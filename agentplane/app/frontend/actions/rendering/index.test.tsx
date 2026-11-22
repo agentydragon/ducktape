@@ -54,17 +54,29 @@ describe("Action presentation slots", () => {
     }
   });
 
-  it("shows pod filters without repeating the operation or namespace", async () => {
+  it("summarizes supported Home Assistant service calls using the target and effect", async () => {
+    const action = identity("home_assistant", "ha_call_service");
+    const fan = { domain: "fan", service: "set_percentage", entity_id: "fan.greenhouse", data: { percentage: 35 } };
+    expect((await mount(renderActionLabel(action, fan))).textContent).toContain("Set fan.greenhouse to 35%");
+    expect((await mount(renderPaneOpened(action, fan))).textContent).toContain("fan.greenhouse");
+    expect(actionOffersCardDecisionButtons(action, fan)).toBe(false);
+    const generic = { domain: "fan", service: "set_percentage", entity_id: ["fan.greenhouse", "fan.study"] };
+    expect((await mount(renderActionLabel(action, generic))).textContent).toContain("Call fan · set percentage");
+    expect((await mount(renderActionLabel(action, { ...fan, future: true }))).textContent).toContain(
+      "Call Home Assistant service"
+    );
+  });
+
+  it("folds pod filters without repeating the operation or namespace", async () => {
     const args = {
       namespace: "prod",
       fieldSelector: "status.phase=Running",
       labelSelector: "app=web",
     };
-    const collapsed = await mount(renderPaneCollapsed(identity("kubernetes_admin", "pods_list_in_namespace"), args));
-    const details = await mount(renderDetailsArguments(identity("kubernetes_admin", "pods_list_in_namespace"), args));
+    const action = identity("kubernetes_admin", "pods_list_in_namespace");
+    const details = await mount(renderDetailsArguments(action, args));
 
-    expect(collapsed.textContent).toContain("Matching pods where");
-    expect(collapsed.textContent).not.toContain("namespace prod");
+    expect(renderPaneCollapsed(action, args)).toBeNull();
     expect(details.textContent).toContain("field selector status.phase=Running");
     expect(details.textContent).not.toContain("List pods in namespace");
     expect(details.textContent).not.toContain("namespace prod");
@@ -139,15 +151,15 @@ describe("Action presentation slots", () => {
     expect(actionOffersCardDecisionButtons(action, { ...args, namespace: "" })).toBe(false);
   });
 
-  it("puts list scope in Kubernetes action labels and leaves only filters in the pane", async () => {
+  it("keeps Kubernetes list scope visible and folds narrowing selectors", async () => {
     const listArgs = { apiVersion: "v1", kind: "Pod", namespace: "apps", labelSelector: "app=web" };
     const listAction = identity("kubernetes_admin", "resources_list");
     const listLabel = await mount(renderActionLabel(listAction, listArgs));
     const listCollapsed = await mount(renderPaneCollapsed(listAction, listArgs));
     const listPane = await mount(renderPaneOpened(listAction, listArgs));
     expect(listLabel.textContent).toContain("List Pod resources in namespace apps");
-    expect(listCollapsed.textContent).toContain("label selector app=web");
-    expect(listCollapsed.textContent).not.toContain("API version");
+    expect(listCollapsed.textContent).not.toContain("label selector app=web");
+    expect(listCollapsed.textContent).toContain("Using API version v1");
     expect(listCollapsed.textContent).not.toContain("apps");
     expect(listPane.textContent).toContain("label selector app=web");
     expect(listPane.textContent).toContain("Using API version v1");
@@ -156,11 +168,11 @@ describe("Action presentation slots", () => {
     const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
     const eventsAction = identity("kubernetes_admin", "events_list");
     const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
-    const eventsCollapsed = await mount(renderPaneCollapsed(eventsAction, eventsArgs));
+    const eventsOpened = await mount(renderPaneOpened(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
-    expect(eventsCollapsed.textContent).toContain("Show events matching");
-    expect(eventsCollapsed.textContent).toContain("type=Warning");
-    expect(eventsCollapsed.textContent).not.toContain("apps");
+    expect(renderPaneCollapsed(eventsAction, eventsArgs)).toBeNull();
+    expect(eventsOpened.textContent).toContain("type=Warning");
+    expect(eventsOpened.textContent).not.toContain("apps");
     expect(renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
   });
 
@@ -173,14 +185,21 @@ describe("Action presentation slots", () => {
   });
 
   it.each([
-    [{ container: "sidecar" }, "View logs for Pod apps/web-0, container sidecar"],
-    [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run, last 60 lines"],
-    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0, last 100 lines (default)"],
-  ])("puts how a log read is cut into its label: %o", async (options, expected) => {
-    const action = identity("kubernetes_admin", "pods_log");
-    const args = { name: "web-0", namespace: "apps", ...options };
-    expect((await mount(renderActionLabel(action, args))).textContent).toContain(expected);
-  });
+    [{ container: "sidecar", tail: 10 }, "View logs for Pod apps/web-0, container sidecar", "Read last 10 lines"],
+    [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run", "Read last 60 lines"],
+    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0", "Read last 100 lines (default)"],
+  ])(
+    "keeps the log source in the label and folds the line limit: %o",
+    async (options, expectedLabel, expectedLimit) => {
+      const action = identity("kubernetes_admin", "pods_log");
+      const args = { name: "web-0", namespace: "apps", ...options };
+      const label = await mount(renderActionLabel(action, args));
+      expect(label.textContent).toContain(expectedLabel);
+      expect(label.textContent).not.toContain("last");
+      expect((await mount(renderPaneOpened(action, args))).textContent).toContain(expectedLimit);
+      expect(actionCompactCardExpands(action, args)).toBe(true);
+    }
+  );
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
     const calendarAction = identity("tana", "get_or_create_calendar_node");
@@ -317,12 +336,12 @@ describe("Action presentation slots", () => {
 
     expect(label.textContent).toContain("Gmail: Search threads");
     expect(collapsed.textContent).toContain("from:alerts@example.com");
-    expect(collapsed.textContent).toContain("Up to 5 threads");
-    expect(collapsed.textContent).toContain("Inbox");
+    expect(collapsed.textContent).not.toContain("Up to 5 threads");
+    expect(collapsed.textContent).not.toContain("Inbox");
     expect(collapsed.textContent).not.toContain("Includes spam and trash");
     expect(details.textContent).toContain("Up to 5 threads");
     expect(details.textContent).toContain("Inbox");
-    expect(actionCompactCardExpands(action, args)).toBe(false);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
 
     const includingSpamAndTrash = await mount(
       renderPaneCollapsed(action, { q: "from:alerts@example.com", includeSpamTrash: true })
@@ -1299,6 +1318,31 @@ const cardDecisionButtonCases: Array<{
   { group: "sandbox", name: "list", args: {}, visible: ["List sandboxes"] },
   { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["List Grocy products"] },
   { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["List quantity units"] },
+  { group: "tana", name: "list_workspaces", args: {}, visible: ["List loaded Tana workspaces"] },
+  {
+    group: "tana",
+    name: "read_node",
+    args: { nodeId: "node-1" },
+    visible: ["node-1", "Up to 1 level of descendants"],
+  },
+  {
+    group: "tana",
+    name: "get_children",
+    args: { nodeId: "node-1", limit: 5, offset: 2 },
+    visible: ["node-1", "Up to 5 direct children, after the first 2"],
+  },
+  {
+    group: "tana",
+    name: "list_tags",
+    args: { workspaceId: "workspace-1" },
+    visible: ["Up to 200 tags in workspace-1 and linked workspaces"],
+  },
+  {
+    group: "tana",
+    name: "get_tag_schema",
+    args: { tagId: "tag-1", includeEditInstructions: false, includeInheritedFields: false },
+    visible: ["tag-1"],
+  },
   {
     group: "gmail",
     name: "threads_list",
@@ -1403,12 +1447,46 @@ describe("compact card renderers", () => {
     ["kubernetes_admin", "pods_get", { name: "web-0", namespace: "apps" }, false],
     ["kubernetes_admin", "events_list", { namespace: "apps" }, false],
     ["sandbox", "list", {}, false],
+    ["tana", "read_node", { nodeId: "node-1", maxDepth: 0 }, false],
+    ["tana", "read_node", { nodeId: "node-1", maxDepth: 1 }, true],
     // The opened card adds the API version.
     ["kubernetes_admin", "resources_get", { apiVersion: "v1", kind: "Pod", name: "web-0" }, true],
     ["ssh", "exec", SSH_EXEC_ARGUMENTS, true],
     ["__proto__", "constructor", {}, true],
   ] as const)("%s/%s with %o expands: %s", (group, name, args, expands) => {
     expect(actionCompactCardExpands(identity(group, name), args)).toBe(expands);
+  });
+
+  it.each(["search_code", "search_commits", "search_pull_requests", "search_repositories", "search_users"])(
+    "folds GitHub %s pagination while preserving scope and validation",
+    async (name) => {
+      const action = identity("github", name);
+      const args = { query: "repo:example/service rollout", page: 3, perPage: 10 };
+      const compact = await mount(renderPaneCollapsed(action, args));
+      expect(compact.textContent).toContain(args.query);
+      expect(compact.textContent).not.toContain("Page");
+      const details = await mount(renderPaneOpened(action, args));
+      expect(details.textContent).toContain("Page 3");
+      expect(details.textContent).toContain("Page size 10");
+      expect(actionCompactCardExpands(action, args)).toBe(true);
+      expect(actionCompactCardExpands(action, { query: args.query })).toBe(false);
+      expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+      expect(actionOffersCardDecisionButtons(action, { ...args, unknownScope: true })).toBe(false);
+    }
+  );
+
+  it("abbreviates the branch-update condition and keeps its exact SHA in details", async () => {
+    const action = identity("github", "update_pull_request_branch");
+    const args = { owner: "example", repo: "service", pullNumber: 42, expectedHeadSha: "0123456789abcdef" };
+    const label = await mount(renderActionLabel(action, args));
+    expect(label.textContent).toContain("example/service#42");
+    expect(label.textContent).toContain("latest base changes");
+    expect(label.textContent).toContain("If unchanged");
+    expect(label.textContent).not.toContain(args.expectedHeadSha);
+    expect((await mount(renderPaneOpened(action, args))).textContent).toContain(args.expectedHeadSha);
+    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain(args.expectedHeadSha);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
   });
 
   it("shows an explicitly supplied maintainer edit permission in compact and opened PR summaries", async () => {
@@ -1438,6 +1516,46 @@ describe("card decision buttons capability", () => {
       expect(actionOffersCardDecisionButtons(identity(group, name), { ...args, invisible: "must review" })).toBe(false);
     }
   );
+
+  it("keeps Tana tag-schema decisions on the named tag as optional detail expands", () => {
+    const action = identity("tana", "get_tag_schema");
+    for (const flags of [{ includeInheritedFields: true }, { includeEditInstructions: true }]) {
+      const args = { tagId: "tag-1", ...flags };
+      expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+      expect(actionCompactCardExpands(action, args)).toBe(true);
+    }
+    expect(actionCompactCardExpands(action, { tagId: "tag-1" })).toBe(false);
+    expect(actionOffersCardDecisionButtons(action, { tagId: "tag-1", includeOtherTags: true })).toBe(false);
+    expect(actionCompactCardExpands(action, { tagId: "tag-1", includeOtherTags: true })).toBe(true);
+  });
+
+  it.each([
+    ["sessions", "get", { session_id: "session-1" }],
+    ["sessions", "read_turns", { session_id: "session-1", count: 5, page_cursor: "next" }],
+    ["orchestration_v1", "get_session", { sandbox: { name: "review-box", uid: "uid-1" }, session_id: "session-1" }],
+    ["orchestration_v1", "list_sessions", { sandbox: { name: "review-box", uid: "uid-1" } }],
+    [
+      "orchestration_v1",
+      "read_turns",
+      { sandbox: { name: "review-box", uid: "uid-1" }, session_id: "session-1", count: 5 },
+    ],
+  ] as const)("allows a scoped %s/%s and rejects unknown options", (group, name, args) => {
+    const action = identity(group, name);
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionCompactCardExpands(action, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons(action, { ...args, all_sessions: true })).toBe(false);
+    expect(actionCompactCardExpands(action, { ...args, all_sessions: true })).toBe(true);
+  });
+
+  it("requires full review for unknown options within a Sandbox target", () => {
+    const action = identity("orchestration_v1", "get_session");
+    const args = {
+      session_id: "session-1",
+      sandbox: { name: "review-box", uid: "uid-1", namespace: "another-namespace" },
+    };
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
+  });
 
   it("keeps compact Gmail search approvals for visible scope and sends custom labels to review", () => {
     const search = identity("gmail", "threads_list");

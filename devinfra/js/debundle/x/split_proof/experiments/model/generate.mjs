@@ -28,6 +28,7 @@ export function generatedCases(seed) {
   };
   const n = num();
   const limit = num();
+  const fields = Array.from({ length: 2 + ((seed >>> 0) % 3) }, (_, i) => i);
   const families = {
     expressions: `
       let value = ${expression(3)};
@@ -55,6 +56,9 @@ export function generatedCases(seed) {
       console.log(holder.read(), next(), captured, factory.name, factory.length);
     `,
     objects: `
+      var { ${fields.map((i) => `k${i}: field${i}`).join(", ")} } =
+        { ${fields.map((i) => `k${i}: ${n + i}`).join(", ")} };
+      console.log("destructured", ${fields.map((i) => `field${i}`).join(", ")});
       let writes = 0;
       const base = { inherited: ${n} };
       const object = Object.create(base);

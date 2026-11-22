@@ -224,11 +224,27 @@ const serviceArgs = z.strictObject({
   result_attribute_keys: parameters.or(stringList),
   ws_command: text,
 });
+function serviceSummary(args: z.infer<typeof serviceArgs>): string {
+  // Entity IDs are unambiguous even when a friendly name cannot be looked up.
+  if (typeof args.entity_id !== "string") return `Call ${words(args.domain)} · ${words(args.service)}`;
+  if (args.service === "turn_on" || args.service === "turn_off") {
+    return `Turn ${args.service === "turn_on" ? "on" : "off"} ${args.entity_id}`;
+  }
+  const data = values.safeParse(args.data);
+  const percentage = data.success ? data.data.percentage : undefined;
+  if (args.domain === "fan" && args.service === "set_percentage" && typeof percentage === "number") {
+    return `Set ${args.entity_id} to ${percentage}%`;
+  }
+  return `Call ${words(args.domain)} · ${words(args.service)} for ${args.entity_id}`;
+}
+
+const serviceLabel = definePreview(serviceArgs, ({ args }) => (
+  <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+    {serviceSummary(args)}
+  </Text>
+));
 const servicePreview = definePreview(serviceArgs, ({ args }) => (
   <Review>
-    <Text size="sm" fw={600}>
-      {words(args.domain)} · {words(args.service)}
-    </Text>
     {(typeof args.entity_id === "string" ? [args.entity_id] : args.entity_id)?.map((id) => (
       <Text size="sm" key={id}>
         <EntityName id={id} />
@@ -510,7 +526,10 @@ function presentation(label: string, args: ArgumentsPreview, result: ResultPrevi
 }
 
 export const homeAssistantRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
-  ["ha_call_service", presentation("Call Home Assistant service", servicePreview, controlResult)],
+  [
+    "ha_call_service",
+    { ...presentation("Call Home Assistant service", servicePreview, controlResult), label: serviceLabel },
+  ],
   ["ha_call_event", presentation("Fire Home Assistant event", eventPreview, controlResult)],
   ["ha_bulk_control", presentation("Control Home Assistant devices", bulkPreview, controlResult)],
   ["ha_get_state", { ...presentation("Read entity state", entityRequest, entityStates), call: readEntityState }],

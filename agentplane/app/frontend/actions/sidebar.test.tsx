@@ -125,7 +125,7 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(podLabel).toBeDefined();
   expect(podLabel?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
   expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
-  expect(container.textContent).toContain("Matching pods where");
+  expect(container.textContent).not.toContain("app=example");
   expect(container.textContent).toContain("systemctl restart backup");
   expect(container.textContent).not.toContain("Requested by");
   expect(container.textContent).not.toContain("test description adding what the decision_pending title leaves out");
@@ -159,7 +159,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       <ActionsSidebarSection />
     </ActionsTestApp>
   );
-  const reads: { request: ActionRequest; visible: string[]; expands: boolean }[] = [
+  const reads: { request: ActionRequest; visible: string[]; folded?: string[]; expands: boolean }[] = [
     {
       request: {
         ...request(ActionState.DECISION_PENDING, 3),
@@ -181,8 +181,9 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         },
         title: "list namespace pods",
       },
-      visible: ["List pods in namespace", "test-namespace", "app=example", "status.phase=Running"],
-      expands: false,
+      visible: ["List pods in namespace", "test-namespace"],
+      folded: ["app=example", "status.phase=Running"],
+      expands: true,
     },
     {
       request: {
@@ -191,8 +192,9 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
         title: "inspect pod logs",
       },
-      visible: ["container sidecar", "previous run", "last 100 lines (default)"],
-      expands: false,
+      visible: ["container sidecar", "previous run"],
+      folded: ["last 100 lines (default)"],
+      expands: true,
     },
     {
       request: {
@@ -201,17 +203,20 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { q: "from:deployments@example.com", maxResults: 5 },
         title: "search deployment mail",
       },
-      visible: ["from:deployments@example.com", "Up to 5 threads"],
-      expands: false,
+      visible: ["from:deployments@example.com"],
+      folded: ["Up to 5 threads"],
+      expands: true,
     },
   ];
   await send(reads.map(({ request: row }) => row));
   await vi.waitFor(() => expect(container.textContent).toContain("previous run"));
-  for (const { request: read, visible, expands } of reads) {
+  for (const { request: read, visible, folded = [], expands } of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
     expect(disclosure !== null).toBe(expands);
+    expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
+    for (const value of folded) expect(container.textContent).not.toContain(value);
     if (disclosure) await act(async () => disclosure.click());
-    for (const value of visible) expect(container.textContent).toContain(value);
+    for (const value of [...visible, ...folded]) expect(container.textContent).toContain(value);
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
   }
@@ -274,7 +279,7 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
   expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).not.toBeNull();
 });
 
-it("shows compact decisions only for a fully displayed mutation", async () => {
+it("shows compact decisions for a simple Calendar creation", async () => {
   const container = await mount(
     <ActionsTestApp>
       <ActionsSidebarSection />
@@ -298,7 +303,7 @@ it("shows compact decisions only for a fully displayed mutation", async () => {
   const cards = container.querySelectorAll(".agentplane-actions-sidebar-request");
   expect(cards[0]?.textContent).toContain("Office closure");
   expect(cards[0]?.textContent).toContain("Primary calendar");
-  expect(cards[0]?.textContent).toContain("Use calendar defaults");
+  expect(cards[0]?.textContent).not.toContain("Use calendar defaults");
   expect(cards[0]?.querySelector('button[aria-label^="Approve "]')).not.toBeNull();
   expect(cards[0]?.querySelector('button[aria-label^="Deny "]')).not.toBeNull();
   expect(cards[0]?.querySelector("button[aria-expanded]")).toBeNull();
@@ -360,6 +365,158 @@ it("offers draft creation decisions while keeping the full message one expansion
     expectDecisions(preview);
     expect(preview?.textContent).toContain(supported ? "Last line" : "unknown");
   }
+});
+
+const shoppingTarget = {
+  key: "shopping_list/52",
+  name: "Kefir",
+  shoppingItemCurrent: { listName: "Weekly groceries", amount: 2, unitName: "Bottle", done: false, note: "Plain" },
+};
+const tanaTarget = { nodeId: "task-1", name: "Plan review" };
+const tanaTag = { nodeId: "tag-1", name: "Task" };
+const shoppingAddArgs = { items: [{ shopping_list: 3, product: 21, amount: 2, note: "Plain" }] };
+const tagArgs = { nodeId: "task-1", action: "add", tagIds: ["tag-1"] };
+
+const collapsedDecisionCases: {
+  group: string;
+  name: string;
+  endpoint: string;
+  args: NonNullable<ActionRequest["arguments"]>;
+  unsupported?: NonNullable<ActionRequest["arguments"]>;
+  response: unknown;
+  partial: unknown;
+  visible: readonly string[];
+}[] = [
+  {
+    group: "grocy_sf",
+    name: "shopping_list_item_edit",
+    endpoint: "grocy-reference-summaries",
+    args: { item_id: 52, done: true, amount: 3, clear_fields: ["note"] },
+    unsupported: { item_id: 52, note: "New", clear_fields: ["note"] },
+    response: { references: [shoppingTarget] },
+    partial: {
+      references: [{ ...shoppingTarget, shoppingItemCurrent: { ...shoppingTarget.shoppingItemCurrent, unitName: "" } }],
+    },
+    visible: ["Kefir · Weekly groceries", "Set quantity to 3 Bottle", "Mark done · Clear note"],
+  },
+  {
+    group: "grocy_sf",
+    name: "shopping_list_item_edit",
+    endpoint: "grocy-reference-summaries",
+    args: { item_id: 52, note: "" },
+    unsupported: { item_id: 52, note: "line one\nline two" },
+    response: { references: [shoppingTarget] },
+    partial: { references: [{ ...shoppingTarget, key: "shopping_list/53" }] },
+    visible: ["Kefir · Weekly groceries", "Replace note", "New note · (empty text)"],
+  },
+  {
+    group: "grocy_sf",
+    name: "shopping_list_items_add",
+    endpoint: "grocy-reference-summaries",
+    args: shoppingAddArgs,
+    unsupported: { items: [...shoppingAddArgs.items, { shopping_list: 3, note: "Check supplies" }] },
+    response: {
+      references: [
+        { key: "products/21", name: "Kefir" },
+        { key: "shopping_lists/3", name: "Weekly groceries" },
+      ],
+    },
+    partial: { references: [{ key: "products/21", name: "Kefir" }] },
+    visible: ["2 stock units of Kefir for Weekly groceries", "Note · Plain"],
+  },
+  {
+    group: "tana",
+    name: "check_node",
+    endpoint: "tana-node-summaries",
+    args: { nodeId: "task-1" },
+    response: { nodes: [tanaTarget] },
+    partial: { nodes: [{ nodeId: "task-2", name: "Different node" }] },
+    visible: ["Complete Tana node", "Plan review", "Syncs the mapped field if configured"],
+  },
+  {
+    group: "tana",
+    name: "uncheck_node",
+    endpoint: "tana-node-summaries",
+    args: { nodeId: "task-1" },
+    response: { nodes: [tanaTarget] },
+    partial: { nodes: [{ nodeId: "task-1", name: " " }] },
+    visible: ["Reopen Tana node", "Plan review", "Syncs the mapped field if configured"],
+  },
+  {
+    group: "tana",
+    name: "tag",
+    endpoint: "tana-node-summaries",
+    args: tagArgs,
+    unsupported: { ...tagArgs, tagIds: ["tag-1", "tag-2"] },
+    response: { nodes: [tanaTarget, tanaTag, { nodeId: "tag-2", name: "Milestone" }] },
+    partial: { nodes: [tanaTarget] },
+    visible: ["Add Task to Plan review"],
+  },
+  {
+    group: "tana",
+    name: "tag",
+    endpoint: "tana-node-summaries",
+    args: { ...tagArgs, action: "remove" },
+    response: { nodes: [tanaTarget, tanaTag] },
+    partial: { nodes: [tanaTag] },
+    visible: ["Remove Task from Plan review"],
+  },
+];
+
+it.each(collapsedDecisionCases)("offers compact $group $name decisions for a clear single target", async (example) => {
+  const container = await mount(
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
+  );
+  const action = create(ActionIdentitySchema, { group: example.group, name: example.name });
+  const unknown = { ...example.args, unknown: true };
+  const fixtures = [example.args, example.args, example.args, example.unsupported ?? unknown, unknown].map(
+    (argumentsValue, index) => ({
+      ...request(ActionState.DECISION_PENDING, index + 1),
+      action,
+      arguments: argumentsValue,
+    })
+  );
+  let completeLookup!: (data: unknown) => void;
+  const pending = new Promise<unknown>((resolve) => {
+    completeLookup = resolve;
+  });
+  answerApi(({ path }) => {
+    if (!path.endsWith(example.endpoint)) return undefined;
+    const index = fixtures.findIndex(({ id }) => path.includes(id));
+    return [pending, Response.json({}, { status: 503 }), example.partial, example.response][index];
+  });
+  await send(fixtures);
+
+  const cards = [...container.querySelectorAll(".agentplane-actions-sidebar-request")];
+  expect(cards).toHaveLength(fixtures.length);
+  const [eligible] = cards;
+  if (!eligible) throw new Error("missing eligible card");
+  function expectDecisions(card: Element, visible: boolean) {
+    for (const label of ["Approve", "Deny"]) {
+      expect(!!card.querySelector(`button[aria-label^="${label} "]`)).toBe(visible);
+    }
+  }
+  async function open(card: Element) {
+    const toggle = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+    if (!toggle) throw new Error("missing action disclosure");
+    await act(async () => toggle.click());
+  }
+  expectDecisions(eligible, false);
+  await act(async () => completeLookup(example.response));
+  await vi.waitFor(() => expectDecisions(eligible, true));
+  for (const text of example.visible) expect(eligible.textContent).toContain(text);
+  await open(eligible);
+  expectDecisions(eligible, true);
+
+  for (const card of cards.slice(1)) {
+    expectDecisions(card, false);
+    await open(card);
+    expectDecisions(card, false);
+    expect(card.textContent).toContain("Decisions require full review.");
+  }
+  expect(cards.at(-1)?.textContent).toContain("unknown");
 });
 
 const expandedDecisionCases: {

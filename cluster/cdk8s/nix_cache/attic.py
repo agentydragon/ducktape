@@ -146,9 +146,7 @@ NEXT_CONFIG_MAP = ConfigMapArgs(name=_NEXT_CONFIG_MAP, namespace=NAMESPACE, file
 
 
 ROTATORS_CONFIG_MAP = ConfigMapArgs(
-    name=_ROTATORS_CONFIG_MAP,
-    namespace=NAMESPACE,
-    data={"rotators.yaml": yaml_config(ROTATOR_CONFIG.model_dump(mode="json"))},
+    name=_ROTATORS_CONFIG_MAP, namespace=NAMESPACE, data={"rotators.yaml": yaml_config(ROTATOR_CONFIG)}
 )
 
 

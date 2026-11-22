@@ -20,13 +20,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
 
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
+from agentplane_sandboxtemplate_crds.works.allegedly.agentplane import (
+    SandboxTemplate,
+    SandboxTemplateSpec,
+    SandboxTemplateSpecWorkspaceVolumeLayoutType,
+)
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS
 from agentplane.env import config as configuration
@@ -56,6 +59,7 @@ from cluster.cdk8s.agentplane import (
     platform_routes,
     sandbox_pod,
     telemetry,
+    template_storage,
     workload_routes,
 )
 from cluster.cdk8s.agentplane.environment import Environment
@@ -76,7 +80,6 @@ ENVIRONMENT_RUNTIME_SERVICE_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
 # Shared by the Runner configuration, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
-_STATE_VOLUME_NAME = "state"
 # The environment disk image's `bin/` (//agentplane/env/images:disk_image): Environment Runtime,
 # Runtime, Execution Service and `agentplane`, mounted read-only the way the VM guest mounts its
 # erofs. Runtime is Pod PID 1; the Execution Service companion gets a separate PID namespace.
@@ -85,7 +88,6 @@ _ENVIRONMENT_DIR = "/run/agentplane/environment"
 _ENVIRONMENT_RUNTIME_BINARY = f"{_ENVIRONMENT_DIR}/bin/agentplane-environment-runtime"
 _EXECUTION_SERVICE_BINARY = f"{_ENVIRONMENT_DIR}/bin/agentplane-execution-service"
 _STATE_DIR = "/state"
-_WORKSPACE_VOLUME_NAME = "workspace"
 _WORKSPACE_DIR = WORKSPACE_ROOT
 _HOME_VOLUME_NAME = "home"
 _HOME_DIR = "/home/runner"
@@ -139,24 +141,6 @@ def pods(namespace: str) -> Pods:
     return Pods(namespace=namespace, labels=tuple(_LABELS.items()))
 
 
-def workspace_volume_spec(
-    state_volume: dict[str, Any],
-    *,
-    layout_type: Literal["DirectoryTree", "RawDiskImage", "BlockFilesystem"],
-    storage_class: str | None = None,
-) -> dict[str, Any]:
-    """The workspace claim follows the state claim, with layout-derived volume mode and optional class."""
-    layout: dict[str, str] = {"type": layout_type}
-    if layout_type != "DirectoryTree":
-        layout["filesystem"] = "ext4"
-    claim = {**state_volume["claim"], "volumeMode": "Block" if layout_type == "BlockFilesystem" else "Filesystem"}
-    if storage_class is not None:
-        if not storage_class:
-            raise ValueError("storage_class cannot be empty")
-        claim["storageClassName"] = storage_class
-    return {"name": _WORKSPACE_VOLUME_NAME, "claim": claim, "layout": layout}
-
-
 class EnvironmentSandboxTemplate(Construct):
     """One Pod execution environment: the runner Pod and storage wiring, as SandboxTemplate `name`, on
     image `image`. `key_files` are the caller's Secrets to project into its workload containers; the
@@ -199,13 +183,12 @@ class EnvironmentSandboxTemplate(Construct):
         self.agent_cli_env = agent_cli_environment(service_urls(env))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
-        # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
         self.spec = self._add_sandbox_template()
 
     def _execution_mounts(self) -> list[k8s.VolumeMount]:
         return [
-            k8s.VolumeMount(name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR),
-            k8s.VolumeMount(name=_WORKSPACE_VOLUME_NAME, mount_path=_WORKSPACE_DIR),
+            k8s.VolumeMount(name=template_storage.STATE, mount_path=_STATE_DIR),
+            k8s.VolumeMount(name=template_storage.WORKSPACE, mount_path=_WORKSPACE_DIR),
             k8s.VolumeMount(name=_ENVIRONMENT_VOLUME_NAME, mount_path=_ENVIRONMENT_DIR, read_only=True),
             *self.trust_mounts,
         ]
@@ -386,7 +369,7 @@ class EnvironmentSandboxTemplate(Construct):
             ),
         )
 
-    def _add_sandbox_template(self) -> dict[str, Any]:
+    def _add_sandbox_template(self) -> SandboxTemplateSpec:
         sidecar_settings = self._add_sidecar_settings(name=f"{self.name}-egress-sidecar")
         pod = sandbox_pod.render_pod_template(
             ENVIRONMENT_RUNTIME_LABELS,
@@ -422,29 +405,16 @@ class EnvironmentSandboxTemplate(Construct):
                 fs_group_change_policy="OnRootMismatch",
             ),
         )
-        state_volume = {
-            "name": _STATE_VOLUME_NAME,
-            "layout": {"type": "DirectoryTree"},
-            "claim": {
-                # The StorageClass selects Piraeus' hdd pool; WaitForFirstConsumer lets LINSTOR's
-                # topology-aware provisioner place both strict-local claims on a node with that pool.
-                "storageClassName": self.storage_class,
-                "accessModes": ["ReadWriteOnce"],
-                "resources": {"requests": {"storage": "10Gi"}},
-            },
-        }
-        spec = {
-            "pod": pod,
-            "stateVolume": state_volume,
-            "workspaceVolume": workspace_volume_spec(state_volume, layout_type="DirectoryTree"),
-        }
-        ApiObject(
-            self,
-            "sandboxtemplate",
-            api_version=f"{GROUP}/{VERSION}",
-            kind="SandboxTemplate",
-            metadata=ApiObjectMetadata(name=self.name, namespace=self.env.namespace),
-        ).add_json_patch(JsonPatch.add("/spec", spec))
+        spec = SandboxTemplateSpec(
+            pod=pod,
+            state_volume=template_storage.state_volume(self.storage_class),
+            workspace_volume=template_storage.workspace_volume(
+                self.storage_class, SandboxTemplateSpecWorkspaceVolumeLayoutType.DIRECTORY_TREE
+            ),
+        )
+        SandboxTemplate(
+            self, "sandboxtemplate", metadata=ApiObjectMetadata(name=self.name, namespace=self.env.namespace), spec=spec
+        )
         return spec
 
     def add_platform_resources(self, scope: Construct) -> None:

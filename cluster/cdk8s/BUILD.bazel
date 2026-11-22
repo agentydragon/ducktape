@@ -473,7 +473,10 @@ py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["@pypi//cdk8s_plus_34"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
 )
 
 py_library(
@@ -1216,18 +1219,21 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
 py_test(
     name = "test_etcd",
     srcs = ["test_etcd.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    data = [
+        "//:nebula-mesh.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
         ":etcd",
+        "//:conftest",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
@@ -1563,7 +1569,6 @@ py_library(
     deps = [
         ":manifest_roots",
         "//cluster/cdk8s/providers/vpa:policy",
-        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
         "@pypi//cdk8s",
     ],
 )
@@ -2031,7 +2036,7 @@ py_library(
         ":terraform",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:imagerepository",
-        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "//cluster/cdk8s/providers/vpa:policy",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
     ],
@@ -2192,20 +2197,19 @@ py_test(
     srcs = ["test_buildbuddy_scaling.py"],
     data = [
         "testdata/buildbuddy_scaling_rules.yaml",
+        "//cluster:generated/buildbuddy-kvm-worker-autoscaler/buildbuddy-kvm-worker-autoscaler.k8s.yaml",
+        "//cluster/k8s:buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml",
         "@multitool//tools/promtool",
-        "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":buildbuddy_kvm_worker",
-        ":conftest",
         "//:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

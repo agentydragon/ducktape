@@ -19,19 +19,12 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepository, ImageRepositorySpec
 from python.runfiles import Runfiles
-from vpa_crds.io.k8s.autoscaling import (
-    VerticalPodAutoscaler,
-    VerticalPodAutoscalerSpec,
-    VerticalPodAutoscalerSpecResourcePolicy,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
-    VerticalPodAutoscalerSpecTargetRef,
-    VerticalPodAutoscalerSpecUpdatePolicy,
-)
 
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
@@ -96,21 +89,5 @@ def chart(app: App) -> Chart:
 
 def vpa_chart(app: App) -> Chart:
     chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
-    VerticalPodAutoscaler(
-        chart,
-        NAME,
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        spec=VerticalPodAutoscalerSpec(
-            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=NAME),
-            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
-            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
-                container_policies=[
-                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
-                        container_name=NAME, controlled_resources=["cpu", "memory"], controlled_values="RequestsOnly"
-                    ),
-                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
-                ]
-            ),
-        ),
-    )
+    requests_only_vpa(chart, NAME, namespace=NAMESPACE, container_name=NAME, update_mode="Initial")
     return chart

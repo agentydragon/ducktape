@@ -175,6 +175,22 @@ EXAMPLE_SESSION = "81000000-0000-4000-8000-000000000001"
 EXAMPLE_COMMAND = "81000000-0000-4000-8000-000000000002"
 ORCHESTRATION_SANDBOX = {"name": "review-box", "uid": "81000000-0000-4000-8000-000000000003"}
 ORCHESTRATION_SESSION: dict[str, object] = {"sandbox": ORCHESTRATION_SANDBOX, "session_id": EXAMPLE_SESSION}
+COMPACT_SCOPED_READS = {
+    "tana.read_node": ("Plan review", "Include descendants"),
+    "tana.get_children": ("Direct children of Plan review",),
+    "tana.list_workspaces": ("List loaded Tana workspaces",),
+    "tana.list_tags": ("Product workspace and linked workspaces",),
+    "sessions.get": (EXAMPLE_SESSION,),
+    "sessions.read_turns": (EXAMPLE_SESSION, "Up to 5 turns from History · next page"),
+    "orchestration_v1.get_session": ("Sandbox review-box", EXAMPLE_SESSION),
+    "orchestration_v1.list_sessions": ("Sandbox review-box",),
+    "orchestration_v1.read_turns": ("Sandbox review-box", EXAMPLE_SESSION, "Up to 5 recent turns"),
+}
+TANA_READ_LIMITS = {
+    "tana.read_node": "Up to 2 levels of descendants",
+    "tana.get_children": "Up to 1 direct child, after the first 1",
+    "tana.list_tags": "Up to 25 tags",
+}
 ORCHESTRATION_COMMAND = {**ORCHESTRATION_SESSION, "command_id": EXAMPLE_COMMAND}
 QUEUED = {"session_id": EXAMPLE_SESSION, "state": "DELIVERY_STATE_QUEUED_IN_DISPATCHER"}
 ORCHESTRATION_SPEC = {"harness": "HARNESS_CODEX", "model": "gpt-5.4", "cwd": "/workspace"}
@@ -1331,6 +1347,7 @@ EXAMPLES = (
             "dispatches": [],
         },
         "Turn active",
+        compact_card_expands=False,
     ),
     ActionExample(
         "orchestration_v1",
@@ -1346,6 +1363,7 @@ EXAMPLES = (
             ]
         },
         "Last turn · Succeeded",
+        compact_card_expands=False,
     ),
     ActionExample(
         "orchestration_v1",
@@ -1391,6 +1409,7 @@ EXAMPLES = (
             "resume_token": "recorded-token",
         },
         "Checked the deployment notes.",
+        compact_card_expands=False,
     ),
     ActionExample(
         "orchestration_v1",
@@ -1431,6 +1450,7 @@ EXAMPLES = (
             "history": {"source": "history", "kind": "unavailable", "error": {"message": "History unavailable"}},
         },
         "History unavailable",
+        compact_card_expands=False,
     ),
     ActionExample(
         "sessions",
@@ -1477,7 +1497,7 @@ EXAMPLES = (
     ActionExample(
         "sessions",
         "read_turns",
-        {"session_id": EXAMPLE_SESSION, "count": 5},
+        {"session_id": EXAMPLE_SESSION, "count": 5, "page_cursor": "recorded-next-page"},
         {
             "session_id": EXAMPLE_SESSION,
             "source": "history",
@@ -1493,6 +1513,7 @@ EXAMPLES = (
             ],
         },
         "Some history is missing.",
+        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1500,7 +1521,6 @@ EXAMPLES = (
         {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
         POD_TABLE,
         "1/2 ready",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1566,7 +1586,6 @@ EXAMPLES = (
         {"name": "web-0", "namespace": "apps", "container": "main", "previous": True, "tail": 100},
         "Starting web server\nListening on :8080\n",
         "Listening on :8080",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1574,16 +1593,8 @@ EXAMPLES = (
         {"namespace": "apps", "fieldSelector": "type=Warning"},
         EVENTS_YAML,
         "BackOff",
-        compact_card_expands=False,
     ),
-    ActionExample(
-        "kubernetes_admin",
-        "pods_list",
-        {"labelSelector": "app=web"},
-        POD_TABLE,
-        "1/2 ready",
-        compact_card_expands=False,
-    ),
+    ActionExample("kubernetes_admin", "pods_list", {"labelSelector": "app=web"}, POD_TABLE, "1/2 ready"),
     ActionExample(
         "kubernetes_admin",
         "namespaces_list",
@@ -1591,7 +1602,6 @@ EXAMPLES = (
         "APIVERSION   KIND        NAME       STATUS   AGE   LABELS\n"
         "v1           Namespace   app-team   Active   4m    kubernetes.io/metadata.name=app-team\n",
         "Active",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1608,7 +1618,6 @@ EXAMPLES = (
         {"name": "worker-1", "query": "kubelet", "tailLines": 80},
         "2026-10-12T03:00:00Z Pod sync complete\n2026-10-12T03:00:01Z Node status reported\n",
         "Node status reported",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1637,7 +1646,6 @@ EXAMPLES = (
         "NAME       CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)\n"
         "worker-1   280m         7%       512Mi           12%\n",
         "Memory 512Mi (12%)",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1645,7 +1653,6 @@ EXAMPLES = (
         {"namespace": "apps", "all_namespaces": False, "label_selector": "app=web"},
         "NAMESPACE   NAME    CPU(cores)   MEMORY(bytes)\napps        web-0   40m          192Mi\n",
         "Memory 192Mi",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1729,7 +1736,6 @@ EXAMPLES = (
         {"owner": "example", "repo": "service", "pullNumber": 42, "expectedHeadSha": "0123456789abcdef"},
         "Pull request branch update is in progress",
         "Update queued",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -1808,7 +1814,6 @@ EXAMPLES = (
             ],
         },
         "Handle deployment checks",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2092,7 +2097,6 @@ EXAMPLES = (
             "items": [{**GITHUB_COMMIT, "repository": {"full_name": "example/service"}}],
         },
         "Document readiness checks",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2155,7 +2159,6 @@ EXAMPLES = (
             ],
         },
         "Wait for staging readiness.",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2318,7 +2321,6 @@ EXAMPLES = (
             "nextPageToken": "test-continuation",
         },
         "More threads available.",
-        compact_card_expands=False,
     ),
     ActionExample(
         "gmail",
@@ -2347,7 +2349,6 @@ EXAMPLES = (
             "nextPageToken": "opaque-drafts-page",
         },
         "More drafts available.",
-        compact_card_expands=False,
     ),
     ActionExample(
         "gmail",
@@ -2918,10 +2919,10 @@ EXAMPLES = (
     ),
     _tana_example(
         "tag",
-        {"nodeId": "task-1", "action": "add", "tagIds": ["tag-1", "tag-2"]},
-        'Adding tags on "Plan review" (task-1):\n✓ Task: Added tag "Task"\n✓ Milestone: Tag "Milestone" is already applied',
-        'Tag "Milestone" is already applied',
-        nodes=(_TASK, _TASK_TAG, ("tag-2", "Milestone")),
+        {"nodeId": "task-1", "action": "add", "tagIds": ["tag-1"]},
+        'Adding tags on "Plan review" (task-1):\n✓ Task: Added tag "Task"',
+        'Added tag "Task"',
+        nodes=(_TASK, _TASK_TAG),
     ),
     _tana_example(
         "set_tag_checkbox",
@@ -3203,6 +3204,8 @@ async def test_action_presentations(
     )
     if example.group == "grocy_sf" and summaries is None:
         summaries = {"grocy-reference-summaries": {"references": []}}
+    if example.key == "github.push_files":
+        summaries = {"github-push-files-preview": {}}
     gmail_labeled_read = example.key in {"gmail.messages_get", "gmail.threads_get"}
     if gmail_labeled_read:
         summaries = {"gmail-resource-summaries": {"labels": [{"id": GMAIL_LABEL["id"], "title": GMAIL_LABEL["name"]}]}}
@@ -3246,8 +3249,9 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("Only this occurrence")
     elif example.key == "google_calendar.update_event":
         await expect(sidebar).to_contain_text("Facilities calendar")
-        await expect(sidebar).to_contain_text("Entire recurring series")
-        await expect(sidebar).to_contain_text("Remove all attendees")
+        await expect(sidebar).to_contain_text("Changes: title, location, attendees, reminders")
+        await expect(sidebar).not_to_contain_text("Entire recurring series")
+        await expect(sidebar).not_to_contain_text("Remove all attendees")
     elif example.key == "google_calendar.list_events":
         await expect(sidebar).to_contain_text(CALENDAR_NAME)
         await expect(sidebar).to_contain_text(CALENDAR_ID)
@@ -3255,15 +3259,25 @@ async def test_action_presentations(
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     elif example.key == "grocy_sf.shopping_list_item_edit":
         await expect(sidebar).to_contain_text("Kefir")
-        await expect(sidebar).to_contain_text("Mark done")
+        await expect(sidebar).to_contain_text("Mark done · Clear note")
+    elif example.key == "grocy_sf.shopping_list_items_add":
+        await expect(sidebar).to_contain_text("2 stock units of Kefir for Weekly groceries")
+        await expect(sidebar).to_contain_text("Note · Plain")
+    elif example.key in {"tana.check_node", "tana.uncheck_node"}:
+        await expect(sidebar).to_contain_text("Plan review")
+        await expect(sidebar).to_contain_text("Syncs the mapped field if configured")
+    elif example.key == "tana.tag":
+        await expect(sidebar).to_contain_text("Add Task to Plan review")
     elif example.key == "tana.move_node":
         await expect(sidebar).to_contain_text("Draft notes")
         await expect(sidebar).to_contain_text("Website project")
     elif example.key == "tana.get_tag_schema":
-        await expect(sidebar.get_by_text("Task", exact=True)).to_be_visible()
+        tag = sidebar.get_by_role("link", name="Task", exact=True)
+        await expect(tag).to_have_attribute("href", "https://app.tana.inc?nodeid=tag-1")
         await expect(sidebar).not_to_contain_text("Include inherited fields")
         await expect(sidebar).not_to_contain_text("Include edit instructions")
-        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
     elif example.key == "kubernetes_admin.pods_run":
         await expect(sidebar).to_contain_text("Expose TCP port 8080 through a ClusterIP Service.")
         await expect(sidebar).not_to_contain_text("OpenShift Route")
@@ -3277,6 +3291,11 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("Reviewed")
         await expect(sidebar).to_contain_text("Needs review")
         await expect(sidebar).not_to_contain_text("Creates missing labels")
+    elif example.key == "github.issue_write":
+        issue = sidebar.get_by_role("link", name="example/service#7", exact=True)
+        await expect(issue).to_have_attribute("href", "https://github.com/example/service/issues/7")
+        await expect(sidebar).to_contain_text("Edit issue fields Priority")
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
     if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
     if example.key in {
@@ -3284,25 +3303,30 @@ async def test_action_presentations(
         "grocy_sf.product_groups_create",
         "grocy_sf.quantity_units_create",
         "grocy_sf.shopping_lists_create",
+        "grocy_sf.shopping_list_item_edit",
+        "grocy_sf.shopping_list_items_add",
         "kubernetes_admin.pods_run",
         "kubernetes_admin.resources_scale",
+        "tana.check_node",
         "tana.get_or_create_calendar_node",
+        "tana.tag",
+        "tana.uncheck_node",
     }:
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+    if example.key in COMPACT_SCOPED_READS:
+        for field in COMPACT_SCOPED_READS[example.key]:
+            await expect(sidebar).to_contain_text(field)
+        await _expect_live_preview(sidebar, example)
+        if example.arguments.get("session_id") == EXAMPLE_SESSION:
+            session = sidebar.get_by_role("link", name=EXAMPLE_SESSION, exact=True)
+            await expect(session).to_have_attribute("href", f"/threads/{EXAMPLE_SESSION}")
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
+    read_limit = TANA_READ_LIMITS.get(example.key)
+    if read_limit is not None:
+        await expect(sidebar).not_to_contain_text(read_limit)
     await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
-    if example.key == "google_calendar.update_event":
-        when = sidebar.get_by_role("button", name=CALENDAR_LOCAL_RANGE, exact=True)
-        await when.hover()
-        tooltip = page.get_by_role("tooltip")
-        await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
-        await page.mouse.move(0, 0)
-        await expect(tooltip).to_have_count(0)
-        await when.focus()
-        await expect(tooltip).to_contain_text("2026-11-23T09:30:00-08:00 · America/Los_Angeles")
-        await when.click()
-        await expect(tooltip).to_be_visible()
-        await sidebar.locator(".agentplane-actions-sidebar-expand").focus()
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
         if example.key == "gmail.threads_modify_labels":
@@ -3327,15 +3351,40 @@ async def test_action_presentations(
             await sidebar.get_by_role("button", name="Collapse ", exact=False).press("Enter")
         await sidebar.locator(".agentplane-actions-sidebar-summary").click(position={"x": 25, "y": 8})
         await _expect_live_preview(sidebar, example)
+        if example.key == "google_calendar.update_event":
+            when = sidebar.get_by_role("button", name=CALENDAR_LOCAL_RANGE, exact=True)
+            await when.hover()
+            tooltip = page.get_by_role("tooltip")
+            await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
+            await page.mouse.move(0, 0)
+            await expect(tooltip).to_have_count(0)
+            await sidebar.get_by_role("link", name="Facilities coordination", exact=True).focus()
+            await page.keyboard.press("Tab")
+            await expect(when).to_be_focused()
+            await expect(tooltip).to_contain_text("2026-11-23T09:30:00-08:00 · America/Los_Angeles")
+            await when.click()
+            await expect(tooltip).to_be_visible()
+            await sidebar.locator(".agentplane-actions-sidebar-expand").focus()
+        if example.key == "google_calendar.update_event":
+            await expect(sidebar).to_contain_text("Entire recurring series")
+            await expect(sidebar).to_contain_text("Remove all attendees")
         if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        elif read_limit is not None:
+            await expect(sidebar).to_contain_text(read_limit)
             await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         elif example.key == "google_calendar.list_events":
             await expect(sidebar).to_contain_text("Ending after")
             await expect(sidebar).to_contain_text("Starting before")
+        elif example.key == "github.push_files":
+            await expect(sidebar.get_by_text("Comparison unavailable. Files show proposed contents.")).to_be_visible()
         elif example.key == "tana.get_tag_schema":
             await expect(sidebar).to_contain_text("Include inherited fields")
             await expect(sidebar).to_contain_text("Include edit instructions")
-            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        elif example.key == "github.issue_write":
+            await expect(sidebar).to_contain_text("Priority P1")
+            await expect(sidebar).to_contain_text("Decisions require full review.")
         await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
@@ -3542,8 +3591,72 @@ async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixtu
 
 
 @DESKTOP_AND_MOBILE
-async def test_issue_label_update_compact(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    args: dict[str, object] = {
+        "owner": "example",
+        "repo": "service",
+        "branch": "docs",
+        "message": "docs: update the deployment guide",
+        "files": [
+            {"path": "docs/deploy.md", "content": "# Deploy\n\nCheck readiness.\nKeep rollback ready.\n"},
+            {"path": "docs/verify.md", "content": "# Verify\n\nCheck the logs.\n"},
+        ],
+    }
+    await app.show_action_preview(
+        "github",
+        "push_files",
+        args,
+        {
+            "github-push-files-preview": {
+                "baseCommitSha": sha,
+                "files": [
+                    {"path": "docs/deploy.md", "content": "# Deploy\n\nWait 30 seconds.\nKeep rollback ready.\n"}
+                ],
+            }
+        },
+    )
+    await app.show_action_receipt(
+        "github",
+        "push_files",
+        args,
+        {"content": [], "structuredContent": {"ref": "refs/heads/docs", "object": {"sha": sha, "type": "commit"}}},
+    )
+    sidebar_width = (viewport.width if viewport == MOBILE else 240) - 16
+    detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
+    await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
+    sidebar = view.page.locator("[data-action-visual=sidebar]")
+    await sidebar.get_by_role("button", name="Expand ", exact=False).click()
+    await expect(sidebar.get_by_role("link", name="0123456")).to_have_attribute(
+        "href", f"https://github.com/example/service/commit/{sha}"
+    )
+    await sidebar.get_by_role("button", name="docs/deploy.md", exact=False).click()
+    added = sidebar.get_by_text("+Check readiness.", exact=True)
+    await added.scroll_into_view_if_needed()
+    await expect(sidebar.get_by_text("-Wait 30 seconds.", exact=True)).to_be_in_viewport()
+    await expect(added).to_be_in_viewport()
+    await view.capture("diff", target=sidebar)
+
+    approve = sidebar.get_by_role("button", name="Approve ", exact=False)
+    await approve.scroll_into_view_if_needed()
+    await expect(approve).to_be_in_viewport()
+    await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_in_viewport()
+    await view.capture("decision", target=sidebar)
+
+    await sidebar.get_by_role("button", name="Proposed contents", exact=True).click()
+    await expect(sidebar.get_by_text("Check readiness.", exact=True)).to_be_visible()
+    await sidebar.get_by_role("button", name="docs/verify.md", exact=False).click()
+    await expect(sidebar.get_by_text("Check the logs.", exact=True)).to_be_visible()
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("mixed", [False, True], ids=["labels-only", "mixed"])
+async def test_issue_update_compact(view: VisualPage, app: AgentplaneFixture, viewport: Viewport, mixed: bool) -> None:
     args = {**GITHUB_ISSUE, "method": "update", "labels": ["bug", "upstream-waiting", "needs investigation", "triage"]}
+    if mixed:
+        args.update(
+            title="Verify staging readiness", assignees=["alex", "taylor"], state="closed", state_reason="not_planned"
+        )
     await app.show_action_preview(
         "github",
         "issue_write",
@@ -3565,12 +3678,21 @@ async def test_issue_label_update_compact(view: VisualPage, app: AgentplaneFixtu
     detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
     await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
     sidebar = view.page.locator("[data-action-visual=sidebar]")
+    issue = sidebar.get_by_role("link", name="example/service#7", exact=True)
+    await expect(issue).to_have_attribute("href", "https://github.com/example/service/issues/7")
+    if mixed:
+        await expect(sidebar).to_contain_text("Close example/service#7")
+        await expect(sidebar).to_contain_text("New title Verify staging readiness")
+        await expect(sidebar).to_contain_text("Reason Not planned")
+        await expect(sidebar).to_contain_text("Set assignees to alex, taylor")
+        await expect(sidebar).to_contain_text("Set labels to")
     badges = sidebar.locator(".mantine-Badge-root")
     await expect(badges.filter(has_text="bug")).to_have_css("background-color", "rgb(215, 58, 74)")
     await expect(badges.filter(has_text="upstream-waiting")).to_have_css("color", "rgb(255, 255, 255)")
     await expect(badges.filter(has_text="needs investigation")).to_have_css("color", "rgb(0, 0, 0)")
     await expect(badges.filter(has_text="triage")).to_be_visible()
     await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+    await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
     await expect(sidebar.get_by_role("button", name="Expand ", exact=False)).to_have_count(0)
     await wait_for_stable(view.page)
     await view.capture(target=sidebar)

@@ -401,6 +401,10 @@ func (r githubLabelRecorder) GitHubLabelSummaries(_ context.Context, owner, repo
 	return []*operator_action_servicepb.GitHubLabelSummary{{Name: names[0], Color: "d73a4a"}}
 }
 
+func (r githubLabelRecorder) GitHubPushFilesPreview(context.Context, string, string, string, []string) *operator_action_servicepb.GetGitHubPushFilesPreviewResponse {
+	return nil
+}
+
 func TestGitHubLabelSummariesUseOnlyRecordedIssueLabels(t *testing.T) {
 	recorder := githubLabelRecorder{calls: make(chan []string, 1)}
 	namespace := newPolicyNamespace(t)
@@ -420,4 +424,66 @@ func TestGitHubLabelSummariesUseOnlyRecordedIssueLabels(t *testing.T) {
 	wrong := s.submitAction(t, "gmail", "labels_get", `{"id":"bug"}`)
 	_, err = s.operators.GetGitHubLabelSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetGitHubLabelSummariesRequest{RequestId: wrong.ID.String()})
 	wantCode(t, "wrong integration", err, codes.InvalidArgument)
+}
+
+type githubPushPreviewFunc func(context.Context, string, string, string, []string) *operator_action_servicepb.GetGitHubPushFilesPreviewResponse
+
+func (f githubPushPreviewFunc) GitHubLabelSummaries(context.Context, string, string, []string) []*operator_action_servicepb.GitHubLabelSummary {
+	return nil
+}
+
+func (f githubPushPreviewFunc) GitHubPushFilesPreview(ctx context.Context, owner, repo, branch string, paths []string) *operator_action_servicepb.GetGitHubPushFilesPreviewResponse {
+	return f(ctx, owner, repo, branch, paths)
+}
+
+func TestGitHubPushPreviewUsesOnlyPendingRecordedTargets(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	var calls atomic.Int32
+	var decideDuringRead atomic.Pointer[func()]
+	provider := githubPushPreviewFunc(func(_ context.Context, owner, repo, branch string, paths []string) *operator_action_servicepb.GetGitHubPushFilesPreviewResponse {
+		calls.Add(1)
+		if owner != "owner" || repo != "repo" || branch != "work/docs" || !slices.Equal(paths, []string{"docs/guide.md"}) {
+			t.Errorf("looked up %s/%s %s %q", owner, repo, branch, paths)
+		}
+		if decide := decideDuringRead.Load(); decide != nil {
+			(*decide)()
+		}
+		return &operator_action_servicepb.GetGitHubPushFilesPreviewResponse{
+			BaseCommitSha: sha,
+			Files:         []*operator_action_servicepb.GitHubPushFileBaseline{{Path: "docs/guide.md", Content: "before"}},
+		}
+	})
+	namespace := newPolicyNamespace(t)
+	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, IntegrationPreviews{GitHub: provider})
+	receipt := s.submitAction(t, "github", "push_files", `{"owner":"owner","repo":"repo","branch":"work/docs","message":"update","files":[
+		{"path":"docs/guide.md","content":"after"},
+		{"path":"docs/duplicate.md","content":"a"},{"path":"docs/duplicate.md","content":"b"},
+		{"path":"../outside.md","content":"x"}
+	]}`)
+	input := &operator_action_servicepb.GetGitHubPushFilesPreviewRequest{RequestId: receipt.ID.String()}
+	_, err := s.operators.GetGitHubPushFilesPreview(as(t, callerCertificate), input)
+	wantCode(t, "workload cannot read GitHub push previews", err, codes.Unauthenticated)
+	if calls.Load() != 0 {
+		t.Fatalf("workload triggered %d provider calls", calls.Load())
+	}
+	code, body := s.get(t, "/v1/operator/action-requests/"+receipt.ID.String()+"/github-push-files-preview", s.operatorToken)
+	var response operator_action_servicepb.GetGitHubPushFilesPreviewResponse
+	if code != http.StatusOK || protojson.Unmarshal(body, &response) != nil || response.GetBaseCommitSha() != sha ||
+		len(response.GetFiles()) != 1 || response.GetFiles()[0].GetContent() != "before" {
+		t.Fatalf("pending preview HTTP response %d %s", code, body)
+	}
+	cancel := func() {
+		if _, err := s.store.Cancel(t.Context(), receipt.ID, s.caller); err != nil {
+			t.Error(err)
+		}
+	}
+	decideDuringRead.Store(&cancel)
+	got, err := s.operators.GetGitHubPushFilesPreview(as(t, s.operatorToken), input)
+	if err != nil || got.GetBaseCommitSha() != "" || len(got.GetFiles()) != 0 {
+		t.Fatalf("preview completed after cancellation: %v, %v", got, err)
+	}
+	got, err = s.operators.GetGitHubPushFilesPreview(as(t, s.operatorToken), input)
+	if err != nil || len(got.GetFiles()) != 0 || calls.Load() != 2 {
+		t.Fatalf("cancelled preview: %v, %v, provider calls %d", got, err, calls.Load())
+	}
 }

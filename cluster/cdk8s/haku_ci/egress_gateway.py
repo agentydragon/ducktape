@@ -18,7 +18,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
-from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler, VerticalPodAutoscalerSpecTargetRef
+from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler
 
 from agentplane.egress import sidecar_config
 from cluster.cdk8s import node_scheduling
@@ -31,7 +31,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.vpa.policy import initial_requests_spec
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -47,14 +47,8 @@ _ZONES = node_scheduling.HOME_AND_OVH_ZONES
 
 def add_vpa(scope: Construct, namespace: str) -> VerticalPodAutoscaler:
     """Size the relay's requests while Goldilocks stays disabled for runner Jobs."""
-    return VerticalPodAutoscaler(
-        scope,
-        NAME,
-        metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-        spec=initial_requests_spec(
-            VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=NAME),
-            container_name=sidecar_config.CONTAINER_NAME,
-        ),
+    return requests_only_vpa(
+        scope, NAME, namespace=namespace, container_name=sidecar_config.CONTAINER_NAME, update_mode="Initial"
     )
 
 

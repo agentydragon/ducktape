@@ -2,7 +2,6 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -19,7 +18,6 @@ from constructs import Construct
 from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -130,9 +128,6 @@ class Notifications(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=NOTIFICATIONS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         settings_model = Settings(
             namespace=env.namespace,
             operator_reader_services=[APP_URI],
@@ -151,18 +146,14 @@ class Notifications(Construct):
             ),
             github=GitHubSettings(app_id=github.app_id) if github is not None else None,
             http_port=http.pod_port,
-            rpc=listener.Listener(
-                listen_address=f"0.0.0.0:{endpoint.pod_port}",
-                tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
+            rpc=serving_tls.spiffe_listener(endpoint.pod_port),
         )
         settings_file = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(settings_model.model_dump(mode="json", exclude_none=True)),
+            content=yaml_config(settings_model, exclude_none=True),
         )
         role = Role(
             self,

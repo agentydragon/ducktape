@@ -118,6 +118,16 @@ function byBehavior(name, code, side) {
 }
 
 for (const [name, code, side] of [
+  [
+    "destructuring_after_descriptor_change",
+    `var record = {first: 3, second: 4};
+var alias = record;
+Object.defineProperty(alias, "second", {get() { return factory(); }});
+const factory = () => 7;
+var { first, second } = record;
+console.log(first, second);`,
+    [0, 1, 2, 4],
+  ],
   ["negated_record_read_tdz", `const flag = {};\nconst record = {value: !flag};\nconsole.log(record.value);`, [1]],
   ["literal_read_tdz", `const result = 7;\nconst alias = result;\nconsole.log(alias);`, [1, 2]],
   [

@@ -118,6 +118,12 @@ request. The service uses fixed read tools and tries up to eight distinct IDs wi
 two-second lookup budget. It omits unavailable results. These reads create no Action request,
 Decision or Execution. Provider metadata can change later. The original IDs stay on the receipt.
 
+`GetGitHubPushFilesPreview` resolves the recorded target branch of a pending `github.push_files`
+request through the linked GitHub MCP server. It then reads up to eight distinct, unambiguous
+paths at that commit under the same two-second budget. The response includes only verified text
+up to 64 KiB per file. A missing branch or file, unreadable content, or changed approval state
+leaves the comparison unavailable. GitHub can move the branch before execution.
+
 `GetGoogleCalendarEventPreview` takes the UUID of a pending Calendar Action. For an explicit
 calendar ID it requests `list_events` with a one-event limit and returns only the page's calendar
 title and requested ID. A get, update, delete or list-instances request also looks up its event or

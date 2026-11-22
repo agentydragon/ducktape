@@ -913,14 +913,7 @@ def add_vm_templates(
     launcher_relay.LauncherRelayPolicy(
         scope, "launcher-relay", namespace=env.namespace, template_name=POD_TEMPLATE, settings_config_map=relay_settings
     )
-    state_volume = runner_template.spec["stateVolume"]
-    state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
-    if env.vm_storage_class is not None:
-        state_claim["storageClassName"] = env.vm_storage_class
-    vm_state_volume = {**state_volume, "claim": state_claim}
-    workspace_volume = environment_sandbox.workspace_volume_spec(
-        vm_state_volume, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
-    )
+    state_storage_class = env.vm_storage_class or runner_template.storage_class
     config_data = environment_guest.guest_config_data(
         env,
         gateway=launcher_relay.GUEST_GATEWAY,
@@ -944,8 +937,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(_VM_GUEST_KERNEL_ARGS),
         config_map=config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
     oom_config = ConfigMap(
         scope,
@@ -963,8 +956,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} agentplane.cgroup-observer=1"),
         config_map=oom_config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
     environment_vm.EnvironmentVmTemplate(
         scope,
@@ -976,8 +969,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} {vm_configuration.SUPERVISION_KERNEL_ARG}"),
         config_map=config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
 
 
@@ -990,7 +983,7 @@ def add_firecracker_template(
         "firecracker-template",
         env,
         labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-        runner_state_volume=runner_template.spec["stateVolume"],
+        storage_class=env.vm_storage_class or runner_template.storage_class,
         runner_image=environment_vm.RUNNER_DISK_IMAGE,
         image_pull_secret_name=None,
         codex_readiness=_VM_CODEX_READINESS,

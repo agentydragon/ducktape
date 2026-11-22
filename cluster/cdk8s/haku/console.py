@@ -17,7 +17,7 @@ carries the Flux marker a generated file cannot.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ConfigMap,
@@ -332,12 +332,7 @@ class Console(Construct):
         )
         deployment.select(LabelSelector.of(labels=_STATIC.pods.selector))
         # Spread each revision across hosts; with one eligible host, keep one replica running.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/topologySpreadConstraints",
-                [node_scheduling.hostname_spread(_STATIC.pods.selector)],
-            )
-        )
+        node_scheduling.set_topology_spread(deployment, node_scheduling.hostname_spread(_STATIC.pods.selector))
         container = deployment.add_container(
             name="static",
             image=f"{_STATIC_IMAGE}:{PLACEHOLDER_TAG}",

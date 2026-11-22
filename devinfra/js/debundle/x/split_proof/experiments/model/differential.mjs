@@ -930,6 +930,11 @@ const focusedCoverage = {};
 for (const job of jobs.filter((j) => j.focused)) {
   const covered = (focusedCoverage[job.focused.family] ??= { generated: 0, completed: 0, reordered: 0 });
   covered.generated++;
+  if (job.focused.family === "objects")
+    assert(
+      job.result.out.some((line) => line.startsWith("destructured ")),
+      job.label
+    );
   if (job.focused.family === "expressions") {
     for (const [kind, table] of Object.entries({ unary: UNARY, binary: BINARY, logical: LOGICAL }))
       for (const op of Object.values(table))

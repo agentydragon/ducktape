@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Service, k8s
-from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -30,65 +29,56 @@ _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPA
 _METRICS = Port(name="metrics", number=2381)
 
 
-class TalosEtcdMetrics(Construct):
-    def __init__(self, scope: Construct, id: str, mesh: Mesh) -> None:
-        super().__init__(scope, id)
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-            cluster_ip="None",
-            ports=[_METRICS.service_port()],
-        )
-        k8s.KubeEndpointSlice(
-            self,
-            "endpoints",
-            metadata=k8s.ObjectMeta(
-                name=_NAME,
-                namespace=NAMESPACE,
-                labels={
-                    "kubernetes.io/service-name": _NAME,
-                    # Anything but endpointslice-controller.k8s.io keeps the control plane's
-                    # controller from reconciling (emptying) a slice whose Service has no selector.
-                    "endpointslice.kubernetes.io/managed-by": "ducktape-static",
-                },
-            ),
-            address_type="IPv4",
-            ports=[k8s.EndpointPort(name=_METRICS.name, port=_METRICS.number, protocol="TCP")],
-            endpoints=[
-                k8s.Endpoint(
-                    addresses=[host.nebula_ip],
-                    hostname=name,
-                    node_name=name,
-                    conditions=k8s.EndpointConditions(ready=True),
-                )
-                for name, host in mesh.control_planes().items()
-            ],
-        )
-        ServiceMonitor(
-            self,
-            "servicemonitor",
-            metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
-            spec=ServiceMonitorSpec(
-                namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
-                selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-                endpoints=[
-                    ServiceMonitorSpecEndpoints(
-                        port=_METRICS.name,
-                        path="/metrics",
-                        scrape_timeout="10s",
-                        relabelings=[
-                            ServiceMonitorSpecEndpointsRelabelings(
-                                source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
-                            )
-                        ],
-                    )
-                ],
-            ),
-        )
-
-
 def chart(app: App, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    TalosEtcdMetrics(chart, "etcd", mesh)
+    Service(
+        chart,
+        "service",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
+        cluster_ip="None",
+        ports=[_METRICS.service_port()],
+    )
+    k8s.KubeEndpointSlice(
+        chart,
+        "endpoints",
+        metadata=k8s.ObjectMeta(
+            name=_NAME,
+            namespace=NAMESPACE,
+            labels={
+                "kubernetes.io/service-name": _NAME,
+                # Anything but endpointslice-controller.k8s.io keeps the control plane's
+                # controller from reconciling (emptying) a slice whose Service has no selector.
+                "endpointslice.kubernetes.io/managed-by": "ducktape-static",
+            },
+        ),
+        address_type="IPv4",
+        ports=[k8s.EndpointPort(name=_METRICS.name, port=_METRICS.number, protocol="TCP")],
+        endpoints=[
+            k8s.Endpoint(
+                addresses=[host.nebula_ip], hostname=name, node_name=name, conditions=k8s.EndpointConditions(ready=True)
+            )
+            for name, host in mesh.control_planes().items()
+        ],
+    )
+    ServiceMonitor(
+        chart,
+        "servicemonitor",
+        metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
+        spec=ServiceMonitorSpec(
+            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+            endpoints=[
+                ServiceMonitorSpecEndpoints(
+                    port=_METRICS.name,
+                    path="/metrics",
+                    scrape_timeout="10s",
+                    relabelings=[
+                        ServiceMonitorSpecEndpointsRelabelings(
+                            source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
+                        )
+                    ],
+                )
+            ],
+        ),
+    )
     return chart

@@ -61,6 +61,11 @@ class RenderedDirectory:
     decryption: KustomizationSpecDecryption | None
 
 
+def literal_artifact_path(path: str) -> bool:
+    """A repository-relative path naming one file or directory in a Flux artifact copy."""
+    return not any(part in {"", ".", ".."} for part in path.split("/")) and not any(char in path for char in "*?[]{}")
+
+
 def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
     """The repo-relative directories `artifact` copies, in copy order. The first is its consumer's
     Kustomization directory; later ones are shared bases and Components that Kustomization
@@ -70,48 +75,32 @@ def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
     not copied to the same path, or a file copy outside the first directory -- since the
     Kustomization's `path` would otherwise silently point at the wrong directory.
     """
-    copies = artifact.copy
-    if not copies:
-        raise ValueError(f"{artifact.name=} copies nothing")
-    first = copies[0]
-    first_directory = first.to.removeprefix("@artifact/").removesuffix("/")
-    if (
-        not first_directory
-        or any(part in {"", ".", ".."} for part in first_directory.split("/"))
-        or first.to != f"@artifact/{first_directory}/"
-        or first.from_ != f"@repo/{first_directory}/**"
-        or first.exclude is not None
-        or first.strategy is not None
-    ):
-        raise ValueError(f"{artifact.name=}: not a whole-directory copy: {first.from_=} {first.to=}")
-
-    directories = [first_directory]
-    for copy in copies[1:]:
-        directory = copy.to.removeprefix("@artifact/").removesuffix("/")
+    directories: list[str] = []
+    for copy in artifact.copy:
+        source = copy.from_.removeprefix("@repo/")
+        destination = copy.to.removeprefix("@artifact/")
         if (
-            directory
-            and not any(part in {"", ".", ".."} for part in directory.split("/"))
-            and copy.to == f"@artifact/{directory}/"
-            and copy.from_ == f"@repo/{directory}/**"
+            copy.from_.startswith("@repo/")
+            and copy.to.startswith("@artifact/")
             and copy.exclude is None
             and copy.strategy is None
         ):
-            directories.append(directory)
-            continue
-        if (
-            not copy.from_.startswith("@repo/")
-            or any(character in copy.from_ for character in "*?[]{}")
-            or any(part in {"", ".", ".."} for part in copy.from_.removeprefix("@repo/").split("/"))
-            or any(character in copy.to for character in "*?[]{}")
-            or not copy.to.startswith(f"@artifact/{first_directory}/")
-            or copy.to.endswith("/")
-            or any(part in {"", ".", ".."} for part in copy.to.removeprefix("@artifact/").split("/"))
-            or copy.exclude is not None
-            or copy.strategy is not None
-        ):
-            raise ValueError(
-                f"{artifact.name=}: not a whole-directory or in-directory file copy: {copy.from_=} {copy.to=}"
-            )
+            directory = destination.removesuffix("/")
+            if destination.endswith("/") and literal_artifact_path(directory) and source == f"{directory}/**":
+                directories.append(directory)
+                continue
+            if (
+                directories
+                and literal_artifact_path(source)
+                and literal_artifact_path(destination)
+                and destination.startswith(f"{directories[0]}/")
+            ):
+                continue
+        raise ValueError(
+            f"{artifact.name=}: expected a whole directory or a file inside the first directory: {copy.from_=} {copy.to=}"
+        )
+    if not directories:
+        raise ValueError(f"{artifact.name=} copies nothing")
     return directories
 
 

@@ -44,13 +44,14 @@ describe("Calendar Action review", () => {
     await vi.waitFor(() => expect(collapsed.textContent).toContain("Facilities calendar"));
     expect(collapsed.textContent).toContain(target.calendar_id);
     expect(collapsed.textContent).toContain("Expand recurring events into occurrences");
-    expect(collapsed.textContent).toContain("Results per page · 120");
+    expect(collapsed.textContent).not.toContain("Results per page");
     expect(collapsed.textContent).not.toContain("Nov 24");
     expect(collapsed.textContent).not.toContain("Dec 1");
     expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
     expect(actionOffersCardDecisionButtons(action, {})).toBe(true);
 
     const opened = await mount(renderPaneOpened(action, args, "request-1"));
+    expect(opened.textContent).toContain("Results per page · 120");
     expect(opened.textContent).toContain("Ending after · Tue, Nov 24, 2026");
     expect(opened.textContent).toContain("Starting before · Tue, Dec 1, 2026");
     await vi.waitFor(() => expect(opened.querySelector("a")?.href).toBe(calendarLink));
@@ -131,19 +132,48 @@ describe("Calendar Action review", () => {
       )
     );
     await vi.waitFor(() => expect(card.textContent).toContain("Facilities coordination"));
-    const original = formatEventRange(
-      eventTime.parse(scheduled),
-      eventTime.parse({
-        ...scheduled,
-        dateTime: "2026-11-23T17:30:00Z",
-      })
+    expect(card.textContent).toContain("Changes: time, location, attendees");
+    expect(card.textContent).not.toContain("Test conference room");
+    expect(card.textContent).not.toContain("attendee@example.test");
+    const review = await mount(
+      renderDetailsArguments(
+        identity("update_event"),
+        {
+          ...target,
+          start: { date_time: "2026-11-23T18:00:00Z", time_zone: "America/Los_Angeles" },
+          location: "Test conference room",
+          attendees: ["attendee@example.test"],
+        },
+        "request-1",
+        true
+      )
     );
-    expect(card.textContent?.split("Requested changes")[0]).toContain(original);
-    expect(card.textContent?.split("Requested changes")[1]).toContain("New time · Starts");
-    expect(card.textContent).toContain("Only this occurrence");
-    expect(card.textContent).toContain("Change location to Test conference room");
-    expect(card.textContent).toContain("Replace attendees with attendee@example.test");
+    expect(review.textContent).toContain("Change location to Test conference room");
+    expect(review.textContent).toContain("Replace attendees with attendee@example.test");
     expect(card.querySelector("a")).toBeNull();
+  });
+
+  it("keeps complex creation details and list pagination in the opened review", async () => {
+    const create = identity("create_event");
+    const args = {
+      summary: "Planning",
+      start: { date: "2026-11-26" },
+      end: { date: "2026-11-27" },
+      attendees: ["guest@example.test"],
+      location: "Conference room",
+    };
+    const collapsed = await mount(renderPaneCollapsed(create, args));
+    const review = await mount(renderDetailsArguments(create, args));
+    expect(collapsed.textContent).toContain("Planning");
+    expect(collapsed.textContent).not.toContain("guest@example.test");
+    expect(review.textContent).toContain("guest@example.test");
+    expect(review.textContent).toContain("Conference room");
+    expect(actionOffersCardDecisionButtons(create, args)).toBe(false);
+
+    const list = identity("list_events");
+    const page = { max_results: 5, page_token: "next" };
+    expect((await mount(renderPaneCollapsed(list, page))).textContent).not.toContain("Results per page");
+    expect((await mount(renderDetailsArguments(list, page))).textContent).toContain("Results per page · 5");
   });
 
   it("shows only supplied changes and distinguishes clears", async () => {

@@ -134,9 +134,7 @@ def add_service_workload(
     if name in env.hostname_spread_services:
         if replicas.count < 2:
             raise ValueError(f"hostname spread requires at least two replicas: {name}")
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add("/spec/template/spec/topologySpreadConstraints", [node_scheduling.hostname_spread(labels)])
-        )
+        node_scheduling.set_topology_spread(deployment, node_scheduling.hostname_spread(labels))
     pod_policy.harden(deployment)
     if create_service:
         service = Service(

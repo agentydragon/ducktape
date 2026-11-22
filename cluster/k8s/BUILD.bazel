@@ -27,3 +27,8 @@ exports_files(
     ["agents/plaid-mcp/readonly-role.sql"],
     visibility = ["//cluster/cdk8s/plaid_mcp:__pkg__"],
 )
+
+exports_files(
+    ["buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)

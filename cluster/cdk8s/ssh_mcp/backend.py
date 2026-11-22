@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -11,13 +11,14 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     EnvValue,
+    HostAlias,
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
+    Secret,
     Service,
     Volume,
-    k8s,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -144,13 +145,18 @@ class SshMcp(Construct):
             replicas=1,
             select=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
+            host_aliases=[
+                HostAlias(ip=mesh.hosts[destination.name].nebula_ip, hostnames=[destination.host])
+                for destination in config.destinations
+                if isinstance(destination, NebulaDestination)
+            ],
             automount_service_account_token=False,
             enable_service_links=False,
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
-        deployment.add_container(
+        server = deployment.add_container(
             name="server",
             image=f"{IMAGE_NAME}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
@@ -179,32 +185,12 @@ class SshMcp(Construct):
         # there so its egress follows the same routed path as the tofu runner.
         pod_policy.place(deployment, node_scheduling.Placement(node_selector=node_scheduling.HOME_LAN_NODE_SELECTOR))
         config_volume = Volume.from_config_map(self, "config-volume", config_map)
-        deployment.containers[0].mount(CONFIG_DIR, config_volume, read_only=True)
-        # cdk8s_plus has no optional SecretVolumeSource builder. Keep the optionality in
-        # typed Kubernetes structs: target keys may be absent while the service stays up.
-        for name, secret, mount_path in _KEY_VOLUMES:
-            ApiObject.of(deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/volumes/-",
-                    k8s.Volume(name=name, secret=k8s.SecretVolumeSource(secret_name=secret, optional=True)),
-                )
-            )
-            ApiObject.of(deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/containers/0/volumeMounts/-",
-                    k8s.VolumeMount(name=name, mount_path=mount_path, read_only=True),
-                )
-            )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/hostAliases",
-                [
-                    k8s.HostAlias(ip=mesh.hosts[destination.name].nebula_ip, hostnames=[destination.host])
-                    for destination in config.destinations
-                    if isinstance(destination, NebulaDestination)
-                ],
-            )
-        )
+        server.mount(CONFIG_DIR, config_volume, read_only=True)
+        # Targets can acquire their keys after the server starts.
+        for name, secret_name, mount_path in _KEY_VOLUMES:
+            secret = Secret.from_secret_name(self, f"{name}-secret", secret_name)
+            volume = Volume.from_secret(self, name, secret, name=name, optional=True)
+            server.mount(mount_path, volume, read_only=True)
         pod_policy.harden(deployment)
         return deployment
 

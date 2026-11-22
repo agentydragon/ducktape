@@ -3,7 +3,7 @@ import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { z } from "zod";
 
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
+import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
 
@@ -60,26 +60,14 @@ function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceA
 
 export const podsInNamespaceLabel: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespaceLabel);
 
-// This is intentionally a separate widget from the details view: each Action owns both
-// representations. Card decision buttons eligibility lives in a separate capability registry.
-function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
-  return args.fieldSelector !== undefined || args.labelSelector !== undefined ? (
-    <PodsInNamespaceFilters args={args} />
-  ) : (
-    <Text size="sm">List every pod in this namespace.</Text>
-  );
-}
-
-export const podsInNamespaceCollapsed: ArgumentsPreview = definePreview(
-  zPodsInNamespaceArguments,
-  PodsInNamespaceCollapsed
-);
-
 export const podsInNamespacePresentation: ActionPresentation = {
   label: podsInNamespaceLabel,
   requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
-  pane: { collapsed: podsInNamespaceCollapsed },
+  pane: { collapsed: null, opened: podsInNamespaceDetails },
   details: { arguments: podsInNamespaceDetails, envelopeResult: resourceListResult },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
-  compactCardExpands: expandsForRejectedArguments(zPodsInNamespaceArguments),
+  compactCardExpands: expandsForDetails(
+    zPodsInNamespaceArguments,
+    (args) => args.fieldSelector !== undefined || args.labelSelector !== undefined
+  ),
 };

@@ -23,7 +23,6 @@ from constructs import Construct
 from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
 from cluster.cdk8s import cilium, node_scheduling, public_web_pki
@@ -156,9 +155,6 @@ class LlmIngress(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=_NAME, uri=LLM_INGRESS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         static_settings = Settings(
             allowed_service_account_namespaces=frozenset({env.namespace}),
             policy_namespace=env.namespace,
@@ -170,11 +166,7 @@ class LlmIngress(Construct):
             codex_model_catalog_file=None if catalog_map is None else Path(str(_CODEX_CATALOG_PATH)),
             litellm_url=AnyHttpUrl(litellm_url),
             log_levels={},
-            rpc=Listener(
-                listen_address=f"0.0.0.0:{self.service.pod_port}",
-                tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
+            rpc=serving_tls.spiffe_listener(self.service.pod_port),
         )
         settings = SettingsFile(
             self,

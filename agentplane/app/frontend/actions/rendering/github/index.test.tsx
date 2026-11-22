@@ -23,8 +23,11 @@ const UPDATE_PULL_REQUEST = create(ActionIdentitySchema, { group: "github", name
 const CREATE_BRANCH = create(ActionIdentitySchema, { group: "github", name: "create_branch" });
 const CREATE_PULL_REQUEST = create(ActionIdentitySchema, { group: "github", name: "create_pull_request" });
 const SEARCH_PULL_REQUESTS = create(ActionIdentitySchema, { group: "github", name: "search_pull_requests" });
+const ISSUE_WRITE = create(ActionIdentitySchema, { group: "github", name: "issue_write" });
 
 const REPOSITORY = { owner: "test-owner", repo: "test-repo" };
+const ISSUE_UPDATE = { ...REPOSITORY, method: "update", issue_number: 42 };
+const ISSUE_URL = "https://github.com/test-owner/test-repo/issues/42";
 
 /** The text a widget drew, without the style sheet `MantineProvider` adds to the mount. */
 function shownText(container: HTMLElement): string {
@@ -44,36 +47,136 @@ function fileBlocks(container: HTMLElement): Array<{ summary: HTMLButtonElement;
   }));
 }
 
-describe("GitHub issue label updates", () => {
-  const action = create(ActionIdentitySchema, { group: "github", name: "issue_write" });
-  const args = { ...REPOSITORY, method: "update", issue_number: 42, labels: ["bug", "upstream-waiting"] };
+describe("GitHub read approvals", () => {
+  it.each([
+    ["list_branches", {}, "test-owner/test-repo"],
+    ["list_commits", {}, "test-owner/test-repo"],
+    ["list_tags", {}, "test-owner/test-repo"],
+    ["list_releases", {}, "test-owner/test-repo"],
+    ["get_latest_release", {}, "test-owner/test-repo"],
+    ["get_tag", { tag: "v1" }, "test-owner/test-repo"],
+    ["get_release_by_tag", { tag: "v1" }, "test-owner/test-repo"],
+    ["get_commit", { sha: "abc123" }, "test-owner/test-repo"],
+    ["list_issues", { state: "OPEN", labels: ["bug"] }, "test-owner/test-repo"],
+    ["list_pull_requests", {}, "test-owner/test-repo"],
+    ["get_file_contents", { path: "docs/guide.md" }, "test-owner/test-repo"],
+    ["get_label", { name: "bug" }, "test-owner/test-repo"],
+    ["issue_read", { issue_number: 42, method: "get_comments" }, "test-owner/test-repo#42"],
+    ["pull_request_read", { pullNumber: 42, method: "get_files" }, "test-owner/test-repo#42"],
+  ])("offers a scoped compact decision for %s", async (name, fields, scope) => {
+    const action = create(ActionIdentitySchema, { group: "github", name });
+    const args = { ...REPOSITORY, ...fields };
+    expect(shownText(await mount(renderPaneCollapsed(action, args)))).toContain(scope);
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action, { ...args, future_scope: true })).toBe(false);
+    expect(actionOffersCardDecisionButtons(action, { ...args, owner: "" })).toBe(false);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
+  });
+});
 
-  it("shows the replacement label set and permits a decision on the closed card", async () => {
-    const label = await mount(renderActionLabel(action, args));
+describe("GitHub issue writes", () => {
+  it("keeps label-only updates in the label and links the issue", async () => {
+    const args = { ...ISSUE_UPDATE, labels: ["bug", "upstream-waiting"] };
+    const label = await mount(renderActionLabel(ISSUE_WRITE, args));
     expect(shownText(label)).toContain("Set labels on test-owner/test-repo#42:");
+    expect(label.querySelector("a")?.getAttribute("href")).toBe(ISSUE_URL);
     expect([...label.querySelectorAll(".mantine-Badge-label")].map((badge) => badge.textContent)).toEqual([
       "bug",
       "upstream-waiting",
     ]);
-    expect(shownText(await mount(renderPaneCollapsed(action, args)))).toBe("");
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-    expect(actionCompactCardExpands(action, args)).toBe(false);
+    expect(shownText(await mount(renderPaneCollapsed(ISSUE_WRITE, args)))).toBe("");
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
+    expect(actionCompactCardExpands(ISSUE_WRITE, args)).toBe(false);
     const clear = { ...args, labels: [] };
-    expect(shownText(await mount(renderActionLabel(action, clear)))).toBe("Clear labels on test-owner/test-repo#42");
-    expect(actionOffersCardDecisionButtons(action, clear)).toBe(true);
+    expect(shownText(await mount(renderActionLabel(ISSUE_WRITE, clear)))).toBe(
+      "Clear labels on test-owner/test-repo#42"
+    );
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, clear)).toBe(true);
+  });
+
+  it("shows all changes and the issue link on a mixed update with closed-card decisions", async () => {
+    const args = {
+      ...ISSUE_UPDATE,
+      state: "closed",
+      state_reason: "not_planned",
+      title: "Review staging",
+      assignees: ["alex", "taylor"],
+      labels: ["bug"],
+      milestone: 3,
+      type: null,
+    };
+    const label = await mount(renderActionLabel(ISSUE_WRITE, args));
+    expect(shownText(label)).toBe("Close test-owner/test-repo#42");
+    expect(label.querySelector("a")?.getAttribute("href")).toBe(ISSUE_URL);
+    const preview = await mount(renderPaneCollapsed(ISSUE_WRITE, args));
+    expect([...preview.querySelectorAll("p")].map((line) => line.textContent?.trim())).toEqual([
+      "New title Review staging",
+      "Reason Not planned",
+      "Set assignees to alex, taylor",
+      "Set labels to bug",
+      "Set milestone to 3",
+      "Clear issue type",
+    ]);
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
+    expect(actionCompactCardExpands(ISSUE_WRITE, args)).toBe(false);
+  });
+
+  it("distinguishes empty replacement sets and the provider's default close reason", async () => {
+    const args = { ...ISSUE_UPDATE, state: "closed", labels: [], assignees: [] };
+    expect(shownText(await mount(renderPaneCollapsed(ISSUE_WRITE, args)))).toContain(
+      "Reason CompletedClear assigneesClear labels"
+    );
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
+    const reopen = { ...ISSUE_UPDATE, state: "open" };
+    expect(shownText(await mount(renderActionLabel(ISSUE_WRITE, reopen)))).toBe("Reopen test-owner/test-repo#42");
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, reopen)).toBe(true);
+  });
+
+  it("names a description replacement and shows its contents on disclosure", async () => {
+    const input = { ...ISSUE_UPDATE, body: "Verify staging readiness before deployment." };
+    expect(shownText(await mount(renderPaneCollapsed(ISSUE_WRITE, input)))).toBe("Replace description");
+    const opened = await mount(renderPaneOpened(ISSUE_WRITE, input));
+    expect(opened.querySelector("[data-operation-heading]")?.textContent).toBe("New description");
+    expect(shownText(opened)).toContain(input.body);
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
+    expect(actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
+  });
+
+  it("links the repository for a create request and keeps full review", async () => {
+    const input = { ...REPOSITORY, method: "create", title: "Review staging" };
+    const label = await mount(renderActionLabel(ISSUE_WRITE, input));
+    expect(shownText(label)).toBe("Create issue in test-owner/test-repo");
+    expect(label.querySelector("a")?.getAttribute("href")).toBe("https://github.com/test-owner/test-repo/issues");
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
+    expect(actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
+  });
+
+  it("preserves recorded data for unknown fields", async () => {
+    const input = { ...ISSUE_UPDATE, title: "New title", future_field: true };
+    expect(shownText(await mount(renderActionLabel(ISSUE_WRITE, input)))).toBe("Change GitHub issue");
+    for (const render of [renderPaneOpened, renderDetailsArguments]) {
+      const view = await mount(render(ISSUE_WRITE, input));
+      expect(shownText(view)).toContain("Details shown as recorded data");
+      expect(shownText(view)).toContain('"future_field": true');
+    }
   });
 
   it.each([
-    { ...args, title: "New title" },
-    { ...args, state: "closed" },
-    { ...args, future_field: true },
-    { ...args, method: "create" },
-    { ...args, issue_number: 0 },
-    { ...args, labels: [""] },
-    { ...args, labels: undefined },
-  ])("requires full review for other or invalid arguments: %j", (input) => {
-    expect(actionOffersCardDecisionButtons(action, input)).toBe(false);
-    expect(actionCompactCardExpands(action, input)).toBe(true);
+    ISSUE_UPDATE,
+    { ...ISSUE_UPDATE, title: " " },
+    { ...ISSUE_UPDATE, future_field: true, labels: ["bug"] },
+    { ...ISSUE_UPDATE, issue_number: 0, labels: ["bug"] },
+    { ...ISSUE_UPDATE, issue_number: undefined, title: "Review staging" },
+    { ...ISSUE_UPDATE, labels: [""] },
+    { ...ISSUE_UPDATE, assignees: [" "] },
+    { ...ISSUE_UPDATE, milestone: 0 },
+    { ...ISSUE_UPDATE, body: "", title: "Review staging" },
+    { ...ISSUE_UPDATE, state: "open", state_reason: "completed" },
+    { ...ISSUE_UPDATE, state: "closed", state_reason: "duplicate", duplicate_of: 7 },
+    { ...ISSUE_UPDATE, issue_fields: [{ field_name: "Priority", field_option_name: "P1" }] },
+  ])("requires full review for incomplete or more involved requests: %j", (input) => {
+    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
+    expect(actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
   });
 });
 
@@ -275,7 +378,7 @@ describe("GitHub search_pull_requests", () => {
     fields: ["number", "title", "state", "html_url"],
   };
 
-  it("shows the search scope and result cap on both review surfaces", async () => {
+  it("shows search scope on both review surfaces and folds pagination", async () => {
     const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
     const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
     const details = await mount(renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
@@ -288,7 +391,9 @@ describe("GitHub search_pull_requests", () => {
       expect(shownText(view)).not.toContain("Sort by");
       expect(shownText(view)).not.toContain("Fields:");
     }
-    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
+    expect(shownText(collapsed)).not.toContain("Page");
+    expect(shownText(details)).toContain("Page size 10");
+    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(true);
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
   });
 

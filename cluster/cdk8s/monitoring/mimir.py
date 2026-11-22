@@ -157,16 +157,14 @@ def _values() -> dict[str, object]:
             # placement; zone-aware would just add a second StatefulSet and
             # rollout-operator coupling for no behavioural win at this scale.
             "zoneAwareReplication": {"enabled": False},
-            "affinity": {
-                "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-                **node_scheduling.one_per_host(
-                    {
-                        "app.kubernetes.io/component": "ingester",
-                        "app.kubernetes.io/name": NAME,
-                        "app.kubernetes.io/instance": NAME,
-                    }
-                ),
-            },
+            "affinity": node_scheduling.one_per_host(
+                {
+                    "app.kubernetes.io/component": "ingester",
+                    "app.kubernetes.io/name": NAME,
+                    "app.kubernetes.io/instance": NAME,
+                },
+                node_affinity=node_scheduling.PREFER_WORKERS.node_affinity,
+            ),
         },
         "querier": _component(1, "50m", "128Mi"),
         "query_frontend": _component(1, "50m", "128Mi"),
