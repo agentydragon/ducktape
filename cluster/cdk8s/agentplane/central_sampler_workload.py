@@ -130,7 +130,6 @@ class CentralSampler(Construct):
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
             ),
             termination_grace=Duration.seconds(60),
-            # Provider Secret files are reread per request; rotating them must not restart the shared host.
             replica_profile=props.replicas or env.replicas,
             placement=placement,
             registry_secret_name=registry_secret_name,
@@ -158,6 +157,14 @@ class CentralSampler(Construct):
                 items={secret_key.key: PathMapping(path=credential_file.name)},
             )
             workload.container.mount(str(credential_file.parent), credential_volume, read_only=True)
+
+        # The sampler rereads provider keys on every request. Roll it for startup-only
+        # settings and credentials, but let kubelet project rotated provider keys in place.
+        if props.connection_credentials:
+            workload.deployment.metadata.add_annotation(
+                "secrets.exclude.reloader.stakater.com/reload",
+                ",".join(sorted({key.secret.name for key in props.connection_credentials.values()})),
+            )
 
     def add_platform_resources(self) -> None:
         """Add the API admission and egress rules used by the sampler runtime."""
