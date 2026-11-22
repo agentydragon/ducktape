@@ -45,10 +45,11 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 	}
 	// A pre-retention Dispatcher left a deletion receipt for this Session. It
 	// contributes current metadata but no command payload.
+	legacyReason := "sandbox_deleted: " + strings.Repeat("r", 300)
 	if _, err := queueStore.DB.ExecContext(ctx, `INSERT INTO dispatch_tombstone
 		(command_id,version,session_id,operation,state,reason,wake_assessment,created_at,updated_at)
-		SELECT 'legacy',nextval('dispatch_version_seq'),session_id,operation,'UNKNOWN','sandbox_deleted',
-			wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$1`, commandID); err != nil {
+		SELECT 'legacy',nextval('dispatch_version_seq'),session_id,operation,'UNKNOWN',$2,
+			wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$1`, commandID, legacyReason); err != nil {
 		t.Fatal(err)
 	}
 	hub := testWatchHub(t, queueStore)
@@ -56,9 +57,15 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 	watch := openWorksetWatch(t, ctx, service, sessionID, "")
 	first := watch.next(t)
 	if initial := first.GetWorkset(); len(initial.GetActive()) != 1 || initial.GetActive()[0].GetCommandId() != commandID ||
-		len(initial.GetRecentIssues()) != 1 || initial.GetRecentIssues()[0].GetCommandId() != "legacy" {
+		len(initial.GetRecentIssues()) != 1 || initial.GetRecentIssues()[0].GetCommandId() != "legacy" ||
+		!initial.GetRecentIssues()[0].GetReasonTruncated() || initial.GetRecentIssues()[0].GetReason() != legacyReason[:256] {
 		t.Fatalf("initial workset = %v", initial)
 	}
+	exact := startVersionWatch(t, ctx, queueStore, hub, testSessionDispatchFilter(sessionID, "legacy"), "")
+	if full := exact.next(t).GetDispatch(); full.GetCommandId() != "legacy" || full.GetReason() != legacyReason {
+		t.Fatalf("selected watch lost the original legacy reason: %v", full)
+	}
+	exact.stop(t)
 	owner := claimSessionOwner(t, queueStore, sessionID)
 	if _, err := queueStore.Settle(ctx, commandID, owner, []string{store.QueueState}, store.DeliveringState, "", nil); err != nil {
 		t.Fatal(err)
@@ -174,7 +181,8 @@ func TestDispatchWorksetGeneratedFacadeReportsEachBound(t *testing.T) {
 	if first := result.GetActive()[0].GetCommandId(); first != "head" {
 		t.Fatalf("queue order lost: first = %q", first)
 	}
-	if len(result.GetRecentIssues()[0].GetReason()) != 256 || strings.Contains(string(envelope.Result), "large payload omitted") {
+	if issue := result.GetRecentIssues()[0]; !issue.GetReasonTruncated() || len(issue.GetReason()) != 256 ||
+		result.GetActive()[0].GetReasonTruncated() || strings.Contains(string(envelope.Result), "large payload omitted") {
 		t.Fatal("workset delivered unbounded reason or authored payload")
 	}
 	for _, query := range []string{"", "?worksetSessionId=" + sessionID + "&filter.sessionId=" + sessionID} {

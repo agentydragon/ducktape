@@ -352,8 +352,11 @@ and replay coverage. Supported rollback images must serve versioned watches and 
 uses the same Session authorization and includes metadata for up to 1,024 queued or delivering
 commands, 20 recent failed or unknown receipts, and 20 recent admissions or cancellations.
 The last group lets the browser bridge the interval between delivery and History projection.
-Each group indicates overflow. Recent receipts include legacy tombstones. Payloads and journal
-entries remain available through their existing reads. History determines command effects.
+Each group indicates overflow. Recent receipts include legacy tombstones. A reason excerpt
+carries `reason_truncated` when a command-ID-filtered ordinary watch is needed to show the
+full retained reason. The ordinary watch includes legacy tombstones, including after their
+live rows become unavailable. Payloads and journal entries remain available through their
+existing reads. History determines command effects.
 
 The first frame on every connection replaces the previous workset. Later replacements follow
 Session-specific changes, including pruning of that Session's legacy tombstones. A PostgreSQL

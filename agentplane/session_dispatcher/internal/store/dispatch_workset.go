@@ -28,13 +28,13 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 	}
 	result := &dispatcherpb.DispatchWorkset{SessionId: sessionID}
 	owner, ownerArgs := OwnerScope(caller, "o.", 6)
-	const columns = "d.command_id,d.operation,d.state,LEFT(d.reason,256),d.admission IS NOT NULL,d.created_at,d.updated_at"
+	const columns = "d.command_id,d.operation,d.state,LEFT(d.reason,256),COALESCE(length(d.reason)>256,false),d.admission IS NOT NULL,d.created_at,d.updated_at"
 	// Merge only the top rows of each recent state. The latest same-Session receipt wins when old
 	// Dispatchers reused an ID. A newer live row can also supersede a tombstone.
 	query := `WITH visible AS (
 		SELECT o.session_id,o.sandbox_name,o.sandbox_uid FROM session o
 		WHERE o.session_id=$1 AND ` + owner + `
-	), active(command_id,operation,state,reason,journal_admitted,created_at,updated_at,rank,bucket) AS (
+	), active(command_id,operation,state,reason,reason_truncated,journal_admitted,created_at,updated_at,rank,bucket) AS (
 		SELECT ` + columns + `,d.position AS rank,0 AS bucket
 		FROM dispatch d JOIN visible o USING (session_id,sandbox_name,sandbox_uid)
 		WHERE d.state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER')
@@ -63,7 +63,7 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 			ORDER BY d.version DESC LIMIT $3)
 		) candidate
 	)
-	SELECT command_id,operation,state,reason,journal_admitted,created_at,updated_at,bucket
+	SELECT command_id,operation,state,reason,reason_truncated,journal_admitted,created_at,updated_at,bucket
 	FROM (SELECT * FROM active UNION ALL SELECT * FROM recent) workset
 	ORDER BY bucket,CASE WHEN bucket=0 THEN rank ELSE -rank END`
 	err = postgres.ReadTransaction(ctx, s.DB, sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
@@ -82,7 +82,7 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 			var reason sql.NullString
 			var created, updated time.Time
 			var bucket int
-			if err := rows.Scan(&item.CommandId, &operation, &state, &reason, &item.JournalAdmitted,
+			if err := rows.Scan(&item.CommandId, &operation, &state, &reason, &item.ReasonTruncated, &item.JournalAdmitted,
 				&created, &updated, &bucket); err != nil {
 				return err
 			}

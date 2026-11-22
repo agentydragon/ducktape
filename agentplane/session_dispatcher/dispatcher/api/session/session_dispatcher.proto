@@ -221,6 +221,9 @@ message DispatchWorksetItem {
   bool journal_admitted = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
+  // The original reason is available from an ordinary command-ID watch for as
+  // long as this receipt is retained, including receipts of deleted Dispatches.
+  bool reason_truncated = 8;
 }
 
 message WatchDispatchesResponse {
