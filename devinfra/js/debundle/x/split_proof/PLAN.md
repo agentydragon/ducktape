@@ -87,6 +87,12 @@ What the statement forces:
 
 Two tracks. The proof track is ordered: each step needs the one before. The engineering track is independent of it and of itself, so its steps can run in parallel. Every step ends with its checks run and its numbers in the PR.
 
+### Excalidraw
+
+Defer modeling or rewriting `import.meta.url`. Start with the editor prefix split in the [Excalidraw census](experiments/translation/debug/excalidraw_certificates/README.md). Its 888 candidate units include the worker factory (unit 872), which reads `import.meta.url` when its static method runs. Keep that unit in the editor entry at the original chunk URL and try extracting the other 887.
+
+Run the structural checks and the CoreJS checker on each complete candidate split. Record how many units move, which splits pass the structural checks, and which receive a CoreJS equivalence certificate under the stated premises. If the retained factory still blocks a whole-split certificate, record that verdict and try other placements or chunks whose certification does not depend on module URLs. Report the first blocker for each unsuccessful probe.
+
 ### Proof track
 
 **N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units.
