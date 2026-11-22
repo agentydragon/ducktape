@@ -658,7 +658,12 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
             : `Up to ${args.maxDepth} ${args.maxDepth === 1 ? "level" : "levels"} of descendants`}
         </Line>
       ),
-      readReceipt
+      readReceipt,
+      (args, names) => (
+        <Line>
+          {nodeLink(args.nodeId, names)} · {args.maxDepth === 0 ? "Only this node" : "Include descendants"}
+        </Line>
+      )
     ),
   ],
   [
@@ -672,7 +677,8 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.offset > 0 && `, after the first ${args.offset}`}
         </Line>
       ),
-      childrenReceipt
+      childrenReceipt,
+      (args, names) => <Line>Direct children of {nodeLink(args.nodeId, names)}</Line>
     ),
   ],
   [
@@ -707,7 +713,8 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           Up to {args.limit} tags in {workspaceName(args.workspaceId, names)} and linked workspaces
         </Line>
       ),
-      tagsReceipt
+      tagsReceipt,
+      (args, names) => <Line>{workspaceName(args.workspaceId, names)} and linked workspaces</Line>
     ),
   ],
   [

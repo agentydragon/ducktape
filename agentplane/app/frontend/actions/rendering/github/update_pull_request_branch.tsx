@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
 import { branchUpdateQueued, githubBranchUpdateOutcome, GitHubLink, pullRequestLink } from "./receipts";
 
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
+import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import {
   type UpdatePullRequestBranchArguments,
@@ -19,20 +19,23 @@ function UpdatePullRequestBranchLabel({ args }: { args: UpdatePullRequestBranchA
         </Code>{" "}
         with latest base changes
       </Text>
-      {args.expectedHeadSha !== undefined && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Only if the PR head is <Code>{args.expectedHeadSha}</Code>
-        </Text>
-      )}
+      {args.expectedHeadSha !== undefined && <Text size="sm">If unchanged</Text>}
     </Stack>
   );
 }
 
 function ReviewPullRequest({ args }: { args: UpdatePullRequestBranchArguments }): JSX.Element {
   return (
-    <Text size="sm">
-      <GitHubLink href={pullRequestLink(args)}>Open pull request in GitHub</GitHubLink>
-    </Text>
+    <Stack gap={4}>
+      {args.expectedHeadSha !== undefined && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Only if the PR head is <Code>{args.expectedHeadSha}</Code>
+        </Text>
+      )}
+      <Text size="sm">
+        <GitHubLink href={pullRequestLink(args)}>Open pull request in GitHub</GitHubLink>
+      </Text>
+    </Stack>
   );
 }
 
@@ -53,7 +56,11 @@ export const updatePullRequestBranchPresentation: ActionPresentation = {
   outcome: githubBranchUpdateOutcome,
   fallbackLabel: "Update GitHub pull request branch",
   label: updatePullRequestBranchLabel,
+  pane: { opened: updatePullRequestBranchArguments },
   details: { arguments: updatePullRequestBranchArguments, result: branchUpdateQueued },
   offersCardDecisionButtons: offersCardDecisionButtonsUpdatePullRequestBranch,
-  compactCardExpands: expandsForRejectedArguments(zUpdatePullRequestBranchArguments),
+  compactCardExpands: expandsForDetails(
+    zUpdatePullRequestBranchArguments,
+    (args) => args.expectedHeadSha !== undefined
+  ),
 };

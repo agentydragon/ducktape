@@ -29,11 +29,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 # Actions whose closed compact card already shows every argument of the calls below, so it has no expanded version.
 CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
     {
-        ("gmail", "threads_list"),
-        ("kubernetes_admin", "pods_list_in_namespace"),
         ("kubernetes_admin", "pods_get"),
-        ("kubernetes_admin", "pods_log"),
-        ("kubernetes_admin", "events_list"),
         ("grocy_sf", "products_list"),
         ("grocy_sf", "quantity_units_list"),
         ("sandbox", "create"),
@@ -180,11 +176,9 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
     )
     await expect(section.get_by_role("link", name="View details for inspect running demo pods")).to_be_visible()
     await expect(section.get_by_text("kubernetes_admin / pods_list_in_namespace", exact=True)).to_have_count(0)
-    await expect(section.get_by_role("button", name="Expand inspect running demo pods")).to_have_count(0)
     summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
-    await expect(summary.get_by_text("Matching pods where")).to_be_visible()
-    await expect(summary.get_by_text("app=demo")).to_be_visible()
-    await expect(summary.get_by_text("status.phase=Running")).to_be_visible()
+    await expect(summary.get_by_text("app=demo")).to_have_count(0)
+    await expect(summary.get_by_text("status.phase=Running")).to_have_count(0)
     await expect(summary.get_by_text("test-apps")).to_have_count(0)
     await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
     await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
@@ -192,6 +186,9 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
     await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
     await view.capture(target=section)
+    await section.get_by_role("button", name="Expand inspect running demo pods").click()
+    await expect(section.get_by_text("app=demo")).to_be_visible()
+    await expect(section.get_by_text("status.phase=Running")).to_be_visible()
 
 
 ARGUMENT_LAYOUTS = [
@@ -204,7 +201,7 @@ ARGUMENT_LAYOUTS = [
             "fieldSelector": "status.phase=Running," + "x" * 48,
         },
         ["test-namespace-", "label selector", "status.phase=Running"],
-        "Matching pods where",
+        "List pods in namespace",
         id="long-target-and-selectors",
     ),
     pytest.param(
@@ -240,7 +237,7 @@ ARGUMENT_LAYOUTS = [
             "labelSelector": "app=" + "demo-" + "d" * 56,
         },
         ["field selector status.phase=Running", "label selector app=demo-"],
-        "Matching resources where",
+        "List Pod resources in namespace apps",
         id="resource-list-selectors",
     ),
     pytest.param(
@@ -248,8 +245,21 @@ ARGUMENT_LAYOUTS = [
         "events_list",
         {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
         ["Show events matching", "type=Warning"],
-        "Show events matching",
+        "List events in namespace apps",
         id="event-field-selector",
+    ),
+    pytest.param(
+        "github",
+        "update_pull_request_branch",
+        {
+            "owner": "example",
+            "repo": "service",
+            "pullNumber": 42,
+            "expectedHeadSha": "0123456789abcdef" * 2 + "01234567",
+        },
+        ["Only if the PR head is", "0123456789abcdef" * 2 + "01234567"],
+        "If unchanged",
+        id="conditional-pull-request-branch",
     ),
     pytest.param(
         "kubernetes_admin",
@@ -304,6 +314,8 @@ async def test_action_argument_layouts(
         await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
+        if name == "update_pull_request_branch":
+            await expect(section).not_to_contain_text(str(arguments["expectedHeadSha"]))
         if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
             await expect(disclosure).to_have_count(0)
             for value in visible:
@@ -399,7 +411,7 @@ async def test_sandbox_action_results(
             "kubernetes_admin",
             "pods_log",
             {"name": "web-0", "previous": True, "tail": -1},
-            "previous run, last 100 lines (default)",
+            "Read last 100 lines (default)",
             id="pod-log",
         ),
         pytest.param(
@@ -555,7 +567,10 @@ async def test_compact_action_summaries(
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
     if group == "gmail" and name == "threads_list":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Gmail: Search threads")
-        await expect(collapsed_summary.get_by_text("Up to 5 threads", exact=True)).to_be_visible()
+        await expect(collapsed_summary.get_by_text("Up to 5 threads", exact=True)).to_have_count(0)
+        await expect(
+            section.locator(".agentplane-actions-sidebar-preview").get_by_text("Up to 5 threads")
+        ).to_be_visible()
     if group == "grocy_sf":
         expected_label = {
             "products_list": "List Grocy products",
@@ -749,8 +764,12 @@ async def test_compact_pull_request_search_offers_card_decisions(view: VisualPag
     await expect(collapsed_summary).not_to_contain_text("Fields:")
     await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
-    await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)
     await view.capture("collapsed", target=section)
+    await section.get_by_role("button", name="Expand review search pull requests").click()
+    opened = section.locator(".agentplane-actions-sidebar-preview")
+    await expect(opened.get_by_text("Page 2", exact=True)).to_be_visible()
+    await expect(opened.get_by_text("Page size 10", exact=True)).to_be_visible()
+    await view.capture("expanded", target=section)
 
 
 @DESKTOP_AND_MOBILE

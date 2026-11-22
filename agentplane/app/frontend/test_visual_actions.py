@@ -1500,7 +1500,6 @@ EXAMPLES = (
         {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
         POD_TABLE,
         "1/2 ready",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1566,7 +1565,6 @@ EXAMPLES = (
         {"name": "web-0", "namespace": "apps", "container": "main", "previous": True, "tail": 100},
         "Starting web server\nListening on :8080\n",
         "Listening on :8080",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1574,16 +1572,8 @@ EXAMPLES = (
         {"namespace": "apps", "fieldSelector": "type=Warning"},
         EVENTS_YAML,
         "BackOff",
-        compact_card_expands=False,
     ),
-    ActionExample(
-        "kubernetes_admin",
-        "pods_list",
-        {"labelSelector": "app=web"},
-        POD_TABLE,
-        "1/2 ready",
-        compact_card_expands=False,
-    ),
+    ActionExample("kubernetes_admin", "pods_list", {"labelSelector": "app=web"}, POD_TABLE, "1/2 ready"),
     ActionExample(
         "kubernetes_admin",
         "namespaces_list",
@@ -1591,7 +1581,6 @@ EXAMPLES = (
         "APIVERSION   KIND        NAME       STATUS   AGE   LABELS\n"
         "v1           Namespace   app-team   Active   4m    kubernetes.io/metadata.name=app-team\n",
         "Active",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1608,7 +1597,6 @@ EXAMPLES = (
         {"name": "worker-1", "query": "kubelet", "tailLines": 80},
         "2026-10-12T03:00:00Z Pod sync complete\n2026-10-12T03:00:01Z Node status reported\n",
         "Node status reported",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1637,7 +1625,6 @@ EXAMPLES = (
         "NAME       CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)\n"
         "worker-1   280m         7%       512Mi           12%\n",
         "Memory 512Mi (12%)",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1645,7 +1632,6 @@ EXAMPLES = (
         {"namespace": "apps", "all_namespaces": False, "label_selector": "app=web"},
         "NAMESPACE   NAME    CPU(cores)   MEMORY(bytes)\napps        web-0   40m          192Mi\n",
         "Memory 192Mi",
-        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1729,7 +1715,6 @@ EXAMPLES = (
         {"owner": "example", "repo": "service", "pullNumber": 42, "expectedHeadSha": "0123456789abcdef"},
         "Pull request branch update is in progress",
         "Update queued",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -1808,7 +1793,6 @@ EXAMPLES = (
             ],
         },
         "Handle deployment checks",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2092,7 +2076,6 @@ EXAMPLES = (
             "items": [{**GITHUB_COMMIT, "repository": {"full_name": "example/service"}}],
         },
         "Document readiness checks",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2155,7 +2138,6 @@ EXAMPLES = (
             ],
         },
         "Wait for staging readiness.",
-        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2318,7 +2300,6 @@ EXAMPLES = (
             "nextPageToken": "test-continuation",
         },
         "More threads available.",
-        compact_card_expands=False,
     ),
     ActionExample(
         "gmail",
@@ -2347,7 +2328,6 @@ EXAMPLES = (
             "nextPageToken": "opaque-drafts-page",
         },
         "More drafts available.",
-        compact_card_expands=False,
     ),
     ActionExample(
         "gmail",

@@ -20,7 +20,7 @@ import { draftResult, mailReadRenderers, DraftTarget, messageHeader } from "./gm
 import { labelRenderers } from "./gmail/labels";
 import { filterRenderers } from "./gmail/filters";
 import { useIntegrationPreviewNames } from "./integration_previews";
-import type { ActionPresentation, CardDecisionProps } from "./presentation";
+import { type ActionPresentation, type CardDecisionProps, expandsForDetails } from "./presentation";
 import { defineResultPreview, type ResultPreviewProps } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -115,12 +115,20 @@ function DraftCallArguments({ args, requestId }: PreviewProps<DraftArguments>): 
 const searchArguments = listArguments.extend({ labelIds: z.array(z.string()).nullish() });
 
 function SearchScope({ args, requestId }: PreviewProps<z.infer<typeof searchArguments>>): JSX.Element {
-  const summaries = useGmailSummaries(needsLabelLookup(args) ? requestId : undefined);
+  const compact = useCompactPane();
+  const summaries = useGmailSummaries(!compact && needsLabelLookup(args) ? requestId : undefined);
   return (
     <Stack gap={4}>
       {args.q ? <EmailField name="Query" value={args.q} /> : <Text size="sm">All threads</Text>}
-      <EmailField name="All labels" value={args.labelIds?.map((id) => labelName(id, summaries?.labels)).join(", ")} />
-      {args.maxResults != null && <Text size="sm">Up to {args.maxResults} threads</Text>}
+      {!compact && (
+        <>
+          <EmailField
+            name="All labels"
+            value={args.labelIds?.map((id) => labelName(id, summaries?.labels)).join(", ")}
+          />
+          {args.maxResults != null && <Text size="sm">Up to {args.maxResults} threads</Text>}
+        </>
+      )}
       {args.includeSpamTrash && <Text size="sm">Includes spam and trash</Text>}
       {args.pageToken && <Text size="sm">Continues a previous search</Text>}
     </Stack>
@@ -189,10 +197,7 @@ const searchPresentation: ActionPresentation = {
   fallbackLabel: "Gmail: Search threads",
   pane: { collapsed: searchPreview, opened: searchPreview },
   details: { arguments: searchPreview, result: defineResultPreview(searchResult, ThreadResults) },
-  compactCardExpands: (args) => {
-    const parsed = searchArguments.safeParse(args);
-    return !parsed.success || needsLabelLookup(parsed.data);
-  },
+  compactCardExpands: expandsForDetails(searchArguments, (args) => !!args.labelIds?.length || args.maxResults != null),
   offersCardDecisionButtons: (args) => {
     const parsed = searchArguments.safeParse(args);
     return parsed.success && !needsLabelLookup(parsed.data);
