@@ -207,6 +207,7 @@ lean_binary(
         # the proofs about the model; `corejs_axioms_test` checks them
         exclude = [
             "EsmSplit/CoreJS/DeclarationArtifacts.lean",
+            "EsmSplit/CoreJS/DeclarationArtifactsExamples.lean",
             "EsmSplit/CoreJS/DeclarationCertificate.lean",
             "EsmSplit/CoreJS/DeclarationGroup.lean",
             "EsmSplit/CoreJS/DeclarationInput.lean",
@@ -252,6 +253,7 @@ lean_axiom_test(
         "EsmSplit/CoreJS/ClassParents.lean",
         "EsmSplit/CoreJS/DataProjection.lean",
         "EsmSplit/CoreJS/DeclarationArtifacts.lean",
+        "EsmSplit/CoreJS/DeclarationArtifactsExamples.lean",
         "EsmSplit/CoreJS/DeclarationCertificate.lean",
         "EsmSplit/CoreJS/DeclarationGroup.lean",
         "EsmSplit/CoreJS/DeclarationInput.lean",
@@ -289,6 +291,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.ClassParents",
         "EsmSplit.CoreJS.DataProjection",
         "EsmSplit.CoreJS.DeclarationArtifacts",
+        "EsmSplit.CoreJS.DeclarationArtifactsExamples",
         "EsmSplit.CoreJS.DeclarationCertificate",
         "EsmSplit.CoreJS.DeclarationInput",
         "EsmSplit.CoreJS.DeclarationProgram",

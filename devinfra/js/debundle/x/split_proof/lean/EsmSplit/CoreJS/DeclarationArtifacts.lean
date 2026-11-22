@@ -10,18 +10,39 @@ open Lean (Json)
 
 private def typ (j : Json) := j.getObjValAs? String "type"
 
-private def importDecl (j : Json) : Except String Import := do
+private def fileSegment (s : String) : Bool :=
+  !s.isEmpty && s != "." && s != ".." &&
+    s.toList.all fun c => c.isAlphanum || ['.', '_', '-', '~'].contains c
+
+/-- Resolve a local URL request from the importing file's directory. Refuse paths that need
+URL decoding, query or fragment semantics, or access outside the supplied module tree. -/
+private def resolve (importer request : String) : Except String String := do
+  unless request.startsWith "./" || request.startsWith "../" do throw "expected a relative glue import"
+  let parts := request.splitOn "/"
+  unless parts.getLast?.any fileSegment do throw "expected a module filename"
+  let mut dir := (importer.splitOn "/").reverse.drop 1
+  for part in parts do
+    if part == ".." then
+      let _ :: parent := dir | throw "glue import leaves the module tree"
+      dir := parent
+    else if part != "." then
+      unless fileSegment part do throw "unsupported module URL segment"
+      dir := part :: dir
+  return "/".intercalate dir.reverse
+
+private def importDecl (importer : String) (j : Json) : Except String Import := do
   let src ← j.getObjVal? "source"
   unless (← typ src) == "Literal" do throw "expected a literal import source"
   let lit ← src.getObjValAs? String "lit"
-  unless lit.startsWith "s:./" do throw "expected a relative glue import"
+  unless lit.startsWith "s:" do throw "expected a string import source"
+  let source ← resolve importer (lit.drop 2).toString
   if let .ok attrs := j.getObjVal? "attributes" then
     unless (← attrs.getArr?).isEmpty do throw "unsupported import attributes"
   let specs ← j.getObjValAs? (List Json) "specifiers"
   let names ← specs.mapM fun sp => do
     unless (← typ sp) == "ImportSpecifier" do throw "expected a named glue import"
     return (← FromESTree.identifier (← sp.getObjVal? "imported"), ← FromESTree.identifier (← sp.getObjVal? "local"))
-  return { source := (lit.drop 4).toString, names }
+  return { source, names }
 
 /-- Imports precede declarations and the optional glue export follows them. The AST supplies
 all requests, aliases, binder names and initializers. Only the region labels come from the plan. -/
@@ -38,7 +59,7 @@ private def readModule (file : Json) (md : EsmSplit.Module) : Except String Modu
     match ← typ j with
     | "ImportDeclaration" =>
       unless body.isEmpty do throw "unexpected import after a declaration"
-      imports := imports.push (← importDecl j)
+      imports := imports.push (← importDecl md.name j)
     | "VariableDeclaration" | "ExportNamedDeclaration" =>
       let exported := (← typ j) == "ExportNamedDeclaration"
       let decl ← if exported then j.getObjVal? "declaration" else pure j
@@ -66,6 +87,7 @@ private def readModule (file : Json) (md : EsmSplit.Module) : Except String Modu
 Require the complete file set, including empty modules. -/
 def decode (files : Json) (P : EsmSplit.Plan) : Except String Program := do
   let names := (← files.getObj?).toList.map Prod.fst
+  unless names.all (fun n => (n.splitOn "/").all fileSegment) do throw "unsupported module filename"
   unless names.Perm (P.mods.map (·.name)) do throw "output filenames differ from the plan"
   let modules ← P.mods.mapM fun m => do
     (readModule (← files.getObjVal? m.name) m).mapError fun why => s!"{m.name}: {why}"
@@ -115,6 +137,9 @@ structure Corresponds (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundl
   decoded : decode files P = .ok (splitProgram ss B P)
   surface : SameSurface source (splitProgram ss B P)
 
+private theorem program_eq {a b : Program} (entry : a.entry = b.entry) (modules : a.modules = b.modules) : a = b := by
+  cases a; cases b; congr
+
 private def verify (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) :
     Except String (PLift (Corresponds source files ss B P)) := do
   let ⟨covered⟩ ← checkEq (DeclarationCertificate.covers source ss) true "source declaration units differ"
@@ -124,9 +149,9 @@ private def verify (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundle) 
     let expected := splitProgram ss B P
     let ⟨entry⟩ ← checkEq actual.entry expected.entry "entry module differs from the plan"
     let ⟨modules⟩ ← checkList checkModule actual.modules expected.modules
-    have same : actual = expected := by cases actual; cases expected; congr
+    have same : actual = splitProgram ss B P := program_eq entry modules
     let ⟨surface⟩ ← checkSurface source actual
-    return ⟨⟨covered, same ▸ h, same ▸ surface⟩⟩
+    return ⟨⟨covered, h.trans (congrArg Except.ok same), same ▸ surface⟩⟩
 
 def check (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) : Except String Unit :=
   (verify source files ss B P).map fun _ => ()
