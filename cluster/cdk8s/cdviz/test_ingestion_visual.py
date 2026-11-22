@@ -25,7 +25,6 @@ import pytest_bazel
 from docker.models.containers import Container
 from playwright.async_api import Route, async_playwright, expect
 from psycopg import sql
-from psycopg.rows import dict_row
 from python.runfiles import Runfiles
 from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
@@ -220,35 +219,29 @@ def _ready(url: str, *, container: Container, timeout: int = 60) -> None:
     raise AssertionError(f"service did not become ready at {url}: {last}")
 
 
-def _stored_rows(url: str, table: str) -> list[dict]:
-    with psycopg.connect(url, row_factory=dict_row) as connection:
-        return connection.execute(sql.SQL("SELECT * FROM cdviz.{}").format(sql.Identifier(table))).fetchall()
+def _subject_outcomes(connection: psycopg.Connection, table: str) -> dict[str, list[str | None]]:
+    query = sql.SQL("SELECT last_payload #>> '{{subject,id}}', array_agg(outcome::text) FROM cdviz.{} GROUP BY 1")
+    return dict(connection.execute(query.format(sql.Identifier(table))).fetchall())
 
 
-def _by_subject(rows: list[dict]) -> dict[str, list[dict]]:
-    result: dict[str, list[dict]] = {}
-    for row in rows:
-        payload = row.get("last_payload")
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        subject = payload.get("subject") if isinstance(payload, dict) else None
-        if isinstance(subject, dict) and isinstance(subject.get("id"), str):
-            result.setdefault(subject["id"], []).append(row)
-    return result
-
-
-def _wait_for_rows(reader_url: str, pipeline_ids: set[str], task_ids: set[str]) -> tuple[dict, dict]:
+def _check_ingestion(
+    reader_url: str, runs: dict[str, list[str]], recent_ids: set[str], jobs: dict[str, list[str]]
+) -> None:
     deadline = time.monotonic() + 60
-    pipelines: dict[str, list[dict]] = {}
-    tasks: dict[str, list[dict]] = {}
-    while time.monotonic() < deadline:
-        pipelines = _by_subject(_stored_rows(reader_url, "pipelinerun"))
-        tasks = _by_subject(_stored_rows(reader_url, "taskrun"))
-        if pipeline_ids.issubset(pipelines) and task_ids.issubset(tasks):
-            return pipelines, tasks
-        time.sleep(0.5)
-    _diagnostic(f"pipeline subjects={sorted(pipelines)}; task subjects={sorted(tasks)}")
-    raise AssertionError("collector did not persist all expected workflow run and job subjects")
+    with psycopg.connect(reader_url, autocommit=True) as connection:
+        while True:
+            pipelines = _subject_outcomes(connection, "pipelinerun")
+            tasks = _subject_outcomes(connection, "taskrun")
+            completed = {subject: outcomes for subject, outcomes in pipelines.items() if subject not in recent_ids}
+            if recent_ids.issubset(pipelines) and completed == runs and tasks == jobs:
+                return
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
+    # Show the missing IDs, unexpected outcomes or duplicate aggregate rows on timeout.
+    assert recent_ids <= pipelines.keys()
+    assert completed == runs
+    assert tasks == jobs
 
 
 def _provision_grafana(base_url: str, dashboard_path: Path) -> dict:
@@ -641,33 +634,19 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                     )
                     _post_webhook(collector_url, "workflow_job", f"job-{job_id}-{action}", body)
 
-            pipeline_ids = {
-                f"https://api.github.com/repos/{_REPO}/actions/runs/{run_id}/attempts/{attempt}"
-                for run_id, attempt in ((81001, 1), (81002, 1), (81003, 1), (81003, 2), (81004, 1))
+            runs_url = f"https://api.github.com/repos/{_REPO}/actions/runs"
+            expected_runs = {
+                f"{runs_url}/{run_id}/attempts/{attempt}": [outcome]
+                for run_id, attempt, _, outcome, _, _, _ in scenarios
             }
-            pipeline_ids.update(
-                f"https://api.github.com/repos/{_REPO}/actions/runs/{run_id}/attempts/1"
-                for run_id in range(90000, 90100)
-            )
-            task_ids = {
-                f"https://api.github.com/repos/{_REPO}/actions/jobs/{job_id}" for job_id in (91001, 91002, 91003, 91004)
+            expected_runs[f"{runs_url}/81004/attempts/1"] = ["success"]  # Recovered by polling.
+            recent_ids = {f"{runs_url}/{run_id}/attempts/1" for run_id in range(90000, 90100)}
+            expected_jobs = {
+                f"https://api.github.com/repos/{_REPO}/actions/jobs/{job_id}": [outcome]
+                for _, _, _, _, job_id, outcome, _ in scenarios
             }
-            pipeline_rows, task_rows = _wait_for_rows(reader_url, pipeline_ids, task_ids)
-            assert len(pipeline_rows) == 105, f"expected 105 unique run attempts, got {len(pipeline_rows)}"
-            assert len(task_rows) == 4, f"expected four unique jobs, got {len(task_rows)}"
-            success_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81001/attempts/1"
-            failed_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81002/attempts/1"
-            rerun_failed_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81003/attempts/1"
-            rerun_success_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81003/attempts/2"
-            polled_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81004/attempts/1"
-            assert len(pipeline_rows[success_id]) == 1, "duplicate delivery created another aggregate row"
-            assert len(pipeline_rows[rerun_failed_id]) == 1
-            assert len(pipeline_rows[rerun_success_id]) == 1
-            assert pipeline_rows[success_id][0]["outcome"] == "success"
-            assert pipeline_rows[failed_id][0]["outcome"] == "failure"
-            assert pipeline_rows[rerun_failed_id][0]["outcome"] == "failure"
-            assert pipeline_rows[rerun_success_id][0]["outcome"] == "success"
-            assert pipeline_rows[polled_id][0]["outcome"] == "success"
+            _check_ingestion(reader_url, expected_runs, recent_ids, expected_jobs)
+
             poll_server.reload()
             poll_port = poll_server.attrs["NetworkSettings"]["Ports"]["8081/tcp"][0]["HostPort"]
             async with httpx.AsyncClient(timeout=15, trust_env=False) as http:
@@ -683,7 +662,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 with pytest.raises(psycopg.errors.InsufficientPrivilege) as denied:
                     reader.execute("INSERT INTO cdviz.cdevents_lake DEFAULT VALUES")
                 assert denied.value.sqlstate == "42501"
-            _diagnostic(f"pipeline attempts={len(pipeline_rows)} jobs={len(task_rows)}; reader INSERT denied")
+            _diagnostic("collector aggregates verified; reader INSERT denied")
 
             dashboard_path = root / "ducktape/cluster/cdk8s/cdviz/ci-workflow-timings.json"
             errors: list[str] = []
