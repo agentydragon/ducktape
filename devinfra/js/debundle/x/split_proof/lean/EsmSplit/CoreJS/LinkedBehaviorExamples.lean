@@ -48,6 +48,13 @@ set_option cbv.warning false
 
 theorem literalRoundTrip : (quotedFixture% source) = source ∧ (quotedFixture% literals) = literals := ⟨rfl, rfl⟩
 
+-- One module, no imports or exports: simply calling an arrow on initialization used
+-- to exhaust the prover when its return expression went through the ordinary unary rule.
+private def unaryCall : Program := Program.single [
+  .expr (.call (.func (.mk "" .arrow false [] [.ret (.unary .typeof .undef)])) [])]
+
+example (W : World) : LinkedBehavior.normal (runProgram W 16 unaryCall) = true := by cbv
+
 /-- Moving the independent closure to a dependency evaluates it before the imported
 factory call. The public export and the returned closure still refer to the same cells. -/
 theorem movedClosure : LinkedBehavior.Equivalent source candidate ∧ LinkedBehavior.SameExports source candidate := by
