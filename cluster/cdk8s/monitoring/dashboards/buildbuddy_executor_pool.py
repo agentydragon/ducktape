@@ -216,24 +216,32 @@ def _reservation(panel_id: int, title: str, metric: str, unit: str, x: int) -> d
     host_requests = (
         f'kube_pod_container_resource_requests{{namespace="buildbuddy-executor",{_WORKER_POD},resource="{resource}"}}'
     )
-    return _chart(
-        panel_id,
-        title,
-        "Reserved and advertised are BuildBuddy estimates. Host requests sums Kubernetes container requests in scheduled "
-        "worker pods, including the compute container and its sidecars.",
-        dashboard.GridPos(h=8, w=12, x=x, y=37),
-        [
-            (label, f"sum(buildbuddy_remote_execution_{kind}_{metric}{{{_SELECTED}}} {_CURRENT}){scale}")
-            for label, kind in (("Reserved", "assigned"), ("Advertised", "assignable"))
-        ]
-        + [
-            (
-                "Host requests",
-                f'sum(max by (pod, container) ({host_requests} and on (namespace, pod) kube_pod_info{{namespace="buildbuddy-executor",node!=""}}))',
-            )
-        ],
-        unit,
+    queries = [
+        (label, f"sum(buildbuddy_remote_execution_{kind}_{metric}{{{_SELECTED}}} {_CURRENT}){scale}")
+        for label, kind in (("Reserved", "assigned"), ("Advertised", "assignable"))
+    ]
+    queries.append(
+        (
+            "Host requests",
+            f'sum(max by (pod, container) ({host_requests} and on (namespace, pod) kube_pod_info{{namespace="buildbuddy-executor",node!=""}}))',
+        )
     )
+    description = (
+        "Reserved and advertised are BuildBuddy estimates. Host requests sums Kubernetes container requests in scheduled "
+        "worker pods, including the compute container and its sidecars."
+    )
+    if resource == "memory":
+        # Select the pod UID at the end of the cgroup path on both cgroupfs and systemd nodes.
+        pod_cgroup = (
+            f'namespace="buildbuddy-executor",{_WORKER_POD},job="kubelet",metrics_path="/metrics/cadvisor",'
+            'container="",id=~".*[-/]pod[0-9a-f_-]+([.]slice)?"'
+        )
+        queries.append(("Host RAM used", f"sum(max by (node, pod) (container_memory_usage_bytes{{{pod_cgroup}}}))"))
+        description += (
+            " Host RAM used sums memory charged to each selected launcher pod on the host, including QEMU, sidecars, "
+            "and host page cache. The All selection shows the pool total."
+        )
+    return _chart(panel_id, title, description, dashboard.GridPos(h=8, w=12, x=x, y=37), queries, unit)
 
 
 def _disk(panel_id: int, title: str, mount: str, x: int) -> dashboard.Panel:
@@ -390,7 +398,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=11, title="Worker sizing and disk headroom", grid_pos=dashboard.GridPos(h=1, w=24, y=36)
             ),
             _reservation(18, "CPU reservations", "milli_cpu", "cores", 0),
-            _reservation(19, "RAM reservations", "ram_bytes", "bytes", 12),
+            _reservation(19, "RAM usage and reservations", "ram_bytes", "bytes", 12),
             _chart(
                 12,
                 "Busiest guest CPU",

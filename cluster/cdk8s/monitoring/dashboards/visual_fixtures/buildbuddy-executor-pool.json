@@ -193,7 +193,7 @@
     }
   },
   "fixture": {
-    "_note": "Synthetic KVM worker scaling, task and filesystem data for the visual preview. RAM panels use 25 consecutive five-minute samples from one guest, aligned with the preview timeline.",
+    "_note": "Synthetic KVM worker scaling, task and filesystem data for the visual preview. Guest RAM panels use 25 consecutive five-minute samples from one guest. Host RAM uses observed usage-to-request ratios scaled to the preview pool.",
     "variables": {
       "worker": ["0", "1", "2"],
       "memory_worker": ["0", "1", "2"]
@@ -821,6 +821,30 @@
                     27058293964, 27058293964, 27058293964, 27058293964, 27058293964, 27058293964, 27058293964,
                     27058293964, 27058293964, 27058293964, 27058293964, 27058293964, 27058293964, 18038862643,
                     18038862643, 18038862643, 18038862643, 18038862643
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        "D": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "D",
+                "fields": [
+                  { "name": "Time", "type": "time", "config": { "interval": 3600000 } },
+                  { "name": "Value", "type": "number", "config": { "displayNameFromDS": "Host RAM used" } }
+                ]
+              },
+              "data": {
+                "values": [
+                  { "$recorded_ref": "value_003" },
+                  [
+                    14282775876, 16307470174, 14494677691, 13513193300, 14098458221, 12933484126, 22978324935,
+                    22633260941, 24572137229, 26290155608, 26657471228, 25538416776, 24644628437, 26525877228,
+                    25187331999, 24052003024, 24442591586, 24406572970, 24460600894, 28075879607, 15190663869,
+                    15330832838, 15502760721, 14932943007, 12813354957
                   ]
                 ]
               }
