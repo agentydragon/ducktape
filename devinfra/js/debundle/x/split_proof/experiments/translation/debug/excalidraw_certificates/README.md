@@ -31,20 +31,24 @@ checker stdout/stderr, and `--move-report` JSON. The latter reports individual
 statement categories and up to 64 failing inverted pairs in original source IDs;
 it is diagnostic evidence, not a certificate bypassing the checker's other premises.
 
-## Replaying the authored Excalidraw spec
+## Building and replaying the authored Excalidraw specs
 
 ```sh
+bbr build --remote_build_event_upload=all //devinfra/js/debundle/x/split_proof/experiments/translation:excalidraw_lean_specs
 bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:excalidraw_authored_placements
 ```
+
+The build translates the Rust debundler's `spec_graphs` reports into
+`excalidraw_lean_specs/editor.json` and `excalidraw_lean_specs/main.json` in
+the Bazel output directory for this package. Both are `lowersplit` specs.
 
 Only `editor` and `main` have named module assignments in the Excalidraw spec.
 The shared roughjs chunk stays in its entry. The vendor swap on the roughjs
 entry stub is a separate transformation.
 
-This probe reads the Rust dependency graph produced from the committed spec.
-It assigns each original source unit to its resolved owner and asks Lean to
-replay Rust's emitted evaluation order. It compares every owner and every
-statement position in Lean's plan with the Rust reports, including on rejection.
+The replay gives Lean the generated specs and independently reads the Rust reports.
+It compares every original source unit's owner and evaluation position in Lean's
+plan with the Rust reports, including on rejection.
 Lean derives its own imports and exports and checks its own footprints. This
 measures agreement on placement and execution order; it does not validate the
 Rust emitter's JavaScript or vendor substitutions.
