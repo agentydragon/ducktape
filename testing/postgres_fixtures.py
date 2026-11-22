@@ -17,6 +17,7 @@ different PostgreSQL image can override ``postgres_image`` in their conftest.
 
 import contextlib
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Generator, Iterator
 
@@ -95,6 +96,17 @@ def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> Postg
         container.start()
         logger.info("Postgres ready in %.1fs", time.monotonic() - started)
         return container
+
+
+def dump_schema_for_migration_check(container: PostgresContainer, database: str) -> str:
+    """Dump schema for repeat-upgrade comparisons, ignoring the Alembic stamp."""
+    result = container.get_wrapped_container().exec_run(
+        ["pg_dump", "-U", "postgres", "--schema-only", "--no-owner", "--exclude-table=public.alembic_version", database]
+    )
+    output = result.output.decode()
+    assert result.exit_code == 0, output
+    # Random psql restriction keys are transport framing, not schema.
+    return re.sub(r"^\\(?:un)?restrict .*\n", "", output, flags=re.MULTILINE)
 
 
 @pytest.fixture(scope="session")
