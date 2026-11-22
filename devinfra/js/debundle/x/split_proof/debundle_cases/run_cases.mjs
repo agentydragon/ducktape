@@ -16,14 +16,13 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
+import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
 import { parse as parseYaml } from "yaml";
 import { dumpParsed } from "../lowering/dump_core.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const lowersplit = path.join(here, "../lean/.lake/build/bin/lowersplit");
+const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../lean/.lake/build/bin/lowersplit"));
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
   const at = args.indexOf(`--${name}`);
@@ -252,7 +251,7 @@ function run(cmd, cmdArgs, options = {}) {
 }
 
 function nodeRun(file, cwd) {
-  const r = run("node", [file], { cwd });
+  const r = run(process.execPath, [file], { cwd });
   const error = (r.stderr.match(/^\w*Error: .*/m) ?? [""])[0];
   return { stdout: r.stdout, code: r.code, error };
 }

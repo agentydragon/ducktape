@@ -6,7 +6,7 @@ The verification frontend parses each module with Acorn and passes its annotated
 
 ## Run it
 
-`./run.sh --translation` from the project root builds the checker and runs the fixtures and a mutation test; `./run.sh --translation-fuzz` runs the [fuzzer](#fuzzer). By hand, in this directory:
+Use `:fixtures_test` for the checker fixtures and `:translation_fuzz` for the [fuzzer](#fuzzer). For standalone research commands in this directory:
 
 ```bash
 cp package.json.in package.json && npm ci --no-audit --no-fund
@@ -69,7 +69,7 @@ The assumption has a known edge: a program can observe the spelling of a name th
 
 ## Fuzzer
 
-The fixtures hold the cases somebody thought of. `node fuzz.mjs` (or `./run.sh --translation-fuzz`) asks whether `translate` ever accepts a tree that behaves differently from its bundle in Node. The generated bundles satisfy premise P3 (the world adds no accessors or hooks), so it runs with `{"noWorldHooks": true}`; bundles whose own run throws in Node are skipped, which is premise P4.
+The fixtures hold the cases somebody thought of. The `:translation_fuzz` target asks whether `translate` ever accepts a tree that behaves differently from its bundle in Node. The generated bundles satisfy premise P3 (the world adds no accessors or hooks), so it runs with `{"noWorldHooks": true}`; bundles whose own run throws in Node are skipped, which is premise P4.
 
 Each round builds a bundle of 8 to 21 units from a catalog of templates and splits it six times at random.
 
@@ -112,9 +112,9 @@ The catalog is the list of ways a move can go wrong that somebody wrote down. A 
 bbr test //devinfra/js/debundle/x/split_proof/translation:fixtures_test
 ```
 
-Bazel runs the same fixture driver as `./run.sh --translation`. The driver uses Node to parse and pair each fixture and checks the Lean checker's verdict for each base case, output variant and generated mutation. The fixture suite checks verdicts. The differential fuzzer described above runs accepted trees in Node and compares their behavior with their bundles.
+The Bazel fixture driver uses Node to parse and pair each fixture and checks the Lean checker's verdict for each base case, output variant and generated mutation. The fixture suite checks verdicts. The differential fuzzer described above runs accepted trees in Node and compares their behavior with their bundles.
 
-The package-local `pnpm-lock.yaml` gives Bazel the same parser versions and integrity hashes as the standalone `package-lock.json`. Refresh it with `pnpm import` in a scratch directory containing `package-lock.json` and a copy of `package.json.in` named `package.json`.
+The package-local `pnpm-lock.yaml` pins the parsers, fuzzer dependencies, and public benchmark libraries. The standalone `package-lock.json` is used by research scripts outside Bazel.
 
 Run a seeded sample of the differential fuzzer on demand:
 
@@ -122,7 +122,7 @@ Run a seeded sample of the differential fuzzer on demand:
 bbr test //devinfra/js/debundle/x/split_proof/translation:fuzz_test
 ```
 
-The target generates 40 bundles with four split attempts each at seed 3. It runs each valid bundle and tree in Node and compares exit status, stdout and error class. The test requires a matching acceptance and fails if the checker accepts a tree with different behavior. `fuzz_leaks_test` is the same sample with the `--leaks` templates. Standalone `./run.sh --translation-fuzz` runs the larger default sample.
+The target generates 40 bundles with four split attempts each at seed 3. It runs each valid bundle and tree in Node and compares exit status, stdout and error class. The test requires a matching acceptance and fails if the checker accepts a tree with different behavior. `fuzz_leaks_test` is the same sample with the `--leaks` templates. For a larger sample, use `bb run` with `:translation_fuzz` and pass your own count and seed.
 
 The callback fixture exercises the initialization-order regression where a callback passed to `map` reads a
 constant before its module initializes it. The checker reports obligations, and Node throws `ReferenceError`

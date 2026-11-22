@@ -916,5 +916,70 @@ js_test(
         "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
+)
+
+js_binary(
+    name = "translation_fuzz",
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
     tags = ["manual"],
+)
+
+# Keep this CLI next to the isolated parser links.
+js_binary(
+    name = "dump_ast",
+    data = [
+        "scope_metadata.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    ],
+    entry_point = "dump_ast.mjs",
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+)
+
+js_binary(
+    name = "prepare_real_bundles",
+    data = [
+        "scope_metadata.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/lodash-es",
+        ":node_modules/semver",
+        ":node_modules/zod",
+        "//:node_modules/esbuild",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof:real_bundle_entries",
+    ],
+    entry_point = "prepare_real_bundles.mjs",
+    tags = ["manual"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+)
+
+js_test(
+    name = "corejs_differential_sweep_test",
+    size = "large",
+    args = [
+        "--count",
+        "40",
+        "--seed",
+        "1",
+        "--splits",
+        "150",
+    ],
+    data = _COREJS_DIFFERENTIAL_DATA,
+    entry_point = _MODEL + ":differential",
+    env = _COREJS_DIFFERENTIAL_ENV,
+    tags = ["manual"],
+)
+
+js_library(
+    name = "bazel_parser",
+    srcs = ["bazel_parser.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )

@@ -5,7 +5,9 @@
 # gazelle:exclude lowering
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/python:defs.bzl", "py_binary")
 
 exports_files(
     [
@@ -17,7 +19,11 @@ exports_files(
         "example/controls/cycle_tdz.json",
         "example/controls/effect_order.json",
     ],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/lean:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
 )
 
 js_library(
@@ -114,4 +120,120 @@ js_library(
 eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
+)
+
+# keep
+py_binary(
+    name = "render_fuzz",
+    srcs = [
+        "fuzz/bazel_main.py",
+        "fuzz/fuzz.py",
+    ],
+    data = [
+        "example/input/bundle.mjs",
+        "example/spec.json",
+        "//devinfra/js/debundle/x/split_proof/lean:render",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "NODE_RUNFILE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "RENDER_RUNFILE": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:render)",
+    },
+    main = "fuzz/bazel_main.py",
+    tags = ["manual"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+js_binary(
+    name = "debundle_cases",
+    testonly = True,
+    data = [
+        ":lowering_dump_core",
+        "//:node_modules/acorn",
+        "//:node_modules/yaml",
+        "//devinfra/js/debundle/e2e:corpus_files",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+    ],
+    entry_point = "debundle_cases/run_cases.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    tags = ["manual"],
+)
+
+js_binary(
+    name = "summarize_debundle_cases",
+    entry_point = "debundle_cases/summarize.mjs",
+    tags = ["manual"],
+)
+
+js_run_binary(
+    name = "example_ast",
+    srcs = ["example/input/bundle.mjs"],
+    args = ["example/input/bundle.mjs"],
+    chdir = package_name(),
+    stdout = "generated/example.json",
+    tool = "//devinfra/js/debundle/x/split_proof/translation:dump_ast",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
+)
+
+js_library(
+    name = "real_bundle_entries",
+    srcs = glob(["lowering/entries/*.mjs"]),
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+js_binary(
+    name = "compare_footprints",
+    data = [
+        "extract/extract.mjs",
+        "//:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "lowering/compare.mjs",
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
+    tags = ["manual"],
+)
+
+js_binary(
+    name = "real_split",
+    data = [
+        "experiments/splits/gen_spec.mjs",
+        "experiments/splits/smoke.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "experiments/splits/run_splits.mjs",
+    env = {
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+    tags = ["manual"],
+)
+
+js_binary(
+    name = "summarize_real_splits",
+    entry_point = "experiments/splits/summarize.mjs",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "real_split_sweep",
+    srcs = ["experiments/splits/run_all.sh"],
+    args = [
+        "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:prepare_real_bundles)",
+        "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "$(rlocationpath :real_split)",
+        "$(rlocationpath :summarize_real_splits)",
+    ],
+    data = [
+        ":real_split",
+        ":summarize_real_splits",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof/translation:prepare_real_bundles",
+    ],
+    tags = ["manual"],
+    use_bash_launcher = True,
 )

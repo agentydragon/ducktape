@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary")
+load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary", "lean_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
@@ -54,6 +54,7 @@ lean_binary(
         "Main.lean",
     ] + _PROOF_SOURCES,
     entry = "Main.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )
 
 sh_test(
@@ -122,7 +123,10 @@ lean_binary(
         "EsmSplit/TranslateInput.lean",
     ] + _ESTREE_SOURCES,
     entry = "EsmSplit/LowerMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
 )
 
 # Source groups used only to compile the deliberately unsound `no_writes` checker.
@@ -164,7 +168,11 @@ sh_binary(
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     use_bash_launcher = True,
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
 )
 
 lean_binary(
@@ -556,4 +564,25 @@ sh_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     use_bash_launcher = True,
+)
+
+lean_test(
+    name = "experiments_test",
+    srcs = _PROOF_SOURCES + [
+        "Experiments.lean",
+        "Experiments/Automation.lean",
+        "Experiments/Ladder.lean",
+        "Experiments/MiniJS.lean",
+        "Experiments/MiniJSExample.lean",
+        "Experiments/TwoTier.lean",
+        "Experiments/TwoTierExample.lean",
+    ],
+    entry = "Experiments.lean",
+    tags = ["manual"],
+)
+
+lean_test(
+    name = "lowered_example_certificate_test",
+    srcs = _PROOF_SOURCES + ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_lowered_example_certificate"],
+    entry = "Experiments/Generated.lean",
 )

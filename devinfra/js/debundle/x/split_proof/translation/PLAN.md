@@ -2,7 +2,7 @@
 
 State: `translate` accepts a tree that is the bundle renamed and reshuffled, and lists **obligations**: pairs of conflicting units whose order changed. Units bind named cells (`Stmt.writes`), so a statement that assigns a variable, or changes an object, conflicts only with the ones that read or write it. Footprints come from [`../effects/`](../effects/README.md), which runs the bundle's top level over abstract values. Almost every obligation left is an effect-effect pair of units that run code it cannot see.
 
-Acceptance for every step: the fixtures and mutants of `./run.sh --translation` still pass, and the step's own check shows the change on a real bundle.
+Acceptance for every step: the fixtures and mutants of `:fixtures_test` still pass, and the step's own check shows the change on a real bundle.
 
 ## 1. Effect summaries: obligations become justified
 

@@ -4,13 +4,12 @@
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
+import { basename, resolve } from "node:path";
+import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
 import { footprints } from "../extract/extract.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
-const LOWER = process.env.LOWER ?? new URL("../lean/.lake/build/bin/lower", import.meta.url).pathname;
+const LOWER = resolve(process.env.LOWER ?? new URL("../lean/.lake/build/bin/lower", import.meta.url).pathname);
 const files = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const set = (a) => new Set(a);
 const missing = (need, have) => [...need].filter((x) => !have.has(x));
