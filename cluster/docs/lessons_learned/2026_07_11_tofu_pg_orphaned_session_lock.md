@@ -120,7 +120,7 @@ orphaned PID; do not restart CNPG or kill all `tfstate` sessions.
 ## Prevention
 
 - **Implemented:** The tofu-state PostgreSQL cluster now uses 60-second idle detection,
-  10-second intervals, and six probes; see the [current database configuration](../../cdk8s/tofu_state/db.py).
+  10-second intervals, and six probes; see the [current database configuration](../../cdk8s/tofu_state.py).
 - Give tofu-controller Terraform CRs a bounded `spec.tfstate.lockTimeout` to avoid rapid
   retry churn during legitimate short overlaps. This is mitigation, not orphan eviction.
 - The Ducktape tofu-controller source includes merged upstream PR

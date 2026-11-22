@@ -74,6 +74,7 @@ from cluster.cdk8s import (
     tana_mcp,
     terraform,
     tofu_controller_release,
+    tofu_state,
     user_agentydragon,
     valkey,
     volsync,
@@ -255,7 +256,6 @@ from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_co
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import app as study_casino_app
-from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.scripts import nebula_mesh
 from devinfra.bazel.workspace import get_build_workspace_directory
 
@@ -280,8 +280,7 @@ def generate_manifests(root: Path) -> None:
     litellm_proxy_chart = litellm_proxy.write_manifests(root, mesh)
     litellm_database_chart = litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
-    tofu_state_namespace.write_manifests(root)
-    tofu_state_db.write_manifests(root)
+    tofu_state.write_manifests(root)
     mcp_oauth_state.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
@@ -963,8 +962,8 @@ def generate_manifests(root: Path) -> None:
             cert_manager_kustomization, cert_manager_trust_kustomization, external_secrets_operator_kustomization
         ),
     )
-    tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
-    tofu_state_db_kustomization = tofu_state_db.tofu_state_db(
+    tofu_state_db_artifact = artifact("tofu-state-db", tofu_state.OUTPUT_DIR)
+    tofu_state_db_kustomization = tofu_state.tofu_state_db(
         flux_chart, tofu_state_db_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
     )
     mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)

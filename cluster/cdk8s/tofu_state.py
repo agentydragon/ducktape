@@ -10,6 +10,7 @@ reads the encrypted source directly.
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -32,13 +33,14 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import manifest_file, write_charts, write_yaml
+from cluster.cdk8s.generation import namespace_chart, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
-_DB_DIR = f"{OUTPUT_DIR}/db"
 _NAMESPACE = "tofu-state"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}"
+_DB_DIR = f"{OUTPUT_DIR}/db"
 _CREDENTIALS_FILE = "credentials.sops.yaml"
 DATABASE = cluster.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
 STATE_DATABASE_NAME = "tfstate"
@@ -99,15 +101,13 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    """Write `db/` and the directory's `kustomization.yaml`; the Namespace beside it is
-    `tofu_state.namespace`'s."""
+    """Write the Namespace and database directories reconciled together by tofu-state-db."""
     write_yaml(
         root / _DB_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=[_CREDENTIALS_FILE, write_charts(root, _DB_DIR, chart)]),
     )
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[manifest_file(OUTPUT_DIR), "db"])
-    )
+    namespace = write_charts(root, OUTPUT_DIR, partial(namespace_chart, name=_NAMESPACE, vpa=Vpa.AUTO))
+    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[namespace, "db"]))
 
 
 def tofu_state_db(
