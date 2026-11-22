@@ -77,22 +77,19 @@ def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def jwt_payload(token: str) -> dict[str, Any]:
-    """Decode a JWT's base64url payload (no signature verification)."""
-    payload = _decode_jwt_payload(token)
+def _token_expiry(jwt: str, token: Token) -> datetime:
+    payload = _decode_jwt_payload(jwt)
     if payload is None:
-        raise RuntimeError("atticadm returned a JWT with an invalid payload")
-    return payload
-
-
-def _jwt_expiry(payload: dict[str, Any], token_name: str) -> datetime:
+        raise RuntimeError(f"{token.name}: invalid JWT payload")
+    if payload.get("sub") != token.sub:
+        raise RuntimeError(f"{token.name}: JWT subject differs from configuration")
     exp = payload.get("exp")
     if not isinstance(exp, int) or isinstance(exp, bool):
-        raise RuntimeError(f"{token_name}: JWT payload is missing a valid exp claim")
+        raise RuntimeError(f"{token.name}: JWT payload is missing a valid exp claim")
     try:
         return datetime.fromtimestamp(exp, UTC)
     except OverflowError, OSError, ValueError:
-        raise RuntimeError(f"{token_name}: JWT exp claim is outside the supported range") from None
+        raise RuntimeError(f"{token.name}: JWT exp claim is outside the supported range") from None
 
 
 def _iso_expiry(expires: datetime) -> str:
@@ -154,34 +151,14 @@ def _valid_scope_annotation(secret: KubernetesSecret, annotation: str, configure
     return isinstance(scope, list) and all(isinstance(cache, str) for cache in scope) and set(scope) == set(configured)
 
 
-def _secret_expiry(secret: KubernetesSecret) -> datetime | None:
-    if secret.jwt is None:
-        return None
-    payload = _decode_jwt_payload(secret.jwt)
-    if payload is None:
-        return None
-    exp = payload.get("exp")
-    if not isinstance(exp, int) or isinstance(exp, bool):
-        return None
-    try:
-        expires = datetime.fromtimestamp(exp, UTC)
-    except OverflowError, OSError, ValueError:
-        return None
-    if secret.annotations.get(_SECRET_EXPIRY_ANNOTATION) != _iso_expiry(expires):
-        return None
-    return expires
-
-
 def _secret_rotation_reason(token: Token, secret: KubernetesSecret, rotate_below_hours: int) -> str | None:
     if secret.jwt is None:
         return "Secret has no usable token"
-    payload = _decode_jwt_payload(secret.jwt)
-    if payload is None:
-        return "Secret token payload is invalid"
-    if payload.get("sub") != token.sub:
-        return "Secret token subject differs from configuration"
-    expires = _secret_expiry(secret)
-    if expires is None:
+    try:
+        expires = _token_expiry(secret.jwt, token)
+    except RuntimeError as error:
+        return str(error)
+    if secret.annotations.get(_SECRET_EXPIRY_ANNOTATION) != _iso_expiry(expires):
         return "Secret expiry metadata is missing or inconsistent"
     if not _valid_scope_annotation(secret, _SECRET_PULL_ANNOTATION, token.pull):
         return "Secret pull scope differs from configuration"
@@ -250,7 +227,7 @@ def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:
     return None
 
 
-def mint_attic_token(token: Token, config: Config) -> str:
+def mint_attic_token(token: Token, config: Config) -> tuple[str, datetime]:
     """Mint a JWT via `kubectl exec deploy/attic-next -- atticadm make-token …`.
 
     The HS256 signing secret stays in the attic pod; the rotator only needs
@@ -280,7 +257,7 @@ def mint_attic_token(token: Token, config: Config) -> str:
     jwt = result.stdout.strip()
     if not jwt:
         raise RuntimeError(f"{token.name}: atticadm make-token returned empty output")
-    return jwt
+    return jwt, _token_expiry(jwt, token)
 
 
 def _write_sops_token(token: Token, destination: SopsDestination, config: Config, jwt: str, expires: datetime) -> None:
@@ -311,11 +288,8 @@ def _rotate_kubernetes_token(token: Token, destination: KubernetesDestination, c
     reason = _secret_rotation_reason(token, secret, config.rotate_below_hours)
     if reason is not None:
         logger.info("%s: rotating (%s)", token.name, reason)
-        jwt = mint_attic_token(token, config)
-        payload = jwt_payload(jwt)
-        if payload.get("sub") != token.sub:
-            raise RuntimeError(f"{token.name}: minted JWT subject differs from configuration")
-        secret = _secret_patch(token, destination, jwt, _jwt_expiry(payload, token.name))
+        jwt, expires = mint_attic_token(token, config)
+        secret = _secret_patch(token, destination, jwt, expires)
         if _secret_rotation_reason(token, secret, config.rotate_below_hours) is not None:
             raise RuntimeError(f"{token.name}: Kubernetes Secret does not match the minted token and configured scope")
 
@@ -340,9 +314,7 @@ def rotate_one(token: Token, config: Config) -> bool:
     reason = drift or ("no existing token" if remaining is None else f"{remaining:.0f}h remaining")
     logger.info("%s: rotating (%s)", token.name, reason)
 
-    jwt = mint_attic_token(token, config)
-    payload = jwt_payload(jwt)
-    expires = _jwt_expiry(payload, token.name)
+    jwt, expires = mint_attic_token(token, config)
     _write_sops_token(token, destination, config, jwt, expires)
     return True
 

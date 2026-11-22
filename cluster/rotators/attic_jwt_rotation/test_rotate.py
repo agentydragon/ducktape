@@ -177,7 +177,8 @@ def test_kubernetes_rotation_publishes_secret_version_without_git_output(
 
 def _seed_kubernetes_secret(fake: _FakeKubernetesRun, jwt: str, *, pull: list[str], push: list[str]) -> None:
     assert fake.secret is not None
-    payload = rotate.jwt_payload(jwt)
+    payload = rotate._decode_jwt_payload(jwt)
+    assert payload is not None
     expires = datetime.fromtimestamp(payload["exp"], UTC)
     fake.secret["data"]["token"] = base64.b64encode(jwt.encode()).decode()
     fake.secret["metadata"]["annotations"] = {
@@ -196,9 +197,11 @@ def test_mint_attic_token_builds_kubectl_exec_atticadm_argv(monkeypatch):
         push=["main"],
         destination=SopsDestination(sops_file=Path("secrets/ci/attic-main-writer.sops.yaml")),
     )
-    fake = _FakeRun(jwt="signed.token")
+    expires = datetime(2030, 1, 1, tzinfo=UTC)
+    jwt = _make_jwt({"sub": token.sub, "exp": int(expires.timestamp())})
+    fake = _FakeRun(jwt=jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    assert mint_attic_token(token, Config(tokens=[])) == "signed.token"
+    assert mint_attic_token(token, Config(tokens=[])) == (jwt, expires)
     (call,) = fake.calls
     assert call == [
         "kubectl",
@@ -288,6 +291,19 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     assert written["expires_unencrypted"] == "2027-01-15T08:00:00Z"
     assert written["pull_unencrypted"] == ["main"]
     assert written["push_unencrypted"] == []
+
+
+def test_wrong_subject_preserves_existing_sops_file(monkeypatch, tmp_path: Path):
+    path = tmp_path / "token.yaml"
+    existing = "attic_token: prior-ciphertext\n"
+    path.write_text(existing)
+    token = Token(
+        name="reader", sub="reader", validity="1 year", pull=["main"], destination=SopsDestination(sops_file=path)
+    )
+    monkeypatch.setattr(rotate.subprocess, "run", _FakeRun(jwt=_make_jwt({"sub": "other", "exp": 1_800_000_000})))
+    with pytest.raises(RuntimeError, match="subject differs"):
+        rotate_one(token, Config(tokens=[token]))
+    assert path.read_text() == existing
 
 
 def test_kubernetes_destination_requires_the_precreated_secret(monkeypatch):
