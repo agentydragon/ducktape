@@ -5,8 +5,6 @@ metadata:
   namespace: tandoor
   labels:
     app.kubernetes.io/name: tandoor
-  annotations:
-    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
