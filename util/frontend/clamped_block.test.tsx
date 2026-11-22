@@ -7,7 +7,8 @@ import { cleanupMounted, renderWithMantine } from "./testing/react";
 
 // happy-dom does no layout, so the content's height is whatever a test says it is.
 function contentHeight(pixels: number): void {
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(pixels);
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(pixels);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(Math.min(160, pixels));
 }
 
 function control(container: HTMLElement, label: string): HTMLElement | undefined {
@@ -42,7 +43,8 @@ describe("ClampedBlock", () => {
 
   it("keeps expanded content collapsible when its height shrinks", async () => {
     let height = 1000;
-    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(() => height);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(() => Math.min(160, height));
     const container = await renderWithMantine(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
     height = 40;
     await act(async () => control(container, "Show all")?.click());

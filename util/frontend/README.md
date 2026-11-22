@@ -4,7 +4,9 @@
 `JsonView` pretty-prints structured values with the same code widget;
 `HighlightedText` displays pre-serialized JSON or plain text.
 `Disclosure`, `DisclosureCard`, `DisclosureBody` and `ClampedBlock` coordinate
-nested headings and expandable content. These primitives also serve non-transcript
+nested headings and expandable content. A collapsed preview bounds its children in CSS
+from first layout, including while a lazy code editor mounts or rewraps. Measurement
+controls the expansion button. These primitives also serve non-transcript
 views, alongside tooltips and resizable panes.
 
 The [transcript package](transcript/README.md) composes these primitives into message
