@@ -21,6 +21,7 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 from cluster.cdk8s.testing.manifests import find_resource
@@ -500,41 +501,46 @@ def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(docu
     assert kustomization["spec"]["prune"] is False
 
 
+def test_private_crossplane_providers_can_pull_from_forgejo(documents: list[dict[str, Any]], checkout: Path) -> None:
+    # The registry tenant owns the credential. Crossplane pulls provider packages in its installation namespace.
+    source = yaml.safe_load((checkout / HAND_WRITTEN_ROOT / "forgejo-images/registry-creds.sops.yaml").read_text())
+    source_name = source["metadata"]["name"]
+    source_namespace = source["metadata"]["namespace"]
+    namespace = find_resource(documents, "HelmRelease", "crossplane")["metadata"]["namespace"]
+    mirror = find_resource(documents, "ExternalSecret", source_name, namespace=namespace)["spec"]
+    assert mirror["dataFrom"] == [{"extract": {"key": source_name}}]
+    assert mirror["target"]["template"]["type"] == source["type"] == "kubernetes.io/dockerconfigjson"
+
+    ref = mirror["secretStoreRef"]
+    store = find_resource(documents, ref["kind"], ref["name"])["spec"]
+    assert store["conditions"] == [{"namespaces": [namespace]}]
+    kubernetes = store["provider"]["kubernetes"]
+    assert kubernetes["remoteNamespace"] == source_namespace
+    reader = kubernetes["auth"]["serviceAccount"]
+    account_namespace = reader.get("namespace", namespace)
+    find_resource(documents, "ServiceAccount", reader["name"], namespace=account_namespace)
+    rbac = Rbac(doc for doc in documents if doc["kind"] in {"Role", "ClusterRole", "RoleBinding", "ClusterRoleBinding"})
+    assert rbac.subjects({("ServiceAccount", reader["name"], account_namespace)}) == {
+        Permission(source_namespace, "", "secrets", "get", source_name)
+    }
+
+    private = [
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "pkg.crossplane.io/v1"
+        and doc["kind"] == "Provider"
+        and doc["spec"]["package"].startswith("git.allegedly.works/")
+    ]
+    assert private
+    credential = {"name": mirror["target"].get("name", source_name)}
+    for provider in private:
+        assert credential in provider["spec"].get("packagePullSecrets", []), provider["metadata"]["name"]
+
+
 def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resources(
     documents: list[dict[str, Any]],
 ) -> None:
-    provider = find_resource(documents, "Provider", "provider-litellm")
-    pull_secret = find_resource(documents, "ExternalSecret", "forgejo-images-creds", namespace="crossplane-system")
     kustomization = find_resource(documents, "Kustomization", "crossplane-provider-litellm")
-
-    assert provider["apiVersion"] == "pkg.crossplane.io/v1"
-    assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
-    assert provider["spec"]["packagePullSecrets"] == [{"name": "forgejo-images-creds"}]
-    assert pull_secret["spec"]["secretStoreRef"] == {
-        "kind": "ClusterSecretStore",
-        "name": "kubernetes-crossplane-forgejo-images-creds-secret-store",
-    }
-    assert pull_secret["spec"]["target"]["template"]["type"] == "kubernetes.io/dockerconfigjson"
-    store = find_resource(documents, "ClusterSecretStore", "kubernetes-crossplane-forgejo-images-creds-secret-store")
-    assert store["spec"]["conditions"] == [{"namespaces": ["crossplane-system"]}]
-    assert store["spec"]["provider"]["kubernetes"]["remoteNamespace"] == "forgejo-images"
-    assert store["spec"]["provider"]["kubernetes"]["auth"]["serviceAccount"] == {
-        "name": "crossplane-forgejo-images-creds-reader"
-    }
-    reader_role = find_resource(documents, "Role", "crossplane-forgejo-images-creds-reader")
-    assert reader_role["metadata"]["namespace"] == "forgejo-images"
-    assert reader_role["rules"] == [
-        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["forgejo-images-creds"], "verbs": ["get"]}
-    ]
-    reader_binding = find_resource(documents, "RoleBinding", "crossplane-forgejo-images-creds-reader")
-    assert reader_binding["subjects"] == [
-        {
-            "apiGroup": "",
-            "kind": "ServiceAccount",
-            "name": "crossplane-forgejo-images-creds-reader",
-            "namespace": "crossplane-system",
-        }
-    ]
     assert kustomization["spec"]["dependsOn"] == [
         {"name": "crossplane", "namespace": "ducktape-flux"},
         {"name": "external-secrets-operator", "namespace": "ducktape-flux"},
