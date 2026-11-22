@@ -139,6 +139,70 @@ def _activity() -> dashboard.Panel:
     )
 
 
+def _health() -> dashboard.Panel:
+    panel = _chart(
+        9,
+        "Worker health and scrape coverage",
+        "Counts for the selected workers. Scrape lines count endpoints that responded. Each health line counts "
+        "workers reporting that check healthy. When counts coincide, the legend and hover show each series.",
+        dashboard.GridPos(h=8, w=24, y=28),
+        [
+            ("Executor scrape", f"sum(up{{{_SELECTED}}} {_CURRENT})"),
+            ("Guest scrape", f"sum(up{{{_GUEST}}} {_CURRENT})"),
+            (
+                "{{health_check_name}}",
+                f"sum by (health_check_name) (buildbuddy_health_check_status{{{_SELECTED}}} {_CURRENT})",
+            ),
+        ],
+    )
+    options = series_options()
+    options.legend = common.VizLegendOptions(
+        show_legend=True,
+        display_mode=common.LegendDisplayMode.TABLE,
+        placement=common.LegendPlacement.RIGHT,
+        calcs=["lastNotNull"],
+    )
+    panel.options = options
+    panel.field_config = dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit="short",
+            decimals=0,
+            min_val=0,
+            custom=common.GraphFieldConfig(
+                line_interpolation=common.LineInterpolation.STEP_AFTER,
+                line_width=2,
+                fill_opacity=0,
+                show_points=common.VisibilityMode.NEVER,
+                span_nulls=False,
+            ),
+        ),
+        # Draw scrape counts with wider strokes so they remain visible under a coincident health line.
+        overrides=[
+            field_override(
+                "Executor scrape",
+                {
+                    "color": {"mode": "fixed", "fixedColor": "#9299a5"},
+                    "custom.lineWidth": 6,
+                    "custom.lineStyle": {"fill": "dash", "dash": [9, 6]},
+                },
+            ),
+            field_override(
+                "Guest scrape",
+                {
+                    "color": {"mode": "fixed", "fixedColor": "#4db6ac"},
+                    "custom.lineWidth": 4,
+                    "custom.lineStyle": {"fill": "dot"},
+                },
+            ),
+            field_override("executor_disk_usage", {"displayName": "Check: executor disk"}),
+            field_override("grpc_app_connection", {"displayName": "Check: app connection"}),
+            field_override("grpc_cache_connection", {"displayName": "Check: cache connection"}),
+            field_override("registered_to_scheduler", {"displayName": "Check: scheduler registration"}),
+        ],
+    )
+    return panel
+
+
 def _reservation(panel_id: int, title: str, metric: str, unit: str, x: int) -> dashboard.Panel:
     scale = " / 1000" if metric == "milli_cpu" else ""
     resource = "cpu" if metric == "milli_cpu" else "memory"
@@ -221,25 +285,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 dashboard.GridPos(h=8, w=12, x=12, y=20),
                 [("Queued reservations", f"sum(buildbuddy_remote_execution_queue_length{{{_SELECTED}}} {_CURRENT})")],
             ),
-            _chart(
-                9,
-                "Workers passing each health check",
-                "Count of selected workers reporting each check healthy.",
-                dashboard.GridPos(h=8, w=12, y=28),
-                [
-                    (
-                        "{{health_check_name}}",
-                        f"sum by (health_check_name) (buildbuddy_health_check_status{{{_SELECTED}}} {_CURRENT})",
-                    )
-                ],
-            ),
-            _chart(
-                2,
-                "Scrape coverage",
-                "Current worker pods successfully scraped on each endpoint.",
-                dashboard.GridPos(h=8, w=12, x=12, y=28),
-                [("Executor", f"sum(up{{{_SELECTED}}} {_CURRENT})"), ("Guest", f"sum(up{{{_GUEST}}} {_CURRENT})")],
-            ),
+            _health(),
             dashboard.RowPanel(
                 id_val=11, title="Worker sizing and disk headroom", grid_pos=dashboard.GridPos(h=1, w=24, y=36)
             ),
