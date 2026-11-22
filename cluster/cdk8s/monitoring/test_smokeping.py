@@ -1,17 +1,16 @@
 """Exercise the exact dashboard PromQL against clean, failed, missing, and reset probes."""
 
 import json
-import subprocess
-from pathlib import Path
 
 import pytest_bazel
-import yaml
 from python.runfiles import Runfiles
+
+from cluster.cdk8s.testing.promtool import PromtoolRules
 
 _DASHBOARD = "ducktape/cluster/cdk8s/monitoring/dashboards/home-network-overview.json"
 
 
-def test_reliability_queries(runfiles: Runfiles, promtool: Path, tmp_path: Path) -> None:
+def test_reliability_queries(runfiles: Runfiles, promtool: PromtoolRules) -> None:
     runfiles_root = runfiles.root()
     dashboard = json.loads((runfiles_root / _DASHBOARD).read_text())
     expressions = {
@@ -34,11 +33,7 @@ def test_reliability_queries(runfiles: Runfiles, promtool: Path, tmp_path: Path)
             }
         ]
     }
-    (tmp_path / "smokeping.yaml").write_text(yaml.safe_dump(spec))
-    (tmp_path / "tests.yaml").write_text(
-        (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/smokeping_rules.yaml").read_text()
-    )
-    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
+    promtool("ducktape/cluster/cdk8s/monitoring/testdata/smokeping_rules.yaml", {"smokeping.yaml": spec})
 
 
 if __name__ == "__main__":

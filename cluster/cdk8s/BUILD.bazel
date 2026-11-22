@@ -117,6 +117,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s/testing:promtool",
         "//cluster/cdk8s/testing:scratch",
         "//cluster/scripts:nebula_mesh_fixtures",
         "@pypi//pytest",
@@ -2173,9 +2174,9 @@ py_test(
         ":buildbuddy_kvm_worker",
         ":conftest",
         "//:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )
@@ -2196,9 +2197,9 @@ py_test(
         ":conftest",
         ":piraeus_metrics",
         "//:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )
