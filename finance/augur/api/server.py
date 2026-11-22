@@ -131,23 +131,23 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
 
-    @app.get("/api/catalog", response_model=CatalogResponse, response_model_exclude_none=True)
+    @app.get("/api/catalog", response_model_exclude_none=True)
     def catalog_route(services: Services) -> CatalogResponse:
         return services.catalog
 
-    @app.get("/api/settings", response_model=SettingsResponse, response_model_exclude_none=True)
+    @app.get("/api/settings", response_model_exclude_none=True)
     def settings_route(services: Services) -> SettingsResponse:
         return services.settings
 
-    @app.get("/api/calibration", response_model=CalibrationInfo, response_model_exclude_none=True)
+    @app.get("/api/calibration", response_model_exclude_none=True)
     def calibration_info_route(services: Services) -> CalibrationInfo:
         return services.calibration_info
 
-    @app.get("/api/deployment", response_model=DeploymentInfo, response_model_exclude_none=True)
+    @app.get("/api/deployment", response_model_exclude_none=True)
     def deployment(services: Services) -> DeploymentInfo:
         return services.deployment_info
 
-    @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse, response_model_exclude_none=True)
+    @app.get("/api/product/portfolio", response_model_exclude_none=True)
     def product_portfolio_snapshot(services: Services) -> ProductPortfolioResponse:
         return product_portfolio_response(
             snapshot=services.portfolio.snapshot,
@@ -156,17 +156,15 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
             currency=USD,
         )
 
-    @app.post(
-        "/api/product/projections/summary", response_model=ProductProjectionResponse, response_model_exclude_none=True
-    )
+    @app.post("/api/product/projections/summary", response_model_exclude_none=True)
     def product_projection_summary(request: ProductProjectionRequest, services: Services) -> ProductProjectionResponse:
         return services.product_service.projection_summary(request)
 
-    @app.post("/api/product/projections/rollout", response_model=RolloutResponse, response_model_exclude_none=True)
+    @app.post("/api/product/projections/rollout", response_model_exclude_none=True)
     def product_projection_rollout(request: RolloutRequest, services: Services) -> RolloutResponse:
         return services.product_service.rollout(request)
 
-    @app.post("/api/calibration/run", response_model=CalibrationRunResponse, response_model_exclude_none=True)
+    @app.post("/api/calibration/run", response_model_exclude_none=True)
     async def calibration_run(
         request: CalibrationRunRequest, services: Services, price_clients: PriceClients
     ) -> CalibrationRunResponse:
