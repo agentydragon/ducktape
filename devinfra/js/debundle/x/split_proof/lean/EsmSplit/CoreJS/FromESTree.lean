@@ -28,6 +28,10 @@ def stringLiteral (j : Json) : Except String String := do
 def moduleExportName (j : Json) : Except String Name := do
   if (← field j "type") == "Literal" then stringLiteral j else identifier j
 
+private def stringExpr (s : String) : Except String Expr := do
+  unless s.toList.all (·.toNat ≤ 0xffff) do throw "string outside the Basic Multilingual Plane"
+  return .str s
+
 private def literal (key : String) : Except String Expr := do
   match key with
   | "null" => return .null
@@ -35,9 +39,7 @@ private def literal (key : String) : Except String Expr := do
   | "b:false" => return .bool false
   | _ =>
     if key.startsWith "s:" then
-      let s := (key.drop 2).toString
-      unless s.toList.all (·.toNat ≤ 0xffff) do throw "string outside the Basic Multilingual Plane"
-      return .str s
+      return ← stringExpr (key.drop 2).toString
     if key.startsWith "n:" then
       let s := (key.drop 2).toString
       let n := Num.ofString s
@@ -200,6 +202,23 @@ private def linkedObject (imports : List Name) (inFunction : Bool) (j : Json) : 
     props := props.push (.init (.str key) value)
   return .obj props.toList
 
+/-- In an untagged template each substitution is converted before the next
+expression runs. Raw escape spellings are observable only in a tagged template. -/
+private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
+  let quasis ← j.getObjValAs? (List Json) "quasis"
+  let expressions ← j.getObjValAs? (List Json) "expressions"
+  let first :: rest := quasis | throw "expected an initial template element"
+  unless rest.length == expressions.length do throw "template element count does not match substitutions"
+  let cooked := fun q => do
+    unless (← field q "type") == "TemplateElement" do throw "expected a template element"
+    stringExpr (← field (← q.getObjVal? "value") "cooked")
+  let mut result ← cooked first
+  for (expression, quasi) in expressions.zip rest do
+    let value := Expr.unary .toString (← lower expression)
+    result := .binary .add result value
+    result := .binary .add result (← cooked quasi)
+  return result
+
 mutual
 
 private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -209,6 +228,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "Literal" => literal (← field j "lit")
   | "Identifier" => reference imports inFunction j
   | "ObjectExpression" => linkedObject imports inFunction j
+  | "TemplateLiteral" => linkedTemplate (linkedExpr imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
     let op ← field j "operator"

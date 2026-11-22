@@ -63,6 +63,8 @@ In linked programs, a conditional expression evaluates its test once and runs th
 
 Linked object literals may contain distinct identifier or string keys and values that are supported primitive literals or binding reads. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. Computed keys, `__proto__`, methods, accessors, and spread are outside this fragment.
 
+Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
+
 Linked expressions support `typeof` on modeled operands. For `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
 
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
