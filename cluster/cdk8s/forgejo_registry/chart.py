@@ -22,7 +22,6 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     ReceiverSpecSecretRef,
     ReceiverSpecType,
 )
-from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import namespaces, opentofu
@@ -75,17 +74,12 @@ def workspace_chart(app: App) -> Chart:
         provider_config_name=WORKSPACE_NAME,
         management_policies=["Observe", "Create", "Update"],
         kubernetes_identity=KUBERNETES_IDENTITY,
-        variables=[
-            WorkspaceSpecForProviderVars(key=key, value=value)
-            for key, value in ForgejoImagesVars(
-                webhook_host=WEBHOOK_HOST,
-                receiver_name=RECEIVER_NAME,
-                receiver_namespace=NAME,
-                webhook_token_secret=WEBHOOK_TOKEN_SECRET,
-            )
-            .model_dump()
-            .items()
-        ],
+        variables=ForgejoImagesVars(
+            webhook_host=WEBHOOK_HOST,
+            receiver_name=RECEIVER_NAME,
+            receiver_namespace=NAME,
+            webhook_token_secret=WEBHOOK_TOKEN_SECRET,
+        ),
     )
     return chart
 

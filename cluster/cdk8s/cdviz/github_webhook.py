@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import opentofu
@@ -35,9 +34,6 @@ def chart(app: App) -> Chart:
     opentofu.secret_access(
         chart, "cdviz-secrets", identity=identity, namespace=config.NAMESPACE, write=[config.WEBHOOK_SECRET.name]
     )
-    variables = CdvizGithubWebhookVars(
-        namespace=config.NAMESPACE, webhook_secret_name=config.WEBHOOK_SECRET.name, webhook_url=config.WEBHOOK_URL
-    )
     opentofu.gitops_workspace(
         chart,
         "workspace",
@@ -47,6 +43,8 @@ def chart(app: App) -> Chart:
         # Creating a named workspace initializes backend state before the provider's first state-list observation.
         external_name=NAME,
         kubernetes_identity=KUBERNETES_IDENTITY,
-        variables=[WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()],
+        variables=CdvizGithubWebhookVars(
+            namespace=config.NAMESPACE, webhook_secret_name=config.WEBHOOK_SECRET.name, webhook_url=config.WEBHOOK_URL
+        ),
     )
     return chart

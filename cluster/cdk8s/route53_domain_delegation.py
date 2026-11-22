@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import opentofu
@@ -30,7 +29,6 @@ class Route53DomainDelegationVars(BaseModel):
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    variables = Route53DomainDelegationVars(route53_zone_id=HOSTED_ZONES["allegedly.works"])
     opentofu.gitops_workspace(
         chart,
         "workspace",
@@ -38,7 +36,7 @@ def chart(app: App) -> Chart:
         provider_config_name=NAME,
         schema=STATE_SCHEMA,
         management_policies=["Observe", "Create", "Update"],
-        variables=[WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()],
+        variables=Route53DomainDelegationVars(route53_zone_id=HOSTED_ZONES["allegedly.works"]),
         env=[
             opentofu.secret_env(key, SecretRef(namespace=_NAMESPACE, name=_CREDENTIALS_SECRET).key(key))
             for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
