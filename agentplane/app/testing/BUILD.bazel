@@ -112,6 +112,7 @@ py_library(
     data = ["http2_proxy.conf.j2"],
     deps = [
         ":browser_certificate",
+        "//agentplane/app/frontend/serving:routes",
         "//agentplane/app/frontend/serving/testing:image",
         "//devinfra/oci",
         "//testing:container_logs",

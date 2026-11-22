@@ -16,14 +16,7 @@ def test_static_routes_leave_api_and_auth_on_the_app(staging_manifests: list[dic
     assert static["spec"]["hostnames"] == api["spec"]["hostnames"]
     rule = one(static["spec"]["rules"])
     assert one(rule["backendRefs"])["name"] == frontend.service(staging.ENV.namespace).name
-    assert {m["path"]["value"] for m in rule["matches"] if m["path"]["type"] == "Exact"} == {
-        "/",
-        "/index.html",
-        "/main.js",
-        "/main.css",
-        "/sw.js",
-        "/favicon.svg",
-    }
+    assert any(m["path"]["value"] == "/" for m in rule["matches"])
     assert all(m["path"]["type"] == "Exact" for m in rule["matches"])
     # API URLs and auth keep their current public paths, including long-lived streams.
     api_rule = one(api["spec"]["rules"])

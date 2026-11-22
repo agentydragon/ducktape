@@ -1642,6 +1642,7 @@ py_library(
     deps = [
         ":environment",
         ":service_workload",
+        "//agentplane/app/frontend/serving:routes",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",

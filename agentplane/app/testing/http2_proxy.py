@@ -11,6 +11,7 @@ import httpx
 from jinja2 import Template
 from python.runfiles import Runfiles
 
+from agentplane.app.frontend.serving.routes import PUBLIC_PATHS
 from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
 from agentplane.app.testing.browser_certificate import BrowserCertificate
 from devinfra.oci.oci import load_oci_image
@@ -67,7 +68,10 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
         port = certificate.port
         template = (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/http2_proxy.conf.j2").read_text()
         (certificate.directory / "nginx.conf").write_text(
-            Template(template).render(port=port, upstream=upstream, static_upstream=static_upstream) + "\n"
+            Template(template).render(
+                port=port, upstream=upstream, static_upstream=static_upstream, static_paths=PUBLIC_PATHS
+            )
+            + "\n"
         )
         container = (
             LoggedContainer(ingress_image, test_name=f"conversation-http2-ingress-{log_id}")
