@@ -104,7 +104,7 @@ Strict replay of the isolated first production statement now gets through the fu
 
 Use the public editor and its real providers to exercise the same certification path on a public input. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) currently adds five private names to the entry’s exports. Keep that output as a rejection case.
 
-The strict replay of the pair currently stops at statement 5 with `expected a single declarator`. Isolate the failing declaration before extending the lowering. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`.
+The strict replay of the pair currently stops at statement 5 with `unsupported linked expression MemberExpression`. Isolate the failing property access before extending the lowering. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`.
 
 An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as calls to
 `Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require

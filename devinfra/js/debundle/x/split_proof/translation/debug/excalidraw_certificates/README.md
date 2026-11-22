@@ -83,8 +83,8 @@ and assigns the other 1,785 units to `entry.mjs` in source order. The replay res
 the stable `editor.js` alias via the generated JS roster and runs the normal splitter
 on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. With
 `--require normal-completion`, the linked CoreJS decoder stops at statement 5
-with `expected a single declarator`. The splitter publishes no modules. The test outputs
-include the source filename, placement spec and verdict. [Full editor replay](https://app.buildbuddy.io/invocation/4ac19c1e-8230-4cc0-8d2d-81d82c3f5ed8)
+with `unsupported linked expression MemberExpression`. The splitter publishes no modules. The test outputs
+include the source filename, placement spec and verdict. [Full editor replay](https://app.buildbuddy.io/invocation/c9039679-7e49-563c-a57b-d5396cbe6d26)
 
 The same target renders two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.
