@@ -63,6 +63,7 @@ import {
   generatedInheritanceCases,
   generatedModuleCases,
   generatedOpaqueCase,
+  generatedObjectRequestCase,
   generatedOpaqueClassCase,
   generatedBindingCases,
 } from "./generate.mjs";
@@ -421,6 +422,7 @@ const allOpaqueCases = bindingOnly
     ? inheritanceOpaqueCases
     : [
         ...opaqueCases,
+        ...Array.from({ length: count }, (_, i) => generatedObjectRequestCase(firstSeed + i)),
         ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i)),
         ...Array.from({ length: count }, (_, i) => generatedOpaqueClassCase(firstSeed + i)),
       ];
@@ -1086,6 +1088,10 @@ const witnessedGraphs = jobs.filter((j) => j.linked && j.expectedOutput);
 assert.equal(witnessedGraphs.length, broad ? count : 0);
 for (const job of witnessedGraphs) assert.deepEqual(job.node.out, job.expectedOutput, job.label);
 console.log(`generated linked programs: ${linked.length}, compared with Node and Plan.evalOrder`);
+for (const job of jobs.filter((j) => j.opaqueCase?.expectedOutput)) {
+  assert.deepEqual(job.node.out, job.opaqueCase.expectedOutput, job.label);
+  assert.deepEqual(job.result.out, job.opaqueCase.expectedOutput, job.label);
+}
 const opaqueMoved = splitJobs.filter((j) => j.of.opaqueCase?.move && !j.orderKept);
 assert.equal(
   opaqueMoved.length,
