@@ -1649,6 +1649,42 @@ it("discards the old workset when a Session becomes unavailable and is selected 
   expect(container.textContent).toBe("Second workset");
 });
 
+it("releases verified originals from the live thread owner without recovering drafts from the archive", async () => {
+  const sessionId = THREAD.metadata.threadId;
+  sendWorksetOnOpen = false;
+  const command = message("guarded-transfer");
+  const draft = message("never-posted");
+  const store = new LocalCommands(sessionId);
+  store.remember(command);
+  store.markAttempted(command.commandId);
+  store.remember(draft);
+  selectedReceipts = [
+    {
+      commandId: command.commandId,
+      operation: "OPERATION_SUBMIT_INPUT",
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      receiptVersion: "31",
+      sandbox: "sandbox",
+      sandboxUid: "sandbox-uid",
+      command: toJson(CommandSchema, command),
+    },
+  ];
+  vi.mocked(listSessionDispatches).mockResolvedValue(create(ListSessionDispatchesResponseSchema));
+  const container = await render({ window: null, error: "History offline" });
+  await act(async () => buttonIn(container, "Delivery history")!.click());
+  const watch = await selectedWorksetWatch();
+  expect(receiptBatchRequests).toEqual([]);
+  await act(async () => watch.send({ workset: { sessionId }, resumeToken: "1" }));
+  await vi.waitFor(() =>
+    expect(new LocalCommands(sessionId).getSnapshot().commands.map((value) => value.command.commandId)).toEqual([
+      draft.commandId,
+    ])
+  );
+  expect(receiptBatchRequests.map((url) => url.searchParams.getAll("commandIds"))).toEqual([[command.commandId]]);
+  expect(getDispatch).not.toHaveBeenCalled();
+  expect(submitInput).not.toHaveBeenCalled();
+});
+
 it("shows server delivery for a fresh browser and defers to settled History", async () => {
   const settled = entity({
     case: "command",

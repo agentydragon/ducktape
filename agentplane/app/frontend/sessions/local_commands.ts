@@ -1,9 +1,10 @@
 import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { CommandSchema, type Command } from "../../../proto/command_pb";
+import { CommandSchema, Operation, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import {
   DispatchSchema,
+  type BatchGetDispatchesResponse_Result,
   type Dispatch,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { dispatchFromJson, normalizeDeliveryState, savedInterruptResultFromJson } from "./client";
@@ -18,6 +19,14 @@ type PlainOperation =
 export type PendingCommand = {
   commandId: string;
   operation: PlainOperation | Command["operation"];
+};
+
+const storedOperation = {
+  submitInput: Operation.SUBMIT_INPUT,
+  changeModel: Operation.CHANGE_MODEL,
+  changeReasoningEffort: Operation.CHANGE_REASONING_EFFORT,
+  interruptTurn: Operation.INTERRUPT_TURN,
+  compact: Operation.COMPACT,
 };
 
 export function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
@@ -154,6 +163,9 @@ export class LocalCommands {
     dispatchWatchError: null,
     dispatchWatchCoverageLost: false,
   };
+  // Keep verified originals visible in this tab until History catches up. Nothing in this map
+  // can submit a command, and a fresh browser can retrieve it from paginated Dispatcher history.
+  private readonly serverCopies = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
 
   constructor(readonly threadId: string) {
@@ -181,15 +193,19 @@ export class LocalCommands {
   /** This must succeed before HTTP is attempted or the composer is cleared. */
   remember(command: PendingCommand): LocalCommand {
     if (this.snapshot.error) throw new Error(this.snapshot.error);
-    const stored = localStorage.getItem(this.key(command.commandId));
-    if (stored !== null) {
+    const key = this.key(command.commandId);
+    const stored = localStorage.getItem(key) ?? this.serverCopies.get(key);
+    if (stored != null) {
       const existing = decode(parseRecord(stored));
       if (!sameCommand(existing.command, command)) {
         throw new Error("A local command id cannot be reused with a different payload");
       }
       return existing;
     }
-    if (this.snapshot.commands.length + this.snapshot.inputEchoes.length >= MAX_RETAINED_COMMANDS) {
+    if (
+      this.snapshot.commands.length + this.snapshot.inputEchoes.length - this.serverCopies.size >=
+      MAX_RETAINED_COMMANDS
+    ) {
       throw new Error(
         `Wait for retained commands to finish before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
       );
@@ -238,17 +254,110 @@ export class LocalCommands {
     return true;
   }
 
+  ownershipCandidates(): Map<string, boolean> {
+    const result = new Map<string, boolean>();
+    if (this.snapshot.error) return result;
+    for (const value of this.snapshot.commands) {
+      const id = value.command.commandId;
+      if (
+        value.attempted &&
+        !this.serverCopies.has(this.key(id)) &&
+        (value.destination.kind === "session" || value.destination.target !== null)
+      )
+        result.set(id, Boolean(value.dispatch || value.admission || value.interruptResult));
+    }
+    for (const echo of this.snapshot.inputEchoes) {
+      const raw = localStorage.getItem(this.echoKey(echo.commandId));
+      if (raw !== null && parseRecord(raw).sessionAddressed === true) result.set(echo.commandId, true);
+    }
+    return result;
+  }
+
+  /** Re-read the authored bytes after the asynchronous batch lookup before releasing them. */
+  transferToDispatcher({ commandId: id, result }: BatchGetDispatchesResponse_Result): boolean {
+    // Legacy deletion evidence can hold an admission echo. Only a current Dispatch owns the authored original.
+    if (result.case !== "dispatch") return false;
+    const receipt = result.value;
+    const key = this.key(id);
+    const raw = localStorage.getItem(key);
+    if (
+      receipt.commandId !== id ||
+      !receipt.sandbox ||
+      !receipt.sandboxUid ||
+      receipt.sessionId !== this.threadId ||
+      !receipt.command ||
+      receipt.command.commandId !== id ||
+      !receipt.command.operation.case ||
+      storedOperation[receipt.command.operation.case] !== receipt.operation ||
+      (receipt.receiptVersion ?? 0n) <= 0n
+    )
+      return false;
+    if (raw === null) {
+      // History may project admission while the original input body is still loading.
+      const key = this.echoKey(id);
+      const echo = localStorage.getItem(key);
+      if (echo === null) return false;
+      const saved = parseRecord(echo);
+      if (
+        saved.sessionAddressed !== true ||
+        saved.commandId !== id ||
+        receipt.command.commandId !== id ||
+        receipt.command.operation.case !== "submitInput" ||
+        saved.text !== receipt.command.operation.value.text
+      )
+        return false;
+      localStorage.removeItem(key);
+      this.cacheServerCopy(key, echo);
+      this.reload();
+      return true;
+    }
+    const existing = decode(parseRecord(raw));
+    if (
+      !existing.attempted ||
+      !sameCommand(existing.command, receipt.command) ||
+      (existing.dispatch?.sandboxUid &&
+        (existing.dispatch.sandboxUid !== receipt.sandboxUid || existing.dispatch.sandbox !== receipt.sandbox)) ||
+      (existing.destination.kind === "reconcile-only" &&
+        (!existing.destination.target ||
+          existing.destination.target.sandbox !== receipt.sandbox ||
+          existing.destination.target.sandboxUid !== receipt.sandboxUid))
+    )
+      return false;
+    if (!this.acknowledgeDispatch(existing.command, receipt)) return false;
+    const saved = localStorage.getItem(key);
+    if (saved === null) return false;
+    localStorage.removeItem(key);
+    this.cacheServerCopy(key, saved);
+    this.reload();
+    return true;
+  }
+
+  private cacheServerCopy(key: string, value: string): void {
+    if (!this.serverCopies.has(key) && this.serverCopies.size >= MAX_RETAINED_COMMANDS) {
+      const oldest = this.serverCopies.keys().next();
+      if (!oldest.done) this.serverCopies.delete(oldest.value);
+    }
+    this.serverCopies.set(key, value);
+  }
+
   acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): boolean {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
     if (dispatch.command && !sameCommand(command, dispatch.command))
       throw new Error("Dispatcher stored a different command payload");
     // Older open tabs use a Dispatch schema without the command field. The authored copy is already stored.
-    const normalizedDispatch = { ...dispatch, command: undefined, state: normalizeDeliveryState(dispatch.state) };
+    const normalizedDispatch = {
+      ...dispatch,
+      command: undefined,
+      receiptVersion: undefined,
+      state: normalizeDeliveryState(dispatch.state),
+    };
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
       this.checkKnownAdmission(command, dispatch.admission);
     }
-    const stored = localStorage.getItem(this.key(command.commandId));
+    const key = this.key(command.commandId);
+    const persisted = localStorage.getItem(key);
+    const stored = persisted ?? this.serverCopies.get(key) ?? null;
     // A replayed server row may already own the command while an HTTP status read is in flight.
     if (stored === null) return true;
     const record = parseRecord(stored);
@@ -278,15 +387,13 @@ export class LocalCommands {
     }
     const admission = normalizedDispatch.admission ?? existing.admission;
     try {
-      localStorage.setItem(
-        this.key(command.commandId),
-        // Other tabs still read the authored command and destination in their original format.
-        JSON.stringify({
-          ...record,
-          admission: admission ? toJson(EventEntrySchema, admission) : null,
-          dispatch: toJson(DispatchSchema, normalizedDispatch),
-        })
-      );
+      const next = JSON.stringify({
+        ...record,
+        admission: admission ? toJson(EventEntrySchema, admission) : null,
+        dispatch: toJson(DispatchSchema, normalizedDispatch),
+      });
+      if (persisted === null) this.cacheServerCopy(key, next);
+      else localStorage.setItem(key, next);
     } catch (error) {
       this.snapshot = {
         ...this.snapshot,
@@ -304,8 +411,9 @@ export class LocalCommands {
   }
 
   updateDispatch(commandId: string, dispatch: Dispatch): boolean {
-    const stored = localStorage.getItem(this.key(commandId));
-    if (stored === null) return true;
+    const key = this.key(commandId);
+    const stored = localStorage.getItem(key) ?? this.serverCopies.get(key);
+    if (stored == null) return true;
     return this.acknowledgeDispatch(decode(parseRecord(stored)).command, dispatch);
   }
 
@@ -368,8 +476,9 @@ export class LocalCommands {
     let changed = false;
     for (const id of ids) {
       const key = this.key(id);
-      const stored = localStorage.getItem(key);
-      if (stored === null) continue;
+      const persisted = localStorage.getItem(key);
+      const stored = persisted ?? this.serverCopies.get(key);
+      if (stored == null) continue;
       let value: LocalCommand;
       try {
         value = decode(parseRecord(stored));
@@ -378,8 +487,16 @@ export class LocalCommands {
         for (const listener of this.listeners) listener();
         continue;
       }
-      if (!this.retainInputEcho(value)) continue;
-      localStorage.removeItem(key);
+      if (persisted === null) {
+        this.serverCopies.delete(key);
+        const op = value.command.operation;
+        if (op.case === "submitInput")
+          this.cacheServerCopy(this.echoKey(id), JSON.stringify({ commandId: id, text: op.value.text }));
+      } else {
+        if (!this.retainInputEcho(value)) continue;
+        localStorage.removeItem(key);
+        this.serverCopies.delete(key);
+      }
       changed = true;
     }
     if (changed) this.reload();
@@ -388,6 +505,8 @@ export class LocalCommands {
   /** The service echo has arrived; its body now replaces the locally retained submitted text. */
   acknowledgeEcho(id: string): void {
     localStorage.removeItem(this.echoKey(id));
+    this.serverCopies.delete(this.echoKey(id));
+    this.serverCopies.delete(this.key(id));
     // The projected row itself confirms admission, so the original delivery record is no longer
     // needed either. This also prevents an immediate payload cache hit from copying it afterward.
     localStorage.removeItem(this.key(id));
@@ -452,7 +571,14 @@ export class LocalCommands {
           throw new Error(`Conflicting locally retained input echo for command ${value.command.commandId}`);
         }
       } else {
-        localStorage.setItem(key, JSON.stringify({ commandId: value.command.commandId, text: operation.value.text }));
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            commandId: value.command.commandId,
+            text: operation.value.text,
+            sessionAddressed: value.destination.kind === "session",
+          })
+        );
       }
       return true;
     } catch (error) {
@@ -487,10 +613,16 @@ export class LocalCommands {
       const dispatchWatchCoverageLost =
         this.snapshot.dispatchWatchCoverageLost || localStorage.getItem(this.coverageLostKey) !== null;
       const known = new Map(this.snapshot.commands.map((value) => [value.command.commandId, value]));
+      const keys = new Set(this.serverCopies.keys());
       for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index);
+        if (key !== null) keys.add(key);
+      }
+      for (const key of keys) {
+        const persisted = localStorage.getItem(key);
+        if (persisted !== null) this.serverCopies.delete(key);
+        const text = persisted ?? this.serverCopies.get(key) ?? null;
         if (key?.startsWith(this.echoPrefix)) {
-          const text = localStorage.getItem(key);
           if (text !== null) {
             const echo = JSON.parse(text) as { commandId?: unknown; text?: unknown };
             const commandId = decodeURIComponent(key.slice(this.echoPrefix.length));
@@ -502,7 +634,6 @@ export class LocalCommands {
           continue;
         }
         if (!key?.startsWith(this.prefix)) continue;
-        const text = localStorage.getItem(key);
         if (text !== null) {
           const value = decode(parseRecord(text));
           const receipt = known.get(value.command.commandId)?.admission;

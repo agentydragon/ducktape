@@ -4,10 +4,12 @@ import { create, equals, fromJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { CommandSchema, type Command } from "../../../proto/command_pb";
+import { CommandSchema, Operation, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import { watchCommandOwnership } from "./command_ownership";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
 import {
+  BatchGetDispatchesResponse_ResultSchema,
   DeliveryState,
   DispatchSchema,
   type Dispatch,
@@ -478,4 +480,196 @@ it("normalizes an unrecognized Dispatcher enum number before retaining its recei
   store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, 99 as DeliveryState, "2026-10-14T12:00:02Z"));
 
   expect(store.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.UNKNOWN);
+});
+
+function currentReceipt(dispatch: Dispatch) {
+  return create(BatchGetDispatchesResponse_ResultSchema, {
+    commandId: dispatch.commandId,
+    result: { case: "dispatch", value: dispatch },
+  });
+}
+
+it("keeps the original when a matching receipt arrives after leaving its thread scope", async () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  const key = "agentplane.pending:thread:input-1";
+  const saved = localStorage.getItem(key);
+  const member = dispatch(COMMAND, DeliveryState.FAILED, "2026-10-14T12:00:00Z");
+  const row = currentReceipt({ ...member, operation: Operation.SUBMIT_INPUT, command: COMMAND, receiptVersion: 3n });
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const lookup = vi.fn(async (_ids: readonly string[], _signal: AbortSignal) => {
+    await held;
+    return [row];
+  });
+  const stop = watchCommandOwnership(store, lookup);
+  await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce());
+  const [ids, signal] = lookup.mock.calls[0];
+  expect(ids).toEqual([COMMAND.commandId]);
+  stop();
+  expect(signal.aborted).toBe(true);
+  release();
+  await lookup.mock.results[0].value;
+  expect(localStorage.getItem(key)).toBe(saved);
+});
+
+it("transfers a protected UNKNOWN receipt while keeping its exact text and subsequent observations in memory", async () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  const member = dispatch(COMMAND, DeliveryState.UNKNOWN, "2026-10-14T12:00:00Z");
+  const check = vi
+    .fn()
+    .mockResolvedValue([
+      currentReceipt({ ...member, command: COMMAND, operation: Operation.SUBMIT_INPUT, receiptVersion: 3n }),
+    ]);
+  const stop = watchCommandOwnership(store, check);
+  try {
+    await vi.waitFor(() => expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]));
+    expect(store.getSnapshot().commands[0]?.command).toMatchObject({
+      operation: { value: { text: COMMAND.operation.case === "submitInput" && COMMAND.operation.value.text } },
+    });
+    expect(store.getSnapshot().commands[0]?.dispatch?.state).toBe(DeliveryState.UNKNOWN);
+    expect(store.markAttempted(COMMAND.commandId, COMMAND)).toBe(false);
+    expect(store.updateDispatch(COMMAND.commandId, { ...member, state: DeliveryState.FAILED })).toBe(true);
+    expect(store.getSnapshot().commands[0]?.dispatch?.state).toBe(DeliveryState.FAILED);
+    store.observeCommandIds(new Set([COMMAND.commandId]));
+    expect(store.getSnapshot().inputEchoes[0]?.commandId).toBe(COMMAND.commandId);
+    expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([]);
+    store.acknowledgeEcho(COMMAND.commandId);
+    expect(store.getSnapshot().inputEchoes).toEqual([]);
+    expect(localStorage.length).toBe(0);
+  } finally {
+    stop();
+  }
+});
+
+it("transfers only current originals in a mixed batch and keeps authored bytes for missing and legacy receipts", async () => {
+  const store = new LocalCommands("thread");
+  const live = create(CommandSchema, { ...COMMAND, commandId: "live" });
+  const legacy = create(CommandSchema, { ...COMMAND, commandId: "legacy" });
+  const missing = create(CommandSchema, { ...COMMAND, commandId: "missing" });
+  for (const command of [live, legacy, missing]) {
+    store.remember(command);
+    store.markAttempted(command.commandId);
+  }
+  const legacyKey = "agentplane.pending:thread:legacy";
+  const missingKey = "agentplane.pending:thread:missing";
+  const legacyBytes = localStorage.getItem(legacyKey);
+  const missingBytes = localStorage.getItem(missingKey);
+  const read = vi.fn().mockResolvedValue([
+    currentReceipt({
+      ...dispatch(live, DeliveryState.UNKNOWN, "2026-10-14T12:00:00Z"),
+      operation: Operation.SUBMIT_INPUT,
+      command: live,
+      receiptVersion: 3n,
+    }),
+    create(BatchGetDispatchesResponse_ResultSchema, {
+      commandId: legacy.commandId,
+      result: {
+        case: "legacyDeletionReceipt",
+        value: {
+          commandId: legacy.commandId,
+          sessionId: "thread",
+          operation: Operation.SUBMIT_INPUT,
+          state: DeliveryState.UNKNOWN,
+          receiptVersion: 4n,
+          admission: admission(9n, legacy),
+        },
+      },
+    }),
+    create(BatchGetDispatchesResponse_ResultSchema, {
+      commandId: missing.commandId,
+      result: { case: "notFound", value: {} },
+    }),
+  ]);
+  const stop = watchCommandOwnership(store, read);
+  try {
+    await vi.waitFor(() => expect(localStorage.getItem("agentplane.pending:thread:live")).toBeNull());
+    expect(localStorage.getItem(legacyKey)).toBe(legacyBytes);
+    expect(localStorage.getItem(missingKey)).toBe(missingBytes);
+    expect(
+      new LocalCommands("thread")
+        .getSnapshot()
+        .commands.map((item) => item.command.commandId)
+        .sort()
+    ).toEqual(["legacy", "missing"]);
+    expect(read).toHaveBeenCalledOnce();
+  } finally {
+    stop();
+  }
+});
+
+it("requires protected page membership and an exact original before removing local bytes", async () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  const member = {
+    ...dispatch(COMMAND, DeliveryState.FAILED, "2026-10-14T12:00:00Z"),
+    operation: Operation.SUBMIT_INPUT,
+  };
+  const saved = localStorage.getItem("agentplane.pending:thread:input-1");
+  const lookup = vi.fn().mockResolvedValue([]);
+  const waitCheck = async (times: number) => {
+    await vi.waitFor(() => expect(lookup).toHaveBeenCalledTimes(times));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  const stop = watchCommandOwnership(store, lookup);
+  try {
+    await waitCheck(1);
+    for (const [i, receipt] of [
+      member,
+      {
+        ...member,
+        command: create(CommandSchema, {
+          commandId: COMMAND.commandId,
+          operation: { case: "submitInput", value: { text: "another" } },
+        }),
+      },
+      { ...member, command: COMMAND, sessionId: "other" },
+      { ...member, command: COMMAND, sandboxUid: "" },
+      { ...member, command: COMMAND, operation: Operation.COMPACT },
+      null,
+    ].entries()) {
+      lookup.mockResolvedValue(receipt ? [currentReceipt({ ...receipt, receiptVersion: 3n })] : []);
+      window.dispatchEvent(new Event("online"));
+      await waitCheck(i + 2);
+      expect(localStorage.getItem("agentplane.pending:thread:input-1")).toBe(saved);
+    }
+    const nextCheck = lookup.mock.calls.length + 1;
+    lookup.mockRejectedValue(new Error("offline"));
+    window.dispatchEvent(new Event("online"));
+    await waitCheck(nextCheck);
+    expect(localStorage.getItem("agentplane.pending:thread:input-1")).toBe(saved);
+  } finally {
+    stop();
+  }
+});
+
+it("releases a projected input echo only when its original Session address and exact text are verified", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  store.observeCommandIds(new Set([COMMAND.commandId]));
+  const fresh = new LocalCommands("thread");
+  expect(fresh.ownershipCandidates().get(COMMAND.commandId)).toBe(true);
+  const row = dispatch(COMMAND, DeliveryState.UNKNOWN, "2026-10-14T12:00:00Z");
+  expect(
+    fresh.transferToDispatcher(
+      currentReceipt({ ...row, operation: Operation.SUBMIT_INPUT, command: COMMAND, receiptVersion: 3n })
+    )
+  ).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([]);
+  expect(fresh.getSnapshot().inputEchoes[0]?.text).toBe("  exact text\nsecond line  ");
+  const key = "agentplane.input-echo:thread:input-1";
+  localStorage.setItem(key, JSON.stringify({ commandId: COMMAND.commandId, text: "  exact text\nsecond line  " }));
+  const legacy = new LocalCommands("thread");
+  expect(legacy.ownershipCandidates().size).toBe(0);
+  expect(
+    legacy.transferToDispatcher(
+      currentReceipt({ ...row, operation: Operation.SUBMIT_INPUT, command: COMMAND, receiptVersion: 3n })
+    )
+  ).toBe(false);
+  expect(localStorage.getItem(key)).not.toBeNull();
 });

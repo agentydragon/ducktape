@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { DispatchWorksetItem } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { NO_ISSUES, useCommandNoticeAttention, type NoticeAttention } from "./command_notice_attention";
+import { watchCommandOwnership } from "./command_ownership";
 import {
   EMPTY_WORKSET,
   readDispatchReceipts,
@@ -56,6 +57,10 @@ export function useThreadDelivery(sessionId: string, worksetEnabled: boolean): T
     (ids, signal) => readDispatchReceipts(sessionId, ids, signal),
     [sessionId]
   );
+  const canTransfer = workset.snapshot?.sessionId === sessionId && !workset.stale;
+  useLayoutEffect(() => {
+    if (canTransfer) return watchCommandOwnership(store, readReceipts);
+  }, [canTransfer, readReceipts, store]);
   const [archiveIssues, setArchiveIssues] = useState<readonly DispatchWorksetItem[]>(NO_ISSUES);
   const registerArchiveIssues = useCallback<ThreadDeliveryState["registerArchiveIssues"]>((issues) => {
     setArchiveIssues(issues);
