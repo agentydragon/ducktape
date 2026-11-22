@@ -29,6 +29,7 @@ import { finishSessionCreate, withinSessionCreate } from "../observability/traci
 import { useFrontendConfig } from "../app_config/frontend_config";
 import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
+import { CommandDeliveryHistory } from "./command_delivery_history";
 import { ThreadConversation } from "./conversation";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
@@ -190,6 +191,9 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
         </Group>
       </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>
+        <Group justify="flex-end">
+          <CommandDeliveryHistory key={threadId} sessionId={threadId} />
+        </Group>
         {error && (
           <Text role="alert" c="red">
             {error}

@@ -14,6 +14,7 @@ import {
   threadNativeFrames,
   threadObservations,
   listThreadMetadata,
+  verifyRetainedMembers,
   selectThreadWindow,
 } from "./client";
 import { SessionSchema, DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
@@ -563,4 +564,28 @@ it("retries the same Session command and payload after a lost transport reply", 
     expect(new URL(request.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:submitInput");
     expect(await request.json()).toEqual(input);
   }
+});
+
+it.each([
+  [{}, false],
+  [{ retainsCommandsAfterEnvironmentDeletion: false }, false],
+  [{ retainsCommandsAfterEnvironmentDeletion: true }, true],
+  [{ retainsCommandsAfterEnvironmentDeletion: true, nextPageToken: "another" }, false],
+])("requires positive database retention and complete named membership %j", async (fields, accepted) => {
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input.toString(), location.href);
+    expect(url.pathname).toBe("/upstream/dispatcher/v1/sessions/thread/dispatches");
+    expect([...url.searchParams]).toEqual([
+      ["verifyRetainedCommandIds", "a"],
+      ["verifyRetainedCommandIds", "b"],
+    ]);
+    expect(init?.method ?? "GET").toBe("GET");
+    return Response.json({
+      coverage: "RETAINED_DISPATCH_ROWS",
+      dispatches: [{ sessionId: "thread", commandId: "b", sandbox: "box", sandboxUid: "uid", receiptVersion: "3" }],
+      ...fields,
+    });
+  });
+  const result = await verifyRetainedMembers("thread", ["a", "b"], new AbortController().signal);
+  expect(result.map((row) => row.commandId)).toEqual(accepted ? ["b"] : []);
 });

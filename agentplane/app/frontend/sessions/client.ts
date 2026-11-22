@@ -41,6 +41,9 @@ import {
   DeliveryState,
   DispatchSchema,
   GetDispatchResponseSchema,
+  ListSessionDispatchesResponseSchema,
+  ListSessionDispatchesResponse_Coverage,
+  type ListSessionDispatchesResponse,
   InterruptTurnRequestSchema,
   InterruptTurnResponseSchema,
   SubmitInputRequestSchema,
@@ -307,6 +310,55 @@ function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, com
   )
     throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
   return { ...dispatch, state };
+}
+
+async function readReceiptPage(sessionId: string, query: URLSearchParams, limit: number, signal?: AbortSignal) {
+  const json = await fetchJson(
+    `/upstream/dispatcher/v1/sessions/${encodeURIComponent(sessionId)}/dispatches?${query}`,
+    {
+      signal,
+      headers: { Accept: "application/json" },
+    }
+  );
+  const page = fromJson(ListSessionDispatchesResponseSchema, json, { ignoreUnknownFields: true });
+  const ids = new Set(page.dispatches.map((row) => row.commandId));
+  if (
+    page.coverage !== ListSessionDispatchesResponse_Coverage.RETAINED_DISPATCH_ROWS ||
+    page.dispatches.length > limit ||
+    ids.size !== page.dispatches.length ||
+    page.dispatches.some((row) => row.sessionId !== sessionId || !row.commandId)
+  )
+    throw new Error("Dispatcher returned an invalid receipt page");
+  return page;
+}
+
+export function listSessionDispatches(
+  sessionId: string,
+  { pageToken = "", limit = 25, signal }: { pageToken?: string; limit?: number; signal?: AbortSignal } = {}
+): Promise<ListSessionDispatchesResponse> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (pageToken) query.set("pageToken", pageToken);
+  return readReceiptPage(sessionId, query, limit, signal);
+}
+
+export async function verifyRetainedMembers(
+  sessionId: string,
+  ids: readonly string[],
+  signal: AbortSignal
+): Promise<Dispatch[]> {
+  if (!ids.length || ids.length > 16 || new Set(ids).size !== ids.length) throw new Error("Invalid receipt IDs");
+  const query = new URLSearchParams();
+  for (const id of ids) query.append("verifyRetainedCommandIds", id);
+  const page = await readReceiptPage(sessionId, query, ids.length, signal);
+  if (
+    page.retainsCommandsAfterEnvironmentDeletion !== true ||
+    page.nextPageToken ||
+    page.dispatches.some(
+      (row) => !ids.includes(row.commandId) || !row.sandbox || !row.sandboxUid || (row.receiptVersion ?? 0n) <= 0n
+    )
+  )
+    return [];
+  return page.dispatches;
 }
 
 /** A missing current receipt leaves any earlier submission unconfirmed. */

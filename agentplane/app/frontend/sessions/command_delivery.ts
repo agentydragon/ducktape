@@ -7,10 +7,12 @@ import {
   CommandSubmissionRefused,
   interruptTurn,
   getDispatch,
+  verifyRetainedMembers,
   submitInput,
   type CommandSubmission,
 } from "./client";
 import { displayableError } from "../transport/client";
+import { watchCommandOwnership } from "./command_ownership";
 import { watchDispatches } from "./dispatch_watch";
 import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
@@ -49,6 +51,7 @@ interface ThreadCommands {
 export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
   const threadId = thread.metadata.threadId;
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
+  useEffect(() => watchCommandOwnership(store, verifyRetainedMembers), [store]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);

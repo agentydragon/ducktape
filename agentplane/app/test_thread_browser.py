@@ -1929,10 +1929,25 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    await page.wait_for_function(
+        """([thread, id]) => ['agentplane.pending:', 'agentplane.input-echo:'].every(prefix =>
+            localStorage.getItem(prefix + encodeURIComponent(thread) + ':' + encodeURIComponent(id)) === null)""",
+        arg=[str(thread.id), command.command_id],
+    )
     source.confirm_input(command, message_id="test-confirmed-message")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
+    await page.reload()
+    await page.get_by_role("button", name="Delivery history", exact=True).click()
+    history = page.get_by_role("dialog", name="Delivery history")
+    await expect(history.get_by_text(command.command_id, exact=True)).to_be_visible()
+    async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as read:
+        await history.get_by_role("button", name="Show original command").click()
+    assert (await read.value).ok
+    await expect(history.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    assert source.runner.commands.empty()
 
 
 def _posted_input(request: Request) -> command_pb2.Command:
