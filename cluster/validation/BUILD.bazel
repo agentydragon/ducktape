@@ -256,8 +256,11 @@ py_test(
         "//:conftest",
         "//cluster/scripts:nebula_mesh",
         "//cluster/scripts:nebula_mesh_fixtures",
+        "//cluster/scripts:render_mobile_nebula_config",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
