@@ -179,7 +179,7 @@ message DispatchFilter {
   // When not empty, only these commands within the scope; at most 1000.
   repeated string command_ids = 3;
   // Include the stored command on each matching receipt. Requires 1 to 16 command IDs.
-  bool include_command = 4;
+  bool include_command = 5;
 }
 
 message WatchDispatchesRequest {
