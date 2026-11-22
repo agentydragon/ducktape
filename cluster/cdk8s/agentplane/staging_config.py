@@ -33,7 +33,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
 from cluster.cdk8s.agentplane.egress import (
-    BASIC_POLICY,
     BUILDBUDDY_POLICY,
     DEFAULT_POLICIES,
     GITHUB_ACTIONS_LOGS_POLICY,
@@ -102,14 +101,10 @@ def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list
     new launches use their pure-egress `-identity` variants.
     """
     sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
-    if not identity_catalog:
-        identity_egress_sets = assignable_set_egress_rules()
-        return [
-            *(f"{name}-identity" for name in sets if name in identity_egress_sets),
-            kubernetes_account_ref.account(namespace, preset).credential_name,
-        ]
+    egress_sets = assignable_set_egress_rules()
+    suffix = "" if identity_catalog else "-identity"
     return [
-        *(name for name in sets if name in assignable_set_egress_rules()),
+        *(f"{name}{suffix}" for name in sets if name in egress_sets),
         kubernetes_account_ref.account(namespace, preset).credential_name,
     ]
 
@@ -127,7 +122,6 @@ def config(
     electric_url: HttpEndpointUrl,
     identity_catalog: bool,
 ) -> Settings:
-    basic_policy_set = BASIC_POLICY
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
@@ -136,7 +130,6 @@ def config(
         action_federation=action_federation,
         connection_service_url=connection_service_url,
         app_origin=app_origin,
-        basic_policy_set=basic_policy_set,
         oidc_issuer=oidc_issuer,
         electric_url=electric_url,
         public_coder_policy_sets=[
@@ -206,7 +199,6 @@ def config(
         # These policies are what a *launch* is granted, independent of which
         # Identity launches it.
         policy_sets=[
-            basic_policy_set,
             *HAKU_SHARED_CORE_POLICIES,
             *HAKU_SHARED_GITHUB_POLICIES,
             *HAKU_SHARED_ACTION_SETS,
@@ -231,7 +223,6 @@ def config(
         title="Finance agent",
         template=sandbox_template,
         policy_sets=[
-            basic_policy_set,
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
@@ -274,11 +265,7 @@ def config(
     )
     # Every preset grants the defaults itself, so a preset shows all a launch of it grants: the
     # baseline sets and the shared diagnostics account (operator, 2026-11-12).
-    defaults = [
-        basic_policy_set,
-        *DEFAULT_POLICIES[1:],
-        kubernetes_account_ref.shared_diagnostics(namespace).credential_name,
-    ]
+    defaults = [*DEFAULT_POLICIES, kubernetes_account_ref.shared_diagnostics(namespace).credential_name]
     for sandbox_preset in cfg.sandbox_presets.values():
         sandbox_preset.policy_sets = list(dict.fromkeys([*defaults, *sandbox_preset.policy_sets]))
     # A new staging Sandbox suspends after 15 idle minutes and wakes for a message (operator, 2026-10-24).

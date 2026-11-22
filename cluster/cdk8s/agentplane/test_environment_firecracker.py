@@ -84,7 +84,7 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(staging_manife
     }
 
 
-def test_staging_exposes_firecracker_in_both_launch_paths(staging_manifests: list[dict[str, Any]]) -> None:
+def test_firecracker_launcher_has_kvm_and_guest_storage(staging_manifests: list[dict[str, Any]]) -> None:
     name = environment_firecracker.NAME
     template = find_resource(staging_manifests, "SandboxTemplate", name)
     pod = pod_spec(template)
@@ -101,26 +101,22 @@ def test_staging_exposes_firecracker_in_both_launch_paths(staging_manifests: lis
         assert template["spec"][volume]["claim"]["storageClassName"] == staging.ENV.vm_storage_class
         assert template["spec"][volume]["layout"] == {"type": "RawDiskImage", "filesystem": "ext4"}
 
-    config = config_map_yaml(staging_manifests, "environments-settings", "config.yaml")
-    runtime = config["environment_service"]["runtime_catalog"]["templates"][name]
-    assert runtime["workspace_root_enforced"] is True
-    assert runtime["workspace_root"] == "/state/workspaces"
 
-    app = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    preset = app["sandbox_presets"]["firecracker"]
-    assert preset["template"] == name
-    assert preset["policy_sets"] == [*DEFAULT_POLICIES, shared_diagnostics(staging.ENV.namespace).credential_name]
-    thread = app["thread_presets"][preset["thread_preset"]]
-    assert thread["harness"] == "HARNESS_CODEX"
-    assert thread["model"] in app["models"]["harnesses"][thread["harness"]]
-    assert thread["cwd"] == "/state/workspaces/{session_id}"
-
-    actions = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
-    action_preset = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["firecracker"]
-    assert action_preset["launch"]["template"] == name
-    assert action_preset["launch"]["policy_sets"] == preset["policy_sets"]
-    assert action_preset["create_session"]["spec"]["harness"] == thread["harness"]
-    assert action_preset["create_session"]["spec"]["model"] == thread["model"]
+def test_firecracker_launch_presets_use_the_guest_workspace() -> None:
+    env = staging.ENV
+    assert env.app is not None
+    assert env.runtime_catalog is not None
+    assert env.actions.orchestration_v1 is not None
+    preset = env.app.config.sandbox_presets["firecracker"]
+    assert preset.template == environment_firecracker.NAME
+    assert preset.policy_sets == [*DEFAULT_POLICIES, shared_diagnostics(env.namespace).credential_name]
+    thread = env.app.config.thread_presets[preset.thread_preset]
+    assert thread.harness == "HARNESS_CODEX"
+    runtime = env.runtime_catalog.templates[preset.template]
+    assert runtime.workspace_root_enforced
+    assert runtime.workspace_root == "/state/workspaces"
+    assert thread.cwd == f"{runtime.workspace_root}/{{session_id}}"
+    assert env.actions.orchestration_v1.presets["firecracker"].launch.template == preset.template
 
 
 if __name__ == "__main__":

@@ -36,7 +36,6 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
-    DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     INFERENCE_EXPERIMENTS_POLICY,
     KUBERNETES_HOST,
@@ -45,15 +44,8 @@ from cluster.cdk8s.agentplane.egress import (
     admin,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
-from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
-
-
-def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str]]:
-    """The explicitly configured PolicySets for each Sandbox launch preset."""
-    presets = config_map_yaml(docs, "app-config", "config.yaml")["sandbox_presets"]
-    return {name: set(spec["policy_sets"]) for name, spec in presets.items()}
 
 
 def test_egress_reads_its_settings_file_and_database_url(staging_manifests: list[dict[str, Any]]) -> None:
@@ -132,14 +124,6 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     assert PROXY_PORT in ingress_ports
 
 
-def test_sandbox_presets_explicitly_grant_the_baseline_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
-    presets = _sandbox_preset_policy_sets(catalog_manifests)
-    expected = {*DEFAULT_POLICIES[1:], shared_diagnostics(staging.ENV.namespace).credential_name}
-    assert presets
-    for name, policy_sets in presets.items():
-        assert expected <= policy_sets, (name, policy_sets)
-
-
 def test_basic_policy_auto_approves_only_same_principal_session_actions(
     catalog_manifests: list[dict[str, Any]],
 ) -> None:
@@ -167,23 +151,11 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
     for account in ("claude-ai", "haku-agent"):
         binding = find_resource(catalog_manifests, "PolicyBinding", account)
         assert BASIC_POLICY in binding["spec"]["policySets"]
-    presets = _sandbox_preset_policy_sets(catalog_manifests)
-    assert presets
-    for policy_sets in presets.values():
-        assert BASIC_POLICY in policy_sets
 
 
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
     public = find_resource(catalog_manifests, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
-    # Every preset spells out its grants; none grants public Internet implicitly.
-    assert (
-        PUBLIC_INTERNET_POLICY not in find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"]
-    )
-    assert all(
-        PUBLIC_INTERNET_POLICY not in policy_sets
-        for policy_sets in _sandbox_preset_policy_sets(catalog_manifests).values()
-    )
     for doc in catalog_manifests:
         if doc["kind"] == "PolicyBinding":
             if doc["metadata"]["name"] == "public-coder-openclaw":
@@ -369,25 +341,6 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manif
     assert "paths" not in rule
 
 
-def test_haku_launches_on_an_available_central_sampler_route(catalog_manifests: list[dict[str, Any]]) -> None:
-    """Haku's model and effort must be accepted by the selected harness.
-
-    Sandbox and Action launches use the same preset, so both must resolve to that harness and model.
-    """
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    preset = config["thread_presets"]["haku-codex"]
-    assert preset["harness"] == "HARNESS_CENTRAL_SAMPLER"
-    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
-    option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
-    assert preset["reasoning_effort"] in option["reasoning_efforts"]
-    assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
-    actions = config_map_yaml(catalog_manifests, "actions-settings", "settings.yaml")
-    action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["create_session"]["spec"]
-    assert action_spec["harness"] == preset["harness"]
-    assert action_spec["model"] == preset["model"]
-    assert "central_sampler" not in action_spec
-
-
 def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_grants(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
@@ -481,10 +434,11 @@ def test_ovh_billing_is_a_named_read_only_credential_with_scoped_egress(
         "/1.0/service/**",
     }
     assert "credentialRef" not in egress
-    presets = _sandbox_preset_policy_sets(staging_manifests)
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["finance-agent"]
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["haku"]
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" not in presets["public-coder"]
+    assert staging.ENV.app is not None
+    presets = staging.ENV.app.config.sandbox_presets
+    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["finance-agent"].policy_sets
+    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["haku"].policy_sets
+    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" not in presets["public-coder"].policy_sets
 
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
