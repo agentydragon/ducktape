@@ -23,9 +23,9 @@ class _CamelCaseModel(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
 
-class ConfigMapGeneratorEntry(_CamelCaseModel):
-    name: str
-    files: list[Path] = []
+class GeneratorInputs(_CamelCaseModel):
+    files: list[str] = []
+    envs: list[Path] = []
 
 
 class PatchEntry(_CamelCaseModel):
@@ -41,7 +41,9 @@ class KustomizeFile(_CamelCaseModel):
     )
     resources: list[Path] = []
     patches: list[PatchEntry] = []
-    config_map_generator: list[ConfigMapGeneratorEntry] = []
+    config_map_generator: list[GeneratorInputs] = []
+    secret_generator: list[GeneratorInputs] = []
+    configurations: list[Path] = []
 
     def _resolve(self, rel: Path) -> Path:
         return (self.path.parent / rel).resolve()
@@ -51,28 +53,15 @@ class KustomizeFile(_CamelCaseModel):
         return [self._resolve(r) for r in self.resources]
 
     @property
-    def resolved_patches(self) -> list[Path]:
-        return [self._resolve(p.path) for p in self.patches if p.path]
-
-    @staticmethod
-    def _strip_configmap_key(p: Path) -> Path:
-        """Handle `key=filename` format in configMapGenerator files entries."""
-        name = str(p)
-        if "=" in name:
-            return Path(name.split("=", 1)[1])
-        return p
-
-    @property
-    def resolved_generator_files(self) -> list[Path]:
-        return [self._resolve(self._strip_configmap_key(f)) for entry in self.config_map_generator for f in entry.files]
-
-    @property
     def all_referenced_files(self) -> set[Path]:
-        result: set[Path] = set()
-        result.update(self.resolved_resources)
-        result.update(self.resolved_patches)
-        result.update(self.resolved_generator_files)
-        return result
+        referenced = set(self.resolved_resources)
+        referenced.update(self._resolve(patch.path) for patch in self.patches if patch.path)
+        referenced.update(self._resolve(path) for path in self.configurations)
+        for generator in (*self.config_map_generator, *self.secret_generator):
+            # Both generator kinds accept "key=path" or just "path" in files.
+            referenced.update(self._resolve(Path(file.split("=", 1)[-1])) for file in generator.files)
+            referenced.update(self._resolve(path) for path in generator.envs)
+        return referenced
 
 
 def has_kustomization_file(directory: Path) -> bool:
