@@ -12,8 +12,10 @@ executor:
   memory_bytes: 7516192768
   max_concurrent_tasks: 1
   runner_pool:
-    # Retain the K3s/KubeVirt baseline; the executor clamps this to its allocated RAM.
-    max_runner_memory_usage_bytes: 10000000000
+    # Allow 2 GiB of paused runners alongside a KVM test estimated at 5 GiB.
+    # Reject a larger runner before it can evict smaller reusable runners.
+    max_runner_memory_usage_bytes: 2147483648
+    max_total_memory_usage_bytes: 2147483648
   max_task_timeout: 24h
   max_termination_grace_period: 1m
   shutdown_cleanup_duration: 15s
