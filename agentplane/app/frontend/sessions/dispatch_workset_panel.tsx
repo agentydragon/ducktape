@@ -10,7 +10,6 @@ import {
 import { waitingReasonLabel } from "./command_progress";
 import { EMPTY_WORKSET, readFullDispatchReason, watchDispatchWorkset, type ReasonLookup } from "./dispatch_workset";
 import type { LocalCommand } from "./local_commands";
-import { useThreadSync } from "./thread_sync";
 
 function operationLabel(operation: Operation): string {
   switch (operation) {
@@ -105,10 +104,9 @@ export function DispatchWorksetPanel({
   useEffect(() => watchDispatchWorkset(sessionId, setView), [sessionId]);
   const { snapshot, stale, coverageLost } = view;
   const rows = snapshot ? [...snapshot.active, ...snapshot.recentIssues, ...snapshot.recentAdmittedOrCancelled] : [];
-  const selected = useThreadSync().useCommandRows(rows.map((item) => item.commandId));
   const hidden = new Set(localCommands.map((command) => command.command.commandId));
   const pendingInHistory = new Set<string>();
-  for (const row of [...entities, ...selected]) {
+  for (const row of entities) {
     if (row.entity.case === "confirmedInput") {
       for (const id of row.entity.value.originCommandIds) hidden.add(id);
     } else if (row.entity.case === "command") {

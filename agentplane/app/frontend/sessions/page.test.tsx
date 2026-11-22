@@ -245,6 +245,13 @@ beforeEach(() => {
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
       const url = new URL(String(input), window.location.href);
+      const worksetSession = url.searchParams.get("worksetSessionId");
+      if (url.pathname === "/upstream/dispatcher/v1/dispatches:watch" && worksetSession) {
+        const stream = new ServedWatch(String(input), init?.signal ?? undefined);
+        dispatchWatches.push(stream);
+        stream.send({ workset: { sessionId: worksetSession }, resumeToken: "test-workset" });
+        return Promise.resolve(stream.response);
+      }
       if (
         url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
@@ -1620,6 +1627,31 @@ it("shows server delivery for a fresh browser and defers to settled History", as
   expect(panel?.textContent).not.toContain("Intermediate delivery receipt");
   expect(panel?.querySelectorAll("button")).toHaveLength(0);
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
+});
+
+it("leaves a locally retained command with its existing browser row", async () => {
+  const local = message("local-workset");
+  new LocalCommands(THREAD.metadata.threadId).remember(local);
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await act(async () => {
+    watch.send({
+      workset: {
+        sessionId: THREAD.metadata.threadId,
+        active: [
+          {
+            commandId: local.commandId,
+            operation: "OPERATION_SUBMIT_INPUT",
+            state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          },
+        ],
+      },
+      resumeToken: "matching",
+    });
+  });
+  expect(pendingRow(container, local.commandId)).not.toBeNull();
+  expect(container.querySelector(`[data-dispatch-command-id="${local.commandId}"]`)).toBeNull();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
 });
 
 it("reads a full legacy reason by command ID and retains the view across expired coverage", async () => {
