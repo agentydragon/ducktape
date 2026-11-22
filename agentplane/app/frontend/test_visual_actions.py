@@ -3416,7 +3416,7 @@ async def test_action_presentations(
 
 @DESKTOP_AND_MOBILE
 async def test_issue_label_update_compact(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
-    args = {**GITHUB_ISSUE, "method": "update", "labels": ["bug", "upstream-waiting", "needs investigation"]}
+    args = {**GITHUB_ISSUE, "method": "update", "labels": ["bug", "upstream-waiting", "needs investigation", "triage"]}
     await app.show_action_preview(
         "github",
         "issue_write",
@@ -3438,10 +3438,11 @@ async def test_issue_label_update_compact(view: VisualPage, app: AgentplaneFixtu
     detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
     await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
     sidebar = view.page.locator("[data-action-visual=sidebar]")
-    await expect(sidebar.locator(".mantine-Badge-label").get_by_text("needs investigation")).to_be_visible()
-    await expect(sidebar.locator(".mantine-Badge-root").filter(has_text="bug")).to_have_css(
-        "border-top-color", "rgb(215, 58, 74)"
-    )
+    badges = sidebar.locator(".mantine-Badge-root")
+    await expect(badges.filter(has_text="bug")).to_have_css("background-color", "rgb(215, 58, 74)")
+    await expect(badges.filter(has_text="upstream-waiting")).to_have_css("color", "rgb(255, 255, 255)")
+    await expect(badges.filter(has_text="needs investigation")).to_have_css("color", "rgb(0, 0, 0)")
+    await expect(badges.filter(has_text="triage")).to_be_visible()
     await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await expect(sidebar.get_by_role("button", name="Expand ", exact=False)).to_have_count(0)
     await wait_for_stable(view.page)

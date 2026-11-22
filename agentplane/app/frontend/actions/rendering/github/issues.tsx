@@ -1,4 +1,4 @@
-import { Badge, Stack, Text } from "@mantine/core";
+import { Badge, isLightColor, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
@@ -313,24 +313,21 @@ function IssueWriteLabel({
     <span>
       Set labels on {target}:{" "}
       {parsed.data.labels.map((label, index) => {
-        const color = summaries?.labels.find((entry) => entry.name === label)?.color;
-        const border = color && /^[0-9a-fA-F]{6}$/.test(color) ? `#${color}` : "var(--mantine-color-gray-6)";
+        const summaryColor = summaries?.labels.find((entry) => entry.name === label)?.color;
+        const color = summaryColor && /^[0-9a-fA-F]{6}$/.test(summaryColor) ? `#${summaryColor}` : undefined;
         return (
           <Badge
             key={index}
             component="span"
-            variant="outline"
+            color={color ?? "gray.7"}
+            c={color && isLightColor(color) ? "black" : "white"}
             size="sm"
             tt="none"
             h="auto"
             maw="100%"
-            style={{
-              verticalAlign: "middle",
-              marginRight: 4,
-              borderColor: border,
-              color: "var(--mantine-color-text)",
-              background: `color-mix(in srgb, ${border} 15%, var(--mantine-color-body))`,
-            }}
+            me={4}
+            my={1}
+            style={{ verticalAlign: "middle" }}
             styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
           >
             {label}
