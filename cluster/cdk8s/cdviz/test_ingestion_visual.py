@@ -15,7 +15,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Thread
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode
 
 import docker
 import httpx
@@ -47,6 +47,7 @@ _REPO = "agentydragon/ducktape"
 _TOKEN = "isolated-cdviz-webhook-signing-key"
 _OWNER_PASSWORD = "isolated-cdviz-database-owner"
 _COLLECTOR_PASSWORD = "isolated-cdviz-collector"
+_DOCKER_DB_ADDRESS = "cdviz-db:5432"
 _READER_PASSWORD = "isolated-cdviz-reader"
 _FROZEN = datetime.fromtimestamp(FROZEN_NOW_MS / 1000, UTC)
 _VISUAL_TITLE = "CDviz dashboards"
@@ -66,19 +67,16 @@ def _diagnostic(message: str) -> None:
         stream.write(message + "\n")
 
 
-def _url(admin_url: str, database: str, role: str, password: str, host: str | None = None) -> str:
-    parsed = urlsplit(admin_url)
-    target = host or parsed.hostname or "127.0.0.1"
-    port = ":5432" if host else (f":{parsed.port}" if parsed.port else "")
-    return f"postgresql://{quote(role)}:{quote(password)}@{target}{port}/{database}?sslmode=disable"
+def _database_url(address: str, role: str, password: str, database: str = "cdviz") -> str:
+    return f"postgresql://{quote(role)}:{quote(password)}@{address}/{database}?sslmode=disable"
 
 
 def _timestamp(minute: int, delta: int) -> str:
     return (_FROZEN + timedelta(minutes=minute + delta)).isoformat().replace("+00:00", "Z")
 
 
-def _setup_database(admin_url: str) -> tuple[str, str, str]:
-    with psycopg.connect(admin_url, autocommit=True) as admin:
+def _setup_database(address: str) -> None:
+    with psycopg.connect(_database_url(address, "postgres", "postgres", "postgres"), autocommit=True) as admin:
         for role, password in (
             ("cdviz", _OWNER_PASSWORD),
             ("cdviz_collector", _COLLECTOR_PASSWORD),
@@ -90,19 +88,15 @@ def _setup_database(admin_url: str) -> tuple[str, str, str]:
         # The upstream image installs Timescale in template1; exercise explicit extension creation as CNPG does.
         admin.execute("CREATE DATABASE cdviz OWNER cdviz TEMPLATE template0")
 
-    owner = _url(admin_url, "cdviz", "cdviz", _OWNER_PASSWORD)
-    collector = _url(admin_url, "cdviz", "cdviz_collector", _COLLECTOR_PASSWORD)
-    reader = _url(admin_url, "cdviz", "cdviz_reader", _READER_PASSWORD)
     # CNPG's Database CR creates TimescaleDB as postgres before migration runs as cdviz.
-    extension_url = _url(admin_url, "cdviz", "postgres", "postgres")
+    extension_url = _database_url(address, "postgres", "postgres")
     with psycopg.connect(extension_url, autocommit=True) as admin:
         admin.execute("CREATE EXTENSION timescaledb")
-    return owner, collector, reader
 
 
 def _run_migration(client: docker.DockerClient, image: str, network: str) -> None:
     name = f"cdviz-migration-{uuid.uuid4().hex[:8]}"
-    url = f"postgresql://cdviz:{_OWNER_PASSWORD}@cdviz-db:5432/cdviz?sslmode=disable"
+    url = _database_url(_DOCKER_DB_ADDRESS, "cdviz", _OWNER_PASSWORD)
     container = client.containers.run(
         image, ["-database", url, "-path", "/migrations/", "up"], name=name, network=network, detach=True
     )
@@ -451,12 +445,11 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             log_threads.append(
                 stream_container_logs(postgres.get_wrapped_container(), undeclared_outputs_dir() / "cdviz-db.log")
             )
-            admin_url = (
-                f"postgresql://postgres:postgres@{postgres.get_container_host_ip()}:"
-                f"{postgres.get_exposed_port(5432)}/postgres"
-            )
+            database_address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
             _stage("creating roles, database, and Timescale extension")
-            owner_url, _, reader_url = _setup_database(admin_url)
+            _setup_database(database_address)
+            owner_url = _database_url(database_address, "cdviz", _OWNER_PASSWORD)
+            reader_url = _database_url(database_address, "cdviz_reader", _READER_PASSWORD)
             _stage("running pinned migration as non-superuser cdviz")
             _run_migration(client, migration_future.result(), network_name)
             with psycopg.connect(owner_url, autocommit=True) as owner:
@@ -544,7 +537,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             (secrets / "database").mkdir(parents=True)
             (secrets / "webhook").mkdir()
             (secrets / "database" / "DATABASE_URL").write_text(
-                _url(admin_url, "cdviz", "cdviz_collector", _COLLECTOR_PASSWORD, "cdviz-db")
+                _database_url(_DOCKER_DB_ADDRESS, "cdviz_collector", _COLLECTOR_PASSWORD)
             )
             (secrets / "webhook" / "token").write_text(_TOKEN)
             state, spool = runtime / "state", runtime / "spool"
@@ -662,7 +655,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                         "uid": "cdviz",
                         "type": "grafana-postgresql-datasource",
                         "access": "proxy",
-                        "url": "cdviz-db:5432",
+                        "url": _DOCKER_DB_ADDRESS,
                         "user": "cdviz_reader",
                         "database": "cdviz",
                         "jsonData": {
