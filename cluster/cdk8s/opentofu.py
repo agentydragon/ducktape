@@ -79,8 +79,7 @@ def gitops_workspace(
     *,
     name: str,
     provider_config_name: str,
-    schema: str,
-    directory: str,
+    schema: str | None = None,
     management_policies: Sequence[str],
     external_name: str = "default",
     kubernetes_identity: str | None = None,
@@ -88,6 +87,8 @@ def gitops_workspace(
     env: Sequence[WorkspaceSpecForProviderEnv] = (),
 ) -> Workspace:
     """Use PostgreSQL state; callers choose the workspace, lifecycle and Kubernetes identity."""
+    if schema is None:
+        schema = db.gitops_state_schema(name)
     configuration = 'terraform {\n  backend "pg" {}\n}\n'
     if kubernetes_identity is not None:
         configuration += (
@@ -112,7 +113,7 @@ def gitops_workspace(
             provider_config_ref=WorkspaceSpecProviderConfigRef(name=provider_config_name),
             for_provider=WorkspaceSpecForProvider(
                 source="Inline",
-                module=inline_module(directory),
+                module=inline_module(f"tf/gitops/{name}"),
                 plan_args=["-lock-timeout=5m"],
                 vars=list(variables) or None,
                 env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
@@ -177,13 +178,13 @@ def gitops_workspace_chart(
     *,
     module_name: str,
     identity_name: str,
-    schema: str,
+    schema: str | None = None,
     secret_accesses: Sequence[tuple[str, str, Sequence[str], Sequence[str]]],
 ) -> Chart:
     """Build the standard crossplane-prefixed chart for a managed GitOps Workspace.
 
     The module name supplies the chart and ProviderConfig names and the `tf/gitops/` path.
-    The Workspace uses Observe/Create/Update; callers provide its schema, identity and exact Secret grants.
+    The Workspace uses Observe/Create/Update; callers provide its identity, exact Secret grants and any historical schema override.
     """
     chart_name = f"crossplane-{module_name}"
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
@@ -196,7 +197,6 @@ def gitops_workspace_chart(
         name=module_name,
         provider_config_name=chart_name,
         schema=schema,
-        directory=f"tf/gitops/{module_name}",
         management_policies=["Observe", "Create", "Update"],
         kubernetes_identity=identity_name,
     )

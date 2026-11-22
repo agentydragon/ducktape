@@ -1,10 +1,11 @@
-"""The CNPG Cluster holding every tofu-controller Terraform state, and the `tofu-state-db`
-Kustomization that owns it together with the tofu-state Namespace.
+"""PostgreSQL state backend for the GitOps OpenTofu roots.
 
-Hand-written beside the generated output: `db/credentials.sops.yaml`, the `tfstate` role
-password. CNPG reconciles the role from that Secret through `spec.managed.roles`, so a
-SOPS rotation propagates to Postgres as `ALTER ROLE`; Terraform runners (`PGPASSWORD`)
-and `cluster/.envrc` read the same Secret directly.
+Crossplane's OpenTofu provider manages the migrated roots. The remaining tofu-controller
+runners use the same database. Each root keeps its state in its own PostgreSQL schema.
+
+CNPG reconciles the tfstate role password from db/credentials.sops.yaml. Reflector copies
+the Secret into flux-system for the providers' PGPASSWORD references. cluster/.envrc
+reads the encrypted source directly.
 """
 
 from __future__ import annotations
@@ -45,6 +46,11 @@ STATE_PASSWORD = SecretRef(namespace="flux-system", name="tofu-state-db-credenti
 STATE_CONNECTION_STRING = (
     f"postgres://tfstate@{DATABASE.rw.host}:{DATABASE.rw.port.number}/{STATE_DATABASE_NAME}?sslmode=disable"
 )
+
+
+def gitops_state_schema(name: str) -> str:
+    """The default Postgres backend schema for `tf/gitops/<name>`."""
+    return name.replace("-", "_")
 
 
 def chart(app: App) -> Chart:
