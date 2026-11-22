@@ -55,7 +55,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
 import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
-import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
+import { coreOf, coreProgramOf, splitInputs } from "../translation/split_dump.mjs";
 import { cases, inheritanceCases, inheritanceSplitCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {
   generatedCases,
@@ -607,11 +607,14 @@ function specsFor(dump, next) {
 }
 
 /** `source` as a one-module program whose statements have the numbers `lowersplit` gives them. */
-function numbered(source, scripts) {
-  const t = scripts ? coreOf(source) : toCore(source);
-  if (scripts)
-    return { program: { entry: "main", modules: [{ name: "main", imports: [], ...t }], scripts }, units: unitsOf(t) };
-  return { program: { entry: "main", modules: [{ name: "main", imports: [], ...t }] }, units: unitsOf(t) };
+function splitInputFor(job) {
+  if (job.splitInput) return job.splitInput;
+  const scripts = job.program.scripts;
+  const { dump, core } = splitInputs(job.source, { opaque: Boolean(scripts) });
+  const program = { entry: "main", modules: [{ name: "main", imports: [], ...core }] };
+  if (scripts) program.scripts = scripts;
+  job.splitInput = { dump, bundle: { program, units: unitsOf(core) } };
+  return job.splitInput;
 }
 
 /** The tokens of each statement of a translated module, by its identity. */
@@ -793,41 +796,35 @@ for (const job of jobs.filter((j) => j.opaqueCase))
     );
   else tally.opaqueCases++;
 const candidates = jobs.filter((j) => !j.entry && j.node && j.result.end !== "unknown" && sameRun(j.result, j.node));
-for (const job of candidates.filter((j) => j.splitCase))
-  split(job, numbered(job.source), dumpOf(job.source), "named", job.splitCase.spec, job.splitCase);
+for (const job of candidates.filter((j) => j.splitCase)) {
+  const { bundle, dump } = splitInputFor(job);
+  split(job, bundle, dump, "named", job.splitCase.spec, job.splitCase);
+}
 // Every focused program gets a nontrivial split, independently of the manual-first random-plan budget.
 const swapPrefix = (dump) => ({
   entry: "entry.mjs",
   modules: { "m0.mjs": ["#1"], "entry.mjs": dump.statements.flatMap((_, i) => (i === 1 ? [] : [`#${i}`])) },
 });
 for (const job of candidates.filter((j) => j.focused || j.opaqueCase?.move)) {
-  const dump = dumpOf(job.source);
-  split(job, numbered(job.source, job.program.scripts), dump, "named", swapPrefix(dump), {});
+  const { dump, bundle } = splitInputFor(job);
+  split(job, bundle, dump, "named", swapPrefix(dump), {});
 }
 // a program with opaque statements, in two consecutive pieces that run in order
 for (const job of candidates.filter((j) => j.opaqueCase)) {
-  const dump = dumpOf(job.source);
+  const { dump, bundle } = splitInputFor(job);
   const n = dump.statements.length;
   const cut = Math.floor(n / 2);
   const modules = { "m0.mjs": [], "entry.mjs": [] };
   dump.statements.forEach((_, i) => modules[i < cut ? "m0.mjs" : "entry.mjs"].push(`#${i}`));
-  split(
-    job,
-    numbered(job.source, job.program.scripts),
-    dump,
-    "opaque",
-    { entry: "entry.mjs", modules, sequential: true },
-    null
-  );
+  split(job, bundle, dump, "opaque", { entry: "entry.mjs", modules, sequential: true }, null);
 }
 for (const [index, job] of candidates
   .filter((j) => !j.opaqueCase)
   .slice(0, splitPrograms)
   .entries()) {
-  const dump = dumpOf(job.source);
+  const { dump, bundle } = splitInputFor(job);
   if (dump.statements.length < 2) continue;
   tally.programs++;
-  const bundle = numbered(job.source);
   const next = random(firstSeed * 7919 + index);
   for (const [kind, spec] of Object.entries(specsFor(dump, next))) split(job, bundle, dump, kind, spec, null);
 }

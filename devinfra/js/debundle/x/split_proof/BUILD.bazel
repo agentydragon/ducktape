@@ -19,8 +19,11 @@ exports_files(
 
 js_library(
     name = "lowering_dump_core",
-    srcs = ["experiments/lowering/dump_core.mjs"],
+    srcs = [
+        "experiments/lowering/dump_core.mjs",
+    ],
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    deps = ["//devinfra/js/debundle/x/split_proof/experiments/translation:scope_metadata"],
 )
 
 js_binary(

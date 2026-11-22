@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { coreOf, dumpOf } from "../../split_dump.mjs";
+import { splitInputs } from "../../split_dump.mjs";
 
 const execute = promisify(execFile);
 const root = process.env.EXCALIDRAW_OUTPUTS.split(" ").find((p) => p.endsWith("/bundle"));
@@ -21,7 +21,17 @@ for (const file of files) {
   const source = readFileSync(path.join(root, file), "utf8");
   const row = { file, bytes: Buffer.byteLength(source), sha256: createHash("sha256").update(source).digest("hex") };
   try {
-    const core = coreOf(source, { external: true, census: true });
+    const { core, dump } = splitInputs(source, { external: true, census: true });
+    const saved = path.join(process.env.TEST_TMPDIR, "parsed", file);
+    mkdirSync(saved, { recursive: true });
+    writeFileSync(path.join(saved, "ast.json"), JSON.stringify(dump));
+    writeFileSync(
+      path.join(saved, "program.json"),
+      JSON.stringify({
+        entry: "main",
+        modules: [{ name: "main", imports: [], exports: core.exports, ids: core.ids, tokens: core.tokens }],
+      })
+    );
     Object.assign(row, {
       statements: core.numbered,
       modeled: core.units - core.opaque.length,
@@ -83,26 +93,17 @@ for (const chunk of selected) {
   console.log(`Probing ${chunk.file} (${chunk.bytes} bytes, ${chunk.statements} statements)`);
   const dir = path.join(out, chunk.file.replaceAll("/", "_"));
   mkdirSync(dir, { recursive: true });
-  const source = readFileSync(path.join(root, chunk.file), "utf8");
-  let dump, core;
-  try {
-    dump = dumpOf(source);
-    core = coreOf(source, { external: true, census: true });
-  } catch (e) {
-    results.push({ file: chunk.file, frontendError: e.message });
+  if (chunk.frontendError) {
+    results.push({ file: chunk.file, frontendError: chunk.frontendError });
     continue;
   }
-  const astFile = path.join(dir, "ast.json"),
-    programFile = path.join(dir, "program.json"),
-    fpFile = path.join(dir, "footprints.jsonl");
-  writeFileSync(astFile, JSON.stringify(dump));
-  writeFileSync(
-    programFile,
-    JSON.stringify({
-      entry: "main",
-      modules: [{ name: "main", imports: [], exports: core.exports, ids: core.ids, tokens: core.tokens }],
-    })
-  );
+  const saved = path.join(process.env.TEST_TMPDIR, "parsed", chunk.file);
+  const astFile = path.join(dir, "ast.json");
+  const programFile = path.join(dir, "program.json");
+  const fpFile = path.join(dir, "footprints.jsonl");
+  copyFileSync(path.join(saved, "ast.json"), astFile);
+  copyFileSync(path.join(saved, "program.json"), programFile);
+  const dump = JSON.parse(readFileSync(astFile, "utf8"));
   const analysis = await run(process.env.LOWER, [astFile], path.join(dir, "lower"));
   const row = {
     file: chunk.file,
@@ -130,7 +131,7 @@ for (const chunk of selected) {
     ["alternating", (i) => i % 2 === 0],
   ];
   if (chunk === editor) {
-    const metaReaders = core.refused.filter((r) => r.why === "MetaProperty: import.meta").map((r) => r.id);
+    const metaReaders = chunk.refused.filter((r) => r.why === "MetaProperty: import.meta").map((r) => r.id);
     assert.deepEqual(metaReaders, [872], "reinspect the worker factory after a bundle update");
     const [factory] = metaReaders;
     probes.push(

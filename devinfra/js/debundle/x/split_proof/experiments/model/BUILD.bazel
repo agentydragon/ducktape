@@ -18,4 +18,5 @@ js_library(
         "to_core.mjs",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    deps = ["//devinfra/js/debundle/x/split_proof/experiments/translation:scope_metadata"],
 )
