@@ -22,7 +22,7 @@ bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/deb
 Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other experiments in
 `run.sh` are not yet Bazel targets.
 
-`lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
+`lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The `orderConflicts` field counts conflicting pairs that the plan reverses and gives up to five examples. Each example names the earlier and later source ordinals. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
 
 Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. The renderer slices the original source using Acorn’s UTF-16 offsets.
 

@@ -86,6 +86,29 @@ and published no modules. A source theorem for linked external imports is the
 first unmet prerequisite in this trial. The test outputs include the two-module
 spec and the JSON verdict. [Full editor replay](https://app.buildbuddy.io/invocation/a6e8b3b3-3c8d-4d8c-81a3-607508751264)
 
+The same target renders two diagnostic placements with `--force` into separate directories,
+reparses their entries and compares their public names against the editor's 611 names.
+The `--plan` report counts source-order conflicts in Lean's structural checker.
+
+| Units moved                         | Entry names added                | Entry names lost | Inverted conflicts | Failed check |
+| ----------------------------------- | -------------------------------- | ---------------: | -----------------: | ------------ |
+| Authored scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `ct`, `qb$1`, `vn` |                0 |                518 | `OrderOk`    |
+| 1337 only                           | none                             |                0 |                259 | `OrderOk`    |
+
+Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
+reads `Jb` and five bindings resident in the entry. Extracting both requires the renderer to
+expose all five to the new module. Comparing export names here detects additions and removals.
+Certified mode also needs to establish which live binding each name denotes.
+
+The first five conflicts for the single-arrow placement are with units 5–9. Unit 5 is the
+first statement after five named-import declarations and initializes `po` with `Ve(callback)`.
+The import resolves to export `b` of `./chunk-BLPUKQJE.js`. The probe calls that exact
+provider export with a counting callback. Creating the wrapper calls the callback zero times.
+Loading it twice calls the callback once and returns the same exports object both times.
+The probe runs the provider in Node. It does not execute the complete editor.
+The test publishes `import-boundary.json` and `entry-exports.json`.
+[Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
+
 ### Direct AST lowering for negated initializers
 
 On the same authored placement, adding logical negation and negated number literals to Lean's ESTree lowerer gave these counts. Each row counts source units after static imports are removed. In each replay's `moves.json`, subtract `externallyLowered` from `statements.length` to get the number Lean lowered directly.

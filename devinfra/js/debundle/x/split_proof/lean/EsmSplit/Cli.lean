@@ -63,4 +63,35 @@ def loadSpec (path : System.FilePath) : IO Spec := do
   let sequential := (j.getObjVal? "sequential" >>= Json.getBool?).toOption.getD false
   pure { entry, modules, order, sequential }
 
+/-- Why two statements conflict, as the bits of `Bundle.conflictT`: 1 both touch the world, 2 `j` binds a name `i` reads,
+4 `i` binds a name `j` reads, 8 both bind a name. A pair conflicts if and only if some bit is set. -/
+def conflictReasons (arr : Array Stmt) (tab : Array EsmSplit.NameSet) (i j : Nat) : Nat :=
+  let a := arr.getD i default
+  let b := arr.getD j default
+  (if a.effect && b.effect then 1 else 0)
+    + (if !b.hoisted && b.binds.any (tab.getD i ∅).contains then 2 else 0)
+    + (if !a.hoisted && a.binds.any (tab.getD j ∅).contains then 4 else 0)
+    + (if !a.hoisted && !b.hoisted && a.binds.any b.binds.contains then 8 else 0)
+
+/-- Pairs of statements that conflict and that the plan runs in the opposite order from the bundle (what `OrderOk`
+rejects): how many, five of them, and (if `all`) every one as `(runs first in the output, runs first in the bundle,
+reasons)`. -/
+def conflictInversions (B : Bundle) (P : Plan) (all : Bool := false) :
+    Nat × Array (Nat × Nat) × Array (Nat × Nat × Nat) := Id.run do
+  let arr := B.toArray
+  let tab := B.readsTab
+  let ord := P.execOrder.toArray
+  let mut count := 0
+  let mut sample : Array (Nat × Nat) := #[]
+  let mut every : Array (Nat × Nat × Nat) := #[]
+  for x in [0:ord.size] do
+    for y in [x + 1:ord.size] do
+      let a := ord[x]!
+      let b := ord[y]!
+      if b < a && Bundle.conflictT arr tab b a then
+        count := count + 1
+        if sample.size < 5 then sample := sample.push (a, b)
+        if all then every := every.push (a, b, conflictReasons arr tab b a)
+  return (count, sample, every)
+
 end EsmSplit
