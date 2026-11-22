@@ -458,31 +458,6 @@ def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
     ]
 
 
-class _ScriptedTransport(httpx.MockTransport):
-    """httpx transport that records incoming requests and replays scripted responses."""
-
-    def __init__(self, responses: list[httpx.Response]):
-        self._responses = list(responses)
-        self.calls: list[tuple[str, str, bytes]] = []
-        super().__init__(self._handle)
-
-    def _handle(self, request: httpx.Request) -> httpx.Response:
-        self.calls.append((request.method, str(request.url), request.content))
-        return self._responses.pop(0)
-
-
-def _client(transport: httpx.MockTransport) -> httpx.Client:
-    return httpx.Client(base_url="http://attic:8080", transport=transport)
-
-
-def test_ensure_cache_returns_public_key_when_cache_exists():
-    transport = _ScriptedTransport([httpx.Response(200, json={"public_key": "main:abc="})])
-    with _client(transport) as client:
-        assert ensure_cache(client, "main") == "main:abc="
-    (call,) = transport.calls
-    assert call[:2] == ("GET", "http://attic:8080/_api/v1/cache-config/main")
-
-
 @pytest.mark.parametrize(
     ("kwargs", "body_overrides"),
     [
@@ -492,26 +467,30 @@ def test_ensure_cache_returns_public_key_when_cache_exists():
     ],
     ids=["private", "public", "supplied-keypair"],
 )
-def test_ensure_cache_creates_when_absent(kwargs: dict[str, Any], body_overrides: dict[str, Any]):
-    transport = _ScriptedTransport(
-        [
-            httpx.Response(404, text="not found"),
-            httpx.Response(201, text=""),
-            httpx.Response(200, json={"public_key": "main:xyz="}),
-        ]
-    )
-    with _client(transport) as client:
+def test_ensure_cache_creates_once_and_returns_the_public_key(kwargs: dict[str, Any], body_overrides: dict[str, Any]):
+    created = False
+
+    def cache_api(request: httpx.Request) -> httpx.Response:
+        nonlocal created
+        assert request.url.path == "/_api/v1/cache-config/main"
+        if request.method == "GET":
+            return httpx.Response(200, json={"public_key": "main:xyz="}) if created else httpx.Response(404)
+        assert request.method == "POST"
+        assert not created
+        assert json.loads(request.content) == {
+            "keypair": "Generate",
+            "is_public": False,
+            "store_dir": "/nix/store",
+            "priority": 41,
+            "upstream_cache_key_names": [],
+            **body_overrides,
+        }
+        created = True
+        return httpx.Response(201)
+
+    with httpx.Client(base_url="http://attic:8080", transport=httpx.MockTransport(cache_api)) as client:
         assert ensure_cache(client, "main", **kwargs) == "main:xyz="
-    assert [c[0] for c in transport.calls] == ["GET", "POST", "GET"]
-    # Matches upstream attic's `attic cache create` default with no flags, plus the requested overrides.
-    assert json.loads(transport.calls[1][2]) == {
-        "keypair": "Generate",
-        "is_public": False,
-        "store_dir": "/nix/store",
-        "priority": 41,
-        "upstream_cache_key_names": [],
-        **body_overrides,
-    }
+        assert ensure_cache(client, "main", **kwargs) == "main:xyz="
 
 
 def test_load_keypair_returns_none_when_dir_is_none():
@@ -527,15 +506,14 @@ def test_load_keypair_reads_and_strips_file(tmp_path: Path):
     assert _load_keypair(tmp_path, "main") == "main:secret=="
 
 
-def test_ensure_cache_raises_on_unexpected_error():
-    transport = _ScriptedTransport([httpx.Response(500, text="boom")])
-    with _client(transport) as client, pytest.raises(RuntimeError):
-        ensure_cache(client, "main")
-
-
-def test_ensure_cache_raises_when_create_fails():
-    transport = _ScriptedTransport([httpx.Response(404, text=""), httpx.Response(403, text="denied")])
-    with _client(transport) as client, pytest.raises(RuntimeError):
+@pytest.mark.parametrize("statuses", [(500,), (404, 403)], ids=["lookup-failed", "creation-denied"])
+def test_ensure_cache_reports_http_failure(statuses: tuple[int, ...]):
+    responses = iter(statuses)
+    transport = httpx.MockTransport(lambda _: httpx.Response(next(responses)))
+    with (
+        httpx.Client(base_url="http://attic:8080", transport=transport) as client,
+        pytest.raises(RuntimeError, match=f"HTTP {statuses[-1]}"),
+    ):
         ensure_cache(client, "main")
 
 
