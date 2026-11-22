@@ -454,19 +454,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             raise AssertionError(f"Client request before restart failed; diagnostics saved to {path}")
         proxy.stop(timeout=15)
 
-        first_reader = client.containers.run(
-            mitmproxy_ref,
-            entrypoint=["sh", "-c"],
-            command=["sleep 3600"],
-            user="1000:1000",
-            read_only=True,
-            volumes={captures_volume.name: {"bind": "/captures", "mode": "ro"}},
-            detach=True,
-        )
-        containers.append(first_reader)
-        first_capture = _read_capture_volume(first_reader)
-        first_reader.remove(force=True)
-        containers.remove(first_reader)
+        first_capture = _read_capture_volume(proxy)
         assert len(first_capture) == 1, list(first_capture)
         first_file, (first_bytes, first_mode) = next(iter(first_capture.items()))
         assert first_mode == 0o600
@@ -484,17 +472,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             raise AssertionError(f"Client request after restart failed; diagnostics saved to {path}")
         proxy.stop(timeout=15)
 
-        final_reader = client.containers.run(
-            mitmproxy_ref,
-            entrypoint=["sh", "-c"],
-            command=["sleep 3600"],
-            user="1000:1000",
-            read_only=True,
-            volumes={captures_volume.name: {"bind": "/captures", "mode": "ro"}},
-            detach=True,
-        )
-        containers.append(final_reader)
-        final_capture = _read_capture_volume(final_reader)
+        final_capture = _read_capture_volume(proxy)
         assert first_file in final_capture
         flows_by_file = {name: _flows(data) for name, (data, _) in final_capture.items()}
         all_flows = [flow for flows in flows_by_file.values() for flow in flows]
@@ -513,8 +491,6 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             # Daily rotation is expected if a test happens to cross UTC midnight.
             assert len(final_capture) == 2
             assert len(flows_by_file[first_file]) == len(flows_by_file[second_file]) == 1
-        final_reader.remove(force=True)
-        containers.remove(final_reader)
     except BaseException:
         for index, container in enumerate(containers):
             _save_container_diagnostics(container, f"container-{index}-{container.name}")
