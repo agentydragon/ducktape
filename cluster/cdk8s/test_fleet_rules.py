@@ -2,10 +2,8 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
 
 from cluster.cdk8s.fleet_rules import (
-    add_fleet_rules,
     cilium_rules_enforce_something,
     daemonsets_leave_offline_nodes,
     https_egress_sni_conflicts,
@@ -14,8 +12,6 @@ from cluster.cdk8s.fleet_rules import (
     reference_kind_mismatches,
     unused_waivers,
 )
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
-from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}
@@ -187,26 +183,6 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
     ]
 
 
-def test_auto_vpa_namespace_owned_policy_requires_controlled_values(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "vpa")
-    ApiObject(
-        chart,
-        "partial-vpa-policy",
-        api_version="v1",
-        kind="Namespace",
-        metadata=ApiObjectMetadata(
-            name="partial",
-            labels={VPA_UPDATE_MODE_LABEL: "auto"},
-            annotations={
-                VPA_RESOURCE_POLICY_ANNOTATION: '{"containerPolicies":[{"containerName":"*","minAllowed":{"cpu":"10m"}}]}'
-            },
-        ),
-    )
-    add_fleet_rules(chart)
-    with pytest.raises(Exception, match=r"Namespace/partial: VPA container policy '\*' lacks controlledValues"):
-        chart.to_json()
-
-
 def _reader(
     name: str, env_secret: str | None = None, volume_secret: str | None = None, config_map: str | None = None
 ) -> dict[str, Any]:
@@ -375,18 +351,6 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         },
     }
     assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
-
-
-def test_rules_fail_synth_naming_the_object(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "fleet")
-    ApiObject(
-        chart, "bare", api_version="apps/v1", kind="Deployment", metadata=ApiObjectMetadata(name="bare")
-    ).add_json_patch(JsonPatch.add("/spec", {"template": {"spec": {"containers": [{"name": "main"}]}}}))
-    add_fleet_rules(chart)
-    with pytest.raises(
-        Exception, match=r"(?s)Validation failed.*Deployment/bare container main: seccomp profile is None"
-    ):
-        chart.to_json()
 
 
 if __name__ == "__main__":

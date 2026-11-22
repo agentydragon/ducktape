@@ -6,6 +6,7 @@ import pytest
 import pytest_bazel
 import yaml
 from cdk8s import App, Chart
+from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import (
@@ -16,7 +17,9 @@ from cluster.cdk8s.flux import (
     SecretGeneratorArgs,
     artifact_directory,
 )
-from cluster.cdk8s.generation import config_map_chart, sops_decryption, write_directory
+from cluster.cdk8s.generation import config_map_chart, sops_decryption, write_app, write_directory
+from cluster.cdk8s.namespaces import Vpa, namespace
+from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _ARTIFACT = artifact("test-app", "test/app")
 
@@ -39,6 +42,26 @@ def test_every_chart_goes_into_the_directory_file_listed_before_the_siblings(scr
         "app.k8s.yaml",
         "test-secret.sops.yaml",
     ]
+
+
+def test_write_app_reports_fleet_violations_across_charts(scratch_app: App, tmp_path: Path) -> None:
+    namespace(
+        Chart(scratch_app, "namespaces"),
+        "partial",
+        name="partial",
+        vpa=Vpa.AUTO,
+        annotations={VPA_RESOURCE_POLICY_ANNOTATION: '{"containerPolicies":[{"containerName":"worker"}]}'},
+    )
+    k8s.KubePodTemplate(
+        Chart(scratch_app, "workloads"),
+        "bare",
+        metadata=k8s.ObjectMeta(name="bare"),
+        template=k8s.PodTemplateSpec(spec=k8s.PodSpec(containers=[k8s.Container(name="main", image="example")])),
+    )
+    with pytest.raises(Exception, match="Validation failed") as failure:
+        write_app(tmp_path, "fleet", scratch_app)
+    assert "Namespace/partial: VPA container policy 'worker' lacks controlledValues" in str(failure.value)
+    assert "PodTemplate/bare container main: seccomp profile is None" in str(failure.value)
 
 
 def test_patch_charts_are_listed_as_patches_not_resources(tmp_path: Path) -> None:
