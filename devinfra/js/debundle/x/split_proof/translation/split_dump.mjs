@@ -12,7 +12,7 @@ export const dumpOf = (code) => lowerDump(code, acorn, eslintScope);
  * identity of every identifier used for opaque closure capture. */
 export function splitInputs(code, options = {}) {
   const parsed = parseModule(code, acorn.parse, eslintScope);
-  const units = topLevelStatements(parsed.ast, parsed.code);
+  const units = topLevelStatements(parsed.ast);
   return { dump: dumpParsed(parsed), core: coreFromParsed(parsed, options, units), units };
 }
 

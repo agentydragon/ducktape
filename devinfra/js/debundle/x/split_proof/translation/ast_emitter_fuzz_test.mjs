@@ -81,7 +81,7 @@ if (process.argv[2] !== "--worker") {
     const choose = random((seed ^ 0xa341316c ^ Math.imul(round, 0x9e3779b1)) >>> 0);
     const { source } = generateAstBundle(seed, round);
     const dump = lowerDump(source, acorn, eslintScope);
-    const units = topLevelStatements(dump, source);
+    const units = topLevelStatements(dump);
     const original = path.join(tmp, `original-${round}.mjs`);
     writeFileSync(original, source);
     const expected = run(process.execPath, [original]);

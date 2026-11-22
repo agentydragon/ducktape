@@ -112,8 +112,6 @@ def joinMany (xs : Array AV) : AV :=
 
 /-- The objects (object `0` is the world). -/
 def objs (a : AV) : List Nat := a.toList.filterMap fun c => if c ≥ 1 then some (c - 1) else none
-
-def hasObj (a : AV) : Bool := a.any (· ≥ 1)
 end AV
 
 /-! ## Objects, the heap, the state -/

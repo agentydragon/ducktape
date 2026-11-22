@@ -73,9 +73,6 @@ theorem Bundle.toArray_getD (B : Bundle) (i : Nat) : B.toArray.getD i default = 
 /-- Statements that declare `u`. -/
 def Bundle.declarers (B : Bundle) (u : Name) : List Stmt := B.filter (·.defs.contains u)
 
-/-- First statement declaring `u`; `none` for globals such as `console`. -/
-def Bundle.ownerOf (B : Bundle) (u : Name) : Option Nat := B.findIdx? (·.defs.contains u)
-
 /-! ## The read closure
 
 Running a statement may call any function value it can read, and a function body reads its `lazy`

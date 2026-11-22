@@ -3,7 +3,7 @@
 
 /** Enumerate units for the external JS model and diagnostics. Array indices are source ordinals,
  * including imports and export lists. Keep the original identifier nodes for scope lookup. */
-export function topLevelStatements(program, code) {
+export function topLevelStatements(program) {
   return program.body.flatMap((statement) => {
     const exported = statement.type === "ExportNamedDeclaration" && statement.declaration;
     const list = exported || statement;
@@ -17,7 +17,6 @@ export function topLevelStatements(program, code) {
           node: statement,
           start: statement.start,
           end: statement.end,
-          src: code.slice(statement.start, statement.end),
         },
       ];
     return list.declarations.map((declarator) => {
@@ -26,7 +25,6 @@ export function topLevelStatements(program, code) {
         node: exported ? { ...statement, declaration } : declaration,
         start: declarator.start,
         end: declarator.end,
-        src: `${exported ? "export " : ""}${list.kind} ${code.slice(declarator.start, declarator.end)};`,
       };
     });
   });

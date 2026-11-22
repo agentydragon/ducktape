@@ -20,7 +20,7 @@ function parse(code, file) {
 
 /** Independently enumerate the body units for the untrusted pairing and diagnostic tools. */
 export function bodyUnits(program) {
-  return topLevelStatements(program, program.sourceText).flatMap(({ node }) => {
+  return topLevelStatements(program).flatMap(({ node }) => {
     switch (node.type) {
       case "ImportDeclaration":
       case "ExportAllDeclaration":

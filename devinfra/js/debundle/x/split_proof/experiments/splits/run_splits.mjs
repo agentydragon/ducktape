@@ -61,7 +61,7 @@ async function analyze() {
 }
 const footprints = option("footprints", null) ?? (await analyze());
 const bundleJson = JSON.parse(await readFile(path.join(lowering, `${bundle}.json`), "utf8"));
-const n = topLevelStatements(bundleJson, bundleJson.sourceText).length;
+const n = topLevelStatements(bundleJson).length;
 const baseline = JSON.stringify(await smoke(family, path.join(lowering, `${bundle}.mjs`)));
 if (!JSON.parse(baseline).ok) throw new Error(`the bundle itself fails its smoke test: ${baseline}`);
 
