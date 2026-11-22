@@ -2609,6 +2609,9 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "175m", "memory": "1Gi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: myquest-canary
   namespace: platform-sessions
 spec:
