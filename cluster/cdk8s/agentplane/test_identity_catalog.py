@@ -126,21 +126,24 @@ def test_standing_callers_always_use_identity_policies_and_exact_account_grants(
 
 
 def test_openclaw_identity_and_grants_are_independent_of_the_catalog_switch(
-    staging_manifests: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+    catalog_manifests: list[dict[str, Any]],
 ) -> None:
     """The paused OpenClaw backend keeps its reviewed Identity grants in either policy rendering."""
-    caller = public_coder_egress.OPENCLAW
-    expected_egress = [public_coder_egress.POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY]
-
-    for docs in (staging_manifests, identity_catalog_manifests):
-        assert (staging.ENV.namespace, caller.identity) in _names(docs, "Identity")
-        for binding_name, expected_policy_sets in (
-            (public_coder_egress.POLICY, expected_egress),
-            ("public-coder-openclaw-actions", [COMMON_GITHUB_READ_SET]),
-        ):
-            binding = one(doc for doc in _of(docs, "PolicyBinding") if doc["metadata"]["name"] == binding_name)
-            assert binding["spec"]["subject"] == {"identity": {"name": caller.identity}}
-            assert binding["spec"]["policySets"] == expected_policy_sets
+    identity = public_coder_egress.OPENCLAW.identity
+    assert (staging.ENV.namespace, identity) in _names(catalog_manifests, "Identity")
+    assert {
+        binding["metadata"]["name"]: binding["spec"]["policySets"]
+        for binding in _of(catalog_manifests, "PolicyBinding")
+        if binding["metadata"]["namespace"] == staging.ENV.namespace
+        and binding["spec"]["subject"] == {"identity": {"name": identity}}
+    } == {
+        public_coder_egress.POLICY: [
+            public_coder_egress.POLICY,
+            egress.INFERENCE_EXPERIMENTS_POLICY,
+            egress.PUBLIC_INTERNET_POLICY,
+        ],
+        "public-coder-openclaw-actions": [COMMON_GITHUB_READ_SET],
+    }
 
 
 def test_every_standing_record_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
