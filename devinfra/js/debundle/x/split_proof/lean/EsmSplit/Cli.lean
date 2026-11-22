@@ -1,8 +1,8 @@
 import Lean.Data.Json
 import EsmSplit.Split
-import EsmSplit.Render
+import EsmSplit.ModulePath
 
-/-! Helpers shared by the executables: the per-check report, writing modules, reading a spec. -/
+/-! Helpers shared by the executables: the per-check report and spec reader. -/
 
 open EsmSplit Lean
 
@@ -33,16 +33,6 @@ def report (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
              ← timedCheck "Permutes" fun _ => decide (Permutes B P),
              ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)]
   return rs.all id
-
-def writeModules (B : Bundle) (P : Plan) (dir : System.FilePath) : IO Unit := do
-  IO.ofExcept (validateModulePaths (P.mods.map (·.name)))
-  IO.FS.createDirAll dir
-  for m in P.mods do
-    let output := dir / m.name
-    let parent := "/".intercalate ((m.name.splitOn "/").dropLast)
-    if !parent.isEmpty then IO.FS.createDirAll (dir / parent)
-    IO.FS.writeFile output (m.render B P)
-  IO.println s!"  wrote {P.mods.length} modules to {dir}"
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
 Module order follows the sorted keys of the parsed object; `order` is optional and keeps its order;

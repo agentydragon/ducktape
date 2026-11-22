@@ -76,7 +76,7 @@ def sourceStmt (s : String) : Option MStmt :=
       (sourceInit init).map fun e => ⟨[String.ofList name], e, false⟩
   | cs => sourceIdentity cs
 
-/-- Translate the source slices supplied to the real renderer. -/
+/-- Translate the source slices embedded in the proof fixture. -/
 def sourceBundle (B : Bundle) : Option (List MStmt) := B.mapM fun s => sourceStmt s.src
 
 end MJS

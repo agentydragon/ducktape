@@ -13,7 +13,7 @@ _PROOF_SOURCES = [
     "EsmSplit/Correct.lean",
     "EsmSplit/Fast.lean",
     "EsmSplit/Plan.lean",
-    "EsmSplit/Render.lean",
+    "EsmSplit/ModulePath.lean",
     "EsmSplit/Semantics.lean",
     "EsmSplit/Split.lean",
     "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
@@ -49,7 +49,10 @@ lean_axiom_test(
 
 lean_binary(
     name = "render",
-    srcs = ["Main.lean"] + _PROOF_SOURCES,
+    srcs = [
+        "Experiments/FixtureRender.lean",
+        "Main.lean",
+    ] + _PROOF_SOURCES,
     entry = "Main.lean",
 )
 
@@ -88,7 +91,7 @@ _TRANSLATE_BASE = [
     "EsmSplit/Correct.lean",
     "EsmSplit/Fast.lean",
     "EsmSplit/Plan.lean",
-    "EsmSplit/Render.lean",
+    "EsmSplit/ModulePath.lean",
     "EsmSplit/Semantics.lean",
     "EsmSplit/Split.lean",
     "EsmSplit/Effects.lean",
@@ -173,7 +176,7 @@ lean_binary(
         "EsmSplit/Fast.lean",
         "EsmSplit/ESTreeEmit.lean",
         "EsmSplit/Plan.lean",
-        "EsmSplit/Render.lean",
+        "EsmSplit/ModulePath.lean",
         "EsmSplit/Semantics.lean",
         "EsmSplit/Split.lean",
         # The verdict checks order preservation, syntax moves, and certified binding moves.
@@ -492,12 +495,13 @@ _PROOF_FIXTURE_SOURCES = [
     "EsmSplit/Correct.lean",
     "EsmSplit/Fast.lean",
     "EsmSplit/Plan.lean",
-    "EsmSplit/Render.lean",
+    "EsmSplit/ModulePath.lean",
     "EsmSplit/Semantics.lean",
     "EsmSplit/Split.lean",
     "Experiments/MiniJS.lean",
     "Experiments/MiniJSSource.lean",
     "Experiments/ProofFixture.lean",
+    "Experiments/FixtureRender.lean",
     "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
 ]
 

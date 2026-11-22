@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import EsmSplit.Lower
-import EsmSplit.Render
+import EsmSplit.ModulePath
+import EsmSplit.Plan
 
 /-! Assemble each output module as ESTree. The original nodes supply declarations, code and
 import attributes; the plan supplies ownership, glue requests and exported binding names. -/
