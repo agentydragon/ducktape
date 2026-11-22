@@ -243,6 +243,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":command_notice_attention",
+        ":command_ownership",
         ":dispatch_workset",
         ":local_commands",
         ":local_delivery_receipts",
@@ -267,6 +268,18 @@ ts_library(
 )
 
 ts_library(
+    name = "command_ownership",
+    srcs = ["command_ownership.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":dispatch_workset",
+        ":local_commands",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
     name = "local_commands",
     srcs = ["local_commands.ts"],
     tsconfig = TSCONFIG,
@@ -283,6 +296,7 @@ agentplane_vitest_test(
     name = "local_commands_test",
     srcs = ["local_commands.test.ts"],
     deps = [
+        ":command_ownership",
         ":local_commands",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",

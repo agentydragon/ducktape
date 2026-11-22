@@ -1649,6 +1649,65 @@ it("discards the old workset when a Session becomes unavailable and is selected 
   expect(container.textContent).toBe("Second workset");
 });
 
+it("expires the connection that supplied transfer evidence immediately on clean lease renewal", async () => {
+  let connection: AbortSignal | null = null;
+  function WorksetProbe() {
+    const view = useDispatchWorkset(THREAD.metadata.threadId);
+    connection = view.connection;
+    return <span>{view.stale ? "stale" : "current"}</span>;
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () => root.render(<WorksetProbe />));
+  const first = await selectedWorksetWatch();
+  const signal = await vi.waitFor(() => {
+    if (!connection) throw new Error("Waiting for the first workset");
+    return connection;
+  });
+  sendWorksetOnOpen = false;
+  await act(async () => first.end());
+  await vi.waitFor(() => expect(signal.aborted).toBe(true));
+  expect(container.textContent).toBe("current");
+});
+
+it("releases verified originals from the live thread owner without recovering drafts from the archive", async () => {
+  const sessionId = THREAD.metadata.threadId;
+  sendWorksetOnOpen = false;
+  const command = message("guarded-transfer");
+  const draft = message("never-posted");
+  const store = new LocalCommands(sessionId);
+  store.remember(command);
+  store.markAttempted(command.commandId);
+  store.remember(draft);
+  selectedReceipts = [
+    {
+      commandId: command.commandId,
+      operation: "OPERATION_SUBMIT_INPUT",
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      receiptVersion: "31",
+      sandbox: "sandbox",
+      sandboxUid: "sandbox-uid",
+      command: toJson(CommandSchema, command),
+    },
+  ];
+  vi.mocked(listSessionDispatches).mockResolvedValue(create(ListSessionDispatchesResponseSchema));
+  const container = await render({ window: null, error: "History offline" });
+  await act(async () => buttonIn(container, "Delivery history")!.click());
+  const watch = await selectedWorksetWatch();
+  expect(receiptBatchRequests).toEqual([]);
+  await act(async () => watch.send({ workset: { sessionId }, resumeToken: "1" }));
+  await vi.waitFor(() =>
+    expect(new LocalCommands(sessionId).getSnapshot().commands.map((value) => value.command.commandId)).toEqual([
+      draft.commandId,
+    ])
+  );
+  expect(receiptBatchRequests.map((url) => url.searchParams.getAll("commandIds"))).toEqual([[command.commandId]]);
+  expect(getDispatch).not.toHaveBeenCalled();
+  expect(submitInput).not.toHaveBeenCalled();
+});
+
 it("shows server delivery for a fresh browser and defers to settled History", async () => {
   const settled = entity({
     case: "command",
