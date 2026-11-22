@@ -252,26 +252,34 @@ function Report() {
       >
     <//>
     <${Text} size="sm" fw=${700} c="blue" tt="uppercase"
-      >Upstream work · Reviewed 9–10 November 2026 UTC<//
+      >Upstream work · 22 November 2026 UTC<//
     >
     <${Title} order=${1} mt="xs">Upstream patches & issues<//>
     <${Text} c="dimmed" size="lg" mt="sm" maw="55rem">
-      Where Ducktape carries a patch, workaround, fork, or incident caused by
-      upstream behavior—and what has moved forward.
+      Try the stable Gazelle modules. Keep the Grocy schema and Ruff
+      workarounds. Each has a fresh result from this source review.
     <//>
     <${Alert}
       color="blue"
       variant="light"
       mt="lg"
-      title="A reviewed snapshot, not a live feed"
+      title="Gazelle 2.5.1 generated zero BUILD drift"
     >
-      Statuses reflect the November 9–10 investigation. Released fixes are
-      candidates for our validation, not proof of deployment or recovery. Some
-      causes and duplicate searches remain uncertain. Source review:${" "}
+      Both stable registry modules built with the existing behavioral patches.
+      The full diff-mode run exited successfully and retained one parser
+      warning.
+      <${Anchor} href="./stable-gazelle.patch"> Candidate diff<//> ·
       <${Anchor}
-        href=${`https://github.com/agentydragon/ducktape/tree/${data?.source_devel_commit ?? "5720cbd391b4d02dd84d98c75c9e73801d6d3059"}`}
-        >devel 5720cbd391<//
-      >.
+        href="https://app.buildbuddy.io/invocation/bc1ed77a-e71e-448a-89c2-b4bc9829b84a"
+      >
+        Build invocation<//
+      >
+      ·
+      <${Anchor}
+        href="https://github.com/agentydragon/ducktape/tree/bfa209746f112ed329ea7ab1f1f3b28ba5f48404"
+      >
+        devel bfa209746f<//
+      >
     <//>
     ${
       error

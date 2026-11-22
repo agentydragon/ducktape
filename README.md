@@ -19,7 +19,7 @@ report snapshots. The CI reports are:
   [evidence](visual-reliability/evidence.json),
   [source and observation window](visual-reliability/manifest.json).
 
-- **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with upstream status, local impact, evidence, and follow-up actions.
+- **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with 33 reviewed items, a stable Gazelle trial, and measured Grocy and Ruff workaround checks.
 
 - **Cluster storage:** [HDD budget scenarios, volume fullness and interventions](storage/index.html), with dated Langfuse, SeaweedFS, ClickHouse, Zot, Mimir and Loki evidence and the earlier inventory retained below it.
 - **Cluster VPA (22 November UTC):** [coverage and next rollout waves](vpa/index.html), with effective policies, admitted requests, CPU and memory samples, and current rollout checks and open capacity gates. [Inventory](vpa/inventory.json); [earlier evidence](vpa/evidence.json); [manifest](vpa/manifest.json).
