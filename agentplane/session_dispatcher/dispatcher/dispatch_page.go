@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,18 @@ func (s *Service) ListSessionDispatches(ctx context.Context, request *dispatcher
 	if limit == 0 {
 		limit = 25
 	}
+	ids := request.GetVerifyRetainedCommandIds()
+	if len(ids) > 0 {
+		if request.GetPageToken() != "" || request.GetLimit() != 0 || len(ids) > 16 || slices.Contains(ids, "") {
+			return nil, status.Error(codes.InvalidArgument, "retention verification requires 1-16 distinct nonempty IDs and no pagination options")
+		}
+		sorted := slices.Clone(ids)
+		slices.Sort(sorted)
+		if len(slices.Compact(sorted)) != len(ids) {
+			return nil, status.Error(codes.InvalidArgument, "retention verification requires distinct command IDs")
+		}
+		limit = uint32(len(ids))
+	}
 	var cursor store.DispatchPageCursor
 	if token := request.GetPageToken(); token != "" {
 		if len(token) > 80 {
@@ -55,11 +68,10 @@ func (s *Service) ListSessionDispatches(ctx context.Context, request *dispatcher
 		}
 		cursor = store.DispatchPageCursor{Before: before, Frontier: frontier}
 	}
-	rows, next, err := s.Store.ReadDispatchPage(ctx, id, caller, int(limit), cursor)
+	response, next, err := s.Store.ReadDispatchPage(ctx, id, caller, int(limit), cursor, ids)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	response := &dispatcherpb.ListSessionDispatchesResponse{Dispatches: rows, Coverage: dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS}
 	if next.Before != 0 {
 		response.NextPageToken = strconv.FormatInt(next.Frontier, 10) + "." + resumetoken.Encode(next.Before, dispatchPageDigest(id, caller, next.Frontier))
 	}

@@ -260,6 +260,9 @@ message ListSessionDispatchesRequest {
   // 1-100 rows. Zero selects 25.
   uint32 limit = 2;
   string page_token = 3;
+  // Optional exact membership check against the same retained rows as an ordinary page.
+  // Supply 1-16 distinct command IDs without limit or page_token to verify storage retention.
+  repeated string verify_retained_command_ids = 4;
 }
 
 message ListSessionDispatchesResponse {
@@ -274,6 +277,9 @@ message ListSessionDispatchesResponse {
     RETAINED_DISPATCH_ROWS = 1;
   }
   Coverage coverage = 3;
+  // Present only for an exact membership check. True when the database protects the returned
+  // Session rows from both current and previous Dispatcher writers after Environment deletion.
+  optional bool retains_commands_after_environment_deletion = 4;
 }
 
 message CancelDispatchRequest {

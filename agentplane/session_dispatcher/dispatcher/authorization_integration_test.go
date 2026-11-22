@@ -626,6 +626,27 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	if len(first.Dispatches) != 1 || first.Dispatches[0].GetCommandId() != "test-third" || first.NextPageToken == "" {
 		t.Fatalf("first receipt page: %v", first)
 	}
+	if first.RetainsCommandsAfterEnvironmentDeletion != nil {
+		t.Fatalf("ordinary page unexpectedly reported retention capability: %v", first)
+	}
+	verify := &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, VerifyRetainedCommandIds: []string{"test-first", "absent"}}
+	verifyMembership := func(wantProtected bool) {
+		t.Helper()
+		page, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), verify)
+		if err != nil || page.RetainsCommandsAfterEnvironmentDeletion == nil ||
+			page.GetRetainsCommandsAfterEnvironmentDeletion() != wantProtected ||
+			len(page.Dispatches) != 1 || page.Dispatches[0].CommandId != "test-first" || page.NextPageToken != "" {
+			t.Fatalf("retention membership, protection %v: %v, %v", wantProtected, page, err)
+		}
+	}
+	verifyMembership(true)
+	if _, err := queueStore.DB.ExecContext(ctx, "ALTER TABLE dispatch DISABLE TRIGGER keep_session_command_on_environment_deletion"); err != nil {
+		t.Fatal(err)
+	}
+	verifyMembership(false)
+	if _, err := peers.otherIdentity.ListSessionDispatches(authoritySVIDContext(t), verify); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-owner retention lookup: %v", err)
+	}
 	for _, session := range []string{id, "test-no-such-session"} {
 		_, err := peers.otherIdentity.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: session})
 		if status.Code(err) != codes.NotFound {
@@ -633,7 +654,14 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 		}
 	}
 	for _, req := range []*dispatcherpb.ListSessionDispatchesRequest{
-		{SessionId: id, Limit: 101}, {SessionId: id, PageToken: "invalid"}, {SessionId: "other-session", PageToken: first.NextPageToken},
+		{SessionId: id, VerifyRetainedCommandIds: []string{""}},
+		{SessionId: id, VerifyRetainedCommandIds: []string{"a", "a"}},
+		{SessionId: id, VerifyRetainedCommandIds: make([]string, 17)},
+		{SessionId: id, Limit: 1, VerifyRetainedCommandIds: []string{"a"}},
+		{SessionId: id, PageToken: first.NextPageToken, VerifyRetainedCommandIds: []string{"a"}},
+		{SessionId: id, Limit: 101},
+		{SessionId: id, PageToken: "invalid"},
+		{SessionId: "other-session", PageToken: first.NextPageToken},
 	} {
 		if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), req); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("invalid page request %v: %v", req, err)
