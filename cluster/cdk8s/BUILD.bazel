@@ -2164,7 +2164,6 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//tf/gitops/forgejo-agentydragon:inline_source",
     ],
     env = {
         "GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)",
@@ -2176,6 +2175,7 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/testing:manifests",
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

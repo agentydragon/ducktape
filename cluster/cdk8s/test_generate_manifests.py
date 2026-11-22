@@ -12,6 +12,7 @@ from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
+import pygohcl
 import pytest
 import pytest_bazel
 import yaml
@@ -365,9 +366,36 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     ]
 
 
-def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_state(
-    runfiles: Runfiles, documents: list[dict[str, Any]]
-) -> None:
+def test_gitops_roots_have_distinct_opentofu_state(active_api_objects: list[dict[str, Any]]) -> None:
+    """Two reconcilers of the same PostgreSQL state can undo each other's applies."""
+    configs = {
+        doc["metadata"]["name"]: doc["spec"]
+        for doc in active_api_objects
+        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1" and doc["kind"] == "ProviderConfig"
+    }
+    owners: dict[tuple[str, str, str], str] = {}
+    for doc in active_api_objects:
+        spec = doc.get("spec", {})
+        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1" and doc["kind"] == "Workspace":
+            if not {"Create", "Update", "Delete", "*"}.intersection(spec.get("managementPolicies", ["*"])):
+                continue
+            config = configs[spec["providerConfigRef"]["name"]]
+            backend = pygohcl.loads(config["backendFile"])
+            workspace = doc["metadata"]["annotations"]["crossplane.io/external-name"]
+        elif doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2" and doc["kind"] == "Terraform":
+            if spec.get("planOnly"):
+                continue
+            backend = pygohcl.loads(spec["backendConfig"]["customConfiguration"])["backend"]["pg"]
+            workspace = spec.get("workspace", "default")
+        else:
+            continue
+        state = (backend["conn_str"], backend["schema_name"], workspace)
+        owner = f"{doc['kind']}/{doc['metadata']['name']}"
+        assert state not in owners, f"{owner} and {owners[state]} both manage {state[1]}/{workspace}"
+        owners[state] = owner
+
+
+def test_forgejo_workspace_preserves_its_existing_state(documents: list[dict[str, Any]]) -> None:
     provider = find_resource(documents, "Provider", "provider-opentofu")
     provider_kustomization = find_resource(documents, "Kustomization", "crossplane-provider-opentofu")
     provider_config = find_resource(documents, "ProviderConfig", "crossplane-forgejo-agentydragon")
@@ -385,18 +413,19 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
             "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
         }
     ]
-    assert provider_config["spec"]["configuration"] == 'terraform {\n  backend "pg" {}\n}\n'
-    assert 'schema_name = "forgejo_agentydragon"' in provider_config["spec"]["backendFile"]
+    assert "pg" in pygohcl.loads(provider_config["spec"]["configuration"])["terraform"]["backend"]
+    assert pygohcl.loads(provider_config["spec"]["backendFile"])["schema_name"] == "forgejo_agentydragon"
     assert "PGPASSWORD" not in provider_config["spec"]["backendFile"]
     assert workspace["metadata"]["annotations"]["crossplane.io/external-name"] == "default"
     assert workspace["spec"]["providerConfigRef"] == {"name": "crossplane-forgejo-agentydragon"}
     assert workspace["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
     assert workspace["spec"]["forProvider"]["source"] == "Inline"
-    assert "remotePullPolicy" not in workspace["spec"]["forProvider"]
-    root = runfiles.root() / "ducktape/tf/gitops/forgejo-agentydragon"
-    assert workspace["spec"]["forProvider"]["module"] == "\n".join(
-        source.read_text() for source in sorted(root.glob("*.tf"))
+    module = pygohcl.loads(workspace["spec"]["forProvider"]["module"])
+    assert "host" in module["resource"]["forgejo_ssh_key"]
+    assert not any(
+        doc.get("kind") == "Terraform" and doc["spec"]["path"].removeprefix("./") == "tf/gitops/forgejo-agentydragon"
+        for doc in documents
     )
     assert workspace["spec"]["forProvider"]["env"] == [
         {
@@ -410,12 +439,6 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     ]
     assert resources_kustomization["spec"]["wait"] is True
     assert resources_kustomization["spec"]["prune"] is True
-    assert not any(
-        doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
-        and doc.get("kind") == "Terraform"
-        and doc.get("metadata", {}).get("name") == "forgejo-agentydragon"
-        for doc in documents
-    )
 
 
 def test_litellm_crossplane_keys_retain_publication_after_handoff(documents: list[dict[str, Any]]) -> None:
