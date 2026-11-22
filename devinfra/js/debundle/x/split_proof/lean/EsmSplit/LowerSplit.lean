@@ -438,7 +438,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
     IO.println s!"  [time] {what}: {t - t0} ms"; (← IO.getStdout).flush; return t
-  let program ← loadProgram bundlePath work
+  let program ← loadProgram bundlePath work required.isSome
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let input := work / "source.mjs"
   IO.FS.writeFile input source
@@ -521,13 +521,13 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
       if request == .allOutcomes && level != .allOutcomes then
         throw (IO.userError "the checked reorder proves only normal-completion")
       let body ← IO.ofExcept model
-      certifyFiles program (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
+      certifyFiles (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
         IO.ofExcept (CoreJS.DeclarationArtifacts.check program files body.stmts B P)
       return ← emitVerdict request.label (.ok level)
     try
       unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
       let providers ← loadProviders program bundlePath work
-      certifyFiles program providers B P out work input checkOnly outputAsts source fun files => do
+      certifyFiles providers B P out work input checkOnly outputAsts source fun files => do
         let (original, candidate) ← IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P)
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
