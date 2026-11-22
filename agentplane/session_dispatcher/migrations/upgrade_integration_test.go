@@ -569,3 +569,47 @@ func TestSamplerActivityUpgradePreservesHostedLeaseAndOldWrites(t *testing.T) {
 		t.Fatalf("previous image startup: %v", err)
 	}
 }
+
+func TestInterruptedReceiptIndexBuildResumes(t *testing.T) {
+	db := openMigrationDatabase(t)
+	ctx := t.Context()
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 29); err != nil {
+		t.Fatal(err)
+	}
+	insertRetainedEvidence(t, db)
+	// A concurrent build creates its catalog entry before scanning the existing rows.
+	// Force an error in its scan to leave the same invalid artifact as an interrupted build.
+	if _, err := db.ExecContext(ctx, "CREATE INDEX CONCURRENTLY ix_dispatch_active_session_position ON dispatch ((1/(length(command_id)-length(command_id))))"); err == nil {
+		t.Fatal("expected concurrent index build to fail")
+	}
+	var valid bool
+	if err := db.QueryRowContext(ctx, "SELECT indisvalid FROM pg_index WHERE indexrelid='ix_dispatch_active_session_position'::regclass").Scan(&valid); err != nil || valid {
+		t.Fatalf("interrupted index validity = %v, %v", valid, err)
+	}
+	// This build had already completed before the interruption.
+	if _, err := db.ExecContext(ctx, "CREATE INDEX CONCURRENTLY ix_dispatch_session_position ON dispatch (session_id, position)"); err != nil {
+		t.Fatal(err)
+	}
+	var previousOID, currentOID int64
+	const completedOID = "SELECT 'ix_dispatch_session_position'::regclass::oid"
+	if err := db.QueryRowContext(ctx, completedOID).Scan(&previousOID); err != nil {
+		t.Fatal(err)
+	}
+	if err := Up(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, completedOID).Scan(&currentOID); err != nil || currentOID != previousOID {
+		t.Fatalf("completed index OID = %d, want %d: %v", currentOID, previousOID, err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_index WHERE indisvalid AND indexrelid IN (
+		'ix_dispatch_session_position'::regclass, 'ix_dispatch_active_session_position'::regclass,
+		'ix_dispatch_recent_session_state_version'::regclass, 'ix_dispatch_tombstone_session_state_version'::regclass)`).Scan(&count); err != nil || count != 4 {
+		t.Fatalf("valid receipt indexes = %d, want 4: %v", count, err)
+	}
+	assertRetainedEvidence(t, db)
+}
