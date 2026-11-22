@@ -75,7 +75,6 @@ cluster/parked/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=
 cluster/parked/public-coder-agent/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/nix-cache/kustomization.yaml linguist-generated=true
 cluster/k8s/host-firewall/kustomization.yaml linguist-generated=true
 cluster/k8s/session-backup/kustomization.yaml linguist-generated=true

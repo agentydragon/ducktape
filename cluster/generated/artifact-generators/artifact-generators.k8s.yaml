@@ -456,11 +456,6 @@ spec:
       name: agent-shared-rbac
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/shared-secrets/**"
-          to: "@artifact/cluster/k8s/agents/shared-secrets/"
-      name: agent-shared-secrets
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/aiquota/**"
           to: "@artifact/cluster/k8s/aiquota/"
       name: aiquota
