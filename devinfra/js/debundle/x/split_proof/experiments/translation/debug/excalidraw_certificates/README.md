@@ -197,3 +197,30 @@ a certificate because its correspondence check sees the factory's
 `import.meta.url` in the complete input. This run checked the placement and
 certificate verdict; it did not execute the editor in a browser.
 [Census results and emitted plans](https://app.buildbuddy.io/invocation/eac77bf3-3e55-42ce-b345-28952b567496)
+
+## Editor units 474 and 475
+
+The authored split runs the app-state factory declaration (475) before the
+pixel-ratio lookup (474). Unit 442 creates `S8 = [1, 2, 3]`. Unit 474 calls
+`S8.includes(devicePixelRatio)`. Both the array and the factory binding `Ii`
+are exported, as `pa` and `La`. The analysis treats exports as reachable by
+outside code during initialization. Its default premises allow an observer to
+install an own getter on an escaped array. In a diagnostic replay, the first
+reason unit 474 ran unknown code was a property read on an object held by the
+world. Its direct writes excluded `Ii`. When Effects added the escaped names,
+`Ii` entered the final set of 1,545 possible writes. The authored editor
+placement still failed `OrderOk`.
+[Diagnostic replay and editor checker log](https://app.buildbuddy.io/invocation/5dad087a-2a49-4a2d-ae87-c8b1b5bff654)
+
+A reduced regression in `inert_escape_test` gives a host an array and a callback
+that reads the factory binding. The host adds a getter at index zero. The
+standard `includes(2)` reads that index and the getter calls the callback.
+The source prints `undefined` and the reordered program prints `function`;
+both then print the same scale and exit normally. Both Lean checkers reject
+the move. With a private dense array and a primitive search value, both accept
+the control and Node prints the same output for both orders.
+[Executed regression and control](https://app.buildbuddy.io/invocation/bad734bf-9b16-4cdc-b1f3-842aaba0c8c4)
+
+Certifying this pair for Excalidraw would require evidence about what outside code
+can observe during this initialization, including the host global read. The test
+establishes that the receiver and its observers matter under the current premises.
