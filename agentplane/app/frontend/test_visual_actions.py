@@ -3226,8 +3226,9 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("Only this occurrence")
     elif example.key == "google_calendar.update_event":
         await expect(sidebar).to_contain_text("Facilities calendar")
-        await expect(sidebar).to_contain_text("Entire recurring series")
-        await expect(sidebar).to_contain_text("Remove all attendees")
+        await expect(sidebar).to_contain_text("Changes: title, location, attendees, reminders")
+        await expect(sidebar).not_to_contain_text("Entire recurring series")
+        await expect(sidebar).not_to_contain_text("Remove all attendees")
     elif example.key == "google_calendar.list_events":
         await expect(sidebar).to_contain_text(CALENDAR_NAME)
         await expect(sidebar).to_contain_text(CALENDAR_ID)
@@ -3289,18 +3290,6 @@ async def test_action_presentations(
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
-    if example.key == "google_calendar.update_event":
-        when = sidebar.get_by_role("button", name=CALENDAR_LOCAL_RANGE, exact=True)
-        await when.hover()
-        tooltip = page.get_by_role("tooltip")
-        await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
-        await page.mouse.move(0, 0)
-        await expect(tooltip).to_have_count(0)
-        await when.focus()
-        await expect(tooltip).to_contain_text("2026-11-23T09:30:00-08:00 · America/Los_Angeles")
-        await when.click()
-        await expect(tooltip).to_be_visible()
-        await sidebar.locator(".agentplane-actions-sidebar-expand").focus()
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
         if example.key == "gmail.threads_modify_labels":
@@ -3325,6 +3314,21 @@ async def test_action_presentations(
             await sidebar.get_by_role("button", name="Collapse ", exact=False).press("Enter")
         await sidebar.locator(".agentplane-actions-sidebar-summary").click(position={"x": 25, "y": 8})
         await _expect_live_preview(sidebar, example)
+        if example.key == "google_calendar.update_event":
+            when = sidebar.get_by_role("button", name=CALENDAR_LOCAL_RANGE, exact=True)
+            await when.hover()
+            tooltip = page.get_by_role("tooltip")
+            await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
+            await page.mouse.move(0, 0)
+            await expect(tooltip).to_have_count(0)
+            await when.focus()
+            await expect(tooltip).to_contain_text("2026-11-23T09:30:00-08:00 · America/Los_Angeles")
+            await when.click()
+            await expect(tooltip).to_be_visible()
+            await sidebar.locator(".agentplane-actions-sidebar-expand").focus()
+        if example.key == "google_calendar.update_event":
+            await expect(sidebar).to_contain_text("Entire recurring series")
+            await expect(sidebar).to_contain_text("Remove all attendees")
         if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
             await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         elif example.key == "google_calendar.list_events":
