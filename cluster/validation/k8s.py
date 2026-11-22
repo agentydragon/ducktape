@@ -172,7 +172,7 @@ class AgentplaneSandboxTemplateResource(K8sResource):
 
 
 class ImageRepositoryResource(K8sResource):
-    """An image-automation `ImageRepository`: `image_automation` matches them to Receiver references by name."""
+    """An image-automation `ImageRepository`: `image_automation` matches them to namespaced Receiver references."""
 
 
 class SecretRef(BaseModel):
@@ -269,6 +269,7 @@ class ReceiverResourceRef(BaseModel):
     model_config = ConfigDict(extra="ignore")
     kind: str = ""
     name: str = ""
+    namespace: str | None = None
 
 
 class ReceiverSpec(BaseModel):

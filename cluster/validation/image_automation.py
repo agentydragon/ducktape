@@ -26,7 +26,7 @@ _IMAGE_POLICY_MARKER = re.compile(r'"\$imagepolicy":\s*"([^"]+)"')
 # haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
 # Receiver here may still reference one (cluster/generated/haku/ui-image-webhook), so exempt these
 # from the "Receiver references an undefined ImageRepository" check.
-_HAKU_STATE_IMAGE_REPOS = {"haku-anki", "haku-ui"}
+_HAKU_STATE_IMAGE_REPOS = {"haku-sandbox/haku-anki", "haku-sandbox/haku-ui"}
 
 # A non-empty YAML flow mapping in *structural* position — `- {name: cfg}` or `key: {a: 1}`.
 #
@@ -44,10 +44,12 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     for resources in cluster.rendered_resources.values():
         for resource in resources:
             if isinstance(resource, ImageRepositoryResource):
-                image_repos.add(resource.name)
+                image_repos.add(f"{resource.namespace}/{resource.name}")
             elif isinstance(resource, ReceiverResource):
                 webhook_repos.update(
-                    ref.name for ref in resource.spec.resources if ref.kind == "ImageRepository" and ref.name
+                    f"{ref.namespace or resource.namespace}/{ref.name}"
+                    for ref in resource.spec.resources
+                    if ref.kind == "ImageRepository" and ref.name
                 )
 
     return [
