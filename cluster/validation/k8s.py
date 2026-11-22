@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from typing import Any, NotRequired, TypedDict
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasPath, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -121,24 +121,8 @@ class PodTemplateWorkloadResource(K8sResource):
         return self.spec.template.spec.images
 
 
-class CronJobJobTemplate(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
-
-
-class CronJobSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    job_template: CronJobJobTemplate = Field(default_factory=CronJobJobTemplate)
-
-
-class CronJobResource(K8sResource):
-    spec: CronJobSpec = Field(default_factory=CronJobSpec)
-
-    @property
-    def images(self) -> list[str]:
-        return self.spec.job_template.template.spec.images
+class CronJobResource(PodTemplateWorkloadResource):
+    spec: PodTemplateWorkloadSpec = Field(validation_alias=AliasPath("spec", "jobTemplate", "spec"))
 
 
 class SandboxTemplateSpec(BaseModel):

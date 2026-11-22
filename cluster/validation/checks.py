@@ -12,7 +12,6 @@ from cluster.validation.k8s import (
     AgentplaneSandboxTemplateResource,
     CiliumPolicyResource,
     ClusterExternalSecretResource,
-    CronJobResource,
     ExternalSecretResource,
     K8sResource,
     PodTemplateWorkloadResource,
@@ -24,7 +23,6 @@ from cluster.validation.k8s import (
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _FORGEJO_IMAGE_WORKLOAD_TYPES = (
-    CronJobResource,
     PodTemplateWorkloadResource,
     SandboxTemplateResource,
     AgentplaneSandboxTemplateResource,
