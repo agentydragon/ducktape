@@ -747,7 +747,6 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/app:sandbox_models",
         "//agentplane/app:settings",
-        "//agentplane/crds:policyset",
         "//agentplane/env/runtime:harness",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//cluster/cdk8s:agent_access_profiles",

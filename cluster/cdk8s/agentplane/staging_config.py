@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -19,6 +18,7 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import kubernetes_account_ref
 from cluster.cdk8s.agentplane.actions_staging_policies import (
+    ASSIGNABLE_EGRESS_RULES,
     COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
@@ -28,8 +28,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     HAKU_SHARED_GITHUB_POLICIES,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
-    coinbase_egress_rules,
-    ovh_billing_egress_rules,
+    identity_egress_set_name,
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
 from cluster.cdk8s.agentplane.egress import (
@@ -40,11 +39,7 @@ from cluster.cdk8s.agentplane.egress import (
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import (
-    AIQUOTA_READ_POLICY,
-    FORGEJO_FINANCE_AGENT_POLICY,
-    PLAID_PGWEB_CREDENTIAL,
-)
+from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, FORGEJO_FINANCE_AGENT_POLICY
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, TABBYAPI_QWEN_STOCK
 from util.urls import HttpEndpointUrl
@@ -75,18 +70,6 @@ def send_to(group: str) -> str:
     return f"send-to-{group}"
 
 
-def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
-    """The non-Kubernetes rules of the assignable sets that have any, by set name. In the identity
-    catalog these are the sets that stay `PolicySet`s; the rest are only `KubernetesRoleSet`s."""
-    return {
-        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
-        agent_access_profiles.OVH_BILLING_POLICY: ovh_billing_egress_rules(),
-        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
-            credential=PLAID_PGWEB_CREDENTIAL
-        ),
-    }
-
-
 def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
     """Identity-supported egress sets for a preset, plus its own Kubernetes account use set.
 
@@ -94,10 +77,12 @@ def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list
     new launches use their pure-egress `-identity` variants.
     """
     sets = agent_access_profiles.PRESET_ROLE_SETS[preset]
-    egress_sets = assignable_set_egress_rules()
-    suffix = "" if identity_catalog else "-identity"
     return [
-        *(f"{name}{suffix}" for name in sets if name in egress_sets),
+        *(
+            identity_egress_set_name(name, identity_catalog=identity_catalog)
+            for name in sets
+            if name in ASSIGNABLE_EGRESS_RULES
+        ),
         kubernetes_account_ref.account(namespace, preset).credential_name,
     ]
 
