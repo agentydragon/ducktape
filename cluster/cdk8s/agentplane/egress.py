@@ -20,7 +20,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
 )
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -792,12 +792,7 @@ class Egress(Construct):
                     NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)
                 )
             )
-            # The fluent scheduling API has no topologySpreadConstraints equivalent.
-            ApiObject.of(workload.deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/topologySpreadConstraints", [node_scheduling.zone_spread(zones, _LABELS)]
-                )
-            )
+            node_scheduling.set_topology_spread(workload.deployment, node_scheduling.zone_spread(zones, _LABELS))
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         public_web_pki.mount(self, workload.container)

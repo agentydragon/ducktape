@@ -12,7 +12,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObject, JsonPatch
+from cdk8s_plus_34 import Deployment, k8s
 
 ZONE_LABEL = "topology.kubernetes.io/zone"
 # The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
@@ -99,14 +100,21 @@ def one_per_host(labels: Mapping[str, str], *, node_affinity: k8s.NodeAffinity |
     )
 
 
-def hostname_spread(labels: Mapping[str, str]) -> k8s.TopologySpreadConstraint:
-    """Spread each revision across two hosts, leaving a replica Pending if only one is eligible."""
+def hostname_spread(labels: Mapping[str, str], *, min_domains: int | None = 2) -> k8s.TopologySpreadConstraint:
+    """Spread each revision across eligible hosts. With the default, only one Pod can schedule on a sole eligible host."""
     return k8s.TopologySpreadConstraint(
         topology_key="kubernetes.io/hostname",
         max_skew=1,
-        min_domains=2,
+        min_domains=min_domains,
         when_unsatisfiable="DoNotSchedule",
         label_selector=k8s.LabelSelector(match_labels=dict(labels)),
         match_label_keys=["pod-template-hash"],
         node_taints_policy="Honor",
+    )
+
+
+def set_topology_spread(deployment: Deployment, constraint: k8s.TopologySpreadConstraint) -> None:
+    """Set the Pod constraint that cdk8s-plus Deployment's scheduling API does not expose."""
+    ApiObject.of(deployment).add_json_patch(
+        JsonPatch.add("/spec/template/spec/topologySpreadConstraints", [constraint])
     )

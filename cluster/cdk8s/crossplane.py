@@ -131,14 +131,7 @@ def chart(app: App) -> Chart:
             "leaderElection": True,
             "affinity": k8s.Affinity(node_affinity=node_scheduling.zone_affinity(node_scheduling.HOME_AND_OVH_ZONES)),
             "topologySpreadConstraints": [
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "DoNotSchedule",
-                    "nodeTaintsPolicy": "Honor",
-                    "labelSelector": {"matchLabels": core_selector},
-                    "matchLabelKeys": ["pod-template-hash"],
-                },
+                node_scheduling.hostname_spread(core_selector, min_domains=None),
                 # Three replicas normally cover OVH and both home zones. With one zone left,
                 # allow replacements there on different hosts instead of blocking recovery.
                 k8s.TopologySpreadConstraint(
