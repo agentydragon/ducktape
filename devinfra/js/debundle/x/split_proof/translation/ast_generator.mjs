@@ -154,6 +154,10 @@ export function generateAstBundle(seed, round) {
       const [left, right] = unaryPick(2) ? [type, tag] : [tag, type];
       return { type: "BinaryExpression", operator: "!=", left, right };
     }
+    if (form === 2 || form === 3) {
+      const right = scope.values.length ? ref(scope.values[unaryPick(scope.values.length)]) : num(unaryPick(4));
+      return { type: "BinaryExpression", operator: form === 2 ? "===" : "!==", left: operand, right };
+    }
     return operand;
   }
   function operandExpression(scope, depth) {

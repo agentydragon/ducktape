@@ -77,6 +77,24 @@ for (const [name, expr] of [
   assertWorkerResult(`conditional-abrupt-${name}`, source, 7);
 }
 
+// The wrong comparison result throws during initialization, so an incorrect lowering
+// cannot pass by making the same mistake in both the original and the split.
+for (const [index, [left, op, right, expected]] of [
+  [literal("1"), "===", literal(1), false],
+  [id("worker"), "===", id("worker"), true],
+  [id("worker"), "!==", { type: "ObjectExpression", properties: [] }, true],
+  [id("NaN"), "===", id("NaN"), false],
+].entries()) {
+  const test = { type: "BinaryExpression", operator: op, left, right };
+  const abrupt = call(arrow([], block([throws(literal(index))])));
+  const result = conditional(test, expected ? literal(true) : abrupt, expected ? abrupt : literal(false));
+  assertWorkerResult(
+    `strict-comparison-${index}`,
+    observedProgram({ type: "ObjectExpression", properties: [] }, result),
+    expected
+  );
+}
+
 // Exercise both direct evaluation and calls during initialization. The first seed
 // reproduces the proof-cost regression on a moved worker returning "undefined" != typeof undefined.
 for (const [index, [operand, tag, expected]] of [

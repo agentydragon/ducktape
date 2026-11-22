@@ -237,13 +237,17 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     unary op argument (fun _ => lower argument)
   | "BinaryExpression" =>
     let op ← field j "operator"
-    unless op == "!=" do throw s!"unsupported linked binary operator {op}"
     let lower := linkedExpr imports inFunction ""
     let left ← lower (← j.getObjVal? "left")
     let right ← lower (← j.getObjVal? "right")
-    unless stringOperand left && stringOperand right do
-      throw "linked != requires two string operands (string literals or typeof expressions)"
-    return .binary .ne left right
+    match op with
+    | "===" => return .binary .strictEq left right
+    | "!==" => return .binary .strictNe left right
+    | "!=" =>
+      unless stringOperand left && stringOperand right do
+        throw "linked != requires two string operands (string literals or typeof expressions)"
+      return .binary .ne left right
+    | _ => throw s!"unsupported linked binary operator {op}"
   | "ConditionalExpression" =>
     let lower := linkedExpr imports inFunction ""
     return .cond (← lower (← j.getObjVal? "test")) (← lower (← j.getObjVal? "consequent"))
