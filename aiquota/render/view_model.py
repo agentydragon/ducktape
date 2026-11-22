@@ -386,11 +386,7 @@ def _window_view(
         used=display_used_percent(window),
         reset="awaiting update" if reset_pending else format_duration(window.reset_seconds),
         pace=format_pace(pace),
-        forecast=None
-        if reset_pending or stale
-        else "exhausted"
-        if exhausted
-        else format_pace_forecast(pace, window.reset_seconds),
+        forecast=None if reset_pending or stale else "exhausted" if exhausted else format_pace_forecast(pace),
         tint="stale"
         if stale or reset_pending
         else "hot"
