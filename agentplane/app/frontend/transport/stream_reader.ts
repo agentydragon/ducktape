@@ -36,8 +36,10 @@ export interface ReaderHandlers<F> {
   frames: (body: ReadableStream<string>) => ReadableStream<F>;
   /** A response was accepted and frame delivery is starting. */
   onOpen?: () => void;
-  /** Abort and retry if no first frame arrives within this many milliseconds. */
+  /** Abort and retry if the initial frame does not arrive within this many milliseconds. */
   initialFrameTimeoutMs?: number;
+  /** Which applied frame ends the initial timeout. By default, the first frame ends it. */
+  initialFrameReady?: (frame: F) => boolean;
   /** Abort and retry if an established stream stops delivering frames. */
   idleTimeoutMs?: number;
   /** One frame, which makes the stream live. Throwing ends the connection. */
@@ -51,8 +53,21 @@ export interface ReaderHandlers<F> {
 /** Follows `url` until the returned function is called. */
 export function followResponse<F>(
   url: string | (() => string),
-  { accept, frames, onOpen, initialFrameTimeoutMs, idleTimeoutMs, onFrame, onConnection, onError }: ReaderHandlers<F>
+  {
+    accept,
+    frames,
+    onOpen,
+    initialFrameTimeoutMs,
+    initialFrameReady,
+    idleTimeoutMs,
+    onFrame,
+    onConnection,
+    onError,
+  }: ReaderHandlers<F>
 ): () => void {
+  const initialTimeoutMessage = initialFrameReady
+    ? "stream did not reach its initial checkpoint"
+    : "stream did not send an initial frame";
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let retries = 0;
   let retry: number | undefined;
@@ -66,13 +81,10 @@ export function followResponse<F>(
   }
 
   async function read(attempt: AbortController): Promise<void> {
-    const timeout =
+    let initialTimeout =
       initialFrameTimeoutMs === undefined
         ? undefined
-        : window.setTimeout(
-            () => attempt.abort(new Error("stream did not send an initial frame")),
-            initialFrameTimeoutMs
-          );
+        : window.setTimeout(() => attempt.abort(new Error(initialTimeoutMessage)), initialFrameTimeoutMs);
     let idleTimeout: number | undefined;
     try {
       const response = await fetchWithLogin(typeof url === "string" ? url : url(), {
@@ -86,12 +98,15 @@ export function followResponse<F>(
       for (;;) {
         const { done, value } = await reader.read();
         if (done) return;
-        window.clearTimeout(timeout);
         if (connection.phase !== "live") {
           retries = 0;
           report({ phase: "live", since: Date.now() });
         }
         onFrame(value);
+        if (initialTimeout !== undefined && (initialFrameReady?.(value) ?? true)) {
+          window.clearTimeout(initialTimeout);
+          initialTimeout = undefined;
+        }
         window.clearTimeout(idleTimeout);
         if (idleTimeoutMs !== undefined)
           idleTimeout = window.setTimeout(
@@ -100,7 +115,7 @@ export function followResponse<F>(
           );
       }
     } finally {
-      window.clearTimeout(timeout);
+      window.clearTimeout(initialTimeout);
       window.clearTimeout(idleTimeout);
     }
   }
@@ -112,8 +127,10 @@ export function followResponse<F>(
     try {
       await read(attempt);
     } catch (reason) {
-      lastError = displayableError(reason);
-      if (!closed) onError?.(reason);
+      // A browser may report a generic AbortError when aborting an open response body.
+      const failure = attempt.signal.aborted ? attempt.signal.reason : reason;
+      lastError = displayableError(failure);
+      if (!closed) onError?.(failure);
     } finally {
       // A malformed frame or a consumer error must close the old body before reconnecting.
       attempt.abort();

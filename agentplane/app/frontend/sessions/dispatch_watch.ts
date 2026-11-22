@@ -7,6 +7,10 @@ import { canonicalDispatchCommandIds, type LocalCommands } from "./local_command
 /** `DispatchFilter.command_ids`' bound; the commands past it go unwatched. */
 const MAX_WATCHED_COMMANDS = 1000;
 
+/** Clean EOF also ends a normal watch lease. Give the first retry time to catch up. */
+const CLEAN_CLOSE_GRACE_MS = 3_000;
+const INITIAL_CATCH_UP_TIMEOUT_MS = 60_000;
+
 function outOfRange(reason: unknown): boolean {
   if (reason instanceof WatchStreamError) return reason.code === 11;
   return reason instanceof HttpError && reason.code === 11;
@@ -34,7 +38,14 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
     return params;
   };
   let held = new Set<string>();
-  return sessionDispatcherClient.watchDispatches(nextQuery, {
+  let cleanCloseTimer: number | undefined;
+  const clearCleanCloseTimer = () => {
+    window.clearTimeout(cleanCloseTimer);
+    cleanCloseTimer = undefined;
+  };
+  const stopWatch = sessionDispatcherClient.watchDispatches(nextQuery, {
+    initialFrameTimeoutMs: INITIAL_CATCH_UP_TIMEOUT_MS,
+    initialFrameReady: (frame) => typeof frame === "object" && frame !== null && "caughtUp" in frame,
     onOpen: () => {
       held = new Set();
     },
@@ -74,13 +85,12 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
                 throw new Error("Missing Dispatcher state could not be saved locally");
               }
             }
-            saveCursor(store, sessionId, asked, frame.resumeToken);
-            resumeToken = frame.resumeToken;
-            snapshotPending = false;
-          } else {
-            saveCursor(store, sessionId, asked, frame.resumeToken);
-            resumeToken = frame.resumeToken;
           }
+          saveCursor(store, sessionId, asked, frame.resumeToken);
+          resumeToken = frame.resumeToken;
+          snapshotPending = false;
+          clearCleanCloseTimer();
+          store.setDispatchWatchError(null);
         } else {
           throw new Error("Dispatcher returned a watch frame without a result");
         }
@@ -89,7 +99,18 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
         throw reason;
       }
     },
-    onConnection: () => undefined,
+    onConnection: (connection) => {
+      if (connection.phase !== "reconnecting") return;
+      if (connection.lastError !== null) {
+        clearCleanCloseTimer();
+        store.setDispatchWatchError(connection.lastError);
+      } else if (store.getSnapshot().dispatchWatchError === null) {
+        cleanCloseTimer ??= window.setTimeout(
+          () => store.setDispatchWatchError("The Dispatcher closed the stream."),
+          CLEAN_CLOSE_GRACE_MS
+        );
+      }
+    },
     onError: (reason) => {
       if (!outOfRange(reason)) return;
       store.clearDispatchWatchResumeToken(sessionId, asked);
@@ -99,4 +120,8 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
       store.recordDispatchWatchCoverageLoss();
     },
   });
+  return () => {
+    stopWatch();
+    clearCleanCloseTimer();
+  };
 }

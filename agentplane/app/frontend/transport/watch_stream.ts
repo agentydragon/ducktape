@@ -19,8 +19,10 @@ export interface WatchHandlers {
   onConnection: (connection: StreamConnection) => void;
   /** Called for a failed connection before it is retried. */
   onError?: (reason: unknown) => void;
-  /** Bounds a watch that opens but never sends its initial snapshot. */
+  /** Bounds a watch that cannot connect or deliver its initial state. */
   initialFrameTimeoutMs?: number;
+  /** Which applied frame ends the initial timeout. By default, the first frame ends it. */
+  initialFrameReady?: (frame: JsonValue) => boolean;
   /** Bounds a quiet stream whose contract promises periodic frames. */
   idleTimeoutMs?: number;
 }
@@ -60,7 +62,7 @@ function results(): TransformStream<string, JsonValue> {
 /** Follows `url` until the returned function is called. */
 export function followWatch(
   url: string | (() => string),
-  { onOpen, onFrame, onConnection, onError, initialFrameTimeoutMs, idleTimeoutMs }: WatchHandlers
+  { onOpen, onFrame, onConnection, onError, initialFrameTimeoutMs, initialFrameReady, idleTimeoutMs }: WatchHandlers
 ): () => void {
   return followResponse(url, {
     accept: "application/x-ndjson",
@@ -70,6 +72,7 @@ export function followWatch(
     onConnection,
     onError,
     initialFrameTimeoutMs,
+    initialFrameReady,
     idleTimeoutMs,
   });
 }

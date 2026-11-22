@@ -362,6 +362,14 @@ function ConversationBody({
               : `Rejected event ${operational.feedError.cursor}: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`}
           </Text>
         )}
+        {commands.local.dispatchWatchError && (
+          <Text role="alert" size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
+            Command delivery updates disconnected. Queued or delivering states may be out of date while reconnecting.
+            <Text component="span" inherit display="block">
+              {commands.local.dispatchWatchError}
+            </Text>
+          </Text>
+        )}
         {commands.local.dispatchWatchCoverageLost && (
           <Text role="alert" c="red">
             Some earlier delivery updates or deletions may be missing because deletion records expired. Check thread

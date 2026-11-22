@@ -13,6 +13,7 @@ from agentplane.app.frontend.testing.app import (
     SUSPENDED_THREAD,
     UNNAMED_THREAD,
     AgentplaneFixture,
+    Flag,
     Scene,
 )
 from agentplane.app.frontend.testing.visual_assertions import (
@@ -596,6 +597,25 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await page.get_by_role("textbox", name="Message").fill("Please wake the Sandbox and continue.")
     await expect(page.get_by_role("button", name="Send")).to_be_enabled()
     await view.capture()
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatch_watch_interruption_and_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.remember_dispatch()
+    await app.set_flag(Flag.DISPATCH_WATCH_UNAVAILABLE)
+    await app.mount_thread(RUNNING_THREAD)
+    page = view.page
+    alert = page.get_by_role("alert").filter(has_text="Command delivery updates disconnected")
+    queued = page.locator('[data-command-id="queued-dispatch"] [data-stage="queued"]')
+    await expect(alert).to_contain_text("Queued or delivering states may be out of date")
+    await expect(alert).to_contain_text("Dispatcher temporarily unavailable")
+    await expect(queued).to_be_visible()
+    await view.capture(name="dispatch_watch_disconnected")
+
+    await app.set_flag(Flag.DISPATCH_WATCH_UNAVAILABLE, on=False)
+    await expect(alert).to_have_count(0)
+    await expect(queued).to_be_visible()
+    await view.capture(name="dispatch_watch_recovered")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
