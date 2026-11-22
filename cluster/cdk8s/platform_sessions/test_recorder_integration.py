@@ -13,7 +13,6 @@ from uuid import uuid4
 
 import docker
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
@@ -265,46 +264,16 @@ def _assert_full_fidelity(flows: list[http.HTTPFlow], marker: str) -> None:
     assert flow.response.headers["Set-Cookie"] == "synthetic-session=unredacted-response-cookie; HttpOnly"
 
 
-def _container_mounts(config: str, captures: str, ca: str, origin: str) -> dict[str, dict[str, str]]:
-    return {
-        config: {"bind": "/config", "mode": "rw"},
-        captures: {"bind": "/captures", "mode": "rw"},
-        ca: {"bind": "/ca", "mode": "ro"},
-        origin: {"bind": "/origin", "mode": "ro"},
-    }
-
-
-def _deployed_recorder_contract(app: App) -> tuple[str, list[str]]:
-    objects = Cdk8sTesting.synth(remote.chart(app, record_upstream_traffic=True))
-    recorders = [
-        container
-        for obj in objects
-        if obj["kind"] == "Deployment"
-        for container in obj["spec"]["template"]["spec"].get("initContainers", [])
-        if container["name"] == "upstream-recorder"
-    ]
-    assert recorders
-    contracts = {(recorder["image"], tuple(recorder["command"])) for recorder in recorders}
-    assert len(contracts) == 1, f"Providers have different recorder images/commands: {contracts}"
-    image, command = next(iter(contracts))
-    return image, list(command)
-
-
-def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scratch_app: App) -> None:
-    deployed_image, deployed_command = _deployed_recorder_contract(scratch_app)
+def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> None:
+    initializer, recorder = remote.recorder_containers()
+    assert initializer.command
+    assert recorder.command
     pinned_image = os.environ["MITMPROXY_TEST_IMAGE_REFERENCE"]
     for registry in ("mirror.gcr.io/", "docker.io/"):
         if pinned_image.startswith(registry):
             pinned_image = pinned_image.removeprefix(registry)
             break
-    assert deployed_image == pinned_image
-    assert deployed_command[:2] == ["sh", "-c"]
-    assert len(deployed_command) == 3
-    production_command = deployed_command[2]
-    assert production_command.count(" -w ") == 1
-    recorder_command = production_command.replace(
-        " -w ", " --set ssl_verify_upstream_trusted_ca=/origin/upstream-ca.crt -w ", 1
-    )
+    assert recorder.image == pinned_image
     mitmproxy_ref = load_oci_image(mitmproxy_image.LAYOUT_RLOCATION)
     busybox_ref = load_oci_image(busybox_image.LAYOUT_RLOCATION)
     client = docker.from_env()
@@ -348,12 +317,14 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
         containers.append(setup)
         _put_files(setup, "/ca", {"tls.key": _private_key_pem(recorder_key), "tls.crt": _pem_cert(recorder_cert)})
         _put_files(
+            setup, "/origin", {"upstream.crt": _pem_cert(upstream_cert), "upstream.key": _private_key_pem(upstream_key)}
+        )
+        _put_files(
             setup,
-            "/origin",
+            "/config",
             {
                 "upstream-ca.crt": _pem_cert(upstream_ca_cert),
-                "upstream.crt": _pem_cert(upstream_cert),
-                "upstream.key": _private_key_pem(upstream_key),
+                "config.yaml": b"ssl_verify_upstream_trusted_ca: /config/upstream-ca.crt\n",
             },
         )
         _put_files(setup, "/fixture", {"origin.py": _ORIGIN_SERVER.encode()})
@@ -363,7 +334,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
                 "-c",
                 "chown -R 1000:1000 /config /captures /ca /origin /fixture && "
                 "chmod 0770 /config /captures && chmod 0440 /ca/tls.key /ca/tls.crt "
-                "/origin/upstream-ca.crt /origin/upstream.crt /origin/upstream.key && "
+                "/origin/upstream.crt /origin/upstream.key && "
                 "chmod 0550 /fixture /fixture/origin.py",
             ]
         )
@@ -376,8 +347,8 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
         # Run the exact pod init command as UID 1000 with a read-only root filesystem.
         init = client.containers.run(
             busybox_ref,
-            entrypoint=["sh", "-c"],
-            command=["umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
+            entrypoint=initializer.command[0],
+            command=list(initializer.command[1:]),
             user="1000:1000",
             read_only=True,
             volumes={
@@ -426,14 +397,18 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
 
         proxy = client.containers.run(
             mitmproxy_ref,
-            entrypoint=["sh", "-c"],
-            command=[recorder_command],
+            entrypoint=recorder.command[0],
+            command=list(recorder.command[1:]),
             user="1000:1000",
             read_only=True,
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],
             network=network.name,
-            volumes=_container_mounts(config_volume.name, captures_volume.name, ca_volume.name, origin_volume.name),
+            volumes={
+                config_volume.name: {"bind": "/config", "mode": "rw"},
+                captures_volume.name: {"bind": "/captures", "mode": "rw"},
+                ca_volume.name: {"bind": "/ca", "mode": "ro"},
+            },
             detach=True,
         )
         containers.append(proxy)
