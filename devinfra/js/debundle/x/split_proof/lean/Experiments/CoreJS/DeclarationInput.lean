@@ -53,30 +53,36 @@ def decode (program : Json) : Except String (List DeclarationGroup) := do
   let body ← program.getObjValAs? (Array Json) "body"
   body.toList.zipIdx.mapM fun (statement, i) => (group statement).mapError fun why => s!"statement {i}: {why}"
 
-private inductive Primitive where
+private inductive InitializerExpr where
   | undef | null | bool (b : Bool) | num (n : Float) | str (s : String) | var (x : Name)
+  | not (arg : InitializerExpr) | negNum (n : Float)
   deriving DecidableEq
 
-private def Primitive.toExpr : Primitive → Expr
+private def InitializerExpr.toExpr : InitializerExpr → Expr
   | .undef => .undef
   | .null => .null
   | .bool b => .bool b
   | .num n => .num n
   | .str s => .str s
   | .var x => .var x
+  | .not arg => .unary .not arg.toExpr
+  | .negNum n => .unary .neg (.num n)
 
-private def primitive : (e : Expr) → Option { p : Primitive // p.toExpr = e }
+private def initializerExpr : (e : Expr) → Option { p : InitializerExpr // p.toExpr = e }
   | .undef => some ⟨.undef, rfl⟩
   | .null => some ⟨.null, rfl⟩
   | .bool b => some ⟨.bool b, rfl⟩
   | .num n => some ⟨.num n, rfl⟩
   | .str s => some ⟨.str s, rfl⟩
   | .var x => some ⟨.var x, rfl⟩
+  | .unary .not arg => (initializerExpr arg).map fun ⟨p, h⟩ =>
+    ⟨.not p, congrArg (Expr.unary .not) h⟩
+  | .unary .neg (.num n) => some ⟨.negNum n, rfl⟩
   | _ => none
 
 private inductive Declaration where
   | varDecl (x : Name)
-  | decl (kind : DeclKind) (x : Name) (init : Primitive)
+  | decl (kind : DeclKind) (x : Name) (init : InitializerExpr)
   deriving DecidableEq
 
 private def Declaration.toStmt : Declaration → Stmt
@@ -85,7 +91,7 @@ private def Declaration.toStmt : Declaration → Stmt
 
 private def declaration : (s : Stmt) → Option { d : Declaration // d.toStmt = s }
   | .varDecl x => some ⟨.varDecl x, rfl⟩
-  | .decl kind x init => (primitive init).map fun ⟨v, h⟩ =>
+  | .decl kind x init => (initializerExpr init).map fun ⟨v, h⟩ =>
     ⟨.decl kind x v, congrArg (Stmt.decl kind x) h⟩
   | _ => none
 

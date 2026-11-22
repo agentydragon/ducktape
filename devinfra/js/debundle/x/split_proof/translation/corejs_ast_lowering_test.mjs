@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { dumpParsed } from "../lowering/dump_core.mjs";
@@ -30,6 +31,15 @@ function run(programs, ast) {
     .map((line) => JSON.parse(line));
 }
 
+async function nodeOutcome(url) {
+  try {
+    await import(url);
+    return ["normal", ""];
+  } catch (e) {
+    return ["throw", e instanceof Error ? e.name : e == null ? String(e) : `${typeof e}:${e}`];
+  }
+}
+
 // Each seed builds a fresh module and binding chain. Throwing the last value
 // makes precision, shadowing and initialization observable in Node and CoreJS.
 const literals = [
@@ -49,7 +59,13 @@ const sources = [
   "const before = later; let later = 2;",
   "var before = later; var later = 2; throw before;",
   'const undefined = "shadow"; throw undefined;',
+  "const nested = !(!(!false)); throw nested;",
+  "const nested = !(!(-2.5)); throw nested;",
+  "const negative = -2.5; throw negative;",
+  "const negativeZero = -0; throw negativeZero;",
+  "export const early = !late, late = -2;",
 ];
+
 for (let seed = 0; seed < 48; seed++) {
   const value = seed % 3 === 0 ? String((seed + 1) * 1.234567891234567e-13) : literals[seed % literals.length];
   const declarations = [`export const first = ${value};`, "; debugger;"];
@@ -61,25 +77,32 @@ for (let seed = 0; seed < 48; seed++) {
   }
   // A later initializer observes either the preceding binding, a hoisted var,
   // or an uninitialized lexical binding in this same declaration list.
-  const group = Array.from(
-    { length: 2 + (seed % 5) },
-    (_, i) => `part${i} = ${i === 0 ? (seed % 2 === 0 ? value : "part1") : `part${i - 1}`}`
-  );
+  const group = Array.from({ length: 2 + (seed % 5) }, (_, i) => {
+    const operand = i > 0 ? `part${i - 1}` : seed % 2 ? "part1" : value;
+    const init = seed % 4 === 0 && i === 0 ? `-${seed}` : "!".repeat((seed + i) % 4) + operand;
+    return `part${i} = ${init}`;
+  });
   sources.push(`export ${["var", "let", "const"][seed % 3]} ${group.join(", ")}; throw part1;`);
   sources.push(`${declarations.join("\n")} export { ${last} as result }; throw ${last};`);
 }
 const actual = run(sources.map(dumpOf), true);
 assert.deepEqual(actual, run(sources.map(reference), false));
 for (const [i, source] of sources.entries()) {
-  let end = "normal";
-  let detail = "";
-  try {
-    await import(`data:text/javascript,${encodeURIComponent(source)}#${i}`);
-  } catch (e) {
-    end = "throw";
-    detail = e instanceof Error ? e.name : e == null ? String(e) : `${typeof e}:${e}`;
-  }
-  assert.deepEqual([actual[i].end, actual[i].detail], [end, detail], source);
+  assert.deepEqual(
+    [actual[i].end, actual[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#${i}`),
+    source
+  );
+}
+
+const unsupportedOperands = ["-binding", "-true", "-Infinity", "+1", "~1"];
+const refusals = run(
+  unsupportedOperands.map((e) => dumpOf(`const binding = 1, value = ${e};`)),
+  true
+);
+for (const [i, expression] of unsupportedOperands.entries()) {
+  assert.equal(refusals[i].end, "malformed", expression);
+  assert.match(refusals[i].detail, /expected a numeric literal after unary minus|unsupported unary operator/);
 }
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
@@ -87,6 +110,7 @@ function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpOf(source)));
   return execFileSync(process.env.LOWERSPLIT, [ast, spec, dir, ...args], { encoding: "utf8" });
 }
+
 const source = "var a = 1, b = a;";
 // The checker obtains identities from Program.body even when presented with a
 // conflicting legacy table. A table on its own cannot stand in for a module.
@@ -132,19 +156,50 @@ assert.match(split("var a = 1; a();", ["--corejs", missing]), /proved slice: non
 // keep source order in one plan and move its final independent binding in the other.
 for (let width = 2; width <= 4; width++) {
   const names = Array.from({ length: width }, (_, i) => `d${i}`);
-  const declarations = names.map((name, i) => `${name} = ${width + i}`).join(", ");
-  const code = `${["let", "const", "var"][width - 2]} ${declarations};`;
+  const declarations = names
+    .map((name, i) => {
+      const number = i === 0 ? "-0" : `-${width + i}.5`;
+      return `${name} = ${"!".repeat(i)}${number}`;
+    })
+    .join(", ");
+  const code = `${["let", "const", "var"][width - 2]} ${declarations}; export const result = ${names[0]};`;
   for (const moved of [0, width - 1]) {
+    const side = `side-${width}-${moved}.mjs`;
     const modules = {
-      "side.mjs": [names[moved]],
-      "entry.mjs": names.flatMap((_, i) => (i === moved ? [] : [`#${i}`])),
+      [side]: [names[moved]],
+      "entry.mjs": [...names.filter((_, i) => i !== moved), `#${width}`],
     };
     file("spec.json", JSON.stringify({ entry: "entry.mjs", modules }));
     const log = split(code);
     assert.match(log, /Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree/);
     assert.match(log, moved === 0 ? /all modeled outcomes/ : /normally terminating executions/);
+    const original = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+    const emitted = await import(`${pathToFileURL(path.join(dir, "entry.mjs")).href}?${width}-${moved}`);
+    assert.ok(Object.is(original.result, -0));
+    assert.ok(Object.is(emitted.result, original.result));
   }
 }
+
+// This declaration-only AST is split without `--corejs`; the certificate also
+// covers a lexical read that throws in Node because the later declarator is in
+// its TDZ.
+file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["early", "late"] } }));
+const tdzDeclaration = "export const early = !late, late = -2;";
+const tdzLog = split(tdzDeclaration);
+assert.match(
+  tdzLog,
+  /Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree on all modeled outcomes/
+);
+assert.match(tdzLog, /FootprintsOfSyntax: against Lean ESTree lowering/);
+assert.deepEqual(await nodeOutcome(`data:text/javascript,${encodeURIComponent(tdzDeclaration)}#tdz-declaration`), [
+  "throw",
+  "ReferenceError",
+]);
+assert.deepEqual(await nodeOutcome(`${pathToFileURL(path.join(dir, "entry.mjs")).href}?tdz-declaration`), [
+  "throw",
+  "ReferenceError",
+]);
+
 file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 assert.match(split("var a; let b;"), /Declaration extraction: .*all modeled outcomes/);
 assert.match(split("export let a = b, b = 1;"), /Declaration extraction: .*all modeled outcomes/);

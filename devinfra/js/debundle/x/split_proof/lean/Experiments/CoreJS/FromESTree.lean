@@ -31,7 +31,7 @@ private def literal (key : String) : Except String Expr := do
       return .num n
     throw "unsupported literal"
 
-def expr (j : Json) : Except String Expr := do
+partial def expr (j : Json) : Except String Expr := do
   match ← field j "type" with
   | "Literal" => literal (← field j "lit")
   | "Identifier" =>
@@ -45,6 +45,15 @@ def expr (j : Json) : Except String Expr := do
       | "NaN" => return .num Num.nan
       | _ => throw s!"unsupported global {x}"
     | k => throw s!"unsupported binding class {k}"
+  | "UnaryExpression" =>
+    let argument ← j.getObjVal? "argument"
+    match ← field j "operator" with
+    | "!" => return .unary .not (← expr argument)
+    | "-" =>
+      unless (← field argument "type") == "Literal" do throw "expected a numeric literal after unary minus"
+      let .num n ← literal (← field argument "lit") | throw "expected a numeric literal after unary minus"
+      return .unary .neg (.num n)
+    | op => throw s!"unsupported unary operator {op}"
   | kind => throw s!"unsupported expression {kind}"
 
 def moduleBinding (id : Json) : Except String Name := do
