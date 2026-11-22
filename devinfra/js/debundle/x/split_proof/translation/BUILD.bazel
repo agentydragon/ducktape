@@ -57,8 +57,8 @@ _SHIFT_FUZZ_DATA = [
     ":node_modules/shift-fuzzer",
     ":node_modules/shift-parser",
     "shift_fuzz_worker.mjs",
-    "modern_syntax.mjs",
-    "scope_metadata.mjs",
+    ":modern_syntax",
+    ":scope_metadata",
     "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
@@ -95,7 +95,7 @@ _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
 _CHECKER_RUNFILES = [
     ":frontend",
-    "scope_metadata.mjs",
+    ":scope_metadata",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     _TRANSLATE,
@@ -137,7 +137,7 @@ js_test(
 )
 
 _LOWER_CALLBACK_FUZZ_DATA = [
-    "scope_metadata.mjs",
+    ":scope_metadata",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
@@ -893,7 +893,7 @@ js_test(
 js_test(
     name = "modern_syntax_test",
     data = [
-        "modern_syntax.mjs",
+        ":modern_syntax",
         ":node_modules/acorn",
     ],
     entry_point = "modern_syntax_test.mjs",
@@ -904,19 +904,19 @@ js_test(
 js_test(
     name = "coverage_audit_test",
     data = _FUZZ_SOURCES + [
-        "analysis_inventory.mjs",
-        "coverage_audit.mjs",
         "fuzz.mjs",
         "intrinsics_probe.mjs",
-        "modern_syntax.mjs",
-        "scope_metadata.mjs",
-        "syntax_inventory.mjs",
+        ":analysis_inventory",
+        ":coverage_audit",
         ":frontend",
+        ":modern_syntax",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":node_modules/shift-codegen",
         ":node_modules/shift-fuzzer",
         ":node_modules/shift-parser",
+        ":scope_metadata",
+        ":syntax_inventory",
     ],
     entry_point = "coverage_audit_test.mjs",
 )
@@ -925,7 +925,7 @@ js_test(
 js_test(
     name = "host_inventory_test",
     data = [
-        "host_inventory.mjs",
+        ":host_inventory",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":node_modules/globals",
@@ -938,13 +938,13 @@ js_test(
     name = "footprint_oracle_test",
     size = "medium",
     data = [
-        "footprint_oracle.mjs",
         "oracle_harness.mjs",
-        "scope_metadata.mjs",
-        "syntax_inventory.mjs",
+        ":footprint_oracle",
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":scope_metadata",
+        ":syntax_inventory",
         "//devinfra/js/debundle/x/split_proof/lean:lower",
     ],
     entry_point = "footprint_oracle_test.mjs",
@@ -955,10 +955,9 @@ js_test(
 js_test(
     name = "gen_validity_test",
     size = "medium",
-    data = [
-        "syntax_inventory.mjs",
+    data = ["//devinfra/js/debundle/x/split_proof/translation/testing:program_generator"] + [
         ":node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+        ":syntax_inventory",
     ],
     entry_point = "gen_validity_test.mjs",
 )
@@ -988,14 +987,14 @@ js_test(
 js_test(
     name = "footprint_reduce_test",
     data = [
-        "footprint_oracle.mjs",
-        "footprint_reduce.mjs",
         "oracle_harness.mjs",
-        "scope_metadata.mjs",
-        "syntax_inventory.mjs",
+        ":footprint_oracle",
+        ":footprint_reduce",
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":scope_metadata",
+        ":syntax_inventory",
     ],
     entry_point = "footprint_reduce_test.mjs",
 )
@@ -1004,10 +1003,9 @@ js_test(
 # the model's fragment: both must print the same and end the same way.
 _MODEL = "//devinfra/js/debundle/x/split_proof/model"
 
-_COREJS_DIFFERENTIAL_DATA = [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
-    "scope_metadata.mjs",
-    "split_dump.mjs",
+_COREJS_DIFFERENTIAL_DATA = ["//devinfra/js/debundle/x/split_proof/translation/testing:program_generator"] + [
+    ":scope_metadata",
+    ":split_dump",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     _MODEL + ":sources",
@@ -1041,11 +1039,11 @@ js_test(
 js_test(
     name = "corejs_ast_lowering_test",
     data = [
-        "scope_metadata.mjs",
-        "split_dump.mjs",
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":scope_metadata",
+        ":split_dump",
         _MODEL + ":sources",
         "//:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
@@ -1157,7 +1155,7 @@ js_run_binary(
 
 js_test(
     name = "excalidraw_lean_specs_test",
-    data = ["generate_specs.mjs"],
+    data = [":generate_specs"],
     entry_point = "generate_specs_test.mjs",
 )
 
@@ -1216,9 +1214,9 @@ js_binary(
 js_binary(
     name = "dump_ast",
     data = [
-        "scope_metadata.mjs",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":scope_metadata",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     ],
     entry_point = "dump_ast.mjs",
@@ -1228,12 +1226,12 @@ js_binary(
 js_binary(
     name = "prepare_real_bundles",
     data = [
-        "scope_metadata.mjs",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":node_modules/lodash-es",
         ":node_modules/semver",
         ":node_modules/zod",
+        ":scope_metadata",
         "//:node_modules/esbuild",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof:real_bundle_entries",
@@ -1291,13 +1289,23 @@ py_test(
 eslint_test(
     name = "eslint_test",
     srcs = [
+        ":analysis_inventory",
         ":bazel_parser",
+        ":coverage_audit",
+        ":footprint_oracle",
+        ":footprint_reduce",
         ":frontend",
+        ":generate_specs",
+        ":host_inventory",
+        ":modern_syntax",
         ":pair",
         ":print",
         ":scope_metadata",
+        ":split_dump",
+        ":syntax_inventory",
         "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
         "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
         "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
     ],
 )
@@ -1322,6 +1330,79 @@ js_library(
     name = "print",
     srcs = ["print.mjs"],
     deps = [":node_modules/astring"],
+)
+
+js_library(
+    name = "modern_syntax",
+    srcs = ["modern_syntax.mjs"],
+)
+
+js_library(
+    name = "host_inventory",
+    srcs = ["host_inventory.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/globals",
+    ],
+)
+
+js_library(
+    name = "syntax_inventory",
+    srcs = ["syntax_inventory.mjs"],
+    deps = [":node_modules/acorn"],
+)
+
+js_library(
+    name = "analysis_inventory",
+    srcs = ["analysis_inventory.mjs"],
+)
+
+js_library(
+    name = "coverage_audit",
+    srcs = ["coverage_audit.mjs"],
+    deps = [
+        ":analysis_inventory",
+        ":modern_syntax",
+        ":node_modules/acorn",
+        ":node_modules/shift-codegen",
+        ":node_modules/shift-fuzzer",
+        ":syntax_inventory",
+    ],
+)
+
+js_library(
+    name = "footprint_oracle",
+    srcs = ["footprint_oracle.mjs"],
+    deps = [
+        ":frontend",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":syntax_inventory",
+    ],
+)
+
+js_library(
+    name = "footprint_reduce",
+    srcs = ["footprint_reduce.mjs"],
+    deps = [":footprint_oracle"],
+)
+
+js_library(
+    name = "split_dump",
+    srcs = ["split_dump.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/model:sources",
+    ],
+)
+
+js_library(
+    name = "generate_specs",
+    srcs = ["generate_specs.mjs"],
 )
 
 eslint_entry_points(name = "eslint_entry_points_test")
