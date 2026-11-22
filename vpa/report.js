@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611221125`);
+      const response = await fetch(`${path}?v=202611222322`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -335,6 +335,7 @@ function Report() {
 
   const { inventory, review } = snapshot;
   const { counts, workloads } = inventory;
+  const piraeus = review.piraeus_management_rollout.namespace_recount;
   const gitlab = review.gitlab_capacity;
   const railsSurge = gitlab.scenarios.find(
     (scenario) => scenario.name === "Rails surge",
@@ -402,9 +403,9 @@ function Report() {
     <${Anchor} href="../">← All reports<//>
     <${Title} order=${1} mt="md">Cluster VPA rollout<//>
     <${Text} size="lg" mt="sm"
-      >The latest rollout has expanded request coverage. Next, verify KubeVirt
-      recovery and address the GitLab capacity gate before enabling more
-      evictions.<//
+      >Both Piraeus management Pods now have CPU and memory requests. The next
+      storage sizing review covers the CSI controller. KubeVirt client recovery
+      and GitLab worker capacity remain open.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -475,6 +476,23 @@ function Report() {
 
     <section id="rollout-status">
       <${Title} order=${2} mt="xl">Recent rollouts<//>
+      <${Text} mt="sm" id="piraeus-management">
+        <strong
+          >Both Piraeus management Pods received static requests on 22
+          November.</strong
+        >
+        ${" "}The operator manager was Ready at 200m CPU and 192 MiB, and the
+        affinity controller at 15m CPU and 64 MiB. Both acquired their leader
+        leases with zero container restarts. The webhook retained a Ready
+        endpoint throughout the replacement. The affinity lease changed hands 54
+        seconds after the old leader’s last renewal. Before and after the
+        rollout, all nine satellites were connected and LINSTOR reported 194
+        UpToDate and 52 Diskless volume instances. Application I/O was
+        unmeasured. ${" "}<${Anchor} href=${github + "pull/19099"}
+          >Management requests PR<//
+        >
+        ${" · "}<${Anchor} href="./rollout-evidence.json">Rollout evidence<//>.
+      <//>
       <${Text} mt="sm">
         <strong>KubeVirt recovered VMI reconciliation.</strong> The controller
         lease moved at ${clock(review.kubevirt.controller_lease_acquired_utc)}
@@ -571,13 +589,16 @@ function Report() {
           PDBs, and evaluate Recreate per controller. The VMI result clears the
           new-instance check for the observed handoff.
         <//>
-        <${Text}>
-          <strong>3. Size Piraeus requests with its operators.</strong> Of 57
-          gaps, CSI node accounts for 24, satellites for 16, HA controller for
-          eight, and management and CSI Deployments for nine. Start with
-          owner-configured static requests for the management and CSI
-          Deployments. Check recovery and per-node budget before changing the
-          satellites or node agents.
+        <${Text} id="piraeus-next">
+          <strong>3. Size the six CSI controller containers next.</strong>
+          ${` At ${clock(piraeus.observed_utc)} UTC, ${piraeus.missing_either_request} of ${piraeus.regular_containers} Piraeus containers lacked CPU or memory requests. `}
+          Since the 11:09 inventory, the node fleet grew from eight to nine,
+          adding six gaps, and the management rollout closed two. Measure each
+          CSI container’s startup and peak usage and check volume provisioning
+          and attachment through replacement. Review the single LINSTOR API
+          container separately because its Deployment uses Recreate. The other
+          54 gaps span 27 CSI node, 18 satellite, and nine HA containers. Check
+          per-node headroom and recovery before changing those templates.
         <//>
         <${Text}>
           <strong>4. Observe the first Notifications updater eviction.</strong>

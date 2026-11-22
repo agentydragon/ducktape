@@ -225,5 +225,54 @@
       "limitations": "Read and reconnection probe only; no committed writes or authenticated end-user flow. One observed rollout is not an outage bound.",
       "recovery": "Primary moved to the former replica; both instances became Ready and replication streamed with zero byte replay lag at the instant checked. Continuous archiving, application health endpoint, and Flux were healthy; PVC identities were unchanged."
     }
+  },
+  "piraeus_management_rollout": {
+    "pr": 19099,
+    "merged_devel_commit": "a8c764fd771cefd47ca5310ea8e183038482954e",
+    "merged_at_utc": "2026-11-22T23:11:46Z",
+    "flux_kustomizations_ready": ["piraeus-operator", "piraeus-cluster"],
+    "operator_manager": {
+      "requests": {
+        "cpu": "200m",
+        "memory": "192Mi"
+      },
+      "ready": true,
+      "restarts": 0,
+      "vpa_mode": "Off",
+      "lease_acquired_utc": "2026-11-22T23:12:58.923617Z"
+    },
+    "affinity_controller": {
+      "requests": {
+        "cpu": "15m",
+        "memory": "64Mi"
+      },
+      "ready": true,
+      "restarts": 0,
+      "vpa_mode": "Off",
+      "previous_leader_last_renewal_utc": "2026-11-22T23:13:26.904627Z",
+      "lease_acquired_utc": "2026-11-22T23:14:21.174600Z"
+    },
+    "webhook_ready_endpoint_counts_during_replacement": [1, 1, 2, 1, 1],
+    "linstor_before_and_after": {
+      "connected_satellites": 9,
+      "total_satellites": 9,
+      "up_to_date_volume_instances": 194,
+      "diskless_volume_instances": 52
+    },
+    "application_io_probed": false,
+    "namespace_recount": {
+      "observed_utc": "2026-11-22T23:22:28Z",
+      "namespace": "piraeus-datastore",
+      "scope": "Regular containers in non-terminating Running or Pending Pods, counted from admitted Pod spec requests. A gap is a missing or zero CPU or memory request.",
+      "regular_containers": 92,
+      "missing_either_request": 61,
+      "gap_counts": {
+        "linstor-controller": 1,
+        "linstor-csi-controller": 6,
+        "linstor-csi-node": 27,
+        "linstor-satellite": 18,
+        "ha-controller": 9
+      }
+    }
   }
 }
