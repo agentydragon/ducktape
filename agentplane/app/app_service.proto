@@ -58,7 +58,7 @@ service AppService {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/unarchive" body: "*"};
   }
 
-  // Shared operator attention for an exact Dispatcher receipt revision.
+  // Per-operator attention for an exact Dispatcher receipt revision.
   rpc AcknowledgeCommandNotice(AcknowledgeCommandNoticeRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/notice-acknowledgements" body: "*"};
   }

@@ -2,16 +2,19 @@ package threads
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	threadstore "github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -19,9 +22,9 @@ import (
 )
 
 type NoticeStore interface {
-	AcknowledgeNotice(context.Context, uuid.UUID, threadstore.NoticeRevision) error
-	FindNoticeAcknowledgements(context.Context, uuid.UUID, []threadstore.NoticeRevision) ([]threadstore.NoticeAcknowledgement, error)
-	ListNoticeAcknowledgements(context.Context, uuid.UUID, *int64, int) ([]threadstore.NoticeAcknowledgement, error)
+	AcknowledgeNotice(context.Context, threadstore.NoticeScope, threadstore.NoticeRevision) error
+	FindNoticeAcknowledgements(context.Context, threadstore.NoticeScope, []threadstore.NoticeRevision) ([]threadstore.NoticeAcknowledgement, error)
+	ListNoticeAcknowledgements(context.Context, threadstore.NoticeScope, *int64, int) ([]threadstore.NoticeAcknowledgement, error)
 }
 
 func noticeRevision(n *apppb.CommandNoticeRevision) (threadstore.NoticeRevision, error) {
@@ -32,22 +35,28 @@ func noticeRevision(n *apppb.CommandNoticeRevision) (threadstore.NoticeRevision,
 	return threadstore.NoticeRevision{CommandID: id, Version: n.GetReceiptVersion()}, nil
 }
 
-func (h *Handler) noticeSession(ctx context.Context, threadID string) (uuid.UUID, error) {
+func (h *Handler) noticeScope(ctx context.Context, threadID string) (threadstore.NoticeScope, error) {
 	id, err := threadTargetID(threadID)
 	if err != nil {
-		return uuid.Nil, err
+		return threadstore.NoticeScope{}, err
 	}
 	if h.dispatcher == nil {
-		return uuid.Nil, status.Error(codes.Unavailable, "Session lookup is unavailable")
+		return threadstore.NoticeScope{}, status.Error(codes.Unavailable, "Session lookup is unavailable")
 	}
 	response, err := h.dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: threadID})
 	if err != nil {
-		return uuid.Nil, err
+		return threadstore.NoticeScope{}, err
 	}
 	if response.GetSession().GetSessionId() != threadID {
-		return uuid.Nil, status.Error(codes.Unavailable, "Session lookup did not return the requested Session")
+		return threadstore.NoticeScope{}, status.Error(codes.Unavailable, "Session lookup did not return the requested Session")
 	}
-	return id, nil
+	caller, ok := auth.CallerFromContext(ctx)
+	if !ok || caller.Kind != auth.CallerOperator || caller.Issuer == "" || caller.Subject == "" {
+		return threadstore.NoticeScope{}, status.Error(codes.Unauthenticated, "Verified operator identity is required")
+	}
+	// JSON encodes the two strings without delimiter collisions. Usernames and session cookies may change.
+	identity, _ := json.Marshal([2]string{caller.Issuer, caller.Subject})
+	return threadstore.NoticeScope{ThreadID: id, OperatorKey: sha256.Sum256(identity)}, nil
 }
 
 func (h *Handler) AcknowledgeCommandNotice(ctx context.Context, request *apppb.AcknowledgeCommandNoticeRequest) (*emptypb.Empty, error) {
@@ -55,11 +64,11 @@ func (h *Handler) AcknowledgeCommandNotice(ctx context.Context, request *apppb.A
 	if err != nil {
 		return nil, err
 	}
-	id, err := h.noticeSession(ctx, request.GetThreadId())
+	scope, err := h.noticeScope(ctx, request.GetThreadId())
 	if err != nil {
 		return nil, err
 	}
-	if err := h.store.AcknowledgeNotice(ctx, id, n); err != nil {
+	if err := h.store.AcknowledgeNotice(ctx, scope, n); err != nil {
 		return nil, noticeStorageError(err)
 	}
 	return &emptypb.Empty{}, nil
@@ -77,11 +86,11 @@ func (h *Handler) BatchGetCommandNoticeAcknowledgements(ctx context.Context, req
 		}
 		notices = append(notices, notice)
 	}
-	id, err := h.noticeSession(ctx, request.GetThreadId())
+	scope, err := h.noticeScope(ctx, request.GetThreadId())
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.store.FindNoticeAcknowledgements(ctx, id, notices)
+	rows, err := h.store.FindNoticeAcknowledgements(ctx, scope, notices)
 	if err != nil {
 		return nil, noticeStorageError(err)
 	}
@@ -96,28 +105,33 @@ func (h *Handler) ListCommandNoticeAcknowledgements(ctx context.Context, request
 	if size == 0 {
 		size = 25
 	}
-	var before *int64
-	if token := request.GetPageToken(); token != "" {
-		raw, err := base64.RawURLEncoding.DecodeString(token)
-		scope, key, ok := strings.Cut(string(raw), "/")
-		n, parseErr := strconv.ParseInt(key, 10, 64)
-		if err != nil || !ok || scope != request.GetThreadId() || parseErr != nil || n <= 0 {
-			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token for this Session")
-		}
-		before = &n
-	}
-	id, err := h.noticeSession(ctx, request.GetThreadId())
+	scope, err := h.noticeScope(ctx, request.GetThreadId())
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.store.ListNoticeAcknowledgements(ctx, id, before, int(size))
+	scopeDigest := sha256.Sum256(append(scope.OperatorKey[:], scope.ThreadID[:]...))
+	pageScope := hex.EncodeToString(scopeDigest[:]) + "/"
+	var before *int64
+	if token := request.GetPageToken(); token != "" {
+		if len(token) > base64.RawURLEncoding.EncodedLen(len(pageScope)+19) {
+			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token")
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(token)
+		key, ok := strings.CutPrefix(string(raw), pageScope)
+		n, parseErr := strconv.ParseInt(key, 10, 64)
+		if err != nil || !ok || parseErr != nil || n <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token for this operator and Session")
+		}
+		before = &n
+	}
+	rows, err := h.store.ListNoticeAcknowledgements(ctx, scope, before, int(size))
 	if err != nil {
 		return nil, noticeStorageError(err)
 	}
 	var next *string
 	if len(rows) > int(size) {
 		rows = rows[:size]
-		token := base64.RawURLEncoding.EncodeToString([]byte(id.String() + "/" + strconv.FormatInt(rows[len(rows)-1].ID, 10)))
+		token := base64.RawURLEncoding.EncodeToString([]byte(pageScope + strconv.FormatInt(rows[len(rows)-1].ID, 10)))
 		next = &token
 	}
 	result := noticeAcknowledgements(rows)

@@ -216,7 +216,9 @@ func assertQuiet(t *testing.T, wakeup <-chan struct{}) {
 func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T) {
 	store, _, _ := openStore(t)
 	ctx := t.Context()
-	session, otherSession := uuid.New(), uuid.New()
+	session := NoticeScope{ThreadID: uuid.New(), OperatorKey: [32]byte{1}}
+	otherSession := NoticeScope{ThreadID: uuid.New(), OperatorKey: session.OperatorKey}
+	secondOperator := NoticeScope{ThreadID: session.ThreadID, OperatorKey: [32]byte{2}}
 	old := NoticeRevision{CommandID: "same-command", Version: 37}
 	changed := NoticeRevision{CommandID: old.CommandID, Version: old.Version + 1}
 	other := NoticeRevision{CommandID: "other-command", Version: 39}
@@ -230,6 +232,18 @@ func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T)
 		t.Fatalf("exact revisions: %v, %v", found, err)
 	}
 	ackTime := found[0].AcknowledgedAt
+	if rows, err := store.ListNoticeAcknowledgements(ctx, secondOperator, nil, 1); err != nil || len(rows) != 0 {
+		t.Fatalf("another operator's history: %v, %v", rows, err)
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, secondOperator, []NoticeRevision{old}); err != nil || len(rows) != 0 {
+		t.Fatalf("another operator's lookup: %v, %v", rows, err)
+	}
+	if err := store.AcknowledgeNotice(ctx, secondOperator, old); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, secondOperator, []NoticeRevision{old}); err != nil || len(rows) != 1 {
+		t.Fatalf("independent acknowledgement: %v, %v", rows, err)
+	}
 	found, err = store.FindNoticeAcknowledgements(ctx, otherSession, []NoticeRevision{old})
 	if err != nil || len(found) != 0 {
 		t.Fatalf("other Session: %v, %v", found, err)

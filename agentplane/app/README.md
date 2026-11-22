@@ -131,8 +131,10 @@ Session placement and deleted-Sandbox fence. An unreadable or conflicting receip
 saved. Older commands with uncertain or Sandbox-addressed destinations support read-only status checks.
 
 The App stores operator acknowledgement separately from delivery. An acknowledgement identifies the
-Session, command ID and exact positive Dispatcher receipt version the operator saw. It is shared
-across browser logins, idempotent and retained across App upgrades. A later revision can request
+verified OIDC issuer and subject, Session, command ID and exact positive Dispatcher receipt version
+the operator saw. The same operator sees it across browser logins and App replicas. Other operators
+maintain independent attention and history, including for the same receipt. Username changes leave
+preferences intact. Acknowledgements are idempotent and retained across App upgrades. A later revision can request
 attention again, including a changed UNKNOWN outcome. The App records the time of acknowledgement
 and keeps the referenced command and revision discoverable in newest-first pages. Dispatcher and
 History retain authority over the outcome and effects. If the original receipt expires or changes,
