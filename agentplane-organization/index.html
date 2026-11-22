@@ -559,7 +559,7 @@
                           >${"Source locations and validation"}<//
                         ><${Accordion.Panel}>
                           <${Text} size="sm"
-                            >${"Source links pin the reviewed implementation. Exact file moves and package-name changes are recorded separately from candidate owners. Checks below name existing targets at this source pin; update labels when a package moves. No source behavior tests were run for this planning-only change."}<//
+                            >${"Source links pin the reviewed implementation. Exact file moves and package-name changes are recorded separately from candidate owners. Checks below name existing targets at this source pin; update labels when a package moves."}<//
                           >
                           <${List} size="sm"
                             >${track.evidence_paths.map((path) => html`<${List.Item} key=${path}><${Anchor} href=${sourceURL(plan, path)}>${path}<//><//>`)}<//

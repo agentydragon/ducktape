@@ -7,7 +7,7 @@
   "summary": "Five contracts rechecked. Includes the Sessions settings key comparison and browser diagnostic union parity screen.",
   "files": {
     "index.html": {
-      "sha256": "d606afb053098df337a4a29d70285f6b1b8701362b894957c4b823aa29a46f16"
+      "sha256": "2dc033951a16395fe3b1a38def2712872e2211f8d78c15b185ab825b5e286c9b"
     },
     "evidence.json": {
       "sha256": "2f84eda85b7a7067d13611482b5443bd7132b9069ee5e273825ed7061c45a957"

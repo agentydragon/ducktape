@@ -7,7 +7,7 @@
   "summary": "Six maintenance and coverage findings, one retired App configuration projection finding, and a generated-decoder prototype.",
   "files": {
     "index.html": {
-      "sha256": "78a820199926b738220162b451159e80278e03b2487ada722095bcb8d91a9a44"
+      "sha256": "4d55ff48b7e68f8f8fd8acdd1150c7abc858f5dcaac8e701b524609c5e332110"
     },
     "evidence.json": {
       "sha256": "a813ad126c0f3b018c34d7f1574b8614c5dc55d4027af86293eec9e0127171b3"

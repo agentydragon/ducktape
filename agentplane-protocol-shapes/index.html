@@ -58,11 +58,9 @@
         Stack,
         Text,
         Title,
-        html,
-        mount,
-        useEffect,
-        useState,
-      } from "../report.js";
+      } from "@mantine/core";
+      import { useEffect, useState } from "react";
+      import { html, mount } from "../report.js";
 
       function Links({ items }) {
         return html`<${Group} gap="sm">
