@@ -3321,6 +3321,7 @@ async def test_action_presentations(
             await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
             await page.mouse.move(0, 0)
             await expect(tooltip).to_have_count(0)
+            await sidebar.locator(".agentplane-actions-sidebar-expand").focus()
             await when.focus()
             await expect(tooltip).to_contain_text("2026-11-23T09:30:00-08:00 · America/Los_Angeles")
             await when.click()
