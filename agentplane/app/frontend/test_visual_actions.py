@@ -3543,6 +3543,53 @@ async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixtu
 
 
 @DESKTOP_AND_MOBILE
+async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    await app.show_action_preview(
+        "github",
+        "push_files",
+        {
+            "owner": "example",
+            "repo": "service",
+            "branch": "docs",
+            "message": "docs: update the deployment guide",
+            "files": [
+                {"path": "docs/deploy.md", "content": "# Deploy\n\nCheck readiness.\nKeep rollback ready.\n"},
+                {"path": "docs/verify.md", "content": "# Verify\n\nCheck the logs.\n"},
+            ],
+        },
+        {
+            "github-push-files-preview": {
+                "baseCommitSha": sha,
+                "files": [
+                    {"path": "docs/deploy.md", "content": "# Deploy\n\nWait 30 seconds.\nKeep rollback ready.\n"}
+                ],
+            }
+        },
+    )
+    sidebar_width = (viewport.width if viewport == MOBILE else 240) - 16
+    detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
+    await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
+    sidebar = view.page.locator("[data-action-visual=sidebar]")
+    await sidebar.get_by_role("button", name="Expand ", exact=False).click()
+    await expect(sidebar.get_by_role("link", name="0123456")).to_have_attribute(
+        "href", f"https://github.com/example/service/commit/{sha}"
+    )
+    await sidebar.get_by_role("button", name="docs/deploy.md", exact=False).click()
+    await expect(sidebar.get_by_text("-Wait 30 seconds.", exact=True)).to_be_visible()
+    await expect(sidebar.get_by_text("+Check readiness.", exact=True)).to_be_visible()
+    await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+    await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
+    await wait_for_stable(view.page)
+    await view.capture(target=sidebar)
+
+    await sidebar.get_by_role("button", name="Proposed contents", exact=True).click()
+    await expect(sidebar.get_by_text("Check readiness.", exact=True)).to_be_visible()
+    await sidebar.get_by_role("button", name="docs/verify.md", exact=False).click()
+    await expect(sidebar.get_by_text("Check the logs.", exact=True)).to_be_visible()
+
+
+@DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("mixed", [False, True], ids=["labels-only", "mixed"])
 async def test_issue_update_compact(view: VisualPage, app: AgentplaneFixture, viewport: Viewport, mixed: bool) -> None:
     args = {**GITHUB_ISSUE, "method": "update", "labels": ["bug", "upstream-waiting", "needs investigation", "triage"]}

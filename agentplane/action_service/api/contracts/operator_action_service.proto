@@ -60,6 +60,12 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/github-label-summaries"};
   }
 
+  // Current text at the head of the target branch of a pending push_files request.
+  // The saved arguments select the repository, branch and paths. Unavailable files are omitted.
+  rpc GetGitHubPushFilesPreview(GetGitHubPushFilesPreviewRequest) returns (GetGitHubPushFilesPreviewResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/github-push-files-preview"};
+  }
+
   // Live names of nodes or a workspace named by a supported recorded Tana request.
   // An unavailable node or backend is omitted. The receipt's arguments remain authoritative.
   rpc GetTanaNodeSummaries(GetTanaNodeSummariesRequest) returns (GetTanaNodeSummariesResponse) {
@@ -177,6 +183,21 @@ message GetGitHubLabelSummariesResponse {
 message GitHubLabelSummary {
   string name = 1;
   string color = 2;
+}
+
+message GetGitHubPushFilesPreviewRequest {
+  string request_id = 1;
+}
+
+message GetGitHubPushFilesPreviewResponse {
+  // The commit used for all included files. Empty when the branch head could not be read.
+  string base_commit_sha = 1;
+  repeated GitHubPushFileBaseline files = 2;
+}
+
+message GitHubPushFileBaseline {
+  string path = 1;
+  string content = 2;
 }
 
 message GetTanaNodeSummariesRequest {

@@ -3,6 +3,7 @@ package mcpexec
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,7 +14,91 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-var githubLabelColor = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
+var (
+	githubLabelColor     = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
+	githubCommitSHA      = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
+	githubDownloadedText = regexp.MustCompile(`^successfully downloaded (?:text|empty) file(?: \(SHA: [0-9a-fA-F]{40}\))?$`)
+)
+
+func (e *Executor) GitHubPushFilesPreview(ctx context.Context, owner, repo, branch string, paths []string) *operator_action_servicepb.GetGitHubPushFilesPreviewResponse {
+	if e == nil || e.key != "github" {
+		return nil
+	}
+	s := e.pin()
+	if s == nil {
+		return nil
+	}
+	defer s.calls.Done()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	// A reconnect can switch the linked account while the session remains pinned.
+	account, linked := linkedAccountOf(e.server)
+	var initialToken string
+	if linked {
+		token, err := requestToken(ctx, e.linkages, account.serverID)
+		if err != nil {
+			return nil
+		}
+		initialToken = token
+	}
+	tools, _, err := e.list(ctx, s)
+	if err != nil {
+		return nil
+	}
+	heads := readOfferedSummaries(ctx, e, s, tools, []string{"refs/heads/" + branch}, "get_commit", func(ref string) map[string]any {
+		return map[string]any{"owner": owner, "repo": repo, "sha": ref, "detail": "none"}
+	}, func(_ string, result *mcp.CallToolResult) *string {
+		var commit struct{ SHA string }
+		if !parsePreviewObject(result, &commit) || !githubCommitSHA.MatchString(commit.SHA) {
+			return nil
+		}
+		return &commit.SHA
+	})
+	if len(heads) != 1 {
+		return nil
+	}
+	sha := *heads[0]
+	files := readOfferedSummaries(ctx, e, s, tools, paths, "get_file_contents", func(path string) map[string]any {
+		return map[string]any{"owner": owner, "repo": repo, "path": path, "sha": sha}
+	}, func(path string, result *mcp.CallToolResult) *operator_action_servicepb.GitHubPushFileBaseline {
+		return githubPushFileBaseline(result, owner, repo, sha, path)
+	})
+	if linked {
+		token, err := requestToken(ctx, e.linkages, account.serverID)
+		if err != nil || token != initialToken {
+			return nil
+		}
+	}
+	return &operator_action_servicepb.GetGitHubPushFilesPreviewResponse{BaseCommitSha: sha, Files: files}
+}
+
+func githubPushFileBaseline(result *mcp.CallToolResult, owner, repo, sha, path string) *operator_action_servicepb.GitHubPushFileBaseline {
+	if len(result.Content) != 2 {
+		return nil
+	}
+	// The success marker distinguishes literal files from symlink targets, directory
+	// listings, similar-path suggestions and download links.
+	message, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || !githubDownloadedText.MatchString(message.Text) {
+		return nil
+	}
+	embedded, ok := result.Content[1].(*mcp.EmbeddedResource)
+	if !ok || embedded.Resource == nil {
+		return nil
+	}
+	resource := embedded.Resource
+	uri, err := url.Parse(resource.URI)
+	if err != nil || uri.Scheme != "repo" || !strings.EqualFold(uri.Host, owner) || uri.User != nil ||
+		uri.RawQuery != "" || uri.Fragment != "" {
+		return nil
+	}
+	repository, file, ok := strings.Cut(strings.TrimPrefix(uri.Path, "/"), "/")
+	if !ok || !strings.EqualFold(repository, repo) || file != "sha/"+sha+"/contents/"+path ||
+		len(resource.Blob) != 0 || len(resource.Text) > 64*1024 || strings.ContainsRune(resource.Text, 0) {
+		return nil
+	}
+	return &operator_action_servicepb.GitHubPushFileBaseline{Path: path, Content: resource.Text}
+}
 
 func (e *Executor) GitHubLabelSummaries(ctx context.Context, owner, repo string, names []string) []*operator_action_servicepb.GitHubLabelSummary {
 	return readSummaries(ctx, e, names, "github", "get_label", func(name string) map[string]any {
