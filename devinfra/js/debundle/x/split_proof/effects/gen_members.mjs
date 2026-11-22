@@ -1,6 +1,6 @@
 // Lists the own properties of the standard objects, as `Path.member` strings, from the running Node.
 //
-//   node gen_members.mjs > ../lean/Experiments/IntrinsicMembers.lean
+//   node gen_members.mjs > ../lean/EsmSplit/IntrinsicMembers.lean
 //
 // `Intrinsics.lean` uses the list to tell a member that exists but is not summarized (a call of it is a call into the
 // world) from a property that does not exist (reading it yields nothing). A member of a newer ECMAScript than the

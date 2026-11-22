@@ -600,7 +600,7 @@ js_test(
     entry_point = "footprint_reduce_test.mjs",
 )
 
-# The CoreJS model (`lean/Experiments/CoreJS`) against Node, on hand-written cases and on programs of `gen/` cut down to
+# The CoreJS model (`lean/EsmSplit/CoreJS`) against Node, on hand-written cases and on programs of `gen/` cut down to
 # the model's fragment: both must print the same and end the same way.
 _MODEL = "//devinfra/js/debundle/x/split_proof/model"
 

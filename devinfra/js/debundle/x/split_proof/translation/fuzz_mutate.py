@@ -19,13 +19,13 @@ ROOT = HERE.parent.parent
 BUNDLE, PLAN, LOWER, TRANSLATE = (
     "EsmSplit/Bundle.lean",
     "EsmSplit/Plan.lean",
-    "Experiments/Lower.lean",
-    "Experiments/Translate.lean",
+    "EsmSplit/Lower.lean",
+    "EsmSplit/Translate.lean",
 )
 
 # name: (file, old text, new text, why the fuzzer should see it)
-EFFECTS = "Experiments/Effects.lean"
-INTRINSICS = "Experiments/Intrinsics.lean"
+EFFECTS = "EsmSplit/Effects.lean"
+INTRINSICS = "EsmSplit/Intrinsics.lean"
 MUTANTS = {
     # the model: the conflict rule and module order
     "drop the effect-effect conflict": (BUNDLE, "(a.effect && b.effect)", "false", "effects swap"),
@@ -360,19 +360,19 @@ MUTANTS = {
         "a bound function that holds itself recurses until the stack overflows",
     ),
     "Promise.resolve is not an effect": (
-        "Experiments/Intrinsics.lean",
+        "EsmSplit/Intrinsics.lean",
         'world := true, retains := [1] }),\n  ("Promise.reject"',
         '}),\n  ("Promise.reject"',
         "two thenables resolved in the other order",
     ),
     "a promise executor gets no world functions": (
-        "Experiments/Intrinsics.lean",
+        "EsmSplit/Intrinsics.lean",
         "callsWithWorld := [1] }",
         "calls := [1] }",
         "an executor that resolves a thenable",
     ),
     "join does not convert its elements": (
-        "Experiments/Intrinsics.lean",
+        "EsmSplit/Intrinsics.lean",
         '("Array.prototype.join", { convertsContents := [0] })',
         '("Array.prototype.join", {})',
         "an element with a toString that writes an object",
