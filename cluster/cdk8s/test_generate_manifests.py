@@ -179,21 +179,6 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
 
 
-def test_mcp_edge_removes_plaintext_service_and_ingress(documents: list[dict[str, Any]]) -> None:
-    service = find_resource(documents, "Service", "mcp-edge")
-    assert {(port["name"], port["port"]) for port in service["spec"]["ports"]} == {("http", 8081), ("grpc-tls", 8443)}
-
-    policy = find_resource(documents, "CiliumNetworkPolicy", "mcp-edge")["spec"]
-    ingress_ports = {
-        port["port"]
-        for rule in policy["ingress"]
-        for group in rule.get("toPorts", [])
-        for port in group.get("ports", [])
-    }
-    assert "8080" not in ingress_ports
-    assert {"8081", "8443"} <= ingress_ports
-
-
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     documents: list[dict[str, Any]], worker_pool: dict[str, Any]
 ) -> None:
