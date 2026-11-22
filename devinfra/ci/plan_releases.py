@@ -140,13 +140,12 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = parser.parse_args(argv)
-    releases = load_releases(args.artifact_targets, args.skills_registry)
-
     if "[skip ci]" in args.commit_subject:
         print("Commit is marked [skip ci]; releasing nothing.", file=sys.stderr)
         publication_cli.write_matrix([])
         return
 
+    releases = load_releases(args.artifact_targets, args.skills_registry)
     evidence = publication_cli.load_evidence(args)
     by_label = evidence.outputs.by_label() if evidence.outputs is not None else {}
 

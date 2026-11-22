@@ -165,18 +165,8 @@ def test_custom_bazel_flags_never_take_the_fast_path() -> None:
 def test_skip_ci_releases_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_file = tmp_path / "gh_output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
-    main(
-        [
-            "--artifact-targets",
-            str(ARTIFACT_TARGETS),
-            "--skills-registry",
-            str(SKILLS_REGISTRY),
-            "--invocations",
-            "",
-            "--commit-subject",
-            "chore: update images [skip ci]",
-        ]
-    )
+    monkeypatch.chdir(tmp_path)  # A skipped commit needs neither release registry.
+    main(["--commit-subject", "chore: update images [skip ci]"])
     written = output_file.read_text()
     assert "count=0" in written
     assert json.loads(written.split("matrix=", 1)[1].splitlines()[0]) == {"include": []}
