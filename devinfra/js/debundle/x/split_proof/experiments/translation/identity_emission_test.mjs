@@ -6,7 +6,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { bundleFromParsed } from "./frontend.mjs";
+import { parseModule } from "./scope_metadata.mjs";
+import { dumpParsed, lowerDump } from "../lowering/dump_core.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = process.env.TEST_TMPDIR;
@@ -25,7 +27,8 @@ writeFileSync(
   JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["identity", "result", "#3"], "side.mjs": ["#2"] } })
 );
 const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
-const lowered = lowerDump(code, acorn, eslintScope).statements;
+const parsed = parseModule(code, acorn.parse, eslintScope);
+const lowered = dumpParsed(parsed).statements;
 // A declarator list becomes one statement per declarator; imports and exports stay. The statements are the
 // ESTree of their own source text: the dump is the parse of a rewritten source.
 const syntax = 'import {x as y} from "./dep.js"; const a = y, b = 1; export {a};';
@@ -71,8 +74,8 @@ const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
 const frontend = path.join(here, "frontend.mjs");
+writeFileSync(bundle, JSON.stringify(bundleFromParsed(parsed, source)));
 for (const args of [
-  [frontend, "bundle", source, "--out", bundle],
   [frontend, "tree", out, "--entry", "entry.mjs", "--out", tree],
   [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
 ]) {

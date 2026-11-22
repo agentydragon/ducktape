@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
-import { coreOf, dumpOf } from "../../split_dump.mjs";
+import { splitInputs } from "../../split_dump.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
 assert(chunks);
@@ -16,8 +16,7 @@ for (const chunk of ["editor", "main"]) {
   const validation = JSON.parse(readFileSync(path.join(reports, "translation_validation.json"), "utf8"));
   assert(validation.gate_accepts && validation.accepts);
   const source = readFileSync(path.join(chunks, chunk + ".js"), "utf8");
-  const dump = dumpOf(source);
-  const core = coreOf(source, { external: true, census: true });
+  const { dump, core } = splitInputs(source, { external: true, census: true });
   const nodes = graph.nodes.sort((a, b) => a.statement_ordinal - b.statement_ordinal);
   assert.equal(nodes.length, dump.statements.length);
   const entry = "entry.mjs";

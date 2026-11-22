@@ -28,6 +28,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "acorn";
+import { parseModule } from "../translation/scope_metadata.mjs";
 
 export class Refused extends Error {
   constructor(node, why) {
@@ -183,12 +184,15 @@ const moduleName = (node) => (node.type === "Identifier" ? node.name : refuse(no
  * names they bind are not declared, and the result has no imports. Each `import` still takes an identity, with no
  * statement, as an `export { … }` list does, so that identities count the file's statements as `lowersplit` does.
  */
-export function toCore(
-  source,
-  { allowHost = false, ids = null, idBase = 0, opaque = null, external = false, census = false } = {}
+export function toCore(source, { opaque = null, ...options } = {}) {
+  return coreFromParsed(parseModule(source, parse, opaque), options);
+}
+
+export function coreFromParsed(
+  { ast, scopes: resolvedScopes },
+  { allowHost = false, ids = null, idBase = 0, external = false, census = false, opaque = true } = {}
 ) {
-  const ast = parse(source, { ecmaVersion: "latest", sourceType: "module", ranges: opaque !== null });
-  const scopeManager = opaque && opaque.analyze(ast, { ecmaVersion: 2022, sourceType: "module" });
+  const scopeManager = opaque ? resolvedScopes : null;
   const opaqueUnits = [];
   const opaqueBodies = [];
   let activeUnit = null;

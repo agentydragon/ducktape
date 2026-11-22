@@ -18,18 +18,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { literalKey, resolveIdentifiers } from "./scope_metadata.mjs";
+import { literalKey, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
 
 const DROP = new Set(["start", "end", "range", "loc", "raw", "sourceType"]);
 
 function parse(code, file) {
-  let ast;
   try {
-    ast = acorn.parse(code, { ecmaVersion: "latest", sourceType: "module", ranges: true });
+    return parseModule(code, acorn.parse, eslintScope, { ecmaVersion: 2024, ignoreEval: true });
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
-  return { ast, scopes: eslintScope.analyze(ast, { ecmaVersion: 2024, sourceType: "module", ignoreEval: true }) };
 }
 
 function convert(node, meaning, binders) {
@@ -146,8 +144,10 @@ function listJs(root) {
 
 /** A bundle: its imports are all external. */
 export function frontBundle(file) {
-  const code = readFileSync(file, "utf8");
-  const parsed = parse(code, file);
+  return bundleFromParsed(parse(readFileSync(file, "utf8"), file), file);
+}
+
+export function bundleFromParsed(parsed, file) {
   const meaning = resolveIdentifiers(parsed, () => true);
   const { units, imports, exports } = split(parsed, meaning, file, (spec) => spec);
   return {

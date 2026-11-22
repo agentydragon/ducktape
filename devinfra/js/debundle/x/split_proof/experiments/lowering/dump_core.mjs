@@ -1,4 +1,4 @@
-import { annotateLower, resolveIdentifiers } from "../translation/scope_metadata.mjs";
+import { annotateLower, parseModule, resolveIdentifiers } from "../translation/scope_metadata.mjs";
 
 /** The statements of the dump: the top-level statements, except that a `var`/`let`/`const` list of several
  * declarators becomes one declaration per declarator, in order, also under `export`. The declarators run in order
@@ -33,8 +33,10 @@ function topLevelStatements(program, code) {
 }
 
 export function lowerDump(code, acorn, eslintScope) {
-  const ast = acorn.parse(code, { ecmaVersion: "latest", sourceType: "module", ranges: true });
-  const sm = eslintScope.analyze(ast, { ecmaVersion: 2022, sourceType: "module" });
+  return dumpParsed(parseModule(code, acorn.parse, eslintScope));
+}
+
+export function dumpParsed({ code, ast, scopes: sm }) {
   const stmts = topLevelStatements(ast, code);
 
   const find = (pos) => {

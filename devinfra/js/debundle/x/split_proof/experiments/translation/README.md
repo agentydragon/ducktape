@@ -1,5 +1,7 @@
 # Translation validation: is this tree the bundle, renamed and reshuffled?
 
+The verification frontend parses each input module with Acorn. The split replay uses the same ESTree and eslint-scope analysis for the footprint dump and the CoreJS lowering. In the authored Excalidraw replay the module assignments and evaluation order come from the Rust debundler’s reports. Lean reconstructs that plan, checks it and renders the candidate modules. The synthetic split tests supply their own specs. [Excalidraw replay](debug/excalidraw_certificates/authored.mjs)
+
 [`Translate.lean`](../../lean/Experiments/Translate.lean) takes a bundle and a tree of ES modules and decides whether the tree is the bundle with its top-level statements moved between modules and its names changed. It does not need to know how the tree was made, so it can referee a splitter, a debundler or an agent that edits names and comments.
 
 ## Run it

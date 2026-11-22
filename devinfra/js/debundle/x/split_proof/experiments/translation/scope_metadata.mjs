@@ -1,6 +1,14 @@
 // Shared scope facts for the translation frontend and LowerSplit's raw ESTree.
 // The parser and eslint-scope remain trusted; this module does not resolve names itself.
 
+/** The source, ESTree and (when requested) scope manager for one JavaScript module.
+ * Scope references point to identifier objects in this exact tree. */
+export function parseModule(code, parse, analyzer = null, scopeOptions = {}) {
+  const ast = parse(code, { ecmaVersion: "latest", sourceType: "module", ranges: true });
+  const scopes = analyzer?.analyze(ast, { ecmaVersion: 2022, sourceType: "module", ...scopeOptions }) ?? null;
+  return { code, ast, scopes };
+}
+
 /** Identifier node -> what it means. `isExternal(source)` identifies external imports. */
 export function resolveIdentifiers({ scopes }, isExternal) {
   const meaning = new Map();
