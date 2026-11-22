@@ -61,8 +61,7 @@ function split(parsed, meaning, file, resolveSource) {
   const units = [];
   const imports = [];
   const exports = [];
-  const addUnit = (node) => units.push(convert(node, meaning, new Map()));
-  for (const statement of parsed.ast.body) {
+  for (const { node: statement } of parsed.units) {
     let node = statement;
     if (statement.type === "ImportDeclaration") {
       imports.push({
@@ -94,10 +93,7 @@ function split(parsed, meaning, file, resolveSource) {
       node = statement.declaration;
       for (const name of declaredNames(node)) exports.push({ exported: name, local: name });
     }
-    if (node.type === "VariableDeclaration" && node.declarations.length > 1) {
-      for (const declarator of node.declarations)
-        addUnit({ type: "VariableDeclaration", kind: node.kind, declarations: [declarator] });
-    } else addUnit(node);
+    units.push(convert(node, meaning, new Map()));
   }
   return { units, imports, exports };
 }

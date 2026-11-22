@@ -189,7 +189,7 @@ export function toCore(source, { opaque = null, ...options } = {}) {
 }
 
 export function coreFromParsed(
-  { ast, scopes: resolvedScopes },
+  { ast, scopes: resolvedScopes, units },
   { allowHost = false, ids = null, idBase = 0, external = false, census = false, opaque = true } = {}
 ) {
   const scopeManager = opaque ? resolvedScopes : null;
@@ -672,7 +672,6 @@ export function coreFromParsed(
   }
 
   function importDeclaration(node) {
-    if (external) return unit(node, () => 0);
     if (node.attributes?.length) refuse(node, "an import attribute");
     if (!/^\.\.?\//.test(node.source.value)) refuse(node, "an import of a module that is not a relative path");
     const names = node.specifiers.map((specifier) => {
@@ -685,11 +684,8 @@ export function coreFromParsed(
 
   const unitIds = [];
   const spans = [];
-  let numbered = 0;
   /** The next numbered statement of the file, which `emitStatement` writes: at most one statement of the model. */
-  function unit(node, emitStatement) {
-    const id = ids === null ? idBase + numbered : ids[numbered];
-    numbered++;
+  function unit(id, node, emitStatement) {
     activeUnit = id;
     // Assign every lexical function a part before lowering. Fallback and statement reordering cannot renumber it.
     const functions = [];
@@ -731,25 +727,23 @@ export function coreFromParsed(
   }
 
   /** A top-level statement or declaration of the module. */
-  function topLevel(node) {
+  function topLevel(node, id) {
     switch (node.type) {
-      case "ImportDeclaration":
-        return importDeclaration(node);
       case "VariableDeclaration":
-        for (const d of node.declarations) unit(d, () => declaration({ ...node, declarations: [d] }));
-        return;
+        if (node.kind === "using" || node.kind === "await using") refuse(node, "a top-level using");
+        return unit(id, node.declarations[0], () => declaration(node));
       case "ExportNamedDeclaration":
         if (node.source) refuse(node, "an export from another module");
         if (node.attributes?.length) refuse(node, "an import attribute");
         if (node.declaration) {
           const d = node.declaration;
-          topLevel(d);
+          topLevel(d, id);
           const own =
             d.type === "VariableDeclaration" ? d.declarations.flatMap((x) => bindingNames(x.id)) : [d.id.name];
           for (const name of own) exports.push([name, name]);
         } else {
           for (const s of node.specifiers) exports.push([moduleName(s.exported), moduleName(s.local)]);
-          unit(node, () => 0);
+          unit(id, node, () => 0);
         }
         return;
       case "ExportDefaultDeclaration": {
@@ -757,7 +751,7 @@ export function coreFromParsed(
         if (d.type === "FunctionDeclaration") {
           // a declared function is bound under its name; one without a name under `default`, which is its `name`
           const name = d.id?.name ?? "default";
-          unit(node, () => {
+          unit(id, node, () => {
             func(d, name, "normal");
             emit("funDecl");
             return 1;
@@ -766,7 +760,7 @@ export function coreFromParsed(
         } else {
           const isClass = d.type === "ClassDeclaration";
           const name = isClass && d.id ? d.id.name : "*default*";
-          unit(node, () => {
+          unit(id, node, () => {
             if (isClass) classTree(d, d.id?.name ?? "default");
             else named(d, "default");
             emit("decl", isClass ? "let" : "const", name);
@@ -777,7 +771,7 @@ export function coreFromParsed(
         return;
       }
       default:
-        return unit(node, () => statement(node));
+        return unit(id, node, () => statement(node));
     }
   }
 
@@ -889,7 +883,22 @@ export function coreFromParsed(
   const moduleNames = scopeManager
     ? defs.map(({ v }) => v.name)
     : [...varNames(ast.body), ...lexicalNames(ast.body), ...importedNames];
-  within(moduleNames, () => ast.body.forEach(topLevel));
+  // Bundle units keep their source ordinals, including gaps for external imports.
+  // Linked programs number only the body, since the linker handles their imports.
+  let linkedImports = 0;
+  within(moduleNames, () =>
+    units.forEach(({ node }, ordinal) => {
+      if (node.type === "ImportDeclaration") {
+        if (!external) {
+          importDeclaration(node);
+          linkedImports++;
+        }
+        return;
+      }
+      const index = ordinal - linkedImports;
+      topLevel(node, ids === null ? idBase + index : ids[index]);
+    })
+  );
   return {
     tokens: out,
     units: unitIds.length,
@@ -897,7 +906,7 @@ export function coreFromParsed(
     spans,
     imports,
     exports,
-    numbered,
+    numbered: units.length - linkedImports,
     opaque: opaqueUnits,
     opaqueBodies,
     refused,
