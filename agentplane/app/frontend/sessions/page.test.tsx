@@ -39,6 +39,8 @@ import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import {
+  ListSessionDispatchesResponseSchema,
+  DeliveryState,
   SessionSchema,
   SessionStatus_Materialization,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
@@ -53,6 +55,7 @@ import {
   changeReasoningEffort,
   interruptTurn,
   getDispatch,
+  listSessionDispatches,
   getThread,
   listThreadMetadata,
 } from "./client";
@@ -95,6 +98,7 @@ vi.mock("./client", async (importOriginal) => ({
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
   getDispatch: vi.fn(),
+  listSessionDispatches: vi.fn(),
   getThread: vi.fn(),
   listThreadMetadata: vi.fn(),
 }));
@@ -2134,4 +2138,50 @@ describe("recovery presentation", () => {
       expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
     }
   );
+});
+
+it("reads an older original on a fresh Session page while the History window is unavailable", async () => {
+  const sid = THREAD.metadata.threadId;
+  const old = {
+    sessionId: sid,
+    commandId: "older",
+    ...COMMAND_TARGET,
+    state: DeliveryState.UNKNOWN,
+    operation: Operation.SUBMIT_INPUT,
+    reason: "runner disconnected before confirmation",
+  };
+  const latest = { ...old, commandId: "newer", state: DeliveryState.RUNNER_ADMITTED, reason: "" };
+  vi.mocked(listSessionDispatches).mockImplementation(async (_, options) =>
+    create(ListSessionDispatchesResponseSchema, {
+      dispatches: [options?.pageToken ? old : latest],
+      nextPageToken: options?.pageToken ? "" : "second",
+    })
+  );
+  vi.mocked(getDispatch).mockResolvedValue({
+    ...dispatchReceipt("older", "DELIVERY_STATE_UNKNOWN", old.reason, "2026-01-01T00:00:00Z"),
+    ...old,
+    command: message("older"),
+  });
+  const container = await render(threadState({ windowError: "History unavailable" }));
+  await act(async () => button(container, "More").click());
+  const item = menuItem([...document.querySelectorAll('[role="menuitem"]')], "Delivery history");
+  await act(async () => (item as HTMLElement).click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("newer");
+  expect(getDispatch).not.toHaveBeenCalled();
+  await act(async () => buttonIn(dialog, "Older")!.click());
+  expect(dialog.textContent).toContain("Outcome unknown");
+  expect(dialog.textContent).toContain(old.reason);
+  await act(async () => buttonIn(dialog, "Show original command")!.click());
+  expect(dialog.textContent).toContain("Test input older");
+  expect(getDispatch).toHaveBeenCalledWith(sid, "older", expect.any(AbortSignal));
+  expect(submitInput).not.toHaveBeenCalled();
+});
+
+it("keeps delivery history reachable before the conversation has any History window", async () => {
+  vi.mocked(listSessionDispatches).mockResolvedValue(create(ListSessionDispatchesResponseSchema));
+  const container = await render({ ...threadState(), window: null, error: "History offline" });
+  expect(container.textContent).toContain("History offline");
+  await act(async () => buttonIn(container, "Delivery history")!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("No retained receipts.");
 });

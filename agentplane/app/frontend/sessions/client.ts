@@ -41,6 +41,9 @@ import {
   DeliveryState,
   DispatchSchema,
   GetDispatchResponseSchema,
+  ListSessionDispatchesResponseSchema,
+  ListSessionDispatchesResponse_Coverage,
+  type ListSessionDispatchesResponse,
   InterruptTurnRequestSchema,
   InterruptTurnResponseSchema,
   SubmitInputRequestSchema,
@@ -309,8 +312,33 @@ function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, com
   return { ...dispatch, state };
 }
 
+export async function listSessionDispatches(
+  sessionId: string,
+  { pageToken = "", limit = 25, signal }: { pageToken?: string; limit?: number; signal?: AbortSignal } = {}
+): Promise<ListSessionDispatchesResponse> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (pageToken) query.set("pageToken", pageToken);
+  const json = await fetchJson(
+    `/upstream/dispatcher/v1/sessions/${encodeURIComponent(sessionId)}/dispatches?${query}`,
+    {
+      signal,
+      headers: { Accept: "application/json" },
+    }
+  );
+  const page = fromJson(ListSessionDispatchesResponseSchema, json, { ignoreUnknownFields: true });
+  const ids = new Set(page.dispatches.map((row) => row.commandId));
+  if (
+    page.coverage !== ListSessionDispatchesResponse_Coverage.RETAINED_DISPATCH_ROWS ||
+    page.dispatches.length > limit ||
+    ids.size !== page.dispatches.length ||
+    page.dispatches.some((row) => row.sessionId !== sessionId || !row.commandId)
+  )
+    throw new Error("Dispatcher returned an invalid receipt page");
+  return page;
+}
+
 /** A missing current receipt leaves any earlier submission unconfirmed. */
-export function getDispatch(threadId: string, commandId: string): Promise<Dispatch | null> {
+export function getDispatch(threadId: string, commandId: string, signal?: AbortSignal): Promise<Dispatch | null> {
   return fetchProto(
     `/upstream/dispatcher/v1/dispatches/${encodeURIComponent(commandId)}`,
     (value) =>
@@ -319,7 +347,8 @@ export function getDispatch(threadId: string, commandId: string): Promise<Dispat
         threadId,
         commandId
       ),
-    "Dispatcher receipt"
+    "Dispatcher receipt",
+    signal
   );
 }
 

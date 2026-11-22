@@ -127,6 +127,39 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "command_delivery_history",
+    srcs = ["command_delivery_history.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":stored_command_details",
+        ":thread_presentation",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend/shell:topbar",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/ui:time_ago",
+        "//agentplane/proto:command_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
+    name = "stored_command_details",
+    srcs = ["stored_command_details.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
     name = "local_commands",
     srcs = ["local_commands.ts"],
     tsconfig = TSCONFIG,
@@ -223,6 +256,7 @@ ts_library(
         ":chronological_debug",
         ":client",
         ":command_delivery",
+        ":command_delivery_history",
         ":composer",
         ":harness_behavior",
         ":history_rows",
@@ -268,6 +302,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":client",
+        ":command_delivery_history",
         ":composer",
         ":conversation",
         ":conversation_css",

@@ -3264,6 +3264,12 @@ function retiredConnectionRows(): Connection[] {
 }
 
 routes.push(
+  // These scenes seed browser-local commands with no corresponding stored records.
+  [
+    "GET",
+    /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+)\/dispatches$/,
+    () => ({ coverage: "RETAINED_DISPATCH_ROWS", dispatches: [] }),
+  ],
   [
     "GET",
     /^\/upstream\/dispatcher\/v1\/dispatches\/legacy-input$/,
