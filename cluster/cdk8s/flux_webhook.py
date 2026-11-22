@@ -35,7 +35,7 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     ReceiverSpecType,
 )
 
-from cluster.cdk8s import ntfy
+from cluster.cdk8s import flux, ntfy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.gateway import https_route
@@ -99,7 +99,7 @@ def chart(app: App) -> Chart:
                 ReceiverResource.git_repository("flux-system", namespace="flux-system"),
                 # Public Flux control objects retain a dedicated sparse checkout. Reconcile
                 # it immediately on a Ducktape push rather than waiting for its poll.
-                ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
+                ReceiverResource.git_repository(flux.DUCKTAPE_SOURCE.name, namespace=flux.DUCKTAPE_SOURCE.namespace),
                 ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
             ],
         ),
