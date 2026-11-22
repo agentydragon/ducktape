@@ -157,11 +157,12 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
         await deliver(value);
       }
     };
-    void recover();
-    window.addEventListener("online", recover);
+    const onOnline = () => void recover();
+    onOnline();
+    window.addEventListener("online", onOnline);
     return () => {
       stopped = true;
-      window.removeEventListener("online", recover);
+      window.removeEventListener("online", onOnline);
     };
   }, [deliver, store]);
   const watchedIds = local.commands
