@@ -21,37 +21,29 @@ BB_OUT_PREFIX = "bb-out/"
 
 @dataclasses.dataclass(frozen=True)
 class Release:
-    """One row of the release matrix.
-
-    Field names are the matrix keys release.yml reads — except `filenames`,
-    which both the planner and publishing job use.
-    """
+    """A release and its ordered (Bazel target, published filename) pairs."""
 
     pkg: str
-    targets: str
-    #: Each target's released asset name, aligned with `targets`. The name is a
-    #: contract: sync_pins.py derives every pin's download URL from it, and
-    #: release_assets.py refuses a built file that carries a different name.
-    filenames: str
-    tests: str
-    bazel_flags: str
-    release_metadata: str
-    metadata_platform: str
+    assets: tuple[tuple[str, str], ...]
+    tests: str = ""
+    bazel_flags: str = ""
+    release_metadata: bool = False
+    metadata_platform: str = ""
 
     @property
     def uses_default_config(self) -> bool:
         """Whether this row was built under the same Bazel config as bazel-ci."""
         return not self.bazel_flags
 
-    @property
-    def assets(self) -> list[tuple[str, str]]:
-        """(target, filename) pairs, aligned by position."""
-        return list(zip(self.targets.split(), self.filenames.split(), strict=True))
-
     def as_matrix_row(self) -> dict[str, str]:
-        row = dataclasses.asdict(self)
-        del row["filenames"]
-        return row
+        return {
+            "pkg": self.pkg,
+            "targets": " ".join(target for target, _ in self.assets),
+            "tests": self.tests,
+            "bazel_flags": self.bazel_flags,
+            "release_metadata": str(self.release_metadata).lower(),
+            "metadata_platform": self.metadata_platform,
+        }
 
 
 def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release]:
@@ -61,11 +53,10 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
     rows = [
         Release(
             pkg=name,
-            targets=" ".join(pin["target"] for pin in owned),
-            filenames=" ".join(pin["filename"] for pin in owned),
+            assets=tuple((pin["target"], pin["filename"]) for pin in owned),
             tests=entry.get("tests", ""),
             bazel_flags=entry.get("bazelFlags", ""),
-            release_metadata=str(entry.get("releaseMetadata", False)).lower(),
+            release_metadata=entry.get("releaseMetadata", False),
             metadata_platform=entry.get("metadataPlatform", ""),
         )
         for name, entry in doc["releases"].items()
@@ -74,18 +65,7 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
     # One release per deployable skill; skills/skills_registry.json is the SSOT.
     # Their `<name>_frontmatter_test` already runs in bazel-ci, so tests stays empty.
     skills = json.loads(skills_registry.read_text())["skills"]
-    rows.extend(
-        Release(
-            pkg=skill["pkg"],
-            targets=skill["target"],
-            filenames=skill["filename"],
-            tests="",
-            bazel_flags="",
-            release_metadata="false",
-            metadata_platform="",
-        )
-        for skill in skills
-    )
+    rows.extend(Release(pkg=skill["pkg"], assets=((skill["target"], skill["filename"]),)) for skill in skills)
     return rows
 
 
