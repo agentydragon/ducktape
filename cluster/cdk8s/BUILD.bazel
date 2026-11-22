@@ -1216,18 +1216,21 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
 py_test(
     name = "test_etcd",
     srcs = ["test_etcd.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    data = [
+        "//:nebula-mesh.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
         ":etcd",
+        "//:conftest",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
