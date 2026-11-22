@@ -4,7 +4,7 @@ import EsmSplit.Plan
 import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
 
-/-! Lower independently parsed original and split modules, with shared, unchanged
+/-! Lower the original and emitted module trees, with shared, unchanged
 providers. The parser's AST, scope annotations and literals are frontend premises.
 Placement gives emitted units their original identities; the actual module syntax
 gives both programs their bodies and links. -/
@@ -16,11 +16,12 @@ open Lean (Json)
 private def field (j : Json) (key : String) := j.getObjValAs? String key
 private def typ (j : Json) := field j "type"
 
-/-- Offsets, literal spellings, and scope annotations can change during emission.
-Syntax comparison is followed by checking the linked cells of all free names. -/
+/-- Reparsing can change offsets, literal spellings, and local binder indices. A module
+binding marked `T` can become an import marked `V`. The linker checks its actual cell. -/
 private partial def unitSyntax : Json → Json
   | .obj fields => Json.mkObj <| fields.toList.filterMap fun (k, v) =>
-    if ["start", "end", "loc", "range", "raw", "k", "b", "d"].contains k then none
+    if ["start", "end", "loc", "range", "raw", "b"].contains k then none
+    else if k == "k" && (v == .str "T" || v == .str "V") then some (k, .str "T")
     else some (k, unitSyntax v)
   | .arr nodes => .arr (nodes.map unitSyntax)
   | j => j
