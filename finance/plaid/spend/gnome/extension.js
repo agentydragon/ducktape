@@ -983,11 +983,12 @@ const PlaidSpendIndicator = GObject.registerClass(
             const unmatched = periodReport(allowance, "recorded_pace_periods", periodId)?.unmatched_charges;
             return unmatched?.count > 0
               ? [
-                  `${label} unmatched ${unmatched.count} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
+                  `${label}: ${unmatched.count} ${unmatched.count === 1 ? "txn" : "txns"} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
                 ]
               : [];
           });
-          if (unmatchedSummaries.length) this._addReadOnly(unmatchedSummaries.join(" · "), "plaid-spend-caution");
+          if (unmatchedSummaries.length)
+            this._addReadOnly(`Unmatched: ${unmatchedSummaries.join(" · ")}`, "plaid-spend-caution");
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
         if (allowance.last_synced_at)
           this._addReadOnly(`Oldest linked sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
