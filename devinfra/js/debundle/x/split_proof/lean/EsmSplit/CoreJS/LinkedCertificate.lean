@@ -222,7 +222,7 @@ private def completesAt (label : String) (p : Program) (fuel : Nat) : Except Str
   | .ok .. => .ok true
   | .fuel => .ok false
   | .throw .. => .error s!"{label} threw during linked initialization"
-  | .unknown why => .error s!"{label} reached an unknown result during linked initialization: {why}"
+  | .unknown why _ => .error s!"{label} reached an unknown result during linked initialization: {why}"
 
 private def witnessFuel (source candidate : Program) : Except String Nat := do
   let maxFuel := 64
