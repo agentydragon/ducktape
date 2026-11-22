@@ -9,6 +9,8 @@ load("//devinfra/lint:linters.bzl", "eslint_test")
 
 npm_link_all_packages(name = "node_modules")
 
+real_bundle_artifacts()
+
 js_library(
     name = "scope_metadata",
     srcs = ["scope_metadata.mjs"],
@@ -1006,5 +1008,3 @@ js_library(
         ":node_modules/eslint-scope",
     ],
 )
-
-real_bundle_artifacts()
