@@ -336,6 +336,9 @@ global pruned-through version.
 
 `WatchDispatches` uses payload-free notifications from `postgres/wakeups.Hub` to wake versioned database
 reads. A fresh snapshot includes matching current Dispatch rows and retained tombstones, ordered by version.
+Set `include_receipt_version` on a Session filter with 1–16 command IDs to read each exact receipt
+revision. The selected List reads current rows. The selected Watch also includes retained deletion
+receipts. The revision is a decimal string in ProtoJSON. Ordinary List and Watch responses omit it.
 Incremental reads return records with a version greater than the cursor. Both apply the existing Session
 read scope; a tombstone has no Sandbox name or UID to filter on directly. Token encoding and decoding use
 the shared `dispatcher/internal/resumetoken` package; wakeups use `postgres/wakeups.Hub`.

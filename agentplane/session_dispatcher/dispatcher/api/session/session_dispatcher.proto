@@ -192,6 +192,9 @@ message DispatchFilter {
   repeated string command_ids = 3;
   // Include the stored command on each matching receipt. Requires 1 to 16 command IDs.
   bool include_command = 5;
+  // Include the exact receipt revision. Requires Session scope and 1 to 16 command IDs.
+  // Watch also supplies versions for legacy deletion receipts while they are retained.
+  bool include_receipt_version = 6;
 }
 
 message WatchDispatchesRequest {

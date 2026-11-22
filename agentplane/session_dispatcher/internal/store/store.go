@@ -888,7 +888,7 @@ func (s *Store) ListDispatchesForCaller(ctx context.Context, filter *dispatcherp
 	defer rows.Close()
 	var result []*dispatcherpb.Dispatch
 	for rows.Next() {
-		change, err := scanDispatchChange(rows)
+		change, err := scanDispatchChange(rows, filter.GetIncludeReceiptVersion())
 		if err != nil {
 			return nil, err
 		}
