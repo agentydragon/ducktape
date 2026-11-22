@@ -95,7 +95,6 @@ async def _route(synced_db: Database, config: PropsConfig, model_id: str) -> Ups
         return await _get_upstream_route(model_id, session, config, LLMApiShape.RESPONSES)
 
 
-@pytest.mark.asyncio
 async def test_custom_model_routes_to_configured_upstream(
     synced_db: Database, sample_config: PropsConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -110,7 +109,6 @@ async def test_custom_model_routes_to_configured_upstream(
     assert route.model_name == "llama3.3:70b"
 
 
-@pytest.mark.asyncio
 async def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """Unknown model ID raises HTTPException(400)."""
     with pytest.raises(HTTPException) as exc_info:
@@ -118,7 +116,6 @@ async def test_unknown_model_raises_400(synced_db: Database, sample_config: Prop
     assert exc_info.value.status_code == 400
 
 
-@pytest.mark.asyncio
 async def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsConfig) -> None:
     """Model referencing unknown upstream raises HTTPException(500)."""
     _add_model(synced_db, "broken-model", upstream_name="nonexistent-upstream", upstream_model="model-name")
@@ -127,7 +124,6 @@ async def test_unknown_upstream_raises_500(synced_db: Database, sample_config: P
     assert exc_info.value.status_code == 500
 
 
-@pytest.mark.asyncio
 async def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """A chat-shaped model cannot be routed through the Responses endpoint."""
     _add_model(

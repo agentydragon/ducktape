@@ -7,7 +7,6 @@ import pytest_bazel
 from platform_sessions.provider.control_auth import ControlBearerInterceptor
 
 
-@pytest.mark.asyncio
 async def test_authentication_and_secret_rotation(tmp_path):
     token_file = tmp_path / "control-token"
     token_file.write_text("a" * 32, encoding="ascii")
