@@ -113,7 +113,7 @@ message Dispatch {
   // The command stored by Dispatcher. Present on GetDispatch. Mutation receipts omit it for ProtoJSON clients.
   // List and watch require include_command; legacy deletion receipts lack the stored command.
   optional agentplane.proto.Command command = 13;
-  // ListSessionDispatches includes the positive database version of this exact receipt revision.
+  // Positive database version of this exact receipt revision. Set on reads that explicitly expose it.
   optional int64 receipt_version = 14;
 }
 
