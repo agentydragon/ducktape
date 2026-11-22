@@ -2100,9 +2100,14 @@ py_test(
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//tf/gitops/forgejo-agentydragon:inline_source",
+        "@multitool//tools/kustomize",
     ],
-    env = {"GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)"},
+    env = {
+        "GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)",
+        "KUSTOMIZE_RLOCATION": "$(rlocationpath @multitool//tools/kustomize)",
+    },
     deps = [
+        ":conftest",
         ":manifest_roots",
         "//:conftest",
         "//cluster/cdk8s/testing:manifests",

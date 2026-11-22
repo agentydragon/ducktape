@@ -1,4 +1,3 @@
-import base64
 import subprocess
 from pathlib import Path
 
@@ -216,72 +215,6 @@ def test_file_backed_config_map_omits_literals() -> None:
         resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", files=["file.conf"])]
     )
     assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "files": ["file.conf"]}]
-
-
-def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryption(
-    kustomize: Path, tmp_path: Path
-) -> None:
-    # This synthetic payload stands in for the encrypted YAML at the exact path the
-    # ArtifactGenerator copy places in the archive artifact. Kustomize packages it into Secret
-    # data unchanged; the generated Flux Kustomization then decrypts that value after build.
-    # This test never reads or prints the real encrypted credentials file.
-    source_name = "session-backup.sops.yaml"
-    source_content = "synthetic encrypted YAML payload\n"
-    (tmp_path / source_name).write_text(source_content)
-    (tmp_path / "workload.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "apiVersion": "batch/v1",
-                "kind": "CronJob",
-                "metadata": {"name": "import", "namespace": "session-backup"},
-                "spec": {
-                    "schedule": "0 * * * *",
-                    "jobTemplate": {
-                        "spec": {
-                            "template": {
-                                "spec": {
-                                    "containers": [{"name": "import", "image": "example.invalid/importer"}],
-                                    "restartPolicy": "Never",
-                                    "volumes": [
-                                        {
-                                            "name": "credentials",
-                                            "secret": {"secretName": "session-backup-importer-credentials"},
-                                        }
-                                    ],
-                                }
-                            }
-                        }
-                    },
-                },
-            }
-        )
-    )
-    (tmp_path / "kustomization.yaml").write_text(
-        yaml.safe_dump(
-            kustomize_kustomization(
-                resources=["workload.yaml"],
-                secret_generator=[
-                    SecretGeneratorArgs(
-                        name="session-backup-importer-credentials",
-                        namespace="session-backup",
-                        files=[f"session-backup.yaml={source_name}"],
-                    )
-                ],
-            )
-        )
-    )
-
-    result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
-    assert result.returncode == 0, result.stderr.decode()
-    documents = {document["kind"]: document for document in yaml.safe_load_all(result.stdout)}
-    secret = documents["Secret"]
-    cron_job = documents["CronJob"]
-    assert secret["metadata"]["name"].startswith("session-backup-importer-credentials-")
-    assert secret["metadata"]["namespace"] == "session-backup"
-    assert list(secret["data"]) == ["session-backup.yaml"]
-    assert base64.b64decode(secret["data"]["session-backup.yaml"]).decode() == source_content
-    [volume] = cron_job["spec"]["jobTemplate"]["spec"]["template"]["spec"]["volumes"]
-    assert volume["secret"]["secretName"] == secret["metadata"]["name"]
 
 
 def test_empty_config_map_data_serializes_as_empty_literals() -> None:
