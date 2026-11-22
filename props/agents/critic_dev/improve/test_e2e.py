@@ -108,7 +108,7 @@ async def test_prompt_improve_e2e_creates_package(
         result = await stack.registry.run_critic_dev_improve(
             image=stack.resolved_images["critic_dev_improve"],
             examples=[subtract_file_example],
-            baseline_image_digests=[stack.image_digests["critic"]],
+            baseline_image_digests=[stack.resolved_images["critic"].digest],
             budget_usd=50.0,
             improvement_model=stack.model,
             critic_model=stack.model,

@@ -104,11 +104,6 @@ class E2EStack:
     model: str
     resolved_images: dict[str, ResolvedImage]  # repo_name → ResolvedImage
 
-    @property
-    def image_digests(self) -> dict[str, str]:
-        """repo_name → digest (sha256:...)."""
-        return {name: img.digest for name, img in self.resolved_images.items()}
-
 
 def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
     """Build agent_base_env for e2e tests.
