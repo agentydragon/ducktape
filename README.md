@@ -11,15 +11,13 @@ report snapshots. The CI reports are:
 
 - **Bazel target and wiring audit:** [source review](bazel-audit/) and [query results](bazel-audit/evidence.json). All 328 tracked frontend TypeScript files reach the typed-lint group. A simulated package omission drops six.
 
-- **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
+- **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with fresh Action and Thread browser costs, devel push controls, and a current dependency graph probe. [Evidence](ci-test-cost/evidence.json) · [Manifest](ci-test-cost/manifest.json)
 
-- **Latency (22 November UTC):** [Report](latency/index.html). On 22 November, 63 of 72 sampled heads reached required green. Median 5m16s, p90 11m45s. Two KVM pilots closed after both candidates lengthened their measured finish times. [Pilot results](latency/#kvm-pilot-results). [Browser experiment](latency/#shard-replay) · [KVM scale-up replay](latency/#kvm-scale-up-signal) · [KVM disk breakdown](latency/#kvm-disk-breakdown) · [KVM test memory](latency/#kvm-test-memory) · [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json).
+- **Latency (15–21 November UTC; partial 22 November):** [report](latency/index.html). 126 of 168 sampled heads reached required green. Median 3m 06s, p90 9m 36s. The report covers the Bazel gate replay, KVM clock rollout and closed KVM pilots. [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
 
-- **Reliability (13–19 November UTC):** [report](reliability/index.html), [evidence](reliability/evidence.json), [manifest](reliability/manifest.json). Four of 350 sampled PR heads had a verified intermittent failure. The daily trend counts each affected head once. The separate 20 November VM cohort includes one Bazel retry recovery in 16 fresh PR verdicts. Nineteen of 63 mainline failures share a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry. The failed attempt reached the baseline rebuild guard in an already-prepared Docker cgroup.
+- **Reliability (15–21 November UTC; partial 22 November):** [report](reliability/index.html). Thirteen of 168 sampled heads remained red. The separate 22 November sample includes one verified fresh sandbox frontend recovery and four fresh first-attempt VM passes. [Evidence](reliability/evidence.json) · [Manifest](reliability/manifest.json)
 
-- **Visual reliability:** [standalone HTML](visual-reliability/index.html),
-  [evidence](visual-reliability/evidence.json),
-  [source and observation window](visual-reliability/manifest.json).
+- **Visual reliability:** [report](visual-reliability/index.html), with a visual operation geometry failure, measured visual History cache exposure and current Chart.js patch applicability. [Evidence](visual-reliability/evidence.json) · [Manifest](visual-reliability/manifest.json)
 
 - **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with 33 reviewed items, a stable Gazelle trial, and measured Grocy and Ruff workaround checks.
 

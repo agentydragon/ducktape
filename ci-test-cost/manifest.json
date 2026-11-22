@@ -1,35 +1,12 @@
 {
-  "source_devel_commit": "459abfb8dd9aab30b8b78c9fdf3ad495ae5badd2",
-  "window_start_utc": "2026-11-16T19:55:16Z",
-  "window_end_utc": "2026-11-17T00:42:19Z",
-  "audited_at_utc": "2026-11-17T00:48:16.461361+00:00",
-  "publication_status": "Active investigation; original audit and concluded trials remain in linked historical evidence and Git history",
-  "population": "53 selected successful completed CI runs; 43 execution reads, 10 errors; 32 with fresh TestRunner actions",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "window_start_utc": "2026-11-22T00:00:00Z",
+  "window_end_utc": "2026-11-22T10:00:00Z",
+  "published_at_utc": "2026-11-22T11:07:53+00:00",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
   "attribution": "not collected",
-  "previous_latency_report": "https://github.com/agentydragon/ducktape/blob/fb2b79e34e4b8b89556a9b15c4bf104f1b294488/latency/index.html",
-  "report_sha256": "68d43d2023c29978bf812a1c538fdf64d83178bbd6d42244ba0a537c68ad923f",
-  "evidence_sha256": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
-  "visual_validation": "visual-validation.json",
-  "visual_invocation": "7a9faaae-07ee-48bb-827a-fbfedaa485e5",
-  "tag_convention_update": "PR #17109 merged the bench tag convention; original source pin and measurement window are unchanged.",
-  "implementation_updates": [
-    {
-      "item": "Move the Debundle source-fact memory guard to an opt-in benchmark and retain a small correctness witness",
-      "status": "merged",
-      "pr": "https://github.com/agentydragon/ducktape/pull/17117",
-      "merge_commit": "6c9257fe5e802d347f6850d3e5dbcc6ba306cdba",
-      "validation": "https://app.buildbuddy.io/invocation/c9aba991-b283-433d-8fb5-8c0de7b00540"
-    },
-    {
-      "item": "Cache cluster manifest synthesis as a tree artifact",
-      "status": "merged",
-      "pr": "https://github.com/agentydragon/ducktape/pull/17131",
-      "merge_commit": "7aace049bf1c134b016494bdf103e9def6c9e0a0",
-      "validation": "https://app.buildbuddy.io/invocation/d8c5e3b4-759d-471d-bf0d-ae85359c7afd",
-      "cache_probe": "https://app.buildbuddy.io/invocation/579dec50-d422-487d-b969-d5c6cdf1fd2b"
-    }
-  ],
+  "report_sha256": "fae410eb4646c2307c11bdf9b3195e3b1e467e6874393446811a94d3a1363908",
+  "evidence_sha256": "9d66361afbddddfd9f9181ea005b818f105530bcec7d8dfd15fb5c95a613f206",
   "followup_evidence": "followup-evidence.json",
-  "followup_evidence_sha256": "e6a0466ba0177c7d58505f5632b7e7d9f4351e50a1cd625604a89e73b30da2d1",
-  "followup_description": "Source-pinned Debundle grouping, cluster synthesis cache and Agentplane fixture experiments plus registry reuse successor validation; original audit evidence remains unchanged."
+  "followup_evidence_sha256": "e6a0466ba0177c7d58505f5632b7e7d9f4351e50a1cd625604a89e73b30da2d1"
 }

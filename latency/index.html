@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>PR time to green · CI latency</title>
+    <title>CI latency</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -47,1083 +47,296 @@
     <div id="report-content"></div>
     <noscript>This report uses JavaScript for charts and disclosures.</noscript>
     <script type="module">
+      import { useState } from "react";
       import {
         Accordion,
         Anchor,
         Box,
+        Code,
         Container,
         Group,
-        Paper,
-        SimpleGrid,
+        SegmentedControl,
         Stack,
         Table,
         Text,
+        TextInput,
         Title,
       } from "@mantine/core";
-      import { BarChart, LineChart } from "@mantine/charts";
-      import { html, mount } from "../report.js?v=ebc2503d323c1b76";
-      const response = await fetch(
-        "./evidence.json?v=bbacd23cc55c68ee007e8fa6885279478e432fb04c61f92722616bb8017a2b71",
-      );
+      import { BarChart } from "@mantine/charts";
+      import { html, mount } from "../report.js";
+      const evidenceSha =
+        "3fb83c15b7ad399eab5e4b8f93f4f2e6e346848d3e15073d598d0cbdd026449e";
+      const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
-      const evidence = await response.json();
-      const [dispatchA, dispatchB] = evidence.kvm_runner_dispatch.cases;
-      const morning = evidence.nov22_morning_feedback;
-      const fresh = evidence.nov22_feedback;
-      const podAdmission = evidence.managed_pod_admission;
-      const cas = evidence.cas_followup;
-      const overlap = evidence.firecracker_overlap;
-      const census = evidence.scheduler_pr_census;
-      const firecrackerFollowup = evidence.firecracker_scheduler_followup;
-      const staggered = firecrackerFollowup.staggered_probe;
-      const hhmm = (stamp) => stamp.slice(11, 16);
-      const modeNames = {
-        serial: "Serial",
-        simultaneous: "Simultaneous",
-        staggered: "Staggered",
-      };
-      const kvmScaleUp = evidence.kvm_scale_up_signal;
-      const kvmDisk = evidence.kvm_work_disk_requirements;
-      const kvmFootprint = evidence.kvm_stack_disk_breakdown;
-      const diskGiB = (bytes) =>
-        bytes == null ? "Unmeasured" : `${(bytes / 2 ** 30).toFixed(2)} GiB`;
-      const cacheTrial = evidence.kvm_shared_cache_trial;
-      const kvmPlacement = evidence.kvm_worker_placement;
-      const kvmWorkDisk = evidence.kvm_work_disk_trial;
-      const retainedVm = evidence.kvm_retained_vm_ssd;
-      const testMemory = evidence.kvm_test_memory;
-      const memoryGiB = (bytes) => `${(bytes / 2 ** 30).toFixed(2)} GiB`;
+      const bytes = await response.arrayBuffer();
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const receivedSha = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (receivedSha !== evidenceSha)
+        throw new Error("Evidence does not match this report");
+      const e = JSON.parse(new TextDecoder().decode(bytes));
       const gh = "https://github.com/agentydragon/ducktape";
-      const source = evidence.retained_nov20_source;
-      const post = "after shadow retired";
-      const groups = evidence.groups.filter((g) => g.period === post);
-      const byPr = new Map(evidence.cases.map((c) => [c.pr, c]));
+      const archive =
+        gh + "/blob/" + e.previous_report_commit + "/latency/index.html";
       const link = (href, label) => html`<${Anchor} href=${href}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
-      const file = (path, label) => link(`${gh}/blob/${source}/${path}`, label);
-      const prior = `${gh}/blob/${evidence.prior_report_commit}/latency`;
-      const seconds = (v) =>
-        v == null ? "Unknown" : `${Number(v.toFixed(2))}s`;
-      const writes = (phase) => {
-        if (!phase) return "—";
-        if (phase.written_gib != null)
-          return `${phase.written_gib.toFixed(2)} GiB`;
-        if (phase.written_bracket_gib == null) return "Unknown";
-        if (phase.written_bracket_gib === 0) return "0 GiB";
-        const roundedUp = Math.ceil(phase.written_bracket_gib * 100) / 100;
-        return `≤${roundedUp.toFixed(2)} GiB`;
-      };
-      const time = (v) => {
-        if (v == null) return "Unknown";
-        const s = Math.round(v);
-        return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-      };
-      const utc = (s) => s?.slice(11, 19) ?? "Unknown";
-      const short = (label) => label?.split(":").at(-1) ?? "Unknown";
-      const job = (j, label) => link(j.html_url, label);
-      const build = (i, label) =>
-        link(`https://app.buildbuddy.io/invocation/${i}`, label);
-      const table = (headers, rows, width = 600) => html`
-        <${Table.ScrollContainer} minWidth=${width}>
-          <${Table} striped withTableBorder style=${{ overflowWrap: "normal" }}>
+      const source = (path, label) =>
+        link(`${gh}/blob/${e.source_devel_commit}/${path}`, label);
+      const inv = (id, label) =>
+        link(
+          "https://app.buildbuddy.io/invocation/" + id,
+          label || id.slice(0, 8),
+        );
+      const table = (headers, rows, width = 560) =>
+        html` <${Table.ScrollContainer}
+          minWidth=${width}
+          type="native"
+          maw="100%"
+        >
+          <${Table} striped verticalSpacing="sm">
             <${Table.Thead}
               ><${Table.Tr}
-                >${headers.map((h) => html`<${Table.Th}>${h}<//>`)}<//
+                >${headers.map((header) => html`<${Table.Th} key=${header}>${header}<//>`)}<//
               ><//
             >
             <${Table.Tbody}
-              >${rows.map((row) => html`<${Table.Tr}>${row.map((v) => html`<${Table.Td}>${v}<//>`)}<//>`)}<//
+              >${rows.map((row, i) => html`<${Table.Tr} key=${i}>${row.map((value, j) => html`<${Table.Td} key=${j}>${value}<//>`)}<//>`)}<//
             >
           <//>
-        <//>
-      `;
-      const titles = {
-        "Agentplane backend": "Backend",
-        "Agentplane tests / fixtures": "Fixtures",
-        Documentation: "Docs",
-        Frontend: "Frontend",
-        "Other code / tooling": "Tooling",
-        "Other infrastructure": "Other infra",
-        "cdk8s infrastructure": "cdk8s",
-      };
-      const phases = evidence.kvm_pool.timeline
-        .filter(
-          (_, i) => i % 10 === 0 || i === evidence.kvm_pool.timeline.length - 1,
-        )
-        .map((r) => ({
-          ...r,
-          utc: new Date(r.at * 1000).toISOString().slice(11, 16),
-        }));
-      const failureRows = [18106, 18243, 18254, 18256, 18273].map((n) => {
-        const c = byPr.get(n);
-        return [
-          pr(n),
-          evidence.rerun_causes[n],
-          time(c.failure_before_job_red_s),
-          time(c.prior_red_to_retry_job_created_s),
-          time(c.feedback_s),
-          html`${job(c.jobs[0], "Attempt 1")} ·
-          ${build(c.attempts[0].inner, "Bazel")}`,
-        ];
-      });
-      const comparable = evidence.groups.filter(
-        (g) => g.group === "Agentplane backend",
-      );
-      function Report() {
-        return html`<${Container} component="main" size="72rem" py="xl" style=${{ overflowWrap: "anywhere" }}>
-          <${Stack} gap="xl">
-<header>
- ${link("../", "Ducktape reports")}
- <${Title} order=${1} mt="md">PR time to green<//>
- <${Text} size="lg" mt="sm">Required checks took 5m16s at the median and 11m45s at p90 among 63 green heads. Nine of the 72 sampled heads ended canceled. Test & Build finished last on 62 green heads, including one tie with imports.<//>
- <${Text} size="sm" c="dimmed" mt="sm">22 November 2026, 00:00–08:00 UTC · sampled from 93 eligible PR heads · CI workflow creation through the last required check to first reach an accepted result.<//>
- <${Group} gap="md" mt="sm">${link("#kvm-pilot-results", "KVM pilot results")}${link("#morning-workloads", "Workloads and sampling")}${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
-</header>
-<section id="kvm-pilot-results">
- <${Title} order=${2}>Keep serial Firecracker cleanup and the current K3s image import<//>
- <${Text} my="sm">Both variants passed the same test cases in their final comparisons.<//>
- ${table(
-   ["Measured interval", "Control → candidate", "Change"],
-   [
-     [
-       "Firecracker · end of live assertions through final cleanup",
-       "108.7 → 133.1s",
-       "+24.4s",
-     ],
-     [
-       "K3s seed · worker start through test process end",
-       "289.01 → 293.98s",
-       "+4.97s",
-     ],
-   ],
-   330,
- )}
- <${Text} mt="sm">Firecracker overlapped 68.3s of cleanup with the next case. Its shorter total process time compared a cold control with a warm candidate on a different worker. The 1.15 GB K3s seed saved 0.81s in stack setup, while worker input fetch went from 0.73s to 6.10s. Both final arms passed the Claude and Codex cases. ${link("https://github.com/agentydragon/ducktape/blob/e00c429eff17e7a6c049947bb381768e02a7a15a/devinfra/ci/debug/system_test_feedback/kvm_pilots_2026_11_22.md", "Decision record and BuildBuddy runs")}<//>
-</section>
-<section id="morning-workloads">
- <${Title} order=${2}>Which tests still determine the finish?<//>
- <${Text} my="sm">The median was 9m38s for 17 green Agentplane backend edits and 4m57s for 16 green frontend edits. Test & Build finished last on every green head in both groups.<//>
- ${table(
-   ["Changed PR files", "Sample", "Green", "Median", "p90"],
-   Object.entries(morning.groups).map(([name, g]) => [
-     name,
-     g.n,
-     g.green,
-     time(g.median_s),
-     g.green >= 10 ? time(g.p90_s) : "—",
-   ]),
-   470,
- )}
- <${Text} mt="md"><strong>Check which browser suite finishes last after the Action harness split.</strong> On the file-disclosure change, 28 of 36 reported test targets had fresh work. The last policy shard finished four seconds after the last Action shard. The shared UI files in that change also feed the routed UI. The split in #18979 verified separate harness dependencies and matched 534 cases and 3,035 screenshot identities. Compare Action-only edits with shared-UI edits before assigning a PR-time saving. ${pr(18824)} · ${build(morning.examples[0].invocation, "Browser timings")} · ${pr(18979)}<//>
- <${Text} mt="md"><strong>Trace the last system test on backend changes.</strong> The mixed App and Dispatcher change in #18943 reached green in 11m45s. All 148 reported test targets had fresh work. Firecracker finished last, 21s before the required check. The native Pod storage split subsequently removed the App session handler dependency from workspace replacement and its manual recovery control. The reverse-dependency probe still selected the required VM test. Only required work on the critical path can move the PR finish. ${pr(18943)} · ${build(morning.examples[1].invocation, "System-test timings")} · ${pr(18984)} · ${build("285c5263-bda5-416f-9682-7d0a4b42580b", "Selection probe")}<//>
- <${Accordion} mt="md" variant="contained"><${Accordion.Item} value="coverage"><${Accordion.Control}>Sampling and comparison limits<//><${Accordion.Panel}>
- <${Text} size="sm">Of 418 pull-request CI runs, 228 had a fork or unavailable repository and 97 lacked a qualifying devel association. The remaining 93 distinct heads included 67 runs recovered by an exact PR head SHA and branch match. We selected 72 by a deterministic hash of the head SHA. Full PR paths determined each group only when the SHA and file count matched the API response. Fourteen heads were unclassified, including all nine cancellations. One green head recovered from a failed Test & Build attempt. Percentiles use nearest rank among green heads, with p90 shown for groups of at least ten. Push and subscriber notification times are unobserved.<//>
- <${Text} size="sm" mt="sm">The browser and backend examples predate the relevant selection changes. #18984 merged after the sample window. The prior week used a different PR association rule and equal daily sample sizes. Differences between these cohorts cannot isolate the effect of a merge. ${pr(19006)} covers native setup in additional manual VM probes.<//>
- <//><//><//>
-</section>
-<section id="weekly-trend">
- <${Title} order=${2}>15–21 November · daily required-check feedback<//>
- <${Text} my="sm">Among 245 heads sampled at 35 per day, 175 reached required green, 48 ended canceled and 22 failed. Five reached green on a later attempt. Median 3m04s, p90 8m57s among green heads. The following weekly breakdowns use this earlier cohort.<//>
- <${Box} role="img" aria-label="Median and p90 minutes among green heads by UTC day">
- <${LineChart} h=${230} data=${Object.entries(fresh.daily).map(([date, r]) => ({ day: date.slice(-2), Median: r.median_s / 60, p90: r.p90_s / 60 }))} dataKey="day" withLegend curveType="linear" yAxisLabel="Minutes" yAxisProps=${{ tickFormatter: (v) => String(v) }} series=${[
-   { name: "Median", color: "blue.6" },
-   { name: "p90", color: "orange.6" },
- ]} valueFormatter=${(v) => time(v * 60)} /><//>
- <${Accordion} variant="contained"><${Accordion.Item} value="daily"><${Accordion.Control}>Daily sample counts and times<//><${Accordion.Panel}>
- ${table(
-   ["November UTC", "Eligible heads", "Green / 35", "Median", "p90"],
-   Object.entries(fresh.daily).map(([d, r]) => [
-     d,
-     fresh.frame.byday[d],
-     r.n,
-     time(r.median_s),
-     time(r.p90_s),
-   ]),
-   430,
- )}
- <//><//><//>
-</section>
-<section id="change-class">
- <${Title} order=${2}>What changed on the head commit?<//>
- <${Text} my="sm">Backend edits took 9m49s at the median. Five of the 15 green backend heads needed a second Bazel attempt, including all three heads above half an hour. Docs edits reached green in 2m01s at the median. These classes use the last commit’s files so superseded heads count too. A PR can contain earlier changes in a different class.<//>
- ${table(
-   ["Head commit", "Sample", "Green", "Failed", "Canceled", "Median", "p90"],
-   Object.entries(fresh.edits).map(([g, r]) => [
-     g,
-     r.sampled,
-     r.n,
-     r.outcomes.failed ?? 0,
-     r.outcomes.cancelled ?? 0,
-     time(r.median_s),
-     r.n < 10 ? "—" : time(r.p90_s),
-   ]),
-   615,
- )}
- <${Text} size="sm" c="dimmed" mt="sm">p90 shown for at least ten green heads. The evidence also groups the 124 heads whose full PR file list could be verified. Most failed or superseded heads lacked a verifiable current file list.<//>
- <${Text} mt="sm">Test & Build finished last on 166 of 175 green heads, imports on eight and Pre-commit on three, including two ties. Moving Test & Build one minute earlier would save 47s on average with both other clocks fixed. Six heads spent at least two minutes setting up Nix on a required gate.<//>
-</section>
-<section id="backend-recovery">
- <${Title} order=${2}>Retries explain the backend tail<//>
- <${Text} my="sm">The five first attempts failed in four places. On #16972 the VM test failed, 21m55s elapsed before GitHub created the retry job, and the new runner started two seconds later. GitHub identifies the triggering accounts as users. The request source and reason for each wait are unknown.<//>
- ${table(
-   ["PR", "First failure", "Red to next job created", "Required green"],
-   fresh.recoveries.map((r) => [
-     pr(r.pr),
-     link(r.failure, r.reason),
-     time(r.gap),
-     time(r.green),
-   ]),
-   555,
- )}
- <${Text} mt="sm">Both VM failures precede the required KVM cutover. Keep the existing 27 November or 50-fresh-execution follow-up for that route. The Pod failure was a managed Firecracker snapshot restore error before the test could run. Reducing VM scenario time or adding GitHub slots would leave that failure mode in place.<//>
-</section>
-<section id="kvm-runner-dispatch">
- <${Title} order=${2}>Where the two cold VM actions landed<//>
- <${Text} my="sm">On 22 November, two required KubeVirt tests started on worker 5 with an empty runner pool. The executor logs show different opportunities for reuse. Our pool can retain warm workers longer. The two timelines show when that could help.<//>
- <${Title} order=${3}>#18741 · A matching runner was idle<//>
- <${Text} my="sm">Worker 0 had paused a VM runner at 23:26:42 UTC the night before. Its fixture fingerprint matched this run. At 00:40:54 it reported healthy registration and all 4 CPUs and 7 GiB of RAM available. Its latest disk sample showed 53 GiB free against a 50 GiB request.<//>
- <${Text} my="sm">At 00:40:56 BuildBuddy queued Firecracker and KubeVirt 16 ms apart. Worker 5 took KubeVirt and spent 306s on fixture setup. At 00:41:01 worker 0 took Firecracker. Its lookup still listed the paused KubeVirt runner. The KubeVirt action occupied 592s of the 622s Bazel critical path and finished 4m10s after the next test.<//>
- <${Text} size="sm">${pr(18741)} · ${build(dispatchA.invocation, "Both actions")} · ${build(dispatchA.previous_invocation, "Worker 0’s preceding VM test")} · ${link(dispatchA.metrics, "Pool metrics at dispatch")}<//>
- <${Title} order=${3} mt="md">#18844 · The known warm runner was busy<//>
- <${Text} my="sm">Worker 3 started a VM test at 03:45:16 UTC. The next VM action queued at 03:46:31 and went to worker 5. Worker 3 returned its matching runner to the pool at 03:49:09, 158s after enqueue. A 30s preference would have expired while that runner was still occupied.<//>
- <${Text} size="sm">${pr(18844)} · ${build(dispatchB.invocation, "Cold VM action")} · ${build(dispatchB.previous_invocation, "Concurrent warm VM action")} · ${link(dispatchB.metrics, "Pool metrics at dispatch")}<//>
- <${Title} order=${3} mt="md">What longer worker retention would cost<//>
- <${Text} my="sm">Between 00:00 and 04:00 UTC, 6 of 18 KubeVirt runner lookups found a matching paused runner on the assigned worker. The other 12 missed. These counts include repeat attempts. Worker 4 returned a matching runner at 00:17:48 and shut down at 00:33:15 as the pool shrank from six to five. Cold lookups followed four and eight minutes later, the second on #18741. Retaining worker 4 would have preserved another placement option.<//>
- <${Text} my="sm">Holding each observed pool size for 15 extra minutes after demand fell would have added 173 requested worker-minutes over these four hours, a 12% increase from 1,463. This replay prices capacity. Which worker stays, which action it gets and how quickly the PR finishes all require a live comparison.<//>
- <${Text} my="sm"><strong>Next decision.</strong> Compare the current 15-minute scale-down window with 30 minutes in alternating, time-limited trial windows. Keep the 5s runner preference and both required suites. Compare critical-path VM runs at similar arrival rates and fixture fingerprints. Record local matches, enqueue-to-completion time, final required-check time and extra worker-minutes. Revert to 15 minutes if the longer window buys no repeatable feedback-time improvement.<//>
- <${Text} size="sm">${link(evidence.kvm_runner_dispatch.retention_sample.metrics, "Four-hour pool history")} · ${file("cluster/cdk8s/buildbuddy_kvm_worker.py", "Worker scale-down policy")}<//>
-</section>
-<section id="kvm-scale-up-signal">
- <${Title} order=${2}>The KVM scale-up signal can rise while a worker has room<//>
- <${Text} my="sm">The live two-to-eight-worker pool allows one task per worker. Its autoscaler adds busy workers to the sum of reservations in local executor queues. An action can have reservations on several executors, even after it starts. Replay found ${kvmScaleUp.raw_increase_samples} samples where every desired worker reported, the pool was below eight and the raw target exceeded the desired size. ${kvmScaleUp.raw_increase_samples_with_cpu_idle_worker} had a CPU-idle worker. In ${kvmScaleUp.raw_increase_samples_with_full_size_headroom} of those samples, at least one healthy nondeleting worker showed 4 unassigned CPUs, 7 GiB unassigned estimated RAM, at least 50 decimal GB of free work disk and no observed active task stage.<//>
- <${Text} my="sm">At 00:41:30 UTC on 22 November, two of five workers had assigned CPU and the local queues reported four reservations, for a raw target of six. Three workers met the full-size headroom check. Both required actions had reached workers by 00:41:02. ${link("#kvm-runner-dispatch", "Dispatch trace")}. Other arrivals are unknown. This replay counts evaluation samples. Actual scale-ups, distinct waiting executions and excess VM-hours are unmeasured.<//>
- <${Text} my="sm">An earlier isolated reproduction recorded three extra reservations for two running actions. A separate action really waited 85.7s while the assigned-and-queued CPU gauge equaled assigned CPU. The hosted metrics inventory had no distinct pending count for this pool. Six hours of executor logs contained 106 runner lookups and zero queue-add debug records. The available logs help trace dispatch. Queue deduplication needs fresh waiting execution and attempt IDs and resource requirements. ${link(kvmScaleUp.earlier_isolated_reproduction.issue, "Reproduction and telemetry gap")}<//>
- <${Text} my="sm">Among ${kvmScaleUp.full_size_shadow_replay.samples_with_reservations} samples with reservations and complete worker telemetry below the limit, both the current signal and a probe for zero full-size headroom called for growth in ${kvmScaleUp.full_size_shadow_replay.both_signals_call_for_growth}. The current signal alone called for growth in ${kvmScaleUp.full_size_shadow_replay.raw_target_only} and the probe alone in ${kvmScaleUp.full_size_shadow_replay.shadow_probe_only}. All six probe-only points fell in one 2m30s interval. The idle worker showed 31.3 GB free at 08:06 UTC on 21 November. Its advertised disk capacity was 70.1 GB. This 30-second replay used a 50 decimal GB filesystem threshold as a proxy for KubeVirt placement.<//>
- <${Text} my="sm"><strong>Evaluate the shadow target.</strong> The recording rule proposes one additional VM when queued work remains after eligible ready and booting capacity. It counts a booting VM once and holds on missing telemetry. Compare distinct enqueue-to-start times, idle warm VM-hours, false adds and burst regressions before enabling scaling. ${pr(18894)}. ${pr(kvmScaleUp.two_task_draft_pr)} separately tests two slots per worker for actions that fit together.<//>
- <${Text} size="sm" c="dimmed">21 November 04:47 to 22 November 04:47 UTC · 30s evaluation, about 60s executor scrapes · ${kvmScaleUp.usable_samples.toLocaleString("en-US")} of ${kvmScaleUp.possible_samples.toLocaleString("en-US")} samples usable · ${link(kvmScaleUp.autoscaler_source, "Inspected scale-up policy")} · ${link(kvmScaleUp.metrics_dashboard, "Pool metrics")} · ${link("./evidence.json", "Replay method and examples")}<//>
-<section id="kvm-disk-sizing">
- <${Title} order=${3} mt="lg">KubeVirt passed below its 50 GiB disk request<//>
- <${Text} my="sm">Eighteen of 30 KubeVirt passes started below 50 GiB free. The lowest-space pass started at 26.801 GiB and had a sampled minimum of 26.437 GiB. It reused its runner. First assignments dropped a median 11.215 GiB across 12 passes and started with at least 45.424 GiB free. Later assignments dropped a median 1.418 GiB across 18 passes. For Firecracker the corresponding medians were 15.776 GiB across 13 first assignments and 1.358 GiB across 20 later assignments. None started below its 20 GiB request.<//>
- ${table(
-   [
-     "Passing suite",
-     "Free at start (GiB)",
-     "Sampled drop, median / p95 / max (GiB)",
-   ],
-   [
-     ["KubeVirt", kvmDisk.suites.kubevirt],
-     ["Firecracker", kvmDisk.suites.firecracker],
-   ].map(([name, suite]) => {
-     const sample = suite.all_passes;
-     return [
-       name + " (" + sample.passes + ")",
-       sample.starting_free_gib_range
-         .map((value) => value.toFixed(3))
-         .join("–"),
-       [
-         sample.median_net_drop_gib,
-         sample.p95_net_drop_gib,
-         sample.max_net_drop_gib,
-       ]
-         .map((value) => value.toFixed(3))
-         .join(" / "),
-     ];
-   }),
-   320,
- )}
- <${Text} my="sm">KubeVirt inherited 50 GiB without a sizing run. Firecracker’s 20 GiB followed one post-run disk reading. BuildBuddy v2.321.0 parses the <code>GB</code> suffix as GiB. The Docker executor’s fit checks use CPU, memory, concurrency and other resources and omit free disk. It can start actions below the declared value. ${pr(15355)} · ${pr(15351)} · ${link(kvmDisk.sources.parser, "Byte parser")} · ${link(kvmDisk.sources.docker_executor_task_fit, "Executor fit check")}<//>
- <${Text} my="sm">The ${pr(18898)} unit correction to the ${pr(18894)} shadow rule changed one of 1,441 historical minute targets, from five to six at 00:42 UTC on 22 November. The 08:06 and 11:09 UTC examples on 21 November kept their targets. Trying 30 GiB in the corrected replay would lower the target by one worker in two minutes. These are offline targets.<//>
- <${Text} my="sm"><strong>KubeVirt now requests 30 GiB on devel.</strong> ${pr(18902)} merged at 05:31 UTC on 22 November. Firecracker still requests 20 GiB. Track cold and warm fits and disk-pressure failures on the current 80 GiB PVC. Across all 5,520 guest disk scrapes, 278 showed less than 30 GiB free and the minimum was 20.47 GiB. Keep the PVC size and test overlapping actions separately.<//>
- <${Text} size="sm" c="dimmed">21 November 05:00 to 22 November 05:00 UTC · 48 of 72 invocations sampled across the day. Joined exact execution IDs to guest launcher pods and used physical disk scrapes about one minute apart. Of 76 executions, 63 passed with complete telemetry, four had nonzero exit codes with telemetry, five were unsuccessful or incomplete, and four lacked endpoint scrapes. Net change can miss brief peaks. The assignment number comes from the execution response and describes the runner’s reuse history. ${build("0b5493f6-ac65-5e3b-84cd-8ec6046a08c9", "Lowest-space KubeVirt pass")} · ${link("./evidence.json", "Exact executions, queries and method")}<//>
-</section>
-<section id="kvm-disk-breakdown">
-  <${Title} order=${3} mt="lg">What uses the KVM work disk<//>
-  <${Text} my="sm">${kvmFootprint.findings.reclaim} ${kvmFootprint.trim_trial ? build(kvmFootprint.trim_trial.invocation, "Private filesystem trim trial") : null}<//>
-  <${Text} my="sm">KubeVirt keeps more image data than Firecracker. Firecracker adds live guest disks and checkpoint copies while the scenario runs. Both actions run inside Docker and use a sparse 32 GiB file for the inner K3s ext4 filesystem. The checkpoints belong to the Firecracker guest inside the action. The BuildBuddy worker pays for that file's allocated blocks and shares its Docker image layers and file cache across actions. ${link(kvmFootprint.sources.worker_paths, "Worker directory layout")} · ${link(kvmFootprint.sources.backing_disk, "Sparse ext4 image")}<//>
-  ${table(
-    [
-      "Required CI example",
-      "Net worker drop",
-      "K3s before → final",
-      "OCI content / layers",
-    ],
-    Object.values(kvmFootprint.historical_actions).map((r) => [
-      build(
-        r.invocation,
-        `${r.suite} · ${r.task_number === 1 ? "First" : "Reused"}`,
-      ),
-      `${r.outer_net_drop_gib.toFixed(2)} GiB`,
-      `${diskGiB(r.before_import.inner_used_bytes)} → ${diskGiB(r.final.inner_used_bytes)}`,
-      `${diskGiB(r.final.content_bytes)} / ${diskGiB(r.final.overlay_snapshot_bytes)}`,
-    ]),
-    355,
-  )}
-  <${Text} size="sm" c="dimmed">Four higher-drop passes selected from the 21–22 November sizing cohort. Image bytes are within K3s used bytes. The final fixture snapshot follows workload cleanup. The two first assignments came from the same CI invocation on separate workers. Both reused actions also reattached their warm K3s baselines, with image layers already present before import. Their outer disk drop measures a different filesystem and observation window.<//>
-  <${Text} my="sm">Across all 63 passes, median downloaded input bytes were 2.72 GiB on first KubeVirt assignments and 0.94 GiB on first Firecracker assignments. On later assignments those medians were 0.26 and 0.36 GiB. BuildBuddy separately reports median uploads below 0.05 GiB in each group. In the largest sampled input transfers, KubeVirt staged a 535 MiB guest root layer while Firecracker staged a 713 MiB boot layer. Transfers count bytes staged through REAPI. A worker sample counted ${diskGiB(kvmFootprint.host_summary.shared_workspace_bytes)} of the workspace by inode in the file cache. Its workspace occupied ${diskGiB(kvmFootprint.host_summary.unique_workspace_bytes)} beyond shared cache files. ${link("./evidence.json", "Transfer and inode accounting")}<//>
-  ${table(
-    ["Fresh fixture on one SSD worker", "KubeVirt", "Firecracker"],
-    [
-      ["Peak sparse backing file", "backing_allocated_bytes"],
-      ["Peak used inside that filesystem", "inner_used_bytes"],
-      ["OCI content at final sampling", "content_bytes"],
-      ["Unpacked overlay layers at final sampling", "overlay_snapshot_bytes"],
-      ["Peak local-path PVC files inside ext4", "local_path_bytes"],
-      ["Sparse backing file after cleanup", "retained_backing_bytes"],
-    ].map(([label, key]) => [
-      label,
-      diskGiB(kvmFootprint.host_summary.vm[key]),
-      diskGiB(kvmFootprint.host_summary.firecracker[key]),
-    ]),
-    365,
-  )}
-  <${Text} my="sm">${kvmFootprint.findings.guest_disks} ${link(kvmFootprint.sources.guest_workspace, "KubeVirt workspace allocation")} · ${link(kvmFootprint.sources.firecracker_storage, "Firecracker checkpoint copies")}<//>
-  <${Text} my="sm">${kvmFootprint.findings.shared_disk} The worker’s NixOS root is a separate KubeVirt containerDisk. These measurements cover the worker’s mounted ext4 work PVC inside the VM. ${link(kvmFootprint.sources.worker_mount, "Worker disk mounts")}<//>
-  <${Accordion} variant="contained" mt="sm">
-    <${Accordion.Item} value="outer-allocation">
-      <${Accordion.Control}>Worker allocation by directory<//>
-      <${Accordion.Panel}>
-        ${table(
-          ["Allocated blocks", "KubeVirt point", "Firecracker point"],
-          [
-            ["Total used on work PVC", "bytes"],
-            ["Docker store", "docker_bytes"],
-            ["BuildBuddy input cache", "filecache_bytes"],
-            [
-              "Action workspaces beyond input-cache links",
-              "unique_workspace_bytes",
-            ],
-            ["Worker runtime containerd (<1 MiB)", "outer_containerd_bytes"],
-          ].map(([label, key]) => [
-            label,
-            diskGiB(kvmFootprint.host_summary.vm.outer_at_selected_sample[key]),
-            diskGiB(
-              kvmFootprint.host_summary.firecracker.outer_at_selected_sample[
-                key
-              ],
-            ),
-          ]),
-          355,
-        )}
-        <${Text} size="sm" c="dimmed" mt="sm">One snapshot per action during its suite, on the same worker with one active action slot. The later Firecracker point includes the KubeVirt runner still paused in Docker. Filesystem metadata and concurrently changing files account for small differences between the total and the sum of directory measurements.<//>
-      <//>
-    <//>
-  <//>
-  <${Text} my="sm">For KubeVirt, start with the largest uncompressed OCI inputs if the aim is to lower persistent footprint. gzip can reduce stored OCI content and input-cache bytes. Unpacked layers will still occupy space. Measure import time, allocated blocks and warm reuse on the same worker. Shrinking the logical 32 GiB K3s disk or the sparse guest workspace capacity has a much smaller measured target. ${link(kvmFootprint.sources.image_evidence, "Exact KubeVirt OCI inputs")}<//>
-  <${Text} size="sm" c="dimmed">${kvmFootprint.findings.diagnostic_method} ${build(kvmFootprint.manual_actions.vm.invocation, "KubeVirt TestRunner")} · ${build(kvmFootprint.manual_actions.firecracker.invocation, "Firecracker TestRunner")} · ${link("./evidence.json", "Allocation samples and methods")}<//>
-</section>
-</section>
-<section id="kvm-test-memory">
-  <${Title} order=${2}>KubeVirt’s working set peaks 1.2 GiB above Firecracker’s<//>
-  <${Text} my="sm">Across 63 passing, physically executed actions, KubeVirt’s sampled working set reached 5.25 GiB and Firecracker’s reached 4.04 GiB. All 63 sampled maxima fell within test cases. By contrast, the highest sampled total charge approached 7 GiB for both suites. These observations cover 21 November 05:00 through 22 November 05:00 UTC in the self-hosted <code>kvm-vm</code> pool.<//>
-  ${table(
-    [
-      "Suite and fixture",
-      "Passes",
-      "Working-set peak p50 / p95 / max",
-      "Sampled total peak p50 / max",
-      "Post-reclaim charge p50",
-    ],
-    Object.entries(testMemory.groups).map(([label, g]) => [
-      label,
-      g.n,
-      [
-        g.time_series_working_set_peak_bytes.p50,
-        g.time_series_working_set_peak_bytes.p95,
-        g.time_series_working_set_peak_bytes.max,
-      ]
-        .map(memoryGiB)
-        .join(" / "),
-      [g.time_series_usage_peak_bytes.p50, g.time_series_usage_peak_bytes.max]
-        .map(memoryGiB)
-        .join(" / "),
-      memoryGiB(g.exit_after_reclaim_current_bytes.p50),
-    ]),
-    725,
-  )}
-  <${Text} size="sm" mt="sm">The 25 first assignments all created cold fixtures. The other 38 reused a verified baseline. Kernel lifetime peaks on fresh runners had medians of 6.67 GiB for KubeVirt and 6.23 GiB for Firecracker. Of 18 linked consecutive warm receipts, six raised the runner’s recorded lifetime peak. A warm receipt can retain an earlier action’s high-water mark.<//>
-  <${Text} my="sm">At Firecracker’s highest sampled total charge, 4.75 of 6.98 GiB was inactive file memory. At KubeVirt’s highest, inactive file memory accounted for 1.76 of 6.88 GiB. These are same-instant comparisons. The KubeVirt sample held two launcher Pods with 0.73 and 0.48 GiB of working set, already included in the total. The steady post-reclaim charge in the table is measured after the scenarios released their guests.<//>
-  <${Text} my="sm">Firecracker already encounters memory pressure during checkpointing. Out of 22 fresh or linked consecutive passing actions, nine increased the Docker hierarchy’s memory-limit counter. Eight of those nine also hit the live guest launcher’s 3.50 GiB limit during sampled checkpoints. In one passing Firecracker action the whole worker stalled on memory for 18.53s cumulatively between in-action scrapes, including 8.57s in one 60s interval. The largest KubeVirt full-stall total was 2.56s. Guest swap was disabled and the worker and Docker counters showed zero OOM kills across these 63 passes and four failed attempts. The four failures involved the trust-manager webhook, API availability or cleanup.<//>
-  <${Title} order=${3} mt="md">Hard caps on disposable test runners<//>
-  <${Text} my="sm">The sampled controls ran the normal required suites from fresh fixtures. The probe read the private Docker cgroup every two seconds. For each capped action Docker applied the limit only to a uniquely marked test container, and the test read back <code>memory.max</code> and zero swap before setting up the fixture.<//>
-  ${table(
-    [
-      "Suite",
-      "Docker cap",
-      "JUnit cases",
-      "Cgroup peak",
-      "Full PSI",
-      "Process",
-    ],
-    testMemory.trials.map((r) => [
-      r.suite === "test_vm" ? "KubeVirt" : "Firecracker",
-      build(
-        r.invocation,
-        r.arm === "control" ? "Uncapped" : r.arm === "cap5" ? "5 GiB" : "4 GiB",
-      ),
-      r.native_exit === 0
-        ? `${r.cases.length}/${r.cases.length} passed`
-        : r.cases.length
-          ? `${r.cases.filter((c) => !c[1].length).length}/${r.cases.length} passed`
-          : `Exit ${r.native_exit}`,
-      r.memory_peak_bytes == null ? "Unknown" : memoryGiB(r.memory_peak_bytes),
-      seconds(r.psi_full_seconds),
-      seconds(r.process_seconds),
-    ]),
-    510,
-  )}
-  <${Text} my="sm">At the uncapped KubeVirt control’s highest sampled charge of 6.88 GiB, 2.65 GiB was anonymous, 1.12 GiB shared memory, 2.91 GiB other file charge and 0.19 GiB kernel charge. The largest same-sample anonymous plus shared-memory total was 3.89 GiB. Firecracker’s uncapped control reached 4.40 GiB at a sample that held 3.02 GiB of regular file charge and 1.23 GiB of anonymous plus shared memory. This control was below much of the historical Firecracker total-charge distribution.<//>
-  <${Text} my="sm">Both suites passed both required cases at 5 GiB. KubeVirt reached the cap, counted 5,244 limit hits and refaulted 758,415 file pages. Firecracker’s 4.44 GiB high-water mark stayed below 5 GiB, with zero limit hits. The largest same-sample anonymous plus shared-memory total in the capped KubeVirt run was 3.77 GiB.<//>
-  <${Text} my="sm">At 4 GiB, KubeVirt failed both cases. The Claude case got an environment proxy 502, the Codex case lacked an egress identity, and teardown found two residual sandboxes. The fixture recorded failed readiness and liveness checks for Environments, plus a virt-operator restart after a failed liveness check. The cgroup recorded 779,000 limit hits, 42.1 million file-page refaults and 79.0s of full memory stalls. Firecracker still passed both cases at 4 GiB, with 136,000 limit hits and 34.4s of full stalls. Both capped arms recorded zero swap use and zero OOM kills. The KubeVirt pressure and failures coincided. These runs leave the failure chain unattributed.<//>
-  <${Text} my="sm"><strong>Sizing decision.</strong> Keep the current worker shape. Use 5 GiB as the next KubeVirt action-cap candidate, the smallest observed passing cap. Use 5 GiB for the first Firecracker qualification as well. It passed without reaching the cap in this trial. Repeat both on cold and retained runners under normal CI load and compare case verdicts, memory stalls and time to required green before changing admission estimates or VM requests. Reducing guest RAM by 1 GiB would free 2–8 GiB in requested memory at the current pool bounds. KubeVirt launcher overhead and boot readiness need separate measurement on any smaller worker.<//>
-  <${Text} size="sm" mt="sm">Each row is one fresh fixture. Different workers and concurrent pool load limit timing comparisons. Process time includes cap confirmation. The sandbox guests, scenario assertions and required CI targets were the same across arms. The cap was applied only to the disposable Docker scopes.<//>
-  <${Text} my="sm">The executor advertises 7 GiB. BuildBuddy asks for 7 GiB for KubeVirt and 6 GiB for Firecracker, and allocates at most one action per 4-vCPU worker. Each provisioned worker reserves 8 GiB of guest RAM plus KubeVirt launcher overhead. The two-worker floor holds 16 GiB of guest requests, and eight workers hold 64 GiB. Action caps leave those requests and slot counts unchanged. ${link(testMemory.sources.worker, "Worker sizing")} · ${link(testMemory.sources.executor, "Executor admission")}<//>
-  <${Accordion} variant="contained" mt="md">
-    <${Accordion.Item} value="kvm-test-memory-traces">
-      <${Accordion.Control}>Memory traces and sampling limits<//>
-      <${Accordion.Panel}>
-        <${Text} my="sm">The nested kubelet starts polling after K3s reaches Ready and stops before final fixture diagnostics and proactive reclaim. It yielded 1,924 unique observations. The median first-to-last sample envelope spans 69–84% of the TestRunner process across the four groups. Setup and case spans have data on every pass, while only five trace envelopes reach a recorded stack cleanup span. The largest observation gap was 51s. Process placement, image staging before the test process and spikes between samples can change the memory requirement.<//>
-        ${testMemory.traces.map(
-          (r) => html`
-            <${Title} order=${3} mt="md">${r.label}<//>
-            <${Box}
-              role="img"
-              aria-label=${r.label + " cgroup charge and working set by seconds since process start"}
-            >
-              <${LineChart}
-                h=${195}
-                data=${r.points}
-                dataKey="seconds"
-                curveType="linear"
-                yAxisLabel="GiB"
-                xAxisLabel="Seconds since process start"
-                xAxisProps=${{ type: "number", domain: ["dataMin", "dataMax"] }}
-                domain=${[0, 8]}
-                withLegend
-                withDots=${false}
-                series=${[
-                  { name: "Charged", color: "blue.6" },
-                  { name: "Working set", color: "orange.6" },
-                ]}
-              />
-            <//>
-            <${Text} size="sm" mt="sm"
-              >${build(r.invocation, "Exact action’s BuildBuddy invocation")}<//
-            >
-          `,
-        )}
-        <${Text} my="sm">The exit receipts separate anonymous memory, regular file charge (<code>file − shmem</code>), shared memory and kernel charge. The active and inactive lists are another view of the same pages. Anonymous memory includes nested guest RAM, where the guest may keep its own page cache. Kubelet working set excludes inactive file memory and may still include reclaimable active files and kernel objects. Inactive files can be needed again, especially during checkpointing. A hard-cap trial measures how much reclaim the full scenarios tolerate.<//>
-        <${Text} my="sm">Proactive file reclaim at test exit removed a median 2.00–2.51 GiB of regular file charge in the two KubeVirt groups and 2.53–2.72 GiB in Firecracker. Six KubeVirt reclaim requests returned EAGAIN after reclaiming fewer bytes than requested. Page scans and refaults from that explicit reclaim are kept out of the pre-reclaim deltas. The counter intervals start at fresh cgroup creation or the preceding verified receipt, so warm intervals can include activity between tests. Whole-VM PSI and MemAvailable include the executor, Docker, the test and other VM activity, including cache outside the test cgroup. The lowest sampled whole-VM MemAvailable was 1.88 GiB for KubeVirt and 2.92 GiB for Firecracker at roughly one-minute resolution.<//>
-        <${Text} size="sm">${link("./evidence.json", "Exact execution IDs and measurements")} · ${link(testMemory.sources.receipt, "Docker receipt and reclaim")} · ${link(testMemory.sources.sampler, "Kubelet sampler")} · ${link(testMemory.sources.cgroup, "Linux memory controller")}<//>
-      <//>
-    <//>
-  <//>
-</section>
-<section id="shard-replay">
- <${Title} order=${2}>Time the longest browser shard<//>
- <${Text} my="sm">The action-presentation suite renders real approval and result surfaces at desktop and mobile widths. Pytest distributes cases by collection position. On #18283, all 16 shards ran fresh. They consumed 56.9 process-minutes and 74.2 CPU-minutes. Shard 11 took 300s of a 360s Bazel critical path. On #18753, shard 4 took 197s of a 328s critical path.<//>
- ${table(
-   [
-     "Case-duration replay",
-     "Cases",
-     "Longest original sum",
-     "Longest redistributed sum",
-   ],
-   [
-     ["#18283 · fit", 524, "269.4s", "199.7s"],
-     ["#18753 · held out", 526, "182.3s", "149.6s"],
-   ],
-   500,
- )}
- <${Text} my="sm">The replay assigns the longest predicted case to the least-loaded of 16 shards, using #18283 JUnit durations and its median for two new cases. The held-out column uses #18753’s actual durations after placement. The 32.7s difference excludes worker queues, fixture setup and other work on the head.<//>
- <${Text} my="sm">Keep the current shard assignment. In the real same-source trial, both arms passed all 529 cases. The weighted plan moved 491 cases and shortened the slowest fresh process by just 0.57s (171.77s to 171.20s). Total process time rose from 2,287s to 2,289s. Both arms waited under 0.07s for a worker on every shard. With this control’s per-case costs held fixed, the new placement predicted only 8.9s less case time. Actual case durations varied between arms. This trial does not justify maintaining a weight table.<//>
- <${Text} size="sm">${build("2c599231-1058-50fe-8598-135673389153", "First critical path")} · ${build("0382f6c0-75e7-5b8e-b33c-d2956833e35e", "Held-out critical path")} · ${build("bbf765f9-0996-4b81-b8d8-d324217cb64f", "Same-source trial")}<//>
-</section>
-<section id="runner-bootstrap">
- <${Title} order=${2}>Three checks slowed during the same cache incident<//>
- <${Text} my="sm">On #18430, Pre-commit setup took 609s and the hooks took 14s. The runner reported an HTTP/2 stream error fetching rustc from the public Attic cache. Rustfmt skipped all four changed files. Test & Build and imports also spent 391s and 392s on Nix setup. Their logs end long silent intervals within the same second. Only the Pre-commit log identifies the failed transfer.<//>
- <${Text} my="sm">Across 175 green heads, setup medians were 15s for Test & Build, 32s for imports and 36s for Pre-commit. Six heads had a setup interval of at least 120s. Shortening Pre-commit alone on #18430 would have moved the finish to Test & Build, saving at most 139s. The other gates must also improve to recover the rest.<//>
- <${Text} my="sm">For this tail, split rustfmt from the base pre-commit tool closure and install it when the tested file list selects the Rust hook. Preserve the full toolset for unclassified and all-file runs and publish both closures to the public cache. Check that a Rust edit still invokes the pinned formatter, a non-Rust edit executes all applicable hooks, and the smaller closure excludes rustc. In the local closure trial, removing only rustfmt removed rustc and reduced the closure from 2,741 MB to 2,303 MB. The lean profile passed all applicable hooks on the four files at the exact #18430 head. The full profile passed the rustfmt hook on a tracked Rust file. Closure size is unpacked store size. Cold GitHub transfer time remains unmeasured.<//>
- <${Text} size="sm">${link("https://github.com/agentydragon/ducktape/actions/runs/44862337516/job/136718280457", "Pre-commit log")} · ${link("https://github.com/agentydragon/ducktape/actions/runs/44862337456/job/136718280065", "Imports log")} · ${link("https://github.com/agentydragon/ducktape/actions/runs/44862337453/job/136718280338", "Bazel job")}<//>
-</section>
-<section id="cdk8s-trial">
- <${Title} order=${2}>Sharing one chart saved little in a matched test<//>
- <${Text} my="sm">#18790 shared one direct Platform Sessions chart across three checks and read chart objects directly. In one remote invocation on the same production source, all eight named cases passed in each of three runs per version. Fresh TestRunner process time averaged 13.43s before and 13.04s after. CPU averaged 17.10s and 16.12s. The wall-time ranges overlapped. Keep the simpler fixture. This result gives little reason to prioritize more conversions for PR speed.<//>
- <${Text} my="sm">On infrastructure PR #18621, mypy on the manifest generator occupied 57.0s of the 58.0s inner critical path. A faster Platform Sessions test would leave that chain intact. The earlier single-worker SSD and cache experiments answer a different question about KVM fixtures.<//>
- <${Text} size="sm">${pr(18790)} · ${build("8b170c77-2a90-4f74-ab24-30e5fc0dc7b8", "Six fresh runs")} · ${build("c5e74f5e-f5a5-5f57-aee9-ef38b36378d0", "Infrastructure critical path")}<//>
-</section>
-<section id="current-clocks">
- <${Title} order=${2}>Where the time went<//>
- ${table(
-   [
-     "PR",
-     "CI created UTC",
-     "Runner wait",
-     "Remote step UTC",
-     "Required green",
-     "Last gate",
-   ],
-   fresh.cases.map((c) => [
-     link(c.job, "#" + c.pr),
-     utc(c.start),
-     seconds(c.assignment),
-     utc(c.remote_start) + "–" + utc(c.remote_end),
-     time(c.green),
-     c.last,
-   ]),
-   640,
- )}
- <${Text} mt="sm">In the separate 01:20–02:50 UTC window on 22 November, 31 completed assigned PR Test & Build jobs waited 2s at both median and p90 for GitHub assignment. Completed jobs accounted for at least 19.91 runner-hours, peaking at 32 simultaneous jobs. This includes runners waiting on Remote Bazel. The fixed window excludes carry-in workflows and unfinished occupancy. A separate live-run sweep raced pagination (14 of 16 records).<//>
- <${Text} mt="sm">On one live PR, the GitHub check was visible 35s after workflow creation. The BuildBuddy log was readable during execution. The GitHub job log returned 404 at 03:00:07 UTC and HTTP 200 in the 03:00:29 poll. The check read in that poll still said in progress. The 03:00:50 poll showed completion, stamped 03:00:28. Polls were about 21s apart and read the job, check and log sequentially. Default PR subscriptions cover completed checks and commit statuses. Actual inbox delivery and agent reads were unobserved.<//>
- <${Text} size="sm">${link(fresh.signal[0].job, "Observed GitHub job")} · ${build(fresh.live_bb.invocation, "BuildBuddy log")}<//>
-</section>
-<section id="method-current">
- <${Title} order=${2}>Sample and limits<//>
- <${Text} my="sm">GitHub returned 3,912 PR CI workflow runs across seven complete UTC days. We excluded 594 fork or deleted-repository runs and 11 runs linked to another base, then deduplicated 3,222 heads. Runs with missing PR associations remain in the frame. Each day contributes the 35 lowest hashes of the head SHA with a fixed salt. Daily frames range from 115 to 881 heads. Pooled times describe this equal-day sample. The earlier 13–19 November sample used another frame, so the difference cannot establish a speedup.<//>
- <${Text} my="sm">The clock starts at the first observed ci.yml PR run creation on the sampled branch and SHA. It stops at the first simultaneously accepted results for the three required contexts from matching PR workflow suites, including retries. Canceled and failed heads remain in the denominator. Current devel rules require a PR, linear history, zero ordinary approvals and an extra approval on unattributed changes. Required checks use non-strict mode. Auto-merge is enabled. Historical draft, conflict and review transitions lack timestamps here.<//>
- <${Text} size="sm">${link(gh + "/rules/15894562", "Ruleset")} · ${link(gh + "/tree/" + fresh.source, "Inspected devel source")} · ${link(gh + "/tree/208d6f705e2fe4ae78204b3dc9f1d1c472f17b54/latency", "Previous snapshot and experiments")}<//>
-</section>
-<${Title} order=${2}>Earlier measurements · 19–21 November<//>
+        <//>`;
+      const disclosure = (label, contents) =>
+        html` <${Accordion}
+          variant="contained"
+          mt="sm"
+          defaultValue=${location.hash && label.startsWith("Earlier") ? label : null}
+          ><${Accordion.Item} value=${label}>
+            <${Accordion.Control}>${label}<//
+            ><${Accordion.Panel}>${contents}<//>
+          <//><//
+        >`;
+      const minutes = (s) =>
+        s == null
+          ? "—"
+          : `${Math.floor(Math.round(s) / 60)}m ${String(Math.round(s) % 60).padStart(2, "0")}s`;
+      const header = (title, lede) =>
+        html` <header>
+          ${link("../", "Ducktape reports")}
+          <${Title} order=${1} my="sm">${title}<//>
+          <${Text} size="lg">${lede}<//>
+          <${Text} mt="sm" size="sm" c="dimmed"
+            >Inspected devel <${Code}>${e.source_devel_commit}<//><//
+          >
+        </header>`;
+      const footer = () =>
+        html`<footer>
+          <${Group} gap="md">
+            ${link("./evidence.json", "Reviewed evidence")}
+            ${link("./manifest.json", "Manifest")}
+            ${link(archive, "Previous snapshot")} ${link("../", "All reports")}
+          <//>
+        </footer>`;
 
-            <section id="cohort">
-              <${Title} order=${2}>20 November follow-up · PR time by change class<//>
-              <${Text} my="sm">From the first observed CI workflow creation for the exact head to the last accepted required check. Backend heads took 10m24s at the median and 23m27s at p90. The 67 post-shadow heads include 60 green, one failed, five canceled and one incomplete. Green timing includes successful reruns. Push time, historical merge eligibility and agent receipt remain unobserved.<//>
-              <${Box} role="img" data-chart="pr-feedback" aria-label="Median and p90 minutes to required checks passing by change class">
-                <${BarChart} h=${290} data=${groups.map((g) => ({ class: titles[g.group], Median: g.green.p50 / 60, p90: g.green.p90 / 60 }))}
-                  dataKey="class" series=${[
-                    { name: "Median", color: "blue.6" },
-                    { name: "p90", color: "orange.6" },
-                  ]}
-                  orientation="vertical" yAxisProps=${{ width: 76 }} xAxisLabel="Minutes" withLegend valueFormatter=${(v) => time(v * 60)} />
-              <//>
-              ${table(
-                [
-                  "Change class",
-                  "Sample / frame",
-                  "Green",
-                  "Failed / canceled / incomplete",
-                  "Median",
-                  "p90",
-                  "Mean",
-                ],
-                groups.map((g) => [
-                  g.group,
-                  `${g.heads} / ${g.frame}`,
-                  g.green.n,
-                  [
-                    g.outcomes.failed ?? 0,
-                    g.outcomes.cancelled ?? 0,
-                    g.outcomes.incomplete ?? 0,
-                  ].join(" / "),
-                  time(g.green.p50),
-                  time(g.green.p90),
-                  time(g.green.mean),
-                ]),
-                750,
-              )}
-              <${Text} size="sm" mt="sm">Test & Build finished last on all 60 green heads. A modeled 60-second reduction to Test & Build would save 54 seconds per green head on average. The imports gate would become last on 14 heads and Pre-commit on one, with their clocks held fixed.<//>
-            </section>
-            <section id="vm-shadow">
-              <${Title} order=${2}>VM cutover follow-up<//>
-              <${Text} my="sm">Required VM CI moved to recycled cluster KVM at 05:41 UTC. The managed TCG shadow stopped at 07:36 UTC. KVM was faster in 97 of 100 manual pairs on 89 revisions, with a median paired saving of 4m28s and 2 first-attempt failures versus 23 on managed TCG. Warm fixture exposure differed across arms. Four fresh devel pairs also favored KVM. These clocks cover the VM test.<//>
-              ${table(
-                [
-                  "Backend head window",
-                  "Green / sampled",
-                  "Median",
-                  "p90",
-                  "Mean",
-                ],
-                comparable.map((g) => [
-                  g.period,
-                  `${g.green.n} / ${g.heads}`,
-                  time(g.green.p50),
-                  time(g.green.p90),
-                  time(g.green.mean),
-                ]),
-              )}
-              <${Text} mt="sm">After retirement, the median was 9m31s on 12 one-attempt heads and 21m06s on five rerun heads. Different source changes, cache states and failures across the windows prevent a routing-effect estimate. On 12 successful first attempts with physical test records, the latest physical test was Pod on three, Firecracker on three, VM on two, and another test on four.<//>
-              <${Text} mt="sm">Keep measuring for seven days through 27 November, or until 50 fresh required VM executions if that takes longer. Count VM failures and VM-last heads on verified cutover ancestry, report warm and cold separately, and retain managed Pod and Firecracker competitors on the same heads. A PR and a devel run both hit the namespace guard when a recycled fixture needed a rebuild. Keep tracking fresh exposure after the rebuild path is repaired.<//>
-              <${Text} size="sm" mt="sm">${pr(18046)} routing · ${pr(18079)} shadow retirement · ${link("../vm-pairs.json", "Paired data")} · ${link(`${prior}/index.html#vm-shadow`, "Previous review")}<//>
-            </section>
-            <section id="kvm-placement">
-              <${Title} order=${2}>KVM workers can now run on wyrm2<//>
-              <${Text} my="sm">On 21 November the BuildBuddy KVM pool opened placement beyond OVH. The change lets workers use wyrm2, whose Piraeus SSD zvol was expanded to 600 GiB. ${pr(kvmPlacement.placement.pr)} placement · ${pr(kvmPlacement.storage.pr)} storage<//>
-              <${Text} mb="sm">Two host-pinned pairs used the same manual VM TestRunner action and cold fixtures on warm executor caches. These are TestRunner process times. Queueing, input staging and upload are outside the clock.<//>
-              ${table(
-                ["Cold run", "OVH control plane", "wyrm2"],
-                kvmPlacement.pairs.map((pair) => [
-                  pair.label,
-                  build(
-                    pair.cp.invocation,
-                    `${seconds(pair.cp.process_seconds)} · pass`,
-                  ),
-                  build(
-                    pair.wyrm2.invocation,
-                    `${seconds(pair.wyrm2.process_seconds)} · ${pair.wyrm2.exit_code ? "teardown failed" : "pass"}`,
-                  ),
-                ]),
-                350,
-              )}
-              <${Text} mt="sm">Another wyrm2 worker was booting during the first pair. In the second pair both wyrm2 scenarios passed. One guest's shutdown grace period expired and KubeVirt forcibly stopped it. The shutdown census also found earlier forced stops on an OVH worker. ${pr(18674)} shutdown census. A separate profiled wyrm2 repeat passed in ${seconds(kvmPlacement.profiled_repeat.process_seconds)}. ${build(kvmPlacement.profiled_repeat.invocation, "Profiled repeat")}<//>
-              <${Text} mt="sm">The OVH control plane uses an Intel bare-metal host. Wyrm2 uses AMD hardware with an extra Proxmox layer. CPU, storage paths and load also differ, so these runs leave the cause of the gap unresolved. The trial leaves placement effects on the retained suite and required-check feedback open.<//>
-              <${Text} mt="sm">Keep wyrm2 eligible and revisit placement if shutdown failures recur. ${link("#kvm-work-disk", "Same-host SSD and HDD trial")}<//>
-              <${Text} size="sm" c="dimmed" mt="sm">21 November UTC · <code>${kvmPlacement.target}</code> · ${link(`${gh}/tree/${kvmPlacement.source_commit}/agentplane/system_tests/x/vm_kvm`, "Test source")}<//>
-            </section>
-            <section id="kvm-work-disk">
-              <${Title} order=${2}>SSD and HDD work disks on wyrm2<//>
-              <${Text} my="sm">${kvmWorkDisk.finding}<//>
-              <${Text} my="sm">${kvmWorkDisk.method}<//>
-              ${table(
-                ["Fixture and executor cache", "SSD", "HDD"],
-                kvmWorkDisk.comparisons.map((pair) => [
-                  pair.label,
-                  ...["ssd", "hdd"].map((medium) => {
-                    const run = pair[medium];
-                    return run
-                      ? build(
-                          run.invocation,
-                          `${seconds(run.clocks_seconds.process)} · ${run.result}`,
-                        )
-                      : "Unobserved";
-                  }),
-                ]),
-                350,
-              )}
-              <${Text} size="sm" my="sm">${kvmWorkDisk.clocks}<//>
-              <${Accordion} variant="contained" my="md">
-                <${Accordion.Item} value="image-inventory">
-                  <${Accordion.Control}>Image sizes and cold import times<//>
-                  <${Accordion.Panel}>
-                    <${Text} my="sm">${kvmWorkDisk.images.note}<//>
-                    ${table(
-                      [
-                        "Image",
-                        "Stored layer bytes",
-                        "Gzip bytes",
-                        "SSD import",
-                        "HDD import",
-                      ],
-                      kvmWorkDisk.images.rows.map((row) => [
-                        row.label,
-                        row.stored_bytes.toLocaleString("en-US"),
-                        row.gzip_bytes.toLocaleString("en-US"),
-                        seconds(row.ssd_seconds),
-                        seconds(row.hdd_seconds),
-                      ]),
-                      680,
-                    )}
-                  <//>
-                <//>
-                <${Accordion.Item} value="disk-io">
-                  <${Accordion.Control}>Observed disk I/O and pressure<//>
-                  <${Accordion.Panel}>
-                    <${Text} my="sm">${kvmWorkDisk.io.note}<//>
-                    ${table(
-                      [
-                        "Run",
-                        "Wall",
-                        "Counter window",
-                        "Read",
-                        "Written",
-                        "Disk busy",
-                        "I/O PSI some",
-                      ],
-                      kvmWorkDisk.io.selected.map((row) => [
-                        row.label,
-                        seconds(row.wall_seconds),
-                        seconds(row.counter_seconds),
-                        `${row.read_gib.toFixed(2)} GiB`,
-                        `${row.written_gib.toFixed(2)} GiB`,
-                        `${row.disk_busy_pct.toFixed(1)}%`,
-                        `${row.node_io_some_pct.toFixed(1)}%`,
-                      ]),
-                      660,
-                    )}
-                    <${Text} my="sm">${kvmWorkDisk.io.qemu_note}<//>
-                    <${Text} size="sm" my="sm">${link("./evidence.json", "Evidence with counter boundaries and per-image spans")}<//>
-                  <//>
-                <//>
-              <//>
-              <${Text} my="sm">${kvmWorkDisk.capacity}<//>
-              <${Text} my="sm">${kvmWorkDisk.cleanup}<//>
-              <${Text} size="sm" c="dimmed" my="sm">21 November UTC · ${link(kvmWorkDisk.tracking_pr, "Trial evidence and operating record")} · ${link("#kvm-retained-vm-ssd", "Required VM suite on SSD")}<//>
-            </section>
-            <section id="kvm-retained-vm-ssd">
-              <${Title} order=${2}>Cold and retained VM fixtures on SSD<//>
-              <${Text} my="sm">${retainedVm.finding}<//>
-              ${table(
-                ["TestRunner", "Process", "SSD work-disk writes"],
-                retainedVm.comparisons.map((row) => [
-                  build(row.invocation, row.label),
-                  seconds(row.process_seconds),
-                  `${row.process_written_gib.toFixed(2)} GiB`,
-                ]),
-                350,
-              )}
-              <${Text} my="sm">${retainedVm.method}<//>
-              <${Accordion} variant="contained" my="md">
-                <${Accordion.Item} value="retained-work-disk">
-                  <${Accordion.Control}>Time and work-disk writes by phase<//>
-                  <${Accordion.Panel}>
-                    <${Text} my="sm">${retainedVm.phase_note}<//>
-                    ${table(
-                      [
-                        "Phase",
-                        "Cold time",
-                        "Cold writes",
-                        "Retained time",
-                        "Retained writes",
-                      ],
-                      retainedVm.phases.map((row) => [
-                        row.label,
-                        row.seed ? seconds(row.seed.seconds) : "—",
-                        writes(row.seed),
-                        row.warm ? seconds(row.warm.seconds) : "—",
-                        writes(row.warm),
-                      ]),
-                      640,
-                    )}
-                    <${Text} my="sm">${retainedVm.host_note}<//>
-                  <//>
-                <//>
-              <//>
-              <${Text} my="sm">${retainedVm.impact}<//>
-              <${Text} size="sm" c="dimmed" my="sm">21 November UTC · ${link(retainedVm.tracking_pr, "Trial evidence and operating record")} · ${link("./evidence.json", "Counter boundaries and image import spans")} · ${build(retainedVm.disposal_invocation, "Disposal")}<//>
-            </section>
-            <section id="managed-pod">
-              <${Title} order=${2}>Two PR heads had over a minute of Pod queue headroom<//>
-              <${Text} my="sm">Three of 24 physical Pod executions with valid queue clocks waited more than a minute on 20 November, all between 20:09 and 20:22 UTC. Eighteen started in under a second. The long waits were on two of the 12 successful first-attempt backend heads with physical test records and on one failed attempt whose Firecracker test finished later. One additional Pod execution had an unusable queue clock.<//>
-              <${Box} role="img" data-chart="managed-pod" aria-label="Observed Pod queue and maximum possible required-check time reduction for each PR" mb="sm">
+      function Report() {
+        const f = e.full_days;
+        const p = e.partial_day;
+        return html`<${Container}
+          component="main"
+          size="73rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <${Stack} gap="xl">
+            ${header("CI latency", html`Over 15–21 November UTC, ${f.n} of 168 sampled PR heads reached required green. Median ${minutes(f.median_s)} · p90 ${minutes(f.p90_s)}. On 22 November through 10:00 UTC, ${p.n} of 24 reached green at a median of ${minutes(p.median_s)} and p90 of ${minutes(p.p90_s)}.`)}
+            <section id="weekly-trend">
+              <${Title} order=${2}>Time to required checks passing<//>
+              <${Text} my="sm"
+                >The clock starts when GitHub creates the CI workflow and stops
+                when its head has three passing required checks. Each day
+                contributes 24 sampled same-repository heads. The first seven
+                days are complete. The 22 November sample ends at 10:00 UTC.<//
+              >
+              <${Box}
+                role="img"
+                data-chart="pr-feedback"
+                aria-label="Daily median and p90 minutes between CI workflow creation and required green"
+              >
                 <${BarChart}
-                  h=${220}
-                  data=${podAdmission.cases.map((c) => ({
-                    pr: `#${c.pr}`,
-                    wait: c.pod.queue,
-                    ceiling: c.conditional_headroom_s,
-                  }))}
-                  dataKey="pr" orientation="vertical"
-                  yAxisProps=${{ width: 62 }}
-                  xAxisLabel="Seconds"
+                  h=${240}
                   withLegend
+                  dataKey="day"
+                  data=${e.daily.map((d) => ({ day: d.day.slice(8) + (d.day.endsWith("-22") ? "*" : ""), Median: +(d.median_s / 60).toFixed(2), P90: +(d.p90_s / 60).toFixed(2) }))}
                   series=${[
-                    {
-                      name: "wait",
-                      label: "Observed queue",
-                      color: "orange.6",
-                    },
-                    {
-                      name: "ceiling",
-                      label: "Possible feedback reduction",
-                      color: "blue.6",
-                    },
+                    { name: "Median", color: "blue.7" },
+                    { name: "P90", color: "orange.7" },
                   ]}
-                  valueFormatter=${seconds}
+                  yAxisProps=${{ width: 32 }}
+                  yAxisLabel="Minutes"
                 />
               <//>
-              ${table(
-                [
-                  "PR",
-                  "Pod queue",
-                  "Next physical finisher",
-                  "Queue-only ceiling",
-                  "Bazel evidence",
-                ],
-                podAdmission.cases.map((c) => [
-                  pr(c.pr),
-                  seconds(c.pod.queue),
-                  short(c.competing_action_label),
-                  seconds(c.conditional_headroom_s),
-                  html`${build(c.invocation, "Inner")}${c.outer.invocation ? html` · ${build(c.outer.invocation, "Outer")}` : ""}
-                  · ${link(c.job, "GitHub job")}`,
-                ]),
-                715,
-              )}
-              <${Text} size="sm" mt="sm">The ceiling holds the remaining action and required-check clocks fixed. It averages 20.8s across the 12 sampled first-pass heads with physical test records. Cluster Firecracker would take over on #18244 and Gateway budget on #18255. Firecracker already finished last on failed attempt #18256. On #18271, Pod was critical with a 0.097s queue and a 391.3s process.<//>
-              <${Text} mt="sm">Worker admission for the outer Remote Bazel runners was 63ms on #18244 and 60ms on #18255. Their runner processes began 93s and 68s before the inner Bazel test invocations appeared. The long Pod waits happened after those invocations began and before a Pod worker started. In the fixture traces, the largest instrumented session admission was 0.83s and stack setup took 55–73s inside the process.<//>
-              <${Text} mt="sm">The two queued Pod actions on #18255 and #18256 started on different workers 33ms apart after overlapping for 92s. Dispatcher started in under 0.1s on both heads with the same platform properties. Pod on #18246 started in 0.071s while #18244 was queued. The decoded actions share the full managed Firecracker platform, including Firecracker isolation, the image and recycling key, 4 requested compute units and 50GB of scratch. A separate exact-action pair started in 3.035s on #18227 and 1.875s on devel while the first action was still running. The three slow Pod actions had different input roots. A standalone repeat would sample another load window with no eligible-capacity measurement.<//>
-              <${Text} size="sm" mt="sm">
-                ${build(podAdmission.exact_digest_pair[0].invocation, "Same action on #18227")} ·
-                ${build(podAdmission.exact_digest_pair[1].invocation, "Same action on devel")} ·
-                ${link(`${gh}/blob/${podAdmission.inspected_source_devel_commit}/agentplane/system_tests/suites/BUILD.bazel`, "Current target")} ·
-                ${link("https://www.buildbuddy.io/docs/rbe-platforms/", "Provider routing properties")}
-              <//>
-              <${Text} mt="sm">Keep the managed route while the admission cause is unknown. The BuildBuddy key received permission denials for executor inventory and account usage. Account throttling, a shortage of compatible workers and reservation terms remain unverified. Pursue a small reserved comparison only if provider telemetry identifies recurring, actionable contention and a candidate can serve the same Firecracker, snapshot and scratch requirements.<//>
-              <${Text} size="sm" c="dimmed" mt="sm">Queue sample 01:40–21:06 UTC on 20 November. The capped target-history extension added five originating actions to the retained PR sample and excluded two shared links. An independent workflow census from 21:12:39 to 21:44 UTC found 14 successful, one canceled and two in-progress CI runs at collection, including superseded heads. The exact-head distribution above retains its original window. Route reviewed at devel ${podAdmission.inspected_source_devel_commit}.<//>
-            </section>
-            <section id="kvm-cas">
-              <${Title} order=${2}>KVM kept direct Cloud after the cache trial<///>
-              <${Text} my="sm">Fresh Cloud-direct workers fetched the identical 7,467-file Firecracker input tree in 8.63–8.71s. The warm shared proxy took 9.29s on its own host, with a different worker from the one that filled it. The cold fill crossed hosts and took 19.05s. All four runs used empty executor file caches. ${link(cacheTrial.archived_report, "Experiment report")} · ${pr(cacheTrial.experiment_pr)}<//>
-              ${table(
-                ["Cache path", "Input fetch", "Receiving host", "BuildBuddy"],
-                cacheTrial.staging.map((row) => [
-                  row.label,
-                  seconds(row.input_s),
-                  row.host,
-                  build(row.invocation, "Invocation"),
-                ]),
-                520,
-              )}
-              <${Text} my="sm">The warm proxy served 1,388 ByteStream hits and 816,514,268 compressed bytes. It made zero upstream ByteStream reads or BatchReadBlobs calls during that sample. GetTree, SplitBlob and authentication still reached Cloud. Both full two-case runs passed with warm executor file caches. ${build(cacheTrial.full_tests[0].invocation, "Full direct run")} · ${build(cacheTrial.full_tests[1].invocation, "Full shared run")}<//>
-              <${Text} my="sm">During a proxy-only egress fault, a standalone client verified a cached blob. The warm guest still hit metadata and authentication errors, and both guest probes were canceled at their fault deadlines. The restarted proxy failed its readiness check after egress was restored. Direct rollback fetched the same inputs in 8.73s. The trial pool, proxy, policies and disks were removed. ${build(cacheTrial.egress_fault.warm_guest_invocation, "Warm fault")} · ${build(cacheTrial.egress_fault.cold_guest_invocation, "Cold fault")}<//>
-              <${Text} c="dimmed" size="sm" mb="sm">One fresh action per route and cache state. These measurements cover input staging in this pool. Fleet tail latency remains unmeasured. Required KVM CI stays on Cloud direct. Per-node caches are deferred.<//>
-              <${Accordion} variant="contained"><${Accordion.Item} value="earlier-cas"><${Accordion.Control}>Earlier CAS stalls and loopback replay<//><${Accordion.Panel}>
-              <${Text} my="sm">On #18106, VM and Firecracker each spent about 9m42s fetching inputs on different workers. Their download bitmaps resolve to the same four unique blobs. The 62.5 MiB Action Service layer accounted for 99.989% of the bytes. Both actions passed. A Gateway crash test caused the rerun. ${pr(18106)} · ${build(cas.pr_invocation, "First Bazel attempt")}<//>
-              ${table(
-                [
-                  "Execution",
-                  "Input fetch",
-                  "Unique files / bytes",
-                  "Read timeouts followed by successful retry",
-                ],
-                cas.executions.map((r) => [
-                  r.label,
-                  seconds(r.input_s),
-                  r.bytes == null
-                    ? "Unknown"
-                    : `${r.files} / ${r.bytes.toLocaleString("en-US")}`,
-                  r.recovered_read_stalls,
-                ]),
-                655,
-              )}
-              <${Text} size="sm" mt="sm">The execution receipts identify the whole set of downloads. The retry logs lack blob digests and the two terminal cold attempts lack bitmaps. The recovered cold attempt fetched just 55 KiB in 3m33s, so byte volume alone cannot explain the long waits. Worker-side gRPC counters also recorded Unavailable and Canceled responses during both incident windows. The four largest five-minute Unavailable bursts in the 24-hour sample were between 08:25 and 09:10 UTC. The counters establish the timing of a shared path problem. Responsibility and per-blob timings remain unknown. ${build(cas.cold_invocation, "Cold execution and attempts")}<//>
-              <${Title} order=${3} mt="md">Loopback replay of the four PR blobs<///>
-              ${table(
-                [
-                  "Route",
-                  "62.5 MiB layer read",
-                  "Verified client reads",
-                  "Proxy upstream ByteStream reads",
-                ],
-                cas.replay.map((r) => [
-                  r.label,
-                  r.large_seconds.map(seconds).join(" / "),
-                  r.verified_reads,
-                  r.upstream_reads ?? "Direct",
-                ]),
-                625,
-              )}
-              <${Text} size="sm" mt="sm">BuildBuddy Enterprise Cache Proxy v2.323.0 filled an empty Pebble store, then served all eight repeat reads locally with zero additional upstream ByteStream calls. The cold fill made 53 upstream ByteStream RPCs for four client requests, including chunk reads. After a proxy restart with the same disk, four more reads hit locally. The restarted process contacted hosted authentication. Both direct controls were healthy. The proxy and clients ran on the same developer host, so these timings establish cache behavior and give no cluster or PR latency estimate.<//>
-                <${Text} mt="sm" size="sm">${link(cas.proxy_docs, "BuildBuddy Cache Proxy")} · ${link(cas.executor_config, "Worker configuration")}<//>
-              <//><//><//>
-            </section>
-            <section id="firecracker-overlap">
-              <${Title} order=${2}>Firecracker overlap delayed live-guest scheduling<///>
-              <${Text} my="sm">In four serial-versus-simultaneous pairs, TestRunner savings ranged from 47 seconds faster to 12 seconds slower. The live-guest launcher reached PodScheduled 3–6 seconds after the readiness wait began in serial runs and 37–69 seconds with both scenarios starting together. All eight runs passed both scenarios. Required CI stays serial.<//>
-              ${table(
-                [
-                  "Host and fixture",
-                  "Serial",
-                  "Simultaneous",
-                  "Process change",
-                  "Live PodScheduled",
-                ],
-                firecrackerFollowup.matched_pairs.map((pair) => {
-                  const saved = pair.process_seconds_saved;
-                  const { serial, concurrent } = pair.rows;
-                  return [
-                    `${pair.host.replace("ovh-ns", "")} · ${pair.fixture}`,
-                    build(serial.invocation, seconds(serial.process_s)),
-                    build(concurrent.invocation, seconds(concurrent.process_s)),
-                    `${seconds(Math.abs(saved))} ${saved >= 0 ? "faster" : "slower"}`,
-                    `${seconds(serial.live_pod_schedule_s)} → ${seconds(concurrent.live_pod_schedule_s)}`,
-                  ];
-                }),
-                535,
-              )}
-              <${Text} size="sm" mt="sm">Each pair used the same worker and input tree. The interrupted repeat used another guest on the same physical host. The process clock includes fixture setup and teardown. PodScheduled uses the nested Kubernetes condition timestamp and the test’s readiness-span start.<//>
-              <${Title} order=${3} mt="md">Staggered start on one retained fixture<///>
-              <${Text} my="sm">${staggered.finding}<//>
-              ${table(
-                [
-                  "Start mode",
-                  "TestRunner",
-                  "Live PodScheduled",
-                  "Both-case envelope",
-                ],
-                staggered.arms.map((arm) => [
-                  arm.replay ? "Staggered repeat" : modeNames[arm.mode],
-                  build(arm.invocation, seconds(arm.process_s)),
-                  seconds(arm.live_pod_schedule_s),
-                  seconds(arm.case_envelope_s),
-                ]),
-                425,
-              )}
-              <${Text} mt="sm">${staggered.scheduler_evidence}<//>
-              <${Text} size="sm" mt="sm">The four timed executions reused one baseline and passed both scenarios. Each staggered gate opened after the observer saw the live pod scheduled. The first staggered submission disconnected after cancellation and later finished on the worker. Its verdicts and timings came from native BuildBuddy output, and the repeat followed it on the retained runner. The experiment used a private recycling key and verified removal of the retained container and loop backing. ${build(staggered.dispose_invocation, "Disposal")} · ${link("./firecracker-staggered-spike.patch", "Probe patch")}<//>
-              <${Accordion} variant="contained" mt="md"><${Accordion.Item} value="first-overlap"><${Accordion.Control}>Earlier warm overlap experiment<//><${Accordion.Panel}>
-              <${Text} my="sm">${overlap.finding}<//>
-              ${table(
-                [
-                  "Arm",
-                  "TestRunner process",
-                  "Both-case envelope",
-                  "Case overlap",
-                  "Live guest",
-                  "Proxy-trust refusal",
-                ],
-                overlap.rows.map((r) => [
-                  build(r.invocation, r.label),
-                  seconds(r.native_process_s),
-                  seconds(r.case_envelope_s),
-                  seconds(r.case_overlap_s),
-                  seconds(r.live_case_s),
-                  seconds(r.refusal_case_s),
-                ]),
-                810,
-              )}
-              <${Text} size="sm" mt="sm">${overlap.method}<//>
-              <${Text} size="sm" mt="sm">${overlap.limit}<//>
-              <${Text} my="sm">${link("./firecracker-overlap-spike.patch", "Experiment patch")} · ${pr(18246)}<//>
-              <//><//><//>
-            </section>
-            <section id="reruns">
-              <${Title} order=${2}>Failure recovery drove the backend tail<//>
-              <${Text} my="sm">The informational BuildBuddy status preceded final red by 4 seconds to 10m32s. For #18243, an early test failure was followed by 7m42s of ongoing CI before final red, then 11m03s until GitHub created the next job. Assignment on that retry took 2s. GitHub identifies the triggering account type as User on these five retries. The request source and reason for the interval are unobserved.<//>
-              ${table(["PR", "First failure", "Live failure → job red", "Red → retry job created", "Time to green", "Evidence"], failureRows, 860)}
-              <${Text} size="sm" mt="sm">PR subscriptions receive completed check-run facts and commit statuses by default. The linked status timestamps measure GitHub publication. The completed job logs and selected BuildBuddy artifacts were readable during review. First queryability, webhook delivery, inbox acknowledgement and harness receipt need separate clocks. ${file("agentplane/notification_service/docs/agents/github.md", "Subscription behavior")}<//>
-            </section>
-            <section id="cases">
-              <${Title} order=${2}>What finished last on green heads<///>
-              <${Text} my="sm">All times in the middle columns are UTC. The GitHub Test + Build + lint step includes outer Remote Bazel allocation and setup, inner Bazel, any subsequent build and finalization. The Pod follow-up includes two exact outer allocation clocks.<///>
-              ${table(
-                [
-                  "PR",
-                  "CI workflow",
-                  "Job starts",
-                  "Remote step",
-                  "Inner test",
-                  "Bazel critical-path test",
-                  "Required green",
-                ],
-                [18234, 18244, 18246, 18255, 18265].map((n) => {
-                  const c = byPr.get(n),
-                    a = c.attempts[0],
-                    j = c.jobs[0];
-                  return [
-                    pr(n),
-                    utc(c.start),
-                    utc(j.started_at),
-                    j.remote.map(utc).join("–"),
-                    build(a.inner, time(a.duration_s)),
-                    short(a.critical_path.test),
-                    job(j, time(c.feedback_s)),
-                  ];
-                }),
-                785,
-              )}
-              <${SimpleGrid} cols=${{ base: 1, md: 2 }} mt="md">
-                <${Paper} withBorder p="md">
-                  <${Title} order=${3}>Managed Pod admission<///>
-                  <${Text} mt="xs">On #18244, the 299.7s Pod process included 54.7s of fixture setup, 179.8s from the first to the last case and 32.5s of stack cleanup. ${link("#managed-pod", "Queue comparison")}<//>
-                <//>
-                <${Paper} withBorder p="md">
-                  <${Title} order=${3}>Firecracker scenario and cleanup<///>
-                  <${Text} mt="xs">#18246 ran for 412.3s with a confirmed warm fixture. Setup took 50.6s. The live-guest continuity case occupied 212.9s, including 56.6s sandbox cleanup. The proxy-trust negative case followed for 74.9s, followed by 50.2s stack cleanup. The live-guest case exercises the one-minute idle policy, suspend/checkpoint, credential rotation and same-process resume. ${file("agentplane/system_tests/scenarios/firecracker.py", "Scenario source")}<//>
-                <//>
-                <${Paper} withBorder p="md">
-                  <${Title} order=${3}>Fast and slow KVM VM paths<///>
-                  <${Text} mt="xs">#18234 had 42.2s warm setup inside a 182s VM action. On #18265, the first action failed before scenario execution after a baseline fingerprint mismatch. The recycled runner entered in private cgroup 0::/init and the rebuild expected 0::/. The retry passed both cases after 193.4s cold setup. Shortening VM on that head could save up to 25.2s before Gateway budget became last. ${file("agentplane/system_tests/k3s/baseline.py", "Namespace check")}${" · "}${link("../reliability/#vm-cutover", "Corroborating devel report")}<//>
-                <//>
-                <${Paper} withBorder p="md">
-                  <${Title} order=${3}>KVM input fetch delayed a failed attempt<///>
-                  <${Text} mt="xs">#18106 assigned VM and Firecracker actions after 5.2s and 3.6s. They then spent 581.1s and 581.9s in input fetch, on two distinct workers, with 65.6 MB across four recorded files on each action. Both tests passed. The long fetch deferred final job red after the separate Gateway crash case failed. Native metadata leaves the responsible CAS object and network path unknown.<//>
-                <//>
-              <//>
-            </section>
-            <section id="capacity">
-              <${Title} order=${2}>Runner and executor capacity<///>
-              <${Text} my="sm">GitHub recorded 27.35 occupied runner-hours and a peak of 40 in the 19:42:40–21:12:40 UTC window, a lower bound based on completed assigned jobs. Among 69 assigned, completed PR Test & Build jobs, creation to start was 2s median, 3s p90 and 65s maximum. No measured PR Test & Build job was awaiting assignment at the cutoff. The longest waits across all job types occurred in dependent release and image steps. Default CodeQL setup is off.<///>
-              <${Text} my="sm">Decoded action properties on #18244 put VM and Firecracker on self-hosted Docker in <code>kvm-vm</code>, one concurrent task per worker. Pod used the managed Firecracker action lane. The managed Pod follow-up measures the two corresponding outer runner admissions. Provider eligibility and capacity remain unobserved.<///>
-              ${table(
-                [
-                  "Physical TestRunner population",
-                  "Process n",
-                  "Process median / p90",
-                  "Valid queue n",
-                  "Queue median / p90",
-                  "Unknown queue",
-                ],
-                [
-                  ["KVM VM", "vm"],
-                  ["KVM Firecracker", "firecracker"],
+              ${disclosure(
+                "Daily counts and durations",
+                table(
                   [
-                    "Managed Pod, dispatcher, Gateway budget, central",
-                    "other_four_long",
+                    "UTC day",
+                    "Eligible",
+                    "Sampled",
+                    "Green",
+                    "Red",
+                    "Cancelled",
+                    "Incomplete",
+                    "Median",
+                    "p90",
                   ],
-                ].map(([label, k]) => {
-                  const s = evidence.native_cost[k];
-                  return [
-                    label,
-                    s.process.n,
-                    `${time(s.process.p50)} / ${time(s.process.p90)}`,
-                    s.queue.n,
-                    `${seconds(s.queue.p50)} / ${seconds(s.queue.p90)}`,
-                    s.queue_unknown,
-                  ];
-                }),
-                760,
+                  e.daily.map((d) => [
+                    d.day + (d.day.endsWith("-22") ? " (partial)" : ""),
+                    d.eligible_heads,
+                    d.sampled,
+                    d.outcomes.green || 0,
+                    d.outcomes.red || 0,
+                    d.outcomes.cancelled || 0,
+                    d.outcomes.incomplete || 0,
+                    minutes(d.median_s),
+                    minutes(d.p90_s),
+                  ]),
+                  800,
+                ),
               )}
-              <${Text} size="sm" mt="sm">The four managed labels reached a 195.6s maximum native queue. Twenty KVM queue clocks were inverted. Keep those unknown. At one-minute resolution the KVM telemetry recorded up to eight registered workers, with task counts available jointly on 684 of 816 points. No joint sample reached eight registered and eight tasks. Short queue bursts and misses still remain possible.<///>
-              <${Box} role="img" data-chart="kvm-pool" mt="md" aria-label="KVM desired workers, registered workers and executor task gauge">
-                <${LineChart} h=${215} data=${phases} dataKey="utc" domain=${[0, 8]} withLegend connectNulls=${false}
-                  strokeWidth=${2} withDots=${false} series=${[
-                    {
-                      name: "registered",
-                      label: "Registered",
-                      color: "blue.6",
-                    },
-                    { name: "tasks", label: "Tasks", color: "teal.6" },
-                    { name: "desired", label: "Desired", color: "gray.6" },
-                  ]} />
-              <//>
-              <${Text} size="sm" mt="sm">Chart samples every ten minutes from the one-minute census. The task gauge includes input preparation and upload. ${link("https://grafana.allegedly.works/d/buildbuddy-executor-pool", "Executor pool dashboard")}<//>
-              <${Text} mt="sm">Across the selected backend and fixture invocations, 1,072 unique originating TestRunner actions used 27.68 process-hours and 46.99 observed CPU-hours. CPU was missing for 37 actions, including all sampled KVM VM and Firecracker actions. Thread-browser shards consumed 3.44 process-hours across 112 actions. Runner hours and remote action costs use different clocks.<///>
+            </section>
+            <section id="current-clocks">
+              <${Title} order=${2}
+                >Bazel finished last on 118 of 126 green heads<//
+              >
+              <${Text} my="sm"
+                >The artifacts and imports check finished last on seven and
+                pre-commit on one. An offline replay moves the Bazel completion
+                up by 60 seconds and holds the other timestamps fixed. 118 heads
+                benefit. Mean savings is 47.1 seconds across all 126 green heads
+                and the p90 moves from 9m 36s to 8m 36s. This replay estimates
+                the benefit only if Bazel finishes a minute earlier on every
+                measured head.<//
+              >
+              <${Text} size="sm"
+                >Exact check names and durations are in the evidence. The clock
+                excludes time before workflow creation, approval and merge
+                scheduling. GitHub runner assignment, Remote Bazel setup,
+                BuildBuddy action queue, action process time and webhook
+                delivery use distinct clocks.
+                ${link(gh + "/rules?ref=refs%2Fheads%2Fdevel", "Active branch rules")}
+                ·
+                ${source(".github/workflows/bazel-ci.yml", "Bazel gate and live status")}<//
+              >
             </section>
             <section id="actions">
-              <${Title} order=${2}>20 November investigation priorities<///>
-              ${table(
-                ["Priority", "Change or test", "Expected effect and boundary"],
-                [
-                  [
-                    "1 · Managed Pod queue",
-                    html`Track recurrence in required CI and obtain provider
-                    admission reasons and eligible capacity for an overlapping
-                    burst.
-                    ${link("#managed-pod", "Measured cases and follow-up")}`,
-                    "Two of 12 successful first-attempt backend heads with physical test records show minute-scale feedback headroom. Snapshot restore errors require their own recovery evidence.",
-                  ],
-                  [
-                    "2 · Firecracker scheduling",
-                    html`${staggered.action}
-                    ${link("#firecracker-overlap", "Matched KVM comparison")}`,
-                    "Three of 12 earlier first-pass backend heads had Firecracker as latest physical finisher. Other gates and action stages constrain any PR-level saving.",
-                  ],
-                ],
-                1000,
-              )}
-              <${Text} mt="sm">A 30% reduction from the 9m31s one-attempt median requires 2m51s. Reaching a four-minute mean requires a 4m52s reduction from the observed 8m52s mean. None of the isolated observed path reductions covers that distance. A larger design would narrow App-triggered guest, Firecracker and managed Pod work together. Keep an end-to-end App→guest witness and the separate guest lifecycle, PKI and recovery assertions. Compare on the same selected source changes with exact gates and action inputs before counting a gain.<///>
-              <${Text} mt="sm">The timeout lookup fix and recycled Docker rebuild fix merged. Track subscriber delivery separately from test-recovery time. The two-worker minimum and fleet warm-hit rate still need a matched comparison. ${pr(18292)} · ${pr(18295)}<//>
-              <${Text} mt="sm">The 20 November cold job reached its 30-minute GitHub timeout. BuildBuddy finished successfully about eight seconds after GitHub canceled it. Two executor attempts failed waiting for CAS Read responses before the test process started. Input fetch consumed 2m53s, 8m50s and 3m33s across two failed starts and the passing attempt. The passing process took 6m50s. The retained receipts and cache replay are linked above. ${link(evidence.cold_workflow[1].html_url, "Passed run")} · ${link(evidence.cold_workflow[0].html_url, "Timed-out GitHub job")}${" · "}${build(evidence.cold_execution.invocation, "Recovered BuildBuddy result")}<//>
+              <${Title} order=${2}>Next measurements<//>
+              <${Stack} gap="sm" mt="sm">
+                <${Text}
+                  ><strong>1. Qualify the synchronized KVM guest image.</strong>
+                  #19089 landed and the live worker policy allows UDP/123 to
+                  Cloudflare. The isolated guest test reduced measured offset
+                  from 609 ms to 1.3 ms. The production pool still uses the
+                  previous image pin. Run the new image through fresh boot and
+                  both required KVM targets before promotion. Then count
+                  comparable queue timestamps and native queue delays before
+                  using them to size the pool. ${pr(19089)} ·
+                  ${source("cluster/cdk8s/buildbuddy_kvm_worker.py#L117-L119", "Production image pin")}<//
+                >
+                <${Text}
+                  ><strong
+                    >2. Measure browser dependency isolation on selected
+                    PRs.</strong
+                  >
+                  The fresh cost sample points to Action and Thread browsers for
+                  worker savings. Compare the action selection and last required
+                  gate on matched Action-only and Thread-only edits with the
+                  split now on devel. Keep desktop and mobile captures and
+                  runtime cases in the comparison.
+                  ${link("../ci-test-cost/", "Test cost and split evaluation")}
+                  · ${pr(18979)}<//
+                >
+                <${Text}
+                  ><strong
+                    >3. Resolve failure signatures before changing retry
+                    policy.</strong
+                  >
+                  One sampled frontend timeout recovered on an identical tested
+                  SHA. Attribution of time from initial red through to a new run
+                  still needs a request clock.
+                  ${link("../reliability/#priorities", "Reliability findings")}<//
+                >
+              <//>
             </section>
-            <${Accordion} variant="separated">
-              <${Accordion.Item} value="method">
-                <${Accordion.Control}>19–20 November population and clocks<//>
-                <${Accordion.Panel}>
-                  <${Text} mb="sm">151 exact latest heads sampled from 264 matching heads across 19 November 20:00 through 20 November 21:12 UTC. GitHub returned 888 PR CI runs for the full window. The frame includes earlier heads and cross-repository runs. Gate estimates use only the joined latest same-repository devel heads with complete changed-file classes, plus one large-diff head in an unclassified row. Exact check attempts and cutoff outcomes appear in the evidence. These are balanced path samples and the earlier 10–16 November report used a different sampling frame.<///>
-                  <${Text} mb="sm">The devel ruleset requires Test & Build, Pre-commit and Build artifacts + imports, with non-strict status checks and zero ordinary approvals. It requires a PR, linear history and extra approval for unattributed changes. Auto-merge is enabled in repository settings. Historical draft, review and conflict transitions were unavailable. Of the 60 green post-shadow heads all were already merged at collection. The sample does not assign auto-merge-ready timestamps.<///>
-                  <${Text} mb="sm">BuildBuddy test invocations use deterministic run-and-attempt IDs. For linked traces, the synthetic test commit's parents identify the PR head and tested base. All listed post-shadow timelines have a tested base containing the route change. Native test process clocks, fixture spans and GitHub step intervals overlap. The 90-minute runner census excludes unfinished jobs. The independent older-active scan raced pagination, returning 14 records against a reported 26.<///>
-                  <${Text} size="sm">${link(`${gh}/rules/15894562`, "Ruleset")} · ${file(".github/workflows/bazel-ci.yml", "Bazel CI workflow")} · ${file("devinfra/ci/skills/ci_latency/SKILL.md", "Collection method")} · ${link("./evidence.json", "Exact heads, cases and supporting data")}<///>
-                <//>
-              <//>
-              <${Accordion.Item} value="history">
-                <${Accordion.Control}>Prior measurements and experiments<//>
-                <${Accordion.Panel}>
-                  <${Text} mb="sm">The 10–16 November baseline recorded 51 green of 53 backend heads, with 10m23s median and 19m05s p90. The 18 November Firecracker acceptance measured 40.6s warm setup against 106.3s on the cold seed. Selected current traces show reuse in operation. Fleet reuse, the two-worker warm floor's latency benefit, and cost attribution remain open.<///>
-                  <${Text} mb="sm">Prior two-stack sharding duplicated setup and increased the slowest action and CPU cost. The managed resource trial hit an admission limit. The paired admission archives, previous canary, rejected trials, timeline graphs and the original methods remain in the pinned snapshot.<///>
-                  <${Text} size="sm">${link(`${prior}/index.html`, "Prior latency dashboard")} · ${link(`${prior}/evidence.json`, "Prior evidence")} · ${link("../agentplane-test-architecture/", "Architecture record")}<///>
-                <//>
-              <//>
-            <//>
+            <section id="kvm-pilot-results">
+              <${Title} order=${2}
+                >Keep serial Firecracker cleanup and cold K3s image import<//
+              >
+              <${Text} my="sm"
+                >The overlap pilot started proxy trust during cleanup of the
+                live guest. Its targeted interval grew 24.4 seconds. The seed
+                shortened stack setup by 0.81 seconds and added 4.97 seconds
+                from worker start to process end, plus 1.15 GB of added inputs.
+                Both use passing two-case samples from 22 November. The overlap
+                arms had different workers and fixture warmth.
+                ${source("devinfra/ci/debug/system_test_feedback/kvm_pilots_2026_11_22.md", "Pilot method and run links")}<//
+              >
+            </section>
+            <section id="method-current">
+              <${Title} order=${2}>Population and prior investigations<//>
+              <${Text} my="sm"
+                >Paginated the same CI workflow’s pull_request event by UTC day,
+                kept runs whose recorded head repository matched Ducktape,
+                deduplicated daily by head SHA and selected the 24 smallest
+                SHA-256 hashes. Each selected Bazel check is joined to its
+                workflow run ID. The other gates are matched on exact head SHA.
+                Day sampling is balanced across very different daily volumes, so
+                the combined result describes the sample. Trusted fork runs have
+                a separate admission path.
+                ${source(".github/workflows/trusted-fork-pr-ci.yml", "Fork admission")}<//
+              >
+              ${disclosure(
+                "Earlier KVM, cache and sharding measurements",
+                html` <${Stack} gap="sm">
+                  <${Text} id="vm-shadow"
+                    >${link(archive + "#vm-shadow", "Paired KVM and managed TCG results")}<//
+                  >
+                  <${Text} id="kvm-cas"
+                    >${link(archive + "#kvm-cas", "Direct Cloud, shared cache and recovery trial")}<//
+                  >
+                  <${Text} id="kvm-placement"
+                    >${link(archive + "#kvm-placement", "Worker placement and wyrm2 qualification")}<//
+                  >
+                  <${Text} id="kvm-work-disk"
+                    >${link(archive + "#kvm-work-disk", "SSD and HDD work-disk comparison")}<//
+                  >
+                  <${Text} id="kvm-retained-vm-ssd"
+                    >${link(archive + "#kvm-retained-vm-ssd", "Retained VM work-disk and import measurements")}<//
+                  >
+                  <${Text} id="kvm-scale-up-signal"
+                    >${link(archive + "#kvm-scale-up-signal", "KVM scale-up replay")}<//
+                  >
+                  <${Text} id="kvm-test-memory"
+                    >${link(archive + "#kvm-test-memory", "Worker memory and disposable caps")}<//
+                  >
+                  <${Text} id="kvm-disk-breakdown"
+                    >${link(archive + "#kvm-disk-breakdown", "KVM disk footprint breakdown")}<//
+                  >
+                  <${Text} id="shard-replay"
+                    >${link(archive + "#shard-replay", "Browser sharding comparison")}<//
+                  >
+                  <${Text} id="cases"
+                    >${link(archive + "#cases", "Traced backend cases")}<//
+                  >
+                  <${Text} id="docker-recycling"
+                    >${source("agentplane/system_tests/debug/kvm_docker_recycling.md", "Recycled KVM Docker evidence")}<//
+                  >
+                  <${Text} id="worker-image-comparison"
+                    >${source("cluster/k8s/buildbuddy-kvm-worker/README.md", "Worker image qualification")}<//
+                  >
+                <//>`,
+              )}
+            </section>
+
+            ${footer()}
           <//>
         <//>`;
       }

@@ -1,19 +1,10 @@
 {
-  "report": "visual-reliability",
-  "source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
-  "audited_at_utc": "2026-11-09T08:07:23Z",
-  "previous_report_commit": "8fa7340f7fd559fef23427953fea5682fa44e190",
-  "evidence_file": "evidence.json",
-  "summary": "One stale open PR requires revalidation; scroll framing and capture identity fixes are closed. Current recurrence absence is not established.",
-  "limits": [
-    "No current-source repeated run or broad fleet test.",
-    "Target history is mixed/cache and physical execution exposure is unknown.",
-    "Prior measurements are preserved with their original source and time window."
-  ],
-  "report_html_sha256": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
-  "evidence_sha256": "1acc9cdd4a3bd4426cc86e97df55cf3648166fdaa79045f87bd42735202cf680",
-  "presentation_validation": "../presentation-validation.json",
-  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
-  "presentation_updated_at_utc": "2026-11-09",
-  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements."
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "window_start_utc": "2026-11-15T00:00:00Z",
+  "window_end_utc": "2026-11-22T10:00:00Z",
+  "published_at_utc": "2026-11-22T11:07:53+00:00",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "attribution": "not collected",
+  "report_sha256": "1a573ccb23ae61a1ed54f6602aad3451bbe8df49e9a3e071a4c039e681087c53",
+  "evidence_sha256": "83c15841d6f8e7d444c1953595619908574f27c3880c19f978d03b5bb5175e73"
 }

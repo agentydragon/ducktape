@@ -2,8 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Visual reliability · 9 November 2026</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Visual reliability</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -45,320 +45,196 @@
   </head>
   <body>
     <div id="report-content"></div>
-    <noscript
-      >This report uses JavaScript for Mantine components and charts.</noscript
-    >
+    <noscript>This report uses JavaScript for charts and disclosures.</noscript>
     <script type="module">
+      import { useState } from "react";
       import {
+        Accordion,
         Anchor,
-        Blockquote,
         Box,
         Code,
         Container,
         Group,
-        Mark,
-        Paper,
-        SimpleGrid,
+        SegmentedControl,
         Stack,
+        Table,
         Text,
+        TextInput,
         Title,
       } from "@mantine/core";
+      import { BarChart } from "@mantine/charts";
       import { html, mount } from "../report.js";
-      function Report() {
-        return html`<header>
-            <${Container}
-              component=${"div"}
-              size="74rem"
-              py="xl"
-              style=${{ overflowWrap: "anywhere" }}
+      const evidenceSha =
+        "83c15841d6f8e7d444c1953595619908574f27c3880c19f978d03b5bb5175e73";
+      const response = await fetch(`./evidence.json?v=${evidenceSha}`);
+      if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const receivedSha = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (receivedSha !== evidenceSha)
+        throw new Error("Evidence does not match this report");
+      const e = JSON.parse(new TextDecoder().decode(bytes));
+      const gh = "https://github.com/agentydragon/ducktape";
+      const archive =
+        gh +
+        "/blob/" +
+        e.previous_report_commit +
+        "/visual-reliability/index.html";
+      const link = (href, label) => html`<${Anchor} href=${href}>${label}<//>`;
+      const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
+      const source = (path, label) =>
+        link(`${gh}/blob/${e.source_devel_commit}/${path}`, label);
+      const inv = (id, label) =>
+        link(
+          "https://app.buildbuddy.io/invocation/" + id,
+          label || id.slice(0, 8),
+        );
+      const table = (headers, rows, width = 560) =>
+        html` <${Table.ScrollContainer}
+          minWidth=${width}
+          type="native"
+          maw="100%"
+        >
+          <${Table} striped verticalSpacing="sm">
+            <${Table.Thead}
+              ><${Table.Tr}
+                >${headers.map((header) => html`<${Table.Th} key=${header}>${header}<//>`)}<//
+              ><//
             >
-              <${Group} component=${"div"} gap="sm" my="md">
-                <${Box}>
-                  <${Text} c="dimmed" component="p" my="sm">
-                    ${" Ducktape · visual reliability · refreshed 9 November 2026 "}
-                  <//>
-                  <${Title} order=${1} mt="md" mb="sm">
-                    ${"Current visual-test findings"}
-                  <//>
-                  <${Text} c="dimmed" component="p" my="sm">
-                    ${" Source review pinned to "}
-                    <${Anchor}
-                      href=${"https://github.com/agentydragon/ducktape/tree/69f35d736dc33f90f66f8345ff35806f04ed9399"}
-                    >
-                      <${Code}
-                        style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                      >
-                        ${"devel 69f35d736dc3"}
-                      <//>
-                    <//>
-                    ${". The prior report’s completed items are removed from the open list; one stale PR remains a revalidation decision. "}
-                  <//>
-                <//>
-                <${Group}
-                  aria-label=${"Report evidence"}
-                  component=${"nav"}
-                  gap="sm"
-                  my="md"
-                >
-                  <${Anchor} href=${"evidence.json"}> ${"Evidence JSON"} <//>
-                  <${Anchor} href=${"manifest.json"}> ${"Manifest"} <//>
-                  <${Anchor}
-                    href=${"https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"}
-                  >
-                    ${"Previous report · 30 Oct"}
-                  <//>
-                <//>
-              <//>
-            <//>
-          </header>
-          <${Container}
-            component=${"main"}
-            size="74rem"
-            py="xl"
-            style=${{ overflowWrap: "anywhere" }}
+            <${Table.Tbody}
+              >${rows.map((row, i) => html`<${Table.Tr} key=${i}>${row.map((value, j) => html`<${Table.Td} key=${j}>${value}<//>`)}<//>`)}<//
+            >
+          <//>
+        <//>`;
+      const disclosure = (label, contents) =>
+        html` <${Accordion}
+          variant="contained"
+          mt="sm"
+          defaultValue=${location.hash && label.startsWith("Earlier") ? label : null}
+          ><${Accordion.Item} value=${label}>
+            <${Accordion.Control}>${label}<//
+            ><${Accordion.Panel}>${contents}<//>
+          <//><//
+        >`;
+      const minutes = (s) =>
+        s == null
+          ? "—"
+          : `${Math.floor(Math.round(s) / 60)}m ${String(Math.round(s) % 60).padStart(2, "0")}s`;
+      const header = (title, lede) =>
+        html` <header>
+          ${link("../", "Ducktape reports")}
+          <${Title} order=${1} my="sm">${title}<//>
+          <${Text} size="lg">${lede}<//>
+          <${Text} mt="sm" size="sm" c="dimmed"
+            >Inspected devel <${Code}>${e.source_devel_commit}<//><//
           >
-            <${Blockquote} my="md">
-              <strong> ${"No current visual failure was reproduced."} </strong>
-              ${" #10753 is still open, but its head is from 16 October, GitHub reports merge state UNKNOWN, and no fresh candidate-source reproduction was made. Treat it as rebase-and-revalidate work, not a confirmed present regression. "}
-            <//>
-            <${SimpleGrid}
-              component=${"div"}
-              cols=${{ base: 1, sm: 2, lg: 3 }}
-              spacing="md"
-            >
-              <${Box}>
-                <${Paper}
-                  component="article"
-                  withBorder
-                  p="lg"
-                  radius="md"
-                  my="md"
-                >
-                  <${Box}>
-                    <${Box} c="dimmed"> ${"Current decision"} <//>
-                    <${Box}> ${"1 stale open PR"} <//>
-                    <${Text} component="p" my="sm">
-                      ${" Chart.js layout-dependence candidate #10753 needs current-source review. "}
-                    <//>
-                  <//>
-                <//>
-              <//>
-              <${Box}>
-                <${Paper}
-                  component="article"
-                  withBorder
-                  p="lg"
-                  radius="md"
-                  my="md"
-                >
-                  <${Box}>
-                    <${Box} c="dimmed"> ${"Resolved from this list"} <//>
-                    <${Box}> ${"Scroll and capture identity"} <//>
-                    <${Text} component="p" my="sm">
-                      ${" #13169 stabilized history framing; #13730 established structured capture identities. "}
-                    <//>
-                  <//>
-                <//>
-              <//>
-              <${Box}>
-                <${Paper}
-                  component="article"
-                  withBorder
-                  p="lg"
-                  radius="md"
-                  my="md"
-                >
-                  <${Box}>
-                    <${Box} c="dimmed"> ${"Recurrence boundary"} <//>
-                    <${Box}> ${"No absence claim"} <//>
-                    <${Text} component="p" my="sm">
-                      ${" Target history has 959 mixed status rows, all PASSED; cache and physical runner exposure were not checked. "}
-                    <//>
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Stack}
-              aria-labelledby=${"open-title"}
-              component="section"
-              gap="md"
-              my="xl"
-            >
-              <${Title} id=${"open-title"} order=${2} mt="md" mb="sm">
-                ${"Open decision"}
-              <//>
-              <${Paper}
-                component="article"
-                withBorder
-                p="lg"
-                radius="md"
-                my="md"
+        </header>`;
+      const footer = () =>
+        html`<footer>
+          <${Group} gap="md">
+            ${link("./evidence.json", "Reviewed evidence")}
+            ${link("./manifest.json", "Manifest")}
+            ${link(archive, "Previous snapshot")} ${link("../", "All reports")}
+          <//>
+        </footer>`;
+
+      function Report() {
+        const f = e.visual_operation_failure;
+        const c = e.chart_candidate;
+        return html`<${Container}
+          component="main"
+          size="73rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <${Stack} gap="xl">
+            ${header("Visual reliability", "A visual operation case captured a 2,598 CSS px discrepancy between the mounted editor and its parked placeholder. The visual History index shows many passing records, but all 16 evenly spaced pass records inspected here reused cached results.")}
+            <section id="open-title">
+              <${Title} order=${2}>Qualify editor height before parking<//>
+              <${Text} my="sm"
+                >On the failing desktop run, the editor measured 3,372.28 CSS px
+                before scrolling. The parked placeholder measured 774.25 CSS px,
+                against a 1 px tolerance. The test sampled initial height after
+                the editor attached and sampled the placeholder after scrolling.
+                The log leaves open whether the initial read, the last committed
+                editor measurement or the parked geometry was stale.
+                ${inv(f.invocation, "Failed test and log")}<//
               >
-                <${Box}>
-                  <${Group} component=${"div"} gap="sm" my="md">
-                    <${Title} order=${3} mt="md" mb="sm">
-                      ${" #10753 · Fix Chart.js layout dependence on previous updates "}
-                    <//>
-                    <${Mark}> ${"OPEN · stale head"} <//>
-                  <//>
-                  <${Text} component="p" my="sm">
-                    ${" The audited source still uses Chart.js in the Spend history chart; package metadata requests "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"^4.4.8"}
-                    <//>
-                    ${" and the lockfile resolves "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"4.5.1"}
-                    <//>
-                    ${". The PR head is "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"519cd94a3ed4"}
-                    <//>
-                    ${", last updated 16 October. GitHub currently reports merge state "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"UNKNOWN"}
-                    <//>
-                    ${". Its checks passed on that old head, which is not current-source evidence. "}
-                  <//>
-                  <${Text} component="p" my="sm">
-                    <strong> ${"Disposition."} </strong>
-                    ${" Rebase and revalidate against current source before treating this PR as an active repair. The old candidate is not a current failure report, and this refresh did not reproduce layout instability. "}
-                  <//>
-                  <${Text} component="p" my="sm">
-                    <${Anchor}
-                      href=${"https://github.com/agentydragon/ducktape/pull/10753"}
-                    >
-                      ${"Open PR #10753"}
-                    <//>
-                    <${Anchor}
-                      href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/ui/SpendingHistoryChart.tsx"}
-                    >
-                      ${"Current chart source"}
-                    <//>
-                    <${Anchor}
-                      href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/package.json"}
-                    >
-                      ${"Dependency declaration"}
-                    <//>
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Text} component="p" my="sm">
-              ${" Closed since the prior report: "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/pull/13169"}
-              >
-                ${"#13169, scroll framing"}
-              <//>
-              ${" and "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/pull/13730"}
-              >
-                ${"#13730, capture identity"}
-              <//>
-              ${". Focused repeat/check receipts and older completed work remain in "}
-              <${Anchor} href=${"evidence.json"}> ${"the evidence"} <//>
-              ${". "}
-            <//>
-            <${Stack}
-              aria-labelledby=${"history-title"}
-              component="section"
-              gap="md"
-              my="xl"
-            >
-              <${Title} id=${"history-title"} order=${2} mt="md" mb="sm">
-                ${"Recent exposure and its limits"}
-              <//>
-              <${Paper}
-                component="article"
-                withBorder
-                p="lg"
-                radius="md"
-                my="md"
-              >
-                <${Box}>
-                  <${Text} component="p" my="sm">
-                    ${" A BuildBuddy query for "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"//agentplane/app/frontend:visual_history"}
-                    <//>
-                    ${" with "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"--since 2026-11-02"}
-                    <//>
-                    ${" returned 959 status rows, all "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"PASSED"}
-                    <//>
-                    ${". The response-reported target timing range begins on 1 November and ends on 8 November. The history mixes commits and PRs; this query did not inspect result-cache hits or physical TestRunner executions. It is not 959 independent fresh runs and cannot establish that a finding did not recur. "}
-                  <//>
-                  <${Text} component="p" my="sm">
-                    ${" The previous report’s 100-PR gallery sample, five-repeat experiment, image comparisons, and detailed per-item inventory are preserved unchanged under "}
-                    <${Code}
-                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                    >
-                      ${"prior_snapshot"}
-                    <//>
-                    ${" in "}
-                    <${Anchor} href=${"evidence.json"}> ${"evidence.json"} <//>
-                    ${". They remain historical measurements at their original source and window. "}
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Stack}
-              aria-labelledby=${"method-title"}
-              component="section"
-              gap="md"
-              my="xl"
-            >
-              <${Title} id=${"method-title"} order=${2} mt="md" mb="sm">
-                ${"Scope and evidence limits"}
-              <//>
-              <${Text} component="p" my="sm">
-                ${" This refresh checked current source at "}
+              <${Text} my="sm"
+                >#18979 moved the case to the Action-specific harness at
                 <${Code}
-                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                >
-                  ${"69f35d736dc33f90f66f8345ff35806f04ed9399"}
-                <//>
-                ${", GitHub state for the open candidate and landed repairs, and the narrow target-history query above. The prior sample and repeat evidence are not silently rebased to this source. No fresh fleet run, current-source repeat experiment, or post-merge recurrence absence is claimed. "}
-              <//>
-              <${Text} c="dimmed" component="p" my="sm">
-                ${" Previous full report: "}
-                <${Anchor}
-                  href=${"https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"}
-                >
-                  ${"gh-pages commit "}
-                  <${Code}
-                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                  >
-                    ${"8fa7340"}
-                  <//>
-                <//>
-                ${". Current checks, dispositions, and raw prior evidence are in "}
-                <${Anchor} href=${"evidence.json"}> ${"evidence.json"} <//>
-                ${"; source/time limits are in "}
-                <${Anchor} href=${"manifest.json"}> ${"manifest.json"} <//>
-                ${". "}
-              <//>
-            <//>
-          <//> `;
+                  >//agentplane/app/frontend/actions:visual_operation_presentation<//
+                >. If the mismatch recurs, sample heights around CodeMirror’s
+                measurement and the ResizeObserver delivery before making
+                readiness wait for a committed geometry. Retain the
+                parked-height, narrow remount and text-selection assertions.
+                ${pr(18979)} ·
+                ${source("agentplane/app/frontend/actions/test_visual_operation_presentation.py#L83", "Current test")}<//
+              >
+              <${Text} my="sm"
+                >One uncached current devel RBE run passed the moved target.
+                Keep the exact geometry check while gathering repeat exposure.
+                ${inv(e.current_source_control.invocation, "Current-source control")}<//
+              >
+            </section>
+            <section>
+              <${Title} order=${2}>Visual History exposure<//>
+              <${Text} my="sm"
+                >Across 15 November 00:00 through 22 November 10:00 UTC the
+                BuildBuddy target index recorded 1,127 passes and three failed
+                builds for <${Code}>${e.visual_target}<//>. All three
+                failed-build records lacked a TestResult. The 16 evenly spaced
+                pass records inspected had four cached runs each and zero linked
+                originating TestRunner actions. The window-wide number of fresh
+                runs is unknown.<//
+              >
+              ${disclosure(
+                "Reviewed history records",
+                table(
+                  [
+                    "Tested source",
+                    "Indexed outcome",
+                    "Cached runs",
+                    "Invocation",
+                  ],
+                  e.visual_samples.map((r) => [
+                    r.commit.slice(0, 10),
+                    r.recorded,
+                    r.targets.length ? r.targets[0].cached : "—",
+                    inv(r.invocation),
+                  ]),
+                ),
+              )}
+            </section>
+            <section>
+              <${Title} order=${2}
+                >Leave the Chart.js patch pending a current reproduction<//
+              >
+              <${Text} my="sm"
+                >Spending History still mounts Chart.js 4.5.1. #10753 remains
+                open on its 16 October head. A Git merge simulation against
+                current devel found conflicts in
+                ${c.merge_conflicts.join(", ")}. Start with the current spending
+                chart and a desktop-to-mobile resize or dataset-toggle witness
+                before porting the library patch. Its old green checks cover its
+                original source tree. ${link(c.url, "Chart.js candidate")} ·
+                ${source("finance/plaid/spend/ui/SpendingHistoryChart.tsx", "Current Spending History chart")}<//
+              >
+            </section>
+            <section id="history-title">
+              <${Title} order=${2}>Earlier visual investigations<//>
+              <${Text} my="sm"
+                >Scroll framing and capture identity fixes remain in the
+                previous reviewed snapshot with their original measurements.
+                ${link(archive, "9 November review")}<//
+              >
+            </section>
+
+            ${footer()}
+          <//>
+        <//>`;
       }
       mount(Report);
     </script>

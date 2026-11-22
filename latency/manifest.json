@@ -1,34 +1,10 @@
 {
-  "source_devel_commit": "beaa21fbb688687431cf3b4c6e03d24d87fae037",
-  "window_start_utc": "2026-11-22T00:00:00Z",
-  "window_end_utc": "2026-11-22T08:00:00Z",
-  "published_at_utc": "2026-11-22T08:22:59.399457+00:00",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "window_start_utc": "2026-11-15T00:00:00Z",
+  "window_end_utc": "2026-11-22T10:00:00Z",
+  "published_at_utc": "2026-11-22T11:07:53+00:00",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
   "attribution": "not collected",
-  "weekly_feedback_window_utc": [
-    "2026-11-15T00:00:00Z",
-    "2026-11-22T00:00:00Z"
-  ],
-  "previous_report_commit": "428ec61866d383dedd9276898d2681dfa597d90f",
-  "report_sha256": "5ead44bdd286e471d66b31ec4f567220a55c3e2f7a983e6c8b6adf7cbb18504d",
-  "evidence_sha256": "bbacd23cc55c68ee007e8fa6885279478e432fb04c61f92722616bb8017a2b71",
-  "kvm_scale_up_window_utc": ["2026-11-21T04:47:00Z", "2026-11-22T04:47:00Z"],
-  "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "86446b7b4ff6e0898886181fcd20369b26f6d407d5945cefd4a0f60d45731f17",
-  "kvm_work_disk_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"],
-  "kvm_stack_disk_breakdown": {
-    "evidence_key": "kvm_stack_disk_breakdown",
-    "source_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
-    "manual_window_utc": [
-      "2026-11-22T05:28:12.094044200Z",
-      "2026-11-22T05:38:56.297591040Z"
-    ]
-  },
-  "kvm_test_memory": {
-    "inspected_source_commit": "4bbeecc8ba0565079e7f178bd479f493856bf785",
-    "cohort_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"],
-    "passes": 63,
-    "failures": 4
-  },
-  "retained_report_source_commit": "16a394a1518add3599ace7b57968edc81fef8628",
-  "retained_report_window_utc": ["2026-11-15T00:00:00Z", "2026-11-22T04:00:00Z"]
+  "report_sha256": "3169ea1018424ae9f70bcee09fe262f24489af598a4461b2b74159e01662a615",
+  "evidence_sha256": "3fb83c15b7ad399eab5e4b8f93f4f2e6e346848d3e15073d598d0cbdd026449e"
 }
