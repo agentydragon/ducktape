@@ -363,11 +363,12 @@ connection, provider model, dialect, exec encoding and provider continuation set
 eligible.
 
 An idle and settled Session can switch between ChatGPT subscription Responses Lite models on the
-same Agentplane ingress connection and tool encoding. Retained sampling requests must match the
-endpoint, account, API and history projection. This evidence also covers removed routes. The
-switch requires an uncompacted transcript with settled tool calls and no pending or queued work.
-A message queued after the switch uses the selected replacement. The sampler sends the existing
-conversation unchanged. The provider may omit incompatible reasoning, as documented in
+same Agentplane ingress connection and tool encoding. Retained sampling and compaction requests
+must match the endpoint, account, API and history projection. This evidence also covers removed
+routes. The switch requires settled tool calls and no pending or queued work. A message queued
+after the switch uses the selected replacement. The sampler sends the active conversation window
+unchanged, including any opaque compaction, and preserves the full transcript. The provider may
+omit incompatible reasoning, as documented in
 [OpenAI's Responses reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#reasoning-item-removal-across-requests).
 
 A removed Chat Completions route can still be replaced by another Chat Completions route in an idle,
