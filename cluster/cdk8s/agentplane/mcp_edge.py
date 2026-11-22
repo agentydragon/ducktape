@@ -86,7 +86,6 @@ class McpEdge(Construct):
             container=NAME,
             image=_IMAGE,
             image_pull_policy=image_pull_policy,
-            replica_profile=props.replicas,
             env_variables=variables,
             readiness=http_probe("/readyz", port=self.http.pod_port, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=self.http.pod_port, initial_delay_seconds=20),

@@ -123,7 +123,6 @@ class CentralSampler(Construct):
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
             ),
             termination_grace=Duration.seconds(60),
-            replica_profile=props.replicas,
             placement=placement,
             registry_secret_name=registry_secret_name,
         )
