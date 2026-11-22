@@ -2455,11 +2455,8 @@ def generate_manifests(root: Path) -> None:
         "cli-proxy-api": cli_proxy_api_kustomization,
         "clickhouse": clickhouse_kustomization,
         "cnpg-system": cnpg_kustomization,
-        "ducktape-flux": None,
         "external-dns": external_dns_kustomization,
         "haku-console": haku_console_kustomization,
-        # Bootstrap roots have no generated owner Kustomization to depend on.
-        "flux-system": None,
         "forgejo": forgejo_kustomization,
         "gatus": gatus_kustomization,
         "grocy-sf": grocy_sf_kustomization,

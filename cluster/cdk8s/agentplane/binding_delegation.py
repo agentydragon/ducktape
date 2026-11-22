@@ -97,30 +97,25 @@ def write_manifests(root: Path, env: Environment, assignable_grants: Sequence[Ku
 def add_flux_kustomizations(
     flux_chart: Chart,
     env: Environment,
-    target_dependencies: Mapping[str, Kustomization | None],
+    target_dependencies: Mapping[str, Kustomization],
     assignable_grants: Sequence[KubernetesGrant],
 ) -> None:
     """Each target owner gates its delegation; bootstrap roots have no generated owner."""
-    scopes = external_scopes(env, assignable_grants)
-    if missing := set(scopes) - target_dependencies.keys():
-        raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    bootstrap_scopes = {"flux-system", "ducktape-flux"}
-    if missing := {scope for scope in scopes if scope not in bootstrap_scopes and target_dependencies[scope] is None}:
-        raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    if unexpected := {
-        scope for scope in scopes if scope in bootstrap_scopes and target_dependencies[scope] is not None
-    }:
-        raise ValueError(f"bootstrap namespaces have no generated Flux dependency: {sorted(unexpected)}")
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
     )
-    for target_namespace in scopes:
-        dependency = target_dependencies[target_namespace]
+    for target_namespace in external_scopes(env, assignable_grants):
+        # Bootstrap creates these namespaces before the generated owners reconcile.
+        depends_on = (
+            None
+            if target_namespace in {"ducktape-flux", "flux-system"}
+            else [flux_kustomization_depends_on(target_dependencies[target_namespace])]
+        )
         flux_kustomization(
             flux_chart,
             f"{env.namespace}-binding-delegation-{target_namespace}",
             source,
             path=f"./{directory(env, target_namespace)}",
-            depends_on=[flux_kustomization_depends_on(dependency)] if dependency is not None else None,
+            depends_on=depends_on,
             description=f"Delegates managed RoleBinding reconciliation in {target_namespace}.",
         )
