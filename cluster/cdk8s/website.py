@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -80,11 +80,7 @@ def chart(app: App) -> Chart:
     # Deployment selectors are immutable, so keep the existing labels.
     deployment.select(LabelSelector.of(labels=_SERVICE.pods.selector))
     # Each revision spreads independently, so old Pods do not block a two-node rollout.
-    ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add(
-            "/spec/template/spec/topologySpreadConstraints", [node_scheduling.hostname_spread(_SERVICE.pods.selector)]
-        )
-    )
+    node_scheduling.set_topology_spread(deployment, node_scheduling.hostname_spread(_SERVICE.pods.selector))
     deployment.add_container(
         name="server",
         image=_IMAGE,

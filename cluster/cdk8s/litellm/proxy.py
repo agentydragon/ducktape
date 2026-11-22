@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -220,19 +220,14 @@ class LiteLLMProxy(Construct):
         deployment.scheduling.tolerate(
             Node.tainted(NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE))
         )
-        # cdk8s-plus exposes no custom topology spread settings on Deployment.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/topologySpreadConstraints",
-                [
-                    k8s.TopologySpreadConstraint(
-                        max_skew=1,
-                        topology_key="kubernetes.io/hostname",
-                        when_unsatisfiable="ScheduleAnyway",
-                        label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
-                    )
-                ],
-            )
+        node_scheduling.set_topology_spread(
+            deployment,
+            k8s.TopologySpreadConstraint(
+                max_skew=1,
+                topology_key="kubernetes.io/hostname",
+                when_unsatisfiable="ScheduleAnyway",
+                label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
+            ),
         )
         return deployment
 
