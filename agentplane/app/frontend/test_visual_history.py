@@ -5,7 +5,7 @@ import re
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import Page, expect
+from playwright.async_api import Locator, Page, expect
 
 from agentplane.app.frontend.testing.app import (
     IDLE_THREAD,
@@ -679,6 +679,27 @@ async def test_dispatcher_notice_acknowledgement(view: VisualPage, app: Agentpla
     await view.capture(name="delivery_issue_history", target=history)
 
 
+async def _expect_delivery_gutter(row: Locator) -> None:
+    bubble = row.locator(".transcript-user-bubble")
+    aside = row.locator(".transcript-user-message-aside")
+    progress = aside.locator(".agentplane-command-progress-inline")
+    bubble_box = await bubble.bounding_box()
+    aside_box = await aside.bounding_box()
+    assert bubble_box
+    assert aside_box
+    assert aside_box["y"] < bubble_box["y"] + bubble_box["height"]
+    for element in (
+        progress,
+        progress.locator(".agentplane-command-lights"),
+        aside.get_by_role("button", name="Dismiss delivery issue", exact=False),
+    ):
+        await expect(element).to_be_visible()
+        box = await element.bounding_box()
+        assert box
+        assert box["width"] > 0
+        assert box["x"] + box["width"] <= bubble_box["x"]
+
+
 @DESKTOP_AND_MOBILE
 async def test_outstanding_command_conversation(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.OUTSTANDING_COMMAND_CONVERSATION)
@@ -699,11 +720,13 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await expect(view.page.get_by_text("More commands in Delivery history")).to_have_count(0)
 
     await phase.scroll_into_view_if_needed()
+    await _expect_delivery_gutter(phase)
+    await _expect_delivery_gutter(continuation)
     await view.page.mouse.move(0, 0)
     await view.capture(name="unknown_on_history_input")
     await phase.get_by_role("button", name="Dismiss delivery issue", exact=False).click()
     await expect(phase).to_have_count(1)
-    await expect(phase.get_by_role("button", name="Dismiss delivery issue", exact=False)).to_have_count(0)
+    await expect(phase.locator(".transcript-user-message-aside")).to_have_count(0)
     await expect(phase.get_by_text("Save a deployment summary.", exact=True)).to_be_visible()
     await view.page.mouse.move(0, 0)
     await view.capture(name="history_input_after_dismissal")
@@ -742,6 +765,7 @@ async def test_acknowledge_saved_issue_outside_workset(view: VisualPage, app: Ag
     acknowledge = local.get_by_role("button", name="Dismiss delivery issue", exact=False)
     await expect(acknowledge).to_be_visible()
     await local.scroll_into_view_if_needed()
+    await _expect_delivery_gutter(local)
     await view.page.mouse.move(0, 0)
     await view.capture(name="saved_delivery_issue", target=local)
     await acknowledge.click()
