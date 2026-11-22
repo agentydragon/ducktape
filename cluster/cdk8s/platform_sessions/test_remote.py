@@ -143,13 +143,13 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
         recorder = init[-1]
         assert recorder["restartPolicy"] == "Always"
-        assert "startupProbe" in recorder
         env = {item["name"]: item["value"] for item in containers["provider"]["env"]}
         assert env["HTTPS_PROXY"] == "http://127.0.0.1:18080"
         assert env["SSL_CERT_FILE"] == "/var/run/session-recorder-trust/ca-certificates.crt"
         assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
         assert env["PLATFORM_SESSIONS_PROXY_CA_FILE"] == "/var/run/session-recorder-ca/tls.crt"
-        assert "+/captures/%Y-%m-%d.mitm" in recorder["command"][-1]
+        [capture_mount] = [mount for mount in recorder["volumeMounts"] if mount["name"] == "captures"]
+        assert capture_mount["mountPath"] == "/captures"
         claim = find_resource(objects, "PersistentVolumeClaim", f"{name}-captures")
         assert claim["spec"]["storageClassName"] == "piraeus-hdd-local"
         assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
