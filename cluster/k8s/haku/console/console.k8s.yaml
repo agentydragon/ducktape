@@ -340,9 +340,6 @@ immutable: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: config,public-web-pki
-    secret.reloader.stakater.com/reload: haku-console-oidc,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console

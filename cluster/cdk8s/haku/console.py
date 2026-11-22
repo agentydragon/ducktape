@@ -30,7 +30,6 @@ from cdk8s_plus_34 import (
     DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
-    ISecret,
     LabelSelector,
     MemoryResources,
     PercentOrAbsolute,
@@ -41,8 +40,6 @@ from cdk8s_plus_34 import (
     Role,
     RoleBinding,
     RolePolicyRule,
-    Secret,
-    SecretValue,
     Service,
     ServiceAccount,
     ServicePort,
@@ -108,13 +105,11 @@ class Console(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        self._secrets: dict[str, ISecret] = {}
 
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
         self._add_rbac()
-        env = self._container_env()
         config = SettingsFile(
             self,
             "config",
@@ -122,7 +117,7 @@ class Console(Construct):
             content=yaml_config(console_config.config()),
             path="/etc/haku-console/config/config.yaml",
         )
-        self._add_deployment(service_account, env, config)
+        self._add_deployment(service_account, config)
         self._add_service()
         self._add_service_monitor()
         self._add_static()
@@ -172,16 +167,10 @@ class Console(Construct):
             automount_token=False,
         )
 
-    def _secret(self, name: str) -> ISecret:
-        if name not in self._secrets:
-            self._secrets[name] = Secret.from_secret_name(self, f"secret-{name}", name)
-        return self._secrets[name]
-
     def _from_secret(self, key: SecretKey, *path: str) -> tuple[str, EnvValue]:
         """The env var for the settings leaf at `path`, read from `key`."""
-        return env_name(Settings, *path), EnvValue.from_secret_value(
-            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=False
-        )
+        name = env_name(Settings, *path)
+        return name, key.env_value(self, name)
 
     def _container_env(self) -> dict[str, EnvValue]:
         oidc = SecretRef(namespace=NAMESPACE, name="haku-console-oidc")
@@ -230,22 +219,11 @@ class Console(Construct):
             ]
         )
 
-    def _add_deployment(self, service_account: ServiceAccount, env: dict[str, EnvValue], config: SettingsFile) -> None:
+    def _add_deployment(self, service_account: ServiceAccount, config: SettingsFile) -> None:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(
-                name=NAME,
-                namespace=NAMESPACE,
-                labels=_API.pods.selector,
-                annotations={
-                    # Only the API's own mounted ConfigMap and credentials, never reloader's
-                    # blanket auto mode: the projected static-image metadata changes on every
-                    # frontend release and must not restart API/MCP/background work.
-                    "configmap.reloader.stakater.com/reload": f"{config.config_map.name},public-web-pki",
-                    "secret.reloader.stakater.com/reload": ",".join(sorted(self._secrets)),
-                },
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_API.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=_API.pods.selector),
             select=False,
             replicas=2,
@@ -269,7 +247,7 @@ class Console(Construct):
             image=f"{IMAGE}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             ports=[_API.port.container_port()],
-            env_variables=env,
+            env_variables=self._container_env(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
                 # TODO(vpa-memory-audit): 512Mi -> 3Gi. VPA observed a 1.29Gi request / 1.74Gi
