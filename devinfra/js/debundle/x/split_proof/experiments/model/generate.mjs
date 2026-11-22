@@ -166,35 +166,126 @@ export function generatedOpaqueCase(seed) {
   };
 }
 
-// The class crosses an independent allocation before its captured binding is initialized.
-// The scripts read current bindings and receivers; no generated result is hard-coded in the world.
-export function generatedOpaqueClassCase(seed) {
-  const value = 1 + ((seed >>> 0) % 17);
+// Each member renders both its JavaScript body and the requests needed to execute it.
+// The observation must call back into modeled JavaScript with the live operands.
+function observedClassMember(signature, role, arity, value, capture, finish) {
+  const steps = [];
+  const request = (...step) => {
+    const register = ["r", 2 + arity + steps.length];
+    steps.push(step);
+    return register;
+  };
+  // observe is the first free name in the body. Any captured operand follows it.
+  const observe = request("readVar", 0);
+  const operand = value.request ? request(...value.request) : value.register;
+  const args = capture ? [request("readVar", 1)] : [];
+  const result = request("call", observe, ["u"], ["s", role], operand, ...args);
+  const ending = finish(result);
+  steps.push(...ending.steps);
   return {
-    name: `opaque class capture seed ${seed}`,
+    source: `${signature} {
+      const [observed] = [observe(${JSON.stringify(role)}, ${value.source}${capture ? `, ${capture}` : ""})];
+      ${ending.source}
+    }`,
+    steps,
+  };
+}
+
+// The class crosses an independent allocation before either of its captured bindings is initialized.
+export function generatedOpaqueClassCase(seed) {
+  const choice = seed >>> 0;
+  const value = 1 + (choice % 17);
+  const method = ["instance", "static", "detached"][choice % 3];
+  const accessor = ["absent", "instance", "static"][Math.floor(choice / 3) % 3];
+  const [ctorCapture, memberCapture] = choice % 2 === 0 ? ["left", "right"] : ["right", "left"];
+  const receiver = ["r", 1];
+  const argument = ["r", 2];
+  const property = (key) => ({ source: `this.${key}`, request: ["get", receiver, ["s", key]] });
+  const returning = (result) => ({ source: "return observed;", steps: [["done", result]] });
+  const members = [
+    observedClassMember(
+      "constructor(argument)",
+      "constructor",
+      1,
+      {
+        source: ctorCapture,
+        request: ["readVar", 1],
+      },
+      null,
+      (result) => ({
+        source: "this.value = observed; this.argument = argument;",
+        steps: [
+          ["set", receiver, ["s", "value"], result],
+          ["set", receiver, ["s", "argument"], argument],
+        ],
+      })
+    ),
+    observedClassMember(
+      method === "static" ? "static read()" : "read()",
+      `${method}-method`,
+      0,
+      method === "detached" ? { source: "this", register: receiver } : property("value"),
+      memberCapture,
+      returning
+    ),
+  ];
+  const observations = [method === "static" ? "Box.read()" : method === "detached" ? "read()" : "box.read()"];
+  const bodyCalls = ["constructor", `${method}-method`];
+  let assignment = "";
+  if (accessor !== "absent") {
+    const prefix = accessor === "static" ? "static " : "";
+    const owner = accessor === "static" ? "Box" : "box";
+    members.push(
+      observedClassMember(`${prefix}get item()`, `${accessor}-getter`, 0, property("stored"), ctorCapture, returning),
+      observedClassMember(
+        `${prefix}set item(argument)`,
+        `${accessor}-setter`,
+        1,
+        {
+          source: "argument",
+          register: argument,
+        },
+        memberCapture,
+        (result) => ({
+          source: "this.stored = observed;",
+          steps: [["set", receiver, ["s", "stored"], result]],
+        })
+      )
+    );
+    assignment = `${owner}.item = ${value + 8};`;
+    observations.push(`${owner}.item`);
+    bodyCalls.splice(1, 0, `${accessor}-setter`);
+    bodyCalls.push(`${accessor}-getter`);
+  }
+  if (choice % 2 === 0) {
+    members.push({ source: "modeled() { return this.argument; }" });
+    observations.push("box.modeled()");
+  }
+  // The lexical part numbers include modeled members and are independent of the invocation order.
+  const rotation = choice % members.length;
+  const ordered = [...members.slice(rotation), ...members.slice(0, rotation)];
+  const scripts = Object.fromEntries(
+    ordered.flatMap((member, i) => (member.steps ? [[`0/${i + 1}`, member.steps]] : []))
+  );
+  return {
+    name: `opaque class ${method} method, ${accessor} accessor seed ${seed}`,
     source: `
-      class Box {
-        constructor(argument) { const [v] = [captured]; this.value = v; this.argument = argument; }
-        read() { const [v] = [this.argument]; return v; }
-      }
+      class Box { ${ordered.map((member) => member.source).join("\n")} }
       const independent = ${value};
-      let captured = ${value + 1};
-      captured = ${value + 2};
-      const box = new Box(${value + 3});
-      console.log(box.value, box.read(), independent, box.constructor === Box);
+      let left = ${value + 1};
+      let right = ${value + 2};
+      left = ${value + 3};
+      right = ${value + 4};
+      function observe(role, item, captured) { console.log("body:" + role, item, captured); return item; }
+      const box = new Box(${value + 5});
+      Box.value = ${value + 6};
+      ${method === "detached" ? "const read = box.read;" : ""}
+      ${assignment}
+      console.log(box.value, box.argument, ${observations.join(", ")}, independent, box.constructor === Box);
     `,
-    scripts: {
-      "0/1": [
-        ["readVar", 0],
-        ["set", ["r", 1], ["s", "value"], ["r", 3]],
-        ["set", ["r", 1], ["s", "argument"], ["r", 2]],
-      ],
-      "0/2": [
-        ["get", ["r", 1], ["s", "argument"]],
-        ["done", ["r", 2]],
-      ],
-    },
-    bodyParts: ["0/1", "0/2"],
+    scripts,
+    bodyParts: Object.keys(scripts),
+    bodyCalls,
     generatedClass: true,
     move: true,
   };
