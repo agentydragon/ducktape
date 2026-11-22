@@ -1497,7 +1497,6 @@ py_test(
 
 py_test(
     name = "test_service_boundaries",
-    # Synthesizes both environments and checks History database wiring, environment authority, and notification scope.
     size = "medium",
     srcs = ["test_service_boundaries.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -1510,8 +1509,11 @@ py_test(
         ":runner_gateway",
         ":sandbox_controller",
         "//:conftest",
+        "//agentplane:crd_group",
+        "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
