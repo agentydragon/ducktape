@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
+from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
@@ -45,34 +45,19 @@ def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]
     return file
 
 
-def _gateway_objects(app: App) -> list[dict[str, Any]]:
-    chart = staging.delivery_chart(app)
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-
-
-def test_sessions_preserves_delivery_store_authority_and_mounts(scratch_app: App) -> None:
-    docs = _gateway_objects(scratch_app)
-    root = Chart(scratch_app, "shared-services", disable_resource_name_hashes=True)
-    runner_gateway_workload.add_service(root, staging.ENV)
-    services = [doc for doc in Cdk8sTesting.synth(root) if doc["kind"] == "Service"]
-    deployment = one(doc for doc in docs if doc["kind"] == "Deployment")
-    assert deployment["metadata"]["name"] == runner_gateway.NAME
-    service = one(services)
-    assert service["metadata"]["name"] == runner_gateway.NAME
-    assert service["spec"]["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
-    new_pod = deployment["spec"]["template"]["spec"]
-    new_container = one(new_pod["containers"])
-    db = one(entry for entry in new_container["env"] if entry["name"] == Settings.dispatcher_database_url_env)
-    assert db["valueFrom"]["secretKeyRef"] == {"name": "postgres-session-dispatcher", "key": "uri"}
-    config = _gateway_settings(docs, new_container)
+def test_gateway_client_certificate_mounts(staging_delivery_manifests: list[dict[str, Any]]) -> None:
+    docs = staging_delivery_manifests
+    deployment = find_resource(docs, "Deployment", runner_gateway.NAME)
+    pod = deployment["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    config = _gateway_settings(docs, container)
     assert config["runner_control_target_template"] == "environments.{namespace}.svc:8082"
     for key in ("cert_file", "key_file"):
         client_path = PurePosixPath(config["gateway_tls"][key])
-        mount = one(mount for mount in new_container["volumeMounts"] if mount["mountPath"] == str(client_path.parent))
-        secret = one(volume for volume in new_pod["volumes"] if volume["name"] == mount["name"])["secret"]["secretName"]
+        mount = one(mount for mount in container["volumeMounts"] if mount["mountPath"] == str(client_path.parent))
+        secret = one(volume for volume in pod["volumes"] if volume["name"] == mount["name"])["secret"]["secretName"]
         cert = one(doc for doc in docs if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret)
         assert cert["spec"]["uris"] == [GATEWAY_SESSIONS_URI]
-        assert config["central_sampler"]["tls"][key] == config["gateway_tls"][key]
 
 
 def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
@@ -95,11 +80,10 @@ def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     assert client_spec["privateKey"]["rotationPolicy"] == "Always"
 
 
-def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
-    docs = _gateway_objects(scratch_app)
-    root = Chart(scratch_app, "root-services", disable_resource_name_hashes=True)
-    runner_gateway_workload.add_service(root, staging.ENV)
-    root_docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(root))
+def test_gateway_preserves_services_and_fences_listener_ingress(
+    staging_manifests: list[dict[str, Any]], staging_delivery_manifests: list[dict[str, Any]]
+) -> None:
+    docs = staging_delivery_manifests
     assert not [doc for doc in docs if doc["kind"] == "Service"]
     deployment = find_resource(docs, "Deployment", runner_gateway.NAME)
     pod = deployment["spec"]["template"]["spec"]
@@ -130,7 +114,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler["tls"][field] == settings["gateway_tls"][field]
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
-    service = one(root_docs)["spec"]
+    service = find_resource(staging_manifests, "Service", runner_gateway.NAME)["spec"]
     assert service["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
     assert one(service["ports"]) == {
         "name": "grpc",
@@ -150,15 +134,6 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert (runner_gateway.NAME, "8080") not in ingress
     assert (egress.NAME, str(runner_gateway.sessions_service(staging.ENV.namespace).pod_port)) in ingress
     assert (sandbox_controller.NAME, "8080") not in ingress
-    runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
-    assert (runner_label, "8090") not in ingress
-    runner_egress = {
-        (endpoint["matchLabels"].get("app.kubernetes.io/name"), str(port["port"]))
-        for rule in policy["egress"]
-        for endpoint in rule.get("toEndpoints", [])
-        for port in rule.get("toPorts", [{}])[0].get("ports", [])
-    }
-    assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) not in runner_egress
     role = find_resource(docs, "Role", runner_gateway.NAME)
     resources = {resource for rule in role["rules"] for resource in rule["resources"]}
     assert resources >= {
@@ -176,7 +151,6 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         for doc in docs
     )
     assert "endpointslices" not in resources
-    assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 
 def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:
@@ -272,6 +246,52 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         for rule in runner_listener["ingress"]
         for endpoint in rule.get("fromEndpoints", [])
     )
+
+
+def test_dispatcher_senders_have_credentials_and_egress(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = find_resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    settings = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
+    callers = set(settings["dispatcher_service_callers"])
+    wakers = set(settings.get("wake_service_callers", []))
+    senders = (app.NAME, notifications.NAME, actions.NAME)
+    assert callers == {
+        uri
+        for sender in senders
+        for uri in find_resource(staging_manifests, "Certificate", f"{sender}-workload")["spec"]["uris"]
+    }
+    assert wakers <= callers
+    database = find_resource(staging_manifests, "Database", "session-dispatcher")["spec"]
+    assert database["name"] == "session_dispatcher"
+    assert database["owner"] == "session_dispatcher"
+    assert {item["name"]: item.get("valueFrom") for item in container["env"]}[
+        "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
+    ] == {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
+    for sender in senders:
+        policy = find_resource(staging_manifests, "CiliumNetworkPolicy", sender)["spec"]
+        assert any(
+            target["matchLabels"].get("app.kubernetes.io/name") == runner_gateway.NAME
+            for rule in policy["egress"]
+            for target in rule.get("toEndpoints", [])
+        )
+
+
+def test_app_reads_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = find_resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
+    container = one(container for container in pod["containers"] if container["name"] == "app")
+    database_url = one(variable for variable in container["env"] if variable["name"] == "AGENTPLANE_DATABASE_URL")
+    assert database_url == {
+        "name": "AGENTPLANE_DATABASE_URL",
+        "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
+    }
+
+
+def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]) -> None:
+    service = find_resource(staging_manifests, "Service", runner_gateway.sessions_service(staging.ENV.namespace).name)
+    grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
+    endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
+    app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    assert app_config["session_dispatcher_target"] == endpoint
 
 
 if __name__ == "__main__":

@@ -1492,26 +1492,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_session_dispatcher",
-    # Synthesizes both environments and checks the shared Gateway listener.
-    size = "medium",
-    srcs = ["test_session_dispatcher.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":app",
-        ":conftest",
-        ":notifications",
-        ":runner_gateway",
-        ":staging",
-        "//:conftest",
-        "//cluster/cdk8s/testing:manifests",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "notifications",
     srcs = ["notifications.py"],
