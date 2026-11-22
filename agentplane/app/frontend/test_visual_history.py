@@ -775,8 +775,17 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     if viewport.has_touch:
         await model_details.tap()
     else:
+        composer = view.page.get_by_role("textbox", name="Message")
+        await composer.focus()
         await model_details.hover()
-        await expect(model_details).to_have_css("text-decoration-style", "solid")
+        await expect(details).to_contain_text("the current model configuration is no longer available")
+        await expect(composer).to_be_focused()
+        await details.hover()
+        # Stay past the pointer-exit grace period to verify entry canceled the scheduled close.
+        await view.page.wait_for_timeout(300)
+        await expect(details).to_be_visible()
+        await view.page.mouse.move(0, 0)
+        await expect(details).to_have_count(0)
         await model_details.click()
     await expect(details).to_contain_text("the current model configuration is no longer available")
     model_expanded = await model.bounding_box()

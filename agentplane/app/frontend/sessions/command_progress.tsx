@@ -1,6 +1,6 @@
 import { FocusTrap, Popover, Stack, Text } from "@mantine/core";
 import { IconCheck } from "../ui/icons";
-import { type JSX, type ReactNode, useState } from "react";
+import { type JSX, type PointerEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */
 export type CommandStage =
@@ -142,28 +142,9 @@ export function CommandProgress({
       >
         {indicator}
         {reasonLabel || details ? (
-          <Popover position="bottom-start" shadow="md" width="min(22rem, calc(100vw - 2rem))" trapFocus returnFocus>
-            <Popover.Target>
-              <button
-                type="button"
-                className="agentplane-command-details-trigger"
-                aria-label={summary + " · delivery details"}
-              >
-                {summary}
-              </button>
-            </Popover.Target>
-            <Popover.Dropdown aria-label="Delivery details">
-              <FocusTrap.InitialFocus />
-              <Stack gap="xs">
-                {reasonLabel && (
-                  <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                    {reasonLabel}
-                  </Text>
-                )}
-                {details}
-              </Stack>
-            </Popover.Dropdown>
-          </Popover>
+          <CommandDetails summary={summary} reason={reasonLabel}>
+            {details}
+          </CommandDetails>
         ) : (
           <span>{summary}</span>
         )}
@@ -196,5 +177,85 @@ export function CommandProgress({
         {label}
       </span>
     </span>
+  );
+}
+
+function CommandDetails({
+  summary,
+  reason,
+  children,
+}: {
+  summary: string;
+  reason: string | null | undefined;
+  children: ReactNode;
+}): JSX.Element {
+  const [mode, setMode] = useState<"hover" | "activated" | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (mode !== "hover") return;
+    const dismissPreview = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMode(null);
+    };
+    window.addEventListener("keydown", dismissPreview);
+    return () => window.removeEventListener("keydown", dismissPreview);
+  }, [mode]);
+  const preview = (event: PointerEvent) => {
+    if (event.pointerType !== "mouse" || !window.matchMedia("(any-hover: hover)").matches) return;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setMode((open) => open ?? "hover"), 200);
+  };
+  const leave = (event: PointerEvent) => {
+    if (event.pointerType !== "mouse") return;
+    window.clearTimeout(timer.current);
+    // Allow the pointer to cross the gap from the status to its popover.
+    timer.current = window.setTimeout(() => setMode((open) => (open === "hover" ? null : open)), 250);
+  };
+  const activate = () => {
+    window.clearTimeout(timer.current);
+    setMode((open) => (open === "activated" ? null : "activated"));
+  };
+
+  return (
+    <Popover
+      position="bottom-start"
+      shadow="md"
+      width="min(22rem, calc(100vw - 2rem))"
+      opened={mode !== null}
+      onDismiss={() => {
+        window.clearTimeout(timer.current);
+        setMode(null);
+      }}
+      trapFocus={mode === "activated"}
+      returnFocus={mode === "activated"}
+    >
+      <Popover.Target>
+        <button
+          type="button"
+          className="agentplane-command-details-trigger"
+          aria-label={summary + " · delivery details"}
+          onPointerEnter={preview}
+          onPointerLeave={leave}
+          onClick={activate}
+        >
+          {summary}
+        </button>
+      </Popover.Target>
+      <Popover.Dropdown
+        aria-label="Delivery details"
+        onPointerEnter={() => window.clearTimeout(timer.current)}
+        onPointerLeave={leave}
+      >
+        <FocusTrap.InitialFocus />
+        <Stack gap="xs">
+          {reason && (
+            <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {reason}
+            </Text>
+          )}
+          {children}
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
