@@ -30,5 +30,8 @@ exports_files(
 
 exports_files(
     ["buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//devinfra/buildbuddy/kvm/x/nixos_worker_qualification:__pkg__",
+    ],
 )
