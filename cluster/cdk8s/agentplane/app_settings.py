@@ -153,7 +153,6 @@ def settings(
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
-    basic_policy_set: str,
     app_origin: str,
     oidc_issuer: str,
     electric_url: HttpEndpointUrl,
@@ -180,7 +179,6 @@ def settings(
                 title="Public coder",
                 template=sandbox_template,
                 policy_sets=[
-                    basic_policy_set,
                     PACKAGES_POLICY,
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,

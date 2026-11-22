@@ -10,8 +10,16 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
 )
-from cluster.cdk8s.agentplane.egress import BASIC_POLICY
+from cluster.cdk8s.agentplane.egress import BASIC_POLICY, PUBLIC_INTERNET_POLICY
 from cluster.cdk8s.testing.manifests import find_resource
+
+
+@pytest.mark.parametrize("identity_catalog", [False, True])
+def test_no_launch_preset_grants_public_internet(identity_catalog: bool) -> None:
+    env = staging.environment(identity_catalog=identity_catalog)
+    assert env.app is not None
+    for name, preset in env.app.config.sandbox_presets.items():
+        assert PUBLIC_INTERNET_POLICY not in preset.policy_sets, name
 
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
