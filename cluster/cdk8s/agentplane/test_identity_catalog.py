@@ -213,7 +213,7 @@ def external_delegation(scratch_app_factory: Callable[[], App]) -> list[dict[str
     app = scratch_app_factory()
     env = staging.ENV
     grants = staging.assignable_grants()
-    objects = []
+    objects: list[dict[str, Any]] = []
     for target in binding_delegation.external_scopes(env, grants):
         chart = binding_delegation.chart(app, env, target, grants)
         objects.extend(cast(ApiObject, obj).to_json() for obj in chart.node.find_all() if ApiObject.is_api_object(obj))
