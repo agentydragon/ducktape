@@ -36,6 +36,7 @@ from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import TEST_PASSWORD, grafana_server
+from testing.container_logs import stream_container_logs
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk, timescaledb_pg18
@@ -183,23 +184,6 @@ def _post_webhook(base_url: str, event: str, delivery: str, body: dict) -> None:
         trust_env=False,
     )
     assert response.status_code < 300, f"webhook returned {response.status_code}: {response.text}"
-
-
-def _stream_logs(container: Container, path: Path) -> Thread:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    output = path.open("wb")
-
-    def stream() -> None:
-        try:
-            for chunk in container.logs(stream=True, follow=True, stdout=True, stderr=True):
-                output.write(chunk)
-                output.flush()
-        finally:
-            output.close()
-
-    thread = Thread(target=stream, daemon=True)
-    thread.start()
-    return thread
 
 
 def _ready(url: str, *, container: Container, timeout: int = 60) -> None:
@@ -465,7 +449,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             .with_command("postgres -c timescaledb.telemetry_level=off -c max_locks_per_transaction=128")
         ) as postgres:
             log_threads.append(
-                _stream_logs(postgres.get_wrapped_container(), undeclared_outputs_dir() / "cdviz-db.log")
+                stream_container_logs(postgres.get_wrapped_container(), undeclared_outputs_dir() / "cdviz-db.log")
             )
             admin_url = (
                 f"postgresql://postgres:postgres@{postgres.get_container_host_ip()}:"
@@ -540,7 +524,9 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 detach=True,
             )
             containers.append(poll_server)
-            log_threads.append(_stream_logs(poll_server, undeclared_outputs_dir() / "cdviz-github-fixture.log"))
+            log_threads.append(
+                stream_container_logs(poll_server, undeclared_outputs_dir() / "cdviz-github-fixture.log")
+            )
 
             source = root / "ducktape/cluster/cdk8s/cdviz"
             config_dir = runtime / "config"
@@ -583,7 +569,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 detach=True,
             )
             containers.append(collector)
-            log_threads.append(_stream_logs(collector, undeclared_outputs_dir() / "cdviz-collector.log"))
+            log_threads.append(stream_container_logs(collector, undeclared_outputs_dir() / "cdviz-collector.log"))
             collector.reload()
             collector_port = collector.attrs["NetworkSettings"]["Ports"]["8080/tcp"][0]["HostPort"]
             collector_url = f"http://127.0.0.1:{collector_port}"

@@ -166,6 +166,7 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//grafana/visual_tests:visual_browser",
         "//grafana/visual_tests:visual_harness",
+        "//testing:container_logs",
         "//testing/frontend_visual:capture",
         "//testing/frontend_visual:context",
         "//third_party/containers:cdviz_collector",
