@@ -144,11 +144,23 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
         assert certificate["spec"]["uris"] == [MCP_EDGE_URI]
     ca = PurePosixPath(tls["client_ca_file"])
     assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
-    port = int(tls["listen"].rsplit(":", 1)[1])
-    assert any(p["containerPort"] == port for p in container["ports"])
-    assert any(
-        p["targetPort"] == port for p in find_resource(staging_manifests, "Service", "mcp-edge")["spec"]["ports"]
-    )
+    tls_port = int(tls["listen"].rsplit(":", 1)[1])
+    listeners = {"http": settings["http_port"], "grpc-tls": tls_port}
+    service = find_resource(staging_manifests, "Service", "mcp-edge")
+    assert {p["name"]: p["targetPort"] for p in service["spec"]["ports"]} == listeners
+    assert {p["name"]: p["containerPort"] for p in container["ports"]} == listeners
+
+    # Gateway and scrape traffic may reach HTTP. Only the staging App may reach TLS.
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "mcp-edge")["spec"]
+    app_peer = {
+        "matchLabels": {"app.kubernetes.io/name": "app", "k8s:io.kubernetes.pod.namespace": staging.ENV.namespace}
+    }
+    http_ports = [{"ports": [{"port": str(settings["http_port"]), "protocol": "TCP"}]}]
+    ingress = policy["ingress"]
+    assert any(rule.get("toPorts") == http_ports for rule in ingress)
+    assert [rule for rule in ingress if rule.get("toPorts") != http_ports] == [
+        {"fromEndpoints": [app_peer], "toPorts": [{"ports": [{"port": str(tls_port), "protocol": "TCP"}]}]}
+    ]
 
 
 def test_notifications_calls_backends_with_its_mounted_service_svid(staging_manifests: list[Body]) -> None:
