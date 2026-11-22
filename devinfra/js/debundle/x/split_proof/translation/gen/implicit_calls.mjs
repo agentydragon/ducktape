@@ -37,7 +37,24 @@ const installers = {
   },
 };
 
-export const requiredFamilies = { species: 14, array_factory: 3, inspect: 2, regexp: 5, installed_hook: 9 };
+const prototypeInstances = { Object: "({})", Array: "[]", Map: "new Map()" };
+const globalQueries = {
+  Array: { member: "isArray", args: "[]" },
+  Number: { member: "isFinite", args: "1" },
+  Reflect: { member: "has", args: '{ item: 1 }, "item"' },
+};
+
+export const requiredFamilies = {
+  species: 14,
+  array_factory: 3,
+  inspect: 2,
+  regexp: 5,
+  computed_intrinsic: 3,
+  spread_intrinsic: 3,
+  intrinsic_alias: 3,
+  global_descriptor: 3,
+  installed_hook: 9,
+};
 
 function program(name, family, knownGap, setup, run, observe = "const seen = meter.n;") {
   const lines = ["const x = 3;", "const y = 5;", ...setup, run, observe, "console.log(x + y, seen);"];
@@ -56,6 +73,61 @@ function program(name, family, knownGap, setup, run, observe = "const seen = met
       { order: reordered, behavior: "differs", stdoutDiffers: true, knownGap },
     ],
   };
+}
+
+function intrinsicPatches(pick, score) {
+  const prototypes = Object.entries(prototypeInstances).flatMap(([name, instance]) => {
+    const target = `${name}.prototype`;
+    const slot = `audit_${score()}`;
+    const key = JSON.stringify(slot);
+    const value = JSON.stringify(`patch_${score()}`);
+    const descriptor = `{ value: ${value}, configurable: true }`;
+    const read = pick([`const seen = (${instance}).${slot};`, `const { ${slot}: seen } = ${instance};`]);
+    const namespace = pick(["Object", "Reflect"]);
+    const aliasedAssignment = pick([
+      `const Constructor = ${name}; Constructor.prototype.${slot} = ${value};`,
+      `const proto = ${target}; proto.${slot} = ${value};`,
+    ]);
+    return [
+      program(
+        `computed ${namespace} mutator of ${target}`,
+        "computed_intrinsic",
+        "P1",
+        ['const method = "defineProperty";'],
+        `${namespace}[method](${target}, ${key}, ${descriptor});`,
+        read
+      ),
+      program(
+        `spread forwarding of ${namespace} mutator to ${target}`,
+        "spread_intrinsic",
+        "P1",
+        ["const apply = (fn, ...args) => fn(...args);"],
+        `apply(${namespace}.defineProperty, ${target}, ${key}, ${descriptor});`,
+        read
+      ),
+      program(
+        `generator patches ${target} through an alias`,
+        "intrinsic_alias",
+        "P1",
+        [`function* install() { ${aliasedAssignment} yield 1; }`],
+        "install().next();",
+        read
+      ),
+    ];
+  });
+  const globals = Object.entries(globalQueries).map(([name, { member, args }]) => {
+    const query = pick([`${name}.${member}`, `${name}[${JSON.stringify(member)}]`]);
+    const replacement = `{ ${member}() { return "replacement_${score()}"; } }`;
+    return program(
+      `global descriptor for ${name}`,
+      "global_descriptor",
+      "P1",
+      [],
+      `Object.defineProperty(globalThis, ${JSON.stringify(name)}, { value: ${replacement}, configurable: true });`,
+      `const seen = ${query}(${args});`
+    );
+  });
+  return [...prototypes, ...globals];
 }
 
 export function generateCases(seed) {
@@ -135,7 +207,7 @@ export function generateCases(seed) {
       )
     );
   });
-  return [...species, ...factories, ...inspect, ...regexp, ...hooks].map((test) => ({
+  return [...species, ...factories, ...inspect, ...regexp, ...intrinsicPatches(pick, score), ...hooks].map((test) => ({
     ...test,
     name: `seed ${seed}: ${test.name}`,
   }));
