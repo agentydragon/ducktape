@@ -228,8 +228,11 @@ def test_staging_picker_and_presets_offer_models_the_harness_can_run() -> None:
             assert model_id not in harnesses[Harness.CLAUDE]
             if model_id != model.provider_model:
                 assert model_id not in harnesses[Harness.CODEX]
-    for preset in app.thread_presets.values():
-        assert preset.model in harnesses[preset.harness]
+    options = {option.model: option for option in app.models.models}
+    for name, preset in app.thread_presets.items():
+        assert preset.model in harnesses[preset.harness], name
+        if preset.reasoning_effort is not None:
+            assert preset.reasoning_effort in options[preset.model].reasoning_efforts, name
     for option in app.models.models:
         if option.model in sampler:
             assert set(option.reasoning_efforts) <= sampler[option.model].reasoning_efforts

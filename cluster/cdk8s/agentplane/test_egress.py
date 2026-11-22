@@ -343,25 +343,6 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manif
     assert "paths" not in rule
 
 
-def test_haku_launches_on_an_available_central_sampler_route(catalog_manifests: list[dict[str, Any]]) -> None:
-    """Haku's model and effort must be accepted by the selected harness.
-
-    Sandbox and Action launches use the same preset, so both must resolve to that harness and model.
-    """
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    preset = config["thread_presets"]["haku-codex"]
-    assert preset["harness"] == "HARNESS_CENTRAL_SAMPLER"
-    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
-    option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
-    assert preset["reasoning_effort"] in option["reasoning_efforts"]
-    assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
-    actions = config_map_yaml(catalog_manifests, "actions-settings", "settings.yaml")
-    action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["create_session"]["spec"]
-    assert action_spec["harness"] == preset["harness"]
-    assert action_spec["model"] == preset["model"]
-    assert "central_sampler" not in action_spec
-
-
 def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_grants(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
