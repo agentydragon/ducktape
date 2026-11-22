@@ -443,8 +443,7 @@ def test_allowance_warning(
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
-        assert "7d unmatched 1 ($15)" in menu_text
-        assert "30d unmatched 1 ($15)" in menu_text
+        assert "Unmatched: 7d: 1 txn ($15) · 30d: 1 txn ($15)" in menu_text
         assert "Oldest linked sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="allowance warning")
 
