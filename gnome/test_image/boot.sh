@@ -1,14 +1,9 @@
 #!/bin/bash
 # One-shot boot for the render test container.
 #
-# Runs the postinst-equivalent setup that rules_distroless skips
-# (gsettings schemas, gdk-pixbuf loader cache, MIME database, dbus
-# machine-id), starts Xvfb on :99, forks a long-lived session bus via
-# dbus-launch, and writes its address to /tmp/dbus.env. Touches
-# /tmp/boot.ready and blocks. The test driver execs into the container
-# to drive everything else (start gnome-shell, poll readiness,
-# screenshot, kill shell) — keeping the orchestration logic in Python
-# where errors are attributable per step.
+# Generates the D-Bus machine ID, starts Xvfb and a session bus, and
+# publishes the bus address in /tmp/dbus.env. Touches /tmp/boot.ready
+# and blocks until Xvfb exits.
 #
 # Usage (called once per container by the test driver):
 #   docker exec <container> /usr/local/bin/boot.sh
@@ -21,12 +16,6 @@ set -euo pipefail
 # menu test driver relies on the menu landing entirely on-screen.
 WIDTH="${RENDER_WIDTH:-1920}"
 HEIGHT="${RENDER_HEIGHT:-500}"
-
-glib-compile-schemas /usr/share/glib-2.0/schemas/
-update-mime-database /usr/share/mime
-# libgdk-pixbuf2.0-bin installs the binary under the lib dir; rules_distroless
-# skips the update-alternatives postinst that would symlink it onto PATH.
-/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders --update-cache
 
 mkdir -p /var/lib/dbus
 dbus-uuidgen --ensure=/var/lib/dbus/machine-id
