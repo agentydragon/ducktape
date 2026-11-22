@@ -63,7 +63,7 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=198e5140b977fee156a0bfd5b69d9a99a3411a87bdaa031f10b195f36e2abd5a",
+        "./evidence.json?v=ecaf9f6136f49b1f92eb0b3796741406fd0ccb2df8fb4d8ac32772419d7e61d2",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
@@ -83,6 +83,9 @@
       };
       const kvmScaleUp = evidence.kvm_scale_up_signal;
       const kvmDisk = evidence.kvm_work_disk_requirements;
+      const kvmFootprint = evidence.kvm_stack_disk_breakdown;
+      const diskGiB = (bytes) =>
+        bytes == null ? "Unmeasured" : `${(bytes / 2 ** 30).toFixed(2)} GiB`;
       const cacheTrial = evidence.kvm_shared_cache_trial;
       const kvmPlacement = evidence.kvm_worker_placement;
       const kvmWorkDisk = evidence.kvm_work_disk_trial;
@@ -284,8 +287,83 @@
  )}
  <${Text} my="sm">KubeVirt inherited 50 GiB without a sizing run. Firecracker’s 20 GiB followed one post-run disk reading. BuildBuddy v2.321.0 parses the <code>GB</code> suffix as GiB. The Docker executor’s fit checks use CPU, memory, concurrency and other resources and omit free disk. It can start actions below the declared value. ${pr(15355)} · ${pr(15351)} · ${link(kvmDisk.sources.parser, "Byte parser")} · ${link(kvmDisk.sources.docker_executor_task_fit, "Executor fit check")}<//>
  <${Text} my="sm">The ${pr(18898)} unit correction to the ${pr(18894)} shadow rule changed one of 1,441 historical minute targets, from five to six at 00:42 UTC on 22 November. The 08:06 and 11:09 UTC examples on 21 November kept their targets. Trying 30 GiB in the corrected replay would lower the target by one worker in two minutes. These are offline targets.<//>
- <${Text} my="sm"><strong>Canary KubeVirt at 30 GiB free before lowering its threshold.</strong> Run cold and warm fixtures on the current 80 GiB PVC, with finer sampling through execution setup and cleanup and checks for disk pressure and test failures. Keep Firecracker at 20 GiB. Across all 5,520 guest disk scrapes, 278 showed less than 30 GiB free and the minimum was 20.47 GiB. Keep the PVC size and test overlapping actions separately.<//>
+ <${Text} my="sm"><strong>KubeVirt now requests 30 GiB on devel.</strong> ${pr(18902)} merged at 05:31 UTC on 22 November. Firecracker still requests 20 GiB. Track cold and warm fits and disk-pressure failures on the current 80 GiB PVC. Across all 5,520 guest disk scrapes, 278 showed less than 30 GiB free and the minimum was 20.47 GiB. Keep the PVC size and test overlapping actions separately.<//>
  <${Text} size="sm" c="dimmed">21 November 05:00 to 22 November 05:00 UTC · 48 of 72 invocations sampled across the day. Joined exact execution IDs to guest launcher pods and used physical disk scrapes about one minute apart. Of 76 executions, 63 passed with complete telemetry, four had nonzero exit codes with telemetry, five were unsuccessful or incomplete, and four lacked endpoint scrapes. Net change can miss brief peaks. The assignment number comes from the execution response and describes the runner’s reuse history. ${build("0b5493f6-ac65-5e3b-84cd-8ec6046a08c9", "Lowest-space KubeVirt pass")} · ${link("./evidence.json", "Exact executions, queries and method")}<//>
+</section>
+<section id="kvm-disk-breakdown">
+  <${Title} order=${3} mt="lg">What uses the KVM work disk<//>
+  <${Text} my="sm">${kvmFootprint.findings.reclaim} ${kvmFootprint.trim_trial ? build(kvmFootprint.trim_trial.invocation, "Private filesystem trim trial") : null}<//>
+  <${Text} my="sm">KubeVirt keeps more image data than Firecracker. Firecracker adds live guest disks and checkpoint copies while the scenario runs. Both actions run inside Docker and use a sparse 32 GiB file for the inner K3s ext4 filesystem. The checkpoints belong to the Firecracker guest inside the action. The BuildBuddy worker pays for that file's allocated blocks and shares its Docker image layers and file cache across actions. ${link(kvmFootprint.sources.worker_paths, "Worker directory layout")} · ${link(kvmFootprint.sources.backing_disk, "Sparse ext4 image")}<//>
+  ${table(
+    [
+      "Required CI example",
+      "Net worker drop",
+      "K3s before → final",
+      "OCI content / layers",
+    ],
+    Object.values(kvmFootprint.historical_actions).map((r) => [
+      build(
+        r.invocation,
+        `${r.suite} · ${r.task_number === 1 ? "First" : "Reused"}`,
+      ),
+      `${r.outer_net_drop_gib.toFixed(2)} GiB`,
+      `${diskGiB(r.before_import.inner_used_bytes)} → ${diskGiB(r.final.inner_used_bytes)}`,
+      `${diskGiB(r.final.content_bytes)} / ${diskGiB(r.final.overlay_snapshot_bytes)}`,
+    ]),
+    355,
+  )}
+  <${Text} size="sm" c="dimmed">Four higher-drop passes selected from the 21–22 November sizing cohort. Image bytes are within K3s used bytes. The final fixture snapshot follows workload cleanup. The two first assignments came from the same CI invocation on separate workers. Both reused actions also reattached their warm K3s baselines, with image layers already present before import. Their outer disk drop measures a different filesystem and observation window.<//>
+  <${Text} my="sm">Across all 63 passes, median downloaded input bytes were 2.72 GiB on first KubeVirt assignments and 0.94 GiB on first Firecracker assignments. On later assignments those medians were 0.26 and 0.36 GiB. BuildBuddy separately reports median uploads below 0.05 GiB in each group. In the largest sampled input transfers, KubeVirt staged a 535 MiB guest root layer while Firecracker staged a 713 MiB boot layer. Transfers count bytes staged through REAPI. A worker sample counted ${diskGiB(kvmFootprint.host_summary.shared_workspace_bytes)} of the workspace by inode in the file cache. Its workspace occupied ${diskGiB(kvmFootprint.host_summary.unique_workspace_bytes)} beyond shared cache files. ${link("./evidence.json", "Transfer and inode accounting")}<//>
+  ${table(
+    ["Fresh fixture on one SSD worker", "KubeVirt", "Firecracker"],
+    [
+      ["Peak sparse backing file", "backing_allocated_bytes"],
+      ["Peak used inside that filesystem", "inner_used_bytes"],
+      ["OCI content at final sampling", "content_bytes"],
+      ["Unpacked overlay layers at final sampling", "overlay_snapshot_bytes"],
+      ["Peak local-path PVC files inside ext4", "local_path_bytes"],
+      ["Sparse backing file after cleanup", "retained_backing_bytes"],
+    ].map(([label, key]) => [
+      label,
+      diskGiB(kvmFootprint.host_summary.vm[key]),
+      diskGiB(kvmFootprint.host_summary.firecracker[key]),
+    ]),
+    365,
+  )}
+  <${Text} my="sm">${kvmFootprint.findings.guest_disks} ${link(kvmFootprint.sources.guest_workspace, "KubeVirt workspace allocation")} · ${link(kvmFootprint.sources.firecracker_storage, "Firecracker checkpoint copies")}<//>
+  <${Text} my="sm">${kvmFootprint.findings.shared_disk} The worker’s NixOS root is a separate KubeVirt containerDisk. These measurements cover the worker’s mounted ext4 work PVC inside the VM. ${link(kvmFootprint.sources.worker_mount, "Worker disk mounts")}<//>
+  <${Accordion} variant="contained" mt="sm">
+    <${Accordion.Item} value="outer-allocation">
+      <${Accordion.Control}>Worker allocation by directory<//>
+      <${Accordion.Panel}>
+        ${table(
+          ["Allocated blocks", "KubeVirt point", "Firecracker point"],
+          [
+            ["Total used on work PVC", "bytes"],
+            ["Docker store", "docker_bytes"],
+            ["BuildBuddy input cache", "filecache_bytes"],
+            [
+              "Action workspaces beyond input-cache links",
+              "unique_workspace_bytes",
+            ],
+            ["Worker runtime containerd (<1 MiB)", "outer_containerd_bytes"],
+          ].map(([label, key]) => [
+            label,
+            diskGiB(kvmFootprint.host_summary.vm.outer_at_selected_sample[key]),
+            diskGiB(
+              kvmFootprint.host_summary.firecracker.outer_at_selected_sample[
+                key
+              ],
+            ),
+          ]),
+          355,
+        )}
+        <${Text} size="sm" c="dimmed" mt="sm">One snapshot per action during its suite, on the same worker with one active action slot. The later Firecracker point includes the KubeVirt runner still paused in Docker. Filesystem metadata and concurrently changing files account for small differences between the total and the sum of directory measurements.<//>
+      <//>
+    <//>
+  <//>
+  <${Text} my="sm">For KubeVirt, start with the largest uncompressed OCI inputs if the aim is to lower persistent footprint. gzip can reduce stored OCI content and input-cache bytes. Unpacked layers will still occupy space. Measure import time, allocated blocks and warm reuse on the same worker. Shrinking the logical 32 GiB K3s disk or the sparse guest workspace capacity has a much smaller measured target. ${link(kvmFootprint.sources.image_evidence, "Exact KubeVirt OCI inputs")}<//>
+  <${Text} size="sm" c="dimmed">${kvmFootprint.findings.diagnostic_method} ${build(kvmFootprint.manual_actions.vm.invocation, "KubeVirt TestRunner")} · ${build(kvmFootprint.manual_actions.firecracker.invocation, "Firecracker TestRunner")} · ${link("./evidence.json", "Allocation samples and methods")}<//>
 </section>
 </section>
 <section id="shard-replay">

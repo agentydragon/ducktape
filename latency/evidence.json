@@ -46771,5 +46771,1110 @@
         }
       ]
     }
+  },
+  "kvm_stack_disk_breakdown": {
+    "source_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+    "historical_actions": {
+      "vm-first": {
+        "suite": "KubeVirt",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "execution_id": "/uploads/4bdcc5a6-aec4-4a53-a20c-6c87bc66c914/blobs/3769ff425c034866c4e1d3a5e0f19d9724363cacf3326bc02a8f9e0a28bc3e89/1989",
+        "outer_net_drop_gib": 11.263,
+        "task_number": 1,
+        "runner_receipt_reports_preceding_action": false,
+        "baseline_outcome": "cold",
+        "before_import": {
+          "inner_used_bytes": 269008896,
+          "overlay_snapshot_bytes": 8192,
+          "inner_containerd_bytes": 151552
+        },
+        "final": {
+          "inner_used_bytes": 6368509952,
+          "overlay_snapshot_bytes": 3389480960,
+          "content_bytes": 2654248960,
+          "inner_containerd_bytes": 6048702464
+        }
+      },
+      "vm-later": {
+        "suite": "KubeVirt",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "f827ad61-3bd4-5573-9c39-2305f3e6e10c",
+        "execution_id": "/uploads/ce89e03e-49d7-4432-80c5-3160158c32ab/blobs/a937d97172b06b5ec3de7db2f953184b6efc7ebdeed8a56b2890b821cf3a2f6d/1989",
+        "outer_net_drop_gib": 2.465,
+        "task_number": 3,
+        "runner_receipt_reports_preceding_action": true,
+        "baseline_outcome": "warm",
+        "before_import": {
+          "inner_used_bytes": 6403334144,
+          "overlay_snapshot_bytes": 3388227584,
+          "content_bytes": 2654244864,
+          "inner_containerd_bytes": 6047371264
+        },
+        "final": {
+          "inner_used_bytes": 6405156864,
+          "overlay_snapshot_bytes": 3389497344,
+          "content_bytes": 2654253056,
+          "inner_containerd_bytes": 6049230848
+        }
+      },
+      "fc-first": {
+        "suite": "Firecracker",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "execution_id": "/uploads/4df80213-064c-413d-bbc2-741fad1ee1c4/blobs/f82c1b7c40feb807fa0bfc9aa4914e76195ddd5fd58608b07b9f3897a0019cae/1341",
+        "outer_net_drop_gib": 17.468,
+        "task_number": 1,
+        "runner_receipt_reports_preceding_action": false,
+        "baseline_outcome": "cold",
+        "before_import": {
+          "inner_used_bytes": 268873728,
+          "overlay_snapshot_bytes": 8192,
+          "inner_containerd_bytes": 151552
+        },
+        "final": {
+          "inner_used_bytes": 4412727296,
+          "overlay_snapshot_bytes": 2339287040,
+          "content_bytes": 1773662208,
+          "inner_containerd_bytes": 4116639744
+        }
+      },
+      "fc-later": {
+        "suite": "Firecracker",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "70e4a372-0892-5cc1-8fd7-3120f7bf04c2",
+        "execution_id": "/uploads/c8ee50ee-03ae-4b4c-b87e-ef1ed35ed8e7/blobs/8f876450e1ae1b1a735bdbe22bd21a860eedabaa88e866aa53c497b471c32531/1341",
+        "outer_net_drop_gib": 4.728,
+        "task_number": 3,
+        "runner_receipt_reports_preceding_action": true,
+        "baseline_outcome": "warm",
+        "before_import": {
+          "inner_used_bytes": 4424474624,
+          "overlay_snapshot_bytes": 2338336768,
+          "content_bytes": 1773383680,
+          "inner_containerd_bytes": 4115275776
+        },
+        "final": {
+          "inner_used_bytes": 4426493952,
+          "overlay_snapshot_bytes": 2339733504,
+          "content_bytes": 1773383680,
+          "inner_containerd_bytes": 4117336064
+        }
+      }
+    },
+    "worker_docker_images": {
+      "executor": {
+        "image_id": "sha256:4902cb0f887aff105dbfa15bd69c7c71b69ebc3b065bfc5e1a2252fe5b19c8e7",
+        "layers": {
+          "sha256:81754f5dc87d69b94c676f0252b4d2de8771ff46ec56aefc7abf6e8c4028c905": 133914624,
+          "sha256:99910ec8e0a141bd45eabae9e4479af99f504deb79950b4dc1a4a317b0408777": 286040064,
+          "sha256:9a0742591a3eeb1f1cc27601ccae7108126979517343b579322d5ded4d2b9999": 351248384,
+          "sha256:38634767b2c26e9ef08a3c93c5951c467a4a13107019fb49578bf72bc97fd87d": 28672,
+          "sha256:f6cb6dd69a2b92eb8df73f5e477c8eacbe74a0a7394da95ab063132bee1044ef": 7548928,
+          "sha256:c09343d88bd90c306489994e0251ccaaccbaee9d9d2141f4ce9c374f74d9a01f": 16384,
+          "sha256:c758e5752e14ba9d8386a8045df757668448280670982f0c6104fb713ce2d855": 81588224,
+          "sha256:a90042bd21303bec74d09afc2d8ad9c3e5004d1a4f3fa97f5581fd8309795f72": 13099008,
+          "sha256:df83874bff555478b3721ab55bdeff35f19831b9ab7c6c08f3318e233f5dee29": 7622656,
+          "sha256:f6c5db13e74e41b2b4de6ef0cf7f3dde5f0632d5a50d928af6ca48fe24eeb20b": 72871936,
+          "sha256:c6d507ef9a9d001948e8d75bc1f413473756f7df7df68559a37ecaa6de95e684": 8192,
+          "sha256:fd1173e01f2479ae1b675fdd536c57c71e40e9d6549110c386b80fa33f900b43": 626716672,
+          "sha256:fcc76ff44324ac98bde7555c0787de2a2828f9f45d849c58db7fc84e334769a7": 4096
+        },
+        "allocated_bytes": 1580707840
+      },
+      "rbe": {
+        "image_id": "sha256:eabfaae9d1277143c0a1079569fad0c0e8051413628bcbc540bc80e1a6331c0b",
+        "layers": {
+          "sha256:45a01f98e78ce09e335b30d7a3080eecab7f50dfa0b38ca44a9dee2654ac0530": 87576576,
+          "sha256:81f305257d83c467399eae819b7ad2fb9be35c5de48d08ea157a40f33207a7ec": 126533632,
+          "sha256:d784ee0050b279b26fe5b5fe9a1c0512f2f0533575d58caf7db9b6c9004b27de": 1990656,
+          "sha256:1a3a7a461bed1252c43406dc8a89058903d8755bbcd0a86e9131564fa610099a": 297496576,
+          "sha256:96bf002aa10b8f5e130a27c4bdea4d6a66f3ac0c80ab8fe91d8e3250a3b21d21": 226869248,
+          "sha256:75ce3bbfdd6c492ef475d8b98cc4d805d9e30a3def1ff41373dafb058295c3b0": 402219008,
+          "sha256:df33b7e1621afd4c146cb0b938590ae798a10c62bf4fcba48e8aa9dfe251e2fa": 22994944,
+          "sha256:299aae0acba67177c204a28a6c1dab89cec69652af881235f5ad0ba115964d61": 53248,
+          "sha256:e8be8f6243b41e077e4aacece447c35c484998bda9fba2b51e9dfdf70e9156e5": 204800,
+          "sha256:654e67ec0042767404381858f075311828d5822ff39417a4677cd8a316424a68": 81920,
+          "sha256:c0d62bfd62d4ebdfacdcb1f49d866e40345fc6dcc5bc312e3febc0167731c97a": 537407488,
+          "sha256:33b4bc14aeb3060f2013b4c063f3baeab63cea5e54bdcfa576bc1fa252992d7e": 16384,
+          "sha256:7aa90fda397d2ffb6bdfa7093039aecd36da85e4e861342db28e26641c18a23a": 83787776
+        },
+        "allocated_bytes": 1787232256
+      }
+    },
+    "sources": {
+      "worker_paths": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/kvm/worker/executor.yaml#L15-L33",
+      "worker_docker": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/kvm/worker/daemon.json",
+      "backing_disk": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/system_tests/k3s/build_data_disk.py#L13-L34",
+      "worker_mount": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/kvm/x/nixos_worker/nixos.nix",
+      "recycling_probe": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/system_tests/k3s/recycling_probe.py",
+      "guest_workspace": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/system_tests/vm/block_storage.py",
+      "firecracker_storage": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/firecracker/host/storage.go#L322-L411",
+      "image_evidence": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/debug/kvm_pool_rollout/2026_11_21_kvm_worker_placement.md#image-inventory-and-import-time"
+    },
+    "transfer_receipts": [
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/87fe8cc0-df98-4a8e-97c3-c4ce5ab97b0d/blobs/d7b16275ecfe81d002d595192bcad0546e7f6548384195cb7b510d920bc371d3/1341",
+        "first_assignment": true,
+        "download_bytes": 949342056,
+        "upload_bytes": 14614392
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/dc977b6e-730e-4b5b-9409-c14df02bd54b/blobs/8dfe662cad0d2358a74c238546e99387616699a2726aa80534d0c66025bdd6b8/1989",
+        "first_assignment": true,
+        "download_bytes": 1976892929,
+        "upload_bytes": 37789977
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/8c523a97-204f-44d0-a5bb-8d51f5bf7615/blobs/add8a515dc3f76ea6a2e2984073db6523da195fee47003e244fb1621d3131aac/1341",
+        "first_assignment": true,
+        "download_bytes": 2043581608,
+        "upload_bytes": 14627937
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/323bf42b-c0fa-4447-a015-3964b1251721/blobs/0043ffdb227b3b9644842934b7852c44b19b54bd331ff4a7f3d71717c4cbd6ee/1989",
+        "first_assignment": false,
+        "download_bytes": 28057,
+        "upload_bytes": 48637424
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b773bad4-d0d6-4bbb-a4cc-a1be216016ec/blobs/f6209f65c08ade295bbcbdc1f97c3915c3cae5294ee05a202faef026f25debad/1341",
+        "first_assignment": true,
+        "download_bytes": 2058442336,
+        "upload_bytes": 15927274
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/f326a9cf-f292-4e78-807c-a2b97d14a407/blobs/80cdff6c2a1b576832757da38253dc9746c4f0ed72886382cb8f4135b5cacc75/1341",
+        "first_assignment": true,
+        "download_bytes": 328060849,
+        "upload_bytes": 16822238
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/64cf87bb-5572-4f3d-a095-a1735f4b3b17/blobs/aa4828094b4a235fca3b947e40512a3bc930256893cd84146f7a5d06aee5bc31/1989",
+        "first_assignment": false,
+        "download_bytes": 302382454,
+        "upload_bytes": 49772821
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/04c169e0-c606-497f-a3c6-c05abcdbf8f9/blobs/0a0744a11144a0d41db75142288ed77cc4c39b772635d021cea52261e9bd41e9/1341",
+        "first_assignment": true,
+        "download_bytes": 965051180,
+        "upload_bytes": 15659220
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/4e9cf88f-4723-490f-b4aa-c82ea6442e5c/blobs/dba332ab252f4c94e63eb60d2e87523d6894ee8a7affd0f8d4f5b5a67a622aa4/1341",
+        "first_assignment": false,
+        "download_bytes": 385265354,
+        "upload_bytes": 22332640
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/9db4b139-06f9-4775-900f-84242c4880ed/blobs/548eac25a7cbd38f3fe6539965ce85097dfadf8ff97d9b4f136102c8bcd48457/1989",
+        "first_assignment": true,
+        "download_bytes": 416040839,
+        "upload_bytes": 35793345
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/4a38d7c7-9240-45ba-9945-81f6a2ee87a4/blobs/9ef0e6681a5831ada116c819d86eebf9475751fc327a4cdfc42f75a7b16a2fb0/1341",
+        "first_assignment": true,
+        "download_bytes": 0,
+        "upload_bytes": 16157080
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/669ba462-0f3e-4cf5-9e92-cd5428cd246a/blobs/26b559ab8da5bf197fb13eb4bd3b7490cb9c59a02ebb080ace8e121dae49f5dc/1341",
+        "first_assignment": true,
+        "download_bytes": 0,
+        "upload_bytes": 14579302
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/6f7ae0a9-79b3-4cb6-9194-eba8a8928f6f/blobs/77ca4f42b31e2105489439238c3b21d0bb1a3242420ba9d25ed9fb8f9c05d43e/1341",
+        "first_assignment": true,
+        "download_bytes": 2043195135,
+        "upload_bytes": 16420453
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/e9a24682-74ad-4366-8ff1-98ccd0380bae/blobs/bac942713638c2aef385f207b0d8eca39492f3ef9a5cee1724828e20c5b4fec3/1989",
+        "first_assignment": true,
+        "download_bytes": 2900124172,
+        "upload_bytes": 37072358
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/eb95b9d6-8c65-43a5-9eb2-5d6eb0e316e8/blobs/a9353a4cf6925674937ff028c023a46d73c3420f403525b4c1096f53db91b53b/1341",
+        "first_assignment": true,
+        "download_bytes": 1500769010,
+        "upload_bytes": 15820740
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/7f7ef043-138f-4b5e-bf78-f097a1332bf6/blobs/b1c8d1377a342e32706518bceb062f06a260919ef3dcc2b46e82b1d9ed77d1c9/1989",
+        "first_assignment": false,
+        "download_bytes": 472894333,
+        "upload_bytes": 49002683
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/a9529494-7643-4141-a6c2-c3ca9d59426d/blobs/26845ffde3df31b40fe0fbfd7c23f75673ffdcceb2e078b52d180ada17a871e2/1341",
+        "first_assignment": false,
+        "download_bytes": 286973,
+        "upload_bytes": 21499848
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/738428d2-5069-43b8-9245-4125b87cafa2/blobs/6101f52056094a55dbca7079f1bd0b7ccc8487c7c92321a67483d930e33a607a/1989",
+        "first_assignment": false,
+        "download_bytes": 277563,
+        "upload_bytes": 46745477
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/3a4392b9-4aa1-4089-b7df-1af8ac1f92e6/blobs/4fef18df9e11f5bf793cd33b04cde73ddb589a77d6df81a84174625c5cfdd9d4/1341",
+        "first_assignment": false,
+        "download_bytes": 415012177,
+        "upload_bytes": 22550205
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/783af886-6378-4880-9b99-fd61813ab82d/blobs/292374217d4e3524512527b9c73f4215ccf717d56af133d25537f062b86444f6/1989",
+        "first_assignment": false,
+        "download_bytes": 390857245,
+        "upload_bytes": 47725437
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/9e45f556-9daa-48f0-b1b8-58a57659a24c/blobs/bfe7390938cefc229bb693b07852447ed513f9d0b1974f51de5d102e367cc3c7/1341",
+        "first_assignment": false,
+        "download_bytes": 132337063,
+        "upload_bytes": 21011791
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/03836627-68fb-4fdc-8fb7-35ecf19058eb/blobs/cfff92ac3520b48b6d7039e428f9690e54dd307a28100a96db0cb66eb7ee4245/1989",
+        "first_assignment": false,
+        "download_bytes": 65853476,
+        "upload_bytes": 46909197
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/4466d59c-edd6-4e10-9c27-33c16a454dd1/blobs/c122b725383416321d9c629e238ed7eb410689f3c1d7ed8082a28b0919911391/1989",
+        "first_assignment": true,
+        "download_bytes": 2945048350,
+        "upload_bytes": 34720857
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/c8ee50ee-03ae-4b4c-b87e-ef1ed35ed8e7/blobs/8f876450e1ae1b1a735bdbe22bd21a860eedabaa88e866aa53c497b471c32531/1341",
+        "first_assignment": false,
+        "download_bytes": 1228,
+        "upload_bytes": 22113418
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/bc02dd94-2eec-481d-b12c-fbdafb6914aa/blobs/4844ebcba756af6a95109fd838161800382404edd16dbe809b58b81f10a84f7a/1341",
+        "first_assignment": false,
+        "download_bytes": 177828135,
+        "upload_bytes": 23728421
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b7c06a1e-6329-4ff6-b1eb-4a0ee1d0d6cc/blobs/c2d24f2de59a6a50a2581897ea351fdc3d9a6c64f2fd5215ed13236ecf4700c6/1341",
+        "first_assignment": true,
+        "download_bytes": 2043582124,
+        "upload_bytes": 14601415
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/4df80213-064c-413d-bbc2-741fad1ee1c4/blobs/f82c1b7c40feb807fa0bfc9aa4914e76195ddd5fd58608b07b9f3897a0019cae/1341",
+        "first_assignment": true,
+        "download_bytes": 2058432530,
+        "upload_bytes": 14829480
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/4bdcc5a6-aec4-4a53-a20c-6c87bc66c914/blobs/3769ff425c034866c4e1d3a5e0f19d9724363cacf3326bc02a8f9e0a28bc3e89/1989",
+        "first_assignment": true,
+        "download_bytes": 2945327669,
+        "upload_bytes": 35236512
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/c96ab6ed-a327-47ce-876b-386e067fbc2a/blobs/71227ef3ba7408c15dac5083129f72f8ea9cc4e8b2ea34010100761430ec75e6/1341",
+        "first_assignment": false,
+        "download_bytes": 883530521,
+        "upload_bytes": 22500717
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/18cfdca2-32f4-40ef-bdf6-6a59a8a8f8e7/blobs/dd9157114dff0e4af156fa0a75abf5644287bacd93f4de3eb60d151f002cc7c7/1989",
+        "first_assignment": true,
+        "download_bytes": 2941631303,
+        "upload_bytes": 34853580
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/c161a1fc-dd8a-41a0-a3ee-ade562996216/blobs/0a112ed0718763379ea342a22593dafeabf2cda513c6d66181a87e92d61e1576/1989",
+        "first_assignment": false,
+        "download_bytes": 404427498,
+        "upload_bytes": 47660896
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/33cb4082-c5d4-4140-868a-1d3610c0f4a0/blobs/54280de7c0472231e498a515a85c872410ce9469d5833c58733d9966560c849c/1341",
+        "first_assignment": false,
+        "download_bytes": 373666611,
+        "upload_bytes": 22811381
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/c876a71a-5b5a-48f6-9e64-a823ee302cab/blobs/d14b1506257e4c5920e51a945fa9dbe09046807cca0c0b035259e3ae980a3337/1341",
+        "first_assignment": false,
+        "download_bytes": 1119929870,
+        "upload_bytes": 22101417
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/2e283dda-4a2f-41d9-9717-24f6655d6a39/blobs/7d85b806b04d1543c040e6c99d981442075349ee23b08ebda3dcb485106c7697/1989",
+        "first_assignment": false,
+        "download_bytes": 417331510,
+        "upload_bytes": 46467206
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/539d20d7-6478-48db-bbb4-1b349c3935aa/blobs/13148c6c4475cb8bb4b7697ad587e980319339f864870b5accf809557e22599f/1341",
+        "first_assignment": true,
+        "download_bytes": 1013167981,
+        "upload_bytes": 14792297
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/66903b34-a311-4414-aa67-9c9328fc5d6a/blobs/8a42ee4dbe7f519e3fad2eee5b6f4e6ef2d59258d9eaabff5cd1c3b679fb13f6/1989",
+        "first_assignment": true,
+        "download_bytes": 2941671694,
+        "upload_bytes": 34588454
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/e6a6d255-12cd-4878-9ab8-ef9af7be6914/blobs/ef6e1c42984ce33a7994401ce8b36d3e8708539a57821863af968479efbed7de/1341",
+        "first_assignment": true,
+        "download_bytes": 623116807,
+        "upload_bytes": 15853748
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/03b5f6b5-241f-416d-962e-46811d981978/blobs/738304771f9416f929ac3015cc1feaa9fd922c28a8ea9fe59674757b7b648c8a/1989",
+        "first_assignment": true,
+        "download_bytes": 2387661667,
+        "upload_bytes": 35456132
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/e53c5188-53ed-4821-bd84-de7ae811db1b/blobs/ef95fef8c06a58385455e6a2555e73ad46e6c138e51898be18c34242142ca0d0/1989",
+        "first_assignment": true,
+        "download_bytes": 2945327669,
+        "upload_bytes": 36296468
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/835f809a-e4ee-4263-924f-3fddc2019ce2/blobs/3e78851f7719075f1f02c1e4654ae1e066f869758023359771d413adf1c6b303/1989",
+        "first_assignment": false,
+        "download_bytes": 128546195,
+        "upload_bytes": 49756511
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b84df647-9db2-4fa1-8dd1-0640b1b2128d/blobs/1adffc2107c5d081564246fe7d20e396188e4d61c9b373d7d1e3ba5c45a1dffa/1341",
+        "first_assignment": false,
+        "download_bytes": 194129804,
+        "upload_bytes": 22186646
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/7e092853-0521-49c4-8ff6-0a151b98206b/blobs/d058579526c07ad02d130148d5fc50503dbcf28c85888fcef9ae4c5b9647ce52/1341",
+        "first_assignment": false,
+        "download_bytes": 623106567,
+        "upload_bytes": 22465864
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/c421c101-4da4-42ab-9cca-4204e9b96ebe/blobs/4b1e2879001d752918e8495c7046d0880f8e57a697e6f550e0dc4ac6c80b364a/1989",
+        "first_assignment": false,
+        "download_bytes": 521247061,
+        "upload_bytes": 47113049
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/a8ffc890-2e97-445b-adf0-2e9d3415bf4d/blobs/9912c35e792df6c0c9edf327fa5fc7f119ee63450a4128b7681c8b1620ef3d8d/1989",
+        "first_assignment": false,
+        "download_bytes": 180983361,
+        "upload_bytes": 46286389
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/067940e1-ff9f-4dd4-82e8-228cd9f1ea93/blobs/e9a25d26a8ef9eb0799facdef7a3f59e7731d9d8ead781d5bafce7f62bbeedad/1341",
+        "first_assignment": false,
+        "download_bytes": 261585952,
+        "upload_bytes": 21630309
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/2984d845-bd34-463e-a650-94a744cc3df4/blobs/8a610cbfc3975125ef467c81fab61652e51a1c282edb457a7fdb89e9c78d9255/1989",
+        "first_assignment": false,
+        "download_bytes": 140432051,
+        "upload_bytes": 48543422
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/71fe6c57-5db2-4cfc-b0a6-38e5b522d70f/blobs/73cd76c034fa32060b2c066b639b54c58d408d3956a68173c012e0c9324a75bb/1341",
+        "first_assignment": false,
+        "download_bytes": 598004614,
+        "upload_bytes": 22012902
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/6ffca487-c93f-4c85-909a-e2dc00063a39/blobs/134fccc0a465249d230e6d6d389b641bce749cbc08d9242e9dad563b5e5b909c/1341",
+        "first_assignment": false,
+        "download_bytes": 472894333,
+        "upload_bytes": 21898011
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/e07818c9-d275-4968-ba68-82b6100447c1/blobs/2ec46ca1f6e4b9731c331063e5bb3aa42383faf994182c7bc44a390d55cf1451/1989",
+        "first_assignment": true,
+        "download_bytes": 1914769698,
+        "upload_bytes": 34932483
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/33287205-908f-43d8-98f3-e21eeb6e4e64/blobs/6183748454614db63bf8f41aa1145cae227819c19d33deec211dc76afed9b550/1989",
+        "first_assignment": false,
+        "download_bytes": 247478738,
+        "upload_bytes": 46337305
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/6dcbdf85-2775-4280-a1cc-d0431f520f16/blobs/273c0759215642e0d7b326d7ed3e7420e8a6bd26c49fe9b24896a2d59cef1078/1989",
+        "first_assignment": false,
+        "download_bytes": 46674,
+        "upload_bytes": 48352544
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/0bdd5b26-e2e5-4d50-910c-d41fbeb311b0/blobs/23e283c3460ee9b618f058ac5513959fb31f37379d59876ee840c24aa34f0a42/1341",
+        "first_assignment": false,
+        "download_bytes": 199504414,
+        "upload_bytes": 23153028
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/dcd83949-11ef-4143-8cc3-3f92e1c3484c/blobs/d0b0a3ca6579b6be53e3f0d8bb0d59be3ebddd3c1144e5ea7fbe9669e80f9d0d/1989",
+        "first_assignment": false,
+        "download_bytes": 230265301,
+        "upload_bytes": 50326135
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/f7f25b56-ef0f-458c-a36c-95ed6db9a959/blobs/79d6d774a230634107430ea8fddd982d5bf21cc5735071d1877ae0c22f1b645e/1341",
+        "first_assignment": false,
+        "download_bytes": 120733085,
+        "upload_bytes": 21770008
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/32f9221e-1541-4463-b293-9d82e3df69c6/blobs/85a919cd7e76028b22d49d97404a0f5a679353eb8f25b131262fd575c55ab46f/1989",
+        "first_assignment": true,
+        "download_bytes": 1980578587,
+        "upload_bytes": 35589047
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/bec4b574-64c1-4581-a7f1-112c6ab1b8fb/blobs/98491a7ec1b1befe201926eec90ecd8bc03580d546826a98c74c769255e0fe42/1989",
+        "first_assignment": false,
+        "download_bytes": 411779416,
+        "upload_bytes": 45782854
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/dd63fbba-89de-4022-a3eb-abe338b45f6e/blobs/c6a8947c96b71f5ecc24421c4b773bae54973c5172063af5e415320372b2d0d4/1341",
+        "first_assignment": false,
+        "download_bytes": 381018529,
+        "upload_bytes": 23672229
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/311c174e-5027-4323-ba45-4ab15f5d815c/blobs/681c427a96c8df59faa1c42c71a8a0f4822942216eda89c01e9d4d60c93fd018/1341",
+        "first_assignment": false,
+        "download_bytes": 701459456,
+        "upload_bytes": 22070905
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b60a4190-2f09-43b6-a2f3-91254b0670b8/blobs/3e30bff95c4b0871ea74567db2380d0367b2191d975ccf0cac961c5ccdb02f72/1341",
+        "first_assignment": false,
+        "download_bytes": 715921379,
+        "upload_bytes": 23620154
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/769dc200-e90b-446f-843d-d912add9e1df/blobs/2eb835b6301e829edbb9ac62daeef318189c49891b0120954154a07a05d35a40/1341",
+        "first_assignment": false,
+        "download_bytes": 701479936,
+        "upload_bytes": 21612991
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/ce89e03e-49d7-4432-80c5-3160158c32ab/blobs/a937d97172b06b5ec3de7db2f953184b6efc7ebdeed8a56b2890b821cf3a2f6d/1989",
+        "first_assignment": false,
+        "download_bytes": 732240823,
+        "upload_bytes": 47961206
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/6ae5ce5c-11e5-4637-96eb-90ef35c3658a/blobs/0a186db83c793d34866730bfc2e5aaab139b63cdec3677ba799e304274c92279/1989",
+        "first_assignment": false,
+        "download_bytes": 457365058,
+        "upload_bytes": 48664171
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/c509191e-6f52-46a7-a00d-fc720f638742/blobs/f9f9ac65db12dfa7aacddfd7b540329e7cca0309cf46cdc3248943e8007c81f7/1989",
+        "first_assignment": true,
+        "download_bytes": 2945317429,
+        "upload_bytes": 36260576
+      }
+    ],
+    "largest_inputs": {
+      "vm": {
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "unique_files": 7515,
+        "unique_bytes": 2945327669,
+        "largest_files": [
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_disk.tar",
+            "digest": {
+              "hash": "0b4688de55ea33da653798bca6f46bde052636e07a5362609556c76dd480c1ba",
+              "sizeBytes": "560568320"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_launcher_linux_amd64/layout/blobs/sha256/d6315e4bb7c91761df69392edac18ffaf789fac56200aff5e0d3922ba133c485",
+            "digest": {
+              "hash": "d6315e4bb7c91761df69392edac18ffaf789fac56200aff5e0d3922ba133c485",
+              "sizeBytes": "383675392"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_handler_linux_amd64/layout/blobs/sha256/2e9ffaf2dd16b662e9f23caaa5d1ae9a8f58f7b1e7f99242bc2c7db42f3e2216",
+            "digest": {
+              "hash": "2e9ffaf2dd16b662e9f23caaa5d1ae9a8f58f7b1e7f99242bc2c7db42f3e2216",
+              "sizeBytes": "176030208"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_launcher_linux_amd64/layout/blobs/sha256/99f4381c1cbf676f26a538fe09ce70ee9760f7397692158f813ee9fbe9d0e7b3",
+            "digest": {
+              "hash": "99f4381c1cbf676f26a538fe09ce70ee9760f7397692158f813ee9fbe9d0e7b3",
+              "sizeBytes": "143194112"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_operator_linux_amd64/layout/blobs/sha256/cb862572df62ad009569fca15accca6a32e320d56cb3ee5336a203347bee77a9",
+            "digest": {
+              "hash": "cb862572df62ad009569fca15accca6a32e320d56cb3ee5336a203347bee77a9",
+              "sizeBytes": "125009920"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/test_runner_disk_bin.tar",
+            "digest": {
+              "hash": "6cd56291a85a8cc32ebdf3ce8f7c417ec2d8ce3d6309882934ffcfa860af5c60",
+              "sizeBytes": "90490880"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/test_runner_disk_image/blobs/sha256/b78af69b0788c53dc23989b5f8d38147136dbee6185af3998a859a3afa075d3a",
+            "digest": {
+              "hash": "b78af69b0788c53dc23989b5f8d38147136dbee6185af3998a859a3afa075d3a",
+              "sizeBytes": "90490880"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/rules_python++python+python_3_14_x86_64-unknown-linux-gnu/bin/python",
+            "digest": {
+              "hash": "a3c5f01bf9e5cd625b74fd700bb58a579c82df228c50b57d2485d006582a8b01",
+              "sizeBytes": "78816800"
+            },
+            "isExecutable": true
+          }
+        ]
+      },
+      "firecracker": {
+        "invocation": "1267a3b9-601b-5ff8-8a09-63303e9a605d",
+        "unique_files": 7467,
+        "unique_bytes": 2058442336,
+        "largest_files": [
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/system_tests/firecracker/boot_image/blobs/sha256/21f5d64c516e29b45b9438007add238e3b7a98e5136745114323bd700e954868",
+            "digest": {
+              "hash": "21f5d64c516e29b45b9438007add238e3b7a98e5136745114323bd700e954868",
+              "sizeBytes": "747991040"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/rules_python++python+python_3_14_x86_64-unknown-linux-gnu/bin/python",
+            "digest": {
+              "hash": "a3c5f01bf9e5cd625b74fd700bb58a579c82df228c50b57d2485d006582a8b01",
+              "sizeBytes": "78816800"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/+artifact_pins+k3s_linux_amd64/file/k3s",
+            "digest": {
+              "hash": "ef1df26b26276c0f6d962391c94e12f9362d1f1e30ec7a7926e9ddb84b0d66ce",
+              "sizeBytes": "78000290"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/firecracker/image/blobs/sha256/115b5cb519c185b420247dd1222a50a3bb94a6c54c21414bd58ed2ba1caa8ce8",
+            "digest": {
+              "hash": "115b5cb519c185b420247dd1222a50a3bb94a6c54c21414bd58ed2ba1caa8ce8",
+              "sizeBytes": "75533312"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/env/images/disk_bin.tar",
+            "digest": {
+              "hash": "37eb48ad105346e44404f9805875904992625b822c9fc72c50a4dc19d3ad5510",
+              "sizeBytes": "75110400"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/env/images/disk_image/blobs/sha256/efa7a0817be73590167550b2c4c5dfff8600a418ed55af6e49881d7e20b666c3",
+            "digest": {
+              "hash": "efa7a0817be73590167550b2c4c5dfff8600a418ed55af6e49881d7e20b666c3",
+              "sizeBytes": "75110400"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/action_service/service_binary_layer.tar",
+            "digest": {
+              "hash": "56f4975aae98066a32005b876ccd0211fb75c47801cbf46f90e9d9fa088728a6",
+              "sizeBytes": "66467840"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/app/app_binary_layer.tar",
+            "digest": {
+              "hash": "1ad6120355f8b5e06f606973a711f5bd35f9fb8bb4bc24556644116dccbe5341",
+              "sizeBytes": "65802240"
+            },
+            "isExecutable": true
+          }
+        ]
+      }
+    },
+    "host_summary": {
+      "vm": {
+        "backing_allocated_bytes": 6585667584,
+        "inner_used_bytes": 6370648064,
+        "local_path_bytes": 20635648,
+        "retained_backing_bytes": 6585946112,
+        "retained_inner_bytes": 6353592320,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3384606720,
+        "retained_state": "paused",
+        "fs_loop_discard_max_bytes": null,
+        "peak_guest_workspace_logical_bytes": 21474836480,
+        "peak_guest_workspace_allocated_bytes": 147390464,
+        "peak_guest_qcow2_allocated_bytes": 802816,
+        "outer_at_selected_sample": {
+          "utc": "2026-11-22T05:31:48.350073795Z",
+          "bytes": 15181139968,
+          "outer_containerd_bytes": 229376,
+          "docker_bytes": 10588725248,
+          "filecache_bytes": 4520357888,
+          "worker_shared_k3s_bytes": 4096,
+          "unique_workspace_bytes": 72609792,
+          "workspace_gross_bytes": 2985943040,
+          "owned_upperdirs_bytes": [7216271360, 36864]
+        }
+      },
+      "firecracker": {
+        "backing_allocated_bytes": 14777552896,
+        "inner_used_bytes": 9688498176,
+        "local_path_bytes": 5344157696,
+        "retained_backing_bytes": 14777798656,
+        "retained_inner_bytes": 4378783744,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2323197952,
+        "retained_state": "paused",
+        "fs_loop_discard_max_bytes": 4294966784,
+        "peak_ram_checkpoint_allocated_bytes": 3221237760,
+        "peak_live_root_allocated_bytes": 617373696,
+        "peak_root_copies_allocated_bytes": 1852121088,
+        "outer_at_selected_sample": {
+          "utc": "2026-11-22T05:38:24.757755300Z",
+          "bytes": 30200242176,
+          "outer_containerd_bytes": 278528,
+          "docker_bytes": 25559748608,
+          "filecache_bytes": 4555296768,
+          "worker_shared_k3s_bytes": 4096,
+          "unique_workspace_bytes": 84865024,
+          "workspace_gross_bytes": 2144768000,
+          "owned_upperdirs_bytes": [15251689472, 6935470080, 36864]
+        }
+      },
+      "shared_workspace_bytes": 2913333248,
+      "unique_workspace_bytes": 72609792
+    },
+    "manual_actions": {
+      "vm": {
+        "invocation": "1b5b6635-d8b1-48ed-9cc4-313684260dff",
+        "bbr_checkout_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+        "bbr_patch_digest": "06639ca22e1114f0add7f63083211913c50a59258608149f33a2aaf0993c2b4c",
+        "execution_id": "/uploads/0686d872-7e6b-4bfd-8a9d-61b1840ced16/blobs/e6292b381c1b57b771411363301ffe8ab618badda4477710a0eb0f4fee62c9e0/1986",
+        "native_stage": "COMPLETED",
+        "process_start_utc": "2026-11-22T05:27:58.444747Z",
+        "process_end_utc": "2026-11-22T05:32:31.166234Z",
+        "outer_start_utc": "2026-11-22T05:27:48.974746Z",
+        "outer_end_utc": "2026-11-22T05:32:32.019627Z",
+        "exit_code": 0,
+        "status_code": 0,
+        "task_number": "1"
+      },
+      "firecracker": {
+        "invocation": "a4e801c6-1b9f-44e3-bf83-f3bf94e977a7",
+        "bbr_checkout_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+        "bbr_patch_digest": "06639ca22e1114f0add7f63083211913c50a59258608149f33a2aaf0993c2b4c",
+        "execution_id": "/uploads/a9fb95cf-04d9-4526-94ab-2ff2c170bae2/blobs/a02c0cbb97cc3f8501f36449eb5997de8bda70f3b7633f8dc2bc71a2189a02c4/1360",
+        "native_stage": "COMPLETED",
+        "process_start_utc": "2026-11-22T05:32:33.374811Z",
+        "process_end_utc": "2026-11-22T05:38:54.710757Z",
+        "outer_start_utc": "2026-11-22T05:32:32.693783Z",
+        "outer_end_utc": "2026-11-22T05:38:55.394732Z",
+        "exit_code": 0,
+        "status_code": 0,
+        "task_number": "1"
+      }
+    },
+    "cleanup_runs": {
+      "vm": {
+        "invocation": "ce417e4f-f689-432d-a280-75125a8b070e",
+        "resume_task_number": "2",
+        "runner_id_matches": true,
+        "discard_requested": true,
+        "exit_code": 0,
+        "collection_only": true
+      },
+      "firecracker": {
+        "invocation": "e36b224c-7617-4ec1-a7c5-c9da324ce31b",
+        "resume_task_number": "2",
+        "runner_id_matches": true,
+        "discard_requested": true,
+        "exit_code": 0,
+        "collection_only": true
+      }
+    },
+    "earlier_trim_attempt": {
+      "invocation": "6472ac44-f4db-4ad4-9394-d1b11ab0ad11",
+      "failure": "Both scenarios reached pytest teardown. The trim command was absent from the Bazel test PATH and never executed. The runner followed its owned disposal path."
+    },
+    "method": {
+      "historical_examples": "Sampled worker net drop comes from kvm_work_disk_requirements. The BuildBuddy test outputs storage/before-import and storage/final provide GNU df -B1 for the nested ext4 and GNU du -B1 -x for its containerd store. recycled-runner.json establishes whether each runner had a prior action.",
+      "transfers": "BuildBuddy execution response ioStats fileDownloadSizeBytes and fileUploadSizeBytes. Largest inputs come from exact GetExecutionDownloads receipts, deduplicated by digest.",
+      "manual_routing": "The source worktree starts on the recorded devel commit. A unique recycling key and zero-length ownership marker isolate the manual test runner. No production config changed. Native TestRunner receipts and the guest scheduler receipt identify the exact SSD worker. One active slot serializes the two fresh fixtures.",
+      "observer": "Trusted QEMU guest agent reads /buildbuddy inside the worker VM. Filesystem totals use df -B1, and outer category totals use one ordered du -sx -B1 invocation with FileCache before remotebuilds so shared inodes count in FileCache. Independent workspace du measures gross blocks.",
+      "loop_files": "File allocation equals Linux st_blocks times stat block unit; filesystem use comes from statfs. The process root is inspected only for the temporary TestRunner ownership marker. tmp workspace backing files are separate from their mounts. Where kubelet bind mounts refer to the same PVC files, the PVC tree is counted once.",
+      "docker_image_layers": "Docker inspect provides DiffIDs. Reconstruct overlay2 ChainIDs and resolve the layerdb cache IDs, then read each layer's diff allocation. These two base image IDs had no shared ChainID; their layer sum is within Docker store allocation.",
+      "limits": "Finite unsynchronized storage reads can miss peaks or observe files changing during scans. Metadata and deleted-but-open files can account for filesystem use outside path sums. The worker PVC figures do not establish physical allocation on the Kubernetes node or backend."
+    },
+    "selected_allocation_samples": {
+      "vm_active_earliest": {
+        "utc": "2026-11-22T05:28:12.094044200Z",
+        "outer_used_bytes": 8518799360,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 269508608,
+        "backing_logical_bytes": 34359738368,
+        "overlay_snapshot_bytes": 8192,
+        "qcow2_allocated_bytes": 0
+      },
+      "vm_peak_inner": {
+        "utc": "2026-11-22T05:31:39.547361898Z",
+        "outer_used_bytes": 15177957376,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          },
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          }
+        ],
+        "backing_allocated_bytes": 6571794432,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 6370648064,
+        "inner_available_bytes": 27114332160,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3387019264,
+        "local_path_bytes": 20635648,
+        "qcow2_allocated_bytes": 802816
+      },
+      "vm_peak_backing": {
+        "utc": "2026-11-22T05:32:24.284064960Z",
+        "outer_used_bytes": 15058075648,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          },
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          }
+        ],
+        "backing_allocated_bytes": 6585667584,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 6352310272,
+        "inner_available_bytes": 27132669952,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3384606720,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      },
+      "vm_after_cleanup": {
+        "utc": "2026-11-22T05:32:33.001736761Z",
+        "outer_used_bytes": 14863503360,
+        "state": "paused",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 6585946112,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 6353592320,
+        "inner_available_bytes": 27131387904,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3384606720,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_active_earliest": {
+        "utc": "2026-11-22T05:32:42.741096961Z",
+        "outer_used_bytes": 14939373568,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 6701056,
+        "backing_logical_bytes": 34359738368,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_peak_inner": {
+        "utc": "2026-11-22T05:36:45.039398608Z",
+        "outer_used_bytes": 25941487616,
+        "state": "running",
+        "guest_disks": [
+          {
+            "logical_bytes": 1610612736,
+            "allocated_bytes": 1610616832,
+            "category": "other",
+            "file": "memory"
+          },
+          {
+            "logical_bytes": 20577,
+            "allocated_bytes": 24576,
+            "category": "other",
+            "file": "vmstate"
+          },
+          {
+            "logical_bytes": 1610612736,
+            "allocated_bytes": 1610620928,
+            "category": "generation",
+            "file": "memory"
+          },
+          {
+            "logical_bytes": 8589934592,
+            "allocated_bytes": 8597504,
+            "category": "generation",
+            "file": "workspace"
+          },
+          {
+            "logical_bytes": 75091968,
+            "allocated_bytes": 74813440,
+            "category": "generation",
+            "file": "runner"
+          },
+          {
+            "logical_bytes": 718233600,
+            "allocated_bytes": 617373696,
+            "category": "generation",
+            "file": "rootfs"
+          },
+          {
+            "logical_bytes": 2147483648,
+            "allocated_bytes": 8802304,
+            "category": "generation",
+            "file": "state"
+          },
+          {
+            "logical_bytes": 25672,
+            "allocated_bytes": 28672,
+            "category": "generation",
+            "file": "vmstate"
+          },
+          {
+            "logical_bytes": 8589934592,
+            "allocated_bytes": 8757248,
+            "category": "generation",
+            "file": "workspace"
+          },
+          {
+            "logical_bytes": 30736384,
+            "allocated_bytes": 30646272,
+            "category": "generation",
+            "file": "runner"
+          },
+          {
+            "logical_bytes": 718233600,
+            "allocated_bytes": 617373696,
+            "category": "generation",
+            "file": "rootfs"
+          },
+          {
+            "logical_bytes": 75091968,
+            "allocated_bytes": 74813440,
+            "category": "live",
+            "file": "runner.img"
+          },
+          {
+            "logical_bytes": 718233600,
+            "allocated_bytes": 617373696,
+            "category": "live",
+            "file": "rootfs.ext4"
+          },
+          {
+            "logical_bytes": 2147483648,
+            "allocated_bytes": 11264000,
+            "category": "other",
+            "file": "disk.img"
+          },
+          {
+            "logical_bytes": 8589934592,
+            "allocated_bytes": 8757248,
+            "category": "other",
+            "file": "disk.img"
+          }
+        ],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 10526703616,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 9688498176,
+        "inner_available_bytes": 23796482048,
+        "loop_discard_max_bytes": 4294966784,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2324496384,
+        "local_path_bytes": 5344157696,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_peak_backing": {
+        "utc": "2026-11-22T05:38:50.855638960Z",
+        "outer_used_bytes": 30072094720,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 14777552896,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 4379598848,
+        "inner_available_bytes": 29105381376,
+        "loop_discard_max_bytes": 4294966784,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2323787776,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_after_cleanup": {
+        "utc": "2026-11-22T05:38:56.297591040Z",
+        "outer_used_bytes": 30002139136,
+        "state": "paused",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 14777798656,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 4378783744,
+        "inner_available_bytes": 29106196480,
+        "loop_discard_max_bytes": 4294966784,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2323197952,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      }
+    },
+    "manual_window_utc": [
+      "2026-11-22T05:28:12.094044200Z",
+      "2026-11-22T05:38:56.297591040Z"
+    ],
+    "findings": {
+      "guest_disks": "The two 10 GiB KubeVirt workspace files used at most 141 MiB in total. The four guest QCOW2 overlays used less than 1 MiB. Firecracker\u2019s live root copy used 589 MiB. At the busiest observed checkpoint the old RAM snapshot and the new capture together took 3.00 GiB. The live and checkpoint root copies occupied up to 1.72 GiB together.",
+      "shared_disk": "The unshared BuildBuddy executor and RBE action image layers occupied 1.47 GiB and 1.66 GiB. At the KubeVirt point the worker held 4.21 GiB in the input cache and 9.86 GiB in Docker including the image layers and the runner\u2019s backing file. Docker accounts for the outer backing file once. The inner image stores, PVCs and snapshots occupy blocks within it.",
+      "reclaim": "Trim Firecracker\u2019s private ext4 after workload cleanup. In one disposable full-suite repeat, trim returned 9.45 GiB of worker allocation in 0.44s (13.65 GiB to 4.20 GiB) with inner free space unchanged. A teardown trim returns space for the next assignment. The trial disposed the runner after trimming. Verify warm reuse after trim and measure runtime peak before changing the disk request.",
+      "diagnostic_method": "22 November UTC. Read-only worker samples roughly every nine seconds on one SSD worker. The temporary Docker runner keys forced fresh K3s fixtures while the outer worker could reuse cached data. A TestRunner result confirmed each scenario independently of the outer Bazel result. The first KubeVirt invocation hit a separate Mypy scheduling error. Reported peaks are sampled maxima. QGA reads report guest filesystem allocation. Physical allocation on the storage node is outside this study."
+    },
+    "trim_trial": {
+      "invocation": "d1619fea-e730-497e-84db-d18faebf56a1",
+      "bbr_checkout_commit": "4e06d0bbf646fbeb671f3818aa3d10d4564bbcc0",
+      "bbr_patch_digest": "26f9e14d46d903b0eeb46e454455bc080379afaa5f40433fdaee198b673a9472",
+      "test_runner_exit_code": 0,
+      "cases_passed": 2,
+      "fixture": "cold",
+      "process_start_utc": "2026-11-22T05:54:00.913596752Z",
+      "process_end_utc": "2026-11-22T06:00:00.684053030Z",
+      "dispose_requested": true,
+      "returned_worker_bytes": 10145415168,
+      "measurement": "Across /usr/sbin/fstrim after workload cleanup and before private runner disposal. st_blocks * 512 on the sparse backing determines actual reclaimed allocation; util-linux verbose output measures discard extents submitted.",
+      "before": {
+        "backing_bytes": 14652747776,
+        "logical_bytes": 34359738368,
+        "inner_free_bytes": 29105147904
+      },
+      "after": {
+        "backing_bytes": 4507332608,
+        "logical_bytes": 34359738368,
+        "inner_free_bytes": 29105147904
+      },
+      "seconds": 0.4387702980002359,
+      "returncode": 0,
+      "stdout": "/var/lib/k3s-recycled: 27.1 GiB (29103013888 bytes) trimmed\n",
+      "stderr": ""
+    }
   }
 }

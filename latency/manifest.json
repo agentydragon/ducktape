@@ -2,17 +2,25 @@
   "source_devel_commit": "16a394a1518add3599ace7b57968edc81fef8628",
   "window_start_utc": "2026-11-15T00:00:00Z",
   "window_end_utc": "2026-11-22T04:00:00Z",
-  "published_at_utc": "2026-11-22T05:12:28.173568+00:00",
+  "published_at_utc": "2026-11-22T06:04:15.054582+00:00",
   "attribution": "not collected",
   "weekly_feedback_window_utc": [
     "2026-11-15T00:00:00Z",
     "2026-11-22T00:00:00Z"
   ],
   "previous_report_commit": "23794d295215d423202f7a989195803fd75f8316",
-  "report_sha256": "9002f8cf203ecbd3009d16df33b76b829031a66683c468bc00773ee0a2e6d3eb",
-  "evidence_sha256": "198e5140b977fee156a0bfd5b69d9a99a3411a87bdaa031f10b195f36e2abd5a",
+  "report_sha256": "4232ce1f9b0e105b3b41a4777d82327e657941461b7ca90380a533e2a9f11628",
+  "evidence_sha256": "ecaf9f6136f49b1f92eb0b3796741406fd0ccb2df8fb4d8ac32772419d7e61d2",
   "kvm_scale_up_window_utc": ["2026-11-21T04:47:00Z", "2026-11-22T04:47:00Z"],
   "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "d8ea204b8d18c36bd391764732d2efc9162ad0f1a36199bf8e444b21887ed258",
-  "kvm_work_disk_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"]
+  "visual_validation_sha256": "6c3657e5a9b25b554ba368fd4f9969dd49c0f38558da34cd0984c65243518b0f",
+  "kvm_work_disk_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"],
+  "kvm_stack_disk_breakdown": {
+    "evidence_key": "kvm_stack_disk_breakdown",
+    "source_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+    "manual_window_utc": [
+      "2026-11-22T05:28:12.094044200Z",
+      "2026-11-22T05:38:56.297591040Z"
+    ]
+  }
 }
