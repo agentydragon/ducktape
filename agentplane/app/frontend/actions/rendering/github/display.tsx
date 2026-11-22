@@ -123,6 +123,7 @@ export function githubPresentation<S extends z.ZodType>({
   compact,
   staticCard = false,
   hasFoldedArguments,
+  cardDecision = false,
   result,
   outcome,
 }: {
@@ -132,6 +133,7 @@ export function githubPresentation<S extends z.ZodType>({
   compact?: (props: PreviewProps<z.infer<S>>) => ReactNode;
   staticCard?: boolean;
   hasFoldedArguments?: (args: z.infer<S>) => boolean;
+  cardDecision?: boolean;
   result: ResultPreview | null;
   outcome?: (value: unknown) => ActionOutcome | undefined;
 }): ActionPresentation {
@@ -147,8 +149,10 @@ export function githubPresentation<S extends z.ZodType>({
           compactCardExpands: hasFoldedArguments
             ? expandsForDetails(schema, hasFoldedArguments)
             : expandsForRejectedArguments(schema),
-          offersCardDecisionButtons: (args: unknown) => schema.safeParse(args).success,
         }
+      : {}),
+    ...(staticCard || cardDecision
+      ? { offersCardDecisionButtons: (args: unknown) => schema.safeParse(args).success }
       : {}),
   };
 }
