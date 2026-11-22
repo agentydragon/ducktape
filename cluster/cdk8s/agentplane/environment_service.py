@@ -12,8 +12,3 @@ def environments_service(namespace: str) -> ServiceRef:
         port=Port(name="grpc", number=8082),
         pods=Pods(namespace=namespace, labels=(("app.kubernetes.io/name", NAME),)),
     )
-
-
-def environments_control_target(namespace: str) -> str:
-    endpoint = environments_service(namespace)
-    return f"{endpoint.name}.{{namespace}}.svc:{endpoint.port.number}"

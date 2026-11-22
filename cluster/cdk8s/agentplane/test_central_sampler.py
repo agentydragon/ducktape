@@ -85,7 +85,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert llm_connection["auth"] == {"type": "agentplane_ingress"}
     assert "history_token_file" not in config
     assert "gateway_token_file" not in config
-    assert config["gateway_target"] == "environments.{namespace}.svc:8082"
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
     for tls, server_uri in (

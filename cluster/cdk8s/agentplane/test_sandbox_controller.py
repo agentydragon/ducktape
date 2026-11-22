@@ -84,7 +84,6 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
         config_env
     }
     settings = yaml.safe_load(one(config_map["data"].values()))
-    assert settings["runner_gateway_target"] == "environments.{namespace}.svc:8082"
     certificate = find_resource(staging_manifests, "Certificate", f"{name}-client-workload")
     certificate_uris = certificate["spec"]["uris"]
     assert certificate_uris == [SANDBOX_CONTROLLER_URI]

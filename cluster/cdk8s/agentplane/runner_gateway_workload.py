@@ -247,7 +247,7 @@ class RunnerGateway(Construct):
             kubernetes_client_qps=-1,
             rpc=serving_tls.spiffe_listener(endpoint.pod_port),
             gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
-            runner_control_target_template=environment_service.environments_control_target(namespace),
+            runner_control_target_template=environment_service.environments_service(namespace).authority,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,
             dispatcher_service_delegation=dispatcher_service_delegation,

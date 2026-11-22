@@ -3677,7 +3677,7 @@ data:
       "executor_codex": "codex",
       "logs": "/var/log/central-sampler",
       "history_target": "history-service.agentplane-staging.svc.cluster.local:8080",
-      "gateway_target": "environments.{namespace}.svc:8082",
+      "gateway_target": "environments.agentplane-staging.svc.cluster.local:8082",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "rpc_timeout_seconds": 30,
@@ -7268,7 +7268,7 @@ data:
     namespace: agentplane-staging
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
-    runner_gateway_target: environments.{namespace}.svc:8082
+    runner_gateway_target: environments.agentplane-staging.svc.cluster.local:8082
 immutable: false
 ---
 apiVersion: cilium.io/v2
