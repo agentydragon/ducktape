@@ -22,8 +22,10 @@ def validate_operator_dependencies(cluster: ParsedCluster, crd_to_operator: dict
     flux_resources = cluster.flux_kust_resources()
     errors = []
     # An edge points from each owner to the prerequisite it waits for.
-    graph: nx.DiGraph = nx.DiGraph(
-        {name: [dep.name for dep in spec.depends_on] for name, spec in cluster.flux_kustomizations.items()}
+    graph: nx.DiGraph = nx.DiGraph()
+    graph.add_nodes_from(cluster.flux_kustomizations)
+    graph.add_edges_from(
+        (name, dep.name) for name, spec in cluster.flux_kustomizations.items() for dep in spec.depends_on
     )
     exempt_groups = BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS
     unprovided: set[tuple[str, str]] = set()
