@@ -1719,7 +1719,9 @@ it("shows server delivery for a fresh browser and defers to settled History", as
     expect(container.querySelectorAll(`[data-command-id="${id}"]`)).toHaveLength(1);
     expect(pendingRow(container, id).querySelector(`[data-stage="${status}"]`)).not.toBeNull();
   }
-  expect(container.textContent).toContain("Runner accepted the command");
+  expect((await openDeliveryDetails(pendingRow(container, "remote-model"))).textContent).toContain(
+    "Runner accepted the command"
+  );
   expect(container.querySelector('[data-command-id="remote-effort"]')).toBeNull();
   expect(container.textContent).not.toContain("Intermediate delivery receipt");
   expect(buttonIn(container, "Older delivery issues")).toBeDefined();
