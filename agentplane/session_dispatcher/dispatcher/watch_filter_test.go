@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"slices"
-	"strconv"
 	"testing"
 
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -11,19 +10,9 @@ import (
 )
 
 func TestDispatchWatchRejectsInvalidFilters(t *testing.T) {
-	tooMany := make([]string, 17)
-	for i := range tooMany {
-		tooMany[i] = strconv.Itoa(i)
-	}
 	for _, filter := range []*dispatcherpb.DispatchFilter{
 		nil,
 		{},
-		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeCommand: true},
-		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeCommand: true, CommandIds: tooMany},
-		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeReceiptVersion: true},
-		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeReceiptVersion: true, CommandIds: tooMany},
-		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeReceiptVersion: true, CommandIds: []string{"", "command"}},
-		{Scope: &dispatcherpb.DispatchFilter_Sandbox{Sandbox: "sandbox"}, IncludeReceiptVersion: true, CommandIds: []string{"command"}},
 		{Scope: &dispatcherpb.DispatchFilter_SessionId{}},
 		{Scope: &dispatcherpb.DispatchFilter_Sandbox{}},
 		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, CommandIds: make([]string, maxFilterCommands+1)},

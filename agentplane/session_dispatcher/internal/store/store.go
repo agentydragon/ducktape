@@ -872,12 +872,12 @@ func (s *Store) ListDispatchesForCaller(ctx context.Context, filter *dispatcherp
 		column, value = "sandbox_name", filter.GetSandbox()
 	}
 	query := `SELECT d.version,d.command_id,d.session_id,d.sandbox_name,d.sandbox_uid::text,d.operation,d.state,d.reason,
-			d.admission,d.delivery_blocker,d.wake_assessment,d.created_at,d.updated_at,CASE WHEN $2 THEN d.command END
+			d.admission,d.delivery_blocker,d.wake_assessment,d.created_at,d.updated_at,NULL::bytea,false
 		FROM dispatch d LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 		WHERE d.` + column + "=$1"
-	arguments := []any{value, filter.GetIncludeCommand()}
+	arguments := []any{value}
 	if len(filter.GetCommandIds()) > 0 {
-		query += " AND d.command_id = ANY($3)"
+		query += " AND d.command_id = ANY($2)"
 		arguments = append(arguments, pq.Array(filter.GetCommandIds()))
 	}
 	scope, scopeArguments := OwnerScope(caller, "o.", len(arguments)+1)
@@ -891,9 +891,6 @@ func (s *Store) ListDispatchesForCaller(ctx context.Context, filter *dispatcherp
 		change, err := scanDispatchChange(rows)
 		if err != nil {
 			return nil, err
-		}
-		if filter.GetIncludeReceiptVersion() {
-			change.Dispatch.ReceiptVersion = &change.Version
 		}
 		result = append(result, change.Dispatch)
 	}

@@ -47,14 +47,6 @@ func dispatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.Dispatch
 	canonical := proto.Clone(filter).(*dispatcherpb.DispatchFilter)
 	slices.Sort(canonical.CommandIds)
 	canonical.CommandIds = slices.Compact(canonical.CommandIds)
-	const maxSelectedReceipts = 16
-	boundedIDs := len(canonical.CommandIds) > 0 && len(canonical.CommandIds) <= maxSelectedReceipts
-	if canonical.GetIncludeCommand() && !boundedIDs {
-		return nil, status.Error(codes.InvalidArgument, "include_command requires 1 to 16 command IDs")
-	}
-	if canonical.GetIncludeReceiptVersion() && (canonical.GetSessionId() == "" || !boundedIDs || canonical.CommandIds[0] == "") {
-		return nil, status.Error(codes.InvalidArgument, "include_receipt_version requires a Session and 1 to 16 non-empty command IDs")
-	}
 	return canonical, nil
 }
 

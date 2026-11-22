@@ -16,6 +16,7 @@ import (
 )
 
 type DispatchChange struct {
+	Deleted  bool
 	Version  int64
 	Dispatch *dispatcherpb.Dispatch
 }
@@ -88,25 +89,25 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 		if filter.GetSandbox() != "" {
 			scopeColumn, scopeValue = "o.sandbox_name", filter.GetSandbox()
 		}
-		args := []any{after, through, scopeValue, filter.GetIncludeCommand()}
+		args := []any{after, through, scopeValue}
 		predicate := scopeColumn + "=$3"
 		if len(filter.GetCommandIds()) > 0 {
 			args = append(args, pq.Array(filter.GetCommandIds()))
-			predicate += " AND c.command_id=ANY($5)"
+			predicate += " AND c.command_id=ANY($4)"
 		}
 		owner, ownerArgs := OwnerScope(caller, "o.", len(args)+1)
 		args = append(args, ownerArgs...)
 		rows, err := tx.QueryContext(ctx, `WITH changes AS (
 			SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,operation,state,reason,
-				admission,delivery_blocker,wake_assessment,created_at,updated_at,false AS deleted,CASE WHEN $4 THEN command END AS command
+				admission,delivery_blocker,wake_assessment,created_at,updated_at,false AS deleted
 			FROM dispatch WHERE version>$1 AND version<=$2
 			UNION ALL
 			SELECT version,command_id,session_id,''::varchar,''::text,operation,state,reason,
-				admission,delivery_blocker,wake_assessment,created_at,updated_at,true AS deleted,NULL::bytea AS command
+				admission,delivery_blocker,wake_assessment,created_at,updated_at,true AS deleted
 			FROM dispatch_tombstone WHERE version>$1 AND version<=$2
 		)
 		SELECT c.version,c.command_id,c.session_id,c.sandbox_name,c.sandbox_uid,c.operation,c.state,c.reason,
-			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at,c.command
+			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at,NULL::bytea,c.deleted
 		FROM changes c JOIN session o ON o.session_id=c.session_id
 			AND (c.deleted OR (o.sandbox_name=c.sandbox_name AND o.sandbox_uid::text=c.sandbox_uid))
 		WHERE `+predicate+" AND "+owner+" ORDER BY c.version", args...)
@@ -118,9 +119,6 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 			change, err := scanDispatchChange(rows)
 			if err != nil {
 				return err
-			}
-			if filter.GetIncludeReceiptVersion() {
-				change.Dispatch.ReceiptVersion = &change.Version
 			}
 			batch.Changes = append(batch.Changes, change)
 		}
@@ -136,7 +134,7 @@ func scanDispatchChange(row interface{ Scan(...any) error }) (DispatchChange, er
 	var admission, blocker, wake, command []byte
 	if err := row.Scan(&change.Version, &dispatch.CommandID, &dispatch.SessionID,
 		&dispatch.SandboxName, &dispatch.SandboxUID, &dispatch.Operation, &dispatch.State,
-		&reason, &admission, &blocker, &wake, &dispatch.CreatedAt, &dispatch.UpdatedAt, &command); err != nil {
+		&reason, &admission, &blocker, &wake, &dispatch.CreatedAt, &dispatch.UpdatedAt, &command, &change.Deleted); err != nil {
 		return change, err
 	}
 	dispatch.Reason = reason.String

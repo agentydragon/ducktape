@@ -132,9 +132,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   from Identity callers but remain visible to service callers.
 - GetDispatch includes the full typed command as stored by Dispatcher. Command mutation responses omit the
   field so older ProtoJSON clients can still decode their receipts.
-  ListDispatches and WatchDispatches include it when the filter sets `include_command` and names 1–16 distinct
-  command IDs. Other filters return receipt metadata and any existing admission evidence. A legacy deletion receipt
-  has no stored command. Presence of a command says nothing about Runner admission.
+  ListDispatches and WatchDispatches return summaries. BatchGetDispatches reads originals by Session
+  and command IDs; a legacy deletion receipt has no stored command. Presence of an original supplies
+  no evidence of Runner admission.
 - WatchDispatches applies the retained Session read scope to live rows and deletion receipts, authorizes
   every request, and resumes from an opaque filter-bound version token. The token carries no caller identity;
   a filter mismatch returns `INVALID_ARGUMENT`, and a cursor behind retained coverage returns `OUT_OF_RANGE`.
@@ -308,20 +308,23 @@ do not change the order. The continuation token binds the position and deletion 
 Session and read scope. A physical Dispatch deletion anywhere after that frontier, including one
 whose tombstone was subsequently pruned, can return `OUT_OF_RANGE`. Discard the traversal and
 restart on that status. An empty `next_page_token` completes the retained-row enumeration.
-`coverage=RETAINED_DISPATCH_ROWS` excludes legacy tombstones, which are available only through
-`WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
+`coverage=RETAINED_DISPATCH_ROWS` excludes legacy tombstones, which can be read by known ID through
+`BatchGetDispatches` or observed through `WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
 Older servers return `UNIMPLEMENTED` for the RPC.
 
 `BatchGetDispatches` reads up to 16 distinct command IDs from one authorized Session. Each
-result corresponds to the requested ID at the same position. A hit includes the original command,
-current receipt and positive receipt version from the same retained rows as paginated history.
-A missing result covers every ID outside the Session's current rows, including legacy deletions.
-Missing results do not establish delivery outcome or authorize replay. An unauthorized Session
+result corresponds to the requested ID at the same position. A `dispatch` result contains the
+original command and current positive receipt version. If there is no current row for that Session,
+`legacy_deletion_receipt` returns its latest retained deletion evidence, including the revision, full
+reason and available admission. It has no authored command or Sandbox address. A `not_found`
+result means the Session has no retained evidence of that ID. Absence or legacy evidence cannot
+authorize replay or release of the caller's original. An unauthorized Session
 returns `NOT_FOUND` for the whole batch. Batches larger than 4 MiB return `RESOURCE_EXHAUSTED`.
 
 Returned originals stay available after Environment deletion for the lifetime of the retained
 Session. Dispatcher checks the database protection before returning batch results. An older
-server returns `UNIMPLEMENTED` for this RPC. In either case, a client holding the sole authored copy
+server returns `UNIMPLEMENTED` before it supports this RPC. A server predating the legacy result can return
+`not_found` for a retained deletion. An older App facade can present an unknown result variant as unset. In either case, a client holding the sole authored copy
 can release it only after a successful read that matches that copy and its destination.
 
 ## Versioned dispatch watches
@@ -336,9 +339,6 @@ global pruned-through version.
 
 `WatchDispatches` uses payload-free notifications from `postgres/wakeups.Hub` to wake versioned database
 reads. A fresh snapshot includes matching current Dispatch rows and retained tombstones, ordered by version.
-Set `include_receipt_version` on a Session filter with 1–16 command IDs to read each exact receipt
-revision. The selected List reads current rows. The selected Watch also includes retained deletion
-receipts. The revision is a decimal string in ProtoJSON. Ordinary List and Watch responses omit it.
 Incremental reads return records with a version greater than the cursor. Both apply the existing Session
 read scope; a tombstone has no Sandbox name or UID to filter on directly. Token encoding and decoding use
 the shared `dispatcher/internal/resumetoken` package; wakeups use `postgres/wakeups.Hub`.

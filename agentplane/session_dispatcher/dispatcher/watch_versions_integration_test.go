@@ -2,11 +2,9 @@ package dispatcher
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,8 +17,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -170,14 +166,8 @@ func TestWatchRequestedCommandAndLegacyDeletionReceipt(t *testing.T) {
 	if got := summary.next(t).GetDispatch(); got.GetCommandId() != cmd.GetCommandId() || got.GetCommand() != nil {
 		t.Fatalf("summary watch: %v", got)
 	}
+	token := summary.next(t).GetResumeToken()
 	summary.stop(t)
-	filter.IncludeCommand = true
-	detailed := startVersionWatch(t, ctx, queueStore, hub, filter, "")
-	if got := detailed.next(t).GetDispatch(); !proto.Equal(got.GetCommand(), cmd) {
-		t.Fatalf("command watch: %v", got)
-	}
-	token := detailed.next(t).GetResumeToken()
-	detailed.stop(t)
 	// The legacy deletion trigger retained only receipt evidence.
 	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", cmd.GetCommandId()); err != nil {
 		t.Fatal(err)
@@ -187,90 +177,6 @@ func TestWatchRequestedCommandAndLegacyDeletionReceipt(t *testing.T) {
 		t.Fatalf("legacy deletion: %v", got)
 	}
 	resumed.stop(t)
-}
-
-func TestSelectedDispatchReceiptVersions(t *testing.T) {
-	ctx := admitted(t)
-	queueStore := testStore(t, 5)
-	const sessionID, commandID = "versioned-session", "versioned-command"
-	if _, err := queueStore.DB.ExecContext(ctx, `SELECT setval('dispatch_version_seq',9007199254740992)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, "versioned-sandbox", sandboxUID, input(commandID, "private input"), nil); err != nil {
-		t.Fatal(err)
-	}
-	hub := testWatchHub(t, queueStore)
-	service := &Service{Store: queueStore, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
-	ordinary := testSessionDispatchFilter(sessionID, commandID)
-	detailed := proto.Clone(ordinary).(*dispatcherpb.DispatchFilter)
-	detailed.IncludeReceiptVersion = true
-	list := func(filter *dispatcherpb.DispatchFilter) []*dispatcherpb.Dispatch {
-		t.Helper()
-		response, err := service.ListDispatches(ctx, &dispatcherpb.ListDispatchesRequest{Filter: filter})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return response.GetDispatches()
-	}
-	defaultRows, detailedRows := list(ordinary), list(detailed)
-	if len(defaultRows) != 1 || len(detailedRows) != 1 {
-		t.Fatalf("selected List ordinary=%v detailed=%v", defaultRows, detailedRows)
-	}
-	row := detailedRows[0]
-	version := row.GetReceiptVersion()
-	if version <= 1<<53 || row.GetCommand() != nil {
-		t.Fatalf("selected version and metadata: %v", row)
-	}
-	checkJSON := func(dispatch *dispatcherpb.Dispatch, want string) {
-		t.Helper()
-		wire, err := protojson.Marshal(dispatch)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var shape map[string]json.RawMessage
-		if err := json.Unmarshal(wire, &shape); err != nil {
-			t.Fatal(err)
-		}
-		if got := string(shape["receiptVersion"]); got != want {
-			t.Fatalf("receiptVersion JSON = %q, want %q", got, want)
-		}
-	}
-	checkJSON(defaultRows[0], "")
-	checkJSON(row, strconv.Quote(strconv.FormatInt(version, 10)))
-	defaultWatch := startVersionWatch(t, ctx, queueStore, hub, ordinary, "")
-	defaultFrame := defaultWatch.next(t)
-	if !proto.Equal(defaultFrame.GetDispatch(), defaultRows[0]) {
-		t.Fatalf("ordinary watch changed receipt shape: %v", defaultFrame.GetDispatch())
-	}
-	defaultWatch.stop(t)
-	if err := service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: detailed, ResumeToken: defaultFrame.GetResumeToken()}, &collectedWatch{ctx: ctx}); status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("accepted ordinary resume token for versioned watch: %v", err)
-	}
-	watch := startVersionWatch(t, ctx, queueStore, hub, detailed, "")
-	if got := watch.next(t).GetDispatch(); !proto.Equal(got, row) {
-		t.Fatalf("selected versioned watch differs from List: %v", got)
-	}
-	checkpoint := watch.next(t)
-	if checkpoint.GetCaughtUp() == nil {
-		t.Fatal("selected snapshot did not establish coverage")
-	}
-	watch.stop(t)
-	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {
-		t.Fatal(err)
-	}
-	resumed := startVersionWatch(t, ctx, queueStore, hub, detailed, checkpoint.GetResumeToken())
-	if got := resumed.next(t).GetDispatch(); got.GetCommandId() != commandID || got.GetReceiptVersion() <= version || got.GetCommand() != nil {
-		t.Fatalf("selected watch legacy revision: %v", got)
-	}
-	resumed.stop(t)
-	if got := list(detailed); len(got) != 0 {
-		t.Fatalf("List includes legacy watch-only receipts: %v", got)
-	}
-	legacyWatch := startVersionWatch(t, ctx, queueStore, hub, ordinary, "")
-	if got := legacyWatch.next(t).GetDispatch(); got.GetCommandId() != commandID || got.ReceiptVersion != nil {
-		t.Fatalf("ordinary legacy receipt changed shape: %v", got)
-	}
-	legacyWatch.stop(t)
 }
 
 func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.T) {
