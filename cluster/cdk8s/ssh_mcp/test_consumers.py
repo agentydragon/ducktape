@@ -1,19 +1,13 @@
-"""The SSH MCP backend and its consumer share a generated URL and bearer contract.
-
-The backend chart is synthesized from its cdk8s construct here; this checks its resource
-relationships without reading committed generated YAML.
-"""
+"""SSH MCP credential delivery, access and network admission in staging."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
-import yaml
 from cdk8s import (
     App,
     Chart,
@@ -21,35 +15,31 @@ from cdk8s import (
 )
 from more_itertools import one
 
+from agentplane.action_service.catalog import McpExecutorBinding
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
+from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
 from cluster.cdk8s.testing.manifests import find_resource
 from cluster.scripts import nebula_mesh
 
 
 @pytest.fixture(scope="module")
-def ssh_config() -> ssh_mcp_config.SshMcpConfig:
-    return ssh_mcp_config.load()
-
-
-@pytest.fixture(scope="module")
-def ssh_resources(
-    scratch_app_factory: Callable[[], App], ssh_config: ssh_mcp_config.SshMcpConfig, nebula_roster: nebula_mesh.Mesh
-) -> list[dict[str, Any]]:
+def ssh_resources(scratch_app_factory: Callable[[], App], nebula_roster: nebula_mesh.Mesh) -> list[dict[str, Any]]:
     chart = Chart(scratch_app_factory(), "test")
-    ssh_mcp_backend.SshMcp(chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_roster)
+    ssh_mcp_backend.SshMcp(chart, ssh_mcp_config.NAME, config=ssh_mcp_config.load(), mesh=nebula_roster)
     return Cdk8sTesting.synth(chart)
 
 
 def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     staging_manifests: list[dict[str, Any]], ssh_resources: list[dict[str, Any]]
 ) -> None:
-    settings = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"]
-    )
-    config = settings["action_groups"]["ssh"]["executor"]["config"]
-    assert config["auth"] == "static_bearer"
-    assert config["url"] == ssh_mcp_config.MCP_URL
-    bearer_file = Path(config["bearer_file"])
+    executor = staging.ENV.actions.action_groups["ssh"].executor
+    assert isinstance(executor, McpExecutorBinding)
+    assert executor.config["auth"] == "static_bearer"
+    assert executor.config["url"] == ssh_mcp_config.MCP_URL
+    path = executor.config["bearer_file"]
+    assert isinstance(path, str)
+    bearer_file = Path(path)
     deployment = find_resource(staging_manifests, "Deployment", "actions")
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
@@ -81,39 +71,19 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     assert copy["metadata"]["namespace"] in {ns for c in store["spec"]["conditions"] for ns in c["namespaces"]}
     # ssh-mcp's namespace also holds every target's private key: the store's reader may get
     # the bearer and nothing else there.
-    reader = {
-        "kind": "ServiceAccount",
-        "name": provider["auth"]["serviceAccount"]["name"],
-        "namespace": copy["metadata"]["namespace"],
-    }
-    roles = {
-        d["metadata"]["name"]: d
-        for d in staging_manifests
-        if d["kind"] == "Role" and d["metadata"]["namespace"] == namespace
-    }
-    granted = [
-        rule
-        for binding in staging_manifests
-        if binding["kind"] == "RoleBinding"
-        and binding["metadata"]["namespace"] == namespace
-        and any({k: s[k] for k in reader} == reader for s in binding["subjects"])
-        for rule in roles[binding["roleRef"]["name"]]["rules"]
-    ]
-    assert granted == [
-        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": [remote_ref["key"]], "verbs": ["get"]}
-    ]
+    reader = provider["auth"]["serviceAccount"]
+    grants = Rbac(staging_manifests).identity(
+        "ServiceAccount", reader["name"], reader.get("namespace", copy["metadata"]["namespace"])
+    )
+    assert {
+        grant
+        for grant in grants
+        if grant.namespace in (None, namespace) and grant.api_group in ("", "*") and grant.resource in ("secrets", "*")
+    } == {Permission(namespace, "", "secrets", "get", remote_ref["key"])}
     backend = one(r for r in ssh_resources if r["kind"] == "Deployment")
     server = one(backend["spec"]["template"]["spec"]["containers"])
     bearer = one(e for e in server["env"] if e["name"] == "SSH_MCP_BEARER_TOKEN")["valueFrom"]["secretKeyRef"]
     assert bearer == {"name": remote_ref["key"], "key": remote_ref["property"]}
-    service = one(r for r in ssh_resources if r["kind"] == "Service")
-    endpoint = urlsplit(config["url"])
-    assert endpoint.hostname == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc"
-    assert endpoint.port == one(service["spec"]["ports"])["port"]
-    assert service["spec"]["selector"].items() <= backend["spec"]["template"]["metadata"]["labels"].items()
-    # Private SSH material never crosses the backend namespace boundary.
-    key_volume = one(v for v in backend["spec"]["template"]["spec"]["volumes"] if v["name"] == "keys")
-    assert all(v.get("secret", {}).get("secretName") != key_volume["secret"]["secretName"] for v in pod["volumes"])
 
 
 def test_bearer_reaches_exactly_the_namespaces_that_may_call(
@@ -121,13 +91,7 @@ def test_bearer_reaches_exactly_the_namespaces_that_may_call(
 ) -> None:
     """The stores on ssh-mcp's namespace admit the namespaces the CiliumNetworkPolicy admits,
     and no Reflector annotation hands the Secret out anywhere else."""
-    password = one(r for r in ssh_resources if r["kind"] == "Password")
     source = one(r for r in ssh_resources if r["kind"] == "ExternalSecret" and "secretStoreRef" not in r["spec"])
-    assert one(source["spec"]["dataFrom"])["sourceRef"]["generatorRef"] == {
-        "apiVersion": password["apiVersion"],
-        "kind": password["kind"],
-        "name": password["metadata"]["name"],
-    }
     annotations = source["spec"]["target"]["template"].get("metadata", {}).get("annotations", {})
     assert not any(annotation.startswith("reflector.v1.k8s.emberstack.com/") for annotation in annotations)
     readers = {

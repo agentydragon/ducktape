@@ -838,6 +838,7 @@ py_library(
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane/testing:__pkg__",
+        "//cluster/cdk8s/ssh_mcp:__pkg__",
     ],
     deps = [
         ":actions",
