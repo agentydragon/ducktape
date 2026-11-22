@@ -283,9 +283,7 @@ const runArguments = definePreview(podRun, ({ args }) => (
       </Text>
     )}
     {args.port && args.port > 0 ? (
-      <Text size="sm">
-        Expose TCP port {args.port} through a ClusterIP Service. May also create an OpenShift Route where supported.
-      </Text>
+      <Text size="sm">Expose TCP port {args.port} through a ClusterIP Service.</Text>
     ) : (
       <Text size="sm">No Service port requested.</Text>
     )}

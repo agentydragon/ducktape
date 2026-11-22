@@ -679,7 +679,8 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.includeEditInstructions && <Line>Include edit instructions</Line>}
         </Stack>
       ),
-      tagSchemaReceipt
+      tagSchemaReceipt,
+      (args, names) => <Line>{nodeLink(args.tagId, names)}</Line>
     ),
   ],
   [

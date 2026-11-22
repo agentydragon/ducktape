@@ -1137,8 +1137,8 @@ describe("expanded Kubernetes Action coverage", () => {
   it("shows Pod run networking scope and waits for returned readiness evidence", async () => {
     const action = identity("kubernetes_admin", "pods_run");
     const details = await mount(renderDetailsArguments(action, { image: "web:v1", port: 8080 }));
-    expect(details.textContent).toContain("ClusterIP Service");
-    expect(details.textContent).toContain("OpenShift Route");
+    expect(details.textContent).toContain("Expose TCP port 8080 through a ClusterIP Service.");
+    expect(details.textContent).not.toContain("OpenShift Route");
     const result: CallToolResult = {
       isError: false,
       content: [
