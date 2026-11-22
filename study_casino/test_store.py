@@ -118,8 +118,8 @@ def _ledger_rows(store: SqlStore, username: str = _U) -> list[LedgerEventRow]:
         )
 
 
-def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> None:
-    engine = create_engine(empty_db_url)
+def test_economy_rebalance_migration_preserves_progress(empty_postgres_url: str) -> None:
+    engine = create_engine(empty_postgres_url)
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
 

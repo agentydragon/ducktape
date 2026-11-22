@@ -34,6 +34,7 @@ from testing.postgres import (
     DatabaseClones,
     DatabaseNames,
     PostgresDatabaseTemplate,
+    create_temporary_database,
     database_name_for_test,
     migrated_database_template,
 )
@@ -129,6 +130,13 @@ def postgres_admin_url(postgres_container: PostgresContainer) -> str:
 def database_names(request: pytest.FixtureRequest) -> DatabaseNames:
     """Allocate safe unique PostgreSQL names scoped to the current pytest node."""
     return DatabaseNames(request.node.nodeid)
+
+
+@pytest.fixture
+def empty_postgres_url(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
+    """Create a fresh database for a test that applies its own migrations."""
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        yield url
 
 
 @pytest.fixture
