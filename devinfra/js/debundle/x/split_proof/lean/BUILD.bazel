@@ -173,7 +173,10 @@ lean_binary(
         "Experiments/EvalOrder.lean",
     ],
     entry = "Experiments/EvalOrder.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/experiments/es_order:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__",
+    ],
 )
 
 # The CoreJS model. `experiments/model/differential.mjs` runs it against Node.

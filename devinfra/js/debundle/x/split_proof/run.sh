@@ -95,7 +95,7 @@ fi
 if [[ " $* " == *" --es-order "* ]]; then
   step "Module order: the model against Node, on random import graphs"
   (cd lean && lake build evalorder)
-  node experiments/es_order/check.mjs 500 1
+  EVALORDER=lean/.lake/build/bin/evalorder node experiments/es_order/check.mjs 500 1
 fi
 
 if [[ " $* " == *" --splits "* ]]; then

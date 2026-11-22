@@ -1,0 +1,21 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+
+_EVALORDER = "//devinfra/js/debundle/x/split_proof/lean:evalorder"
+
+js_test(
+    name = "es_order_test",
+    size = "medium",
+    data = [_EVALORDER],
+    entry_point = "check.mjs",
+    env = {"EVALORDER": "$(rootpath " + _EVALORDER + ")"},
+)
+
+js_test(
+    name = "es_order_sweep_test",
+    size = "large",
+    args = ["500"],
+    data = [_EVALORDER],
+    entry_point = "check.mjs",
+    env = {"EVALORDER": "$(rootpath " + _EVALORDER + ")"},
+    tags = ["manual"],
+)

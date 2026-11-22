@@ -1,75 +1,70 @@
-// Does the model's module evaluation order (`Plan.evalOrder`, used by `OrderOk`) match what Node does?
-//
-//   node check.mjs [graphs] [seed] [--control]
-//
-// Random import graphs: 2–8 modules, 0–3 imports each, cycles and unreachable modules included, imports in random
-// order. Every module prints its name when its body runs. Node's printed order must equal the model's.
-// `--control` writes every module's imports in reverse order for Node only: mismatches must appear.
+// Compare Plan.evalOrder with the order in which Node executes ES module bodies.
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const evalorder = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../lean/.lake/build/bin/evalorder");
-const graphs = Number(process.argv[2] ?? 500);
-let seed = Number(process.argv[3] ?? 1);
-const control = process.argv.includes("--control");
+const evalorder = path.resolve(process.env.EVALORDER);
+const graphs = Number(process.argv[2] ?? 40);
+if (!Number.isSafeInteger(graphs) || graphs < 1) throw new Error("expected a positive graph count");
+const initialSeed = Number(process.argv[3] ?? 1);
+let seed = initialSeed;
 const random = () => {
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-  return seed / 4294967296;
+  return seed / 2 ** 32;
 };
 
-let mismatches = 0;
-let cyclic = 0;
-for (let g = 0; g < graphs; g++) {
-  const n = 2 + Math.floor(random() * 7);
-  const names = Array.from({ length: n }, (_, i) => `m${i}.mjs`);
-  const imports = Object.fromEntries(
-    names.map((name, i) => {
-      const k = Math.floor(random() * 4);
-      return [
-        name,
-        Array.from({ length: k }, () => names[Math.floor(random() * n)]).filter(
-          (x, j, all) => x !== name && all.indexOf(x) === j
-        ),
-      ];
-    })
-  );
-  const entry = names[Math.floor(random() * n)];
-  const dir = mkdtempSync(path.join(tmpdir(), "es_order_"));
+function stdout(command, file) {
+  const result = spawnSync(command, [file], { encoding: "utf8", timeout: 15_000 });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, `${command} ${file}: ${result.signal ?? result.stderr}`);
+  return result.stdout;
+}
+
+function compare(entry, modules, { reverseImports = false } = {}) {
+  const dir = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? tmpdir(), "es_order_"));
   try {
-    for (const name of names) {
-      const order = control ? [...imports[name]].reverse() : imports[name];
+    for (const [name, imports] of Object.entries(modules)) {
+      const order = reverseImports ? [...imports].reverse() : imports;
       const body = order.map((src) => `import "./${src}";`).join("\n");
       writeFileSync(path.join(dir, name), `${body}\nconsole.log(${JSON.stringify(name)});\n`);
     }
-    writeFileSync(path.join(dir, "graph.json"), JSON.stringify({ entry, modules: imports }));
-    const node = spawnSync("node", [path.join(dir, entry)], { encoding: "utf8" })
-      .stdout.trim()
-      .split("\n");
-    const model = spawnSync(evalorder, [path.join(dir, "graph.json")], { encoding: "utf8" })
-      .stdout.trim()
-      .split("\n");
-    if (JSON.stringify(node) !== JSON.stringify(model)) {
-      mismatches++;
-      console.log(
-        "MISMATCH",
-        JSON.stringify({ entry, imports }),
-        "\n  node ",
-        node.join(" "),
-        "\n  model",
-        model.join(" ")
-      );
-    }
-    // a graph has a cycle if some module can reach itself
-    const reach = (from, seen = new Set()) =>
-      imports[from].forEach((x) => seen.has(x) || (seen.add(x), reach(x, seen))) || seen;
-    if (names.some((m) => reach(m).has(m))) cyclic++;
+    const graph = path.join(dir, "graph.json");
+    writeFileSync(graph, JSON.stringify({ entry, modules }));
+    return { node: stdout(process.execPath, path.join(dir, entry)), lean: stdout(evalorder, graph) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
-console.log(`${graphs} random import graphs (${cyclic} with a cycle): ${mismatches} mismatches`);
-process.exitCode = mismatches ? 1 : 0;
-if (control) process.exitCode = mismatches ? 0 : 1;
+
+const cycle = {
+  "entry.mjs": ["a.mjs", "b.mjs"],
+  "a.mjs": ["entry.mjs"],
+  "b.mjs": [],
+  "unreachable.mjs": [],
+};
+const expected = "a.mjs\nb.mjs\nentry.mjs\n";
+const original = compare("entry.mjs", cycle);
+assert.equal(original.node, expected);
+assert.equal(original.lean, expected);
+const reversed = compare("entry.mjs", cycle, { reverseImports: true });
+assert.equal(reversed.node, "b.mjs\na.mjs\nentry.mjs\n");
+assert.equal(reversed.lean, expected);
+
+for (let g = 0; g < graphs; g++) {
+  const n = 2 + Math.floor(random() * 7);
+  const names = Array.from({ length: n }, (_, i) => `m${i}.mjs`);
+  const modules = Object.fromEntries(
+    names.map((name) => {
+      const k = Math.floor(random() * 4);
+      const imports = new Set(Array.from({ length: k }, () => names[Math.floor(random() * n)]));
+      imports.delete(name);
+      return [name, [...imports]];
+    })
+  );
+  const entry = names[Math.floor(random() * n)];
+  const result = compare(entry, modules);
+  assert.equal(result.lean, result.node, `seed ${initialSeed}, graph ${g}: ${JSON.stringify({ entry, modules })}`);
+}
+console.log(`${graphs} random graphs matched Node (seed ${initialSeed}); reversed-import control differed`);
