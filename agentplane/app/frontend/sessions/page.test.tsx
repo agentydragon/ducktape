@@ -1419,8 +1419,9 @@ function pendingRow(container: Element, commandId: string): HTMLElement {
 async function openDeliveryDetails(row: Element): Promise<HTMLElement> {
   const trigger = row.querySelector<HTMLButtonElement>(".agentplane-command-details-trigger");
   if (!trigger) throw new Error("Missing delivery details trigger");
-  await act(async () => trigger.click());
-  const detail = document.querySelector<HTMLElement>('[aria-label="Delivery details"]');
+  if (trigger.getAttribute("aria-expanded") !== "true") await act(async () => trigger.click());
+  const id = trigger.getAttribute("aria-controls");
+  const detail = id && document.getElementById(id);
   if (!detail) throw new Error("Missing delivery details");
   return detail;
 }
@@ -1480,7 +1481,7 @@ it("keeps legacy input visible for reconciliation without replaying it on mount 
   expect(sentIds()).toEqual(["session-retry"]);
   const row = pendingRow(container, legacy.commandId);
   expect(row.textContent).toContain("Test input legacy-targeted");
-  expect(progressLabel(container, legacy.commandId)).toContain("Dispatcher could not verify");
+  expect((await openDeliveryDetails(row)).textContent).toContain("Dispatcher could not verify");
   expect(buttonIn(row, "Check status")).toBeDefined();
   expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
@@ -2332,7 +2333,7 @@ it("checks an ambiguous submission against the stored command without resending 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
   expect(progressLabel(container, "hung")).toContain("Dispatcher receipt unconfirmed");
   expect(pendingRow(container, "hung").querySelector('[data-state="uncertain"]')).not.toBeNull();
-  expect(progressLabel(container, "hung")).toContain("signal timed out");
+  expect((await openDeliveryDetails(pendingRow(container, "hung"))).textContent).toContain("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
 
   await act(async () => retry(container, "hung").click());
@@ -2358,11 +2359,13 @@ it("keeps authored input when reconnect cannot recover its receipt", async () =>
   new LocalCommands(THREAD.metadata.threadId).remember(command);
   vi.mocked(submitInput).mockRejectedValueOnce(new Error("lost reply"));
   const container = await render();
-  expect(progressLabel(container, "offline")).toContain("lost reply");
+  expect((await openDeliveryDetails(pendingRow(container, "offline"))).textContent).toContain("lost reply");
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId, expect.any(AbortSignal));
   expect(sentIds()).toEqual(["offline"]);
-  expect(progressLabel(container, "offline")).toContain("receipt lookup unavailable");
+  expect((await openDeliveryDetails(pendingRow(container, "offline"))).textContent).toContain(
+    "receipt lookup unavailable"
+  );
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands[0].command).toEqual(command);
 });
 

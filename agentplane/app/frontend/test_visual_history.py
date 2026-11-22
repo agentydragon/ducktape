@@ -724,6 +724,8 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await _expect_delivery_gutter(continuation)
     await view.page.mouse.move(0, 0)
     await view.capture(name="unknown_on_history_input")
+    collapsed = await phase.bounding_box()
+    assert collapsed
     details_button = phase.get_by_role("button", name="Outcome unknown · delivery details")
     details = view.page.get_by_role("dialog", name="Delivery details")
     await expect(details).to_have_count(0)
@@ -734,12 +736,16 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
         await details_button.press("Enter")
     await expect(details).to_contain_text("Dispatcher did not receive an outcome before the runner disconnected.")
     await expect(details).to_contain_text("Runner accepted the command")
+    expanded = await phase.bounding_box()
+    assert expanded
+    assert expanded["height"] == pytest.approx(collapsed["height"], abs=1)
     await view.page.mouse.move(0, 0)
     await view.capture(name="unknown_on_history_input_details")
     if viewport.has_touch:
         await details_button.tap()
     else:
-        await details_button.press("Escape")
+        await view.page.keyboard.press("Escape")
+        await expect(details_button).to_be_focused()
     await expect(details).to_have_count(0)
     await phase.get_by_role("button", name="Dismiss delivery issue", exact=False).click()
     await expect(phase).to_have_count(1)

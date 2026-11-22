@@ -1,4 +1,4 @@
-import { Popover, Stack, Text } from "@mantine/core";
+import { FocusTrap, Popover, Stack, Text } from "@mantine/core";
 import { IconCheck } from "../ui/icons";
 import { type JSX, type ReactNode, useState } from "react";
 
@@ -136,7 +136,7 @@ export function CommandProgress({
         {subject !== "input" ? (
           <span>{label}</span>
         ) : reasonLabel || details ? (
-          <Popover position="bottom-start" shadow="md" width="min(22rem, calc(100vw - 2rem))" returnFocus>
+          <Popover position="bottom-start" shadow="md" width="min(22rem, calc(100vw - 2rem))" trapFocus returnFocus>
             <Popover.Target>
               <button
                 type="button"
@@ -147,6 +147,7 @@ export function CommandProgress({
               </button>
             </Popover.Target>
             <Popover.Dropdown aria-label="Delivery details">
+              <FocusTrap.InitialFocus />
               <Stack gap="xs">
                 {reasonLabel && (
                   <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>

@@ -72,7 +72,9 @@ The open Thread watches the Dispatcher's bounded Session workset. The conversati
 delivering, failed, and unknown commands using ordinary input bubbles and control cards. The browser
 can load originals for visible receipts even before History is available. Loaded History owns
 finished commands. A pending History command shows its unresolved delivery status on the same
-row. Admissions and cancellations outside the conversation are available in Delivery history.
+row. The message gutter holds the progress dots, short state, and dismissal. The state opens
+its reason without resizing the message row. Admissions and cancellations outside the conversation
+are available in Delivery history.
 The browser reports stale delivery updates, clipped active work or issues, and expired receipt
 coverage. When a reason is abbreviated, the browser reads the full retained reason by command ID.
 
