@@ -1,4 +1,4 @@
-"""Build the native Pod platform suite's deployment from explicit cdk8s additions."""
+"""Build the native Pod and Firecracker deployments from their backend services."""
 
 from dataclasses import asdict
 
@@ -13,11 +13,11 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 )
 
 
-def render() -> RenderedFixture:
+def render(runtime: SandboxRuntime) -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
     operator_oidc = fixture_chart.operator_oidc()
     env = fixture_chart.environment(
-        runtime=SandboxRuntime.POD,
+        runtime=runtime,
         routes=fixture_chart.LOCAL_MODEL_ROUTES,
         app=None,
         central_sampler=None,
@@ -33,7 +33,9 @@ def render() -> RenderedFixture:
     fixture_chart.add_backend_services(
         chart, env, models=models, platform_callers=fixture_chart.NATIVE_CALLERS, notification_callers=[]
     )
-    fixture_chart.add_runner_templates(chart, env)
+    runner = fixture_chart.add_runner_templates(chart, env)
+    if runtime is SandboxRuntime.FIRECRACKER:
+        fixture_chart.add_firecracker_template(chart, env, runner)
     boxes = fixture_chart.add_command_templates(chart, env)
     fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)

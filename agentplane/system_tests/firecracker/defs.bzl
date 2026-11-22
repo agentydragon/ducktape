@@ -54,9 +54,8 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
         deps = [
             "//:conftest",
             "//agentplane/system_tests/k3s:recycling_probe",
-            "//agentplane/app/testing:client",
-            "//agentplane/session_dispatcher/dispatcher:testing_client",
-            "//agentplane/system_tests:app_fixtures",
+            "//agentplane/system_tests/driver:native_fixtures",
+            "//agentplane/system_tests/driver:native_platform",
             "//agentplane/system_tests:conftest",
             "//agentplane/system_tests/driver:cluster",
             "//agentplane/system_tests/driver:sandbox",

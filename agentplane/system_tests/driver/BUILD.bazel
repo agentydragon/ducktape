@@ -15,15 +15,14 @@ py_library(
     testonly = True,
     srcs = ["agent.py"],
     deps = [
+        ":scripted_turn",
         ":tracing",
         ":turn",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:history_reads",
         "//agentplane/app/testing:models",
         "//agentplane/history_service/api/history:history_service_pb2",
-        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
@@ -948,5 +947,18 @@ py_library(
     deps = [
         ":cluster",
         "//agentplane:sandbox_resource",
+    ],
+)
+
+py_library(
+    name = "scripted_turn",
+    srcs = ["scripted_turn.py"],
+    deps = [
+        ":turn",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
     ],
 )

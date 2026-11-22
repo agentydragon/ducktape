@@ -82,7 +82,7 @@ image_manifest(
 image_manifest(
     name = "firecracker_image_manifest",
     testonly = True,
-    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | RUNNER_DISK_IMAGE,
     guest = FIRECRACKER_GUEST_IMAGES,
     pki = PKI_IMAGES,
     vm = GENERIC_DEVICE_PLUGIN_IMAGE,
@@ -799,8 +799,8 @@ py_test(
 )
 
 py_library(
-    name = "pod_native_deployment",
-    srcs = ["pod_native_deployment.py"],
+    name = "native_deployment",
+    srcs = ["native_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:fixture_database",
@@ -821,7 +821,7 @@ py_library(
     name = "suite_recipe",
     srcs = ["suite_recipe.py"],
     deps = [
-        ":pod_native_deployment",
+        ":native_deployment",
         "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
