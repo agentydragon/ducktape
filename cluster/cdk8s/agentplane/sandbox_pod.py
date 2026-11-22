@@ -160,9 +160,7 @@ def add_sidecar_settings(
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
     settings = sidecar_config.Settings(
-        proxy=sidecar_config.Proxy(
-            address=f"{egress.proxy(env.namespace).fqdn}:{egress.PROXY_PORT}", transport=proxy_transport
-        ),
+        proxy=sidecar_config.Proxy(address=egress.proxy(env.namespace).authority, transport=proxy_transport),
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
         platform_routes=platform_routes,
         workload_routes=dict(workload_routes) if workload_routes is not None else {},
