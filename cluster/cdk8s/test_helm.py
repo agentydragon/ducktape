@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import ApiObjectMetadata, Chart
 from constructs import Construct
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec
 from flux_source.io.fluxcd.toolkit.source import HelmRepository
@@ -46,7 +46,7 @@ def test_version_mismatched_to_source_raises(
 
 
 def test_git_repository_chart_references_its_source(scratch_chart: Chart) -> None:
-    helm_release(
+    release = helm_release(
         scratch_chart,
         "test-release",
         "test-namespace",
@@ -55,8 +55,8 @@ def test_git_repository_chart_references_its_source(scratch_chart: Chart) -> Non
         interval="1h",
         values={},
     )
-    (_, release) = Cdk8sTesting.synth(scratch_chart)
-    assert release["spec"]["chart"]["spec"] == {
+    spec = release.to_json()["spec"]
+    assert spec["chart"]["spec"] == {
         "chart": "charts/test-chart",
         "sourceRef": {"kind": "GitRepository", "name": "test-source", "namespace": "test-namespace"},
     }
