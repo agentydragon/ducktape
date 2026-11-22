@@ -24,7 +24,7 @@ from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 from cluster.cdk8s.testing.manifests import find_resource
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-type YamlDocuments = dict[Path, list[dict[str, Any]]]
+type ManifestsByPath = dict[Path, list[dict[str, Any]]]
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
@@ -41,36 +41,29 @@ def generated(runfiles: Runfiles) -> Path:
 
 
 @pytest.fixture(scope="module")
-def parsed_yaml_documents(generated: Path) -> YamlDocuments:
-    """YAML mappings by repository-relative path."""
+def manifests_by_path(generated: Path) -> ManifestsByPath:
+    """cdk8s resource documents by repository-relative path, including parked charts."""
     return {
         path.relative_to(generated): [
             doc for doc in yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader) if isinstance(doc, dict)
         ]
-        for path in generated.rglob("*.yaml")
+        for path in generated.rglob("*.k8s.yaml")
     }
 
 
 @pytest.fixture(scope="module")
-def active_yaml_documents(parsed_yaml_documents: YamlDocuments) -> YamlDocuments:
+def active_manifests_by_path(manifests_by_path: ManifestsByPath) -> ManifestsByPath:
     """Files written by cdk8s into the active Flux roots."""
     return {
         path: docs
-        for path, docs in parsed_yaml_documents.items()
-        if path.is_relative_to(GENERATED_ROOT)
-        or (path.is_relative_to(HAND_WRITTEN_ROOT) and path.name.endswith(".k8s.yaml"))
+        for path, docs in manifests_by_path.items()
+        if path.is_relative_to(GENERATED_ROOT) or path.is_relative_to(HAND_WRITTEN_ROOT)
     }
 
 
 @pytest.fixture(scope="module")
-def documents(active_yaml_documents: YamlDocuments) -> list[dict[str, Any]]:
-    return [doc for docs in active_yaml_documents.values() for doc in docs]
-
-
-@pytest.fixture(scope="module")
-def active_api_objects(active_yaml_documents: YamlDocuments) -> list[dict[str, Any]]:
-    """API objects, excluding local Kustomize configuration."""
-    return [doc for path, docs in active_yaml_documents.items() if path.name.endswith(".k8s.yaml") for doc in docs]
+def documents(active_manifests_by_path: ManifestsByPath) -> list[dict[str, Any]]:
+    return [doc for docs in active_manifests_by_path.values() for doc in docs]
 
 
 def test_gaffer_archive_reads_app_ids_and_signing_key_from_same_secret(documents: list[dict[str, Any]]) -> None:
@@ -82,9 +75,9 @@ def test_gaffer_archive_reads_app_ids_and_signing_key_from_same_secret(documents
     assert reconciler["spec"]["postBuild"]["substituteFrom"] == [{"kind": "Secret", "name": key["name"]}]
 
 
-def test_gitops_variables_match_the_module(active_api_objects: list[dict[str, Any]], checkout: Path) -> None:
+def test_gitops_variables_match_the_module(documents: list[dict[str, Any]], checkout: Path) -> None:
     """OpenTofu warns on unknown variables and can silently use an optional input's default."""
-    for obj in active_api_objects:
+    for obj in documents:
         if obj["kind"] == "Workspace" and obj["apiVersion"].startswith("opentofu.upbound.io/"):
             params = obj["spec"]["forProvider"]
             source = params["module"]
@@ -393,15 +386,15 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     ]
 
 
-def test_gitops_roots_have_distinct_opentofu_state(active_api_objects: list[dict[str, Any]]) -> None:
+def test_gitops_roots_have_distinct_opentofu_state(documents: list[dict[str, Any]]) -> None:
     """Two reconcilers of the same PostgreSQL state can undo each other's applies."""
     configs = {
         doc["metadata"]["name"]: doc["spec"]
-        for doc in active_api_objects
+        for doc in documents
         if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1" and doc["kind"] == "ProviderConfig"
     }
     owners: dict[tuple[str, str, str], str] = {}
-    for doc in active_api_objects:
+    for doc in documents:
         spec = doc.get("spec", {})
         if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1" and doc["kind"] == "Workspace":
             if not {"Create", "Update", "Delete", "*"}.intersection(spec.get("managementPolicies", ["*"])):
@@ -537,9 +530,9 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(documents: lis
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_namespace_readers_can_reconcile_before_the_application(parsed_yaml_documents: YamlDocuments) -> None:
+def test_namespace_readers_can_reconcile_before_the_application(manifests_by_path: ManifestsByPath) -> None:
     # Diagnostics must come up even when the application in the target namespace is unhealthy.
-    graph = parsed_yaml_documents[Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")]
+    graph = manifests_by_path[Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")]
     roles = find_resource(graph, "Kustomization", "claude-rbac")["metadata"]
     root = Path(GENERATED_ROOT, "agents/namespace-rbac")
     readers = [
@@ -552,12 +545,12 @@ def test_namespace_readers_can_reconcile_before_the_application(parsed_yaml_docu
         assert spec["dependsOn"] == [{"name": roles["name"], "namespace": roles["namespace"]}], spec["path"]
 
 
-def test_goldilocks_explicit_decision(active_yaml_documents: YamlDocuments) -> None:
+def test_goldilocks_explicit_decision(active_manifests_by_path: ManifestsByPath) -> None:
     update_mode = "goldilocks.fairwinds.com/vpa-update-mode"
     enabled = "goldilocks.fairwinds.com/enabled"
     missing = sorted(
         f"{path}: Namespace '{doc['metadata']['name']}'"
-        for path, docs in active_yaml_documents.items()
+        for path, docs in active_manifests_by_path.items()
         for doc in docs
         if doc.get("kind") == "Namespace"
         and update_mode not in (labels := (doc["metadata"].get("labels") or {}))
@@ -616,28 +609,26 @@ def test_claude_session_sync_vpa_opt_in_is_limited_to_deployments(documents: lis
 
 
 @pytest.fixture(scope="module")
-def owner_specs(active_api_objects: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def owner_specs(documents: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {
         doc["metadata"]["name"]: doc["spec"]
-        for doc in active_api_objects
+        for doc in documents
         if doc["kind"] == "Kustomization" and doc["metadata"].get("namespace") == "ducktape-flux"
     }
 
 
 def test_parked_haku_backup_and_shared_services_remain_configured(
     generated: Path,
-    active_api_objects: list[dict[str, Any]],
-    parsed_yaml_documents: YamlDocuments,
+    documents: list[dict[str, Any]],
+    manifests_by_path: ManifestsByPath,
     owner_specs: dict[str, dict[str, Any]],
 ) -> None:
     # Keep Haku's namespace and the public coder's namespace and access Roles alive.
     assert {"haku-namespace", "public-coder-agent-access"} <= owner_specs.keys()
-    assert any(
-        doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active_api_objects
-    )
+    assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in documents)
     # Only the retained backup recovery package remains reproducible outside the live roots.
     archived = Path(PARKED_ROOT, "haku-openclaw-spike")
-    backup = parsed_yaml_documents[archived / "backup/backup.k8s.yaml"]
+    backup = manifests_by_path[archived / "backup/backup.k8s.yaml"]
     bucket = next(doc for doc in backup if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
     credentials = next(doc for doc in backup if doc["kind"] == "S3Credentials")
@@ -647,10 +638,10 @@ def test_parked_haku_backup_and_shared_services_remain_configured(
 
 
 def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
-    active_api_objects: list[dict[str, Any]], owner_specs: dict[str, dict[str, Any]]
+    documents: list[dict[str, Any]], owner_specs: dict[str, dict[str, Any]]
 ) -> None:
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
-    claude = [doc for doc in active_api_objects if doc["metadata"].get("namespace") == "claude-sandbox"]
+    claude = [doc for doc in documents if doc["metadata"].get("namespace") == "claude-sandbox"]
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
     assert str(quota["spec"]["hard"]["pods"]) == "0"
     fence = next(
@@ -661,7 +652,7 @@ def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
     assert not any(
-        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active_api_objects
+        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in documents
     )
     assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owner_specs.keys()
 
@@ -678,13 +669,13 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(owner_specs: dict[str
 
 
 def test_public_coder_pause_retains_state_after_devbox_retirement(
-    parsed_yaml_documents: YamlDocuments, owner_specs: dict[str, dict[str, Any]]
+    manifests_by_path: ManifestsByPath, owner_specs: dict[str, dict[str, Any]]
 ) -> None:
     roots = (Path(PARKED_ROOT, "public-coder-agent"), Path(GENERATED_ROOT, "agents/public-coder-agent"))
     objects = [
         doc
-        for path, docs in parsed_yaml_documents.items()
-        if path.name.endswith(".k8s.yaml") and any(path.is_relative_to(root) for root in roots)
+        for path, docs in manifests_by_path.items()
+        if any(path.is_relative_to(root) for root in roots)
         for doc in docs
     ]
     deployments = [doc for doc in objects if doc["kind"] == "Deployment"]
