@@ -325,6 +325,49 @@ def _image_policy(chart: Chart, name: str) -> None:
     )
 
 
+def recorder_containers() -> list[k8s.Container]:
+    """The CA initializer and native sidecar for providers recording upstream traffic."""
+    recorder_listening = k8s.ExecAction(
+        command=[
+            "python",
+            "-c",
+            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
+        ]
+    )
+    return [
+        k8s.Container(
+            name="recorder-ca-init",
+            image="busybox:1.38",
+            command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
+            volume_mounts=[
+                k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
+                k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+            ],
+            security_context=_container_security(),
+            resources=_resources(),
+        ),
+        k8s.Container(
+            name="upstream-recorder",
+            image="mitmproxy/mitmproxy:12.2.3",
+            # Start the recorder before providers dispatch their first probe.
+            restart_policy="Always",
+            command=[
+                "sh",
+                "-c",
+                f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
+            ],
+            readiness_probe=k8s.Probe(exec=recorder_listening),
+            startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
+            volume_mounts=[
+                k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+                k8s.VolumeMount(name="captures", mount_path="/captures"),
+            ],
+            security_context=_container_security(),
+            resources=_resources(),
+        ),
+    ]
+
+
 def _provider_workload(chart: Chart, instance: str, *, provider_type: str, record_upstream_traffic: bool) -> None:
     name = _provider_name(instance)
     provider_credentials = k8s.Volume(
@@ -378,55 +421,6 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
             ),
             k8s.Volume(name="recorder-trust", config_map=k8s.ConfigMapVolumeSource(name=_RECORD_BUNDLE)),
             k8s.Volume(name="recorder-config", empty_dir=k8s.EmptyDirVolumeSource()),
-        ]
-        if record_upstream_traffic
-        else []
-    )
-    recorder_init = (
-        [
-            k8s.Container(
-                name="recorder-ca-init",
-                image="busybox:1.38",
-                command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
-                volume_mounts=[
-                    k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
-                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
-                ],
-                security_context=_container_security(),
-                resources=_resources(),
-            )
-        ]
-        if record_upstream_traffic
-        else []
-    )
-    recorder_listening = k8s.ExecAction(
-        command=[
-            "python",
-            "-c",
-            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
-        ]
-    )
-    recorder_sidecars = (
-        [
-            k8s.Container(
-                name="upstream-recorder",
-                image="mitmproxy/mitmproxy:12.2.3",
-                # Start the recorder before providers dispatch their first probe.
-                restart_policy="Always",
-                command=[
-                    "sh",
-                    "-c",
-                    f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
-                ],
-                readiness_probe=k8s.Probe(exec=recorder_listening),
-                startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
-                volume_mounts=[
-                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
-                    k8s.VolumeMount(name="captures", mount_path="/captures"),
-                ],
-                security_context=_container_security(),
-                resources=_resources(),
-            )
         ]
         if record_upstream_traffic
         else []
@@ -539,7 +533,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         ],
         selector_name=name,
         node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
-        init_containers=[*recorder_init, *recorder_sidecars],
+        init_containers=recorder_containers() if record_upstream_traffic else [],
         vpa_policy=vpa_policy,
     )
     _service(
