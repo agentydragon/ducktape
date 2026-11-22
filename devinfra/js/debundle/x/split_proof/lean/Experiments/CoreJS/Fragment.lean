@@ -25,10 +25,20 @@ theorem plainClassMembers_fieldInits {ms : List ClassMember} (h : plainClassMemb
       simp only [plainClassMembers, Bool.false_eq_true] at h
     all_goals simpa only [fieldInits] using ih h
 
+/-- Logical negation does not coerce objects to primitives. Numeric negation is safe here
+only on a syntactic number literal, whose conversion cannot call user code. -/
+def localUnaryOperand (op : UnOp) (operand : Expr) : Bool :=
+  op == .not || (op == .neg && (operand matches .num _))
+
+theorem localUnaryOperand_ops {op : UnOp} {e : Expr} (h : localUnaryOperand op e = true) :
+    op = .not ∨ op = .neg := by
+  cases op <;> simp_all [localUnaryOperand]
+
 mutual
-/-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties, an array literal of such expressions, or a plain class. -/
+/-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties, an array literal of such expressions, a plain class, or a supported unary operation. -/
 def Expr.allocOnly : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ | .host _ | .this | .func _ => true
+  | .unary op operand => localUnaryOperand op operand && operand.allocOnly
   | .obj props => allocOnlyProps props
   | .arr elems => allocOnlyAll elems
   | .cls _ _ _ members => plainClassMembers members
@@ -68,6 +78,7 @@ mutual
 /-- The names an expression that only allocates reads when it runs. Functions and admitted plain classes read none: they keep bindings, not values. -/
 def Expr.readsNow : Expr → List Name
   | .var x => [x]
+  | .unary _ operand => operand.readsNow
   | .obj props => readsNowProps props
   | .arr elems => readsNowAll elems
   | _ => []
@@ -103,6 +114,13 @@ def mayMove (a b : Stmt) : Bool :=
     match a.allocs, b.allocs with
     | some (xs, rs), some (ys, rs') => !rs.any ys.contains && !rs'.any xs.contains
     | _, _ => false
+
+/-- Negating an object can invoke a user-defined conversion. -/
+example : (Expr.unary .neg (.var "obj")).allocOnly = false := rfl
+
+/-- Negating a binding reads it, including when the result initializes a fresh record. -/
+example : mayMove (.decl .const "flag" (.obj []))
+    (.decl .const "record" (.obj [.init (.str "value") (.unary .not (.var "flag"))])) = false := rfl
 
 /-- Statements `i` and `j` of the bundle `ss` may run in either order. -/
 def MayMove (ss : List Stmt) (i j : Nat) : Bool :=

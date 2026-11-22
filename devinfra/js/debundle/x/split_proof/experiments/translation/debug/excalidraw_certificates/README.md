@@ -64,6 +64,19 @@ question is which possible writes the checker can soundly exclude for that call.
 Both replays stop at structural checks before reaching the module URL guard.
 [Exact schedules, checker logs, and move reports](https://app.buildbuddy.io/invocation/03ee0f61-d9eb-48d8-b30e-63e9cf62e0b8)
 
+### Proved moves for negated initializers
+
+The editor replay has 294,024 inverted pairs after excluding imports. On the
+same schedule, extending the allocation proof to logical negation and negated
+number literals reduced pairs lacking a move proof from 73,489 to 70,439.
+All 3,050 newly covered pairs already passed the structural independence check,
+leaving 19,024 such pairs without a move proof. Unit 1584, a tool-options
+object initialized with `!0` and `!1`, accounts for 1,024 newly covered pairs.
+Unit 103, a zlib constants object with negative error codes, accounts for 236.
+The complete editor schedule still fails `OrderOk`.
+[Baseline pair report](https://app.buildbuddy.io/invocation/9b56495c-aa2a-4034-a2ce-674fc72cf55b) ·
+[Extended proof pair report](https://app.buildbuddy.io/invocation/30d817ef-4e12-4d32-84a2-8ace0c26cda6)
+
 ## First run: 2026-11-21
 
 [BuildBuddy invocation](https://app.buildbuddy.io/invocation/541244a8-ccf7-415e-a939-3081ff2ac7b9).

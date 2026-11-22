@@ -118,6 +118,7 @@ function byBehavior(name, code, side) {
 }
 
 for (const [name, code, side] of [
+  ["negated_record_read_tdz", `const flag = {};\nconst record = {value: !flag};\nconsole.log(record.value);`, [1]],
   ["literal_read_tdz", `const result = 7;\nconst alias = result;\nconsole.log(alias);`, [1, 2]],
   [
     "literal_callback",

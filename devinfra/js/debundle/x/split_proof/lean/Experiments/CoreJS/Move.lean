@@ -426,9 +426,16 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
   | succ n ih =>
     obtain ⟨ihE, ihA, ihP⟩ := ih
     refine ⟨fun env e he hw => ?_, fun env es he hw => ?_, fun env a ps he hw ha => ?_⟩
-    · cases e <;> simp only [Expr.allocOnly, Bool.false_eq_true] at he <;> unfold evalExpr
+    · cases e <;> try simp only [Expr.allocOnly, Bool.false_eq_true] at he
+      all_goals try unfold evalExpr
       case undef | null | bool | num | str | host | this => exact local_pure _
       case var x => exact local_readVar (hw x (by simp [Expr.readsNow]))
+      case unary op operand =>
+        simp only [Bool.and_eq_true] at he
+        obtain ⟨hop, ha⟩ := he
+        change Local r R (evalExpr (n + 1) env (.unary op operand) : M W Val)
+        rw [evalExpr_localUnary hop]
+        exact (ihE env operand ha hw).bind' fun _ => local_lift _
       case func f => exact local_makeFunc env f
       case obj props =>
         refine (local_alloc _).bind fun a ⟨s, s', hr, h⟩ => ?_
