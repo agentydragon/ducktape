@@ -25,10 +25,19 @@ import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/li
 import { useOptionalStreamStatus } from "../transport/stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
-import { PendingInputMessages, LocalControlCommands, type LocalNotice } from "./thread_commands";
+import {
+  PendingInputMessages,
+  LocalControlCommands,
+  OutstandingDispatchCommands,
+  inlineDispatches,
+  receiptProgress,
+  selectedHistoryCommands,
+  type LocalNotice,
+} from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
-import { AcknowledgeDeliveryIssue, DispatchWorksetPanel } from "./dispatch_workset_panel";
-import { matchingLocalIssue } from "./command_notice_attention";
+import { sameCommand } from "./local_commands";
+import { useDispatchOriginals } from "./delivery_notice";
+import { isDeliveryIssue, matchingLocalIssue } from "./command_notice_attention";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -299,6 +308,9 @@ function ConversationBody({
       active = false;
     };
   }, [harness]);
+  const confirmedIds = new Set(
+    entities.flatMap((row) => (row.entity.case === "confirmedInput" ? row.entity.value.originCommandIds : []))
+  );
   const rows = historyRows(
     entities
       .filter(
@@ -307,20 +319,64 @@ function ConversationBody({
           row.entity.case === "confirmedInput" ||
           row.entity.case === "lifecycle" ||
           (row.entity.case === "command" &&
-            (pendingSentMessage(row) || row.entity.value.operation !== Operation.SUBMIT_INPUT))
+            ((pendingSentMessage(row) && !confirmedIds.has(row.entityId)) ||
+              row.entity.value.operation !== Operation.SUBMIT_INPUT))
       )
       .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
   const deliveryAttention = delivery.attention;
+  const inline = inlineDispatches(delivery);
+  // Invite History to surface the older exact IDs before showing a second representation.
+  useThreadSync().useCommandRows(inline.map((item) => item.commandId));
+  const historyIds = selectedHistoryCommands(entities);
+  const localIds = new Set(localCommands.map(({ command }) => command.commandId));
+  // An older browser record may have a receipt without the current attempt flag.
+  const attemptedLocalIds = new Set(
+    localCommands.filter((value) => value.attempted || value.dispatch !== null).map(({ command }) => command.commandId)
+  );
+  const byCommand = new Map([...inline, ...deliveryAttention.issues].map((item) => [item.commandId, item]));
+  const uncertainLocalIds = localCommands.flatMap((command) => {
+    const id = command.command.commandId;
+    const issue = byCommand.get(id);
+    return attemptedLocalIds.has(id) &&
+      issue &&
+      isDeliveryIssue(issue.state) &&
+      !matchingLocalIssue(command, threadId, [issue])
+      ? [id]
+      : [];
+  });
+  const localOriginals = useDispatchOriginals(delivery.readReceipts, uncertainLocalIds);
   const localNotice: LocalNotice = (command) => {
-    const item = matchingLocalIssue(command, threadId, deliveryAttention.issues);
+    const id = command.command.commandId;
+    const exact = matchingLocalIssue(command, threadId, deliveryAttention.issues);
+    const item = exact ?? (delivery.workset.stale || !attemptedLocalIds.has(id) ? undefined : byCommand.get(id));
     if (!item) return;
+    const original = localOriginals.commands?.get(id);
+    const verified =
+      exact !== undefined ||
+      (original?.command !== undefined &&
+        original.receiptVersion === item.receiptVersion &&
+        original.operation === item.operation &&
+        sameCommand(command.command, original.command));
+    if (deliveryAttention.acknowledged(item)) {
+      return { acknowledged: verified, hasDispatcherReceipt: true };
+    }
     return {
-      acknowledged: deliveryAttention.acknowledged(item),
-      action: <AcknowledgeDeliveryIssue item={item} attention={deliveryAttention} />,
+      acknowledged: false,
+      hasDispatcherReceipt: true,
+      failed: isDeliveryIssue(item.state),
+      progress: receiptProgress(delivery, item),
     };
   };
+  const projectedProgress = new Map(
+    inline
+      .filter((item) => isDeliveryIssue(item.state))
+      .map(
+        (item) =>
+          [item.commandId, deliveryAttention.acknowledged(item) ? null : receiptProgress(delivery, item)] as const
+      )
+  );
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
   for (const local of localCommands) {
     if (local.command.operation.case === "submitInput") {
@@ -349,11 +405,10 @@ function ConversationBody({
           localNotice={localNotice}
         />
       )}
-      <DispatchWorksetPanel
+      <OutstandingDispatchCommands
         delivery={delivery}
+        items={inline.filter((item) => !historyIds.has(item.commandId) && !localIds.has(item.commandId))}
         onOpenDeliveryHistory={onOpenDeliveryHistory}
-        localCommands={localCommands}
-        entities={entities}
       />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
@@ -376,6 +431,7 @@ function ConversationBody({
           inputEchoes={inputEchoes}
           onInputEchoLoaded={onInputEchoLoaded}
           tail={commandTail}
+          projectedProgress={projectedProgress}
           running={running}
           activeTurn={activeTurn}
           history={history}
@@ -570,7 +626,11 @@ export function ThreadConversation({
       <>
         <DeliveryHistoryFallback onOpen={onOpenDeliveryHistory} />
         {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
-        <DispatchWorksetPanel delivery={delivery} onOpenDeliveryHistory={onOpenDeliveryHistory} />
+        <OutstandingDispatchCommands
+          delivery={delivery}
+          items={inlineDispatches(delivery)}
+          onOpenDeliveryHistory={onOpenDeliveryHistory}
+        />
       </>
     );
   }

@@ -20,7 +20,7 @@ export type PendingCommand = {
   operation: PlainOperation | Command["operation"];
 };
 
-function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
+export function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
   return equals(CommandSchema, create(CommandSchema, left), create(CommandSchema, right));
 }
 

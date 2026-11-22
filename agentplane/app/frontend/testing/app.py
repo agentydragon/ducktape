@@ -85,6 +85,7 @@ class Scene(StrEnum):
     COMMAND_OUTCOMES = "commandOutcomes"
     REMEMBER_LEGACY_INPUT = "rememberLegacyInput"
     DISPATCH_WORKSET = "dispatchWorkset"
+    OUTSTANDING_COMMAND_CONVERSATION = "outstandingCommandConversation"
     VERSIONED_DISPATCH_WORKSET = "versionedDispatchWorkset"
     SAVED_DELIVERY_ISSUE_OUTSIDE_WORKSET = "savedDeliveryIssueOutsideWorkset"
     REMEMBER_PENDING_INPUT = "rememberPendingInput"

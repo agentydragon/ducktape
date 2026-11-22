@@ -11,9 +11,9 @@ import { TimeAgo } from "../ui/time_ago";
 import { listSessionDispatches } from "./client";
 import { isDeliveryIssue, noticeKey } from "./command_notice_attention";
 import { listCommandNoticeAcknowledgements } from "./command_notice_client";
-import { deliveryOperationLabel, deliveryStateLabel } from "./delivery_labels";
+import { storedCommandLabel, deliveryStateLabel } from "./delivery_labels";
 import { readSelectedDispatchReceipts, worksetItemFromReceipt, type ReadDispatchReceipts } from "./dispatch_workset";
-import { AcknowledgeDeliveryIssue, WorksetRow } from "./dispatch_workset_panel";
+import { AcknowledgeDeliveryIssue, ReceiptDetails, useDispatchOriginals } from "./delivery_notice";
 import { StoredCommandDetails } from "./stored_command_details";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import { timestampLabel } from "./thread_presentation";
@@ -114,7 +114,11 @@ async function retained(sessionId: string, pageToken: string, signal: AbortSigna
 }
 
 function RetainedReceiptRows({ delivery, rows }: { delivery: ThreadDeliveryState; rows: Dispatch[] }) {
-  const { attention, registerArchiveIssues } = delivery;
+  const { attention, readReceipts, registerArchiveIssues } = delivery;
+  const originals = useDispatchOriginals(
+    readReceipts,
+    rows.map((row) => row.commandId)
+  );
   const notices = useMemo(() => rows.filter((row) => isDeliveryIssue(row.state)).map(worksetItemFromReceipt), [rows]);
   useEffect(() => registerArchiveIssues(notices), [notices, registerArchiveIssues]);
   const byCommand = new Map(notices.map((notice) => [notice.commandId, notice]));
@@ -135,10 +139,12 @@ function RetainedReceiptRows({ delivery, rows }: { delivery: ThreadDeliveryState
         const time = timestampLabel(row.updatedAt);
         const notice = byCommand.get(row.commandId);
         return (
-          <Stack key={row.commandId} gap={2} style={{ overflowWrap: "anywhere" }}>
+          <Stack key={row.commandId} gap={2} data-receipt-id={row.commandId} style={{ overflowWrap: "anywhere" }}>
             <Divider />
             <Text size="sm" fw={500}>
-              {deliveryOperationLabel(row.operation)} · {deliveryStateLabel[row.state] ?? "Delivery unconfirmed"}
+              {storedCommandLabel(row.operation, originals.commands?.get(row.commandId)?.command)}
+              {" · "}
+              {deliveryStateLabel[row.state] ?? "Delivery unconfirmed"}
             </Text>
             <Group gap="xs" justify="space-between" align="baseline">
               <Text size="xs" ff="monospace" c="dimmed">
@@ -237,8 +243,7 @@ function AcknowledgedReceiptEvidence({
         if (!controller.signal.aborted) setLoading(false);
       });
   };
-  if (result && "item" in result)
-    return <WorksetRow readReceipts={readReceipts} item={result.item} showCommandId={false} />;
+  if (result && "item" in result) return <ReceiptDetails readReceipts={readReceipts} item={result.item} />;
   return (
     <Group gap="xs">
       {(!result || result.retry) && (
@@ -255,47 +260,65 @@ function AcknowledgedReceiptEvidence({
   );
 }
 
-function AcknowledgedIssues({ delivery }: { delivery: ThreadDeliveryState }) {
-  const { sessionId, readReceipts, attention } = delivery;
+function AcknowledgedReceiptRows({
+  delivery,
+  rows,
+}: {
+  delivery: ThreadDeliveryState;
+  rows: CommandNoticeAcknowledgement[];
+}): JSX.Element {
+  const { readReceipts, attention } = delivery;
   const current = new Map(attention.issues.map((item) => [noticeKey(item), item]));
+  const originals = useDispatchOriginals(
+    readReceipts,
+    rows.flatMap(({ notice }) => (notice ? [notice.commandId] : []))
+  );
+  if (rows.length === 0)
+    return (
+      <Text size="sm" c="dimmed">
+        No acknowledged delivery issues.
+      </Text>
+    );
+  return (
+    <>
+      {rows.map(({ notice, acknowledgedAt }) => {
+        if (!notice) return null;
+        const item = current.get(noticeKey(notice));
+        const original = originals.commands?.get(notice.commandId);
+        const stamp = timestampLabel(acknowledgedAt);
+        return (
+          <Stack key={noticeKey(notice)} gap={2} style={{ overflowWrap: "anywhere" }}>
+            <Divider />
+            <Group gap="xs" justify="space-between" align="baseline">
+              <Text size={original ? "sm" : "xs"} ff={original ? undefined : "monospace"} title={notice.commandId}>
+                {original ? storedCommandLabel(original.operation, original.command) : notice.commandId}
+              </Text>
+              {stamp && (
+                <Text size="xs" c="dimmed">
+                  <TimeAgo value={stamp} />
+                </Text>
+              )}
+            </Group>
+            {item ? (
+              <ReceiptDetails readReceipts={readReceipts} item={item} />
+            ) : (
+              <AcknowledgedReceiptEvidence readReceipts={readReceipts} notice={notice} />
+            )}
+            {original && <StoredCommandDetails receipt={original} />}
+          </Stack>
+        );
+      })}
+    </>
+  );
+}
+
+function AcknowledgedIssues({ delivery }: { delivery: ThreadDeliveryState }) {
   return (
     <PagedHistory
-      sessionId={sessionId}
+      sessionId={delivery.sessionId}
       load={acknowledged}
-      revision={attention.historyRevision}
-      renderRows={(rows) =>
-        rows.length === 0 ? (
-          <Text size="sm" c="dimmed">
-            No acknowledged delivery issues.
-          </Text>
-        ) : (
-          rows.map(({ notice, acknowledgedAt }) => {
-            if (!notice) return null;
-            const item = current.get(noticeKey(notice));
-            const stamp = timestampLabel(acknowledgedAt);
-            return (
-              <Stack key={noticeKey(notice)} gap={2} style={{ overflowWrap: "anywhere" }}>
-                <Divider />
-                <Group gap="xs" justify="space-between" align="baseline">
-                  <Text size="xs" ff="monospace" c="dimmed">
-                    {notice.commandId}
-                  </Text>
-                  {stamp && (
-                    <Text size="xs" c="dimmed">
-                      <TimeAgo value={stamp} />
-                    </Text>
-                  )}
-                </Group>
-                {item ? (
-                  <WorksetRow readReceipts={readReceipts} item={item} showCommandId={false} />
-                ) : (
-                  <AcknowledgedReceiptEvidence readReceipts={readReceipts} notice={notice} />
-                )}
-              </Stack>
-            );
-          })
-        )
-      }
+      revision={delivery.attention.historyRevision}
+      renderRows={(rows) => <AcknowledgedReceiptRows delivery={delivery} rows={rows} />}
     />
   );
 }

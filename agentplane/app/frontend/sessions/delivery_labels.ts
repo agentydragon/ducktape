@@ -1,4 +1,4 @@
-import { Operation } from "../../../proto/command_pb";
+import { Operation, type Command } from "../../../proto/command_pb";
 import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 export function deliveryOperationLabel(operation: Operation): string {
@@ -27,3 +27,20 @@ export const deliveryStateLabel: Record<DeliveryState, string> = {
   [DeliveryState.CANCELLED_IN_DISPATCHER]: "Cancelled before delivery",
   [DeliveryState.UNKNOWN]: "Outcome unknown",
 };
+
+export function storedCommandLabel(operation: Operation, command?: Command): string {
+  const original = command?.operation;
+  if (operation === Operation.SUBMIT_INPUT && original?.case === "submitInput") {
+    const preview = original.value.text.trim().replace(/\s+/g, " ");
+    if (!preview) return "Empty message";
+    const characters = Array.from(preview);
+    return characters.length > 88 ? characters.slice(0, 88).join("") + "…" : preview;
+  }
+  if (operation === Operation.CHANGE_MODEL && original?.case === "changeModel") {
+    return "Change model to " + original.value.model;
+  }
+  if (operation === Operation.CHANGE_REASONING_EFFORT && original?.case === "changeReasoningEffort") {
+    return "Set reasoning effort to " + original.value.effort;
+  }
+  return deliveryOperationLabel(operation);
+}
