@@ -181,10 +181,7 @@ def tea_config_yaml(rotation: Rotation, creds: ForgejoCredentials, token: str) -
     )
 
 
-def write_raw_token_sops_file(
-    rotation: Rotation, creds: ForgejoCredentials, token_data: dict[str, Any], now: datetime | None = None
-) -> None:
-    now = now or datetime.now(UTC)
+def write_outputs(rotation: Rotation, creds: ForgejoCredentials, token_data: dict[str, Any], now: datetime) -> None:
     token = token_data["sha1"]
     stamps: dict[str, Any] = {
         "rotated_at_unencrypted": f"{now:%Y-%m-%dT%H:%M:%SZ}",
@@ -193,12 +190,14 @@ def write_raw_token_sops_file(
         "scopes_unencrypted": rotation.scopes,
         "token_id_unencrypted": token_data.get("id"),
         "token_name_unencrypted": token_data["name"],
-        "token_last_eight_unencrypted": token_data.get("token_last_eight") or token[-8:],
+        "token_last_eight_unencrypted": token_data["token_last_eight"],
         "username": creds.username,
         "url": creds.tea_url,
         rotation.token_field: token,
     }
     write_sops_yaml(path=rotation.sops_file, document=stamps)
+    if out := rotation.tea_secret:
+        write_sops_yaml(path=out.path, document=build_secret_manifest(out, rotation, creds, token_data))
 
 
 def build_secret_manifest(
@@ -223,17 +222,9 @@ def build_secret_manifest(
             out.username_key: creds.username,
             out.url_key: creds.tea_url,
             out.token_name_key: token_data["name"],
-            out.token_last_eight_key: token_data.get("token_last_eight") or token[-8:],
+            out.token_last_eight_key: token_data["token_last_eight"],
         },
     }
-
-
-def write_tea_secret(rotation: Rotation, creds: ForgejoCredentials, token_data: dict[str, Any]) -> None:
-    if rotation.tea_secret is None:
-        return
-    write_sops_yaml(
-        path=rotation.tea_secret.path, document=build_secret_manifest(rotation.tea_secret, rotation, creds, token_data)
-    )
 
 
 def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:
@@ -248,8 +239,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:
     logger.info("%s: rotating (%s)", rotation.name, reason)
     token_data = mint_token(client, rotation, creds, now)
     verify_token(client, creds, token_data["sha1"])
-    write_raw_token_sops_file(rotation, creds, token_data, now)
-    write_tea_secret(rotation, creds, token_data)
+    write_outputs(rotation, creds, token_data, now)
     return RotatedToken(
         rotation=rotation, credentials=creds, token_id=token_data.get("id"), token_name=token_data["name"]
     )

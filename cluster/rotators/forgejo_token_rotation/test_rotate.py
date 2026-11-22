@@ -4,6 +4,7 @@ import subprocess
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -15,10 +16,10 @@ from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, 
 from cluster.rotators.forgejo_token_rotation.rotate import (
     ForgejoCredentials,
     RotatedToken,
-    build_secret_manifest,
     mint_token,
     should_rotate,
     tokens_to_prune,
+    write_outputs,
 )
 
 
@@ -50,38 +51,19 @@ def test_should_rotate_due_to_stamps_age_or_token_presence(overrides, token_id: 
     assert rotate_due is due
 
 
-def test_published_tea_login_matches_the_raw_credentials():
+def test_minted_account_token_is_published_for_raw_and_tea_clients(monkeypatch: pytest.MonkeyPatch) -> None:
     out = TeaSecretOutput(
-        path=Path("secrets/tea.sops.yaml"),
+        path=Path("tea.yaml"),
         name="forgejo-token",
         namespace="target",
         annotations={"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"},
     )
     rotation = Rotation(
-        name="test", credentials_dir=Path("/creds"), sops_file=Path("secrets/token.yaml"), tea_secret=out
-    )
-    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    manifest = build_secret_manifest(out, rotation, creds, {"name": "minted", "sha1": "token-value"})
-    metadata = manifest["metadata"]
-    assert (metadata["namespace"], metadata["name"]) == (out.namespace, out.name)
-    assert metadata["annotations"].items() >= out.annotations.items()
-    assert metadata["annotations"]["description"]
-    data = manifest["stringData"]
-    [login] = yaml.safe_load(data["config.yml"])["logins"]
-    assert login["url"] == data["url"] == creds.tea_url
-    assert login["token"] == data["token"] == "token-value"
-    assert login["user"] == data["username"] == creds.username
-    assert login["name"] == "forgejo"
-    assert login["default"] is True
-    assert login["version_check"] is False
-
-
-def test_mint_token_requests_full_non_admin_account_access():
-    rotation = Rotation(
         name="haku",
         token_prefix="forgejo-tea-haku",
         credentials_dir=Path("/creds"),
-        sops_file=Path("secrets/haku.yaml"),
+        sops_file=Path("raw.yaml"),
+        tea_secret=out,
     )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     expected_name = "forgejo-tea-haku-20260701010203456789"
@@ -104,12 +86,36 @@ def test_mint_token_requests_full_non_admin_account_access():
                 "write:user",
             ],
         }
-        return httpx.Response(201, json={"id": 12, "name": expected_name, "sha1": "token-value"})
+        return httpx.Response(201, json={"id": 12, "name": expected_name, "token": "token-value"})
 
+    outputs: dict[Path, dict[str, Any]] = {}
+
+    def capture(path: Path, document: dict[str, Any]) -> None:
+        outputs[path] = document
+
+    monkeypatch.setattr(rotate, "write_sops_yaml", capture)
+    now = datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC)
     with httpx.Client(transport=httpx.MockTransport(forgejo)) as client:
-        minted = mint_token(client, rotation, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
-    assert minted["sha1"] == "token-value"
-    assert minted["name"] == expected_name
+        write_outputs(rotation, creds, mint_token(client, rotation, creds, now), now)
+
+    raw = outputs[rotation.sops_file]
+    listed = {"id": 12, "name": expected_name, "token_last_eight": "en-value"}
+    due, _ = should_rotate(rotation, raw, [listed], now)
+    assert not due
+    manifest = outputs[out.path]
+    metadata = manifest["metadata"]
+    assert (metadata["namespace"], metadata["name"]) == (out.namespace, out.name)
+    assert metadata["annotations"].items() >= out.annotations.items()
+    assert metadata["annotations"]["description"]
+    data = manifest["stringData"]
+    assert data["token-last-eight"] == raw["token_last_eight_unencrypted"] == listed["token_last_eight"]
+    [login] = yaml.safe_load(data["config.yml"])["logins"]
+    assert login["url"] == data["url"] == raw["url"] == creds.tea_url
+    assert login["token"] == data["token"] == raw["token"] == "token-value"
+    assert login["user"] == data["username"] == raw["username"] == creds.username
+    assert login["name"] == "forgejo"
+    assert login["default"] is True
+    assert login["version_check"] is False
 
 
 def test_tokens_to_prune_keeps_current_and_newest_previous():
