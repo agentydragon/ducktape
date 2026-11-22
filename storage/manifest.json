@@ -1,25 +1,28 @@
 {
   "scope": "OVH HDD pools, their SeaweedFS and ClickHouse filesystems, and selected S3 accounting and cache workloads. Pool names are assigned labels.",
   "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
-  "audited_at_utc": "2026-11-22T10:58:25+00:00",
+  "audited_at_utc": "2026-11-22T11:37:38Z",
   "snapshot_utc": "2026-11-22T10:57:24+00:00",
   "commitment_snapshot_utc": "2026-11-22T10:58:25+00:00",
   "cache_query_window_end_utc": "2026-11-22T11:01:25.292610+00:00",
-  "previous_report_commit": "62929b186a",
+  "previous_report_commit": "fe952da265f408e8efcb24762e138e35f7de591d",
   "historical_observations": {
     "inventory_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
     "inventory_bucket_response_written_at_utc": "2026-11-09T07:52:12.402236+00:00",
     "inventory_pools_last_response_written_at_utc": "2026-11-09T07:54:15.566889+00:00",
     "remediation_snapshot_utc": "2026-11-10T19:20:23Z",
-    "observability_snapshot_utc": "2026-11-10T21:12:00Z\u201321:28:00Z",
-    "seaweed_volume_fullness_snapshot_utc": "2026-11-10 around 22:30\u201322:33 UTC",
+    "observability_snapshot_utc": "2026-11-10T21:12:00Z–21:28:00Z",
+    "seaweed_volume_fullness_snapshot_utc": "2026-11-10 around 22:30–22:33 UTC",
     "render_receipt": "remediation-validation.json",
     "render_revision_note": "The retained receipt describes the earlier presentation revision."
   },
-  "report_html_sha256": "3d1a638708e9d6232b58f28ac59557493d703cffb589b1bf1c21c3102c11c1df",
-  "current_script_sha256": "45a5167e6bf19555a8a995e319dbe11d1dd312659d0b407411b55c09082c1854",
-  "current_evidence_sha256": "8da93357f187083b1b3bb9b8a62d2da035e6499c4f12813913be2090313471e0",
+  "report_html_sha256": "8e7360a4e425b6a8adc93f580f01f155a5d6748d5d436dde63a41c6c98d7cd7b",
+  "current_script_sha256": "c1c176447707d7d00664dcd3a18616b88dcf746c2c3c335806a6c332915f242d",
+  "current_evidence_sha256": "30b9fc48f5b08b7a894c39b4d8cbf607ff493a0a643696e6ce022f91fa116d29",
   "remediation_script_sha256": "3460ba18a3e0be3e566f16e68c90cb0cc6910e8b17af5bf29d9242b2dcf8114b",
   "remediation_evidence_sha256": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
-  "evidence_sha256": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894"
+  "evidence_sha256": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
+  "followup_devel_commit": "9eaaaa053b89ea1567d69410872dc6c03056ab5c",
+  "ownership_observed_utc": "2026-11-22T11:32:42Z",
+  "discard_observed_utc": "2026-11-22T11:37:38Z"
 }

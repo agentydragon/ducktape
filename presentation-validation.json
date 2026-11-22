@@ -59,34 +59,30 @@
       }
     },
     "home": {
-      "invocation_url": "https://app.buildbuddy.io/invocation/973acdf7-37ba-4477-9e85-f6d2667437ca",
-      "test_target": "//debug/pages_refresh_preview:catalog_test",
+      "invocation_url": "https://app.buildbuddy.io/invocation/54a7a2ea-a785-480e-a213-6f7c5c527c4d",
+      "test_target": "//debug/reclaim_review_preview:reclaim_test",
       "screenshot_sha256": {
         "1280-dark": "8a48b9b31b053fb29661d9cf7363618f1918623cd3450440598ccdb0b9590252",
-        "390-light": "d5b16175ac317f6a2e963c599a1b8f4f3eb713c65d41c5b466d8d0f5f05a3d27",
+        "390-dark": "41a8ca54f7e08906be42409e8c509f62e7edd70e737ba4cbf60376f46bf48785",
         "1280-light": "4941954ee3cb5b505a6247e9e45aaa19f64d0cd409a9e91b272fff52b8afe3d8",
-        "390-dark": "41a8ca54f7e08906be42409e8c509f62e7edd70e737ba4cbf60376f46bf48785"
+        "390-light": "d5b16175ac317f6a2e963c599a1b8f4f3eb713c65d41c5b466d8d0f5f05a3d27"
       },
       "assets_sha256": {
         "agentplane-organization/manifest.json": "aeada12db596c15e0a9fdae70eb3e0629658553c482f15d3ded567f170a021c4",
         "agentplane-protocol-shapes/manifest.json": "196d6bb00bd793d7125f13ef40289a784b1989f3bd10781710c6302623a8b700",
         "agentplane-test-architecture/manifest.json": "95b7def32d12db2d39eec9afb68fc8cbb36eddc7788c78051812531a609b221f",
         "bazel-audit/evidence.json": "5307d59162a007a82cb400fcb243267928f1479f2fa332a77f9bbab180405751",
-        "bazel-audit/index.html": "d4e7eb6bea77bed5d908b2a5dc43e00b773b0b74710600d6f3ef92ea7ecf1243",
         "ci-test-cost/manifest.json": "3e18431b94ba0c5eab1b3aaaf00c7e085f36783c2f0828193692145d46f786b5",
         "fixture-model-audit/manifest.json": "15901de8425aa0da849c3e1694c80a6d537038c13d90d01aa544cea65ed034d7",
-        "index.html": "1c59dced70d07cf44bf257b1c80c8d8a200c46904196aba5e497dcadb1a1b040",
+        "index.html": "d3e07137f907d9ac5e81991b57884043b99fbf51a538add7852a08b9c30e451e",
         "latency/manifest.json": "e4bcac82327cb64f9fb3dee0345c916ab40ad9d2866f982f2eecc6ccd0464aac",
         "reliability/manifest.json": "4e1e61fa21b348f57b7b4fcca7756286a834f168b4bff3b13e558e3fcb68271d",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
-        "storage/manifest.json": "d90d2e6208198c8ce33925b55d30c6c8edd5312db668c8f08fcbe371afc965b8",
-        "upstream-patches/dashboard.js": "1427b01be068977e6309d5437ee7d0c895e56975e9d40cd6bf03b832b4f103e6",
-        "upstream-patches/evidence.json": "4db3c60b636460b3d7587332e7ced2fd1cc4c3d4c986fd4c826309c01467289c",
-        "upstream-patches/index.html": "711aadc3f9f3587385ccae6fb885cb7ddb6483462d8772638b6bd2f4a86f950b",
+        "storage/manifest.json": "6b94aa54970df7f4e9ace2882a91d32594cdbc424721832a1bd449991a6115d9",
         "upstream-patches/manifest.json": "fe705ed856f6b0f308639efb2a36da9da4e9e31f48bfb33008fdc1f05bd4141f",
         "visual-reliability/manifest.json": "13fe4cee44f926151eb72cf78ecb0c237a71f4fbae472863eeda10caa3f83340",
-        "vpa/manifest.json": "c2ec1937a5319044d458bfffaaf4be31db128b474e1a3e632e959832fe9839b5"
+        "vpa/manifest.json": "8a800454b3ef16c0185df35a20e61dec2dc57eb97e49bb2f37805576b4341576"
       }
     },
     "latency": {
@@ -179,25 +175,35 @@
       }
     },
     "storage": {
-      "invocation_url": "https://app.buildbuddy.io/invocation/aaf3d614-638c-43f4-ad28-bca6c04d450f",
-      "test_target": "//debug/pages_refresh_preview:cluster_test",
+      "invocation_url": "https://app.buildbuddy.io/invocation/54a7a2ea-a785-480e-a213-6f7c5c527c4d",
+      "test_target": "//debug/reclaim_review_preview:reclaim_test",
       "screenshot_sha256": {
-        "1280-dark": "e55b0ca447e2545a9da77be9c89984297f81ef91fdbada602ef4d4b48a879f44",
-        "390-light": "d870b4e0b790a5b44927f9a781260456c915100a8f710ca59223627e71c6fd1e",
-        "390-dark": "631084fe774f69b22dc90c4ffe71283ac0318f3b482cbd2fba2e92a50ea12754",
-        "1280-light": "9168dfe62ee72c86ac86d664398055b3be2298ebb31340fe6705eb2df570132f"
+        "390-light": "6aba175408262c19d53db186cca029b0b8cbb468c06006864b705a65a05fa249",
+        "1280-light": "2c284fe3eef3883c63926718f8d0fbb7f32d3b42f9d6ca7013b72a198dd2a78b",
+        "390-dark": "a650db89049e2eea82cf7008092ae9ddde58c8e670065a6ea9a04abe26e45ad9",
+        "1280-dark": "e24713819da781143f7e1510866b7f659dac72b8f8f123e368ccceef3de8e35d"
       },
       "assets_sha256": {
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
-        "storage/current-evidence.json": "8da93357f187083b1b3bb9b8a62d2da035e6499c4f12813913be2090313471e0",
-        "storage/remediation-validation.json": "b7a63a9c36648881a90d5f4ef8cbf1de6575517db885702020cd167a1c19c4d2",
-        "storage/current.js": "45a5167e6bf19555a8a995e319dbe11d1dd312659d0b407411b55c09082c1854",
-        "storage/manifest.json": "d90d2e6208198c8ce33925b55d30c6c8edd5312db668c8f08fcbe371afc965b8",
-        "storage/remediation-evidence.json": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
+        "storage/current-evidence.json": "30b9fc48f5b08b7a894c39b4d8cbf607ff493a0a643696e6ce022f91fa116d29",
+        "storage/current.js": "c1c176447707d7d00664dcd3a18616b88dcf746c2c3c335806a6c332915f242d",
         "storage/evidence.json": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
-        "storage/index.html": "3d1a638708e9d6232b58f28ac59557493d703cffb589b1bf1c21c3102c11c1df",
+        "storage/index.html": "8e7360a4e425b6a8adc93f580f01f155a5d6748d5d436dde63a41c6c98d7cd7b",
+        "storage/manifest.json": "6b94aa54970df7f4e9ace2882a91d32594cdbc424721832a1bd449991a6115d9",
+        "storage/remediation-evidence.json": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
+        "storage/remediation-validation.json": "b7a63a9c36648881a90d5f4ef8cbf1de6575517db885702020cd167a1c19c4d2",
         "storage/remediation.js": "3460ba18a3e0be3e566f16e68c90cb0cc6910e8b17af5bf29d9242b2dcf8114b"
+      },
+      "section_screenshot_sha256": {
+        "discard-1280-light": "a50acb5d564b95669c037b0a2b963db41e48be70d57ccdc89bfe0b576387b05f",
+        "ownership-390-dark": "27d317d9417a7cb12c4c9ea06b9fde9fef68ad520799e1a0c009089d4c302c22",
+        "discard-390-dark": "7a92140e531c90c27ad51c98abc91938b7275e81869f78595d3d8b02a5d36493",
+        "ownership-1280-dark": "4c2274d700ac13c63ad6924f8a0d650c759290e4e90695539dc78c574a659bec",
+        "discard-1280-dark": "b26de7ff97f439b8588ad32bf093be165c7dc03f605888cc5fd1996635bb2288",
+        "ownership-1280-light": "f3051be295f5e113a1d242c75e3457d11c85a38850d203817fffb972f479df9c",
+        "discard-390-light": "c5aa562bf873fc8e6d23d36e095eab0e3fd4ffe53f1900fcdc0b387a52431b78",
+        "ownership-390-light": "b13c9f22bc97ace36a89d1249eb07d9919a78bf3f415de00f96ae0aac9e9bad1"
       }
     },
     "agentplane-test-architecture": {
