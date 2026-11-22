@@ -1769,26 +1769,27 @@ py_library(
 
 py_test(
     name = "test_environment_firecracker",
-    size = "medium",
     srcs = ["test_environment_firecracker.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
         ":egress",
         ":environment_firecracker",
-        ":environment_vm",
-        ":history_service",
         ":kubernetes_account_ref",
+        ":runner_gateway",
         ":staging",
         "//:conftest",
         "//agentplane/egress:platform_routes",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s/testing:manifests",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
