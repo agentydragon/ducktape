@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"gopkg.in/yaml.v3"
@@ -232,8 +232,7 @@ type config struct {
 }
 
 // loadConfig reads the only settings source used by the process.
-func loadConfig(getenv func(string) string) (config, error) {
-	path := getenv(configFileEnv)
+func loadConfig(path string) (config, error) {
 	if path == "" {
 		return config{}, fmt.Errorf("%s must name the YAML settings file", configFileEnv)
 	}
@@ -243,14 +242,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return config{}, err
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&c); err != nil {
+	if err := configfile.DecodeKnownFieldsFile(path, &c); err != nil {
 		return config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return c, nil

@@ -19,7 +19,7 @@ import (
 // Its exit codes are consumed by the process wrapper in cmd/main.go.
 func Run() int {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	c, err := loadConfig(os.Getenv)
+	c, err := loadConfig(os.Getenv(configFileEnv))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2

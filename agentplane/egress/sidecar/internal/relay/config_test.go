@@ -9,15 +9,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
-func settingsFileEnv(path string) func(string) string {
-	return func(name string) string {
-		if name == configFileEnv {
-			return path
-		}
-		return ""
-	}
-}
-
 func TestLoadConfigReadsNestedProxySettings(t *testing.T) {
 	path := configtest.WriteSettings(t, `
 proxy:
@@ -32,7 +23,7 @@ platform_routes:
       transport: {mode: plaintext, token_file: /var/run/control/token}
 listen_address: 127.0.0.1:0
 `)
-	config, err := loadConfig(settingsFileEnv(path))
+	config, err := loadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +50,7 @@ func TestLoadConfigAcceptsAnEmptySharedRouteTable(t *testing.T) {
 proxy: {address: p.example:8888, transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}}
 platform_routes: {routes: {}}
 `
-	config, err := loadConfig(settingsFileEnv(configtest.WriteSettings(t, content)))
+	config, err := loadConfig(configtest.WriteSettings(t, content))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +82,7 @@ workload_routes:
     upstream: notifications.agentplane.svc.cluster.local:8443
     server_uri: spiffe://agentplane/notifications
 `)
-	config, err := loadConfig(settingsFileEnv(path))
+	config, err := loadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +112,8 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 	tlsRoute := "platform_routes: {listen_address: 127.0.0.1:3130, routes: {rules: {service_prefixes: [/rules.Service/], upstream: 'rules.test:8081', transport: {mode: tls_connect, server_uri: " + peertls.EgressProxyURI + "}}}}\n"
 	for name, content := range map[string]string{
 		"unknown key":                              required + "proxy_hots: typo\n",
+		"extra YAML document":                      required + "---\n{}\n",
+		"malformed trailing YAML":                  required + "---\n[\n",
 		"legacy proxy field":                       "proxy_host: p.example\ntoken_file: /token\n",
 		"proxy unknown key":                        strings.Replace(required, "transport:", "extra: true, transport:", 1),
 		"transport unknown key":                    strings.Replace(required, "auth:", "extra: true, auth:", 1),
@@ -166,7 +159,7 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 		"workload route requires valid SPIFFE URI": required + "workload_routes: {'rules.test:443': {upstream: 'rules.test:8443', server_uri: 'spiffe:///rules'}}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			config, err := loadConfig(settingsFileEnv(configtest.WriteSettings(t, content)))
+			config, err := loadConfig(configtest.WriteSettings(t, content))
 			if err == nil {
 				err = config.validate()
 			}
@@ -179,7 +172,7 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 
 func TestLoadConfigRefusesAMissingSettingsFile(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent.yaml")
-	if _, err := loadConfig(settingsFileEnv(absent)); err == nil {
+	if _, err := loadConfig(absent); err == nil {
 		t.Fatal("a settings file that is not there must be an error, not defaults")
 	}
 }
