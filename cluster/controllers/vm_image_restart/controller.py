@@ -263,15 +263,9 @@ async def _request_restart(
 
 
 async def reconcile(
-    vm_api: VMApi,
-    core: CoreApi,
-    settings: Settings,
-    *,
-    vm_cache: Mapping[str, dict[str, Any]],
-    vmi_cache: Mapping[str, dict[str, Any]],
+    vm_api: VMApi, core: CoreApi, settings: Settings, *, vm: dict[str, Any] | None, vmi: dict[str, Any] | None
 ) -> datetime | None:
     """Reconcile the watched VM and return its next timer deadline, if any."""
-    vm = vm_cache.get(settings.target_vm_name)
     if vm is None:
         return None
     annotations = vm.get("metadata", {}).get("annotations", {})
@@ -285,7 +279,6 @@ async def reconcile(
         logger.error("%s/%s has no rootdisk containerDisk image", settings.target_namespace, settings.target_vm_name)
         return None
 
-    vmi = vmi_cache.get(settings.target_vm_name)
     state = await _read_state(core, settings)
     now = _utcnow()
 
@@ -406,7 +399,13 @@ async def _run_reconcile_loop(
         await changed.wait()
         changed.clear()
         try:
-            deadline = await reconcile(vm_api, core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
+            deadline = await reconcile(
+                vm_api,
+                core,
+                settings,
+                vm=vm_cache.get(settings.target_vm_name),
+                vmi=vmi_cache.get(settings.target_vm_name),
+            )
             delay = None if deadline is None else max(0.0, (deadline - _utcnow()).total_seconds())
         except asyncio.CancelledError:
             raise
