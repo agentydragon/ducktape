@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
+import pytest
 import pytest_bazel
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
@@ -35,6 +37,7 @@ from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+from cluster.cdk8s.testing.promtool import PromtoolRules
 
 # types-jsonschema imports referencing in its stubs.
 # gazelle:include_dep @pypi//referencing
@@ -142,31 +145,30 @@ def test_workload_tls_is_mounted_when_optional_secrets_are_unconfigured(scratch_
     assert any(mount["name"] == tls_volume["name"] for mount in container["volumeMounts"])
 
 
-def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> None:
-    env = replace(staging.ENV, namespace="agentplane-test")
-    chart = Chart(scratch_app, "actions", disable_resource_name_hashes=True)
-    actions.Actions(
+@pytest.fixture(scope="module")
+def actions_without_sampler(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    env = replace(
+        staging.ENV,
+        namespace="agentplane-test",
+        actions=replace(staging.ENV.actions, central_sampler_session_delegation=False),
+    )
+    chart = Chart(scratch_app_factory(), "delegation-actions", disable_resource_name_hashes=True)
+    component = actions.Actions(
         chart,
         "actions",
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
-    ).add_platform_resources()
-
-    rule = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "PrometheusRule")
-    assert rule["metadata"]["name"] == f"{actions.NAME}-availability"
-    assert rule["metadata"]["namespace"] == env.namespace
-    alert = one(rule["spec"]["groups"][0]["rules"])
-    assert alert["alert"] == "AgentplaneActionServiceReplicasUnavailable"
-    assert alert["expr"] == (
-        f"max by (cluster, namespace, deployment) "
-        f'(kube_deployment_spec_replicas{{namespace="{env.namespace}", deployment="{actions.NAME}"}}) '
-        f"- max by (cluster, namespace, deployment) "
-        f'(kube_deployment_status_replicas_available{{namespace="{env.namespace}", deployment="{actions.NAME}"}}) > 0'
+        environment_service_endpoint=environment_service.environments_service(env.namespace),
     )
-    assert alert["for"] == "10m"
-    assert alert["labels"] == {"severity": "warning"}
+    component.add_platform_resources()
+    return chart.to_json()
+
+
+def test_action_replica_alert(actions_without_sampler: list[dict[str, Any]], promtool: PromtoolRules) -> None:
+    rule = find_resource(actions_without_sampler, "PrometheusRule", "actions-availability", namespace="agentplane-test")
+    promtool("ducktape/cluster/cdk8s/agentplane/testdata/action_availability.yaml", {"actions.yaml": rule["spec"]})
 
 
 def test_gaffer_policy_approves_only_scoped_branch_and_pr_requests(staging_manifests: list[dict[str, Any]]) -> None:
@@ -279,24 +281,13 @@ def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> N
     assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == alloy_endpoints.OTLP_GRPC_ENDPOINT
 
 
-def test_disabling_sampler_delegation_removes_its_caller_and_ingress_rule(scratch_app: App) -> None:
-    env = replace(staging.ENV, actions=replace(staging.ENV.actions, central_sampler_session_delegation=False))
-    chart = Chart(scratch_app, "delegation-actions", disable_resource_name_hashes=True)
-    component = actions.Actions(
-        chart,
-        "actions",
-        env,
-        database_url=EnvValue.from_value("postgres://unused"),
-        history=history_service.service(env.namespace),
-        dispatcher=runner_gateway.sessions_service(env.namespace),
-        environment_service_endpoint=environment_service.environments_service(env.namespace),
-    )
-    component.add_platform_resources()
-    documents = Cdk8sTesting.synth(chart)
-    settings = config_map_yaml(documents, f"{actions.NAME}-settings", "settings.yaml")
+def test_disabling_sampler_delegation_removes_its_caller_and_ingress_rule(
+    actions_without_sampler: list[dict[str, Any]],
+) -> None:
+    settings = config_map_yaml(actions_without_sampler, f"{actions.NAME}-settings", "settings.yaml")
     assert not settings.get("session_delegation_service")
-    policy = find_resource(documents, "CiliumNetworkPolicy", actions.NAME)
-    sampler = central_sampler.service(env.namespace).pods.cilium
+    policy = find_resource(actions_without_sampler, "CiliumNetworkPolicy", actions.NAME)
+    sampler = central_sampler.service(policy["metadata"]["namespace"]).pods.cilium
     assert all(
         endpoint.get("matchLabels") != sampler
         for rule in policy["spec"]["ingress"]

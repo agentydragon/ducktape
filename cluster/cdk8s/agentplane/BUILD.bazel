@@ -950,8 +950,15 @@ py_test(
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
     srcs = ["test_actions.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = [
+        "testdata/action_availability.yaml",
+        "@multitool//tools/promtool",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
     deps = [
         ":actions",
         ":central_sampler",
@@ -966,10 +973,12 @@ py_test(
         "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/testing:manifests",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//jsonschema",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//referencing",
     ],
