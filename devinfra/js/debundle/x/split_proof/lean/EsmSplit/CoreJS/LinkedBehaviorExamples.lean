@@ -53,4 +53,6 @@ factory call. The public export and the returned closure still refer to the same
 theorem movedClosure : LinkedBehavior.Equivalent source candidate ∧ LinkedBehavior.SameExports source candidate := by
   verify_linked_programs 16
 
+#audit_linked_programs movedClosure
+
 end CoreJS.LinkedBehaviorExamples

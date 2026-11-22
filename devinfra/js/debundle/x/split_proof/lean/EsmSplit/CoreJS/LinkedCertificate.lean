@@ -50,6 +50,15 @@ macro "verify_linked_programs " fuel:num : tactic => `(tactic|
   constructor <;> (first | apply of_evaluation $fuel | apply sameExports_of_match) <;>
     intro w <;> first | rfl | cbv <;> rfl)
 
+-- Check the actual theorem, whose reduction lemmas depend on the input program.
+open Lean Elab Command in
+elab "#audit_linked_programs " thm:ident : command => do
+  let name ← liftCoreM <| realizeGlobalConstNoOverload thm
+  let axioms ← liftCoreM <| Lean.collectAxioms name
+  let allowed := #[``propext, ``Classical.choice, ``Quot.sound]
+  for ax in axioms do
+    unless allowed.contains ax do throwError "linked program certificate depends on {ax}"
+
 /-- The generated module proves an all-world, fuel-independent claim for these two programs.
 The caller accepts only successful elaboration and kernel checking of the complete file. -/
 def certificate (source candidate : Program) : Except String String := do
@@ -60,6 +69,6 @@ def certificate (source candidate : Program) : Except String String := do
     "private def source : Program := " ++ s ++ "\n" ++
     "private def candidate : Program := " ++ c ++ "\n" ++
     "theorem verified : LinkedBehavior.Equivalent source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
-    "  verify_linked_programs 16\n"
+    "  verify_linked_programs 16\n#audit_linked_programs verified\n"
 
 end CoreJS.LinkedBehavior
