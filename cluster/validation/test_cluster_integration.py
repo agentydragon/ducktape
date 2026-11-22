@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import shutil
 import tempfile
-from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
@@ -39,120 +38,72 @@ from cluster.validation.image_automation import (
     check_no_flow_mappings_where_flux_writes,
 )
 from cluster.validation.k8s import AgentplaneSandboxTemplateResource, K8sResource, load_k8s_resources
-from cluster.validation.kustomize import (
-    KustomizeFile,
-    flux_generated_kustomization,
-    parse_kustomize_file,
-    run_kustomize_build,
-    stage_artifact_copies,
-)
+from cluster.validation.kustomize import run_kustomize_build, stage_artifact_copies
 
 
-async def _build_namespace_override(
-    owner: str, spec: FluxKustomizationSpec, directory: Path, source_root: Path
-) -> list[K8sResource]:
+async def _build_namespace_override(owner: str, spec: FluxKustomizationSpec, directory: Path) -> list[K8sResource]:
     assert spec.manifest_path is not None
-    # Flux CLI 2.4 rewrites the root kustomization temporarily. Each owner gets its own
-    # source copy so nested resources still resolve and overlapping owners cannot race.
-    with tempfile.TemporaryDirectory(prefix="flux-namespace-") as scratch:
-        source = Path(scratch) / "source"
-        shutil.copytree(source_root, source)
-        flux = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
-        process = await asyncio.create_subprocess_exec(
-            flux,
-            "build",
-            "kustomization",
-            owner,
-            "--namespace",
-            spec.namespace,
-            "--kustomization-file",
-            spec.manifest_path,
-            "--path",
-            source / directory.relative_to(source_root),
-            "--dry-run",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            raise RuntimeError(f"Flux build failed for {spec.namespace}/{owner}: {stderr.decode()}")
+    flux = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
+    process = await asyncio.create_subprocess_exec(
+        flux,
+        "build",
+        "kustomization",
+        owner,
+        "--namespace",
+        spec.namespace,
+        "--kustomization-file",
+        spec.manifest_path,
+        "--path",
+        directory,
+        "--dry-run",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(f"Flux build failed for {spec.namespace}/{owner}: {stderr.decode()}")
     return load_k8s_resources(stdout)
 
 
 def _build_cluster(repo_root: Path) -> ParsedCluster:
     parsed = parse_cluster(repo_root)
 
-    # Build all local flux-referenced kustomizations (including suspended — kustomize
-    # build should still succeed). Only validation checks filter suspended.
-    kusts_by_dir = {path.parent.resolve(): kust for path, kust in parsed.kustomize_files.items()}
+    async def build(owner: str, spec: FluxKustomizationSpec, directory: Path) -> tuple[str, list[K8sResource]]:
+        # Flux temporarily rewrites kustomization.yaml. Give each namespace override a private source,
+        # even when another owner builds the same path with a different targetNamespace.
+        with tempfile.TemporaryDirectory(prefix="flux-owner-") as scratch:
+            source = Path(scratch)
+            ref = spec.source_ref
+            if ref and ref.kind == EXTERNAL_ARTIFACT_KIND:
+                key = (ref.namespace or spec.namespace, ref.name)
+                try:
+                    stage_artifact_copies(repo_root, source, parsed.artifact_copies[key])
+                except (ValueError, FileNotFoundError, KeyError) as error:
+                    raise ValueError(f"{owner}: cannot stage ExternalArtifact {key}: {error}") from error
+                directory = source / directory.relative_to(repo_root)
+            elif spec.target_namespace:
+                shutil.copytree(repo_root, source, dirs_exist_ok=True)
+                directory = source / directory.relative_to(repo_root)
 
-    def needs_artifact_staging(copies: list[tuple[str, str]]) -> bool:
-        # Directory copies already appear at their artifact paths in the source checkout.
-        # Exact-file copies and remapped directories need a temporary materialized artifact.
-        for source_uri, destination_uri in copies:
-            if not source_uri.startswith("@repo/") or not destination_uri.startswith("@artifact/"):
-                continue
-            source = source_uri.removeprefix("@repo/")
-            if source == "**":
-                source = ""
-            elif source.endswith("/**"):
-                source = source.removesuffix("/**").rstrip("/")
-            destination = destination_uri.removeprefix("@artifact/").rstrip("/")
-            if source != destination:
-                return True
-        return False
+            if not directory.is_dir():
+                raise FileNotFoundError(f"{owner}: {spec.path} is missing from its source")
+            if spec.target_namespace:
+                return owner, await _build_namespace_override(owner, spec, directory)
 
-    staged_artifacts: dict[tuple[str, str], Path] = {}
-    with ExitStack() as staging_dirs:
-        for key, copies in parsed.artifact_copies.items():
-            if not needs_artifact_staging(copies):
-                continue
-            staging_root = Path(staging_dirs.enter_context(tempfile.TemporaryDirectory(prefix="flux-artifact-")))
-            try:
-                stage_artifact_copies(repo_root, staging_root, copies)
-            except (ValueError, FileNotFoundError) as error:
-                raise ValueError(f"failed to stage ExternalArtifact {key}: {error}") from error
-            staged_artifacts[key] = staging_root
+            return owner, await run_kustomize_build(directory)
 
-        async def _build_all() -> dict[str, list[K8sResource]]:
-            # At most one additional copy of a manifest tree, even when several owners share it.
-            namespace_build = asyncio.Semaphore(1)
-
-            async def _build(
-                owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile
-            ) -> tuple[str, list[K8sResource]]:
-                source_root = repo_root
-                build_file = kust
-                source_ref = spec.source_ref
-                if source_ref is not None and source_ref.kind == EXTERNAL_ARTIFACT_KIND:
-                    artifact_namespace = source_ref.namespace or spec.namespace
-                    if staged_root := staged_artifacts.get((artifact_namespace, source_ref.name)):
-                        relative = kust.path.relative_to(repo_root)
-                        staged_path = staged_root / relative
-                        if not staged_path.is_file():
-                            raise FileNotFoundError(
-                                f"ExternalArtifact {artifact_namespace}/{source_ref.name} does not contain {relative}"
-                            )
-                        source_root = staged_root
-                        build_file = KustomizeFile(path=staged_path)
-
-                if spec.target_namespace:
-                    async with namespace_build:
-                        resources = await _build_namespace_override(owner, spec, build_file.path.parent, source_root)
-                else:
-                    resources = await run_kustomize_build(build_file)
-                return owner, resources
-
-            rendered = await asyncio.gather(
+    async def build_all() -> dict[str, list[K8sResource]]:
+        return dict(
+            await asyncio.gather(
                 *(
-                    _build(owner, spec, kusts_by_dir[directory])
+                    build(owner, spec, directory)
                     for owner, spec in parsed.flux_kustomizations.items()
-                    if (directory := spec.local_dir(repo_root)) is not None and directory in kusts_by_dir
+                    if (directory := spec.local_dir(repo_root)) is not None
                 )
             )
-            return dict(rendered)
+        )
 
-        parsed.rendered_resources = asyncio.run(_build_all())
+    parsed.rendered_resources = asyncio.run(build_all())
     return parsed
 
 
@@ -422,10 +373,7 @@ def test_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> None:
 @pytest.fixture(scope="module")
 def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
     """Bootstrap roots are not children of the generated Flux graph; build them rather than guessing their labels."""
-    bootstrap_roots = (
-        parse_kustomize_file(k8s_dir / "flux/flux-system/kustomization.yaml"),
-        flux_generated_kustomization(k8s_dir / "flux/ducktape-flux"),
-    )
+    bootstrap_roots = (k8s_dir / "flux/flux-system", k8s_dir / "flux/ducktape-flux")
     return [resource for root in bootstrap_roots for resource in asyncio.run(run_kustomize_build(root))]
 
 
