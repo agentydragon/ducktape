@@ -149,7 +149,7 @@ function PushedFileContent({
     return (
       <Stack gap="xs">
         <Text size="sm" c="dimmed">
-          This file's diff is too large to display.
+          The diff is too large to display.
         </Text>
         {proposed}
       </Stack>
