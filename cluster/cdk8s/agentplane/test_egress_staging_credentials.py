@@ -8,6 +8,7 @@ import pytest_bazel
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
+from cluster.cdk8s.agentplane import gaffer_archive
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, add_staging_egress_credentials
 from cluster.cdk8s.clickhouse import client as clickhouse
@@ -59,6 +60,35 @@ def test_credential_copy_uses_a_scoped_source_reader(
             assert grant == read
             readers.update((s["kind"], s.get("namespace"), s["name"]) for s in binding["subjects"])
     assert readers == {("ServiceAccount", STAGING_CREDENTIALS_NAMESPACE, provider["auth"]["serviceAccount"]["name"])}
+
+
+def test_private_archive_token_scope_and_redirect(credentials: list[dict[str, Any]], scratch_app: App) -> None:
+    objects = Cdk8sTesting.synth(gaffer_archive.chart(scratch_app))
+    source = find_resource(objects, "GithubAccessToken", gaffer_archive.NAME)
+    assert source["metadata"]["namespace"] == "flux-system"
+    assert source["spec"]["repositories"] == ["gaffer-private"]
+    assert source["spec"]["permissions"] == {"contents": "read"}
+    external = find_resource(objects, "ExternalSecret", gaffer_archive.NAME)["spec"]
+    assert external["dataFrom"][0]["sourceRef"]["generatorRef"]["name"] == source["metadata"]["name"]
+    assert external["target"]["template"]["data"] == {"token": "{{ .token }}"}
+    token = find_resource(credentials, "EgressCredential", gaffer_archive.NAME)["spec"]["source"]["secretRef"]
+    assert token == {"name": external["target"]["name"], "key": "token"}
+    rules = find_resource(credentials, "PolicySet", gaffer_archive.NAME)["spec"]["rules"]
+    assert rules == [
+        {
+            "type": "egress",
+            "methods": ["GET"],
+            "hosts": ["api.github.com"],
+            "paths": ["/repos/agentydragon/gaffer-private/tarball/*"],
+            "credentialRef": {"name": gaffer_archive.NAME},
+        },
+        {
+            "type": "egress",
+            "methods": ["GET"],
+            "hosts": ["codeload.github.com"],
+            "paths": ["/agentydragon/gaffer-private/legacy.tar.gz/*"],
+        },
+    ]
 
 
 def test_aiquota_read_limits_egress_and_the_history_credential(credentials: list[dict[str, Any]]) -> None:

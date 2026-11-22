@@ -1,4 +1,5 @@
 # gazelle:ignore
+# gazelle:resolve py eso_github_access_token_crds //cluster/cdk8s/providers/external_secrets:githubaccesstoken
 
 # gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
@@ -1226,6 +1227,7 @@ py_test(
     deps = [
         ":egress_credentials",
         ":egress_staging_credentials",
+        ":gaffer_archive",
         "//:conftest",
         "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
@@ -1847,5 +1849,21 @@ py_library(
     deps = [
         "//agentplane/crds:sandboxtemplate",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "gaffer_archive",
+    srcs = ["gaffer_archive.py"],
+    deps = [
+        ":egress_credentials",
+        "//cluster/cdk8s:image_automation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:reflector",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/external_secrets:githubaccesstoken",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )

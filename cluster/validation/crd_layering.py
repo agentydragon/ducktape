@@ -10,6 +10,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "ClusterExternalSecret",
         "SecretStore",
         "ClusterSecretStore",
+        "GithubAccessToken",
         "Password",
         "Fake",
         "VaultDynamicSecret",
