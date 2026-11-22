@@ -182,10 +182,15 @@ py_test(
 py_test(
     name = "test_flux",
     srcs = ["test_flux.py"],
-    data = ["//cluster/k8s/flux/flux-system:gotk-sync.yaml"],
+    data = [
+        "//cluster:generated/artifact-generators/artifact-generators.k8s.yaml",
+        "//cluster/k8s:flux/ducktape-flux/ducktape-flux.k8s.yaml",
+        "//cluster/k8s/flux/flux-system:gotk-sync.yaml",
+    ],
     deps = [
         ":flux",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",

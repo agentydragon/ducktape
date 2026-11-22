@@ -15,6 +15,11 @@ filegroup(
 
 # Focused tests inline these direct-file inputs in their data lists.
 exports_files(
+    ["flux/ducktape-flux/ducktape-flux.k8s.yaml"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
+exports_files(
     ["haku/forgejo-tea/haku-forgejo-tea.sops.yaml"],
     visibility = ["//cluster/cdk8s/haku_ci:__pkg__"],
 )
