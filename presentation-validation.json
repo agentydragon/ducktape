@@ -41,46 +41,46 @@
       }
     },
     "upstream-patches": {
-      "invocation_url": "https://app.buildbuddy.io/invocation/973acdf7-37ba-4477-9e85-f6d2667437ca",
-      "test_target": "//debug/pages_refresh_preview:catalog_test",
+      "invocation_url": "https://app.buildbuddy.io/invocation/fdd18e85-3961-458f-8b91-c2f16d787f69",
+      "test_target": "//debug/reclaim_review_preview:adoption_test",
       "screenshot_sha256": {
-        "1280-light": "60599af020fc47e3bfe38966e1f0d9979078a4a2db7afbc2a72e6b28680f3e09",
-        "1280-dark": "6bfd6f3d3f0e92689b574aaa634c523b1bcbde517b69be23ed4f8db2a9b2c5de",
-        "390-light": "3fb2e6b6d90da1b3ed373786574d4c75ae44ad628992728d8e173d62bcf2252c",
-        "390-dark": "3b921007c0b9b8f8ec46fa943ac6e7b380b4f8d3fec89e9483a5a6b7ca98a578"
+        "390-dark": "a2295388ceab13f877e2e232ea020eb74b53595e6fa8245166d4083f75ecbfab",
+        "1280-dark": "40e53c358ca97686cf77069905c37b3300fb3d25b67a798e382942a7cfdce1de",
+        "390-light": "42f028116549e4338e4f60d268b855981a595fccb78fa40fa7c440bfda25b1d6",
+        "1280-light": "15addc915de5985dfded1845441803e03c01484be8200a72c4fe0db7a0804697"
       },
       "assets_sha256": {
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
-        "upstream-patches/dashboard.js": "1427b01be068977e6309d5437ee7d0c895e56975e9d40cd6bf03b832b4f103e6",
-        "upstream-patches/evidence.json": "4db3c60b636460b3d7587332e7ced2fd1cc4c3d4c986fd4c826309c01467289c",
-        "upstream-patches/index.html": "711aadc3f9f3587385ccae6fb885cb7ddb6483462d8772638b6bd2f4a86f950b",
-        "upstream-patches/manifest.json": "fe705ed856f6b0f308639efb2a36da9da4e9e31f48bfb33008fdc1f05bd4141f"
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "upstream-patches/manifest.json": "5a96fca978c89b6fb83e74b0a5342545e041c2debaa7bb161e6e93f07785834d",
+        "upstream-patches/dashboard.js": "c49312a34d41edc639cd95d11a0edac8395510a144157653279613c8e67610a6",
+        "upstream-patches/evidence.json": "c044ae7ceda408652d586f1e3974e32434a6b25ca73d91b260f61df6010270a2",
+        "upstream-patches/index.html": "d73125571848082d0bf1afc7f32e1effaef95504ff3cbbbcf97dd6c4ee5f76bf"
       }
     },
     "home": {
-      "invocation_url": "https://app.buildbuddy.io/invocation/54a7a2ea-a785-480e-a213-6f7c5c527c4d",
-      "test_target": "//debug/reclaim_review_preview:reclaim_test",
+      "invocation_url": "https://app.buildbuddy.io/invocation/fdd18e85-3961-458f-8b91-c2f16d787f69",
+      "test_target": "//debug/reclaim_review_preview:adoption_test",
       "screenshot_sha256": {
-        "1280-dark": "8a48b9b31b053fb29661d9cf7363618f1918623cd3450440598ccdb0b9590252",
-        "390-dark": "41a8ca54f7e08906be42409e8c509f62e7edd70e737ba4cbf60376f46bf48785",
-        "1280-light": "4941954ee3cb5b505a6247e9e45aaa19f64d0cd409a9e91b272fff52b8afe3d8",
-        "390-light": "d5b16175ac317f6a2e963c599a1b8f4f3eb713c65d41c5b466d8d0f5f05a3d27"
+        "390-light": "1f7bb0ddfd95e7c823866845c474feb83c5ea2b82ee15a5b5bb8dbcc5bac517d",
+        "390-dark": "20418bbf658220c887ff1405a935d5660b507ec01b529066898f992acb3e91e1",
+        "1280-dark": "850b98d708d39a73b9b28ac5becd107aca4c17a42d79fe96eeaccd5a64e5cfd0",
+        "1280-light": "32279f3f1cef4be9a68963a96624db7ecb97dea8c22d23c7fb8a233ae38d6734"
       },
       "assets_sha256": {
-        "agentplane-organization/manifest.json": "aeada12db596c15e0a9fdae70eb3e0629658553c482f15d3ded567f170a021c4",
-        "agentplane-protocol-shapes/manifest.json": "196d6bb00bd793d7125f13ef40289a784b1989f3bd10781710c6302623a8b700",
-        "agentplane-test-architecture/manifest.json": "95b7def32d12db2d39eec9afb68fc8cbb36eddc7788c78051812531a609b221f",
-        "bazel-audit/evidence.json": "5307d59162a007a82cb400fcb243267928f1479f2fa332a77f9bbab180405751",
-        "ci-test-cost/manifest.json": "3e18431b94ba0c5eab1b3aaaf00c7e085f36783c2f0828193692145d46f786b5",
-        "fixture-model-audit/manifest.json": "15901de8425aa0da849c3e1694c80a6d537038c13d90d01aa544cea65ed034d7",
-        "index.html": "d3e07137f907d9ac5e81991b57884043b99fbf51a538add7852a08b9c30e451e",
-        "latency/manifest.json": "e4bcac82327cb64f9fb3dee0345c916ab40ad9d2866f982f2eecc6ccd0464aac",
-        "reliability/manifest.json": "4e1e61fa21b348f57b7b4fcca7756286a834f168b4bff3b13e558e3fcb68271d",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "index.html": "550c82ae614ff66c0978982c4aba0708b87a42c5e8e083a48ebd9b8255352b93",
         "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "bazel-audit/evidence.json": "5307d59162a007a82cb400fcb243267928f1479f2fa332a77f9bbab180405751",
+        "reliability/manifest.json": "4e1e61fa21b348f57b7b4fcca7756286a834f168b4bff3b13e558e3fcb68271d",
+        "latency/manifest.json": "e4bcac82327cb64f9fb3dee0345c916ab40ad9d2866f982f2eecc6ccd0464aac",
+        "fixture-model-audit/manifest.json": "15901de8425aa0da849c3e1694c80a6d537038c13d90d01aa544cea65ed034d7",
+        "agentplane-protocol-shapes/manifest.json": "196d6bb00bd793d7125f13ef40289a784b1989f3bd10781710c6302623a8b700",
+        "ci-test-cost/manifest.json": "3e18431b94ba0c5eab1b3aaaf00c7e085f36783c2f0828193692145d46f786b5",
+        "upstream-patches/manifest.json": "5a96fca978c89b6fb83e74b0a5342545e041c2debaa7bb161e6e93f07785834d",
+        "agentplane-organization/manifest.json": "aeada12db596c15e0a9fdae70eb3e0629658553c482f15d3ded567f170a021c4",
+        "agentplane-test-architecture/manifest.json": "95b7def32d12db2d39eec9afb68fc8cbb36eddc7788c78051812531a609b221f",
         "storage/manifest.json": "6b94aa54970df7f4e9ace2882a91d32594cdbc424721832a1bd449991a6115d9",
-        "upstream-patches/manifest.json": "fe705ed856f6b0f308639efb2a36da9da4e9e31f48bfb33008fdc1f05bd4141f",
         "visual-reliability/manifest.json": "13fe4cee44f926151eb72cf78ecb0c237a71f4fbae472863eeda10caa3f83340",
         "vpa/manifest.json": "8a800454b3ef16c0185df35a20e61dec2dc57eb97e49bb2f37805576b4341576"
       }
