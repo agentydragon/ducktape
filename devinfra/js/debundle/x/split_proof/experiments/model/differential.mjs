@@ -387,6 +387,7 @@ for (const c of !broad ? [] : [...moduleCases, ...linked]) {
     expectEnd: c.end ?? null,
     set: null,
     linked: linked.includes(c),
+    expectedOutput: c.expectedOutput,
   });
 }
 // Body fallback must not hide eager class work or unsupported invocation/home-object semantics.
@@ -1058,9 +1059,12 @@ assert(
 );
 assert.equal(
   jobs.filter((j) => j.linked).length,
-  broad ? count * 3 : 0,
-  "each seed must run the diamond, cycle and abrupt module graphs"
+  broad ? count * 4 : 0,
+  "each seed must run the default-export, diamond, cycle and abrupt module graphs"
 );
+const witnessedGraphs = jobs.filter((j) => j.linked && j.expectedOutput);
+assert.equal(witnessedGraphs.length, broad ? count : 0);
+for (const job of witnessedGraphs) assert.deepEqual(job.node.out, job.expectedOutput, job.label);
 console.log(`generated linked programs: ${linked.length}, compared with Node and Plan.evalOrder`);
 const opaqueMoved = splitJobs.filter((j) => j.of.opaqueCase?.move && !j.orderKept);
 assert.equal(
