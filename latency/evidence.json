@@ -45368,5 +45368,60 @@
       }
     ],
     "method": "Hash sort sha256(nov22 + head SHA), first 35 per UTC creation day. Sample fixed November 15\u201321 inclusive. Join PR-event check suites by repository, branch and head SHA. Test current three contexts, requiring simultaneous acceptance. Checks and file metadata collected November 22 from 02:52\u201303:02 UTC. Edit family uses first-parent file list on single-parent commits with fewer than 100 files. Docs alongside one code family take the code family. PR-wide classification requires GitHub current head equal sampled SHA and complete list at most 100 files."
+  },
+  "kvm_runner_dispatch": {
+    "population": "Two selected cold required KubeVirt actions on 22 November UTC. This follow-up does not estimate a fleet miss rate.",
+    "method": "Joined BuildBuddy execution IDs and executor host IDs to Loki guest-console-log runner lookups and recycling events. Compared the K3s persistence fingerprint from each action and its warm predecessor. Mimir CPU and RAM figures are last available 60-second samples of reservations. Work-disk space is guest filesystem availability. Central scheduler offers and candidate rankings are unavailable.",
+    "worker_log_selector": "{namespace=\"buildbuddy-executor\",container=\"guest-console-log\",app=~\"buildbuddy-kvm-worker-[0-9]+\"} |~ \"Looking for match|Successfully recycled runner|Executor shutting down\"",
+    "baseline_fingerprint": "d66e586d4c7d7aa05f9e1cd4ee014e65731abc90da92104a505432a3959c0c69",
+    "cases": [
+      {
+        "pr": 18741,
+        "pr_head": "4b3e74f2c176af24afeedd4c2a9a7e882e30baf8",
+        "invocation": "01918835-66ec-569d-87c1-64d28a06e99b",
+        "previous_invocation": "7a7810cc-9f23-5841-9deb-b8bef697d363",
+        "metrics": "https://grafana.allegedly.works/d/buildbuddy-executor-pool/buildbuddy-executor-pool?from=1795308000000&to=1795308120000",
+        "vm_queued_utc": "2026-11-22T00:40:56.503089Z",
+        "firecracker_queued_utc": "2026-11-22T00:40:56.487115Z",
+        "vm_worker": 5,
+        "vm_lookup": "empty pool",
+        "vm_setup_s": 305.51,
+        "vm_action_s": 591.59,
+        "bazel_critical_path_s": 622.01,
+        "next_test_finish_gap_s": 250.36,
+        "matching_worker": 0,
+        "prior_runner_paused_utc": "2026-11-21T23:26:42.569Z",
+        "matching_runner_prefix": "3dfd29fe",
+        "matching_platform_prefix": "cb0021f1",
+        "firecracker_platform_prefix": "1d2d3ec7",
+        "matching_runner_seen_on_firecracker_lookup_utc": "2026-11-22T00:41:01.672Z",
+        "registered_workers": [0, 2, 3, 5, 6],
+        "last_sample_unreserved_cpu_and_ram": [0, 5, 6],
+        "last_sample_all_cpu_reserved": [2, 3],
+        "worker_0_reservation_sample_utc": "2026-11-22T00:40:54Z",
+        "advertised_cores": 4,
+        "advertised_ram_gib": 7,
+        "available_work_disk_gib": 53,
+        "disk_sample_utc": "2026-11-22T00:40:25Z",
+        "requested_disk_gib": 50,
+        "clock_note": "The VM worker clock precedes central enqueue by about one second. Compare the two central enqueue timestamps to each other."
+      },
+      {
+        "pr": 18844,
+        "pr_head": "f93eb5e150015f74381195f2cb642caff45d9121",
+        "invocation": "ec48b4c8-7fac-5e5a-8c0e-803bbac5f502",
+        "previous_invocation": "0b5493f6-ac65-5e3b-84cd-8ec6046a08c9",
+        "metrics": "https://grafana.allegedly.works/d/buildbuddy-executor-pool/buildbuddy-executor-pool?from=1795319100000&to=1795319400000",
+        "vm_worker": 5,
+        "vm_lookup": "empty pool",
+        "vm_setup_s": 206.14,
+        "matching_worker": 3,
+        "matching_runner_prefix": "247ff4d5",
+        "matching_action_start_utc": "2026-11-22T03:45:16.185Z",
+        "vm_queued_utc": "2026-11-22T03:46:31.499015Z",
+        "matching_runner_paused_again_utc": "2026-11-22T03:49:09.759Z",
+        "time_until_runner_free_s": 158.26
+      }
+    ]
   }
 }

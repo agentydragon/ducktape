@@ -63,10 +63,11 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=18a30ec8f94413a204fa905c36f3b4f35bdecf552751d66654ca8d8ef6d043d9",
+        "./evidence.json?v=99c6e70760e96a0a63a5e63c58bde2e2ec1f58b9c40c9831fdac58f35130e3e5",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
+      const [dispatchA, dispatchB] = evidence.kvm_runner_dispatch.cases;
       const fresh = evidence.nov22_feedback;
       const podAdmission = evidence.managed_pod_admission;
       const cas = evidence.cas_followup;
@@ -224,6 +225,18 @@
    555,
  )}
  <${Text} mt="sm">Both VM failures precede the required KVM cutover. Keep the existing 27 November or 50-fresh-execution follow-up for that route. The Pod failure was a managed Firecracker snapshot restore error before the test could run. Reducing VM scenario time or adding GitHub slots would leave that failure mode in place.<//>
+</section>
+<section id="kvm-runner-dispatch">
+ <${Title} order=${2}>Where the two cold VM actions landed<//>
+ <${Text} my="sm">On 22 November, two required KubeVirt tests started on worker 5 with an empty runner pool. The executor logs show different opportunities for reuse. Keep the 5s preference for a recycled runner while investigating how BuildBuddy assigned the first pair of actions.<//>
+ <${Title} order=${3}>#18741 · A matching runner was idle<//>
+ <${Text} my="sm">Worker 0 had paused a VM runner at 23:26:42 UTC the night before. Its fixture fingerprint matched this run. At 00:40:54 it reported healthy registration and all 4 CPUs and 7 GiB of RAM available. Its latest disk sample showed 53 GiB free against a 50 GiB request.<//>
+ <${Text} my="sm">At 00:40:56 BuildBuddy queued Firecracker and KubeVirt 16 ms apart. Worker 5 took KubeVirt and spent 306s on fixture setup. At 00:41:01 worker 0 took Firecracker. Its lookup still listed the paused KubeVirt runner. The KubeVirt action occupied 592s of the 622s Bazel critical path and finished 4m10s after the next test.<//>
+ <${Text} size="sm">${pr(18741)} · ${build(dispatchA.invocation, "Both actions")} · ${build(dispatchA.previous_invocation, "Worker 0’s preceding VM test")} · ${link(dispatchA.metrics, "Pool metrics at dispatch")}<//>
+ <${Title} order=${3} mt="md">#18844 · The known warm runner was busy<//>
+ <${Text} my="sm">Worker 3 started a VM test at 03:45:16 UTC. The next VM action queued at 03:46:31 and went to worker 5. Worker 3 returned its matching runner to the pool at 03:49:09, 158s after enqueue. A 30s preference would have expired while that runner was still occupied.<//>
+ <${Text} size="sm">${pr(18844)} · ${build(dispatchB.invocation, "Cold VM action")} · ${build(dispatchB.previous_invocation, "Concurrent warm VM action")} · ${link(dispatchB.metrics, "Pool metrics at dispatch")}<//>
+ <${Text} my="sm"><strong>Next decision.</strong> Request BuildBuddy’s scheduler trace for #18741. Did it offer worker 0 the KubeVirt action, or had it already reserved that worker for Firecracker? The worker logs identify the runner and assignment. The scheduler’s candidate ranking and reservation order remain unknown. These two cases establish neither a fleet miss rate nor a measured PR speedup.<//>
 </section>
 <section id="shard-replay">
  <${Title} order=${2}>Time the longest browser shard<//>
