@@ -2,14 +2,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import (
-    ApiObject,
-    ApiObjectMetadata,
-    App,
-    Chart,
-    JsonPatch,
-    Testing as Cdk8sTesting,
-)  # pytest auto-collects classes named Test*
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
 
 from cluster.cdk8s.fleet_rules import (
     add_fleet_rules,
@@ -211,7 +204,7 @@ def test_auto_vpa_namespace_owned_policy_requires_controlled_values(scratch_app:
     )
     add_fleet_rules(chart)
     with pytest.raises(Exception, match=r"Namespace/partial: VPA container policy '\*' lacks controlledValues"):
-        Cdk8sTesting.synth(chart)
+        chart.to_json()
 
 
 def _reader(
@@ -393,7 +386,7 @@ def test_rules_fail_synth_naming_the_object(scratch_app: App) -> None:
     with pytest.raises(
         Exception, match=r"(?s)Validation failed.*Deployment/bare container main: seccomp profile is None"
     ):
-        Cdk8sTesting.synth(chart)
+        chart.to_json()
 
 
 if __name__ == "__main__":

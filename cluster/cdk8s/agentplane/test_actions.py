@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
+from cdk8s import App, Chart
 from cdk8s_plus_34 import EnvValue
 from jsonschema import Draft202012Validator
 from more_itertools import one
@@ -89,7 +89,7 @@ def test_mcp_edge_identity_reader_role_exists_without_oauth(scratch_app: App) ->
     chart = Chart(scratch_app, "mcp-edge", disable_resource_name_hashes=True)
     mcp_edge.McpEdge(chart, "mcp-edge", env, database_url=EnvValue.from_value("postgres://unused"))
 
-    documents = Cdk8sTesting.synth(chart)
+    documents = chart.to_json()
     role = find_resource(documents, "Role", mcp_edge.NAME)
     assert role["metadata"]["namespace"] == env.namespace
     assert role["rules"] == [
@@ -136,7 +136,7 @@ def test_workload_tls_is_mounted_when_optional_secrets_are_unconfigured(scratch_
         placement=None,
         registry_secret_name=None,
     )
-    docs = Cdk8sTesting.synth(chart)
+    docs = chart.to_json()
     pod = one(doc for doc in docs if doc["kind"] == "Deployment")["spec"]["template"]["spec"]
     container = one(container for container in pod["containers"] if container["name"] == "actions")
     tls_volume = one(

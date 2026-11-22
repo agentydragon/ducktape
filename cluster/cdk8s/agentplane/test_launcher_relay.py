@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Chart, Testing as Cdk8sTesting  # Testing aliased so pytest does not collect it
+from cdk8s import App, Chart
 from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
@@ -79,7 +79,7 @@ def relay_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, An
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, template_name="relay-test-template", settings_config_map=RELAY_SETTINGS
     )
-    return Cdk8sTesting.synth(chart)
+    return chart.to_json()
 
 
 @pytest.fixture(scope="module")

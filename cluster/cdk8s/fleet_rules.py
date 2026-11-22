@@ -1,8 +1,6 @@
-"""Rules every object this repo generates must hold, checked over an App's rendered
-objects when it synthesizes (`App.synth`, `App.synth_yaml`, `Chart.to_json`,
-`cdk8s.Testing.synth` all validate the construct tree first). `generation.write_app` attaches
-them to every App it writes. A violation fails synth with the object named, instead of an
-admission denial or a CreateContainerConfigError on the cluster.
+"""Fleet rules checked at synthesis. `generation.write_app` registers them on each App.
+Synthesizing an App or calling `Chart.to_json` validates its construct tree, so violations
+identify the offending object before admission or Pod startup.
 """
 
 from __future__ import annotations

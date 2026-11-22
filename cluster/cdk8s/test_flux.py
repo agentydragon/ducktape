@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import ApiObjectMetadata, App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -55,7 +55,7 @@ def test_wait_with_health_checks_fails_synth(scratch_app: App) -> None:
     chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=True, health_checks=_HEALTH_CHECKS)
     with pytest.raises(Exception, match="Kustomization/test-app"):
-        Cdk8sTesting.synth(chart)
+        chart.to_json()
 
 
 @pytest.mark.parametrize(("wait", "health_checks"), [(False, _HEALTH_CHECKS), (True, None)])
@@ -64,7 +64,7 @@ def test_wait_or_health_checks_alone_synthesizes(
 ) -> None:
     chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=wait, health_checks=health_checks)
-    (rendered,) = Cdk8sTesting.synth(chart)
+    (rendered,) = chart.to_json()
     assert rendered["spec"]["wait"] is wait
 
 

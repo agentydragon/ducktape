@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
+from cdk8s import App, Chart
 
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.agentplane import gaffer_archive
@@ -21,7 +21,7 @@ def credentials(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     add_staging_egress_credentials(
         chart, namespace="agentplane-staging", credentials_namespace=STAGING_CREDENTIALS_NAMESPACE
     )
-    return Cdk8sTesting.synth(chart)
+    return chart.to_json()
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_credential_copy_uses_a_scoped_source_reader(
 
 
 def test_private_archive_token_scope_and_redirect(credentials: list[dict[str, Any]], scratch_app: App) -> None:
-    objects = Cdk8sTesting.synth(gaffer_archive.chart(scratch_app))
+    objects = gaffer_archive.chart(scratch_app).to_json()
     source = find_resource(objects, "GithubAccessToken", gaffer_archive.NAME)
     assert source["metadata"]["namespace"] == "flux-system"
     assert source["spec"]["repositories"] == ["gaffer-private"]
