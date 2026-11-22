@@ -41,7 +41,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpec,
     ServiceMonitorSpecSelector,
 )
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
+    PrometheusRule,
+    PrometheusRuleSpec,
+    PrometheusRuleSpecGroups,
+)
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling, piraeus_storage
@@ -66,6 +70,7 @@ _METRICS_SERVICE = f"{NAME}-metrics"
 # Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
 _VM_SHUTDOWN_GRACE_SECONDS = 87_000
 _MIN_REPLICA_COUNT = 2
+_MAX_REPLICA_COUNT = 8
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
@@ -76,10 +81,8 @@ AUTOSCALER_OUTPUT_DIR = f"{GENERATED_ROOT}/{AUTOSCALER_NAME}"
 # not a count of distinct queued tasks. The assigned CPU gauge is present even
 # before the first task; the queue gauge is created only after a group queues.
 _METRICS_TARGET = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS.name}"'
-_WORKER_PODS = (
-    f'max by (namespace, pod) (kube_pod_info{{namespace="{NAMESPACE}",'
-    f'created_by_kind="VirtualMachineInstance",created_by_name=~"{NAME}-[0-9]+"}})'
-)
+_WORKER_POD_INFO = f'kube_pod_info{{namespace="{NAMESPACE}",created_by_kind="VirtualMachineInstance",created_by_name=~"{NAME}-[0-9]+"}}'
+_WORKER_PODS = f"max by (namespace, pod) ({_WORKER_POD_INFO})"
 _UP = f"up{{{_METRICS_TARGET}}}"
 _REGISTERED = f'buildbuddy_health_check_status{{{_METRICS_TARGET},health_check_name="registered_to_scheduler"}}'
 _HEALTHY_WORKERS = (
@@ -114,6 +117,59 @@ _MEMORY = Size.gibibytes(8)
 # require fresh-boot and workload qualification before changing this manual pin.
 _IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268"
 _HTTPS_HOSTS = ("remote.buildbuddy.io",)
+
+
+def _fresh(selector: str) -> str:
+    return f"({selector} and (time() - timestamp({selector}) < 180))"
+
+
+def _shadow_scaling_rules() -> PrometheusRuleSpecGroups:
+    """Model one extra worker for a waiting KubeVirt-sized action."""
+    guest = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_NODE_METRICS.name}"'
+    fs = f'node_filesystem_avail_bytes{{{guest},mountpoint="/buildbuddy"}}'
+    deleting = f'kube_pod_deletion_timestamp{{namespace="{NAMESPACE}"}}'
+    # Track the four checks independently of any extra checks a later executor may add.
+    checks = "executor_disk_usage|grpc_app_connection|grpc_cache_connection|registered_to_scheduler"
+    health = _fresh(f'buildbuddy_health_check_status{{{_METRICS_TARGET},health_check_name=~"{checks}"}}')
+    per_check = f"min by (namespace, pod, health_check_name) ({health})"
+    per_pod = "by (namespace, pod)"
+    fit_metric = "buildbuddy_kvm_worker:fits_vm_suite"
+
+    def free(resource: str) -> str:
+        available = _fresh(f"buildbuddy_remote_execution_assignable_{resource}{{{_METRICS_TARGET}}}")
+        assigned = _fresh(f"buildbuddy_remote_execution_assigned_{resource}{{{_METRICS_TARGET}}}")
+        return f"(max {per_pod} ({available}) - max {per_pod} ({assigned}))"
+
+    # Boolean comparisons preserve a reported zero. An absent input drops the pod,
+    # so count(fit) measures coverage and sum(fit) counts workers with headroom.
+    fit = (
+        f"({free('milli_cpu')} >= bool 4000)\n"
+        f"* ({free('ram_bytes')} >= bool {7 * 1024**3})\n"
+        f"* (min {per_pod} ({_fresh(fs)}) >= bool {50 * 10**9})\n"
+        f"* min {per_pod} ({per_check})\n"
+        f"and (count {per_pod} ({per_check}) == 4)\n"
+        f"and on (namespace, pod) ({_fresh(_REGISTERED)} == 1)\n"
+        f"and on (namespace, pod) ({_fresh(_UP)} == 1)\n"
+        f"and on (namespace, pod) ({_fresh(f'up{{{guest}}}')} == 1)\n"
+        f"and on (namespace, pod) {_fresh(_WORKER_POD_INFO)}\n"
+        f"unless on (namespace, pod) {deleting}"
+    )
+    covered = _fresh(fit_metric)
+    queue = _fresh(f"buildbuddy_remote_execution_queue_length{{{_METRICS_TARGET}}}")
+    waiting = f"sum({queue} and on (namespace, pod) {covered}) > 0"
+    busy = f"sum((max {per_pod} ({_fresh(_ASSIGNED_CPU_METRIC)}) > bool 0) and {covered})"
+    # A missing queue series is normal before a worker's first reservation.
+    # With a queue, hold when an existing worker can fit the suite. Otherwise
+    # propose one more VM. With all queues empty, release idle workers.
+    target = (
+        f"clamp((({_DESIRED_REPLICAS} + (sum({covered}) == bool 0)) and ({waiting}))\n"
+        f"  or ({busy}), {_MIN_REPLICA_COUNT}, {_MAX_REPLICA_COUNT})\n"
+        f"and (count({covered}) == {_DESIRED_REPLICAS})\n"
+        f"or {_DESIRED_REPLICAS}"
+    )
+    return group(
+        f"{NAME}-shadow", [Rule.record(fit_metric, fit), Rule.record("buildbuddy_kvm:shadow_target_workers", target)]
+    )
 
 
 def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVirtualMachineTemplate:
@@ -322,6 +378,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=PrometheusRuleSpec(
             groups=[
+                _shadow_scaling_rules(),
                 group(
                     NAME,
                     [
@@ -353,7 +410,7 @@ def chart(app: App) -> Chart:
                             description="The autoscaler holds its current size until every requested worker reports metrics.",
                         ),
                     ],
-                )
+                ),
             ]
         ),
     )
@@ -371,7 +428,7 @@ def autoscaler_chart(app: App) -> Chart:
                 api_version=VirtualMachinePool.GVK.api_version, kind=VirtualMachinePool.GVK.kind, name=NAME
             ),
             min_replica_count=_MIN_REPLICA_COUNT,
-            max_replica_count=8,
+            max_replica_count=_MAX_REPLICA_COUNT,
             polling_interval=30,
             fallback=keda.ScaledObjectSpecFallback(
                 failure_threshold=3,
