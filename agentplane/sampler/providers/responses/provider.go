@@ -222,6 +222,7 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 	lineReader := bufio.NewReader(reader)
 	var dataLines []string
 	seenItemTransitions := map[string]struct{}{}
+	var projector observationProjector
 	dispatch := func() error {
 		if len(dataLines) == 0 {
 			return nil
@@ -233,7 +234,7 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 		var observations []*eventpb.Event
 		if evidence != nil {
-			observations, err = Observations(event)
+			observations, err = projector.observations(event)
 			if err != nil {
 				return err
 			}
