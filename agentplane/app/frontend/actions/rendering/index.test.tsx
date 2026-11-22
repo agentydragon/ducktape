@@ -1447,6 +1447,8 @@ describe("compact card renderers", () => {
     ["kubernetes_admin", "pods_get", { name: "web-0", namespace: "apps" }, false],
     ["kubernetes_admin", "events_list", { namespace: "apps" }, false],
     ["sandbox", "list", {}, false],
+    ["tana", "read_node", { nodeId: "node-1", maxDepth: 0 }, false],
+    ["tana", "read_node", { nodeId: "node-1", maxDepth: 1 }, true],
     // The opened card adds the API version.
     ["kubernetes_admin", "resources_get", { apiVersion: "v1", kind: "Pod", name: "web-0" }, true],
     ["ssh", "exec", SSH_EXEC_ARGUMENTS, true],

@@ -225,13 +225,11 @@ function readView<S extends z.ZodType>(
   name: string,
   schema: S,
   view: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode,
-  result: ResultPreview
+  result: ResultPreview,
+  summary: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode
 ): ActionPresentation {
-  const presentation = requestView(name, schema, view, result);
   return {
-    ...presentation,
-    pane: { collapsed: presentation.pane?.collapsed },
-    compactCardExpands: expandsForRejectedArguments(schema),
+    ...requestView(name, schema, view, result, summary),
     offersCardDecisionButtons: (args) => schema.safeParse(args).success,
   };
 }
@@ -671,24 +669,30 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["move_node", moveNodePresentation],
   [
     "read_node",
-    readView(
-      "read_node",
-      readArguments,
-      (args, names) => (
-        <Line>
-          {readNodeLink(args.nodeId, names)} ·{" "}
-          {args.maxDepth === 0
-            ? "Only this node"
-            : `Up to ${args.maxDepth} ${args.maxDepth === 1 ? "level" : "levels"} of descendants`}
-        </Line>
+    {
+      ...readView(
+        "read_node",
+        readArguments,
+        (args, names) => (
+          <Line>
+            {readNodeLink(args.nodeId, names)} ·{" "}
+            {args.maxDepth === 0
+              ? "Only this node"
+              : `Up to ${args.maxDepth} ${args.maxDepth === 1 ? "level" : "levels"} of descendants`}
+          </Line>
+        ),
+        readReceipt,
+        (args, names) => (
+          <Line>
+            {readNodeLink(args.nodeId, names)} · {args.maxDepth === 0 ? "Only this node" : "Include descendants"}
+          </Line>
+        )
       ),
-      readReceipt,
-      (args, names) => (
-        <Line>
-          {nodeLink(args.nodeId, names)} · {args.maxDepth === 0 ? "Only this node" : "Include descendants"}
-        </Line>
-      )
-    ),
+      compactCardExpands: (args) => {
+        const parsed = readArguments.safeParse(args);
+        return !parsed.success || parsed.data.maxDepth > 0;
+      },
+    },
   ],
   [
     "get_children",
@@ -702,7 +706,7 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
         </Line>
       ),
       childrenReceipt,
-      (args, names) => <Line>Direct children of {nodeLink(args.nodeId, names)}</Line>
+      (args, names) => <Line>Direct children of {readNodeLink(args.nodeId, names)}</Line>
     ),
   ],
   [
@@ -744,7 +748,7 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
     "get_tag_schema",
     {
-      ...requestView(
+      ...readView(
         "get_tag_schema",
         tagSchemaArguments,
         (args, names) => (
@@ -761,7 +765,6 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
         const parsed = tagSchemaArguments.safeParse(args);
         return !parsed.success || Boolean(parsed.data.includeEditInstructions || parsed.data.includeInheritedFields);
       },
-      offersCardDecisionButtons: (args) => tagSchemaArguments.safeParse(args).success,
     },
   ],
   [

@@ -176,15 +176,20 @@ EXAMPLE_COMMAND = "81000000-0000-4000-8000-000000000002"
 ORCHESTRATION_SANDBOX = {"name": "review-box", "uid": "81000000-0000-4000-8000-000000000003"}
 ORCHESTRATION_SESSION: dict[str, object] = {"sandbox": ORCHESTRATION_SANDBOX, "session_id": EXAMPLE_SESSION}
 COMPACT_SCOPED_READS = {
-    "tana.read_node": ("Plan review", "Up to 2 levels of descendants"),
-    "tana.get_children": ("Plan review", "Up to 1 direct child, after the first 1"),
+    "tana.read_node": ("Plan review", "Include descendants"),
+    "tana.get_children": ("Direct children of Plan review",),
     "tana.list_workspaces": ("List loaded Tana workspaces",),
-    "tana.list_tags": ("Product workspace and linked workspaces", "Up to 25 tags"),
+    "tana.list_tags": ("Product workspace and linked workspaces",),
     "sessions.get": (EXAMPLE_SESSION,),
     "sessions.read_turns": (EXAMPLE_SESSION, "Up to 5 turns from History · next page"),
     "orchestration_v1.get_session": ("Sandbox review-box", EXAMPLE_SESSION),
     "orchestration_v1.list_sessions": ("Sandbox review-box",),
     "orchestration_v1.read_turns": ("Sandbox review-box", EXAMPLE_SESSION, "Up to 5 recent turns"),
+}
+TANA_READ_LIMITS = {
+    "tana.read_node": "Up to 2 levels of descendants",
+    "tana.get_children": "Up to 1 direct child, after the first 1",
+    "tana.list_tags": "Up to 25 tags",
 }
 ORCHESTRATION_COMMAND = {**ORCHESTRATION_SESSION, "command_id": EXAMPLE_COMMAND}
 QUEUED = {"session_id": EXAMPLE_SESSION, "state": "DELIVERY_STATE_QUEUED_IN_DISPATCHER"}
@@ -2839,7 +2844,6 @@ EXAMPLES = (
         "- [ ] Plan review <!-- node-id: task-1 -->\n  - Review the milestones <!-- node-id: child-1 -->",
         "Review the milestones",
         nodes=(_TASK,),
-        expands=False,
     ),
     _tana_example(
         "get_children",
@@ -2863,7 +2867,6 @@ EXAMPLES = (
         },
         "More child nodes available",
         nodes=(_TASK,),
-        expands=False,
     ),
     _tana_example(
         "open_node",
@@ -2885,7 +2888,6 @@ EXAMPLES = (
         [{"id": "tag-1", "name": "Task", "color": "blue"}, {"id": "tag-2", "name": "Milestone"}],
         "2 tags returned",
         workspace=True,
-        expands=False,
     ),
     _tana_example(
         "get_tag_schema",
@@ -3317,6 +3319,9 @@ async def test_action_presentations(
             await expect(session).to_have_attribute("href", f"/threads/{EXAMPLE_SESSION}")
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
+    read_limit = TANA_READ_LIMITS.get(example.key)
+    if read_limit is not None:
+        await expect(sidebar).not_to_contain_text(read_limit)
     await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
     if example.key == "google_calendar.update_event":
@@ -3356,6 +3361,9 @@ async def test_action_presentations(
         await sidebar.locator(".agentplane-actions-sidebar-summary").click(position={"x": 25, "y": 8})
         await _expect_live_preview(sidebar, example)
         if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        elif read_limit is not None:
+            await expect(sidebar).to_contain_text(read_limit)
             await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         elif example.key == "google_calendar.list_events":
             await expect(sidebar).to_contain_text("Ending after")
