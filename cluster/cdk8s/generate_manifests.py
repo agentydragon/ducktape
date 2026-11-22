@@ -134,7 +134,6 @@ from cluster.cdk8s.external_secrets import (
     operator as external_secrets_operator,
 )
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import SecretGeneratorArgs
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
@@ -1987,13 +1986,11 @@ def generate_manifests(root: Path) -> None:
         piraeus_cluster_kustomization,
     )
     session_archive_artifact = artifact(
-        "ai-session-archive",
+        session_archive.NAME,
         session_archive.OUTPUT_DIR,
         session_archive.PINS_DIR,
         files={
-            "secrets/shared/session-backup.yaml": (
-                f"{session_archive.OUTPUT_DIR}/{session_backup.IMPORTER_CREDENTIALS_SOURCE}"
-            )
+            "secrets/shared/session-backup.yaml": f"{session_archive.OUTPUT_DIR}/{session_archive.CREDENTIALS_SOURCE}"
         },
     )
     session_archive.archive(
@@ -2003,13 +2000,7 @@ def generate_manifests(root: Path) -> None:
             session_archive_artifact,
             session_archive.chart,
             components=[posixpath.relpath(session_archive.PINS_DIR, session_archive.OUTPUT_DIR)],
-            secret_generator=[
-                SecretGeneratorArgs(
-                    name=session_backup.IMPORTER_CREDENTIALS_SECRET,
-                    namespace=session_backup.NAMESPACE,
-                    files=[f"session-backup.yaml={session_backup.IMPORTER_CREDENTIALS_SOURCE}"],
-                )
-            ],
+            secret_generator=[session_archive.CREDENTIALS],
         ),
         session_backup_kustomization,
         cnpg_kustomization,
