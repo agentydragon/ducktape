@@ -368,7 +368,8 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
   const emitter = spawnSync(process.env.LOWERSPLIT, [path.join(dir, "ast.json"), path.join(dir, "spec.json"), out], {
     encoding: "utf8",
-    timeout: 20000,
+    // A cold Lean process loads the compiler before the splitter can read the case.
+    timeout: 60_000,
   });
   if (emitter.error) {
     if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
