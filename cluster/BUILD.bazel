@@ -21,17 +21,6 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-# Generator output kept beside hand-written files in the parked tree, for the parity test.
-filegroup(
-    name = "parked_generated_manifests",
-    srcs = glob([
-        "parked/**/*.k8s.yaml",
-        "parked/haku-openclaw-spike/backup/**",
-        "parked/public-coder-agent/backup/kustomization.yaml",
-    ]),
-    visibility = ["//cluster/cdk8s:__pkg__"],
-)
-
 filegroup(
     name = "parked_yaml_manifests",
     srcs = glob(["parked/**/*.yaml"]),
