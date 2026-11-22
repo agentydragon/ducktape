@@ -1,5 +1,19 @@
 # Prebuilt KVM worker qualification
 
+## Cloudflare time source, 2026-11-22 UTC
+
+A fresh VM on `ovh-ns1001419` booted the image published from
+[`652bc7f`](https://github.com/agentydragon/ducktape/commit/652bc7fcd8fd14317d91bbfe892ab955d73427dc),
+digest `sha256:21df8d193ec6d68d5b1a596b49ef18318cc26019560694ed16462aa6e64a87ff`.
+With the worker policy allowing UDP/123 to `time.cloudflare.com`, the guest
+reported `NTPSynchronized=yes` and selected `162.159.200.1` for that name.
+The link and fallback NTP server lists were empty. The first poll measured
+a +1.028 s offset and the second measured −114 µs with a 5.084 ms round trip.
+
+The KVM smoke, Firecracker, and Agentplane VM targets all passed on worker
+`af92a459-6cbe-4284-802d-3f49c0367fc5` with test-result caching disabled
+and one attempt per target. [BuildBuddy qualification](https://app.buildbuddy.io/invocation/e5d038dc-005a-42b8-ba20-045c62b28aa8)
+
 ## Production transition qualification, 2026-11-17 UTC
 
 The corrected image passed an isolated Ubuntu-to-NixOS template update with an
