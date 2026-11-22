@@ -17,6 +17,9 @@ let
   # Theme switching scripts - wrappers around gterm-theme.
   # Installed to PATH via home.packages; called by Night Theme Switcher
   # extension on sunrise/sunset and available for manual use.
+  # TODO: Find a way to update running Codex CLI sessions on day/night changes.
+  # Codex 0.167.0 caches the terminal colors at startup, so its adaptive syntax
+  # theme and contrast-dependent UI can become unreadable after a switch.
   set_light_theme = pkgs.writeShellApplication {
     name = "set_light_theme";
     runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
