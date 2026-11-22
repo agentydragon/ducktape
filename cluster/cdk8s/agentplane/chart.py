@@ -231,20 +231,12 @@ def environment_chart(
             ),
         )
     if env.firecracker_sandboxes:
-        state_volume = runner_template.spec["stateVolume"]
-        claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
-        if env.vm_storage_class is not None:
-            claim["storageClassName"] = env.vm_storage_class
-        firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
-        firecracker_workspace = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
-        firecracker_workspace["claim"]["resources"] = state_volume["claim"]["resources"]
         environment_firecracker.EnvironmentFirecrackerTemplate(
             runner_scope,
             "firecracker-template",
             env,
             labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-            state_volume=firecracker_state,
-            workspace_volume=firecracker_workspace,
+            runner_state_volume=runner_template.spec["stateVolume"],
             runner_image=environment_vm.RUNNER_DISK_IMAGE,
             image_pull_secret_name=sandbox_pod.SECRET_NAME,
         )

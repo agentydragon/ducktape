@@ -18,6 +18,7 @@ from agentplane.firecracker.config import Config
 from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, workload_routes
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.environment_guest import guest_config_data
+from cluster.cdk8s.agentplane.environment_sandbox import workspace_volume_spec
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import SettingsFile
@@ -37,8 +38,7 @@ class EnvironmentFirecrackerTemplate(Construct):
         env: Environment,
         *,
         labels: Mapping[str, str],
-        state_volume: dict[str, Any],
-        workspace_volume: dict[str, Any],
+        runner_state_volume: dict[str, Any],
         runner_image: str,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         session_reconcile_concurrency: int | None = None,
@@ -155,6 +155,14 @@ class EnvironmentFirecrackerTemplate(Construct):
             endpoint_selector={**labels, "agentplane.allegedly.works/environment-backend": "firecracker"},
             ingress=[IngressRule.from_entities(Entity.KUBE_APISERVER, Entity.HOST, ports=[9092])],
         )
+        workspace_volume = workspace_volume_spec(
+            runner_state_volume, layout_type="RawDiskImage", storage_class=env.vm_storage_class
+        )
+        state_volume = {
+            **runner_state_volume,
+            "layout": workspace_volume["layout"],
+            "claim": {**workspace_volume["claim"], "resources": {"requests": {"storage": "100Gi"}}},
+        }
         self.template = ApiObject(
             self,
             "Resource",
