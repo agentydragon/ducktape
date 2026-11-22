@@ -290,8 +290,13 @@ py_test(
 py_test(
     name = "test_rotations_config",
     srcs = ["test_rotations_config.py"],
-    data = ["//:sops_config"],
+    data = [
+        "//:sops_config",
+        "@sops_linux_amd64//file:sops",
+    ],
+    env = {"SOPS_RLOCATION": "$(rlocationpath @sops_linux_amd64//file:sops)"},
     deps = [
+        "//:conftest",
         "//cluster/cdk8s/authentik:jwt_roster",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
