@@ -21,7 +21,7 @@ WORKSPACE = "workspace"
 def _claim(storage_class: str, size: str, mode: str | None) -> dict[str, Any]:
     if not storage_class:
         raise ValueError("storage_class cannot be empty")
-    return k8s.KubePersistentVolumeClaim.manifest(
+    claim: dict[str, Any] = k8s.KubePersistentVolumeClaim.manifest(
         spec=k8s.PersistentVolumeClaimSpec(
             storage_class_name=storage_class,
             access_modes=["ReadWriteOnce"],
@@ -29,6 +29,7 @@ def _claim(storage_class: str, size: str, mode: str | None) -> dict[str, Any]:
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string(size)}),
         )
     )["spec"]
+    return claim
 
 
 def state_volume(
