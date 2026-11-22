@@ -117,10 +117,11 @@ def test_thrive_read_has_scoped_bearer_and_get_rules(credentials: list[dict[str,
     }
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
     policy = find_resource(credentials, "PolicySet", "thrive-read")
-    rules = policy["spec"]["rules"]
-    assert [rule["methods"] for rule in rules] == [["GET"]]
-    assert rules[0]["hosts"] == ["platform-sessions.allegedly.works"]
-    assert set(rules[0]["paths"]) == {
+    [rule] = policy["spec"]["rules"]
+    assert rule["credentialRef"] == {"name": credential["metadata"]["name"]}
+    assert rule["methods"] == ["GET"]
+    assert rule["hosts"] == ["platform-sessions.allegedly.works"]
+    assert set(rule["paths"]) == {
         "/proxy/thrive/products",
         "/proxy/thrive/account/orders",
         "/proxy/thrive/account",
