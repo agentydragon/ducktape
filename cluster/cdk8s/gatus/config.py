@@ -68,7 +68,7 @@ class Endpoint(BaseModel):
 
 
 def _in_cluster(service: ServiceRef) -> str:
-    return f"http://{service.fqdn}:{service.port.number}"
+    return f"http://{service.authority}"
 
 
 # Endpoint names key Gatus' stored results, so each household keeps its established label.

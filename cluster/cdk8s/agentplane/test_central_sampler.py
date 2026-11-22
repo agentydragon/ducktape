@@ -82,7 +82,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert config["platform_instructions"]
     llm_connection = config["connections"]["llm-ingress"]
     llm_service = llm_ingress.service(namespace)
-    assert llm_connection["base_url"] == f"https://{llm_service.fqdn}:{llm_service.port.number}"
+    assert llm_connection["base_url"] == f"https://{llm_service.authority}"
     assert llm_connection["auth"] == {"type": "agentplane_ingress"}
     assert "history_token_file" not in config
     assert "gateway_token_file" not in config
@@ -134,7 +134,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert controller["environment_service"]["runtime_proxy"]["executor_callers"] == serving_certificate["spec"]["uris"]
 
     app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
+    assert app_config["policy_service_target"] == policy_controller.tls_service(namespace).authority
     assert app_config["policy_service_tls"]["server_uri"] == POLICY_CONTROLLER_URI
 
     history = config_map_yaml(staging_manifests, f"{history_service.NAME}-config", "config.yaml")

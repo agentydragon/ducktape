@@ -109,7 +109,7 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> Identit
         content=yaml_config(
             sidecar_config.Settings(
                 proxy=sidecar_config.Proxy(
-                    address=f"{proxy.fqdn}:{proxy.port.number}",
+                    address=proxy.authority,
                     transport=sidecar_config.TLSProxyTransport(
                         ca_file=_WORKLOAD_CA_DIR / cluster_ca.BUNDLE_KEY,
                         auth=sidecar_config.SpiffeProxyAuth(

@@ -25,8 +25,8 @@ def service_urls(env: Environment, *, egress_host: str = "127.0.0.1") -> Service
     history_route = platform_routes.history_grpc(env.namespace)
     return ServiceUrls(
         egress_grpc=f"http://{egress_host}:{platform_routes.egress_rules(env.namespace).listen_port}",
-        actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-        sessions=f"http://{sessions_service.fqdn}:{sessions_service.port.number}",
+        actions=f"http://{actions_service.authority}",
+        sessions=f"http://{sessions_service.authority}",
         history=f"http://{egress_host}:{history_route.listen_port}",
         environments=f"http://{egress_host}:{platform_routes.environments_grpc(env.namespace).listen_port}",
         notifications_grpc=f"http://{egress_host}:{platform_routes.notifications_grpc(env.namespace).listen_port}",

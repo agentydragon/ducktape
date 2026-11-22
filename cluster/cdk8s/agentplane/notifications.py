@@ -156,7 +156,7 @@ class Notifications(Construct):
             operator_reader_services=[APP_URI],
             notice_debounce=env.notifications_debounce,
             actions=ActionsSettings(
-                url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
+                url=AnyHttpUrl(f"https://{actions.authority}"),
                 tls=workload_tls.service_client_tls(ACTIONS_URI, client_uri=NOTIFICATIONS_URI),
             ),
             history_service=HistoryServiceSettings(
@@ -164,7 +164,7 @@ class Notifications(Construct):
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=NOTIFICATIONS_URI),
             ),
             session_dispatcher=SessionDispatcherSettings(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                target=dispatcher.authority,
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=NOTIFICATIONS_URI),
             ),
             github=GitHubSettings(app_id=github.app_id) if github is not None else None,

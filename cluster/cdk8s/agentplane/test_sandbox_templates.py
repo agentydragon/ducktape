@@ -332,7 +332,7 @@ def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[s
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
     settings = config_map_yaml(staging_manifests, settings_volume["configMap"]["name"], "settings.yaml")
     service = llm_ingress.service(staging.ENV.namespace)
-    route = settings["workload_routes"][f"{service.fqdn}:{service.port.number}"]
+    route = settings["workload_routes"][service.authority]
     assert route["upstream"] == f"{service.fqdn}:{service.pod_port}"
     assert route["server_uri"] == LLM_INGRESS_URI
 

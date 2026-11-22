@@ -100,6 +100,11 @@ class _Service:
         return f"{self.host}.cluster.local"
 
     @property
+    def authority(self) -> str:
+        """Fully qualified host and Service port for clients and proxy route matching."""
+        return f"{self.fqdn}:{self.port.number}"
+
+    @property
     def url(self) -> str:
         return f"http://{self.host}:{self.port.number}"
 

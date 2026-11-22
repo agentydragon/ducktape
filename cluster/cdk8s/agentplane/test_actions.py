@@ -313,7 +313,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     dispatcher = runner_gateway.sessions_service(env.namespace)
     history = history_service.service(env.namespace)
     environments = environment_service.environments_service(env.namespace)
-    assert settings["environment_service"]["target"] == f"{environments.fqdn}:{environments.port.number}"
+    assert settings["environment_service"]["target"] == environments.authority
     assert settings["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     deployment = find_resource(documents, "Deployment", actions.NAME)
     pod = deployment["spec"]["template"]["spec"]
@@ -323,8 +323,8 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     certificate = one(doc for doc in documents if doc["kind"] == "Certificate")
     assert certificate["spec"]["uris"] == [ACTIONS_URI]
     for peer_name, server_uri, target in [
-        ("session_dispatcher", SESSION_DISPATCHER_URI, f"{dispatcher.fqdn}:{dispatcher.port.number}"),
-        ("session_delegation_dispatcher", SESSION_DISPATCHER_URI, f"{dispatcher.fqdn}:{dispatcher.port.number}"),
+        ("session_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
+        ("session_delegation_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
         ("history_service", HISTORY_SERVICE_URI, f"{history.fqdn}:{history.pod_port}"),
         ("session_delegation_history", HISTORY_SERVICE_URI, f"{history.fqdn}:{history.pod_port}"),
     ]:

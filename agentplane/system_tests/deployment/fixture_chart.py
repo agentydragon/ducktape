@@ -290,7 +290,7 @@ def app_props(
         reach_incluster_authentik=False,
         config=Settings(
             models=catalog,
-            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
+            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.authority}"),
             thread_presets=_THREAD_PRESETS,
             sandbox_presets=_SANDBOX_PRESETS,
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
@@ -300,15 +300,11 @@ def app_props(
                 f"{environment_service.environments_service(NAMESPACE).fqdn}:{environment_service.environments_service(NAMESPACE).pod_port}"
             ),
             runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
-            session_dispatcher_target=(
-                f"{runner_gateway.sessions_service(NAMESPACE).fqdn}:{runner_gateway.sessions_service(NAMESPACE).port.number}"
-            ),
+            session_dispatcher_target=(runner_gateway.sessions_service(NAMESPACE).authority),
             session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
-            policy_service_target=policy_controller.tls_target(NAMESPACE),
+            policy_service_target=policy_controller.tls_service(NAMESPACE).authority,
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
-            history_service_target=(
-                f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
-            ),
+            history_service_target=(history_service.service(NAMESPACE).authority),
             history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
             notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
@@ -343,7 +339,7 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
     return CentralSamplerProps(
         admin_service_callers=(GATEWAY_SESSIONS_URI,),
         actions=ActionsConfig(
-            target=f"{ACTIONS_SERVICE.fqdn}:{ACTIONS_SERVICE.port.number}",
+            target=ACTIONS_SERVICE.authority,
             tls=TLS(
                 cert_file="/run/agentplane/workload-tls/tls.crt",
                 key_file="/run/agentplane/workload-tls/tls.key",
@@ -364,7 +360,7 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
         },
         connections={
             "llm-ingress": ConnectionConfig(
-                base_url=f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}",
+                base_url=f"https://{llm_ingress.service(NAMESPACE).authority}",
                 auth=AuthConfig(type="agentplane_ingress"),
                 tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
             )

@@ -99,7 +99,7 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(firecracker_ma
         target = urlsplit(url)
         assert (target.hostname, target.port) == (environment_firecracker.GATEWAY, listener.port)
     history = history_service.service(staging.ENV.namespace)
-    origin = f"{history.fqdn}:{history.port.number}"
+    origin = history.authority
     assert harness["AGENTPLANE_HISTORY_URL"] == f"http://{environment_firecracker.GATEWAY}:{listener.port}"
     suffix = f"{staging.ENV.namespace}.svc.cluster.local"
     sessions = f"sessions.{suffix}:8080"

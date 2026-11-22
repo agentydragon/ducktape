@@ -334,7 +334,7 @@ class Actions(Construct):
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
             dispatcher_peer = ServicePeer(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                target=dispatcher.authority,
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
             )
@@ -346,7 +346,7 @@ class Actions(Construct):
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
             delegated_dispatcher_peer = ServicePeer(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                target=dispatcher.authority,
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
             )
@@ -389,7 +389,7 @@ class Actions(Construct):
                     action_groups=groups,
                     environment_service=(
                         EnvironmentServicePeer(
-                            target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
+                            target=environment_service_endpoint.authority,
                             request_timeout_s=(
                                 _DELEGATED_PEER_TIMEOUT_SECONDS
                                 if props.session_delegation is not None

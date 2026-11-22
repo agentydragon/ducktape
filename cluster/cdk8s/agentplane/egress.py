@@ -234,7 +234,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         (
             "ollama",
             ollama.DIRECT_TOKEN,
-            f"Direct Ollama inference and model metadata at http://{ollama.AUTH_PROXY.fqdn}:{ollama.AUTH_PROXY.port.number}. "
+            f"Direct Ollama inference and model metadata at http://{ollama.AUTH_PROXY.authority}. "
             "Uses the existing token-authenticated proxy, not the unauthenticated Ollama port. "
             "Shared local GPUs; avoid unbounded or concurrent load experiments.",
         ),
@@ -578,9 +578,7 @@ class Egress(Construct):
             # Where kubernetesServiceAccount credentials impersonate, with the proxy's own bearer. What
             # it may impersonate there is kubernetes_accounts.py's Role, not this.
             local_api_server=APIServer(host=KUBERNETES_HOST, port=443, token_file=Path(_API_SERVER_TOKEN_FILE)),
-            tls_passthrough_targets=[
-                f"{service.fqdn}:{service.port.number}" for service in (self.admin, *tls_passthrough_services)
-            ],
+            tls_passthrough_targets=[service.authority for service in (self.admin, *tls_passthrough_services)],
             forward=Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
                 tls=TLS(

@@ -150,7 +150,7 @@ def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runf
     # The app keeps its unused Connection routes; external Connections are out of scope here.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(
-        f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
+        f"https://{fixture_chart.MCP_EDGE_SERVICE.authority}"
     )
 
 
@@ -255,9 +255,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert edge_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
     assert edge_config["http_port"] == 8081
-    assert edge_config["actions_target"] == (
-        f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
-    )
+    assert edge_config["actions_target"] == (fixture_chart.ACTIONS_SERVICE.authority)
     assert edge_config["actions_tls"] == {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
         "server_uri": ACTIONS_URI,
@@ -268,7 +266,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert edge_config.get("actions_token_file") is None
     app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(
-        f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
+        f"https://{fixture_chart.MCP_EDGE_SERVICE.authority}"
     )
     edge_database_env_name = mcp_edge.DATABASE_URL_ENV
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
@@ -700,10 +698,10 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     assert _host_port(harness_env["AGENTPLANE_ENVIRONMENTS_URL"]) == guest_listener
     environments = environment_service.environments_service(vm_fixture.namespace)
     environment_route = relay["platform_routes"]["routes"]["environments"]
-    assert environment_route["upstream"] == f"{environments.fqdn}:{environments.port.number}"
+    assert environment_route["upstream"] == environments.authority
     assert environment_route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
     sessions = runner_gateway.sessions_service(vm_fixture.namespace)
-    sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
+    sessions_authority = sessions.authority
     assert harness_env["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert relay["workload_routes"][sessions_authority] == {
         "upstream": sessions_authority,
@@ -773,9 +771,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert settings.executor_reconnect_timeout_seconds is None
     assert settings.health_listen == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert settings.actions is not None
-    assert (
-        settings.actions.target == f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
-    )
+    assert settings.actions.target == fixture_chart.ACTIONS_SERVICE.authority
     assert settings.actions.tls is not None
     assert settings.actions.tls.cert_file == "/run/agentplane/workload-tls/tls.crt"
     assert settings.actions.tls.key_file == "/run/agentplane/workload-tls/tls.key"
@@ -783,9 +779,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     action_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
     assert action_settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     ingress_connection = settings.connections["llm-ingress"]
-    assert ingress_connection.base_url == (
-        f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
-    )
+    assert ingress_connection.base_url == (f"https://{llm_ingress.service(NAMESPACE).authority}")
     assert ingress_connection.auth.type == "agentplane_ingress"
     assert ingress_connection.auth.credential_file is None
     assert ingress_connection.auth.credential is None
