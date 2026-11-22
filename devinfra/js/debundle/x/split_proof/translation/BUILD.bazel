@@ -206,16 +206,37 @@ js_test(
     tags = ["manual"],
 )
 
+js_library(
+    name = "linked_programs_test_support",
+    testonly = True,
+    srcs = ["linked_programs_test_support.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/astring",
+    ],
+)
+
+_LINKED_PROGRAMS_TEST_DATA = [
+    ":linked_programs_test_support",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+_LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+
 js_test(
     name = "linked_programs_test",
     size = "medium",
-    data = [
-        ":node_modules/acorn",
-        ":node_modules/astring",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
+    data = _LINKED_PROGRAMS_TEST_DATA,
     entry_point = "linked_programs_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
+    name = "linked_reordering_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_reordering_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
 )
 
 js_test(

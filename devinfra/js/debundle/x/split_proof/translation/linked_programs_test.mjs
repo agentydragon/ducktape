@@ -1,141 +1,30 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
-import { parse } from "acorn";
-import { generate } from "astring";
-
-const root = process.env.TEST_TMPDIR;
-assert(root, "TEST_TMPDIR is required");
-
-const id = (name) => ({ type: "Identifier", name });
-const literal = (value) => ({ type: "Literal", value });
-const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
-const conditional = (test, consequent, alternate) => ({
-  type: "ConditionalExpression",
-  test,
-  consequent,
-  alternate,
-});
-const expression = (expression) => ({ type: "ExpressionStatement", expression });
-const returns = (argument) => ({ type: "ReturnStatement", argument });
-const throws = (argument) => ({ type: "ThrowStatement", argument });
-const block = (body) => ({ type: "BlockStatement", body });
-const tryStatement = (body, handler = null, finalizer = null) => ({
-  type: "TryStatement",
-  block: body,
-  handler,
-  finalizer,
-});
-const catchClause = (param, body) => ({ type: "CatchClause", param, body });
-const arrow = (params, body) => ({
-  type: "ArrowFunctionExpression",
-  params,
-  body,
-  expression: body.type !== "BlockStatement",
-});
-const functionExpression = (params, body) => ({ type: "FunctionExpression", id: null, params, body });
-const variables = (kind, bindings) => ({
-  type: "VariableDeclaration",
-  kind,
-  declarations: bindings.map(([name, init]) => ({ type: "VariableDeclarator", id: id(name), init })),
-});
-const variable = (kind, name, init) => variables(kind, [[name, init]]);
-const property = (key, value) => ({
-  type: "Property",
-  key: id(key),
-  value,
-  kind: "init",
-  method: false,
-  shorthand: false,
-  computed: false,
-});
-const importNamed = (source, bindings) => ({
-  type: "ImportDeclaration",
-  source: literal(source),
-  specifiers: bindings.map(([imported, local]) => ({
-    type: "ImportSpecifier",
-    imported: id(imported),
-    local: id(local),
-  })),
-});
-const exportNamed = (bindings) => ({
-  type: "ExportNamedDeclaration",
-  declaration: null,
-  specifiers: bindings.map(([local, exported]) => ({
-    type: "ExportSpecifier",
-    local: id(local),
-    exported: id(exported),
-  })),
-  source: null,
-});
-const program = (body) => generate({ type: "Program", sourceType: "module", body });
-
-const probe = path.join(root, "linked_programs_observe.mjs");
-writeFileSync(
-  probe,
-  `try {
-  const module = await import(process.argv[2]);
-  const names = JSON.parse(process.argv[3]);
-  const values = Object.fromEntries(names.map((name) => {
-    const exported = module[name];
-    const value = typeof exported === "function" ? exported() : exported;
-    return [name, typeof value === "function" ? value() : value];
-  }));
-  console.log(JSON.stringify({ values }));
-} catch (error) {
-  console.log(JSON.stringify({ error: error.name }));
-}
-`
-);
-
-function observe(file, exportNames) {
-  const names = Array.isArray(exportNames) ? exportNames : [exportNames];
-  const result = spawnSync(process.execPath, [probe, pathToFileURL(file).href, JSON.stringify(names)], {
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
-  const observed = JSON.parse(result.stdout.trim());
-  if (observed.error) return observed;
-  return Object.fromEntries(names.map((name) => [name, observed.values[name]]));
-}
-
-function lower(source, spec, out, extra = []) {
-  const result = spawnSync(process.env.LOWERSPLIT, [source, spec, out, ...extra], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error) throw result.error;
-  const log = result.stdout + result.stderr;
-  assert([0, 1].includes(result.status), log);
-  const verdictLines = result.stdout.split(/\r?\n/).filter((line) => {
-    try {
-      JSON.parse(line);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  assert.equal(verdictLines.length, 1, log);
-  const verdict = JSON.parse(verdictLines[0]);
-  assert.equal(verdict.requested, "normal-completion", log);
-  assert.equal(verdict.scope, "linked-programs", log);
-  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
-  return { verdict, log };
-}
-
-function prepare(dir, { source, provider, extras = {}, sourceName = "source.mjs", spec }) {
-  mkdirSync(dir, { recursive: true });
-  const sourceFile = path.join(dir, sourceName);
-  const providerFile = path.join(dir, "provider.mjs");
-  const specFile = path.join(dir, "spec.json");
-  writeFileSync(sourceFile, source);
-  writeFileSync(providerFile, provider);
-  for (const [name, contents] of Object.entries(extras)) writeFileSync(path.join(dir, name), contents);
-  writeFileSync(specFile, JSON.stringify(spec, null, 2));
-  return { sourceFile, providerFile, specFile };
-}
+import {
+  root,
+  id,
+  literal,
+  call,
+  conditional,
+  expression,
+  returns,
+  throws,
+  block,
+  tryStatement,
+  catchClause,
+  arrow,
+  functionExpression,
+  variables,
+  variable,
+  property,
+  importNamed,
+  exportNamed,
+  program,
+  observe,
+  lower,
+  prepare,
+} from "./linked_programs_test_support.mjs";
 
 function generatedTryCase(seed) {
   switch (seed % 4) {
@@ -359,159 +248,6 @@ for (const [index, [operand, tag, expected]] of [
   const expr = { type: "BinaryExpression", operator: "!=", left, right };
   const source = index < 2 ? observedProgram(arrow([], expr), call(id("worker"))) : observedProgram(expr, id("worker"));
   assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
-}
-
-// Compute evaluation order from the emitted requests, including the cycle a fixed
-// schedule can introduce when the second provider reads the first provider.
-function moduleEvaluationOrder(directory, entry) {
-  const visited = new Set();
-  const order = [];
-  function visit(file) {
-    if (visited.has(file)) return;
-    visited.add(file);
-    const ast = parse(readFileSync(path.join(directory, file), "utf8"), {
-      sourceType: "module",
-      ecmaVersion: "latest",
-    });
-    for (const node of ast.body) {
-      if (node.type === "ImportDeclaration") visit(path.join(path.dirname(file), node.source.value));
-    }
-    order.push(file);
-  }
-  visit(entry);
-  return order;
-}
-
-function forcePreview(files, directory) {
-  const preview = spawnSync(
-    process.env.LOWERSPLIT,
-    ["--diagnostic", files.sourceFile, files.specFile, directory, "--force"],
-    { encoding: "utf8" }
-  );
-  assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
-}
-
-// Source initializes left, then right. Pin the reverse order across all cases.
-// Mutating one initializer to read its neighbor introduces a TDZ in exactly one execution.
-for (const [changed, first, second] of [
-  ["left", "low", "high"],
-  ["right", 42, 0],
-]) {
-  const spec = {
-    entry: "entry.mjs",
-    modules: { "left.mjs": ["#0"], "right.mjs": ["#1"], "entry.mjs": ["#2", "#3"] },
-    order: ["right.mjs", "left.mjs"],
-    sequential: true,
-  };
-  for (const dependent of [false, true]) {
-    const dir = path.join(root, `reordered-providers-${changed}-${dependent}`);
-    const readsRight = dependent && changed === "left";
-    const readsLeft = dependent && changed === "right";
-    const files = prepare(dir, {
-      source: program([
-        variable("const", "left", readsRight ? id("right") : literal(first)),
-        variable("const", "right", readsLeft ? id("left") : literal(second)),
-        variable("const", "pair", {
-          type: "ObjectExpression",
-          properties: [property("first", id("left")), property("second", id("right"))],
-        }),
-        exportNamed([["pair", "result"]]),
-      ]),
-      provider: "",
-      spec,
-    });
-    const out = path.join(dir, "out");
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-    const tdz = { error: "ReferenceError" };
-    const normal = { result: { first: readsRight ? second : first, second: readsLeft ? first : second } };
-    assert.deepEqual(observe(files.sourceFile, "result"), readsRight ? tdz : normal);
-    let candidate = out;
-    if (dependent) {
-      assert.equal(verdict.status, "rejected", log);
-      assert.equal(verdict.reason, `${readsRight ? "original" : "split"} threw during linked initialization`);
-      assert(!existsSync(out));
-      candidate = path.join(dir, "preview");
-      forcePreview(files, candidate);
-    } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
-    }
-    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
-    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), readsLeft ? tdz : normal);
-  }
-}
-
-// Both calls can complete even when the formatter observes their order: catch
-// the TDZ and return the usual formatted value until the captured call finishes.
-for (const [observed, leftArg, rightArg] of [
-  ["left", "sun", "rain"],
-  ["right", 13, false],
-]) {
-  const format = {
-    type: "TemplateLiteral",
-    expressions: [id("prefix"), id("value")],
-    quasis: ["", ":", ""].map((text, index) => ({
-      type: "TemplateElement",
-      value: { raw: text, cooked: text },
-      tail: index === 2,
-    })),
-  };
-  const left = `label:${leftArg}`;
-  const right = `label:${rightArg}`;
-  const original = { left, right };
-  const shared = observed === "left" ? left : right;
-  const dependentSource = observed === "left" ? { left, right: shared } : original;
-  const dependentReversed = observed === "right" ? { left: shared, right } : original;
-  assert.notDeepEqual(dependentSource, dependentReversed);
-
-  for (const [variant, capturesCall, reversed] of [
-    ["independent", false, true],
-    ["same-order", true, false],
-    ["order-sensitive", true, true],
-  ]) {
-    const body = capturesCall
-      ? block([tryStatement(block([returns(id(observed))]), catchClause(null, block([returns(format)])))])
-      : format;
-    const source = program([
-      variable("const", "prefix", literal("label")),
-      variable("const", "format", arrow([id("value")], body)),
-      variable("const", "left", call(id("format"), [literal(leftArg)])),
-      variable("const", "right", call(id("format"), [literal(rightArg)])),
-      variable("const", "pair", {
-        type: "ObjectExpression",
-        properties: [property("left", id("left")), property("right", id("right"))],
-      }),
-      exportNamed([["pair", "result"]]),
-    ]);
-    const calls = reversed ? ["right.mjs", "left.mjs"] : ["left.mjs", "right.mjs"];
-    const spec = {
-      entry: "entry.mjs",
-      modules: { "format.mjs": ["#0", "#1"], "left.mjs": ["#2"], "right.mjs": ["#3"], "entry.mjs": ["#4", "#5"] },
-      order: ["format.mjs", ...calls],
-      sequential: true,
-    };
-    const dir = path.join(root, `reordered-formatter-${observed}-${variant}`);
-    const files = prepare(dir, { source, provider: "", spec });
-    const out = path.join(dir, "out");
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-    const bundled = capturesCall ? dependentSource : original;
-    assert.deepEqual(observe(files.sourceFile, "result"), { result: bundled }, log);
-
-    let candidate = out;
-    if (capturesCall && reversed) {
-      assert.equal(verdict.status, "rejected", log);
-      assert.match(verdict.reason, /could not prove equivalent linked executions/, log);
-      assert(!existsSync(out));
-      candidate = path.join(dir, "preview");
-      forcePreview(files, candidate);
-    } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
-    }
-    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry], log);
-    const expected = capturesCall && reversed ? dependentReversed : bundled;
-    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), { result: expected }, log);
-  }
 }
 
 // Vary the number, spelling and values of static properties across a module boundary.
