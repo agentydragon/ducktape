@@ -61,11 +61,11 @@ def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str
     return {name: set(spec["policy_sets"]) for name, spec in presets.items()}
 
 
-def test_egress_reads_its_settings_file_and_database_url(catalog_manifests: list[dict[str, Any]]) -> None:
-    pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
+def test_egress_reads_its_settings_file_and_database_url(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = find_resource(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    settings_document = one(find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"].values())
+    settings_document = one(find_resource(staging_manifests, "ConfigMap", "egress-go-settings")["data"].values())
     assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
         EgressSettings.config_file_env,
         EgressSettings.database_url_env,
@@ -80,8 +80,8 @@ def test_egress_reads_its_settings_file_and_database_url(catalog_manifests: list
     assert config["admin_grpc_service_callers"] == [APP_URI]
 
 
-def test_staging_requires_the_tls_hop(catalog_manifests: list[dict[str, Any]]) -> None:
-    deployment = find_resource(catalog_manifests, "Deployment", "egress")
+def test_staging_requires_the_tls_hop(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = find_resource(staging_manifests, "Deployment", "egress")
     assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
         f"{staging.ENV.namespace}-egress-upstream-ca",
         "public-web-pki",
@@ -91,7 +91,7 @@ def test_staging_requires_the_tls_hop(catalog_manifests: list[dict[str, Any]]) -
     )
     ports = {port["containerPort"] for port in proxy["ports"]}
     assert admin(staging.ENV.namespace).pod_port in ports
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
+    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe"}
     api = admin(staging.ENV.namespace)
@@ -99,21 +99,21 @@ def test_staging_requires_the_tls_hop(catalog_manifests: list[dict[str, Any]]) -
 
 
 def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
-    catalog_manifests: list[dict[str, Any]],
+    staging_manifests: list[dict[str, Any]],
 ) -> None:
-    deployment = find_resource(catalog_manifests, "Deployment", "egress")
+    deployment = find_resource(staging_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
     assert [port["containerPort"] for port in proxy["ports"]].count(PROXY_PORT) == 1
-    service = find_resource(catalog_manifests, "Service", "egress")
+    service = find_resource(staging_manifests, "Service", "egress")
     mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
     assert len(mtls_ports) == 1
 
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
+    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
 
-    role = find_resource(catalog_manifests, "Role", "egress")
+    role = find_resource(staging_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
     # An SVID names a WorkloadCredential, and the record names the subject the proxy reads live; the
@@ -123,11 +123,11 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
     assert "pods" not in all_resources
 
-    certificate = find_resource(catalog_manifests, "Certificate", "agentplane-egress-proxy")
+    certificate = find_resource(staging_manifests, "Certificate", "agentplane-egress-proxy")
     assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
     assert "server auth" in certificate["spec"]["usages"]
 
-    policy = find_resource(catalog_manifests, "CiliumNetworkPolicy", "egress")["spec"]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "egress")["spec"]
     ingress_ports = {
         int(port["port"])
         for rule in policy["ingress"]
@@ -230,15 +230,15 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: l
     assert notification_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
 
 
-def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[str, Any]]) -> None:
-    llm_service = find_resource(catalog_manifests, "Service", "llm-ingress")
+def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    llm_service = find_resource(staging_manifests, "Service", "llm-ingress")
     assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080}
 
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
+    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     workload = llm_ingress.service(staging.ENV.namespace)
     assert f"{workload.fqdn}:{workload.pod_port}" in settings["tls_passthrough_targets"]
 
-    llm_settings = config_map_yaml(catalog_manifests, "llm-ingress-settings", "settings.yaml")
+    llm_settings = config_map_yaml(staging_manifests, "llm-ingress-settings", "settings.yaml")
     assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
@@ -246,11 +246,11 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert llm_settings["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert llm_settings["central_sampler_identity_callers"] is True
 
-    certificate = find_resource(catalog_manifests, "Certificate", "llm-ingress-workload")
+    certificate = find_resource(staging_manifests, "Certificate", "llm-ingress-workload")
     assert certificate["spec"]["uris"] == [LLM_INGRESS_URI]
     assert "server auth" in certificate["spec"]["usages"]
 
-    role = find_resource(catalog_manifests, "Role", "llm-ingress-sandbox-reader")
+    role = find_resource(staging_manifests, "Role", "llm-ingress-sandbox-reader")
     assert role["rules"] == [
         {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list"]},
         {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]},
@@ -258,11 +258,11 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
         {"apiGroups": [GROUP], "resources": ["identities"], "verbs": ["get"]},
     ]
 
-    basic_policy = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
+    basic_policy = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)
     allowed_hosts = [host for rule in basic_policy["spec"]["rules"] for host in rule.get("hosts", [])]
     assert llm_ingress.service(staging.ENV.namespace).fqdn not in allowed_hosts
 
-    network_policy = find_resource(catalog_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"]
+    network_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"]
     assert any(
         int(port["port"]) == workload.pod_port
         for rule in network_policy["ingress"]
@@ -271,7 +271,7 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     )
 
 
-def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dict[str, Any]]) -> None:
+def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dict[str, Any]]) -> None:
     """Keep managed CLI origins credential-free while the sidecar presents its Sandbox SVID."""
     namespace = staging.ENV.namespace
     sessions = runner_gateway.sessions_service(namespace)
@@ -283,9 +283,9 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     history_url = f"http://{history_route.local_target}"
     environments = environment_service.environments_service(namespace)
     environments_route = platform_routes.environments_grpc(namespace)
-    basic = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
+    basic = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)
     assert all(sessions.fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"])
-    proxy_settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
+    proxy_settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert {
         sessions_authority,
         f"{history.fqdn}:{history.pod_port}",
@@ -293,7 +293,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     } <= set(proxy_settings["tls_passthrough_targets"])
 
     configured: list[dict[str, Any]] = []
-    for item in catalog_manifests:
+    for item in staging_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
@@ -307,7 +307,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
 
     history_configured: list[dict[str, Any]] = []
     environments_configured: list[dict[str, Any]] = []
-    for item in catalog_manifests:
+    for item in staging_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
@@ -329,7 +329,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
         assert route["upstream"] == f"{environments.fqdn}:{environments.pod_port}"
         assert route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
 
-    pod_template = find_resource(catalog_manifests, "SandboxTemplate", "environment-tools")
+    pod_template = find_resource(staging_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
         container
         for container in pod_template["spec"]["pod"]["spec"]["containers"]
@@ -352,7 +352,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     )
 
     vm_runtime = json.loads(
-        find_resource(catalog_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+        find_resource(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
     )
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
@@ -364,7 +364,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     )
 
 
-def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manifests: list[dict[str, Any]]) -> None:
+def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manifests: list[dict[str, Any]]) -> None:
     """The bot can finish a pull request, not only open one.
 
     GitHub answers a PR description with PATCH and `update-branch`/`merge` with PUT; a review comment
@@ -372,7 +372,7 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manif
     unable to correct it. Pinned in both directions so that trimming a verb stays a decision rather
     than a side effect of tidying, and so the rule stays unpathed rather than narrowing quietly.
     """
-    github = find_resource(catalog_manifests, "PolicySet", GITHUB_AGENTYDRAGON_AGENT_POLICY)
+    github = find_resource(staging_manifests, "PolicySet", GITHUB_AGENTYDRAGON_AGENT_POLICY)
     rule = one(github["spec"]["rules"])
     assert set(rule["methods"]) == {"GET", "POST", "PUT", "PATCH", "DELETE"}
     assert rule["credentialRef"] == {"name": "github-pat"}
@@ -380,8 +380,8 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manif
     assert "paths" not in rule
 
 
-def test_claude_picker_offers_environment_models_and_keeps_ingress(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
+def test_claude_picker_offers_environment_models_and_keeps_ingress(staging_manifests: list[dict[str, Any]]) -> None:
+    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == [route.id for route in STAGING_APP_MODELS.claude]
     assert all(
         route.id in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"] for route in STAGING_APP_MODELS.claude
@@ -390,8 +390,8 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(catalog_manif
         assert preset["model"] in config["models"]["harnesses"][preset["harness"]]
 
 
-def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
+def test_shared_coding_models_preserve_provider_protocols(staging_manifests: list[dict[str, Any]]) -> None:
+    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
     abliterated_id = "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated"
@@ -409,7 +409,7 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
     assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(
-        find_resource(catalog_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
+        find_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
     )
     assert set(sampler["models"]) == {*chat_models, *(route.id for route in STAGING_APP_MODELS.central_sampler)}
     for model_id, provider_model in chat_models.items():
