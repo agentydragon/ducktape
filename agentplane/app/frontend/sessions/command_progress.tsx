@@ -30,8 +30,6 @@ export function dispatchReasonLabel(reason: string | null | undefined): string |
   const runner = detailOf("runner_unreachable");
   if (runner !== null) return `Dispatcher could not reach the runner and keeps retrying: ${runner}`;
   switch (reason) {
-    case "sandbox_deleted":
-      return "Sandbox was deleted";
     case "sandbox_resuming":
       return "Sandbox is waking; message is queued";
     case "wake_on_send_disabled":

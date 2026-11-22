@@ -96,9 +96,10 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	defer endLease()
 	first := true
 	var lastIssues *dispatcherpb.RecentDispatchIssues
+	issueGeneration := s.Hub.Generation()
 	for {
 		generation := s.Hub.Generation()
-		if filter.GetRecentIssueLimit() != 0 && !s.Hub.Connected() {
+		if filter.GetRecentIssueLimit() != 0 && (!s.Hub.Connected() || generation != issueGeneration) {
 			return status.Error(codes.Unavailable, "dispatcher delivery issue updates disconnected")
 		}
 		batch, err := s.Store.ReadDispatchChanges(leaseCtx, filter, caller, last, resuming)

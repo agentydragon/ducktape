@@ -407,7 +407,7 @@ export function RecentDeliveryIssues({
             </Text>
             {row.reason && (
               <Text size="xs" c="dimmed">
-                {dispatchReasonLabel(row.reason)}
+                {row.reason === "sandbox_deleted" ? "Sandbox was deleted" : dispatchReasonLabel(row.reason)}
               </Text>
             )}
           </Stack>
