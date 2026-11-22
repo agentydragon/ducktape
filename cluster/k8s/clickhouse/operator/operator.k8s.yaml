@@ -52,9 +52,9 @@ spec:
                     "metrics-exporter", "controlledValues": "RequestsOnly", "minAllowed": {"cpu":
                     "25m", "memory": "96Mi"}, "maxAllowed": {"cpu": "25m", "memory": "128Mi"}, "controlledResources":
                     ["memory"]}, {"containerName": "altinity-clickhouse-operator", "controlledValues":
-                    "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed":
-                    {"cpu": "50m", "memory": "128Mi"}, "mode": "Off"}, {"containerName": "*", "controlledValues":
-                    "RequestsOnly", "mode": "Off"}]}'
+                    "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "controlledResources":
+                    ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly",
+                    "mode": "Off"}]}'
   timeout: 10m
   values:
     crdHook:

@@ -26,7 +26,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "clickhouse-operator"
 _CHART_NAME = "altinity-clickhouse-operator"
@@ -100,14 +100,10 @@ def helmrelease_chart(app: App) -> Chart:
         ContainerPolicy.memory_requests_only(
             "metrics-exporter", cpu_request="25m", memory_floor="96Mi", memory_limit="128Mi"
         ),
-        # The operator was previously OOMKilled under its current limit. Leave
-        # it out of new sizing, and pin requests against cached recommendations.
-        ContainerPolicy(
-            container_name=_CHART_NAME,
-            controlled_values=ControlledValues.REQUESTS_ONLY,
-            min_allowed=_OPERATOR_REQUESTS,
-            max_allowed=_OPERATOR_REQUESTS,
-            mode="Off",
+        # Preserve startup reservations and the runtime limits. The operator
+        # previously OOMKilled at 512Mi, so a larger request alone cannot prevent recurrence.
+        ContainerPolicy.cpu_and_memory_requests_only(
+            _CHART_NAME, cpu_floor=_OPERATOR_REQUESTS["cpu"], memory_floor=_OPERATOR_REQUESTS["memory"]
         ),
     )
     helm_release(
