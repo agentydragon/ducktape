@@ -6,8 +6,9 @@ environment. The public contract is [`executor.proto`](executor.proto). The nati
 ## Ownership and admission
 
 One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
-lifetime inside Environment Runtime. Runtime forwards through its typed proxy after both backend
-readiness probes; Host asks Runtime for in-process readiness. Every
+lifetime inside Environment Runtime. Runtime publishes the typed API after the selected backend's
+readiness check: gRPC health for native, or the WebSocket protocol for Codex. Host asks Runtime
+for in-process readiness. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Callers supply Session and incarnation context with each request;
