@@ -131,14 +131,18 @@ def _values() -> dict[str, object]:
             ],
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
-            "annotations": initial_request_annotations(
-                ContainerPolicy.cpu_and_memory_requests_only(
-                    "controller",
-                    cpu_floor=_CLEANUP_CPU_REQUEST,
-                    memory_floor="124Mi",
-                    memory_ceiling=_CLEANUP_MEMORY_LIMIT,
-                )
-            ),
+            "annotations": {
+                VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy.cpu_and_memory_requests_only(
+                        "controller",
+                        cpu_floor=_CLEANUP_CPU_REQUEST,
+                        memory_floor="124Mi",
+                        memory_ceiling=_CLEANUP_MEMORY_LIMIT,
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
+            },
             "resources": {
                 "limits": {"cpu": "100m", "memory": _CLEANUP_MEMORY_LIMIT},
                 "requests": {"cpu": _CLEANUP_CPU_REQUEST, "memory": "32Mi"},
