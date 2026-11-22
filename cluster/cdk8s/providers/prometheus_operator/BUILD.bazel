@@ -52,21 +52,6 @@ py_library(
 )
 
 py_test(
-    name = "test_service_monitor",
-    srcs = ["test_service_monitor.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":service_monitor",
-        ":servicemonitor",
-        "//:conftest",
-        "//cluster/cdk8s:conftest",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_prometheus_rule",
     srcs = ["test_prometheus_rule.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],

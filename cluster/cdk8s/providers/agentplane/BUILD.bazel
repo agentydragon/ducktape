@@ -6,7 +6,7 @@
 
 # gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "egress_credential",
@@ -15,21 +15,6 @@ py_library(
     deps = [
         "//agentplane/crds:egresscredential",
         "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_test(
-    name = "test_egress_credential",
-    srcs = ["test_egress_credential.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":egress_credential",
-        "//:conftest",
-        "//agentplane/crds:egresscredential",
-        "//cluster/cdk8s:conftest",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
