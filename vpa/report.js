@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611221107`);
+      const response = await fetch(`${path}?v=202611221125`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -502,15 +502,16 @@ function Report() {
         ${" "}<${Anchor} href=${github + "pull/19080"}>CSI PR<//>.
       <//>
       <${Text} mt="sm">
-        <strong>Four PostgreSQL clusters admitted static requests.</strong>
-        All four Cluster and Barman ObjectStore specs have the new requests. At
-        11:07 UTC, ${review.cnpg.ready_pods_with_all_three_requests} of
-        ${review.cnpg.expected_instance_pods} Pods were Ready with the new
-        PostgreSQL, bootstrap and backup sidecar requests. Check the remaining
-        instances and the next backup cycle. ${" "}<${Anchor}
-          href=${github + "pull/19102"}
-          >Database sizing PR<//
-        >.
+        <strong>CNPG sizing needs a controlled rollout.</strong> All four
+        Clusters recovered after the request wave, but three write endpoints
+        were unready for roughly three minutes each during primary restarts. At
+        11:24 UTC on 22 November, a Study Casino switchover test had an
+        11.1-second gap between successful client reads and ten failed attempts
+        before reconnection; it did not test committed writes. Both instances
+        and archiving recovered. This is one observation, not an outage bound.
+        ${" "}<${Anchor} href=${github + "pull/19102"}>Database sizing PR<//
+        >${" · "}<${Anchor} href=${github + "pull/19119"}>Switchover test<//
+        >${" · "}<${Anchor} href="./rollout-evidence.json">Dated evidence<//>.
       <//>
     </section>
 
@@ -583,6 +584,17 @@ function Report() {
           Confirm one endpoint keeps serving, the replacement schedules with the
           recommended requests, and a webhook reaches runner confirmation. Check
           for SQL readiness stalls during that observation.
+        <//>
+        <${Text}>
+          <strong>5. Size the remaining CNPG databases individually.</strong>
+          ${" "}Keep their VPAs recommendation-only. For a replicated database,
+          evaluate a planned switchover and client recovery before its next
+          request change; singletons need a separate maintenance plan. Verify
+          backup, replication, capacity and application behavior for each
+          rollout. ${" "}<${Anchor}
+            href=${github + "blob/devel/cluster/docs/cnpg_conventions.md#r7-cnpg-vpas-are-recommendation-only"}
+            >CNPG conventions<//
+          >.
         <//>
       <//>
       <${Title} order=${3} mt="lg">Review cohorts<//>

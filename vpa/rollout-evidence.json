@@ -205,6 +205,25 @@
     "ready_pods_with_all_three_requests": 8,
     "expected_instance_pods": 8,
     "scope": "PostgreSQL, bootstrap controller and Barman requests on the four target clusters; next backup cycle pending",
-    "pods_observed_utc": "2026-11-22T11:10:35Z"
+    "pods_observed_utc": "2026-11-22T11:10:35Z",
+    "request_wave_impact": {
+      "pr": 19102,
+      "observed_utc": "2026-11-22T11:11:45Z",
+      "primary_update_method": "restart",
+      "affected_clusters": ["gatus", "gitlab", "study-casino"],
+      "observation": "Each write Service had no Ready endpoint for approximately three minutes while existing primary connections delayed shutdown; all four databases recovered."
+    },
+    "study_casino_switchover": {
+      "pr": 19119,
+      "observed_utc": "2026-11-22T11:24:45Z",
+      "primary_update_method": "switchover",
+      "request_change": "PostgreSQL memory request 160 MiB to 192 MiB",
+      "probe": "Application-pod client repeatedly queries pg_is_in_recovery() through the read-write Service, reconnecting after errors; approximately one-second sampling interval.",
+      "last_success_utc": "2026-11-22T11:24:45.188245Z",
+      "first_success_after_utc": "2026-11-22T11:24:56.282455Z",
+      "failed_attempts": 10,
+      "limitations": "Read and reconnection probe only; no committed writes or authenticated end-user flow. One observed rollout is not an outage bound.",
+      "recovery": "Primary moved to the former replica; both instances became Ready and replication streamed with zero byte replay lag at the instant checked. Continuous archiving, application health endpoint, and Flux were healthy; PVC identities were unchanged."
+    }
   }
 }
