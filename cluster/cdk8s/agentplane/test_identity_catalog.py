@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
+import pytest
 import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
 from more_itertools import one
@@ -204,21 +205,32 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
     assert all(account_sets & set(spec["policy_sets"]) for spec in presets.values()), presets
 
 
-def test_controller_may_bind_every_role_a_role_set_names(
-    scratch_app_factory: Callable[[], App], identity_catalog_manifests: list[dict[str, Any]]
-) -> None:
-    env = staging.environment(identity_catalog=True)
+@pytest.fixture(scope="module")
+def external_delegation(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    app = scratch_app_factory()
+    env = staging.ENV
     grants = staging.assignable_grants()
-    delegation = [
+    return [
         doc
         for target in binding_delegation.external_scopes(env, grants)
-        for doc in cast(
-            list[dict[str, Any]],
-            Cdk8sTesting.synth(binding_delegation.chart(scratch_app_factory(), env, target, grants)),
-        )
+        for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(binding_delegation.chart(app, env, target, grants)))
     ]
-    rbac = Rbac([*identity_catalog_manifests, *delegation])
-    direct = rbac.subjects({("ServiceAccount", policy_controller.NAME, env.namespace)})
+
+
+def test_external_delegation_is_separate_from_the_app(
+    catalog_manifests: list[dict[str, Any]], external_delegation: list[dict[str, Any]]
+) -> None:
+    # An absent external namespace must not fail the app Kustomization's apply.
+    for kind in ("Role", "RoleBinding"):
+        assert _names(catalog_manifests, kind).isdisjoint(_names(external_delegation, kind))
+
+
+def test_controller_may_bind_every_role_a_role_set_names(
+    identity_catalog_manifests: list[dict[str, Any]], external_delegation: list[dict[str, Any]]
+) -> None:
+    rbac = Rbac([*identity_catalog_manifests, *external_delegation])
+    subject = {("ServiceAccount", policy_controller.NAME, staging.ENV.namespace)}
+    direct = rbac.subjects(subject)
     bindable = {
         permission
         for permission in direct
@@ -227,20 +239,17 @@ def test_controller_may_bind_every_role_a_role_set_names(
         and permission.resource in {"roles", "clusterroles"}
     }
     assert all(permission.name is not None for permission in bindable), "bind grants must name their roles"
-    needed: set[Permission] = set()
-    for role_set in _of(identity_catalog_manifests, "KubernetesRoleSet"):
-        for rule in role_set["spec"]["rules"]:
-            if rule["type"] == "cluster_role_binding":
-                needed.add(Permission(None, _RBAC_GROUP, "clusterroles", "bind", rule["clusterRole"]))
-            else:
-                role = rule["role"]
-                resource = "roles" if role["kind"] == "Role" else "clusterroles"
-                needed |= {
-                    Permission(namespace, _RBAC_GROUP, resource, "bind", role["name"])
-                    for namespace in rule["namespaces"]
-                }
+    needed = {
+        Permission(role.namespace, _RBAC_GROUP, "roles" if role.kind == "Role" else "clusterroles", "bind", role.name)
+        for name in rbac.role_sets
+        for role in rbac.set_roles(name)
+    }
     assert needed
     assert not uncovered(needed, bindable)
+    # Other namespaces delegate exactly the named Roles assigned by the catalog.
+    assert {p for p in Rbac(external_delegation).subjects(subject) if p.verb in {"bind", "*"}} == {
+        p for p in needed if p.resource == "roles" and p.namespace != staging.ENV.namespace
+    }
 
 
 if __name__ == "__main__":
