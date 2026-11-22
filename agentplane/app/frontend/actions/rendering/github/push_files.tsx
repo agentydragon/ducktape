@@ -149,6 +149,7 @@ function PushFiles({ args, requestId }: { args: PushFilesArguments; requestId?: 
     queryFn: ({ signal }) => getGitHubPushFilesPreview(requestId ?? "", signal),
     enabled: requestId !== undefined,
     gcTime: 0,
+    staleTime: 0,
     retry: false,
   });
   const preview = query.isFetching || query.isError ? undefined : query.data;

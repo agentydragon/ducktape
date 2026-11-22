@@ -3545,19 +3545,20 @@ async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixtu
 @DESKTOP_AND_MOBILE
 async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
+    args = {
+        "owner": "example",
+        "repo": "service",
+        "branch": "docs",
+        "message": "docs: update the deployment guide",
+        "files": [
+            {"path": "docs/deploy.md", "content": "# Deploy\n\nCheck readiness.\nKeep rollback ready.\n"},
+            {"path": "docs/verify.md", "content": "# Verify\n\nCheck the logs.\n"},
+        ],
+    }
     await app.show_action_preview(
         "github",
         "push_files",
-        {
-            "owner": "example",
-            "repo": "service",
-            "branch": "docs",
-            "message": "docs: update the deployment guide",
-            "files": [
-                {"path": "docs/deploy.md", "content": "# Deploy\n\nCheck readiness.\nKeep rollback ready.\n"},
-                {"path": "docs/verify.md", "content": "# Verify\n\nCheck the logs.\n"},
-            ],
-        },
+        args,
         {
             "github-push-files-preview": {
                 "baseCommitSha": sha,
@@ -3566,6 +3567,12 @@ async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture
                 ],
             }
         },
+    )
+    await app.show_action_receipt(
+        "github",
+        "push_files",
+        args,
+        {"content": [], "structuredContent": {"ref": "refs/heads/docs", "object": {"sha": sha, "type": "commit"}}},
     )
     sidebar_width = (viewport.width if viewport == MOBILE else 240) - 16
     detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
