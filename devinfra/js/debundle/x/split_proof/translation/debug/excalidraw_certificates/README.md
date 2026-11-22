@@ -68,6 +68,24 @@ question is which possible writes the checker can soundly exclude for that call.
 Both replays stop at structural checks before reaching the module URL guard.
 [Exact schedules, checker logs, and move reports](https://app.buildbuddy.io/invocation/03ee0f61-d9eb-48d8-b30e-63e9cf62e0b8)
 
+### Strict certification of the scroll module
+
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_certificate
+```
+
+The generated editor spec assigns `#1337` and `#1338` to
+`packages/excalidraw/scene/scroll.mjs`. This trial keeps those two selections
+and assigns the other 1,785 units to `entry.mjs` in source order. It asks
+`lowersplit --require all-outcomes` to certify the complete editor chunk.
+
+The first source statement imports `./chunk-7GWWG4HU.js`. The closed-declaration
+decoder stopped there with `statement 0: expected a variable declaration, got ImportDeclaration`.
+The checker returned exit code 1 and a null guarantee before checking the placement,
+and published no modules. A source theorem for linked external imports is the
+first unmet prerequisite in this trial. The test outputs include the two-module
+spec and the JSON verdict. [Full editor replay](https://app.buildbuddy.io/invocation/a6e8b3b3-3c8d-4d8c-81a3-607508751264)
+
 ### Direct AST lowering for negated initializers
 
 On the same authored placement, adding logical negation and negated number literals to Lean's ESTree lowerer gave these counts. Each row counts source units after static imports are removed. In each replay's `moves.json`, subtract `externallyLowered` from `statements.length` to get the number Lean lowered directly.

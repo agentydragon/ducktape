@@ -2,7 +2,7 @@ import EsmSplit.ESTreeUnits
 import EsmSplit.Cli
 import EsmSplit.Effects
 import EsmSplit.CoreJS.FromESTree
-import EsmSplit.CoreJS.DeclarationCertificate
+import EsmSplit.CoreJS.DeclarationArtifacts
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.Move
@@ -350,6 +350,18 @@ def moveReport (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan)
 @[noinline] def modelCounts (ss : List CoreJS.Stmt) : Nat × Nat × Nat :=
   (ss.countP fun | .opaque .. => true | _ => false, ss.countP (·.inert), ss.countP fun s => !s.inert && s.allocs.isSome)
 
+inductive Guarantee where
+  | allOutcomes | normalCompletion
+  deriving DecidableEq
+
+def Guarantee.label : Guarantee → String
+  | .allOutcomes => "all-outcomes"
+  | .normalCompletion => "normal-completion"
+
+structure SliceVerdict where
+  lines : List String
+  declarationGuarantee : Option Guarantee := none
+
 /-- **Which proved slice of the end-to-end theorem covers the split**, and what it rests on; or what it lacks. The
 checker decides each slice as its theorem states it, of the bundle without its outside `import`s
 (`WithoutImports`), after `Valid` and `FootprintsOfSyntax`:
@@ -362,13 +374,13 @@ checker decides each slice as its theorem states it, of the bundle without its o
   total coverage check and do not conflict.
 - `CoreJS.moves_preserve_of_heritageMovesOk` moves a derived class across a block after checking an earlier
   class declaration establishes its superclass and intervening steps preserve it. -/
-def sliceLines (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
-    (model : Except String ModelBody) : List String :=
+def sliceVerdict (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
+    (model : Except String ModelBody) : SliceVerdict :=
   let kept := "order kept (`CoreJS.valid_order_kept_preserves`)"
   let moves := "moves (`CoreJS.moves_preserve`)"
   let dynamicImport := asts.any (anyNode (Lower.typ · == "ImportExpression"))
   let metaUrl := asts.any (anyNode (Lower.typ · == "MetaProperty"))
-  let covered : Except String (List String) := do
+  let covered : Except String SliceVerdict := do
     if replicated then throw "the bundle as it is, not `--replicate`"
     unless checked do throw "the split to pass the checks above"
     if let some i := asts.findIdx? readsMeta then
@@ -409,7 +421,7 @@ def sliceLines (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P :
     let (inverted, _, _) := if orderKept then (0, 0, none) else movesFailures (CoreJS.MayMoveAt arr) w.P.execOrder.toArray
     let sourceProof := body.external == 0 && (orderKept || syntaxMoves || certifiedMoves)
       && CoreJS.DeclarationCertificate.covers program ss
-    pure ([if orderKept then s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"
+    let lines := [if orderKept then s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"
         else s!"  proved slice: {name}: in the model, the split ends normally in a state exactly when the bundle does, for every world"]
       ++ (if sourceProof then
         let outcomes := if orderKept then "all modeled outcomes" else "normally terminating executions"
@@ -429,13 +441,60 @@ def sliceLines (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P :
       ++ (if orderKept then [] else ["    not covered: a run that throws, runs out of fuel or does not end (premise P4); the split may end otherwise then"])
       ++ [if certifiedMoves || heritage then
         "    Footprint certificates: the actual supplied reads and writes cover the supported CoreJS statements; producer correctness is not assumed"
-        else "    not among its hypotheses: the footprint analysis and its premises"])
+        else "    not among its hypotheses: the footprint analysis and its premises"]
+    return ⟨lines, if sourceProof then some (if orderKept then .allOutcomes else .normalCompletion) else none⟩
   match covered with
   | .ok lines => lines
-  | .error why => [if why.startsWith "the plan to keep the order" then s!"  proved slice: none. {kept} needs {why}"
-      else s!"  proved slice: none. {kept} and {moves} need {why}"]
+  | .error why => { lines := [if why.startsWith "the plan to keep the order" then s!"  proved slice: none. {kept} needs {why}"
+      else s!"  proved slice: none. {kept} and {moves} need {why}"] }
 
-def main (args : List String) : IO UInt32 := do
+/-- Read the actual directory through the same Acorn and scope frontend used for the input.
+The native Lake binary finds that frontend beside the project; Bazel supplies its runfile. -/
+private def reparse (dir input reply : System.FilePath) : IO Json := do
+  let cwd ← IO.currentDir
+  let args := #[dir, input, reply].map fun p => (if p.isAbsolute then p else cwd / p).toString
+  let parser ← IO.getEnv "SPLIT_PROOF_REPARSE"
+  let proc ← match parser with
+    | some exe => IO.Process.output { cmd := exe, args }
+    | none => do
+      let mut root ← IO.appPath
+      for _ in [:5] do root := root.parent.getD "."
+      IO.Process.output { cmd := "node", args := #[toString (root / "translation" / "reparse.mjs")] ++ args }
+  unless proc.exitCode == 0 do throw (IO.userError s!"reparse failed: {proc.stderr.trimAscii}")
+  IO.ofExcept (Json.parse (← IO.FS.readFile reply))
+
+private def certifyFiles (program : Json) (ss : List CoreJS.Stmt) (B : Bundle) (P : Plan)
+    (out : System.FilePath) (checkOnly : Bool) (render : EsmSplit.Module → String) : IO Unit := do
+  IO.FS.withTempDir fun work => do
+    let input := work / "source.mjs"
+    IO.FS.writeFile input (← IO.ofExcept (program.getObjValAs? String "sourceText"))
+    let verify (dir : System.FilePath) : IO Unit := do
+      let parsed ← reparse dir input (work / "programs.json")
+      unless (← IO.ofExcept (parsed.getObjVal? "source")) == program do
+        throw (IO.userError "input annotations differ from a fresh parse of sourceText")
+      let files ← IO.ofExcept (parsed.getObjVal? "files")
+      IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
+    if checkOnly then verify out else
+      let parent := out.parent.getD "."
+      IO.FS.createDirAll parent
+      -- A sibling directory makes publication a single same-filesystem rename.
+      let stage := parent / (".split-proof-" ++ work.fileName.get!)
+      IO.FS.createDir stage
+      try
+        writeModules B P stage render
+        verify stage
+        IO.FS.rename stage out
+      finally
+        if ← stage.pathExists then IO.FS.removeDirAll stage
+
+private def emitVerdict (requested : String) (outcome : Except String Guarantee) : IO UInt32 := do
+  let fields := match outcome with
+    | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
+    | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
+  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson "closed-declarations")] ++ fields)).compress
+  return if outcome.isOk then 0 else 1
+
+private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
@@ -456,6 +515,9 @@ def main (args : List String) : IO UInt32 := do
     let t ← IO.monoMsNow
     IO.println s!"  [time] {what}: {t - t0} ms"; (← IO.getStdout).flush; return t
   let program ← IO.ofExcept (Json.parse (← IO.FS.readFile bundlePath))
+  if required.isSome then
+    -- Report the first original AST statement outside this theorem, before planning.
+    let _ ← IO.ofExcept (CoreJS.DeclarationInput.decode program)
   let t1 ← lap "read + parse JSON" tStart
   let stmts ← IO.ofExcept (ESTreeUnits.renderUnits program)
   let asts := stmts.map (·.ast)
@@ -484,6 +546,10 @@ def main (args : List String) : IO UInt32 := do
     | some K => replicateBundle K B0
     | none => B0
   let S ← loadSpec specPath
+  if required.isSome then
+    for name in S.entry :: S.modules.map Prod.fst do
+      unless CoreJS.DeclarationArtifacts.supportedFilename name && name.endsWith ".mjs" do
+        throw (IO.userError s!"certified output requires a safe relative .mjs path, got {name}")
   let t3 ← lap "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
   -- A rule Lean does not check. It talks about the original statements, so `--replicate` skips it.
@@ -507,7 +573,15 @@ def main (args : List String) : IO UInt32 := do
     IO.FS.writeFile path ((match report with
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
-  for line in sliceLines program asts B S P (ok && !bad) replicate?.isSome model do IO.println line
+  let slice := sliceVerdict program asts B S P (ok && !bad) replicate?.isSome model
+  for line in slice.lines do IO.println line
+  if let some request := required then
+    let some level := slice.declarationGuarantee | throw (IO.userError (slice.lines.headD "declaration proof unavailable"))
+    if request == .allOutcomes && level != .allOutcomes then
+      throw (IO.userError "the checked reorder proves only normal-completion")
+    let body ← IO.ofExcept model
+    certifyFiles program body.stmts B P out checkOnly (renderModule asts [] B P)
+    return ← emitVerdict request.label (.ok level)
   if let some l := leanOut? then
     if bad then
       IO.println "  no kernel certificate: the front-end rule above failed, and Lean does not check it"
@@ -526,3 +600,22 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
   IO.eprintln (if force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
+
+def main (args : List String) : IO UInt32 := do
+  if !args.contains "--require" then
+    return ← runSplitter none false args
+  let (level?, args) := Effects.takeFlag "--require" args
+  let label := level?.getD ""
+  try
+    let level ← match label with
+      | "all-outcomes" => pure Guarantee.allOutcomes
+      | "normal-completion" => pure Guarantee.normalCompletion
+      | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
+    let checkOnly := args.contains "--check-output"
+    let args := args.filter (· != "--check-output")
+    unless args.length == 3 && !args.any (·.startsWith "--") do
+      throw (IO.userError "usage: lowersplit bundle.json spec.json outdir --require LEVEL [--check-output]")
+    let status ← runSplitter (some level) checkOnly args
+    if status != 0 then return ← emitVerdict label (.error "source outside the supported module model")
+    return status
+  catch e => emitVerdict label (.error e.toString)

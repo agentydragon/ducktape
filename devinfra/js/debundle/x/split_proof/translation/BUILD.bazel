@@ -16,6 +16,17 @@ js_library(
     ],
 )
 
+js_binary(
+    name = "reparse",
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    ],
+    entry_point = "reparse.mjs",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
 _SHIFT_FUZZ_DATA = [
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
@@ -670,6 +681,18 @@ _COREJS_DIFFERENTIAL_ENV = {
 }
 
 js_test(
+    name = "certified_split_test",
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "certified_split_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
     name = "corejs_ast_lowering_test",
     data = [
         "frontend.mjs",
@@ -809,5 +832,25 @@ js_test(
         MAIN_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_MAIN_SPEC + ")",
         SPEC_GRAPHS = "$(rootpath " + _EXCALIDRAW_GRAPHS + ")",
     ),
+    tags = ["manual"],
+)
+
+js_test(
+    name = "excalidraw_scroll_certificate",
+    size = "medium",
+    data = [
+        ":" + _EXCALIDRAW_EDITOR_SPEC,
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/excalidraw:inputs",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "debug/excalidraw_certificates/scroll.mjs",
+    env = {
+        "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+        "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
     tags = ["manual"],
 )
