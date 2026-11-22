@@ -64,6 +64,8 @@ Lean checks that the public name resolves to the same live cell in both graphs. 
 resolve to declarations in their immediate providers. Source-bearing re-exports such as
 `export { name } from "./provider.mjs"` are outside this fragment.
 
+Ordinary top-level function declarations with identifier parameters are initialized when the modules link. A call can reach a declared function before its statement executes, while its closed-over lexical bindings still observe their own initialization order. The checker uses the same scope correspondence for recursive references and deferred function bodies. Nested declarations, async and generator functions, and default parameters remain outside this fragment.
+
 In linked programs, a conditional expression evaluates its test once and runs the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes.
 
 Linked object literals may contain distinct identifier or string keys and values that are supported primitive literals or binding reads. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. Computed keys, `__proto__`, methods, accessors, and spread are outside this fragment.
