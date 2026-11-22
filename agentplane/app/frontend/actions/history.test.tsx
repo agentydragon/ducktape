@@ -439,7 +439,6 @@ describe("ActionHistory", () => {
 
   it("shows a Gmail draft's arguments and result together, with both available in Raw", async () => {
     const container = await renderHistory([gmailDraft()], [group("gmail", ExecutorKind.MCP)]);
-    expect(container.textContent).toContain("Call");
     expect(container.textContent).toContain("Release notes saved");
     expect(container.textContent).toContain("reader@example.com");
     expect(container.textContent).toContain("The release is ready.");

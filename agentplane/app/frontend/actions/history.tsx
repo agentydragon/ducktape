@@ -50,6 +50,7 @@ import {
   renderDetailsArguments,
   renderDetailsResult,
   renderNativeDetailsResult,
+  shouldRenderRequestTitle,
 } from "./rendering/index";
 import { actionGroupsQuery, stateLabel } from "./requests";
 
@@ -283,9 +284,11 @@ export function ActionHistoryCard({
                 </Tooltip>
               </Group>
             </Group>
-            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-              {request.title}
-            </Text>
+            {shouldRenderRequestTitle(action, args, request.title, actionLabel) && (
+              <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                {request.title}
+              </Text>
+            )}
             {timestamp}
           </Stack>
           <Disclosure summary="Receipt details" open={receiptOpen} onOpenChange={setReceiptOpen} keepMounted>

@@ -97,7 +97,7 @@ it("opens cached stream details without a reload and Back returns to the origina
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
   expect(fetched(sent)).toBe(false);
-  expect(container.textContent).toContain("Exact arguments");
+  expect(container.querySelector(".agentplane-command-call")).not.toBeNull();
   expect(container.textContent).toContain("exact-command");
 
   const back = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "Back");
@@ -107,15 +107,26 @@ it("opens cached stream details without a reload and Back returns to the origina
   expect(container.textContent).toContain("Thread contents remain open");
 });
 
-it("renders an Action's human-facing label on the full details page", async () => {
+it("uses the operation heading once and keeps the caller's justification and stored arguments", async () => {
   const row = clone(ActionRequestSchema, ROW);
   row.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" });
   row.arguments = { namespace: "tofu-controller" };
+  row.title = "List pods in namespace tofu-controller";
+  row.description = "Check whether the controller restarted after the rollout.";
   serve({ stored: row });
   const container = await mount(<App initialPath={`/actions/${row.id}`} />);
 
-  await vi.waitFor(() => expect(container.textContent).toContain("List pods in namespace tofu-controller"));
+  await vi.waitFor(() => expect(container.textContent).toContain(row.title));
+  expect(container.textContent?.split(row.title)).toHaveLength(2);
+  expect(container.textContent).toContain(row.description);
   expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
+  expect(container.textContent).not.toContain("Exact arguments");
+
+  const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!raw) throw new Error("missing the Raw switch");
+  await act(async () => raw.click());
+  expect(container.textContent).toContain("Exact arguments");
+  expect(container.textContent).toContain('"namespace": "tofu-controller"');
 });
 
 it("keeps an Identity caller's pending detail reviewable with its UID", async () => {
@@ -175,7 +186,7 @@ it("stays on action details when a decision fails", async () => {
   });
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
-  expect(container.textContent).toContain("Exact arguments");
+  expect(container.querySelector(".agentplane-command-call")).not.toBeNull();
 });
 
 it("keeps a direct action link on its terminal receipt after a successful decision", async () => {
@@ -202,7 +213,7 @@ it("loads uncached deep links and falls back to the Actions page on Back", async
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
   await send([]);
   await vi.waitFor(() => expect(fetched(sent)).toBe(true));
-  await vi.waitFor(() => expect(container.textContent).toContain("Exact arguments"));
+  await vi.waitFor(() => expect(container.textContent).toContain("exact-command"));
 
   const back = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "Back");
   if (!back) throw new Error("missing action detail Back button");

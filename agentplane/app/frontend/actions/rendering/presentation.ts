@@ -16,12 +16,13 @@ export interface ActionPresentation {
   fallbackLabel?: ReactNode;
   /** Omit a slot for the generic fallback, set null to suppress it, or provide its own React DOM. */
   label?: ArgumentsPreview | null;
+  /** Action-specific equality when the label is built from arguments and rendered as JSX. */
+  requestTitleIsRedundant?: (title: string, args: unknown) => boolean;
   /** A custom view that keeps an Action's arguments and returned value together. */
   call?: CallPreview;
   pane?: {
     collapsed?: ArgumentsPreview | null;
     opened?: ArgumentsPreview | null;
-    requestTitleIsRedundant?: (title: string, args: unknown) => boolean;
   };
   details?: {
     arguments?: ArgumentsPreview | null;

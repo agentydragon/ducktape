@@ -24,7 +24,7 @@ import {
   renderNativeDetailsResult,
   renderPaneCollapsed,
   renderPaneOpened,
-  shouldRenderPaneRequestTitle,
+  shouldRenderRequestTitle,
 } from "./index";
 
 function identity(group: string, name: string): ActionIdentity {
@@ -54,7 +54,7 @@ describe("Action presentation slots", () => {
     }
   });
 
-  it("uses a distinct collapsed-pane view from the details view", async () => {
+  it("shows pod filters without repeating the operation or namespace", async () => {
     const args = {
       namespace: "prod",
       fieldSelector: "status.phase=Running",
@@ -73,15 +73,26 @@ describe("Action presentation slots", () => {
   it("uses a human-facing Action label in place of the technical identity", async () => {
     const action = identity("kubernetes_admin", "pods_list_in_namespace");
     const args = { namespace: "tofu-controller" };
-    const label = await mount(renderActionLabel(action, args));
+    const heading = renderActionLabel(action, args);
+    const label = await mount(heading);
 
     expect(label.textContent).toContain("List pods in namespace tofu-controller");
     expect(label.textContent).not.toContain("kubernetes_admin");
     expect(label.textContent).not.toContain("pods_list_in_namespace");
     const fallback = await mount(renderActionLabel(action, { namespace: "tofu-controller", hidden: true }));
     expect(fallback.textContent).toContain("List pods in namespace");
-    expect(shouldRenderPaneRequestTitle(action, args, "List pods in namespace tofu-controller")).toBe(false);
-    expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
+    expect(shouldRenderRequestTitle(action, args, "List pods in namespace tofu-controller", heading)).toBe(false);
+    expect(shouldRenderRequestTitle(action, args, "Inspect the running demo pods", heading)).toBe(true);
+  });
+
+  it("suppresses a caller title matching the displayed text label", () => {
+    const action = identity("gmail", "threads_list");
+    const args = {};
+    const heading = renderActionLabel(action, args);
+
+    expect(heading).toBe("Gmail: Search threads");
+    expect(shouldRenderRequestTitle(action, args, "Gmail: Search threads", heading)).toBe(false);
+    expect(shouldRenderRequestTitle(action, args, "Search for the release email", heading)).toBe(true);
   });
 
   it.each([

@@ -11,7 +11,7 @@ import {
   renderActionLabel,
   renderPaneCollapsed,
   renderPaneOpened,
-  shouldRenderPaneRequestTitle,
+  shouldRenderRequestTitle,
 } from "./rendering/index";
 import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionIdentity } from "./presentation";
@@ -74,7 +74,7 @@ export function PendingActionList({
         const actionLabel = renderActionLabel(action, args, request.id);
         const collapsedPreview = renderPaneCollapsed(action, args, request.id);
         const openedPreview = renderPaneOpened(action, args, request.id);
-        const showRequestTitle = shouldRenderPaneRequestTitle(action, args, request.title);
+        const showRequestTitle = shouldRenderRequestTitle(action, args, request.title, actionLabel);
         const decision = actionOffersCardDecisionButtons(action, args) ? (
           <ActionDecisionButtons
             size="xs"
