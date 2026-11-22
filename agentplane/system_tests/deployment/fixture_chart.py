@@ -986,21 +986,12 @@ def add_firecracker_template(
     chart: Chart, env: Environment, runner_template: environment_sandbox.EnvironmentSandboxTemplate
 ) -> None:
     """Compose the opt-in Firecracker template beside its runner Pod template."""
-    scope = chart
-    state_volume = runner_template.spec["stateVolume"]
-    claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
-    if env.vm_storage_class is not None:
-        claim["storageClassName"] = env.vm_storage_class
-    firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
-    workspace_volume = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
-    workspace_volume["claim"]["resources"] = state_volume["claim"]["resources"]
     environment_firecracker.EnvironmentFirecrackerTemplate(
-        scope,
+        chart,
         "firecracker-template",
         env,
         labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-        state_volume=firecracker_state,
-        workspace_volume=workspace_volume,
+        runner_state_volume=runner_template.spec["stateVolume"],
         runner_image=environment_vm.RUNNER_DISK_IMAGE,
         image_pull_secret_name=None,
         codex_readiness=_VM_CODEX_READINESS,
