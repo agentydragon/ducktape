@@ -19,6 +19,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
     ClusterSpecPostgresql,
+    ClusterSpecPrimaryUpdateMethod,
     ClusterSpecProbes,
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
@@ -139,6 +140,7 @@ def cluster(
     managed: ClusterSpecManaged | None = None,
     postgresql: ClusterSpecPostgresql | None = None,
     resources: ClusterSpecResources | None = None,
+    primary_update_method: ClusterSpecPrimaryUpdateMethod | None = None,
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
@@ -176,6 +178,7 @@ def cluster(
                 else None
             ),
             resources=resources,
+            primary_update_method=primary_update_method,
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
                     isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
