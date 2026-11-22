@@ -7,6 +7,8 @@
 // `bundle.json` is the output of `frontend.mjs bundle`, `footprints.jsonl` that of `lower` on it: the count says how
 // many of the units that only allocate the analysis calls an effect (it should be none).
 import fs from "node:fs";
+import { bodyUnits } from "./frontend.mjs";
+
 const b = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const fps = fs
   .readFileSync(process.argv[3], "utf8")
@@ -89,7 +91,8 @@ let alloc = 0,
   vars = 0,
   allocEffect = 0,
   notAllocPure = 0;
-b.units.forEach((u, i) => {
+const units = bodyUnits(b.program);
+units.forEach((u, i) => {
   const r = more(u);
   if (!r) {
     alloc++;
@@ -102,7 +105,7 @@ b.units.forEach((u, i) => {
     if (!fps[i].effect) notAllocPure++;
   }
 });
-const n = b.units.length;
+const n = units.length;
 console.log(
   `${n} units; allocate only: ${alloc} (${((100 * alloc) / n).toFixed(1)}%): ${fn} function declarations, ${cls} plain classes, ${vars} variable declarations`
 );

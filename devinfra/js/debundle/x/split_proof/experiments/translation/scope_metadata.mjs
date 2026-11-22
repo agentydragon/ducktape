@@ -1,9 +1,9 @@
 // Shared scope facts for the translation frontend and LowerSplit's raw ESTree.
 // The parser and eslint-scope remain trusted; this module does not resolve names itself.
 
-/** Array indices are source ordinals, including imports and export lists. Split var/let/const lists
- * at declarator boundaries, including under export. Keep the original identifier nodes for scope lookup. */
-function topLevelStatements(program, code) {
+/** Enumerate units for the external JS model and diagnostics. Array indices are source ordinals,
+ * including imports and export lists. Keep the original identifier nodes for scope lookup. */
+export function topLevelStatements(program, code) {
   return program.body.flatMap((statement) => {
     const exported = statement.type === "ExportNamedDeclaration" && statement.declaration;
     const list = exported || statement;
@@ -32,12 +32,12 @@ function topLevelStatements(program, code) {
   });
 }
 
-/** The ESTree, source units and (when requested) scope manager for one JavaScript module.
+/** The ESTree and (when requested) scope manager for one JavaScript module.
  * Scope references point to identifier objects in this exact tree. */
 export function parseModule(code, parse, analyzer = null, scopeOptions = {}) {
   const ast = parse(code, { ecmaVersion: "latest", sourceType: "module", ranges: true });
   const scopes = analyzer?.analyze(ast, { ecmaVersion: 2022, sourceType: "module", ...scopeOptions }) ?? null;
-  return { code, ast, scopes, units: topLevelStatements(ast, code) };
+  return { code, ast, scopes };
 }
 
 /** Identifier node -> what it means. `isExternal(source)` identifies external imports. */
@@ -70,17 +70,17 @@ export function literalKey(node) {
   return `${{ string: "s", number: "n", boolean: "b" }[typeof node.value]}:${node.value}`;
 }
 
-const LOWER_DROP = new Set(["start", "end", "loc", "range", "raw", "regex", "bigint", "sourceType"]);
+const POSITION_FIELDS = new Set(["start", "end", "loc", "range"]);
+const LITERAL_DROP = new Set(["value", "raw", "regex", "bigint"]);
 
-/** Copy one statement without changing its ESTree structure, adding only
- * scope/literal annotations. A new binder map is used for each statement. */
-export function annotateLower(node, meaning, binders = new Map()) {
-  if (Array.isArray(node)) return node.map((child) => annotateLower(child, meaning, binders));
+function annotate(node, meaning, ranged, binders) {
+  if (Array.isArray(node)) return node.map((child) => annotate(child, meaning, ranged, binders));
   if (node === null || typeof node !== "object") return node;
-  const out = {};
+  const keepRange = ranged.has(node);
+  const out = keepRange ? { start: node.start, end: node.end } : {};
   for (const [key, value] of Object.entries(node)) {
-    if (!LOWER_DROP.has(key) && !(node.type === "Literal" && key === "value"))
-      out[key] = annotateLower(value, meaning, binders);
+    if (!POSITION_FIELDS.has(key) && !(node.type === "Literal" && LITERAL_DROP.has(key)))
+      out[key] = annotate(value, meaning, ranged, binders);
   }
   if (node.type === "Identifier") {
     const m = meaning.get(node);
@@ -95,4 +95,17 @@ export function annotateLower(node, meaning, binders = new Map()) {
   }
   if (node.type === "Literal") out.lit = literalKey(node);
   return out;
+}
+
+/** Preserve the Program structure with scope/literal annotations. Acorn's UTF-16 ranges
+ * and the original source let Lean recover text for each statement or declarator. */
+export function annotateProgram({ code, ast }, meaning) {
+  const ranged = new Set(ast.body);
+  for (const statement of ast.body) {
+    const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+    if (declaration?.type === "VariableDeclaration") {
+      for (const declarator of declaration.declarations) ranged.add(declarator);
+    }
+  }
+  return { ...annotate(ast, meaning, ranged, new Map()), sourceText: code };
 }

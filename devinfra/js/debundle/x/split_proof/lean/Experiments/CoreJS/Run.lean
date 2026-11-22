@@ -1,3 +1,4 @@
+import Experiments.ESTreeUnits
 import Experiments.CoreJS.FromESTree
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Eval
@@ -422,7 +423,7 @@ def main (args : List String) : IO UInt32 := do
     | .error msg => IO.eprintln msg; pure 1
   | ["--ast", file] =>
     for line in (← IO.FS.lines file) do
-      IO.println (runLine 100000 line fun j => FromESTree.statements j >>= FromESTree.program)
+      IO.println (runLine 100000 line fun j => ESTreeUnits.nodes j >>= FromESTree.program)
     pure 0
   | [file] | [file, "--fuel", _] =>
     let fuel := (args[2]?.bind String.toNat?).getD 100000

@@ -59,6 +59,13 @@ for (let seed = 0; seed < 48; seed++) {
     declarations.push(`${["var", "let", "const"][(seed + i) % 3]} ${name} = ${last};`);
     last = name;
   }
+  // A later initializer observes either the preceding binding, a hoisted var,
+  // or an uninitialized lexical binding in this same declaration list.
+  const group = Array.from(
+    { length: 2 + (seed % 5) },
+    (_, i) => `part${i} = ${i === 0 ? (seed % 2 === 0 ? value : "part1") : `part${i - 1}`}`
+  );
+  sources.push(`export ${["var", "let", "const"][seed % 3]} ${group.join(", ")}; throw part1;`);
   sources.push(`${declarations.join("\n")} export { ${last} as result }; throw ${last};`);
 }
 const actual = run(sources.map(dumpOf), true);
@@ -81,6 +88,26 @@ function split(source, args = []) {
   return execFileSync(process.env.LOWERSPLIT, [ast, spec, dir, ...args], { encoding: "utf8" });
 }
 const source = "var a = 1, b = a;";
+// The checker obtains identities from Program.body even when presented with a
+// conflicting legacy table. A table on its own cannot stand in for a module.
+const program = dumpOf(source);
+assert.equal(program.type, "Program");
+assert.equal(program.body.length, 1);
+assert.equal(program.body[0].declarations.length, 2);
+const [fromBody, legacyOnly] = run([{ ...program, statements: [] }, { statements: [] }], true);
+assert.deepEqual(fromBody, run([reference(source)], false)[0]);
+assert.equal(legacyOnly.end, "malformed");
+
+// Acorn ranges count UTF-16 code units. Exercise both a supplementary
+// character before the declaration and one inside the first declarator.
+split('/*😀*/ export var a = "🌱", b = a;');
+const rendered = readFileSync(path.join(dir, "entry.mjs"), "utf8");
+assert.match(rendered, /export var a = "🌱";/);
+assert.match(rendered, /export var b = a;/);
+const badRange = dumpOf("/*😀*/ var a = 1, b = a;");
+badRange.body[0].declarations[0].start = 3;
+const invalid = file("bad-range.json", JSON.stringify(badRange));
+assert.throws(() => execFileSync(process.env.LOWERSPLIT, [invalid, spec, dir], { stdio: "pipe" }), /surrogate pair/);
 const moves = path.join(dir, "moves.json");
 assert.match(split(source, ["--move-report", moves]), /proved slice: order kept/);
 const nativeReport = JSON.parse(readFileSync(moves));
@@ -111,23 +138,17 @@ for (let width = 1; width <= 6; width++) {
     export {x as renamed}; debugger; import "./side.mjs"; read;`;
   const parsed = parseModule(code, acorn.parse, eslintScope);
   const dump = dumpParsed(parsed);
-  const tree = bundleFromParsed(parsed, "entry.mjs");
+  const tree = bundleFromParsed(parsed);
   const core = coreFromParsed(parsed, { external: true });
   const bindings = [...names, "x", "read"];
-  assert.equal(dump.statements.length, width + 7);
-  assert.equal(core.numbered, dump.statements.length);
+  assert.equal(dump.body.length, 6);
+  assert.equal(core.numbered, width + 7);
+  const declarators = dump.body[1].declaration.declarations;
   assert.deepEqual(
-    dump.statements.slice(1, width + 3).map((s) => s.ast.declaration.declarations.length),
-    bindings.map(() => 1)
+    declarators.map((d) => d.id.type),
+    [...names.map(() => "Identifier"), "ObjectPattern", "Identifier"]
   );
-  assert.deepEqual(
-    tree.units.map((n) => n.type),
-    [...bindings.map(() => "VariableDeclaration"), "DebuggerStatement", "ExpressionStatement"]
-  );
-  assert.deepEqual(
-    tree.exports.map((s) => s.exported),
-    [...bindings, "renamed"]
-  );
+  assert.deepEqual(tree.program, dump);
   assert.deepEqual(
     core.exports.map(([name]) => name),
     [...bindings, "renamed"]
@@ -137,8 +158,13 @@ for (let width = 1; width <= 6; width++) {
     core.opaque.map((o) => o.id),
     [width + 1, width + 2]
   );
-  assert.deepEqual(dump.statements[width + 1].oracle.free.toSorted(), ["bag", "n0"]);
-  assert.deepEqual(dump.statements[width + 2].oracle.free, ["x"]);
+  const destructuring = declarators[width];
+  assert.equal(destructuring.init.k, "V");
+  assert.equal(destructuring.id.properties[0].value.right.k, "T");
+  const closure = declarators[width + 1].init;
+  assert.equal(closure.body.left.k, "T");
+  assert.equal(closure.body.right.k, "L");
+  assert.equal(closure.body.right.b, closure.params[0].properties[0].value.b);
   // Linked programs take their IDs from the caller's compact table (imports are linked separately).
   const ids = Array.from({ length: width + 5 }, (_, i) => 100 + 2 * i);
   const linked = coreFromParsed(parsed, { ids });

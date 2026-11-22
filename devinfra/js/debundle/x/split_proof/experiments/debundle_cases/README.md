@@ -6,11 +6,11 @@ An entry is a bundle (`main.js` or `static/app.js`), a spec, and the verdict deb
 `run_cases.mjs` turns each entry into a `lowersplit` run and compares the verdicts. A run takes about 10 s.
 
 Results: [`results/summary.md`](results/summary.md) (generated tables) and [`results/cases.jsonl`](results/cases.jsonl) (one line per entry).
-The numbers in this file are from the corpus as of the commit that added this directory. Re-run to refresh them.
+The outcomes and limitations below describe the initial corpus run, before the adapter sent annotated Programs and proposed placements by declarator. Re-run to measure the current adapter.
 
 ## Run it
 
-From the project root: `./run.sh --debundle-cases` (builds `lowersplit`, installs `acorn` and `yaml`, runs the corpus, writes the summary).
+From the project root: `./run.sh --debundle-cases` (builds `lowersplit`, installs its adapter dependencies, runs the corpus, writes the summary).
 By hand, in this directory:
 
 ```bash
@@ -23,11 +23,11 @@ node summarize.mjs results/cases.jsonl > results/summary.md
 
 ## What the adapter does
 
-1. `acorn` parses the case's one chunk. Each top-level statement gets the names it declares. A `var` nested in a block counts.
-2. The debundle spec becomes a `lowersplit` spec. `binding` selectors and hole-free `source_matches` and `anonymous_statements` templates (matched by exact AST shape) become statement numbers. `import_order` becomes the import priority (`Spec.order`).
+1. `acorn` parses the case's one chunk and `eslint-scope` supplies scope annotations. For placement proposals, the adapter numbers the top-level source units, counting each declarator in a top-level list separately. A block's unit includes the names its nested `var` declarations bind.
+2. The debundle spec becomes a `lowersplit` spec. `binding` selectors and hole-free `source_matches` and `anonymous_statements` templates (matched by exact AST shape) become source-unit ordinals. `import_order` becomes the import priority (`Spec.order`).
 3. Unclaimed statements follow `unassigned_mode`. With `inline_in_entry` they stay in the entry. With `catchall_file` the catchall module takes the unclaimed declarations, the unclaimed anonymous statements before its last statement, and everything when it is the only module.
    Later anonymous statements stay in the entry (debundle's rule: [`docs/design.md`](../../../../docs/design.md)). An `export { … }` without a declaration always stays in the entry.
-4. `lowersplit --force` checks the split and writes the modules even when a check rejects them.
+4. `lowersplit --force` derives its own source units from the annotated Program, checks the split, and writes the modules even when a check rejects them.
 5. Node runs the original chunk and the emitted entry. The adapter compares verdict and stdout with the entry's expectation.
 6. What the adapter cannot translate is `unsupported:<cause>` and is not forced.
 

@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { lowerDump } from "../lowering/dump_core.mjs";
+import { topLevelStatements } from "./scope_metadata.mjs";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { generateAstBundle } from "./ast_generator.mjs";
@@ -79,7 +80,8 @@ if (process.argv[2] !== "--worker") {
   for (let round = start; round < end; round++) {
     const choose = random((seed ^ 0xa341316c ^ Math.imul(round, 0x9e3779b1)) >>> 0);
     const { source } = generateAstBundle(seed, round);
-    const units = lowerDump(source, acorn, eslintScope);
+    const dump = lowerDump(source, acorn, eslintScope);
+    const units = topLevelStatements(dump, source);
     const original = path.join(tmp, `original-${round}.mjs`);
     writeFileSync(original, source);
     const expected = run(process.execPath, [original]);
@@ -96,7 +98,7 @@ if (process.argv[2] !== "--worker") {
       const modules = { "entry.mjs": [], "side-a.mjs": [], "side-b.mjs": [] };
       const names = Object.keys(modules);
       const prefixLength = 1 + choose(2);
-      units.statements.forEach(({ ast: unit }, i) => {
+      units.forEach(({ node: unit }, i) => {
         // One randomized source prefix has a chance to preserve execution order;
         // the other plan scatters statements freely among modules.
         const target = unit.type.startsWith("Export")
@@ -110,7 +112,7 @@ if (process.argv[2] !== "--worker") {
       });
       const order = choose(2) ? ["side-a.mjs", "side-b.mjs"] : ["side-b.mjs", "side-a.mjs"];
       writeFileSync(path.join(dir, "source.mjs"), source);
-      writeFileSync(path.join(dir, "ast.json"), JSON.stringify(units));
+      writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
       writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, order }));
       const args = [path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir];
       const checked = run(process.env.LOWERSPLIT, args);

@@ -2,14 +2,54 @@
 //
 //   node compare.mjs <bundle.json>... [--example]
 import { execFileSync } from "node:child_process";
+import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import * as acorn from "acorn";
+import * as eslintScope from "eslint-scope";
 import { footprints } from "../../extract/extract.mjs";
+import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const LOWER = process.env.LOWER ?? new URL("../../lean/.lake/build/bin/lower", import.meta.url).pathname;
 const files = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const set = (a) => new Set(a);
 const missing = (need, have) => [...need].filter((x) => !have.has(x));
+
+/** Independent oracle from eslint-scope's resolved references and the JS model's unit boundaries. */
+function scopeFootprints(scopes, units) {
+  const find = (pos) => {
+    let lo = 0;
+    let hi = units.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (pos < units[mid].start) hi = mid - 1;
+      else if (pos >= units[mid].end) lo = mid + 1;
+      else return mid;
+    }
+    return -1;
+  };
+  const oracle = units.map(() => ({ free: new Set(), eager: new Set(), ambiguous: new Set() }));
+  for (const scope of scopes.scopes) {
+    for (const ref of scope.references) {
+      if (ref.init) continue;
+      const i = find(ref.identifier.start);
+      if (i < 0) continue;
+      const v = ref.resolved;
+      if (v && v.scope.type !== "global" && v.scope.type !== "module") continue;
+      let inFn = false;
+      let inInit = false;
+      for (let s = ref.from; s && s.type !== "module" && s.type !== "global"; s = s.upper) {
+        if (s.type === "function") inFn = true;
+        if (s.type === "class-field-initializer" || s.type === "class-static-block") inInit = true;
+      }
+      const name = ref.identifier.name;
+      oracle[i].free.add(name);
+      if (!inFn && !inInit) oracle[i].eager.add(name);
+      if (!inFn && inInit) oracle[i].ambiguous.add(name);
+    }
+  }
+  return oracle;
+}
 
 const shape = (s) => {
   if (s.type === "VariableDeclaration")
@@ -51,13 +91,18 @@ const median = (a) => {
 const rows = [];
 for (const file of files) {
   const dump = JSON.parse(readFileSync(file, "utf8"));
+  const parsed = parseModule(dump.sourceText, acorn.parse, eslintScope);
+  const units = topLevelStatements(parsed.ast, parsed.code);
+  const oracle = scopeFootprints(parsed.scopes, units);
   const t0 = performance.now();
   const out = execFileSync(LOWER, [file], { maxBuffer: 1 << 30, encoding: "utf8" });
   const ms = performance.now() - t0;
   const fps = out
     .trim()
     .split("\n")
-    .map((l) => JSON.parse(l));
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.equal(fps.length, units.length, file);
   const n = fps.length;
   let unsound = 0,
     unsoundEager = 0,
@@ -68,21 +113,21 @@ for (const file of files) {
   const examples = [];
   const fallbackTypes = new Map();
   const effShapes = new Map();
-  dump.statements.forEach((s, i) => {
+  units.forEach(({ node, src }, i) => {
     const f = fps[i];
     const lean = set([...f.rawEager, ...f.rawLazy]);
-    const free = set(s.oracle.free);
+    const { free, eager, ambiguous } = oracle[i];
     const miss = missing(free, lean);
     if (miss.length) {
       unsound++;
       if (examples.length < 3)
-        examples.push(`stmt ${i} (${s.ast.type}): lean misses ${miss.slice(0, 4)} :: ${s.src.slice(0, 60)}`);
+        examples.push(`stmt ${i} (${node.type}): lean misses ${miss.slice(0, 4)} :: ${src.slice(0, 60)}`);
     }
-    const missE = missing(set(s.oracle.eager), set(f.rawEager)).filter((x) => !s.oracle.ambiguous.includes(x));
+    const missE = missing(eager, set(f.rawEager)).filter((x) => !ambiguous.has(x));
     if (missE.length) {
       unsoundEager++;
       if (examples.length < 3)
-        examples.push(`stmt ${i}: lean calls eager ${missE.slice(0, 4)} lazy :: ${s.src.slice(0, 60)}`);
+        examples.push(`stmt ${i}: lean calls eager ${missE.slice(0, 4)} lazy :: ${src.slice(0, 60)}`);
     }
     const extra = missing(lean, free);
     if (!miss.length && !extra.length) exact++;
@@ -92,7 +137,7 @@ for (const file of files) {
       f.fallback.forEach((t) => fallbackTypes.set(t, (fallbackTypes.get(t) ?? 0) + 1));
     }
     if (f.assigns.length) assigns++;
-    if (f.effect) effShapes.set(shape(s.ast), (effShapes.get(shape(s.ast)) ?? 0) + 1);
+    if (f.effect) effShapes.set(shape(node), (effShapes.get(shape(node)) ?? 0) + 1);
   });
   const eff = fps.filter((f) => f.effect).length;
   const hoisted = fps.filter((f) => f.hoisted).length;
@@ -160,7 +205,11 @@ console.table(
 
 if (process.argv.includes("--example")) {
   const dump = JSON.parse(readFileSync(files[0], "utf8"));
-  const mine = footprints(dump.statements.map((s) => s.src).join("\n"));
+  const mine = footprints(
+    topLevelStatements(dump, dump.sourceText)
+      .map(({ src }) => src)
+      .join("\n")
+  );
   const fps = execFileSync(LOWER, [files[0]], { encoding: "utf8" })
     .trim()
     .split("\n")

@@ -41,7 +41,7 @@ function split(name, { code, outside = {}, modules, force = false, spec = {} }) 
     { encoding: "utf8" }
   );
   const text = (file) => readFileSync(path.join(dir, file), "utf8");
-  return { dir, dump, checked, log: `${checked.stdout}\n${checked.stderr}`, text };
+  return { dir, checked, log: `${checked.stdout}\n${checked.stderr}`, text };
 }
 
 /** An accepted split prints what its bundle prints. */
@@ -220,21 +220,14 @@ export const three = 3;
 export let e = 5, f = () => e + b;
 console.log(a, b, c, d, e, f());
 `;
-  const { dump, text } = same(
+  const { text } = same(
     "declarators",
     { code, modules: { "entry.mjs": ["b", "e", "f", "#5"], "peel.mjs": ["a", "c"] } },
     ["e", "f"]
   );
-  assert.deepEqual(
-    dump.statements.map((s) => s.src),
-    [
-      "const a = 1;",
-      "const b = a + 1;",
-      "const { c, d } = { c: 3, d: 4 };",
-      "export let e = 5;",
-      "export let f = () => e + b;",
-      "console.log(a, b, c, d, e, f());",
-    ]
+  assert.match(
+    text("entry.mjs"),
+    /const b = a \+ 1;\nexport let e = 5;\nexport let f = \(\) => e \+ b;\nconsole\.log\(a, b, c, d, e, f\(\)\);/
   );
   assert.equal(text("peel.mjs"), "const a = 1;\nconst { c, d } = { c: 3, d: 4 };\n\nexport { a, c, d };\n");
 }

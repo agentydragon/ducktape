@@ -1,3 +1,4 @@
+import Experiments.ESTreeUnits
 import EsmSplit.Cli
 import Experiments.Effects
 import Experiments.CoreJS.FromESTree
@@ -208,7 +209,7 @@ partial def readsMeta (j : Json) : Bool :=
 
 /-- The bundle as the order-kept slice reads it: without its `import`s of outside modules. Such an `import` binds names
 of the world before any statement runs, wherever it stands, and is an empty statement to the analysis
-(`Effects.dumpUnits`): it declares nothing and nothing mentions it. Leaving it out of the bundle, of the spec and so
+(`Effects.footprintUnits`): it declares nothing and nothing mentions it. Leaving it out of the bundle, of the spec and so
 of the plan changes no other statement, module, import or export, which `withoutImports` checks; then the split it
 writes is the split of the bundle without them. -/
 structure WithoutImports where
@@ -447,10 +448,10 @@ def main (args : List String) : IO UInt32 := do
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
     IO.println s!"  [time] {what}: {t - t0} ms"; (← IO.getStdout).flush; return t
-  let j ← IO.ofExcept (Json.parse (← IO.FS.readFile bundlePath))
+  let program ← IO.ofExcept (Json.parse (← IO.FS.readFile bundlePath))
   let t1 ← lap "read + parse JSON" tStart
-  let stmts := Lower.items (Lower.fld j "statements")
-  let asts ← IO.ofExcept (CoreJS.FromESTree.statements j)
+  let stmts ← IO.ofExcept (ESTreeUnits.renderUnits program)
+  let asts := stmts.map (·.ast)
   for s in asts do
     -- `export * from` publishes names that only the other module knows: a glue export could shadow one
     if Lower.typ s == "ExportAllDeclaration" then
@@ -459,19 +460,19 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "unsupported top-level statement: an ImportDeclaration whose source has no `lit` (not a dump of `dump.mjs`)"; return 3
     if let some what := outsideModel false s then
       IO.eprintln s!"unsupported: {what}"; return 3
-  let units := Effects.dumpUnits j
+  let units := Effects.footprintUnits asts
   let exported := units.toList.flatMap Lower.exportedBindings
   let fps ← match fpPath? with
     | some p => do
       IO.println s!"  footprints read from {p}: the premises printed by `lower` when it wrote them apply"
       loadFootprints p units
     | none => do
-      let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf j) prem exported.toArray
+      let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
       for line in Effects.premiseLines prem analysis do IO.println line
       pure fps
   let t2 ← lap "footprints (Lean analysis)" t1
   let B0 : Bundle := (stmts.zip fps).toList.map fun (s, f) =>
-    toStmt (Lower.str (Lower.fld s "src")) (Lower.fld s "ast") f
+    toStmt s.src s.ast f
   let B := match replicate?.bind String.toNat? with
     | some K => replicateBundle K B0
     | none => B0

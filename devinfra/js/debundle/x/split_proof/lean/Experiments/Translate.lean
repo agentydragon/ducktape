@@ -4,15 +4,16 @@ import Std.Data.HashSet
 import EsmSplit.Cli
 import EsmSplit.Correct
 import Experiments.Effects
+import Experiments.TranslateInput
 
 /-!
 # Is this output tree the bundle, renamed and reshuffled?
 
     translate <bundle.json> <output.json> <cert.json> [--table <file>]
 
-`bundle.json` and `output.json` come from `experiments/translation/frontend.mjs`: the bundle's units (a unit is one
-top-level statement or one declarator of a variable list) and the output tree's modules, with every identifier
-annotated by what it means (`k`: local, module scope, import from outside the tree, global).
+`bundle.json` and `output.json` come from `experiments/translation/frontend.mjs`: the bundle's ESTree Program and
+one Program per output module, with identifier scope annotations (`k`: local, module scope, import from outside
+the tree, global). Lean derives the units and the module linkage from these Programs.
 `cert.json` pairs every output unit with a bundle unit. It is untrusted: a wrong pairing is rejected here.
 
 Checked:
@@ -242,9 +243,30 @@ structure Result where
   /-- exports of the output entry beyond the bundle's -/
   extraExports : Nat
 
-def translate (bundleJ outJ certJ : Json) : Except String Result := do
-  let bUnits := arr (fld bundleJ "units")
-  let mods := arr (fld outJ "modules")
+private structure OutputModule extends TranslateInput.Module where
+  path : String
+  deriving Inhabited
+
+private def resolveSource (paths : Std.HashSet String) (path spec : String) : String :=
+  if !spec.startsWith "." then "ext:" ++ spec else
+  let target := normalizeFrom path spec
+  let target := if target.isEmpty then "." else target
+  let target := if spec.endsWith "/" then target ++ "/" else target
+  if paths.contains target then target else "ext:" ++ target
+
+def translate (bundle : TranslateInput.Bundle) (outJ certJ : Json) : Except String Result := do
+  let bUnits := bundle.units
+  let moduleJson ← (fld outJ "modules").getArr?
+  let mut mods : Array OutputModule := #[]
+  let mut paths : Std.HashSet String := {}
+  for mj in moduleJson do
+    let path ← (fld mj "path").getStr?
+    if paths.contains path then throw s!"output contains module `{path}` twice"
+    paths := paths.insert path
+    let data ← (TranslateInput.readModule mj).mapError (s!"{path}: " ++ ·)
+    mods := mods.push { toModule := data, path }
+  mods := mods.map fun m =>
+    { m with imports := m.imports.map fun d => { d with source := resolveSource paths m.path d.source } }
   -- 1. the pairing
   let mut triples : Array (Nat × Nat × Nat) := #[]
   let mut pairOf : Array (Option (Nat × Nat)) := Array.replicate bUnits.size none
@@ -255,7 +277,7 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
     let u := nat pa[1]!
     let i := nat pa[2]!
     unless i < bUnits.size do throw s!"certificate names bundle unit {i}, the bundle has {bUnits.size}"
-    unless m < mods.size && u < (arr (fld mods[m]! "units")).size do throw s!"certificate names output unit {m}/{u}, which does not exist"
+    unless m < mods.size && u < mods[m]!.units.size do throw s!"certificate names output unit {m}/{u}, which does not exist"
     if pairOf[i]!.isSome then throw s!"bundle unit {i} is paired twice"
     if usedOut.contains (m, u) then throw s!"output unit {m}/{u} is paired twice"
     pairOf := pairOf.set! i (some (m, u))
@@ -263,16 +285,16 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
     triples := triples.push (m, u, i)
   for i in [0:bUnits.size] do
     if pairOf[i]!.isNone then throw s!"bundle unit {i} has no unit in the output"
-  let outCount := mods.foldl (fun n m => n + (arr (fld m "units")).size) 0
+  let outCount := mods.foldl (fun n m => n + m.units.size) 0
   unless outCount == bUnits.size do throw s!"the output has {outCount} units, the bundle {bUnits.size}"
   -- 2. equal up to renaming
   let step : M Unit := do
     for (m, u, i) in triples do
       modify fun c => { c with cur := m, loc := {}, locRev := {} }
       let a := bUnits[i]!
-      let b := (arr (fld mods[m]! "units"))[u]!
+      let b := mods[m]!.units[u]!
       try unify a b
-      catch e => throw s!"bundle unit {i} against {str (fld mods[m]! "path")} unit {u}: {e}"
+      catch e => throw s!"bundle unit {i} against {mods[m]!.path} unit {u}: {e}"
   let (r, ctx) := (step.run).run {}
   match r with
   | .error e => throw e
@@ -281,13 +303,13 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
   let mut infos : Array ModInfo := #[]
   let mut index : Std.HashMap String Nat := {}
   for mj in mods do
-    let path := str (fld mj "path")
+    let path := mj.path
     let mut mi : ModInfo := { path }
-    for d in arr (fld mj "imports") do
-      for s in arr (fld d "specs") do
-        mi := { mi with imports := mi.imports.insert (str (fld s "local")) (str (fld d "from"), str (fld s "imported")) }
-    for e in arr (fld mj "exports") do
-      mi := { mi with exports := mi.exports.insert (str (fld e "exported")) (str (fld e "local")) }
+    for d in mj.imports do
+      for (localName, imported) in d.specs do
+        mi := { mi with imports := mi.imports.insert localName (d.source, imported) }
+    for (exported, localName) in mj.exports do
+      mi := { mi with exports := mi.exports.insert exported localName }
     index := index.insert path infos.size
     infos := infos.push mi
   -- 3. links. Declarations first: they say which output name each bundle name became.
@@ -311,11 +333,9 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
       unless got == want do
         throw s!"{infos[m]!.path}: `{y}` means {infos[got.1]!.path}:{got.2}, but it stands for `{x}`, declared as {infos[want.1]!.path}:{want.2}"
   -- the imports from outside the tree: a function from bundle imports to output expressions
-  let bundleImports : Std.HashMap String (String × String) :=
-    (arr (fld bundleJ "imports")).foldl (fun acc i => acc.insert (str (fld i "local")) (str (fld i "from"), str (fld i "imported"))) {}
   let mut vendor : Std.HashMap (String × String) (String × String × Array String) := {}
   for (m, alias, root, ms) in ctx.vends do
-    let some bi := bundleImports[alias]? | throw s!"`{alias}` is not an import of the bundle"
+    let some bi := bundle.imports[alias]? | throw s!"`{alias}` is not an import of the bundle"
     let some (src, imported) := infos[m]!.imports[root]? | throw s!"{infos[m]!.path}: `{root}` is not an import"
     unless src.startsWith "ext:" do throw s!"{infos[m]!.path}: `{root}` stands for the import `{alias}` but comes from the tree ({src})"
     let want := (src, imported, ms)
@@ -332,36 +352,32 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
   -- the entry's export list is the chunk's public surface: every name the bundle exports must be exported under the
   -- same name and mean the same declaration. Extra exports (aliases under new names) only widen the surface.
   let some entryIdx := index[str (fld outJ "entry")]? | throw s!"the entry {str (fld outJ "entry")} is not in the output"
-  let bundleExports := arr (fld bundleJ "exports")
-  for e in bundleExports do
-    let ex := str (fld e "exported")
-    let x := str (fld e "local")
+  for (ex, x) in bundle.exports do
     let some want := entity[x]? | throw s!"the bundle exports `{ex}` = `{x}`, which no unit declares"
     let some z := infos[entryIdx]!.exports[ex]? | throw s!"the output entry does not export `{ex}`, which the bundle exports"
     let got ← resolveIn infos index entryIdx z
     unless got == want do throw s!"the output entry exports `{ex}` as {infos[got.1]!.path}:{got.2}, but the bundle exports `{x}`, declared as {infos[want.1]!.path}:{want.2}"
   for (_, z) in infos[entryIdx]!.exports.toList do
     let _ ← resolveIn infos index entryIdx z
-  let extraExports := infos[entryIdx]!.exports.size - bundleExports.size
+  let extraExports := infos[entryIdx]!.exports.size - bundle.exports.size
   -- 4. the plan, in the bundle's names
   let mut planMods : Array EsmSplit.Module := #[]
   for mi in [0:mods.size] do
     let mj := mods[mi]!
     let stmts := (triples.filter fun (m, _, _) => m == mi).map (fun (_, u, i) => (u, i)) |>.qsort (fun a b => a.1 < b.1) |>.map (·.2)
     let mut imps : List (ModName × List EsmSplit.Name) := []
-    for d in arr (fld mj "imports") do
-      let src := str (fld d "from")
+    for d in mj.imports do
+      let src := d.source
       unless src.startsWith "ext:" do
         let mut names : List EsmSplit.Name := []
-        for s in arr (fld d "specs") do
+        for (_, imported) in d.specs do
           let some si := index[src]? | throw s!"{infos[mi]!.path}: imports from {src}, which is not in the tree"
-          let some z := infos[si]!.exports[str (fld s "imported")]? | throw s!"{src} does not export `{str (fld s "imported")}`"
+          let some z := infos[si]!.exports[imported]? | throw s!"{src} does not export `{imported}`"
           let some x := nameOf[(si, z)]? | throw s!"{src}:{z} stands for no bundle name"
           names := names ++ [x]
         imps := imps ++ [(src, names)]
     let mut exps : List (EsmSplit.Name × EsmSplit.Name) := []
-    for e in arr (fld mj "exports") do
-      let z := str (fld e "local")
+    for (_, z) in mj.exports do
       -- the entry may re-export what it imports; that is checked against the bundle's exports above
       unless mi == entryIdx && !(infos[mi]!.decls.contains z) do
         let some x := nameOf[(mi, z)]? | throw s!"{infos[mi]!.path} exports `{z}`, which stands for no bundle name"
@@ -425,12 +441,15 @@ def main (args : List String) : IO UInt32 := do
   let certJ ← read certPath
   IO.println s!"  [time] read + parse JSON: {(← IO.monoMsNow) - t0} ms"
   let t1 ← IO.monoMsNow
-  let r ← IO.lazyPure fun _ => translate bundleJ outJ certJ
+  let r ← IO.lazyPure fun _ => do
+    let bundle ← TranslateInput.bundle bundleJ
+    let res ← translate bundle outJ certJ
+    return (bundle, res)
   match r with
   | .error e => IO.println s!"TRANSLATION REJECT: {e}"; return 1
-  | .ok res =>
+  | .ok (bundle, res) =>
     IO.println s!"  [time] pairing, equality, links: {(← IO.monoMsNow) - t1} ms"
-    let units := arr (fld bundleJ "units")
+    let units := bundle.units
     IO.println s!"TRANSLATION OK: {units.size} units, {res.plan.mods.length} modules, {res.names} module-scope names linked"
     IO.println s!"  premises: {res.vendor.size} outside imports stand for member chains or other imports; {res.dynamic.size} dynamic-import paths moved; {res.workers.size} worker paths made relative to import.meta.url; {res.metaUrls.size} absolute URLs against import.meta.url left as they are; {res.extraExports} extra exported aliases"
     if let some t := table? then
@@ -438,9 +457,8 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile t (Json.mkObj [("vendor", Json.arr rows), ("dynamic", Json.arr (res.dynamic.map fun (a, b) => Json.mkObj [("from", a), ("to", b)])), ("workers", Json.arr (res.workers.map Json.str)), ("urls", Json.arr (res.metaUrls.map Json.str)), ("extraExports", Json.num res.extraExports)]).pretty
       IO.println s!"  wrote the premise table to {t}"
     let t2 ← IO.monoMsNow
-    -- Exports are removed from `units` by the frontend but may be observed by external modules.
-    let exported := (arr (fld bundleJ "exports")).map fun e => str (fld e "local")
-    let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf bundleJ) prem exported
+    let exported := bundle.exports.map (·.2)
+    let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units bundle.imports prem exported
     for line in Effects.premiseLines prem analysis do IO.println line
     let B := bundleOfFootprints fps
     IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units touch the world"

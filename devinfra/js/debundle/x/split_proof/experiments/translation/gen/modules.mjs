@@ -5,7 +5,7 @@
 // into the world, and a callback that reaches it escapes. The names an import binds are never marked, because the splitter
 // repeats the import lines in every module it makes (`program.imports`).
 //
-// What is not here: `export default`, `export … from` and `export *`, which the front end of the translation refuses, and
+// What is not here: `export default`, `export … from` and `export *`, which the translation checker refuses, and
 // aliased exports, which the splitter would have to carry (an export is by name).
 import { local } from "./core.mjs";
 

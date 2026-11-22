@@ -10,6 +10,7 @@ import shiftFuzzer from "shift-fuzzer";
 import codegen from "shift-codegen";
 import { composeModernExpressions } from "./modern_syntax.mjs";
 import { lowerDump } from "../lowering/dump_core.mjs";
+import { topLevelStatements } from "./scope_metadata.mjs";
 
 // Named source-syntax families from the input requirements. Counts describe
 // syntactic presence, not execution of every branch or semantic equivalence.
@@ -350,7 +351,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     record("loweringRejected");
     continue;
   }
-  const total = dump.statements.length;
+  const total = topLevelStatements(dump, source).length;
   const side = [];
   for (let i = 0; i < total - 1; i++) if (random() < 0.5) side.push(i);
   if (!side.length) side.push(0);

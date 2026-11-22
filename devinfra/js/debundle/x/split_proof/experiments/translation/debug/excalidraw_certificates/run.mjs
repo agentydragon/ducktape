@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } fro
 import path from "node:path";
 import { promisify } from "node:util";
 import { splitInputs } from "../../split_dump.mjs";
+import { topLevelStatements } from "../../scope_metadata.mjs";
 
 const execute = promisify(execFile);
 const root = process.env.EXCALIDRAW_OUTPUTS.split(" ").find((p) => p.endsWith("/bundle"));
@@ -104,6 +105,7 @@ for (const chunk of selected) {
   copyFileSync(path.join(saved, "ast.json"), astFile);
   copyFileSync(path.join(saved, "program.json"), programFile);
   const dump = JSON.parse(readFileSync(astFile, "utf8"));
+  const units = topLevelStatements(dump, dump.sourceText);
   const analysis = await run(process.env.LOWER, [astFile], path.join(dir, "lower"));
   const row = {
     file: chunk.file,
@@ -120,10 +122,10 @@ for (const chunk of selected) {
     .trim()
     .split("\n")
     .map((s) => JSON.parse(s));
-  assert.equal(fps.length, dump.statements.length);
+  assert.equal(fps.length, units.length);
   row.effects = fps.filter((f) => f.effect).length;
-  const pinned = dump.statements.map((s) => /^(Import|Export)/.test(s.ast.type));
-  const n = dump.statements.length;
+  const pinned = units.map(({ node }) => /^(Import|Export)/.test(node.type));
+  const n = units.length;
   // These are bounded diagnostic probes, not inferred source-module boundaries.
   const probes = [
     ["identity", () => false],
