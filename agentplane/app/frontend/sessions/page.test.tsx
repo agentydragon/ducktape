@@ -1714,7 +1714,7 @@ it("shows server delivery for a fresh browser and defers to settled History", as
   for (const [id, status] of [
     ["remote-message", "queued"],
     ["remote-interrupt", "delivering"],
-    ["remote-model", "unknown"],
+    ["remote-model", "admitted_unknown"],
   ]) {
     expect(container.querySelectorAll(`[data-command-id="${id}"]`)).toHaveLength(1);
     expect(pendingRow(container, id).querySelector(`[data-stage="${status}"]`)).not.toBeNull();
