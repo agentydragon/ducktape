@@ -43,7 +43,7 @@ export interface ActionPresentation {
     nativeResult?: ResultPreview | null;
   };
   /** A custom view does not grant decision buttons. The Action checks whether the current card shows enough to decide. */
-  offersCardDecisionButtons?: (args: unknown, expanded: boolean) => boolean;
+  offersCardDecisionButtons?: (args: unknown) => boolean;
   /** When the opened preview depends on live data, use that same lookup to gate the decisions. */
   expandedCardDecision?: ComponentType<ExpandedCardDecisionProps>;
   /** Whether this invocation's compact card has an expanded version; omitted, it does. Return false only when the

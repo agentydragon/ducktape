@@ -181,8 +181,8 @@ export function renderDetailsResult(
 }
 
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
-export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown, expanded = false): boolean {
-  return presentation(action)?.offersCardDecisionButtons?.(args, expanded) ?? false;
+export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
+  return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
 }
 
 export function renderExpandedCardDecision(action: ActionIdentity, props: ExpandedCardDecisionProps): ReactNode {

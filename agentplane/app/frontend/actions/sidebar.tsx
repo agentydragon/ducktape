@@ -84,7 +84,7 @@ export function PendingActionList({
             onDecide={(verdict) => actions.decide(request, verdict)}
           />
         );
-        const decision = actionOffersCardDecisionButtons(action, args, expanded) ? buttons : null;
+        const decision = actionOffersCardDecisionButtons(action, args) ? buttons : null;
         const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
         const navigationState = {
           returnTo: {

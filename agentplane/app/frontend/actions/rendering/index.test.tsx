@@ -192,7 +192,6 @@ describe("Action presentation slots", () => {
     expect(actionOffersCardDecisionButtons(calendarAction, args)).toBe(true);
     const unknown = { ...args, mode: "unknown" };
     expect(actionOffersCardDecisionButtons(calendarAction, unknown)).toBe(false);
-    expect(actionOffersCardDecisionButtons(calendarAction, unknown, true)).toBe(false);
     expect(actionCompactCardExpands(calendarAction, unknown)).toBe(true);
 
     const deletion = await mount(
