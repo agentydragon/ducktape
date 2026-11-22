@@ -320,24 +320,4 @@ py_test(
     ],
 )
 
-test_suite(
-    name = "tests",
-    tests = [
-        ":analysis_threads_action_test",
-        ":default_test",
-        ":export_test",
-        ":filtered_test",
-        ":flat_projection_inputs_test",
-        ":full_reentry_test",
-        ":full_report_filtered_test",
-        ":full_report_test",
-        ":identity_inputs_test",
-        ":ownership_subset_split_graphs_test",
-        ":readable_test",
-        ":selected_subset_cli_contract_test",
-        ":selected_subset_cli_test",
-        ":shared_analysis_behavior_test",
-        ":shared_analysis_test",
-        ":tree_projection_inputs_test",
-    ],
-)
+test_suite(name = "tests")
