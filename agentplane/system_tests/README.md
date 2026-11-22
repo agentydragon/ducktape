@@ -25,8 +25,9 @@ of truth for exact case membership.
 ## Suite entrypoints
 
 Each k3s system-test target starts one fixture stack. Scenarios share it only when their resource
-changes are compatible. `test_dispatcher` owns a separate stack because it scales the `sessions`
-Deployment and deletes one of its Pods. The external MCP delegation acceptance owns another stack
+changes are compatible. `test_dispatcher` owns a separate native stack because it scales the
+`sessions` Deployment and deletes one of its Pods. The fixture client presents the App service
+SVID for the Dispatcher RPCs. The external MCP delegation acceptance owns another stack
 because it scales the app to zero after OAuth consent.
 
 | Target                                                                 | Coverage                                              |
