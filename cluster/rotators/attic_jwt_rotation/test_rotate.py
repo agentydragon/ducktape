@@ -1,6 +1,5 @@
 import base64
 import json
-import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -389,69 +388,39 @@ def test_token_without_push_grants_no_push_scope():
     assert make_token().push == []
 
 
-@pytest.fixture
-def upstream(tmp_path: Path) -> Path:
-    """A local bare git repo on `devel` with one commit, as the rotator's push target.
-
-    Bare so commit_and_push can push into refs/heads/devel without git's
-    receive.denyCurrentBranch refusing an update to a checked-out branch.
-    """
+def test_git_publication_pushes_only_rotated_files_and_skips_an_unchanged_retry(tmp_path: Path) -> None:
     remote = tmp_path / "upstream.git"
-    repo = pygit2.init_repository(str(remote), bare=True)
-    blob = repo.create_blob(b"creation_rules: []\n")
-    builder = repo.TreeBuilder()
-    builder.insert(".sops.yaml", blob, pygit2.GIT_FILEMODE_BLOB)
-    tree = builder.write()
-    sig = pygit2.Signature("test", "test@example.com")
-    repo.create_commit("refs/heads/devel", sig, sig, "init", tree, [])
-    return remote
+    upstream = pygit2.init_repository(str(remote), bare=True)
+    builder = upstream.TreeBuilder()
+    sops_config = b"creation_rules: []\n"
+    builder.insert(".sops.yaml", upstream.create_blob(sops_config), pygit2.GIT_FILEMODE_BLOB)
+    author = pygit2.Signature("test", "test@example.com")
+    branch = "refs/heads/devel"
+    initial = upstream.create_commit(branch, author, author, "init", builder.write(), [])
 
-
-def _devel_oid(path: Path) -> str:
-    return str(pygit2.Repository(str(path)).references["refs/heads/devel"].target)
-
-
-def test_clone_repo_clones_devel_from_local_remote(upstream: Path, tmp_path: Path):
-    config = Config(tokens=[], git_remote=str(upstream), git_clone_depth=None)
-    work = tmp_path / "work"
-    repo = clone_repo(config, "unused-for-local-transport", work)
-    assert (work / ".sops.yaml").read_text() == "creation_rules: []\n"
-    assert repo.head.shorthand == "devel"
-
-
-def test_commit_and_push_commits_and_pushes_rotated_files(upstream: Path, tmp_path: Path):
     config = Config(
-        tokens=[make_token(name="wyrm2", sops_file="secrets/hosts/wyrm2-attic.yaml")],
-        git_remote=str(upstream),
+        tokens=[
+            make_token(name="workstation", sops_file="rotated.yaml"),
+            make_token(name="other", sops_file="other.yaml"),
+        ],
+        git_remote=str(remote),
         git_clone_depth=None,
     )
     work = tmp_path / "work"
     repo = clone_repo(config, "unused-for-local-transport", work)
+    assert repo.head.shorthand == "devel"
+    assert (work / ".sops.yaml").read_bytes() == sops_config
+    (work / "rotated.yaml").write_bytes(b"rotated output\n")
+    (work / "other.yaml").write_bytes(b"unrelated change\n")
 
-    sops_file = work / "secrets/hosts/wyrm2-attic.yaml"
-    sops_file.parent.mkdir(parents=True, exist_ok=True)
-    contents = textwrap.dedent("""\
-        attic_token: newjwt
-        expires_unencrypted: "2030-01-01T00:00:00Z"
-        """)
-    sops_file.write_text(contents)
+    commit_and_push(repo, config, rotated=["workstation"], token="unused-for-local-transport")
+    published = upstream.revparse_single(branch).peel(pygit2.Commit)
+    assert published.parent_ids == [initial]
+    assert {entry.name for entry in published.tree} == {".sops.yaml", "rotated.yaml"}
+    assert published.tree["rotated.yaml"].peel(pygit2.Blob).data == b"rotated output\n"
 
-    commit_and_push(repo, config, rotated=["wyrm2"], token="unused-for-local-transport")
-
-    # A fresh clone of upstream reflects the pushed commit.
-    verify = tmp_path / "verify"
-    pygit2.clone_repository(str(upstream), str(verify), checkout_branch="devel")
-    assert (verify / "secrets/hosts/wyrm2-attic.yaml").read_text() == contents
-
-
-def test_commit_and_push_skips_when_nothing_staged(upstream: Path, tmp_path: Path):
-    config = Config(tokens=[make_token()], git_remote=str(upstream), git_clone_depth=None)
-    work = tmp_path / "work"
-    repo = clone_repo(config, "unused-for-local-transport", work)
-
-    before = _devel_oid(upstream)
-    commit_and_push(repo, config, rotated=[], token="unused-for-local-transport")
-    assert _devel_oid(upstream) == before
+    commit_and_push(repo, config, rotated=["workstation"], token="unused-for-local-transport")
+    assert upstream.references[branch].target == published.id
 
 
 def test_configure_ca_trust_loads_a_real_bundle():
