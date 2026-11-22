@@ -16,7 +16,7 @@ report snapshots. The [report index](index.html) links each review and its obser
 
 - **Visual reliability:** [report](visual-reliability/index.html), with a visual operation geometry failure, measured visual History cache exposure and current Chart.js patch applicability. [Evidence](visual-reliability/evidence.json) · [Manifest](visual-reliability/manifest.json)
 
-- **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with 33 reviewed items, a stable Gazelle trial, and measured Grocy and Ruff workaround checks.
+- **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with 33 reviewed items, the merged Gazelle 2.5.1 pins, and measured Grocy and Ruff workaround checks.
 
 - **Cluster storage (22 November UTC):** [HDD capacity and interventions](storage/index.html). Three OVH HDD pools gained 477 GB of physical allocation in a week. Declared limits exceed physical capacity on two pools. [Volume ownership](storage/#ownership-review) traces the two idle capture claims. [Zot discard](storage/#zot-discard) compares the live mount with physical allocation on both copies. [Current evidence](storage/current-evidence.json) · [Earlier analysis](storage/index.html#historical-analysis) · [Manifest](storage/manifest.json).
 - **Cluster VPA (22 November UTC):** [Coverage and rollout checks](vpa/index.html). 215 of 231 active controllers have a direct VPA. A CNPG switchover test recorded an 11.1-second client-read gap; the GitLab Rails capacity gate remains open. [Inventory](vpa/inventory.json) · [Rollout evidence](vpa/rollout-evidence.json) · [Manifest](vpa/manifest.json).
