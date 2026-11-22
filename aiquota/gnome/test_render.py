@@ -478,7 +478,7 @@ def test_paid_credits(session: GnomeSession) -> None:
     codex = _ProviderPopup(session, "codex")
     windows = codex.windows
     assert len(windows) == 2
-    assert "Codex — Paid credits:" in codex.header
+    assert "Codex — 2,746 credits" in codex.header
     assert "Banked resets: 0" in codex.reset
     assert "Included quota exhausted" not in codex.status
     assert "paid credits available" not in codex.status
@@ -510,7 +510,7 @@ def test_observed_account_2026_11_04(session: GnomeSession, capture_menu: GnomeM
     assert len(claude.windows) == 1
     assert len(codex.windows) == 1
     assert "Claude — Available balance:" in claude.header
-    assert "Codex — Paid credits:" in codex.header
+    assert "Codex — 45,191 credits" in codex.header
     assert not claude.balance
     assert not codex.balance
     assert json.loads(string_reply(session.call("GetPanelProviders"))) == ["claude", "codex"]

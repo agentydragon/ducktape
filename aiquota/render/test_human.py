@@ -126,7 +126,7 @@ def test_paid_mode_keeps_each_window_without_repeating_visible_status(
 
     assert "Included quota exhausted" not in rendered
     assert "paid credits available" not in rendered
-    assert rendered.index("Paid credits: 2,746 credits") < rendered.index("5h: 100% used")
+    assert rendered.index("2,746 credits") < rendered.index("5h: 100% used")
     assert "5h: 100% used  ↻ 1h 30m" in rendered
     assert "7d:  38% used  ↻ 3d 14h" in rendered
 
