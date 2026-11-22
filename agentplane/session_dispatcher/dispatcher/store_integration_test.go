@@ -559,7 +559,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
 	}
 	first, err := service.InterruptTurn(ctx, request)
-	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != commandpb.Operation_OPERATION_INTERRUPT_TURN {
+	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != commandpb.Operation_OPERATION_INTERRUPT_TURN || first.GetDispatch().GetCommand().GetInterruptTurn().GetTurnId() != request.GetTurnId() {
 		t.Fatalf("queued interrupt: %v %v", first, err)
 	}
 	retry, err := service.InterruptTurn(ctx, request)
@@ -1796,7 +1796,7 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	if _, err := queueStore.EnqueueForCaller(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, admission); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("store missing Session: %v", err)
 	}
-	if rows, err := queueStore.ListDispatchesForCaller(ctx, "missing", "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter("missing"), testStoreCaller(nil)); err != nil || len(rows) != 0 {
 		t.Fatalf("missing Session left work: %+v %v", rows, err)
 	}
 }
@@ -1831,7 +1831,7 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 			t.Fatalf("cross-placement command: %v", err)
 		}
 	}
-	if rows, err := queueStore.ListDispatchesForCaller(ctx, sessionID, "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter(sessionID), testStoreCaller(nil)); err != nil || len(rows) != 0 {
 		t.Fatalf("cross-placement command left work: %+v %v", rows, err)
 	}
 }
@@ -1885,7 +1885,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			if err := <-result; !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("deleted Session admitted command: %v", err)
 			}
-			if rows, err := queueStore.ListDispatchesForCaller(ctx, sessionID, "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
+			if rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter(sessionID), testStoreCaller(nil)); err != nil || len(rows) != 0 {
 				t.Fatalf("deleted Session left work: %+v %v", rows, err)
 			}
 		})
@@ -2295,7 +2295,7 @@ func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := queueStore.ListDispatchesForCaller(ctx, dispatch.SessionID, "", nil, testStoreCaller(nil))
+	rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter(dispatch.SessionID), testStoreCaller(nil))
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("list dispatches: %d rows, %v", len(rows), err)
 	}

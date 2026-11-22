@@ -49,7 +49,7 @@ func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
 	}
 	result := &dispatcherpb.Dispatch{
 		CommandId: row.CommandID, SessionId: row.SessionID, Sandbox: row.SandboxName,
-		SandboxUid: row.SandboxUID, Operation: operation, State: dispatchState(row.State),
+		SandboxUid: row.SandboxUID, Operation: operation, Command: row.Command, State: dispatchState(row.State),
 		Admission: row.Admission, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}

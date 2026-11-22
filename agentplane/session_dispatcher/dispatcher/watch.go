@@ -28,7 +28,7 @@ func subscribeWatch(hub *wakeups.Hub, channels ...string) (<-chan struct{}, func
 	return changed, unsubscribe, nil
 }
 
-func dispatchWatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.DispatchFilter, error) {
+func dispatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.DispatchFilter, error) {
 	if filter == nil || len(filter.GetCommandIds()) > maxFilterCommands {
 		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required and must name at most 1000 commands")
 	}
@@ -47,6 +47,9 @@ func dispatchWatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.Dis
 	canonical := proto.Clone(filter).(*dispatcherpb.DispatchFilter)
 	slices.Sort(canonical.CommandIds)
 	canonical.CommandIds = slices.Compact(canonical.CommandIds)
+	if canonical.GetIncludeCommand() && (len(canonical.CommandIds) == 0 || len(canonical.CommandIds) > 16) {
+		return nil, status.Error(codes.InvalidArgument, "include_command requires 1 to 16 command IDs")
+	}
 	return canonical, nil
 }
 
@@ -56,7 +59,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	if err != nil {
 		return err
 	}
-	filter, err := dispatchWatchFilter(request.GetFilter())
+	filter, err := dispatchFilter(request.GetFilter())
 	if err != nil {
 		return err
 	}

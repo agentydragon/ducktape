@@ -653,45 +653,18 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	return &dispatcherpb.CancelDispatchResponse{Dispatch: dispatch}, nil
 }
 
-func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter) ([]*dispatcherpb.Dispatch, error) {
+func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if filter == nil {
-		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
-	}
-	var session, sandbox string
-	switch scope := filter.GetScope().(type) {
-	case *dispatcherpb.DispatchFilter_SessionId:
-		session = scope.SessionId
-	case *dispatcherpb.DispatchFilter_Sandbox:
-		sandbox = scope.Sandbox
-	default:
-		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
-	}
-	if len(filter.GetCommandIds()) > maxFilterCommands {
-		return nil, status.Errorf(codes.InvalidArgument, "dispatch filter names more than %d commands", maxFilterCommands)
-	}
-	rows, err := s.Store.ListDispatchesForCaller(ctx, session, sandbox, filter.GetCommandIds(), caller)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	result := make([]*dispatcherpb.Dispatch, 0, len(rows))
-	for _, row := range rows {
-		dispatch, err := store.DescribeDispatch(row)
-		if err != nil {
-			return nil, apiError(err)
-		}
-		result = append(result, dispatch)
-	}
-	return result, nil
-}
-
-func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
-	rows, err := s.list(ctx, request.GetFilter())
+	filter, err := dispatchFilter(request.GetFilter())
 	if err != nil {
 		return nil, err
+	}
+	rows, err := s.Store.ListDispatchesForCaller(ctx, filter, caller)
+	if err != nil {
+		return nil, apiError(err)
 	}
 	return &dispatcherpb.ListDispatchesResponse{Dispatches: rows}, nil
 }

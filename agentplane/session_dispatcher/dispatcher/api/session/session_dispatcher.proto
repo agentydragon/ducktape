@@ -105,6 +105,9 @@ message Dispatch {
   agentplane.proto.DeliveryBlocker delivery_blocker = 11;
   // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the command.
   agentplane.proto.WakeAssessment wake_assessment = 12;
+  // The command stored by Dispatcher. Present on individual reads and mutation receipts.
+  // List and watch require include_command; legacy deletion receipts lack the stored command.
+  agentplane.proto.Command command = 13;
 }
 
 message SubmitInputRequest {
@@ -175,6 +178,8 @@ message DispatchFilter {
   }
   // When not empty, only these commands within the scope; at most 1000.
   repeated string command_ids = 3;
+  // Include the stored command on each matching receipt. Requires 1 to 16 command IDs.
+  bool include_command = 4;
 }
 
 message WatchDispatchesRequest {
