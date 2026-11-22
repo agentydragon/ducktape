@@ -12,13 +12,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
-    ImagePolicySpecFilterTags,
-    ImagePolicySpecImageRepositoryRef,
-    ImagePolicySpecPolicy,
-    ImagePolicySpecPolicyAlphabetical,
-    ImagePolicySpecPolicyAlphabeticalOrder,
-)
 from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepository,
     ImageRepositorySpec,
@@ -44,10 +37,10 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
+from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
-from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.volume_claim import volume_claim
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -313,16 +306,7 @@ def _image_policy(chart: Chart, name: str) -> None:
             secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
         ),
     )
-    ImagePolicy(
-        chart,
-        f"{name}-image-policy",
-        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
-        image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=r"^main-\d{14}-[0-9a-f]{7}$"),
-        policy=ImagePolicySpecPolicy(
-            alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
-        ),
-    )
+    newest_ci_tag_policy(chart, repository, prefix="main")
 
 
 def recorder_containers() -> list[k8s.Container]:
