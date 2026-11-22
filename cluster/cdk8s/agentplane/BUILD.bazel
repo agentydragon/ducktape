@@ -1194,6 +1194,7 @@ py_library(
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/haku:mailbox",
+        "//cluster/cdk8s/haku:mailbox_endpoint",
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/plaid_mcp:pgweb",
