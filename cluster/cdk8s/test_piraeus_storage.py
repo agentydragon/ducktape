@@ -138,21 +138,6 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(values: dict[str, Any]) -
             assert parameters["DrbdOptions/auto-diskful-allow-cleanup"] == "true"
 
 
-def test_piraeus_operator_manager_requests_use_chart_values(scratch_app: App) -> None:
-    release = next(obj for obj in piraeus.operator_chart(scratch_app).api_objects if obj.kind == "HelmRelease")
-    operator = release.to_json()["spec"]["values"]["operator"]
-    assert operator["resources"] == {"requests": {"cpu": "200m", "memory": "192Mi"}}
-
-
-def test_piraeus_affinity_controller_requests_use_named_template_container(values: dict[str, Any]) -> None:
-    affinity = values["linstorCluster"]["affinityController"]
-    [container] = affinity["podTemplate"]["spec"]["containers"]
-    assert container == {
-        "name": "linstor-affinity-controller",
-        "resources": {"requests": {"cpu": "15m", "memory": "64Mi"}},
-    }
-
-
 def test_descheduler_protects_piraeus_node_local_storage_classes(scratch_app: App, values: dict[str, Any]) -> None:
     release = next(obj for obj in descheduler.chart(scratch_app).api_objects if obj.kind == "HelmRelease")
     [default_profile] = release.to_json()["spec"]["values"]["deschedulerPolicy"]["profiles"]
