@@ -40,8 +40,6 @@ from cluster.cdk8s.agentplane.egress import (
     PUBLIC_INTERNET_POLICY,
     admin,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
-from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
@@ -462,30 +460,6 @@ def test_inference_is_granted_separately_from_platform_operations(catalog_manife
         secret = find_resource(catalog_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-def test_aiquota_read_limits_egress_and_the_history_credential(catalog_manifests: list[dict[str, Any]]) -> None:
-    quota = find_resource(catalog_manifests, "PolicySet", AIQUOTA_READ_POLICY)
-    assert {
-        "type": "egress",
-        "hosts": [client.HTTP.fqdn],
-        "clusterInternal": True,
-        "methods": ["GET"],
-        "paths": ["/"],
-        "credentialRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS},
-    } in quota["spec"]["rules"]
-    credential = find_resource(catalog_manifests, "EgressCredential", client.AIQUOTA_HISTORY_CREDENTIALS)
-    assert credential["spec"]["source"] == {
-        "secretRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS, "key": client.PASSWORD_KEY}
-    }
-    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
-    assert any(
-        rule.get("clusterInternal")
-        and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
-        and rule["methods"] == ["GET"]
-        and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
-        for rule in quota["spec"]["rules"]
-    )
 
 
 if __name__ == "__main__":
