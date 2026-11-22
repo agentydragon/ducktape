@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import time
 from collections.abc import Callable
 from typing import Any
@@ -18,6 +16,7 @@ import pytest_bazel
 from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient, TestServer
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 
 from finance.plaid.spend.desktop import oauth as oauth_module
 from finance.plaid.spend.desktop.credentials import SecretServiceTokenStore
@@ -227,8 +226,7 @@ async def test_login_uses_authlib_for_public_pkce_and_token_exchange(monkeypatch
     assert token_form["redirect_uri"] == [REDIRECT_URI]
     assert "client_secret" not in token_form
     verifier = token_form["code_verifier"][0]
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
-    assert authorization_params["code_challenge"] == [challenge.rstrip(b"=").decode("ascii")]
+    assert authorization_params["code_challenge"] == [create_s256_code_challenge(verifier)]
     assert store.refresh_token == "login-refresh-token"
     assert store.saved == ["login-refresh-token"]
     assert authenticator.access_token == "login-access-token"
