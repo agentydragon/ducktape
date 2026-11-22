@@ -1,3 +1,4 @@
+import { Operation } from "../../../proto/command_pb";
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
@@ -313,7 +314,12 @@ function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, com
   return { ...dispatch, state };
 }
 
-async function readReceiptPage(sessionId: string, query: URLSearchParams, limit: number, signal?: AbortSignal) {
+export async function listSessionDispatches(
+  sessionId: string,
+  { pageToken = "", limit = 25, signal }: { pageToken?: string; limit?: number; signal?: AbortSignal } = {}
+): Promise<ListSessionDispatchesResponse> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (pageToken) query.set("pageToken", pageToken);
   const json = await fetchJson(
     `/upstream/dispatcher/v1/sessions/${encodeURIComponent(sessionId)}/dispatches?${query}`,
     {
@@ -333,14 +339,13 @@ async function readReceiptPage(sessionId: string, query: URLSearchParams, limit:
   return page;
 }
 
-export function listSessionDispatches(
-  sessionId: string,
-  { pageToken = "", limit = 25, signal }: { pageToken?: string; limit?: number; signal?: AbortSignal } = {}
-): Promise<ListSessionDispatchesResponse> {
-  const query = new URLSearchParams({ limit: String(limit) });
-  if (pageToken) query.set("pageToken", pageToken);
-  return readReceiptPage(sessionId, query, limit, signal);
-}
+const storedOperation = {
+  submitInput: Operation.SUBMIT_INPUT,
+  changeModel: Operation.CHANGE_MODEL,
+  changeReasoningEffort: Operation.CHANGE_REASONING_EFFORT,
+  interruptTurn: Operation.INTERRUPT_TURN,
+  compact: Operation.COMPACT,
+};
 
 /** A successful batch returns originals from the same retained Session rows as paginated history. */
 export async function batchGetDispatches(
@@ -378,7 +383,8 @@ export async function batchGetDispatches(
       !hit.sandboxUid ||
       (hit.receiptVersion ?? 0n) <= 0n ||
       hit.command?.commandId !== row.commandId ||
-      !hit.command.operation.case
+      !hit.command.operation.case ||
+      storedOperation[hit.command.operation.case] !== hit.operation
     )
       throw new Error("Incomplete stored Dispatcher command");
     hits.push(hit);

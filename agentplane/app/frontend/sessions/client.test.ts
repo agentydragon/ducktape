@@ -571,6 +571,7 @@ const batchHit = {
   dispatch: {
     sessionId: "thread",
     commandId: "b",
+    operation: "OPERATION_SUBMIT_INPUT",
     sandbox: "box",
     sandboxUid: "uid",
     receiptVersion: "3",
@@ -603,6 +604,7 @@ it.each([
   { results: [batchHit, batchMiss] },
   { results: [batchMiss, { commandId: "b" }] },
   { results: [batchMiss, { ...batchHit, dispatch: { ...batchHit.dispatch, command: undefined } }] },
+  { results: [batchMiss, { ...batchHit, dispatch: { ...batchHit.dispatch, operation: "OPERATION_COMPACT" } }] },
   { results: [batchMiss, { ...batchHit, dispatch: { ...batchHit.dispatch, sessionId: "another" } }] },
 ])("rejects incomplete or unexpected batch responses", async (body) => {
   vi.stubGlobal("fetch", () => Response.json(body));
