@@ -15,6 +15,21 @@ theorem State.objectCount_pos_of_objAt {s : State W} {a : Addr} {o : Obj}
     ⟨region.size, List.mem_map_of_mem (f := Array.size)
       (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hRegion)), Nat.zero_lt_of_lt hIndex⟩
 
+/-- An own data property resolves on the first lookup step in every world. Reading it
+returns its value without calling a getter, traversing the prototype, or mutating the heap. -/
+theorem getProp_ownData {s : State W} {a : Addr} {o : Obj} {key : String} {v : Val}
+    {w e c : Bool} (call : Call W) (hObj : s.objAt a = some o)
+    (hp : o.props.lookup key = some (.data v w e c)) :
+    getProp call (.obj a) (.str key) s = .ok v s := by
+  have hLookup : lookupProp a key s = .ok (some (.data v w e c)) s := by
+    change Res.ok (findProp s s.objectCount a key) s = _
+    have hCount := State.objectCount_pos_of_objAt hObj
+    cases hFuel : s.objectCount with
+    | zero => simp [hFuel] at hCount
+    | succ n => simp only [findProp, hObj, hp]
+  change getFrom call a (.obj a) key s = _
+  simp only [getFrom, M.bind_apply, hLookup] <;> rfl
+
 /-- An own data `prototype` is found at the first lookup step. Heritage evaluation returns its address without
 invoking a getter or changing the state. -/
 theorem classParents_ownPrototype {s : State W} {a p : Addr} {o : Obj} {f : Func} {closed : Env}
@@ -24,15 +39,7 @@ theorem classParents_ownPrototype {s : State W} {a p : Addr} {o : Obj} {f : Func
     classParents call (.obj a) s = .ok (a, some p) s := by
   have hConstructor : isConstructor (.obj a) s = .ok true s := by
     simp only [isConstructor, M.bind_apply, getObj, hObj, hCode, hKind] <;> rfl
-  have hLookup : lookupProp a "prototype" s = .ok (some (.data (.obj p) w e c)) s := by
-    change Res.ok (findProp s s.objectCount a "prototype") s = _
-    have hCount := State.objectCount_pos_of_objAt hObj
-    cases hFuel : s.objectCount with
-    | zero => simp [hFuel] at hCount
-    | succ n => simp only [findProp, hObj, hProto]
-  have hGet : getProp call (.obj a) (.str "prototype") s = .ok (.obj p) s := by
-    change getFrom call a (.obj a) "prototype" s = _
-    simp only [getFrom, M.bind_apply, hLookup] <;> rfl
+  have hGet := getProp_ownData call hObj hProto
   simp [classParents, M.bind_apply, hConstructor, hGet]
   rfl
 
