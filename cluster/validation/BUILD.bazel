@@ -80,7 +80,6 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "@pypi//networkx",
         "@pypi//numpy",
-        "@pypi//pygit2",
         "@pypi//types_networkx",
     ],
 )

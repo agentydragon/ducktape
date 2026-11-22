@@ -106,14 +106,6 @@ x/llm/instruct_logseq/pages/** filename-conventions-ignored=true
 # Blog posts - filenames are published URLs (date-prefixed kebab-case)
 website/posts/** filename-conventions-ignored=true
 
-# cluster/validation/cluster.py reads cluster-manifest-ignored via `git check-attr` (pygit2) and skips
-# such files from orphan detection + resource parsing.
-# Parked manifests are retained for possible revival but are not active cluster config.
-cluster/parked/** cluster-manifest-ignored=true
-# The retired Codex pod's manifests are kept beside their source, not active cluster config.
-x/codex_pod_image/deploy/** cluster-manifest-ignored=true
-# A strategic-merge patch the tofu-controller image-pins Component applies — not a resource.
-cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml cluster-manifest-ignored=true
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true
 .*/** filename-conventions-ignored=true
