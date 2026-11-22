@@ -28,7 +28,7 @@ theorem literalInstanceMembers_plain {ms : List ClassMember} (h : literalInstanc
       simp only [literalInstanceMembers, Bool.false_eq_true] at h
     all_goals exact ih h
 
-private theorem alloc_objAt {s t : State W} {o : Obj} {a : Addr} (h : alloc o s = .ok a t) :
+theorem alloc_objAt {s t : State W} {o : Obj} {a : Addr} (h : alloc o s = .ok a t) :
     t.objAt a = some o := by
   unfold alloc at h
   split at h
@@ -37,7 +37,7 @@ private theorem alloc_objAt {s t : State W} {o : Obj} {a : Addr} (h : alloc o s 
     rw [objAt_push hobjs] <;> simp
   · cases h
 
-private theorem modifyObj_self {s t : State W} {f : Obj → Obj} {a : Addr} {o : Obj}
+theorem modifyObj_self {s t : State W} {f : Obj → Obj} {a : Addr} {o : Obj}
     (ho : s.objAt a = some o) (h : modifyObj a f s = .ok () t) : t.objAt a = some (f o) := by
   cases h
   unfold State.objAt at ho ⊢
@@ -136,7 +136,7 @@ private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
     cases hresult
     exact ⟨c, proto, _, rfl, (alloc_region hc).trans (alloc_ok hp).2.region, hfound, rfl, rfl⟩
 
-private theorem writeVar_origin {env : Env} {x : Name} {v : Val} {s t : State W}
+theorem writeVar_origin {env : Env} {x : Name} {v : Val} {s t : State W}
     (h : writeVar env x v s = .ok () t) :
     ∃ c, env.vars.lookup x = some c ∧ t.cellAt c = some ⟨some v, true⟩ ∧ t.heap = s.heap := by
   unfold writeVar at h
