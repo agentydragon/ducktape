@@ -9,6 +9,7 @@ const MAX_WATCHED_COMMANDS = 1000;
 
 /** Clean EOF also ends a normal watch lease. Give the first retry time to catch up. */
 const CLEAN_CLOSE_GRACE_MS = 3_000;
+const INITIAL_CATCH_UP_TIMEOUT_MS = 60_000;
 
 function outOfRange(reason: unknown): boolean {
   if (reason instanceof WatchStreamError) return reason.code === 11;
@@ -43,6 +44,8 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
     cleanCloseTimer = undefined;
   };
   const stopWatch = sessionDispatcherClient.watchDispatches(nextQuery, {
+    initialFrameTimeoutMs: INITIAL_CATCH_UP_TIMEOUT_MS,
+    initialFrameReady: (frame) => typeof frame === "object" && frame !== null && "caughtUp" in frame,
     onOpen: () => {
       held = new Set();
     },

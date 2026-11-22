@@ -178,6 +178,32 @@ it("restarts a partial fresh snapshot from the beginning instead of resuming bef
   expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
 });
 
+it.each([false, true])("times out before the initial checkpoint with partial rows: %s", async (partialRows) => {
+  const store = new LocalCommands(SESSION);
+  queued(store, "a");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  const [first] = fetchMock.served;
+  if (partialRows) first.send(dispatchFrame("a", "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "partial-row"));
+
+  await vi.advanceTimersByTimeAsync(59_999);
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
+  expect(first.signal?.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(first.signal?.aborted).toBe(true);
+  expect(store.getSnapshot().dispatchWatchError).toBe("stream did not reach its initial checkpoint");
+
+  await vi.advanceTimersByTimeAsync(1_000);
+  const retry = fetchMock.served[1];
+  expect(retry.url.searchParams.has("resumeToken")).toBe(false);
+  retry.send(dispatchFrame("a", "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "retried-row"));
+  retry.send(caughtUp("retried-checkpoint"));
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(retry.signal?.aborted).toBe(false);
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
+  expect(stateOf(store, "a")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+});
+
 it("suppresses a clean lease renewal that catches up promptly", async () => {
   const store = new LocalCommands(SESSION);
   queued(store, "a");
