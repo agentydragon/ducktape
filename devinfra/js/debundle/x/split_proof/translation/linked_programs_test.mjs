@@ -202,6 +202,7 @@ function generatedCase(seed) {
   const resultName = `publicResult${seed}`;
   const plainResultName = `plainResult${seed}`;
   const tryResultName = `tryResult${seed}`;
+  const reexportedName = `publicMoved${seed}`;
   const loaderName = `loader${seed}`;
   const movedName = `moved${seed}`;
   const tryCallableName = `tryCallable${seed}`;
@@ -225,6 +226,7 @@ function generatedCase(seed) {
       [loaderName, resultName],
       [plainName, plainResultName],
       [tryResultName, tryResultName],
+      [hasSecondMovedDeclaration ? `fragmentValue${seed}` : movedName, reexportedName],
     ]),
   ];
   const movedIndex = 3;
@@ -271,6 +273,8 @@ function generatedCase(seed) {
     resultName,
     plainResultName,
     tryResultName,
+    reexportedName,
+    expectedReexport: seed + (hasSecondMovedDeclaration ? 40 : 20),
     providerMode,
     expectedValue: providerMode === 0 ? seed + 20 : providerMode === 1 ? seed + 71 : seed + 72,
     expectedTryValue: generatedTry.expectedValue,
@@ -569,6 +573,31 @@ for (const [name, expr, reason] of [
   assert(!existsSync(out));
 }
 
+// The entry publishes bindings from both a copied provider and a newly split module.
+{
+  const dir = path.join(root, "entry-exports-imports");
+  const source = `
+    import { original as imported } from "./provider.mjs";
+    const moved = () => imported;
+    export { imported as value, moved as getValue };
+  `;
+  const files = prepare(dir, {
+    source,
+    provider: "export const original = 31;",
+    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#1"], "entry.mjs": ["#0", "#2"] }, order: ["worker.mjs"] },
+  });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    const namespace = await import(pathToFileURL(file).href);
+    assert.deepEqual(Object.keys(namespace), ["getValue", "value"]);
+    assert.equal(namespace.value, 31);
+    assert.equal(namespace.getValue(), 31);
+  }
+}
+
 // Generated aliases, layouts and provider-body shapes exercise the ordinary
 // source-file CLI. The entry calls a moved try-body function during initialization.
 for (let seed = 0; seed < 8; seed++) {
@@ -577,7 +606,7 @@ for (let seed = 0; seed < 8; seed++) {
   const files = prepare(dir, fixture);
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  const exportNames = [fixture.resultName, fixture.plainResultName, fixture.tryResultName];
+  const exportNames = [fixture.resultName, fixture.plainResultName, fixture.tryResultName, fixture.reexportedName];
   const original = observe(files.sourceFile, exportNames);
   assert.deepEqual(
     original,
@@ -585,6 +614,7 @@ for (let seed = 0; seed < 8; seed++) {
       [fixture.resultName]: fixture.expectedValue,
       [fixture.plainResultName]: seed + 60,
       [fixture.tryResultName]: fixture.expectedTryValue,
+      [fixture.reexportedName]: fixture.expectedReexport,
     },
     `seed ${seed}`
   );

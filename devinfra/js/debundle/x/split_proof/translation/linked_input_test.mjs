@@ -12,14 +12,17 @@ export { make as build };
 const call = "var deferred = wrap(function callback() { return extra(); });";
 const closures = "var extra = () => 17; var alternate = () => 42;";
 const publish = "export { deferred as start };";
-const source = parse(`import { build as wrap } from "./providers/maker.mjs"; ${call} ${closures} ${publish}`);
+const publishBoth = "export { deferred as start, extra as readExtra };";
 
 function check({
   maker = provider,
   request = "../providers/maker.mjs",
   glueBinding = "extra",
-  entryExports = publish,
+  exposesGlue = false,
+  entryExports = exposesGlue ? publishBoth : publish,
 } = {}) {
+  const sourceExports = exposesGlue ? publishBoth : publish;
+  const source = parse(`import { build as wrap } from "./providers/maker.mjs"; ${call} ${closures} ${sourceExports}`);
   const files = {
     "entry/main.mjs": parse(`
       import { build as wrap } from "${request}";
@@ -57,3 +60,11 @@ for (const [controls, reason] of [
   assert.equal(rejected.status, 1, rejected.stderr + rejected.stdout);
   assert.match(rejected.stderr, reason);
 }
+
+// A public alias through a glue import must resolve to the same declaration.
+const reexport = check({ exposesGlue: true });
+assert.equal(reexport.status, 0, reexport.stderr);
+
+const redirected = check({ exposesGlue: true, glueBinding: "alternate" });
+assert.equal(redirected.status, 1, redirected.stderr + redirected.stdout);
+assert.match(redirected.stderr, /entry exports resolve to different linked cells/);
