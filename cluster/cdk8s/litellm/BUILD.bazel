@@ -108,6 +108,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config",
+        ":database",
         ":endpoint",
         ":upstreams",
         "//cluster/cdk8s:config_format",
