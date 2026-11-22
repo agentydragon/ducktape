@@ -29,7 +29,7 @@ import { finishSessionCreate, withinSessionCreate } from "../observability/traci
 import { useFrontendConfig } from "../app_config/frontend_config";
 import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
-import { CommandDeliveryHistory } from "./command_delivery_history";
+import { CommandDeliveryHistory, DeliveryHistoryFallback } from "./command_delivery_history";
 import { ThreadConversation } from "./conversation";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
@@ -70,6 +70,8 @@ export interface ThreadPageProps {
 
 export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
+  const [historySession, setHistorySession] = useState<string | null>(null);
+  const openDeliveryHistory = () => setHistorySession(threadId);
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
@@ -104,6 +106,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const materializationUnconfirmed =
     materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED ||
     materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN;
+  const showConversation = !materializationUnconfirmed || Boolean(thread?.summary.projectionEpoch);
   const notice =
     !materializationUnconfirmed && !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
       ? "Execution Sandbox is unavailable. Central sampling controls remain available."
@@ -190,10 +193,13 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
           </Box>
         </Group>
       </TopbarTitle>
+      <CommandDeliveryHistory
+        sessionId={threadId}
+        opened={historySession === threadId}
+        onClose={() => setHistorySession(null)}
+      />
+      {(!thread || !showConversation) && <DeliveryHistoryFallback onOpen={openDeliveryHistory} />}
       <Stack style={{ flex: 1, minHeight: 0 }}>
-        <Group justify="flex-end">
-          <CommandDeliveryHistory key={threadId} sessionId={threadId} />
-        </Group>
         {error && (
           <Text role="alert" c="red">
             {error}
@@ -214,7 +220,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {notice}
           </Text>
         )}
-        {thread && (!materializationUnconfirmed || thread.summary.projectionEpoch) && (
+        {thread && showConversation && (
           <sync.Thread key={threadId} threadId={threadId}>
             <ThreadConversation
               threadId={threadId}
@@ -227,6 +233,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               canQueueCommands={canQueueCommands}
               canResumeSandbox={canResumeSandbox}
               composerPlaceholder={composerPlaceholder}
+              onOpenDeliveryHistory={openDeliveryHistory}
               onResumeSandbox={() => {
                 if (canResumeSandbox && thread && sandbox?.target) {
                   void resumeSandbox(sandbox.target).catch((reason: unknown) => setError(displayableError(reason)));

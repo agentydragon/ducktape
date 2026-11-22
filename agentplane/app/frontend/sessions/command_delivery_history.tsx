@@ -3,6 +3,7 @@ import { type JSX, type ReactNode, useEffect, useState } from "react";
 import { Operation } from "../../../proto/command_pb";
 import { DeliveryState, type Dispatch } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError } from "../transport/client";
+import { TopbarActions } from "../shell/topbar";
 import { TimeAgo } from "../ui/time_ago";
 import { listSessionDispatches } from "./client";
 import { StoredCommandDetails } from "./stored_command_details";
@@ -172,22 +173,35 @@ export function RetainedDispatches({ sessionId }: { sessionId: string }): JSX.El
   );
 }
 
-export function CommandDeliveryHistory({ sessionId }: { sessionId: string }): JSX.Element {
-  const [opened, setOpened] = useState(false);
+/** There is no conversation overflow menu until its first History window arrives. */
+export function DeliveryHistoryFallback({ onOpen }: { onOpen: () => void }): JSX.Element {
   return (
-    <>
-      <Button size="compact-sm" variant="subtle" color="gray" onClick={() => setOpened(true)}>
+    <TopbarActions>
+      <Button size="compact-sm" variant="subtle" onClick={onOpen}>
         Delivery history
       </Button>
-      <Modal
-        opened={opened}
-        onClose={() => setOpened(false)}
-        title="Delivery history"
-        size="lg"
-        scrollAreaComponent={ScrollArea.Autosize}
-      >
-        {opened && <RetainedDispatches key={sessionId} sessionId={sessionId} />}
-      </Modal>
-    </>
+    </TopbarActions>
+  );
+}
+
+export function CommandDeliveryHistory({
+  sessionId,
+  opened,
+  onClose,
+}: {
+  sessionId: string;
+  opened: boolean;
+  onClose: () => void;
+}): JSX.Element {
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Delivery history"
+      size="lg"
+      scrollAreaComponent={ScrollArea.Autosize}
+    >
+      {opened && <RetainedDispatches key={sessionId} sessionId={sessionId} />}
+    </Modal>
   );
 }

@@ -1944,7 +1944,8 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
     await page.reload()
-    await page.get_by_role("button", name="Delivery history", exact=True).click()
+    await page.get_by_role("button", name="More", exact=True).click()
+    await page.get_by_role("menuitem", name="Delivery history", exact=True).click()
     history = page.get_by_role("dialog", name="Delivery history")
     await expect(history.get_by_text(command.command_id, exact=True)).to_be_visible()
     async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as read:

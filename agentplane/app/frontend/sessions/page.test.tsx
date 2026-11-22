@@ -2166,7 +2166,9 @@ it("reads an older original on a fresh Session page while the History window is 
     command: message("older"),
   });
   const container = await render(threadState({ windowError: "History unavailable" }));
-  await act(async () => buttonIn(container, "Delivery history")!.click());
+  await act(async () => button(container, "More").click());
+  const item = menuItem([...document.querySelectorAll('[role="menuitem"]')], "Delivery history");
+  await act(async () => (item as HTMLElement).click());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(dialog.textContent).toContain("newer");
   expect(getDispatch).not.toHaveBeenCalled();
@@ -2177,4 +2179,12 @@ it("reads an older original on a fresh Session page while the History window is 
   expect(dialog.textContent).toContain("Test input older");
   expect(getDispatch).toHaveBeenCalledWith(sid, "older", expect.any(AbortSignal));
   expect(submitInput).not.toHaveBeenCalled();
+});
+
+it("keeps delivery history reachable before the conversation has any History window", async () => {
+  vi.mocked(listSessionDispatches).mockResolvedValue(create(ListSessionDispatchesResponseSchema));
+  const container = await render({ ...threadState(), window: null, error: "History offline" });
+  expect(container.textContent).toContain("History offline");
+  await act(async () => buttonIn(container, "Delivery history")!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("No retained receipts.");
 });

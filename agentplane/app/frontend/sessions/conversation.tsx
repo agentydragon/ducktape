@@ -34,6 +34,7 @@ import { isoTime } from "../ui/format_time";
 import { TimeAgo } from "../ui/time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notifications/notification_status";
+import { DeliveryHistoryFallback } from "./command_delivery_history";
 import { TopbarActions } from "../shell/topbar";
 
 import { ThreadComposer } from "./composer";
@@ -193,6 +194,7 @@ interface ConversationBodyProps {
   canResumeSandbox: boolean;
   composerPlaceholder: string;
   onResumeSandbox: () => void;
+  onOpenDeliveryHistory: () => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
@@ -208,6 +210,7 @@ function ConversationBody({
   canResumeSandbox,
   composerPlaceholder,
   onResumeSandbox,
+  onOpenDeliveryHistory,
   traceSearch,
   langfuseSearch,
   sandbox,
@@ -454,6 +457,7 @@ function ConversationBody({
                 <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
                   Notifications
                 </Menu.Item>
+                <Menu.Item onClick={onOpenDeliveryHistory}>Delivery history</Menu.Item>
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>
@@ -515,6 +519,7 @@ export interface ThreadConversationProps {
   canResumeSandbox: boolean;
   composerPlaceholder: string;
   onResumeSandbox: () => void;
+  onOpenDeliveryHistory: () => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
@@ -528,6 +533,7 @@ export function ThreadConversation({
   canResumeSandbox,
   composerPlaceholder,
   onResumeSandbox,
+  onOpenDeliveryHistory,
   traceSearch,
   langfuseSearch,
   sandbox,
@@ -536,8 +542,12 @@ export function ThreadConversation({
   // A stopped window is not following the thread at all, and its alert says so.
   useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
-    if (error) return <p role="alert">Thread sync failed: {error}</p>;
-    return <p role="status">Loading thread…</p>;
+    return (
+      <>
+        <DeliveryHistoryFallback onOpen={onOpenDeliveryHistory} />
+        {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
+      </>
+    );
   }
   return (
     <>
@@ -562,6 +572,7 @@ export function ThreadConversation({
         canQueueCommands={canQueueCommands}
         canResumeSandbox={canResumeSandbox}
         composerPlaceholder={composerPlaceholder}
+        onOpenDeliveryHistory={onOpenDeliveryHistory}
         onResumeSandbox={onResumeSandbox}
         traceSearch={traceSearch}
         langfuseSearch={langfuseSearch}
