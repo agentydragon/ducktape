@@ -2111,7 +2111,6 @@ py_test(
     data = [
         ":synthesized_manifests",
         "//:MODULE.bazel",
-        "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster:parked_generated_manifests",
@@ -2122,11 +2121,9 @@ py_test(
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//tf/gitops/forgejo-agentydragon:inline_source",
-        "@multitool//tools/kustomize",
     ],
     env = {
         "GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)",
-        "KUSTOMIZE_RLOCATION": "$(rlocationpath @multitool//tools/kustomize)",
     },
     deps = [
         ":agent_rbac_test_support",

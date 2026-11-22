@@ -10,7 +10,9 @@ patches. Live decryption and post-build variable sources are outside both paths.
 from __future__ import annotations
 
 import asyncio
+import base64
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -238,6 +240,39 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         ]
         assert "second" in error
         assert "./cluster/generated/secrets" in error
+
+
+def test_session_archive_importers_receive_the_backup_credentials(
+    cluster: ParsedCluster, repo_root: Path, tmp_path: Path
+) -> None:
+    owner = cluster.flux_kustomizations["ai-session-archive"]
+    source = owner.source_ref
+    assert source is not None
+    stage_artifact_copies(
+        repo_root, tmp_path, cluster.artifact_copies[source.namespace or owner.namespace, source.name]
+    )
+    # Flux dry-run masks SOPS payloads. Use Kustomize here to verify which file the importer actually receives.
+    kustomize = Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"
+    output = subprocess.check_output([kustomize, "build", tmp_path / owner.path])
+    resources = list(yaml.load_all(output, Loader=yaml.CSafeLoader))
+    [secret] = [doc for doc in resources if doc["kind"] == "Secret"]
+    jobs = [doc for doc in resources if doc["kind"] == "CronJob"]
+    assert jobs
+    expected = (repo_root / "secrets/shared/session-backup.yaml").read_bytes()
+    for job in jobs:
+        pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        [importer] = [container for container in pod["containers"] if "--credentials-file" in container.get("args", [])]
+        path = Path(importer["args"][importer["args"].index("--credentials-file") + 1])
+        [mount] = [mount for mount in importer["volumeMounts"] if path.is_relative_to(mount["mountPath"])]
+        [volume] = [volume["secret"] for volume in pod["volumes"] if volume["name"] == mount["name"]]
+        assert (job["metadata"]["namespace"], volume["secretName"]) == (
+            secret["metadata"]["namespace"],
+            secret["metadata"]["name"],
+        )
+        key = str(path.relative_to(mount["mountPath"]))
+        if "items" in volume:
+            [key] = [item["key"] for item in volume["items"] if item["path"] == key]
+        assert base64.b64decode(secret["data"][key]) == expected
 
 
 def test_staging_sandbox_templates_use_their_pinned_images(cluster: ParsedCluster, k8s_dir: Path) -> None:
