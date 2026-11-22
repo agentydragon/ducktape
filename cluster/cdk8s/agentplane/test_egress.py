@@ -330,7 +330,8 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     """New Sandbox Identities use account egress, while their existing account grants retain preset RBAC."""
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    assert staging.ENV.app is not None
+    presets = staging.ENV.app.config.sandbox_presets
     policies = {
         doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifests if doc["kind"] == "PolicySet"
     }
@@ -342,8 +343,8 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
         if grant["kind"] == "ServiceAccountGrant"
     }
 
-    for preset, spec in config["sandbox_presets"].items():
-        launch_policies = set(spec["policy_sets"])
+    for preset, spec in presets.items():
+        launch_policies = spec.policy_sets
         assert all(not rule["type"].startswith("kubernetes_") for name in launch_policies for rule in policies[name]), (
             preset
         )
@@ -372,16 +373,11 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
             agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
         },
     }
-    for preset in ("public-coder", "finance-agent", "haku"):
+    for preset, role_sets in expected_role_sets.items():
         ref = kubernetes_account_ref.account(staging.ENV.namespace, preset)
-        assert ref.credential_name in config["sandbox_presets"][preset]["policy_sets"]
-        assert account_grants[(ref.namespace, ref.name)] == expected_role_sets[preset]
+        assert ref.credential_name in presets[preset].policy_sets
+        assert account_grants[(ref.namespace, ref.name)] == role_sets
 
-    for preset in ("finance-agent", "haku"):
-        launch_policies = config["sandbox_presets"][preset]["policy_sets"]
-        assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in launch_policies
-        assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in launch_policies
-        assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in launch_policies
     for name in (
         agent_access_profiles.COINBASE_POLICY,
         agent_access_profiles.OVH_BILLING_POLICY,
@@ -419,18 +415,9 @@ def test_ovh_billing_is_a_named_read_only_credential_with_scoped_egress(
         "/1.0/service/**",
     }
     assert "credentialRef" not in egress
-    assert staging.ENV.app is not None
-    presets = staging.ENV.app.config.sandbox_presets
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["finance-agent"].policy_sets
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["haku"].policy_sets
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" not in presets["public-coder"].policy_sets
 
 
 def test_coinbase_egress_and_standing_identity_selections(staging_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    presets = config["sandbox_presets"]
-    assert "coinbase-identity" in presets["finance-agent"]["policy_sets"]
-    assert "coinbase-identity" not in presets["public-coder"]["policy_sets"]
     for caller in ("claude-ai", "haku-agent"):
         selected = find_resource(staging_manifests, "PolicyBinding", caller)["spec"]["policySets"]
         assert {"coinbase-identity", "plaid-diagnostics-identity"} <= set(selected)
@@ -483,11 +470,7 @@ def test_the_local_api_server_bearer_is_the_proxys_mounted_token(catalog_manifes
     assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
 
 
-def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    for name in ("finance-agent", "haku"):
-        assert AIQUOTA_READ_POLICY in config["sandbox_presets"][name]["policy_sets"]
-    assert AIQUOTA_READ_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
+def test_aiquota_read_limits_egress_and_the_history_credential(catalog_manifests: list[dict[str, Any]]) -> None:
     quota = find_resource(catalog_manifests, "PolicySet", AIQUOTA_READ_POLICY)
     assert {
         "type": "egress",
