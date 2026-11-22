@@ -14,6 +14,7 @@ import numpy as np
 import yaml
 from pydantic import Field, model_validator
 
+from finance.augur.config_paths import config_relative_path
 from finance.augur.dates import months_between
 from finance.augur.model.schemas import StrictModel
 from finance.augur.model.series import IssuerId
@@ -240,8 +241,8 @@ def fit_private_equity_model(
 def train_from_config(config_path: Path) -> TrainedPrivateEquityModelArtifact:
     config = load_training_config(config_path)
     base_dir = config_path.parent
-    observations_path = _resolve_path(config.observations_path, base_dir)
-    out_model_path = _resolve_path(config.out_model_path, base_dir)
+    observations_path = config_relative_path(config.observations_path, base_dir)
+    out_model_path = config_relative_path(config.out_model_path, base_dir)
     artifact = fit_private_equity_model(load_price_observations_jsonl(observations_path), config)
     out_model_path.parent.mkdir(parents=True, exist_ok=True)
     out_model_path.write_text(artifact.model_dump_json(indent=2), encoding="utf-8")
@@ -260,13 +261,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"trained private-equity model issuer={artifact.issuer_id} as_of={artifact.as_of_date.isoformat()}")
     print(f"current mark: ${artifact.current_mark_usd:,.2f}")
     return 0
-
-
-def _resolve_path(path: str | Path, base_dir: Path) -> Path:
-    value = Path(path)
-    if value.is_absolute():
-        return value
-    return (base_dir / value).resolve()
 
 
 def _weighted_slope(times_months: np.ndarray, log_prices: np.ndarray, obs_sigmas: np.ndarray) -> float:
