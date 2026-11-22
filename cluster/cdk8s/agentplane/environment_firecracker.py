@@ -4,21 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
+from agentplane_sandboxtemplate_crds.works.allegedly.agentplane import (
+    SandboxTemplate,
+    SandboxTemplateSpec,
+    SandboxTemplateSpecFirecracker,
+    SandboxTemplateSpecWorkspaceVolumeLayoutType,
+)
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env.config import CodexReadiness
 from agentplane.firecracker.config import Config
-from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, workload_routes
+from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, template_storage, workload_routes
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.environment_guest import guest_config_data
-from cluster.cdk8s.agentplane.environment_sandbox import workspace_volume_spec
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import SettingsFile
@@ -38,7 +41,7 @@ class EnvironmentFirecrackerTemplate(Construct):
         env: Environment,
         *,
         labels: Mapping[str, str],
-        runner_state_volume: dict[str, Any],
+        storage_class: str,
         runner_image: str,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         session_reconcile_concurrency: int | None = None,
@@ -155,34 +158,21 @@ class EnvironmentFirecrackerTemplate(Construct):
             endpoint_selector={**labels, "agentplane.allegedly.works/environment-backend": "firecracker"},
             ingress=[IngressRule.from_entities(Entity.KUBE_APISERVER, Entity.HOST, ports=[9092])],
         )
-        workspace_volume = workspace_volume_spec(
-            runner_state_volume, layout_type="RawDiskImage", storage_class=env.vm_storage_class
-        )
-        state_volume = {
-            **runner_state_volume,
-            "layout": workspace_volume["layout"],
-            "claim": {**workspace_volume["claim"], "resources": {"requests": {"storage": "100Gi"}}},
-        }
-        self.template = ApiObject(
+        self.template = SandboxTemplate(
             self,
             "Resource",
-            api_version=f"{GROUP}/{VERSION}",
-            kind="SandboxTemplate",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-        )
-        self.template.add_json_patch(
-            JsonPatch.add(
-                "/spec",
-                {
-                    "firecracker": {
-                        "pod": sandbox_pod.render_pod_template(labels, pod),
-                        "bootImage": BOOT_IMAGE,
-                        "runnerImage": runner_image,
-                        "vcpuCount": resources.guest_vcpu_count,
-                        "memoryMiB": resources.guest_memory_bytes // (1024 * 1024),
-                    },
-                    "stateVolume": state_volume,
-                    "workspaceVolume": workspace_volume,
-                },
-            )
+            spec=SandboxTemplateSpec(
+                firecracker=SandboxTemplateSpecFirecracker(
+                    pod=sandbox_pod.render_pod_template(labels, pod),
+                    boot_image=BOOT_IMAGE,
+                    runner_image=runner_image,
+                    vcpu_count=resources.guest_vcpu_count,
+                    memory_mib=resources.guest_memory_bytes // (1024 * 1024),
+                ),
+                state_volume=template_storage.state_volume(storage_class, volume_mode="Filesystem", raw_disk=True),
+                workspace_volume=template_storage.workspace_volume(
+                    storage_class, SandboxTemplateSpecWorkspaceVolumeLayoutType.RAW_DISK_IMAGE
+                ),
+            ),
         )

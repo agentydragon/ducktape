@@ -178,11 +178,7 @@ def environment_chart(
             template_name=environment_template_name,
             settings_config_map=relay_settings,
         )
-        state_volume = runner_template.spec["stateVolume"]
-        state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
-        if env.vm_storage_class is not None:
-            state_claim["storageClassName"] = env.vm_storage_class
-        vm_state_volume = {**state_volume, "claim": state_claim}
+        storage_class = env.vm_storage_class or runner_template.storage_class
         vm_config = ConfigMap(
             runner_scope,
             "environment-vm-config",
@@ -199,10 +195,8 @@ def environment_chart(
             root_image=environment_vm.ROOT_IMAGE,
             config_map=vm_config,
             labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-            state_volume=vm_state_volume,
-            workspace_volume=environment_sandbox.workspace_volume_spec(
-                vm_state_volume, layout_type="BlockFilesystem", storage_class=env.vm_storage_class
-            ),
+            state_storage_class=storage_class,
+            workspace_storage_class=storage_class,
         )
     if env.firecracker_sandboxes:
         environment_firecracker.EnvironmentFirecrackerTemplate(
@@ -210,7 +204,7 @@ def environment_chart(
             "firecracker-template",
             env,
             labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-            runner_state_volume=runner_template.spec["stateVolume"],
+            storage_class=env.vm_storage_class or runner_template.storage_class,
             runner_image=environment_vm.RUNNER_DISK_IMAGE,
             image_pull_secret_name=sandbox_pod.SECRET_NAME,
         )

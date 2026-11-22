@@ -56,7 +56,7 @@ def _runner_pod(
         environment_runtime_resources=environment_runtime_resources,
         executor_resources=executor_resources,
     )
-    return cast(dict[str, Any], template.spec["pod"]["spec"])
+    return cast(dict[str, Any], template.spec.pod["spec"])
 
 
 def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict[str, Any]]) -> None:
