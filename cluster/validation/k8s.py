@@ -256,16 +256,6 @@ class ClusterExternalSecretResource(K8sResource):
     spec: dict[str, Any] = Field(default_factory=dict)
 
 
-class GitRepositorySpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    provider: str | None = None
-    secret_ref: SecretRef | None = None
-
-
-class GitRepositoryResource(K8sResource):
-    spec: GitRepositorySpec = Field(default_factory=GitRepositorySpec)
-
-
 class ImagePolicyResource(K8sResource):
     """An image-automation `ImagePolicy`: what a `$imagepolicy` setter marker names."""
 
@@ -335,7 +325,6 @@ class CiliumPolicyResource(K8sResource):
 
 
 _KIND_MODELS: dict[str, type[K8sResource]] = {
-    "GitRepository": GitRepositoryResource,
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
     "ArtifactGenerator": ArtifactGeneratorResource,

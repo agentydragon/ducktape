@@ -32,7 +32,6 @@ from cluster.validation.checks import (
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, DependsOn, FluxKustomizationSpec, SourceRef
-from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import (
     check_image_automation_webhook,
@@ -388,12 +387,6 @@ def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
     that lands on `devel` with `[skip ci]` — so the failure surfaces in unrelated PRs.
     """
     errors = check_no_flow_mappings_where_flux_writes(k8s_dir)
-    assert not errors, "\n".join(errors)
-
-
-def test_flux_bootstrap_sources_need_no_decrypted_auth(k8s_dir: Path) -> None:
-    """Cold bootstrap sources must not depend on Flux-decrypted auth."""
-    errors = check_flux_bootstrap_auth(k8s_dir)
     assert not errors, "\n".join(errors)
 
 
