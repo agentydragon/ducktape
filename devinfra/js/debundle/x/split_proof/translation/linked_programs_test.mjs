@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { parse } from "acorn";
 import { generate } from "astring";
 
 const root = process.env.TEST_TMPDIR;
@@ -356,23 +357,79 @@ for (const [index, [operand, tag, expected]] of [
   assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
 }
 
-// Two distinct provider modules supply live bindings to the exported record.
-{
-  const files = prepare(path.join(root, "record-providers"), {
-    source: 'const a = "left"; const b = "right"; const pair = { first: a, second: b }; export { pair as result };',
-    provider: "",
-    spec: {
-      entry: "entry.mjs",
-      modules: { "a.mjs": ["#0"], "b.mjs": ["#1"], "entry.mjs": ["#2", "#3"] },
-      order: ["a.mjs", "b.mjs"],
-    },
-  });
-  const out = path.join(root, "record-providers", "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, "result"), { result: { first: "left", second: "right" } });
+// Compute evaluation order from the emitted requests, including the cycle a fixed
+// schedule can introduce when the second provider reads the first provider.
+function moduleEvaluationOrder(directory, entry) {
+  const visited = new Set();
+  const order = [];
+  function visit(file) {
+    if (visited.has(file)) return;
+    visited.add(file);
+    const ast = parse(readFileSync(path.join(directory, file), "utf8"), {
+      sourceType: "module",
+      ecmaVersion: "latest",
+    });
+    for (const node of ast.body) {
+      if (node.type === "ImportDeclaration") visit(path.join(path.dirname(file), node.source.value));
+    }
+    order.push(file);
+  }
+  visit(entry);
+  return order;
+}
+
+// Source initializes left, then right. Pin the reverse order across all cases.
+// Mutating one initializer to read its neighbor introduces a TDZ in exactly one execution.
+for (const [changed, first, second] of [
+  ["left", "low", "high"],
+  ["right", 42, 0],
+]) {
+  const spec = {
+    entry: "entry.mjs",
+    modules: { "left.mjs": ["#0"], "right.mjs": ["#1"], "entry.mjs": ["#2", "#3"] },
+    order: ["right.mjs", "left.mjs"],
+    sequential: true,
+  };
+  for (const dependent of [false, true]) {
+    const dir = path.join(root, `reordered-providers-${changed}-${dependent}`);
+    const readsRight = dependent && changed === "left";
+    const readsLeft = dependent && changed === "right";
+    const files = prepare(dir, {
+      source: program([
+        variable("const", "left", readsRight ? id("right") : literal(first)),
+        variable("const", "right", readsLeft ? id("left") : literal(second)),
+        variable("const", "pair", {
+          type: "ObjectExpression",
+          properties: [property("first", id("left")), property("second", id("right"))],
+        }),
+        exportNamed([["pair", "result"]]),
+      ]),
+      provider: "",
+      spec,
+    });
+    const out = path.join(dir, "out");
+    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+    const tdz = { error: "ReferenceError" };
+    const normal = { result: { first: readsRight ? second : first, second: readsLeft ? first : second } };
+    assert.deepEqual(observe(files.sourceFile, "result"), readsRight ? tdz : normal);
+    let candidate = out;
+    if (dependent) {
+      assert.equal(verdict.status, "rejected", log);
+      assert.equal(verdict.reason, `${readsRight ? "original" : "split"} threw during linked initialization`);
+      assert(!existsSync(out));
+      candidate = path.join(dir, "preview");
+      const preview = spawnSync(
+        process.env.LOWERSPLIT,
+        ["--diagnostic", files.sourceFile, files.specFile, candidate, "--force"],
+        { encoding: "utf8" }
+      );
+      assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
+    } else {
+      assert.equal(verdict.status, "certified", log);
+      assert.equal(verdict.guarantee, "normal-completion", log);
+    }
+    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
+    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), readsLeft ? tdz : normal);
   }
 }
 

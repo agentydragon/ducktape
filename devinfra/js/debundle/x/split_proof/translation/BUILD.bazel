@@ -210,6 +210,7 @@ js_test(
     name = "linked_programs_test",
     size = "medium",
     data = [
+        ":node_modules/acorn",
         ":node_modules/astring",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
