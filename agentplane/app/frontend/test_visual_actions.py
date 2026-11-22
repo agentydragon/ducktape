@@ -3630,7 +3630,20 @@ async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture
     await expect(sidebar.get_by_role("link", name="0123456")).to_have_attribute(
         "href", f"https://github.com/example/service/commit/{sha}"
     )
-    await sidebar.get_by_role("button", name="docs/deploy.md", exact=False).click()
+    changed_file = sidebar.get_by_role("button", name="docs/deploy.md · +1 -1", exact=True)
+    unverified_name = "docs/verify.md · 26 B"
+    unverified_file = sidebar.get_by_role("button", name=unverified_name, exact=True)
+    await expect(changed_file).to_have_attribute("aria-expanded", "false")
+    await expect(unverified_file).to_have_attribute("aria-expanded", "false")
+    unverified_frame = sidebar.locator("[data-layout=disclosure]").filter(
+        has=view.page.get_by_role("button", name=unverified_name, exact=True)
+    )
+    await unverified_frame.scroll_into_view_if_needed()
+    await expect(changed_file).to_be_in_viewport(ratio=0.95)
+    await expect(unverified_file).to_be_in_viewport(ratio=0.95)
+    await view.capture("files", target=sidebar)
+
+    await changed_file.click()
     added = sidebar.get_by_text("+Check readiness.", exact=True)
     await added.scroll_into_view_if_needed()
     await expect(sidebar.get_by_text("-Wait 30 seconds.", exact=True)).to_be_in_viewport()
@@ -3645,8 +3658,10 @@ async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture
 
     await sidebar.get_by_role("button", name="Proposed contents", exact=True).click()
     await expect(sidebar.get_by_text("Check readiness.", exact=True)).to_be_visible()
-    await sidebar.get_by_role("button", name="docs/verify.md", exact=False).click()
-    await expect(sidebar.get_by_text("Check the logs.", exact=True)).to_be_visible()
+    await unverified_file.click()
+    unverified_body = sidebar.get_by_role("region", name=unverified_name, exact=True)
+    await unverified_body.scroll_into_view_if_needed()
+    await expect(unverified_body.get_by_text("Check the logs.", exact=True)).to_be_visible()
 
 
 @DESKTOP_AND_MOBILE

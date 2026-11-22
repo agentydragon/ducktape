@@ -1,7 +1,7 @@
-import type { JSX } from "react";
-import { Code, Stack, Text } from "@mantine/core";
+import { type JSX, useMemo } from "react";
+import { Box, Code, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { createTwoFilesPatch, OMIT_HEADERS } from "diff";
+import { formatPatch, OMIT_HEADERS, structuredPatch, type StructuredPatch } from "diff";
 import { filesPushed, GitHubLink, repositoryHref } from "./receipts";
 
 import { getGitHubPushFilesPreview } from "../../client";
@@ -71,6 +71,21 @@ function PushFilesCollapsed({ args }: { args: PushFilesArguments }): JSX.Element
   );
 }
 
+function compareFile(before: string | undefined, after: string) {
+  if (before === undefined) return undefined;
+  const patch = structuredPatch("before", "after", before, after, undefined, undefined, { timeout: 50 });
+  if (patch === undefined) return undefined;
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of patch.hunks) {
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) additions++;
+      if (line.startsWith("-")) deletions++;
+    }
+  }
+  return { patch, additions, deletions };
+}
+
 function PushedFileBlock({
   file,
   before,
@@ -80,26 +95,38 @@ function PushedFileBlock({
   before: string | undefined;
   defaultOpen: boolean;
 }): JSX.Element {
+  const comparison = useMemo(() => compareFile(before, file.content), [before, file.content]);
+  const size = comparison ? `+${comparison.additions} -${comparison.deletions}` : pushedFileSize(file);
   return (
-    <OperationSection surface="framed">
+    <OperationSection layout="disclosure">
       <Disclosure
         defaultOpen={defaultOpen}
         summary={
           <Text size="sm" ff="monospace" style={{ overflowWrap: "anywhere" }}>
             {file.path}
-            <Text span size="sm" c="dimmed" ff="var(--mantine-font-family)">
-              {` · ${pushedFileSize(file)}`}
+            <Text span size="sm" c="dimmed" ff="var(--mantine-font-family)" style={{ whiteSpace: "nowrap" }}>
+              {` · ${size}`}
             </Text>
           </Text>
         }
       >
-        <PushedFileContent file={file} before={before} />
+        <Box py="var(--operation-section-padding)">
+          <PushedFileContent file={file} patch={comparison?.patch} hasBaseline={before !== undefined} />
+        </Box>
       </Disclosure>
     </OperationSection>
   );
 }
 
-function PushedFileContent({ file, before }: { file: PushedFile; before: string | undefined }): JSX.Element {
+function PushedFileContent({
+  file,
+  patch,
+  hasBaseline,
+}: {
+  file: PushedFile;
+  patch: StructuredPatch | undefined;
+  hasBaseline: boolean;
+}): JSX.Element {
   const fileExtension = extension(file.path);
   const proposed = (
     <ClampedBlock
@@ -117,31 +144,31 @@ function PushedFileContent({ file, before }: { file: PushedFile; before: string 
       />
     </ClampedBlock>
   );
-  if (before === undefined) return proposed;
+  if (!hasBaseline) return proposed;
+  if (patch === undefined) {
+    return (
+      <Stack gap="xs">
+        <Text size="sm" c="dimmed">
+          The diff is too large to display.
+        </Text>
+        {proposed}
+      </Stack>
+    );
+  }
 
-  const patch =
-    before === file.content
-      ? undefined
-      : createTwoFilesPatch("before", "after", before, file.content, undefined, undefined, {
-          headerOptions: OMIT_HEADERS,
-          timeout: 50,
-        });
+  const diff = patch.hunks.length > 0 ? formatPatch(patch, OMIT_HEADERS) : undefined;
   return (
     <Stack gap="xs">
-      {patch === undefined ? (
+      {diff === undefined ? (
         <Text size="sm" c="dimmed">
-          {before === file.content ? "No text changes." : "This file's diff is too large to display."}
+          No text changes.
         </Text>
       ) : (
-        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(patch)} label="Diff" stickyCollapse={false}>
-          <CodeBlock text={patch} language="diff" surface="plain" releaseWhenFar />
+        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(diff)} label="Diff" stickyCollapse={false}>
+          <CodeBlock text={diff} language="diff" surface="plain" releaseWhenFar />
         </ClampedBlock>
       )}
-      {patch === undefined && before !== file.content ? (
-        proposed
-      ) : (
-        <Disclosure summary={<Text size="sm">Proposed contents</Text>}>{proposed}</Disclosure>
-      )}
+      <Disclosure summary={<Text size="sm">Proposed contents</Text>}>{proposed}</Disclosure>
     </Stack>
   );
 }
