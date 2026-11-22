@@ -22,6 +22,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { generate as printJs } from "astring";
 import { frontBundle, frontTree } from "./frontend.mjs";
 import { generateAstBundle, astStatistics, generateRenamed } from "./ast_generator.mjs";
 import { generateProgram } from "./gen/index.mjs";
@@ -1046,6 +1047,12 @@ function renderBundle(bundle) {
   return lines.join("\n") + "\n";
 }
 
+const identifier = (name) => ({ type: "Identifier", name });
+
+function exportSpecifier(local, exported) {
+  return { type: "ExportSpecifier", local: identifier(local), exported: identifier(exported) };
+}
+
 /** A random split of the bundle into modules (`entry.js`, `m1.js`, ...), with the unit mapping the checker's certificate needs. */
 function split(bundle, r, opts) {
   const n = bundle.units.length;
@@ -1144,10 +1151,14 @@ function split(bundle, r, opts) {
     if (!opts.place && r.chance(0.3)) importOrder = r.shuffle(importOrder);
     for (const d of importOrder) {
       const names = [...(needs[m].get(d) ?? [])];
-      const specs = names.map((name) =>
-        nameIn(m, name) === external(name) ? external(name) : `${external(name)} as ${nameIn(m, name)}`
+      const specifiers = names.map((name) => ({
+        type: "ImportSpecifier",
+        imported: identifier(external(name)),
+        local: identifier(nameIn(m, name)),
+      }));
+      lines.push(
+        printJs({ type: "ImportDeclaration", specifiers, source: { type: "Literal", value: `./${file(d)}` } })
       );
-      lines.push(names.length === 0 ? `import "./${file(d)}";` : `import { ${specs.join(", ")} } from "./${file(d)}";`);
     }
     for (const i of order[m]) {
       const u = bundle.units[i];
@@ -1163,14 +1174,14 @@ function split(bundle, r, opts) {
               .replace(LITERAL, (_, name) => name)
       );
     }
-    const out = [...exportsOf[m]].map((name) =>
-      topName(name) === external(name) ? external(name) : `${topName(name)} as ${external(name)}`
-    );
-    const own = out.filter((_, k) => owner.get([...exportsOf[m]][k]) === m);
+    const specifiers = [...exportsOf[m]]
+      .filter((name) => owner.get(name) === m)
+      .map((name) => exportSpecifier(topName(name), external(name)));
     if (m === 0)
       for (const name of bundle.exports)
-        if (owner.get(name) !== 0) own.push(nameIn(0, name) === name ? name : `${nameIn(0, name)} as ${name}`);
-    if (own.length > 0) lines.push(`export { ${own.join(", ")} };`);
+        if (owner.get(name) !== 0) specifiers.push(exportSpecifier(nameIn(0, name), name));
+    if (specifiers.length > 0)
+      lines.push(printJs({ type: "ExportNamedDeclaration", declaration: null, specifiers, source: null }));
     files[file(m)] = lines.join("\n") + "\n";
   }
   const paths = Object.keys(files).sort();
