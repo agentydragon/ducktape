@@ -664,11 +664,6 @@ def add_backend_services(
     environment_service_delegation_actor = (
         ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME) if env.actions.orchestration_v1 is not None else None
     )
-    environment_service_delegated_methods = (
-        ("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",)
-        if environment_service_delegation_actor is not None
-        else ()
-    )
     gateway_callers = platform_callers | notifications_caller
     runner_gateway_workload.add_service(chart, env)
     runner_gateway_workload.RunnerGateway(
@@ -710,8 +705,7 @@ def add_backend_services(
             launchers=orchestration_caller,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
             wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
-            delegation_actor=environment_service_delegation_actor,
-            extra_delegated_methods=environment_service_delegated_methods,
+            delegate_to_actions=environment_service_delegation_actor is not None,
         ),
         runtime_proxy_readers=(RUNTIME_PROXY_TEST_READER_URI,),
         placement=None,
