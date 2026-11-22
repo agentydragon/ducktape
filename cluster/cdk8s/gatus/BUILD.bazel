@@ -33,7 +33,7 @@ py_library(
         "//cluster/cdk8s/litellm:endpoint",
         "//cluster/cdk8s/matrix",
         "//cluster/cdk8s/monitoring:grafana_instance",
-        "//cluster/cdk8s/monitoring:loki",
+        "//cluster/cdk8s/monitoring:loki_endpoints",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/nix_cache:attic",
         "//cluster/cdk8s/ollama:tabby",

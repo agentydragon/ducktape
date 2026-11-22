@@ -39,7 +39,7 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring import loki_endpoints, mimir
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -239,7 +239,7 @@ def _datasources(chart: Chart) -> None:
             type="loki",
             access="proxy",
             # SimpleScalable: reads go to the read Deployment's Service.
-            url="http://loki-read.loki.svc.cluster.local:3100",
+            url=loki_endpoints.READ_URL,
             is_default=False,
             editable=True,
             json_data={"maxLines": 1000},

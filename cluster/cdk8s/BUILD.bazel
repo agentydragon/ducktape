@@ -943,6 +943,7 @@ py_library(
         ":service_ref",
         ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/monitoring:loki_endpoints",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

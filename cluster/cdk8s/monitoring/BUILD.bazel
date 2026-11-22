@@ -121,7 +121,7 @@ py_library(
     deps = [
         ":alloy_endpoints",
         ":grafana_helmrepository",
-        ":loki",
+        ":loki_endpoints",
         ":mimir",
         ":namespace",
         ":tempo",
@@ -139,15 +139,20 @@ py_library(
 )
 
 py_library(
+    name = "loki_endpoints",
+    srcs = ["loki_endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s:service_ref"],
+)
+
+py_library(
     name = "loki",
     srcs = ["loki.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":alloy_endpoints",
         ":grafana_helmrepository",
+        ":loki_endpoints",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
@@ -226,6 +231,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":loki_endpoints",
         ":mimir",
         ":namespace",
         "//cluster/cdk8s:flux",
@@ -582,7 +588,7 @@ py_library(
     data = ["talos.alloy"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":loki",
+        ":loki_endpoints",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",

@@ -13,6 +13,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import alloy_endpoints, grafana_helmrepository
+from cluster.cdk8s.monitoring.loki_endpoints import HTTP, NAME
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
@@ -23,14 +24,10 @@ from cluster.cdk8s.vpa_policy import (
     resource_policy_annotation,
 )
 
-NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
-WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
-READ_URL = "http://loki-read.loki.svc.cluster.local:3100"
-PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 
@@ -218,6 +215,7 @@ def _helm_releases(chart: Chart) -> None:
 
 
 def _network_policy(chart: Chart) -> None:
+    http_port = HTTP.number
     namespace_label = "k8s:io.kubernetes.pod.namespace"
     loki_pods = {"app.kubernetes.io/name": NAME, namespace_label: NAME}
     # Loki has auth disabled: any pod reaching port 3100 can read, write, or delete
@@ -231,9 +229,9 @@ def _network_policy(chart: Chart) -> None:
             # Alloy Talos-log receiver → Loki (Talos node logs). The receiver runs in
             # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
             # host on the local node and remote-node after a cross-node service hop.
-            IngressRule.from_entities(Entity.HOST, Entity.REMOTE_NODE, ports=(3100,)),
+            IngressRule.from_entities(Entity.HOST, Entity.REMOTE_NODE, ports=(http_port,)),
             # Grafana → Loki (log queries)
-            IngressRule.from_endpoints({"app": "grafana", namespace_label: "monitoring"}, ports=(3100,)),
+            IngressRule.from_endpoints({"app": "grafana", namespace_label: "monitoring"}, ports=(http_port,)),
             # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
             IngressRule.from_endpoints(
                 {
@@ -241,7 +239,7 @@ def _network_policy(chart: Chart) -> None:
                     "app.kubernetes.io/instance": "props",
                     namespace_label: "props",
                 },
-                ports=(3100,),
+                ports=(http_port,),
             ),
             # Central Alloy → Loki (OTel log forwarding), the syslog Alloy → Loki (the home switch's
             # logs); the per-node Alloys scrape the components' metrics on the same port.
@@ -250,21 +248,21 @@ def _network_policy(chart: Chart) -> None:
                 alloy_endpoints.NODE.cilium,
                 alloy_endpoints.SYSLOG.cilium,
                 alloy_endpoints.JOURNAL.cilium,
-                ports=(3100,),
+                ports=(http_port,),
             ),
             # Per-node Alloy → Loki canary metrics (ServiceMonitor scraping)
             alloy_endpoints.NODE.admit(3500),
             # Gatus → Loki (health checks)
-            cilium.PROBER.admit(3100),
+            cilium.PROBER.admit(http_port),
             # Authentik proxy outpost → Loki (SSO-protected external access)
-            IngressRule.from_endpoints({namespace_label: "authentik"}, ports=(3100,)),
+            IngressRule.from_endpoints({namespace_label: "authentik"}, ports=(http_port,)),
             # Haku's read-only, namespace-filtered proxy queries `loki-read` directly,
             # enforcing its validator/allowlist without the gateway resolver path (#4750).
             IngressRule.from_endpoints(
-                {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}, ports=(3100,)
+                {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}, ports=(http_port,)
             ),
             # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-            IngressRule.from_endpoints(loki_pods, ports=(80, 8080, 3100, 9095, 7946)),
+            IngressRule.from_endpoints(loki_pods, ports=(80, 8080, http_port, 9095, 7946)),
         ],
         egress=[
             # Loki → kube-apiserver (sc-rules sidecar watches secrets)
@@ -281,7 +279,7 @@ def _network_policy(chart: Chart) -> None:
                 8333,
             ),
             # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-            EgressRule.to_endpoints(loki_pods, 80, 8080, 7946, 9095, 3100),
+            EgressRule.to_endpoints(loki_pods, 80, 8080, 7946, 9095, http_port),
         ],
     )
 
