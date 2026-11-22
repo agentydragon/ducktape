@@ -212,3 +212,41 @@ func assertQuiet(t *testing.T, wakeup <-chan struct{}) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T) {
+	store, _, _ := openStore(t)
+	ctx := t.Context()
+	session, otherSession := uuid.New(), uuid.New()
+	old := NoticeRevision{CommandID: "same-command", Version: 37}
+	changed := NoticeRevision{CommandID: old.CommandID, Version: old.Version + 1}
+	other := NoticeRevision{CommandID: "other-command", Version: 39}
+	for _, notice := range []NoticeRevision{old, old, other} {
+		if err := store.AcknowledgeNotice(ctx, session, notice); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found, err := store.FindNoticeAcknowledgements(ctx, session, []NoticeRevision{old, changed, {CommandID: other.CommandID, Version: old.Version}})
+	if err != nil || len(found) != 1 || found[0].NoticeRevision != old {
+		t.Fatalf("exact revisions: %v, %v", found, err)
+	}
+	ackTime := found[0].AcknowledgedAt
+	found, err = store.FindNoticeAcknowledgements(ctx, otherSession, []NoticeRevision{old})
+	if err != nil || len(found) != 0 {
+		t.Fatalf("other Session: %v, %v", found, err)
+	}
+
+	if err := store.AcknowledgeNotice(ctx, session, changed); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeNotice(ctx, session, old); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.ListNoticeAcknowledgements(ctx, session, nil, 1)
+	if err != nil || len(page) != 2 || page[0].NoticeRevision != changed || page[1].NoticeRevision != other {
+		t.Fatalf("first page and lookahead: %v, %v", page, err)
+	}
+	next, err := store.ListNoticeAcknowledgements(ctx, session, &page[0].ID, 2)
+	if err != nil || len(next) != 2 || next[0].NoticeRevision != other || next[1].NoticeRevision != old || !next[1].AcknowledgedAt.Equal(ackTime) {
+		t.Fatalf("older revisions: %v, %v", next, err)
+	}
+}

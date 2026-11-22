@@ -58,6 +58,18 @@ service AppService {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/unarchive" body: "*"};
   }
 
+  // Shared operator attention for an exact Dispatcher receipt revision.
+  rpc AcknowledgeCommandNotice(AcknowledgeCommandNoticeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/threads/{thread_id}/notice-acknowledgements" body: "*"};
+  }
+  // Returns only acknowledgements of the supplied command/revision pairs (1 to 100).
+  rpc BatchGetCommandNoticeAcknowledgements(BatchGetCommandNoticeAcknowledgementsRequest) returns (CommandNoticeAcknowledgements) {
+    option (google.api.http) = {post: "/v1/threads/{thread_id}/notice-acknowledgements:batchGet" body: "*"};
+  }
+  rpc ListCommandNoticeAcknowledgements(ListCommandNoticeAcknowledgementsRequest) returns (CommandNoticeAcknowledgements) {
+    option (google.api.http) = {get: "/v1/threads/{thread_id}/notice-acknowledgements"};
+  }
+
   // List App-owned titles and archived state by metadata creation time, newest first.
   // Session membership and Environment placement come from Dispatcher, not this list.
   rpc ListThreadMetadata(ListThreadMetadataRequest) returns (ListThreadMetadataResponse) {
@@ -184,6 +196,39 @@ message SessionDefaults {
 
 message ThreadMetadataTarget {
   string thread_id = 1;
+}
+
+// Receipt versions are assigned by Dispatcher to live updates and deletion receipts.
+message CommandNoticeRevision {
+  string command_id = 1;
+  int64 receipt_version = 2;
+}
+
+message CommandNoticeAcknowledgement {
+  CommandNoticeRevision notice = 1;
+  google.protobuf.Timestamp acknowledged_at = 2;
+}
+
+message AcknowledgeCommandNoticeRequest {
+  string thread_id = 1;
+  CommandNoticeRevision notice = 2;
+}
+
+message BatchGetCommandNoticeAcknowledgementsRequest {
+  string thread_id = 1;
+  repeated CommandNoticeRevision notices = 2;
+}
+
+message ListCommandNoticeAcknowledgementsRequest {
+  string thread_id = 1;
+  // Defaults to 25, maximum 100.
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message CommandNoticeAcknowledgements {
+  repeated CommandNoticeAcknowledgement acknowledgements = 1;
+  optional string next_page_token = 2;
 }
 
 message RenameThreadRequest {

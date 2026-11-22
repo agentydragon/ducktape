@@ -6,6 +6,7 @@ go_library(
     name = "threads",
     srcs = [
         "handler.go",
+        "notices.go",
         "routes.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads",

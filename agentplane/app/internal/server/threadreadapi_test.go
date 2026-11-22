@@ -28,6 +28,7 @@ import (
 )
 
 type threadReadStoreFake struct {
+	threadhttp.NoticeStore
 	rows []threads.Thread
 }
 
@@ -378,5 +379,119 @@ func TestArchiveThreadWithoutHistoryCannotBypassDispatcher(t *testing.T) {
 				t.Fatalf("archive = %v, rows=%v, reads=%d, requested=%s", err, store.rows, dispatcher.calls, dispatcher.requestedID)
 			}
 		})
+	}
+}
+
+// The App stores the operator's attention only after it establishes access to the requested Session.
+func TestNoticeAcknowledgementScope(t *testing.T) {
+	id := uuid.New()
+	notice := &apppb.CommandNoticeRevision{CommandId: "c", ReceiptVersion: 40000000000000001}
+	for _, tc := range []struct {
+		name    string
+		session *dispatcherpb.Session
+		err     error
+		code    codes.Code
+	}{
+		{"missing Session", nil, status.Error(codes.NotFound, "Session missing"), codes.NotFound},
+		{"forbidden", nil, status.Error(codes.PermissionDenied, "Session forbidden"), codes.PermissionDenied},
+		{"different Session", threadReadIdleSession(uuid.New()), nil, codes.Unavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := threadhttp.NewHandler(threadhttp.Dependencies{Dispatcher: &threadReadDispatcherFake{session: tc.session, err: tc.err}})
+			_, err := h.AcknowledgeCommandNotice(t.Context(), &apppb.AcknowledgeCommandNoticeRequest{ThreadId: id.String(), Notice: notice})
+			if status.Code(err) != tc.code {
+				t.Fatalf("acknowledge: %v", err)
+			}
+			_, err = h.BatchGetCommandNoticeAcknowledgements(t.Context(), &apppb.BatchGetCommandNoticeAcknowledgementsRequest{ThreadId: id.String(), Notices: []*apppb.CommandNoticeRevision{notice}})
+			if status.Code(err) != tc.code {
+				t.Fatalf("lookup: %v", err)
+			}
+			_, err = h.ListCommandNoticeAcknowledgements(t.Context(), &apppb.ListCommandNoticeAcknowledgementsRequest{ThreadId: id.String()})
+			if status.Code(err) != tc.code {
+				t.Fatalf("history: %v", err)
+			}
+		})
+	}
+}
+
+func TestNoticeAcknowledgementGatewayRequiresBrowserLogin(t *testing.T) {
+	fixture := testauth.New(t)
+	server := newHTTPServer(fixture.Auth)
+	h := threadhttp.NewHandler(threadhttp.Dependencies{})
+	if err := h.RegisterRoutes(server); err != nil {
+		t.Fatal(err)
+	}
+	handler := server.Handler(fixture.Auth)
+	path := "/upstream/app/v1/threads/" + uuid.NewString() + "/notice-acknowledgements"
+	for _, req := range []struct{ method, path string }{{"GET", path}, {"POST", path}, {"POST", path + ":batchGet"}} {
+		for _, authorized := range []bool{false, true} {
+			r := httptest.NewRequest(req.method, req.path, nil)
+			want := http.StatusUnauthorized
+			if authorized {
+				fixture.Authorize(r)
+				want = http.StatusForbidden
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, r)
+			if rec.Code != want {
+				t.Fatalf("%s %s: %d, want %d", req.method, req.path, rec.Code, want)
+			}
+		}
+	}
+}
+
+type noticeStoreFake struct {
+	threadReadStoreFake
+	notices []threads.NoticeAcknowledgement
+}
+
+func (s *noticeStoreFake) AcknowledgeNotice(_ context.Context, _ uuid.UUID, n threads.NoticeRevision) error {
+	s.notices = append(s.notices, threads.NoticeAcknowledgement{NoticeRevision: n, ID: int64(len(s.notices) + 1), AcknowledgedAt: time.Now().UTC()})
+	return nil
+}
+
+func (s *noticeStoreFake) ListNoticeAcknowledgements(_ context.Context, _ uuid.UUID, before *int64, limit int) ([]threads.NoticeAcknowledgement, error) {
+	var rows []threads.NoticeAcknowledgement
+	for i := len(s.notices) - 1; i >= 0; i-- {
+		n := s.notices[i]
+		if before == nil || n.ID < *before {
+			rows = append(rows, n)
+		}
+		if len(rows) > limit {
+			break
+		}
+	}
+	return rows, nil
+}
+
+func TestNoticeAcknowledgementPagingAndBounds(t *testing.T) {
+	id := uuid.New()
+	store := &noticeStoreFake{}
+	h := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, Dispatcher: &threadReadDispatcherFake{session: threadReadIdleSession(id)}})
+	for _, version := range []int64{40000000000000001, 40000000000000002} {
+		_, err := h.AcknowledgeCommandNotice(t.Context(), &apppb.AcknowledgeCommandNoticeRequest{ThreadId: id.String(), Notice: &apppb.CommandNoticeRevision{CommandId: "authored-command", ReceiptVersion: version}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := h.ListCommandNoticeAcknowledgements(t.Context(), &apppb.ListCommandNoticeAcknowledgementsRequest{ThreadId: id.String(), PageSize: 1})
+	if err != nil || len(page.GetAcknowledgements()) != 1 || page.GetNextPageToken() == "" || page.Acknowledgements[0].Notice.ReceiptVersion != 40000000000000002 {
+		t.Fatalf("first: %v, %v", page, err)
+	}
+	next, err := h.ListCommandNoticeAcknowledgements(t.Context(), &apppb.ListCommandNoticeAcknowledgementsRequest{ThreadId: id.String(), PageSize: 1, PageToken: page.GetNextPageToken()})
+	if err != nil || len(next.GetAcknowledgements()) != 1 || next.GetNextPageToken() != "" || next.Acknowledgements[0].Notice.ReceiptVersion != 40000000000000001 {
+		t.Fatalf("next: %v, %v", next, err)
+	}
+	for _, req := range []*apppb.ListCommandNoticeAcknowledgementsRequest{{ThreadId: uuid.NewString(), PageToken: page.GetNextPageToken()}, {ThreadId: id.String(), PageToken: "!"}, {ThreadId: id.String(), PageSize: 101}} {
+		_, err := h.ListCommandNoticeAcknowledgements(t.Context(), req)
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("rejected history request: %v", err)
+		}
+	}
+	for _, notices := range [][]*apppb.CommandNoticeRevision{nil, make([]*apppb.CommandNoticeRevision, 101), {{CommandId: "c"}}} {
+		_, err := h.BatchGetCommandNoticeAcknowledgements(t.Context(), &apppb.BatchGetCommandNoticeAcknowledgementsRequest{ThreadId: id.String(), Notices: notices})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("rejected batch: %v", err)
+		}
 	}
 }

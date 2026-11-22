@@ -36,6 +36,7 @@ const (
 
 // Store is the app-owned Thread metadata store.
 type Store interface {
+	NoticeStore
 	GetThread(context.Context, uuid.UUID) (*threadstore.Thread, error)
 	ListPage(context.Context, int, *threadstore.PageCursor, bool) (threadstore.Page, error)
 	ArchivedCount(context.Context) (int, error)
