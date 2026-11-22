@@ -47,6 +47,7 @@ let maxDepth = 0;
 const unaryOperands = new Map();
 const eagerUnary = new Set();
 const eagerTypeComparisons = new Set();
+const eagerStrictComparisons = new Set();
 function walk(value, depth = 0) {
   if (value === null || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -125,6 +126,8 @@ for (const seed of [1, 2026, 2027, 1337]) {
     // A direct top-level initializer runs whenever the module completes.
     for (const st of ast.body)
       for (const { init } of st.declarations ?? []) {
+        if (init?.type === "BinaryExpression" && ["===", "!=="].includes(init.operator))
+          eagerStrictComparisons.add(init.operator);
         if (init?.type === "UnaryExpression") eagerUnary.add(init.operator);
         if (init?.type === "BinaryExpression" && init.operator === "!=")
           eagerTypeComparisons.add([init.left.type, init.right.type].join("/"));
@@ -166,6 +169,7 @@ for (const type of [
   "CallExpression",
 ])
   assert(kinds.has(type), `sample did not exercise ${type}`);
+assert.deepEqual([...eagerStrictComparisons].sort(), ["!==", "==="]);
 assert.deepEqual([...eagerUnary].sort(), ["!", "-"]);
 assert.deepEqual([...eagerTypeComparisons].sort(), ["Literal/UnaryExpression", "UnaryExpression/Literal"]);
 for (const op of ["!", "-", "typeof"]) {
