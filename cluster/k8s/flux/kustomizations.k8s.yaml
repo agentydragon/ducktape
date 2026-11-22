@@ -1126,41 +1126,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.
-  name: crossplane-provider-litellm
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: crossplane
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: external-secrets.io/v1
-      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')
-      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')
-      kind: ExternalSecret
-    - apiVersion: pkg.crossplane.io/v1
-      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
-      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
-      kind: Provider
-  interval: 10m
-  path: ./cluster/generated/crossplane-provider-litellm
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: crossplane-provider-litellm
-    namespace: ducktape-flux
-  timeout: 15m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Install the OpenTofu provider after Crossplane core; its Workspace resources reconcile separately.
   name: crossplane-provider-opentofu
   namespace: ducktape-flux
@@ -3166,6 +3131,41 @@ spec:
     name: forgejo-images
     namespace: ducktape-flux
   timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.
+  name: crossplane-provider-litellm
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: external-secrets.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')
+      kind: ExternalSecret
+    - apiVersion: pkg.crossplane.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
+      kind: Provider
+  interval: 10m
+  path: ./cluster/generated/crossplane-provider-litellm
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-provider-litellm
+    namespace: ducktape-flux
+  timeout: 15m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

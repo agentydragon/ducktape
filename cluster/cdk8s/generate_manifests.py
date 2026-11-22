@@ -760,15 +760,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
     )
-    crossplane_litellm_provider_artifact = artifact(
-        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
-    )
-    crossplane_provider_kustomization = crossplane.litellm_provider(
-        flux_chart,
-        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
-        crossplane_kustomization,
-        external_secrets_operator_kustomization,
-    )
     crossplane_opentofu_provider_artifact = artifact(
         crossplane.OPENTOFU_PROVIDER_KUSTOMIZATION_NAME, crossplane.OPENTOFU_PROVIDER_OUTPUT_DIR
     )
@@ -1638,6 +1629,16 @@ def generate_manifests(root: Path) -> None:
             "kubernetes-forgejo-images-secret-store) + Crossplane Workspace that "
             "provisions the Forgejo user."
         ),
+    )
+    crossplane_litellm_provider_artifact = artifact(
+        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
+    )
+    crossplane_provider_kustomization = crossplane.litellm_provider(
+        flux_chart,
+        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
+        crossplane_kustomization,
+        external_secrets_operator_kustomization,
+        forgejo_images_kustomization,
     )
     forgejo_images_workspace_artifact = artifact(forgejo_images.WORKSPACE_NAME, forgejo_images.WORKSPACE_DIR)
     opentofu.workspace_kustomization(
