@@ -17,11 +17,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -122,12 +118,13 @@ from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_c
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.cnpg import cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.generation import sops_decryption
 from cluster.cdk8s.haku import namespace as haku_namespace, ui_egress as haku_ui_egress
 from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
@@ -1127,11 +1124,7 @@ def agentplane_staging(
                 )
             ),
         ],
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         decryption=sops_decryption(LAYOUT.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
             agentplane_crds,

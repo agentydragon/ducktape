@@ -22,11 +22,12 @@ from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecExtensionsEnsure,
 )
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from agentplane.x.indexing.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -290,18 +291,7 @@ def agentplane_index(
             ),
             KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name="ducktape", namespace=NAME),
         ],
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1",
-                kind="Database",
-                current=(
-                    "has(status.applied) && status.applied && "
-                    "has(status.observedGeneration) && status.observedGeneration == "
-                    "metadata.generation && has(status.extensions) && "
-                    "status.extensions.exists(e, e.name == 'vector' && e.applied)"
-                ),
-            )
-        ],
+        health_check_exprs=[database_health(extension="vector")],
         depends_on=flux_kustomization_depends_on_many(
             cnpg,
             external_secrets_operator,

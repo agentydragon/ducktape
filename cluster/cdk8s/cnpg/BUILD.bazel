@@ -3,6 +3,16 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "health",
+    srcs = ["health.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/cnpg:database",
+        "//cluster/cdk8s/providers/flux:kustomization",
+    ],
+)
+
+py_library(
     name = "cluster",
     srcs = ["cluster.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
