@@ -124,10 +124,11 @@ Barman sidecars, so size those separately. [CNPG 1.30 VPA guidance](https://clou
 
 Changing `Cluster.spec.resources` rolls the PostgreSQL Pods. For a healthy
 replicated Cluster, prefer `primaryUpdateMethod: switchover` for a sizing
-change: CNPG updates the replicas first and promotes an updated replica before
-replacing the former primary. This still disconnects clients; it is not a
-zero-downtime promise. A singleton has no replica to promote and needs its own
-maintenance and recovery plan. See [CNPG rolling updates](https://cloudnative-pg.io/docs/current/rolling_update/).
+change: CNPG updates the replicas first, then with the default `unsupervised`
+strategy promotes an updated replica before replacing the former primary. The
+`supervised` strategy waits for operator intervention. This still disconnects
+clients; it is not a zero-downtime promise. A singleton has no replica to
+promote and needs its own maintenance and recovery plan. See [CNPG rolling updates](https://cloudnative-pg.io/docs/current/rolling_update/).
 
 1. Review the requested sizes against usage, startup and failover headroom, and
    capacity on the nodes where each instance can run. Confirm a recent usable
