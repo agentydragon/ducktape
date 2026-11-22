@@ -1124,6 +1124,7 @@ flowchart LR
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
+    CENTRAL_SAMPLER_DRAIN_BUDGET[Unscheduled: consider longer sampling drain]
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CODE_MODE_HOST_DESIGN[Decision, unscheduled: keep Codex's code-mode host or own one]
     SESSION_SETUP_FAILURE_CAUSE[Unscheduled: show why a Session's setup failed]
@@ -1360,6 +1361,15 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 `openai/codex` main at `c7234c11` (2026-10-21), and core emits the call output only to hooks, so the runner sees
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
+
+### `CENTRAL_SAMPLER_DRAIN_BUDGET` — consider a longer sampling drain
+
+**Unscheduled; operator requested tracking, 2026-11-21 PDT.** Consider increasing the sampler's
+40-second shutdown drain to let more in-flight model responses finish during rolls, weighing
+sampling durations against rollout latency. A staging roll interrupted a streaming response in
+[this Session](https://agentplane-staging.allegedly.works/#/threads/de396206-d814-4443-8978-34bfbdd242ae)
+when the drain deadline expired. Any increase also needs compatible shutdown cleanup budget and Pod
+termination grace; it cannot guarantee every response completes.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
