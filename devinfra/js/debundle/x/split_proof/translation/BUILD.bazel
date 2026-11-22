@@ -396,6 +396,8 @@ js_test(
     data = _EFFECTS_CASES_DATA,
     entry_point = _EFFECTS + ":run",
     env = _EFFECTS_CASES_ENV,
+    # The permutation target includes these golden classifications and handwritten reorders.
+    tags = ["manual"],
 )
 
 js_test(
