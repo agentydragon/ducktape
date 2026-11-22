@@ -45,6 +45,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
+    PLAID_PGWEB_CREDENTIAL,
     QUEST_SCHEDULER_READ_POLICY,
     THRIVE_READ_POLICY,
     grocy_sf_read_egress_rules,
@@ -90,20 +91,23 @@ CLAUDE_AI = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="claude-
 HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-agent"), identity="haku-agent")
 
 
-def coinbase_egress_rules() -> list[PolicySetSpecRules]:
-    """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
-    return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
-
-
-def ovh_billing_egress_rules() -> list[PolicySetSpecRules]:
-    """OVH billing reads and the server clock used for request signatures."""
-    return [
+# Pure-egress rules for assignable Kubernetes role sets that also grant API access.
+ASSIGNABLE_EGRESS_RULES = {
+    access.COINBASE_POLICY: [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])],
+    access.OVH_BILLING_POLICY: [
         Rule.egress(
             hosts=["api.us.ovhcloud.com"],
             methods=[PolicySetSpecRulesMethods.GET],
             paths=["/1.0/auth/time", "/1.0/me/bill", "/1.0/me/bill/**", "/1.0/service", "/1.0/service/**"],
         )
-    ]
+    ],
+    access.PLAID_DIAGNOSTICS_POLICY: access.plaid_pgweb_egress_rules(credential=PLAID_PGWEB_CREDENTIAL),
+}
+
+
+def identity_egress_set_name(name: str, *, identity_catalog: bool) -> str:
+    """Mixed catalogs keep the unsuffixed name for the set that also grants Kubernetes access."""
+    return name if identity_catalog else f"{name}-identity"
 
 
 # The Action PolicySets created below that the launch presets bind, named because a
@@ -158,16 +162,14 @@ def caller_role_sets() -> list[str]:
     return [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
 
 
-def _identity_caller_policies(
-    policies: Sequence[str], *, identity_catalog: bool, identity_egress_set_names: set[str]
-) -> list[str]:
+def _identity_caller_policies(policies: Sequence[str], *, identity_catalog: bool) -> list[str]:
     """Identity-compatible policies, replacing mixed Kubernetes sets with their pure-egress sibling."""
     selected: list[str] = []
     for name in policies:
         if name not in access.POLICY_SETS:
             selected.append(name)
-        elif name in identity_egress_set_names:
-            selected.append(name if identity_catalog else f"{name}-identity")
+        elif name in ASSIGNABLE_EGRESS_RULES:
+            selected.append(identity_egress_set_name(name, identity_catalog=identity_catalog))
     return selected
 
 
@@ -403,12 +405,7 @@ _KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pod
 
 
 def add_staging_action_policies(
-    scope: Construct,
-    *,
-    identity_catalog: bool,
-    identity_egress_set_names: set[str],
-    haku_ui: Identity,
-    haku_ci: Identity,
+    scope: Construct, *, identity_catalog: bool, haku_ui: Identity, haku_ci: Identity
 ) -> None:
     """Render Haku's standing workload Identities and caller grants independently of the optional catalog."""
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
@@ -752,11 +749,7 @@ def add_staging_action_policies(
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
     # out-of-cluster infrastructure, so it still needs Haku's credentials (haku/TODO.md). Revisit
     # whether claude-ai should keep carrying them once haku-agent has been in use for a while.
-    shared_policies = _identity_caller_policies(
-        _HAKU_CLAUDE_BASE_POLICIES,
-        identity_catalog=identity_catalog,
-        identity_egress_set_names=identity_egress_set_names,
-    )
+    shared_policies = _identity_caller_policies(_HAKU_CLAUDE_BASE_POLICIES, identity_catalog=identity_catalog)
     _account_binding(
         scope,
         CLAUDE_AI,

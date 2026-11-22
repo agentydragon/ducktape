@@ -78,10 +78,12 @@ from cluster.cdk8s.agentplane import (
     workload_tls,
 )
 from cluster.cdk8s.agentplane.actions_staging_policies import (
+    ASSIGNABLE_EGRESS_RULES,
     CLAUDE_AI,
     HAKU_AGENT,
     add_staging_action_policies,
     caller_role_sets,
+    identity_egress_set_name,
 )
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -796,7 +798,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
     assignable_sets = assignable_policy_sets()
-    egress_rules = staging_config.assignable_set_egress_rules()
     role_sets: dict[str, KubernetesRoleSet] = {}
     for name, grants in sorted(assignable_sets.items()):
         # Sandboxes and standing callers act as Identities and reach the API server only as accounts,
@@ -814,22 +815,16 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 f"policy-set-{name}",
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 spec=PolicySetSpec(
-                    rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())]
+                    rules=[*agent_access_profiles.rules_for_grants(grants), *ASSIGNABLE_EGRESS_RULES.get(name, ())]
                 ),
             )
-            if name in egress_rules:
-                PolicySet(
-                    chart,
-                    f"policy-set-{name}-identity",
-                    metadata=ApiObjectMetadata(name=f"{name}-identity", namespace=env.namespace),
-                    spec=PolicySetSpec(rules=egress_rules[name]),
-                )
-        elif name in egress_rules:
+        if name in ASSIGNABLE_EGRESS_RULES:
+            policy_name = identity_egress_set_name(name, identity_catalog=env.identity_catalog)
             PolicySet(
                 chart,
-                f"policy-set-{name}",
-                metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-                spec=PolicySetSpec(rules=egress_rules[name]),
+                f"policy-set-{policy_name}",
+                metadata=ApiObjectMetadata(name=policy_name, namespace=env.namespace),
+                spec=PolicySetSpec(rules=ASSIGNABLE_EGRESS_RULES[name]),
             )
     claude_ai_static_grants = agent_access_profiles.claude_ai_static_grants()
     role_sets[agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] = KubernetesRoleSet(
@@ -976,13 +971,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(
-        chart,
-        identity_catalog=env.identity_catalog,
-        identity_egress_set_names=set(egress_rules),
-        haku_ui=haku_ui,
-        haku_ci=haku_ci,
-    )
+    add_staging_action_policies(chart, identity_catalog=env.identity_catalog, haku_ui=haku_ui, haku_ci=haku_ci)
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
     )
