@@ -114,7 +114,10 @@ js_library(
 )
 
 # What `fuzz.mjs` imports besides the front end: the AST corpus and the generator of `gen/`.
-_FUZZ_SOURCES = [":ast_generator"] + glob(["gen/*.mjs"])
+_FUZZ_SOURCES = [
+    ":ast_generator",
+    ":node_modules/astring",
+] + glob(["gen/*.mjs"])
 
 js_test(
     name = "fixtures_test",
