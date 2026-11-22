@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import * as client from "./client";
+import { watchCommandOwnership } from "./command_ownership";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
 import {
   DeliveryState,
@@ -478,4 +480,95 @@ it("normalizes an unrecognized Dispatcher enum number before retaining its recei
   store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, 99 as DeliveryState, "2026-10-14T12:00:02Z"));
 
   expect(store.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.UNKNOWN);
+});
+
+it("transfers a protected UNKNOWN receipt while keeping its exact text and subsequent observations in memory", async () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  const member = dispatch(COMMAND, DeliveryState.UNKNOWN, "2026-10-14T12:00:00Z");
+  vi.spyOn(client, "getDispatch").mockResolvedValue({ ...member, command: COMMAND });
+  const check = vi.fn().mockResolvedValue([member]);
+  const stop = watchCommandOwnership(store, check);
+  try {
+    await vi.waitFor(() => expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]));
+    expect(store.getSnapshot().commands[0]?.command).toMatchObject({
+      operation: { value: { text: COMMAND.operation.case === "submitInput" && COMMAND.operation.value.text } },
+    });
+    expect(store.getSnapshot().commands[0]?.dispatch?.state).toBe(DeliveryState.UNKNOWN);
+    expect(store.markAttempted(COMMAND.commandId, COMMAND)).toBe(false);
+    expect(store.updateDispatch(COMMAND.commandId, { ...member, state: DeliveryState.FAILED })).toBe(true);
+    expect(store.getSnapshot().commands[0]?.dispatch?.state).toBe(DeliveryState.FAILED);
+    store.observeCommandIds(new Set([COMMAND.commandId]));
+    expect(store.getSnapshot().inputEchoes[0]?.commandId).toBe(COMMAND.commandId);
+    expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([]);
+    store.acknowledgeEcho(COMMAND.commandId);
+    expect(store.getSnapshot().inputEchoes).toEqual([]);
+    expect(localStorage.length).toBe(0);
+  } finally {
+    stop();
+  }
+});
+
+it("requires protected page membership and an exact original before removing local bytes", async () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  const member = dispatch(COMMAND, DeliveryState.FAILED, "2026-10-14T12:00:00Z");
+  const saved = localStorage.getItem("agentplane.pending:thread:input-1");
+  const get = vi.spyOn(client, "getDispatch").mockResolvedValue(member);
+  const lookup = vi.fn().mockResolvedValue([]);
+  const waitCheck = async (times: number) => {
+    await vi.waitFor(() => expect(lookup).toHaveBeenCalledTimes(times));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  const stop = watchCommandOwnership(store, lookup);
+  try {
+    await waitCheck(1);
+    expect(get).not.toHaveBeenCalled();
+    lookup.mockResolvedValue([member]);
+    for (const [i, receipt] of [
+      member,
+      {
+        ...member,
+        command: create(CommandSchema, {
+          commandId: COMMAND.commandId,
+          operation: { case: "submitInput", value: { text: "another" } },
+        }),
+      },
+      { ...member, command: COMMAND, sessionId: "other" },
+      { ...member, command: COMMAND, sandboxUid: "other" },
+      null,
+    ].entries()) {
+      get.mockResolvedValue(receipt);
+      window.dispatchEvent(new Event("online"));
+      await waitCheck(i + 2);
+      expect(localStorage.getItem("agentplane.pending:thread:input-1")).toBe(saved);
+    }
+    get.mockRejectedValue(new Error("offline"));
+    window.dispatchEvent(new Event("online"));
+    await waitCheck(7);
+    expect(localStorage.getItem("agentplane.pending:thread:input-1")).toBe(saved);
+  } finally {
+    stop();
+  }
+});
+
+it("releases a projected input echo only when its original Session address and exact text are verified", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  store.observeCommandIds(new Set([COMMAND.commandId]));
+  const fresh = new LocalCommands("thread");
+  expect(fresh.ownershipCandidates().get(COMMAND.commandId)).toBe(true);
+  const row = dispatch(COMMAND, DeliveryState.UNKNOWN, "2026-10-14T12:00:00Z");
+  expect(fresh.transferToDispatcher(row, { ...row, command: COMMAND })).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([]);
+  expect(fresh.getSnapshot().inputEchoes[0]?.text).toBe("  exact text\nsecond line  ");
+  const key = "agentplane.input-echo:thread:input-1";
+  localStorage.setItem(key, JSON.stringify({ commandId: COMMAND.commandId, text: "  exact text\nsecond line  " }));
+  const legacy = new LocalCommands("thread");
+  expect(legacy.ownershipCandidates().size).toBe(0);
+  expect(legacy.transferToDispatcher(row, { ...row, command: COMMAND })).toBe(false);
+  expect(localStorage.getItem(key)).not.toBeNull();
 });

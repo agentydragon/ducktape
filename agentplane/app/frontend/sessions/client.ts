@@ -310,7 +310,7 @@ function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, com
 }
 
 /** A missing current receipt leaves any earlier submission unconfirmed. */
-export function getDispatch(threadId: string, commandId: string): Promise<Dispatch | null> {
+export function getDispatch(threadId: string, commandId: string, signal?: AbortSignal): Promise<Dispatch | null> {
   return fetchProto(
     `/upstream/dispatcher/v1/dispatches/${encodeURIComponent(commandId)}`,
     (value) =>
@@ -319,7 +319,8 @@ export function getDispatch(threadId: string, commandId: string): Promise<Dispat
         threadId,
         commandId
       ),
-    "Dispatcher receipt"
+    "Dispatcher receipt",
+    signal
   );
 }
 
