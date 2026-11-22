@@ -10,7 +10,7 @@ open Lean (Json)
 
 private def field (j : Json) (key : String) := j.getObjValAs? String key
 
-private def identifier (j : Json) : Except String Name := do
+def identifier (j : Json) : Except String Name := do
   unless (← field j "type") == "Identifier" do throw "expected an identifier"
   field j "name"
 
@@ -63,13 +63,16 @@ private theorem objValSizeOfLt {j v : Json} {key : String}
     simp +arith
     omega
 
-def expr (j : Json) : Except String Expr := do
+private def exprWithImports (imports : List Name) (j : Json) : Except String Expr := do
   match ← field j "type" with
   | "Literal" => literal (← field j "lit")
   | "Identifier" =>
     let x ← identifier j
     match ← field j "k" with
     | "T" => return .var x
+    | "V" =>
+      unless imports.contains x do throw s!"unlinked imported name {x}"
+      return .var x
     | "G" =>
       match x with
       | "undefined" => return .undef
@@ -82,7 +85,7 @@ def expr (j : Json) : Except String Expr := do
     | .error err => throw err
     | .ok argument =>
       match ← field j "operator" with
-      | "!" => return .unary .not (← expr argument)
+      | "!" => return .unary .not (← exprWithImports imports argument)
       | "-" =>
         unless (← field argument "type") == "Literal" do throw "expected a numeric literal after unary minus"
         let .num n ← literal (← field argument "lit") | throw "expected a numeric literal after unary minus"
@@ -93,26 +96,31 @@ termination_by sizeOf j
 decreasing_by
   exact objValSizeOfLt _lookup
 
+def expr := exprWithImports []
+
 def moduleBinding (id : Json) : Except String Name := do
   let x ← identifier id
   unless (← field id "k") == "T" do throw "expected a module binding"
   return x
 
-private def declaration (j : Json) : Except String (Name × Stmt) := do
+/-- One emitted declaration; an imported reference can read only a local name in its import table. -/
+def declaration (imports : List Name) (j : Json) : Except String (Name × Stmt) := do
+  unless (← field j "type") == "VariableDeclaration" do throw "expected a variable declaration"
   let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
+  unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
   let x ← d.getObjVal? "id" >>= moduleBinding
   let init ← d.getObjVal? "init"
   match ← field j "kind", init with
   | "var", .null => return (x, .varDecl x)
   | "let", .null => return (x, .decl .let_ x .undef)
-  | "var", e => return (x, .decl .var x (← expr e))
-  | "let", e => return (x, .decl .let_ x (← expr e))
-  | "const", e => return (x, .decl .const x (← expr e))
+  | "var", e => return (x, .decl .var x (← exprWithImports imports e))
+  | "let", e => return (x, .decl .let_ x (← exprWithImports imports e))
+  | "const", e => return (x, .decl .const x (← exprWithImports imports e))
   | kind, _ => throw s!"unsupported declaration {kind}"
 
 def unit (j : Json) : Except String (Option Stmt × List (Name × Name)) := do
   match ← field j "type" with
-  | "VariableDeclaration" => return (some (← declaration j).2, [])
+  | "VariableDeclaration" => return (some (← declaration [] j).2, [])
   | "ExpressionStatement" => return (some (.expr (← expr (← j.getObjVal? "expression"))), [])
   | "ThrowStatement" => return (some (.throw (← expr (← j.getObjVal? "argument"))), [])
   | "EmptyStatement" | "DebuggerStatement" => return (none, [])
@@ -121,7 +129,7 @@ def unit (j : Json) : Except String (Option Stmt × List (Name × Name)) := do
     let d ← j.getObjVal? "declaration"
     if d != .null then
       unless (← field d "type") == "VariableDeclaration" do throw "unsupported exported declaration"
-      let (x, s) ← declaration d
+      let (x, s) ← declaration [] d
       return (some s, [(x, x)])
     let specs ← j.getObjVal? "specifiers" >>= Json.getArr?
     let names ← specs.toList.mapM fun sp => do
