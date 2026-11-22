@@ -357,7 +357,9 @@ class EnvironmentSandboxTemplate(Construct):
             self,
             self.env,
             name=name,
-            platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
+            platform_routes=platform_routes.listener(
+                *platform_routes.runner_routes(self.env.namespace), listen_host=bind_host
+            ),
             workload_routes=workload_routes.sidecar_routes(self.env.namespace),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
             proxy_transport=sidecar_config.TLSProxyTransport(

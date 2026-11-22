@@ -70,7 +70,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             env,
             name=f"{NAME}-relay",
             listen_address=f"[::]:{sandbox_pod.SIDECAR_LISTEN_PORT}",
-            platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
+            platform_routes=platform_routes.listener(*platform_routes.runner_routes(namespace), listen_host="0.0.0.0"),
             workload_routes=workload_routes.sidecar_routes(namespace),
             proxy_transport=sidecar_config.TLSProxyTransport(
                 ca_file=sidecar_config.RUNNER_WORKLOAD_TRUST_FILE,
