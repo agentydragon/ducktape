@@ -73,10 +73,10 @@ describe("Action presentation slots", () => {
       fieldSelector: "status.phase=Running",
       labelSelector: "app=web",
     };
-    const collapsed = await mount(renderPaneCollapsed(identity("kubernetes_admin", "pods_list_in_namespace"), args));
-    const details = await mount(renderDetailsArguments(identity("kubernetes_admin", "pods_list_in_namespace"), args));
+    const action = identity("kubernetes_admin", "pods_list_in_namespace");
+    const details = await mount(renderDetailsArguments(action, args));
 
-    expect(collapsed.textContent).toBe("");
+    expect(renderPaneCollapsed(action, args)).toBeNull();
     expect(details.textContent).toContain("field selector status.phase=Running");
     expect(details.textContent).not.toContain("List pods in namespace");
     expect(details.textContent).not.toContain("namespace prod");
@@ -168,10 +168,9 @@ describe("Action presentation slots", () => {
     const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
     const eventsAction = identity("kubernetes_admin", "events_list");
     const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
-    const eventsCollapsed = await mount(renderPaneCollapsed(eventsAction, eventsArgs));
     const eventsOpened = await mount(renderPaneOpened(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
-    expect(eventsCollapsed.textContent).toBe("");
+    expect(renderPaneCollapsed(eventsAction, eventsArgs)).toBeNull();
     expect(eventsOpened.textContent).toContain("type=Warning");
     expect(eventsOpened.textContent).not.toContain("apps");
     expect(renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
@@ -186,14 +185,21 @@ describe("Action presentation slots", () => {
   });
 
   it.each([
-    [{ container: "sidecar" }, "View logs for Pod apps/web-0, container sidecar"],
-    [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run, last 60 lines"],
-    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0, last 100 lines (default)"],
-  ])("puts how a log read is cut into its label: %o", async (options, expected) => {
-    const action = identity("kubernetes_admin", "pods_log");
-    const args = { name: "web-0", namespace: "apps", ...options };
-    expect((await mount(renderActionLabel(action, args))).textContent).toContain(expected);
-  });
+    [{ container: "sidecar", tail: 10 }, "View logs for Pod apps/web-0, container sidecar", "Read last 10 lines"],
+    [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run", "Read last 60 lines"],
+    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0", "Read last 100 lines (default)"],
+  ])(
+    "keeps the log source in the label and folds the line limit: %o",
+    async (options, expectedLabel, expectedLimit) => {
+      const action = identity("kubernetes_admin", "pods_log");
+      const args = { name: "web-0", namespace: "apps", ...options };
+      const label = await mount(renderActionLabel(action, args));
+      expect(label.textContent).toContain(expectedLabel);
+      expect(label.textContent).not.toContain("last");
+      expect((await mount(renderPaneOpened(action, args))).textContent).toContain(expectedLimit);
+      expect(actionCompactCardExpands(action, args)).toBe(true);
+    }
+  );
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
     const calendarAction = identity("tana", "get_or_create_calendar_node");
@@ -1451,6 +1457,7 @@ describe("compact card renderers", () => {
     expect(label.textContent).toContain("If unchanged");
     expect(label.textContent).not.toContain(args.expectedHeadSha);
     expect((await mount(renderPaneOpened(action, args))).textContent).toContain(args.expectedHeadSha);
+    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain(args.expectedHeadSha);
     expect(actionCompactCardExpands(action, args)).toBe(true);
     expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
   });

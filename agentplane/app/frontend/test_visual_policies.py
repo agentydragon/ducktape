@@ -314,6 +314,8 @@ async def test_action_argument_layouts(
         await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
+        if name == "update_pull_request_branch":
+            await expect(section).not_to_contain_text(str(arguments["expectedHeadSha"]))
         if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
             await expect(disclosure).to_have_count(0)
             for value in visible:

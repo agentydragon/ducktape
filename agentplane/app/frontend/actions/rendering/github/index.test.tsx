@@ -275,7 +275,7 @@ describe("GitHub search_pull_requests", () => {
     fields: ["number", "title", "state", "html_url"],
   };
 
-  it("shows the search scope and result cap on both review surfaces", async () => {
+  it("shows search scope on both review surfaces and folds pagination", async () => {
     const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
     const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
     const details = await mount(renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
@@ -288,7 +288,9 @@ describe("GitHub search_pull_requests", () => {
       expect(shownText(view)).not.toContain("Sort by");
       expect(shownText(view)).not.toContain("Fields:");
     }
-    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
+    expect(shownText(collapsed)).not.toContain("Page");
+    expect(shownText(details)).toContain("Page size 10");
+    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(true);
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
   });
 
