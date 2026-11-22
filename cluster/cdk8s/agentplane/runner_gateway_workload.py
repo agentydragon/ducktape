@@ -249,6 +249,7 @@ class RunnerGateway(Construct):
             gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
             runner_control_target_template=environment_service.environments_service(namespace).authority,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
+            notice_acknowledgement_service_callers=frozenset({APP_URI}),
             wake_service_callers=wake_service_callers,
             dispatcher_service_delegation=dispatcher_service_delegation,
             central_sampler=central_sampler_target,

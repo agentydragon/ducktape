@@ -96,6 +96,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(
     assert settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert int(settings["rpc"]["listen_address"].rsplit(":", 1)[1]) == listener_ports["grpc"]
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
+    assert settings["notice_acknowledgement_service_callers"] == [APP_URI]
     service = find_resource(staging_manifests, "Service", runner_gateway.NAME)["spec"]
     assert service["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
     assert one(service["ports"]) == {

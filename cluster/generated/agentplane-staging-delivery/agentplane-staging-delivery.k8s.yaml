@@ -352,6 +352,8 @@ data:
       - spiffe://agentplane/actions
       - spiffe://agentplane/app
       - spiffe://agentplane/notifications
+    notice_acknowledgement_service_callers:
+      - spiffe://agentplane/app
     wake_service_callers:
       - spiffe://agentplane/actions
       - spiffe://agentplane/app
