@@ -225,7 +225,6 @@ py_test(
         ":dependencies",
         ":flux",
         ":k8s",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
