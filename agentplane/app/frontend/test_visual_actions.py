@@ -3204,6 +3204,8 @@ async def test_action_presentations(
     )
     if example.group == "grocy_sf" and summaries is None:
         summaries = {"grocy-reference-summaries": {"references": []}}
+    if example.key == "github.push_files":
+        summaries = {"github-push-files-preview": {}}
     gmail_labeled_read = example.key in {"gmail.messages_get", "gmail.threads_get"}
     if gmail_labeled_read:
         summaries = {"gmail-resource-summaries": {"labels": [{"id": GMAIL_LABEL["id"], "title": GMAIL_LABEL["name"]}]}}
@@ -3374,6 +3376,8 @@ async def test_action_presentations(
         elif example.key == "google_calendar.list_events":
             await expect(sidebar).to_contain_text("Ending after")
             await expect(sidebar).to_contain_text("Starting before")
+        elif example.key == "github.push_files":
+            await expect(sidebar.get_by_text("Comparison unavailable. Files show proposed contents.")).to_be_visible()
         elif example.key == "tana.get_tag_schema":
             await expect(sidebar).to_contain_text("Include inherited fields")
             await expect(sidebar).to_contain_text("Include edit instructions")
@@ -3584,6 +3588,65 @@ async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixtu
     await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
     await expect(sidebar.get_by_role("button", name="Expand ", exact=False)).to_have_attribute("aria-expanded", "false")
     await view.capture()
+
+
+@DESKTOP_AND_MOBILE
+async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    args: dict[str, object] = {
+        "owner": "example",
+        "repo": "service",
+        "branch": "docs",
+        "message": "docs: update the deployment guide",
+        "files": [
+            {"path": "docs/deploy.md", "content": "# Deploy\n\nCheck readiness.\nKeep rollback ready.\n"},
+            {"path": "docs/verify.md", "content": "# Verify\n\nCheck the logs.\n"},
+        ],
+    }
+    await app.show_action_preview(
+        "github",
+        "push_files",
+        args,
+        {
+            "github-push-files-preview": {
+                "baseCommitSha": sha,
+                "files": [
+                    {"path": "docs/deploy.md", "content": "# Deploy\n\nWait 30 seconds.\nKeep rollback ready.\n"}
+                ],
+            }
+        },
+    )
+    await app.show_action_receipt(
+        "github",
+        "push_files",
+        args,
+        {"content": [], "structuredContent": {"ref": "refs/heads/docs", "object": {"sha": sha, "type": "commit"}}},
+    )
+    sidebar_width = (viewport.width if viewport == MOBILE else 240) - 16
+    detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
+    await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
+    sidebar = view.page.locator("[data-action-visual=sidebar]")
+    await sidebar.get_by_role("button", name="Expand ", exact=False).click()
+    await expect(sidebar.get_by_role("link", name="0123456")).to_have_attribute(
+        "href", f"https://github.com/example/service/commit/{sha}"
+    )
+    await sidebar.get_by_role("button", name="docs/deploy.md", exact=False).click()
+    added = sidebar.get_by_text("+Check readiness.", exact=True)
+    await added.scroll_into_view_if_needed()
+    await expect(sidebar.get_by_text("-Wait 30 seconds.", exact=True)).to_be_in_viewport()
+    await expect(added).to_be_in_viewport()
+    await view.capture("diff", target=sidebar)
+
+    approve = sidebar.get_by_role("button", name="Approve ", exact=False)
+    await approve.scroll_into_view_if_needed()
+    await expect(approve).to_be_in_viewport()
+    await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_in_viewport()
+    await view.capture("decision", target=sidebar)
+
+    await sidebar.get_by_role("button", name="Proposed contents", exact=True).click()
+    await expect(sidebar.get_by_text("Check readiness.", exact=True)).to_be_visible()
+    await sidebar.get_by_role("button", name="docs/verify.md", exact=False).click()
+    await expect(sidebar.get_by_text("Check the logs.", exact=True)).to_be_visible()
 
 
 @DESKTOP_AND_MOBILE

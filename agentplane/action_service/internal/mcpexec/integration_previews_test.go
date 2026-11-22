@@ -409,3 +409,56 @@ func TestGitHubLabelSummariesUseRecordedNames(t *testing.T) {
 		t.Errorf("GitHub labels = %v", got)
 	}
 }
+
+func TestGitHubPushFilesPreviewPinsReadsAndOmitsUnverifiedText(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	server := mcp.NewServer(&mcp.Implementation{Name: "github-push-preview-test"}, nil)
+	server.AddTool(&mcp.Tool{Name: "get_commit", InputSchema: json.RawMessage(`{"type":"object"}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct{ Owner, Repo, SHA, Detail string }
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.Owner != "owner" || args.Repo != "repo" || args.SHA != "refs/heads/work/docs" || args.Detail != "none" {
+			t.Errorf("unexpected commit lookup: %+v", args)
+		}
+		return textResultForPreview(`{"sha":"` + sha + `"}`), nil
+	})
+	server.AddTool(&mcp.Tool{Name: "get_file_contents", InputSchema: json.RawMessage(`{"type":"object"}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct{ Owner, Repo, SHA, Path, Ref string }
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.Owner != "owner" || args.Repo != "repo" || args.SHA != sha || args.Ref != "" {
+			t.Errorf("unexpected file lookup: %+v", args)
+		}
+		prefix := "repo://owner/repo/sha/" + sha + "/contents/"
+		block := &mcp.ResourceContents{URI: prefix + args.Path, MIMEType: "text/plain", Text: "previous text\n"}
+		marker := "successfully downloaded text file (SHA: " + sha + ")"
+		switch args.Path {
+		case "docs/guide one":
+			block.URI = prefix + "docs/guide%20one"
+		case "empty":
+			block.Text = ""
+			marker = "successfully downloaded empty file (SHA: " + sha + ")"
+		case "wrong":
+			block.URI = prefix + "other"
+		case "symlink":
+			marker = `{"type":"symlink","path":"symlink","resolved_path":"other"}`
+		case "binary":
+			block.Text = ""
+			block.Blob = []byte{0}
+		case "missing":
+			return &mcp.CallToolResult{IsError: true}, nil
+		default:
+			t.Errorf("unexpected path: %q", args.Path)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: marker}, &mcp.EmbeddedResource{Resource: block}}}, nil
+	})
+	executor := previewExecutor(t, "github", server)
+	preview := executor.GitHubPushFilesPreview(t.Context(), "owner", "repo", "work/docs", []string{"docs/guide one", "empty", "wrong", "symlink", "binary", "missing"})
+	if preview.GetBaseCommitSha() != sha || len(preview.GetFiles()) != 2 ||
+		preview.GetFiles()[0].GetPath() != "docs/guide one" || preview.GetFiles()[0].GetContent() != "previous text\n" ||
+		preview.GetFiles()[1].GetPath() != "empty" || preview.GetFiles()[1].GetContent() != "" {
+		t.Errorf("GitHub push preview = %v", preview)
+	}
+}

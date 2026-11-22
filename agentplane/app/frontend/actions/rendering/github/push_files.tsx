@@ -1,7 +1,10 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
-import { filesPushed } from "./receipts";
+import { useQuery } from "@tanstack/react-query";
+import { createTwoFilesPatch, OMIT_HEADERS } from "diff";
+import { filesPushed, GitHubLink, repositoryHref } from "./receipts";
 
+import { getGitHubPushFilesPreview } from "../../client";
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../../../util/frontend/clamped_block";
@@ -68,12 +71,19 @@ function PushFilesCollapsed({ args }: { args: PushFilesArguments }): JSX.Element
   );
 }
 
-/** One pushed file, closed until opened: Markdown as prose, code highlighted by its extension. */
-function PushedFileBlock({ file }: { file: PushedFile }): JSX.Element {
-  const fileExtension = extension(file.path);
+function PushedFileBlock({
+  file,
+  before,
+  defaultOpen,
+}: {
+  file: PushedFile;
+  before: string | undefined;
+  defaultOpen: boolean;
+}): JSX.Element {
   return (
     <OperationSection surface="framed">
       <Disclosure
+        defaultOpen={defaultOpen}
         summary={
           <Text size="sm" ff="monospace" style={{ overflowWrap: "anywhere" }}>
             {file.path}
@@ -83,35 +93,101 @@ function PushedFileBlock({ file }: { file: PushedFile }): JSX.Element {
           </Text>
         }
       >
-        <ClampedBlock
-          maxHeightRem={TEXT_MAX_HEIGHT_REM}
-          lines={lineCount(file.content)}
-          label={file.path}
-          stickyCollapse={false}
-        >
-          <CodeBlock
-            text={file.content}
-            language={LANGUAGE_BY_EXTENSION.get(fileExtension)}
-            font={fileExtension === "md" ? "prose" : "monospace"}
-            surface="plain"
-            releaseWhenFar
-          />
-        </ClampedBlock>
+        <PushedFileContent file={file} before={before} />
       </Disclosure>
     </OperationSection>
   );
 }
 
-function PushFiles({ args }: { args: PushFilesArguments }): JSX.Element {
+function PushedFileContent({ file, before }: { file: PushedFile; before: string | undefined }): JSX.Element {
+  const fileExtension = extension(file.path);
+  const proposed = (
+    <ClampedBlock
+      maxHeightRem={TEXT_MAX_HEIGHT_REM}
+      lines={lineCount(file.content)}
+      label={file.path}
+      stickyCollapse={false}
+    >
+      <CodeBlock
+        text={file.content}
+        language={LANGUAGE_BY_EXTENSION.get(fileExtension)}
+        font={fileExtension === "md" ? "prose" : "monospace"}
+        surface="plain"
+        releaseWhenFar
+      />
+    </ClampedBlock>
+  );
+  if (before === undefined) return proposed;
+
+  const patch =
+    before === file.content
+      ? undefined
+      : createTwoFilesPatch("before", "after", before, file.content, undefined, undefined, {
+          headerOptions: OMIT_HEADERS,
+          timeout: 50,
+        });
+  return (
+    <Stack gap="xs">
+      {patch === undefined ? (
+        <Text size="sm" c="dimmed">
+          {before === file.content ? "No text changes." : "This file's diff is too large to display."}
+        </Text>
+      ) : (
+        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(patch)} label="Diff" stickyCollapse={false}>
+          <CodeBlock text={patch} language="diff" surface="plain" releaseWhenFar />
+        </ClampedBlock>
+      )}
+      {patch === undefined && before !== file.content ? (
+        proposed
+      ) : (
+        <Disclosure summary={<Text size="sm">Proposed contents</Text>}>{proposed}</Disclosure>
+      )}
+    </Stack>
+  );
+}
+
+function PushFiles({ args, requestId }: { args: PushFilesArguments; requestId?: string }): JSX.Element {
+  const query = useQuery({
+    queryKey: ["github-push-files-preview", requestId],
+    queryFn: ({ signal }) => getGitHubPushFilesPreview(requestId ?? "", signal),
+    enabled: requestId !== undefined,
+    gcTime: 0,
+    staleTime: 0,
+    retry: false,
+  });
+  const preview = query.isFetching || query.isError ? undefined : query.data;
+  const baseline = new Map(preview?.files.map((file) => [file.path, file.content]));
   return (
     <Stack gap="xs">
       <TextBlock text={args.message} heading="Commit message" format="prose" clamp={false} />
       <Text size="sm" c="dimmed">
         Creates the branch from the default branch if needed.
       </Text>
+      {requestId !== undefined && (
+        <Text size="sm" c="dimmed" role="status">
+          {query.isFetching ? (
+            "Reading the target branch…"
+          ) : preview?.baseCommitSha && baseline.size > 0 ? (
+            <>
+              Compared with{" "}
+              <GitHubLink href={`${repositoryHref(args)}/commit/${encodeURIComponent(preview.baseCommitSha)}`}>
+                <Code>{preview.baseCommitSha.slice(0, 7)}</Code>
+              </GitHubLink>
+              {baseline.size < args.files.length && ". Other files show proposed contents."}
+            </>
+          ) : (
+            "Comparison unavailable. Files show proposed contents."
+          )}
+        </Text>
+      )}
       {args.files.map((file, index) => (
         // A push may list the same path twice; position is its identity.
-        <PushedFileBlock key={index} file={file} />
+        <PushedFileBlock
+          key={index}
+          file={file}
+          before={baseline.get(file.path)}
+          defaultOpen={requestId !== undefined && args.files.length === 1}
+        />
       ))}
     </Stack>
   );
@@ -129,6 +205,6 @@ export const pushFilesPresentation: ActionPresentation = {
   fallbackLabel: "Push files to GitHub",
   label: pushFilesLabel,
   pane: { collapsed: pushFilesCollapsed, opened: pushFilesPane },
-  details: { arguments: pushFilesPane, result: filesPushed },
+  details: { arguments: pushFilesPane, pendingPreviewOnly: true, result: filesPushed },
   offersCardDecisionButtons: offersCardDecisionButtonsPushFiles,
 };
