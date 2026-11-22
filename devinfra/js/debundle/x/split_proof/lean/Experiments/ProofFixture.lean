@@ -1,6 +1,6 @@
 import ProofFixture.Instance
 import Experiments.MiniJSSource
-import EsmSplit.Render
+import Experiments.FixtureRender
 
 open EsmSplit MJS
 
@@ -89,11 +89,11 @@ theorem preserves_model (fuel : Nat) :
 /-- The same plan passed to the renderer is the plan checked by the generated instance. -/
 theorem accepted : Valid Example.bundle Example.spec Example.plan := Example.plan_valid
 
-/-- Concrete source text produced by the actual renderer for this plan. -/
-theorem rendered_base : (Example.plan.find "base.mjs").map (Module.render Example.bundle Example.plan) =
+/-- Concrete source text produced by the fixture renderer for this plan. -/
+theorem rendered_base : (Example.plan.find "base.mjs").map (FixtureRender.render Example.bundle Example.plan) =
     some "const one = 1;\n\nexport { one };\n" := by decide +kernel
 
-theorem rendered_entry : (Example.plan.find "main.mjs").map (Module.render Example.bundle Example.plan) =
+theorem rendered_entry : (Example.plan.find "main.mjs").map (FixtureRender.render Example.bundle Example.plan) =
     some "import { one } from \"./base.mjs\";\n\nconst unused = 2;\nconst copy = one;\n" := by
   decide +kernel
 

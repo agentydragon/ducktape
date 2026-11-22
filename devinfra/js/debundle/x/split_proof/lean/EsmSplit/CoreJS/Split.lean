@@ -16,7 +16,7 @@ says the two results are equal. Nothing is related up to a renaming, because a s
 its identity whatever module it is in, and a closure keeps only the bindings of the names its code can mean.
 What differs between the programs, the scopes of their modules, is not part of a result.
 
-`splitProgram` builds the split of a bundle from a plan, as `Module.render` writes it. `valid_order_kept_preserves`,
+`splitProgram` builds the split of a bundle from its plan. `valid_order_kept_preserves`,
 at the end, is the theorem for it: a split that `Valid` accepts and that keeps the order ends as its bundle does.
 -/
 
@@ -166,7 +166,7 @@ theorem order_kept_preserves {P P' : Program} (hregions : P.regions = P'.regions
 
 /-! ## The split of a bundle by a plan
 
-`splitProgram` is the program that `Module.render` writes for each module of a plan: for every glue import the
+`splitProgram` is the modeled program for the modules of a plan: for every glue import the
 names it takes, each under the name its source exports it by; the module's statements, by their numbers in the
 bundle, which become their identities; and what the module exports, by its glue and by `export` statements of its
 own.
