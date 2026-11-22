@@ -30,7 +30,8 @@ _WORKLOADS = (
     ("policy-controller", "policy-controller", 64, 112),
     ("sessions", "sessions", 256, 320),
 )
-_UPDATE_MODES = {"frontend": "Recreate"}
+# History writers replay from the committed cursor, and followers resume on another replica.
+_UPDATE_MODES = {"frontend": "Recreate", "history-service": "Recreate"}
 
 
 def chart(app: App) -> Chart:
