@@ -6037,6 +6037,9 @@ spec:
     runner:
       grpc:
         maxMessageSize: 50
+      image:
+        repository: ghcr.io/agentydragon/tf-runner
+        tag: devel-20261120070342-4f193ce
       serviceAccount:
         annotations:
           eks.amazonaws.com/role-arn: ""
