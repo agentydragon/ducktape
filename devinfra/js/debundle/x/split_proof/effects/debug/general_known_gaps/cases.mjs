@@ -17,26 +17,6 @@ console.log(o.n);
     [0, 1, 2, 4, 3]
   ),
   gap(
-    "Reflect.get runs a getter with another receiver",
-    `
-const target = { n: 0 };
-const src = { get v() { this.n = 1; return 1; } };
-Reflect.get(src, "v", target);
-console.log(target.n);
-`,
-    [0, 1, 3, 2]
-  ),
-  gap(
-    "Reflect.set stores into another receiver",
-    `
-const o = {};
-const target = { n: 0 };
-Reflect.set(o, "n", 1, target);
-console.log(target.n);
-`,
-    [0, 1, 3, 2]
-  ),
-  gap(
     "a static of Array called on a subclass constructs the subclass",
     `
 const o = { n: 0 };

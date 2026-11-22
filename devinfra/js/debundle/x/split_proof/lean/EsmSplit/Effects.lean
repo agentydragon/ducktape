@@ -737,23 +737,22 @@ standard function calls through its protocol) on the object `recv`. A standard f
 without a level of the call chain in between: a getter that reads the property it is, `Array.prototype.toString` on an
 array that holds itself, an `exec` that is `RegExp.prototype.test`. So these calls are counted, and past the limit the
 functions are not run: they and the object are the world's. -/
-partial def callHooks (recv : Nat) (fns : AV) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
+partial def callHooks (recv : AV) (fns : AV) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
   tick
   if (← isBroke) then return AV.top
   if (← get).hookDepth ≥ maxDepth then
     escapeAV fns
-    escapeObj recv
+    escapeAV recv
     setWorld "getters, setters and conversion hooks nested too deep"
     return AV.top
   modify fun s => { s with hookDepth := s.hookDepth + 1 }
-  let r ← callAll fns (AV.ofObj recv) args false fr site
+  let r ← callAll fns recv args false fr site
   modify fun s => { s with hookDepth := s.hookDepth - 1 }
   return r
 
-/-- A getter or a setter runs on the object it was found for. The candidates that are program code are run, with the
-value for a setter. A world function, or a receiver the world holds when the world may have added accessors to it
-(`Premises.noWorldHooks` off), is unknown code. -/
-partial def runAccessors (recv : Nat) (fns : AV) (args : List AV) (tag : String) : M AV := do
+/-- Run the candidate accessors with the original receiver as `this` and the value as the setter's argument. The
+receiver can differ from the object where the accessor was found. -/
+partial def runAccessors (recv : AV) (fns : AV) (args : List AV) (tag : String) : M AV := do
   let mut programs : AV := #[]
   let mut unknown := false
   for d in fns do
@@ -764,7 +763,8 @@ partial def runAccessors (recv : Nat) (fns : AV) (args : List AV) (tag : String)
       | _ => pure ()
   if unknown then
     escapeAV fns
-    escapeObj recv
+    escapeAV recv
+    for v in args do escapeAV v
     setWorld "getter or setter the world made"
   if programs.isEmpty then return (if unknown then AV.top else #[])
   let cur := (← get).cur
@@ -785,9 +785,10 @@ of a class of the program. No premise covers these: the hooks are the program's 
 the world, which is what unknown code writes. -/
 partial def worldValue (what : String) : M Unit := setWorld (what ++ " a value the world made")
 
-/-- Values stored in an object under `key` (any key if `none`), and in what it inherits. A getter on the way is run as
-unknown code. -/
-partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M AV := do
+/-- Read properties of `c` and its prototypes. A getter runs with the original receiver, which `Reflect.get` can
+supply separately from the lookup target. -/
+partial def getVal (c : Nat) (key : Option String) (receiver : Option AV := none) (seen : List Nat := []) : M AV := do
+  let recv := receiver.getD #[c]
   if c == 0 then
     match key with
     | some "__proto__" => return AV.top
@@ -801,11 +802,12 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
   -- what the world holds may have been changed by the world's code, which only a unit that runs unknown code runs: such
   -- a unit writes every name that reaches the world's objects, including the names of the imports (see `footprints`)
   if o == 0 then
+    escapeAV recv
     worldValue "a property of"
     return AV.top
   if seen.contains o then return #[]
   -- a chain of prototypes longer than is followed: a getter further up may run, on the object the read started from
-  if seen.length > 10 then return ← runAccessors (seen.getLast?.getD o) AV.top [] "get"
+  if seen.length > 10 then return ← runAccessors recv AV.top [] "get"
   let ob ← getObj o
   match ob.kind with
   | .builtin path =>
@@ -858,7 +860,7 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       if k == "length" && isElements then r := r.join AV.prim
       if k == "__proto__" then r := r.join ob.proto
       if ob.acc.contains k || ob.acc.contains "*" then
-        r := r.join (← runAccessors (seen.getLast?.getD o) (accessorFns ob key "get") [] ("get" ++ k))
+        r := r.join (← runAccessors recv (accessorFns ob key "get") [] ("get" ++ k))
       -- a function's own prototype object exists once someone asks for it
       if k == "prototype" && (ob.props.getD k #[]).isEmpty then
         match ob.kind with
@@ -872,12 +874,14 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
     | none =>
       for v in ob.props.values do r := r.join v
       unless ob.acc.isEmpty do
-        r := r.join (← runAccessors (seen.getLast?.getD o) (accessorFns ob key "get") [] "get*")
+        r := r.join (← runAccessors recv (accessorFns ob key "get") [] "get*")
     -- what the world holds it may have changed, except the `prototype` of a class, which is not writable and not
     -- configurable
     if ob.escaped && !(key == some "prototype" && ob.kind matches .klass ..) then
       r := r.join AV.top
-      worldMayHaveAccessors (seen.getLast?.getD o)
+      unless (← get).prem.noWorldHooks do
+        escapeAV recv
+        setWorld "a property of an object the world holds"
     -- a member of a vendor object: a method the premise lists allocates, anything else is unknown
     match ob.fam, key with
     | some f, some k =>
@@ -885,15 +889,15 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       else r := r.join AV.top
     | some _, none => r := r.join AV.top
     | none, _ => pure ()
-    for p in ob.proto do r := r.join (← getVal p key (o :: seen))
+    for p in ob.proto do r := r.join (← getVal p key (some recv) (o :: seen))
     return r
 
-partial def getAV (a : AV) (key : Option String) : M AV := do
+partial def getAV (a : AV) (key : Option String) (receiver : Option AV := none) : M AV := do
   -- a value that is a primitive for certain has the prototype of a string, a number, a boolean, a symbol or a bigint; one
   -- that only may be a primitive has an unknown one (it would patch all five)
   if key == some "__proto__" && a == AV.prim then return ← primitivePrototypeValue
   let mut parts : Array AV := #[]
-  for c in a do parts := parts.push (← getVal c key)
+  for c in a do parts := parts.push (← getVal c key receiver)
   let r := AV.joinMany parts
   modify fun s => { s with dbg := #[s.dbg[0]! + 1, max s.dbg[1]! a.size, s.dbg[2]! + (parts.foldl (· + ·.size) 0), max s.dbg[3]! (parts.foldl (· + ·.size) 0)] }
   return r
@@ -943,7 +947,7 @@ partial def setAV (target : AV) (key : Option String) (v : AV) : M Unit := do
       recWrite o
       -- an assignment runs a setter the object or what it inherits has for the key
       let (hit, fns) ← accessorsOn o key "set"
-      if hit then let _ ← runAccessors o fns [v] ("set" ++ key.getD "*")
+      if hit then let _ ← runAccessors (AV.ofObj o) fns [v] ("set" ++ key.getD "*")
       if ob.escaped then worldMayHaveAccessors o
       match key with
       | some "__proto__" => joinProto o v
@@ -964,7 +968,7 @@ partial def contentsOf (a : AV) : M AV := do
       parts := parts.push ob.any
       for v in ob.props.values do parts := parts.push v
       unless ob.acc.isEmpty do
-        parts := parts.push (← runAccessors (c - 1) (accessorFns ob none "get") [] "get*")
+        parts := parts.push (← runAccessors #[c] (accessorFns ob none "get") [] "get*")
       if ob.escaped then
         parts := parts.push AV.top
         worldMayHaveAccessors (c - 1)
@@ -1255,6 +1259,21 @@ partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (fr : Fr) 
     if thisV.contains 1 then worldValue "a standard function called on"
     -- the standard functions convert their operands to numbers, strings and keys
     convert args fr (mixHash site 89)
+    if path == "Reflect.get" then
+      recBuiltinsRead (AV.joinAll (thisV :: args))
+      let target : AV := args[0]?.getD #[]
+      -- The argument abstraction can pad a spread even if it supplied no receiver.
+      let recv := args[2]?.map (target.join ·)
+      return ← getAV target none recv
+    if path == "Reflect.set" then
+      if let some recv := args[3]? then
+        -- A setter or proxy trap on the target can run on the supplied receiver. A data property can instead be
+        -- defined directly on that receiver. The ordinary store summary only covers a single object in both roles.
+        recBuiltinsRead (AV.joinAll (thisV :: args))
+        noteChange (args[0]?.getD #[]) "Reflect.set target"
+        noteChange recv "Reflect.set receiver"
+        let _ ← worldCall (thisV :: args)
+        return AV.prim
     applySummary s thisV args fr site
 
 partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
@@ -1430,13 +1449,13 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
             seen := seen.insert c
             for k in ["valueOf", "toString", "join"] do
               let f ← if ob.hook then hookFns ((← getVal c (some k)).join ob.any) else pure (ob.props.getD k #[])
-              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))
+              unless f.isEmpty do let _ ← callHooks #[c] f [] fr (mixHash site (hash k))
             if ob.kind matches .array then work := ob.any :: work
         | _ =>
           if ← chainHasHook (c - 1) then
             for k in ["valueOf", "toString"] do
               let f ← hookFns (← getVal c (some k))
-              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))
+              unless f.isEmpty do let _ ← callHooks #[c] f [] fr (mixHash site (hash k))
 
 /-- Whether converting the object may run a function: it or what it inherits has a hook. -/
 partial def chainHasHook (o : Nat) (seen : List Nat := []) : M Bool := do
@@ -1467,7 +1486,7 @@ partial def runProtocol (target : AV) (name : String) (args : List AV) (fr : Fr)
   for c in target do
     if c ≥ 2 then
       let fns ← hookFns (← getVal c (some name))
-      unless fns.isEmpty do let _ ← callHooks (c - 1) fns args fr site
+      unless fns.isEmpty do let _ ← callHooks #[c] fns args fr site
 
 /-- A thenable the program defined has its `then` called when a promise is resolved with it (`await`, the value an async
 function returns). -/

@@ -172,7 +172,8 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   ("Object.prototype.__defineSetter__", { muts := [0], accessors := [(0, 2)] }),
   ("Object.prototype.__lookupGetter__", { ret := contents 0 }), ("Object.prototype.__lookupSetter__", { ret := contents 0 }),
   -- Reflect: the same as the `Object` functions with the same names, with the target first
-  ("Reflect.get", { ret := contents 1 }), ("Reflect.has", {}), ("Reflect.ownKeys", { ret := freshPrims }),
+  -- `Reflect.get` and `Reflect.set` have dedicated receiver handling in `Effects.callBuiltin`.
+  ("Reflect.get", {}), ("Reflect.has", {}), ("Reflect.ownKeys", { ret := freshPrims }),
   ("Reflect.getPrototypeOf", { ret := protoOf 1 }), ("Reflect.getOwnPropertyDescriptor", { ret := descriptorOf 1 }),
   ("Reflect.isExtensible", {}),
   ("Reflect.set", { muts := [1], store := [(3, 1)] }),
