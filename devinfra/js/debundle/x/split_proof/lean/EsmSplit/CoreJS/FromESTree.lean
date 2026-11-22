@@ -178,6 +178,28 @@ private def stringOperand : Expr → Bool
   | .str _ | .unary .typeof _ => true
   | _ => false
 
+/-- Static own data properties, evaluated in source order on a fresh ordinary object. -/
+private def linkedObject (imports : List Name) (inFunction : Bool) (j : Json) : Except String Expr := do
+  let mut seen : Std.HashSet String := {}
+  let mut props := #[]
+  for p in ← j.getObjValAs? (Array Json) "properties" do
+    unless (← field p "type") == "Property" do throw "expected a static data property"
+    unless (← field p "kind") == "init" &&
+        !(← p.getObjValAs? Bool "computed") && !(← p.getObjValAs? Bool "method") do
+      throw "expected a static data property"
+    let key ← moduleExportName (← p.getObjVal? "key")
+    unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
+    if key == "__proto__" then throw "unsupported __proto__ property"
+    if seen.contains key then throw "duplicate object property"
+    seen := seen.insert key
+    let v ← p.getObjVal? "value"
+    let value ← match ← field v "type" with
+      | "Literal" => literal (← field v "lit")
+      | "Identifier" => reference imports inFunction v
+      | _ => throw "expected a literal or binding as an object property value"
+    props := props.push (.init (.str key) value)
+  return .obj props.toList
+
 mutual
 
 private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -186,6 +208,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   match kind with
   | "Literal" => literal (← field j "lit")
   | "Identifier" => reference imports inFunction j
+  | "ObjectExpression" => linkedObject imports inFunction j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
     let op ← field j "operator"
