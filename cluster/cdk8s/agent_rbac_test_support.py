@@ -27,17 +27,19 @@ class Permission:
                 and other.url is not None
                 and (self.url == other.url or (self.url.endswith("*") and other.url.startswith(self.url[:-1])))
             )
-        resource_matches = self.resource in ("*", other.resource) or (
-            self.resource.startswith("*/")
-            and "/" in other.resource
-            and self.resource[1:] == other.resource[other.resource.index("/") :]
-        )
         return (
             (self.namespace is None or self.namespace == other.namespace)
-            and self.api_group in ("*", other.api_group)
-            and resource_matches
+            and self.matches_resource(other.api_group, other.resource)
             and (self.name is None or self.name == other.name)
         )
+
+    def matches_resource(self, api_group: str, resource: str) -> bool:
+        if self.url is not None or self.api_group not in ("*", api_group):
+            return False
+        if self.resource in ("*", resource):
+            return True
+        _, slash, subresource = resource.partition("/")
+        return bool(slash) and self.resource == f"*/{subresource}"
 
 
 def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -> set[Permission]:
