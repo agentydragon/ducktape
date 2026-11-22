@@ -253,9 +253,8 @@ Probed 2026-10-21 with `bb execute` on the managed executor under the k3s target
 (`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. That managed stack ran KubeVirt with software emulation and used kube-proxy with ClusterIP Services.
 The required VM suite now uses the [hosted KVM pool](../../../devinfra/ci/README.md#where-bazel-ci-runs-tests).
 
-The earlier RBE precompile failure did not recur on 2026-10-30 with `rules_python` 2.4.3 (`MODULE.bazel` now
-pins 2.5.0-rc4): a target using `pyc_collection = "include_pyc"` passed and Python loaded the generated `.pyc`
-files. The
+The earlier RBE precompile failure did not recur on 2026-10-30 with `rules_python` 2.4.3. A
+target using `pyc_collection = "include_pyc"` passed and Python loaded the generated `.pyc` files. The
 [current experiment](../k3s/debug/pyc_precompilation.md) shows the large compile action graph and the
 observed warm-run difference, so the suites do not enable collection yet. With the chart rendered at
 build time, imports still took 10–13 s before pytest in the October 21 measurements
