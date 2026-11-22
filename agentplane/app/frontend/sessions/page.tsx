@@ -31,7 +31,8 @@ import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
 import { CommandDeliveryHistory, DeliveryHistoryFallback } from "./command_delivery_history";
 import { ThreadConversation } from "./conversation";
-import { DispatchWorksetPanel, useDispatchWorkset } from "./dispatch_workset_panel";
+import { DispatchWorksetPanel } from "./dispatch_workset_panel";
+import { useThreadDelivery } from "./thread_delivery";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
 import "./conversation.css";
@@ -69,14 +70,18 @@ export interface ThreadPageProps {
   settingsOpen?: boolean;
 }
 
-export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
+export function ThreadPage(props: ThreadPageProps): JSX.Element {
+  return <SelectedThreadPage key={props.threadId} {...props} />;
+}
+
+function SelectedThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
   const [historySession, setHistorySession] = useState<string | null>(null);
   const openDeliveryHistory = () => setHistorySession(threadId);
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
-  const dispatchWorkset = useDispatchWorkset(thread?.metadata.threadId === threadId ? threadId : null);
+  const delivery = useThreadDelivery(threadId, thread?.metadata.threadId === threadId);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
@@ -196,8 +201,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
         </Group>
       </TopbarTitle>
       <CommandDeliveryHistory
-        sessionId={threadId}
-        issues={dispatchWorkset.snapshot?.recentIssues ?? []}
+        delivery={delivery}
         opened={historySession === threadId}
         onClose={() => setHistorySession(null)}
       />
@@ -245,17 +249,12 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               traceSearch={traceSearch}
               langfuseSearch={langfuseSearch}
               sandbox={sandbox}
-              dispatchWorkset={dispatchWorkset}
+              delivery={delivery}
             />
           </sync.Thread>
         )}
         {thread && materializationUnconfirmed && !thread.summary.projectionEpoch && (
-          <DispatchWorksetPanel
-            key={threadId}
-            sessionId={threadId}
-            view={dispatchWorkset}
-            onOpenDeliveryHistory={openDeliveryHistory}
-          />
+          <DispatchWorksetPanel delivery={delivery} onOpenDeliveryHistory={openDeliveryHistory} />
         )}
       </Stack>
     </ChronologicalDebugProvider>

@@ -66,6 +66,7 @@ import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { ThreadPage } from "./page";
+import { useDispatchWorkset } from "./thread_delivery";
 import { HistoryRowView } from "./history_row_views";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../transport/stream_status";
@@ -154,6 +155,7 @@ let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
 let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETTINGS;
 // The Dispatcher watches the page opened, which a test answers itself.
 let dispatchWatches: ServedWatch[] = [];
+let sendWorksetOnOpen: boolean;
 let threadRows: ThreadView[] | null = null;
 let noticeInboxes: Array<{ inboxId: string; sessionId: string; queued: number; unacknowledged: number }> = [];
 let deliveryRequest: (url: URL, init?: RequestInit) => Response | Promise<Response>;
@@ -200,6 +202,7 @@ beforeEach(() => {
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
+  sendWorksetOnOpen = true;
   threadRows = null;
   noticeInboxes = [];
   deliveryRequest = () => Response.json({ message: "route unavailable" }, { status: 404 });
@@ -279,7 +282,7 @@ beforeEach(() => {
       if (url.pathname === "/upstream/dispatcher/v1/dispatches:watch" && worksetSession) {
         const stream = new ServedWatch(String(input), init?.signal ?? undefined);
         dispatchWatches.push(stream);
-        stream.send({ workset: { sessionId: worksetSession }, resumeToken: "test-workset" });
+        if (sendWorksetOnOpen) stream.send({ workset: { sessionId: worksetSession }, resumeToken: "test-workset" });
         return Promise.resolve(stream.response);
       }
       if (
@@ -424,7 +427,8 @@ function page(
   state: ThreadState,
   topbarTitle: HTMLDivElement,
   topbarActions: HTMLDivElement,
-  mountKey?: string
+  mountKey?: string,
+  threadId = THREAD.metadata.threadId
 ): JSX.Element {
   const sync: ThreadSync = {
     Thread: ({ children }) => <>{children}</>,
@@ -437,7 +441,7 @@ function page(
     <MantineProvider env="test">
       <ThreadSyncContext.Provider value={sync}>
         <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
-          <ThreadPage key={mountKey} threadId={THREAD.metadata.threadId} />
+          <ThreadPage key={mountKey} threadId={threadId} />
         </TopbarContext.Provider>
       </ThreadSyncContext.Provider>
     </MantineProvider>
@@ -1607,6 +1611,33 @@ it("shows Dispatcher delivery before History materializes and keeps one watch wh
   expect(dispatchWatches.filter(({ url }) => url.searchParams.has("worksetSessionId"))).toEqual([watch]);
 });
 
+it("discards the old workset when a Session becomes unavailable and is selected again", async () => {
+  function WorksetProbe({ sessionId }: { sessionId: string | null }) {
+    const view = useDispatchWorkset(sessionId);
+    return <span>{view.snapshot?.recentIssues[0]?.reason ?? "no current workset"}</span>;
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  const select = (sessionId: string | null) => act(async () => root.render(<WorksetProbe sessionId={sessionId} />));
+  await select(THREAD.metadata.threadId);
+  const first = await selectedWorksetWatch();
+  await showIssues(first, issueReceipt("same-session", "1", "First workset"));
+  expect(container.textContent).toBe("First workset");
+
+  await select(null);
+  expect(first.signal?.aborted).toBe(true);
+  expect(container.textContent).toBe("no current workset");
+  sendWorksetOnOpen = false;
+  await select(THREAD.metadata.threadId);
+  const next = await selectedWorksetWatch(first);
+  expect(next.url.searchParams.has("resumeToken")).toBe(false);
+  expect(container.textContent).toBe("no current workset");
+  await showIssues(next, issueReceipt("same-session", "2", "Second workset"));
+  expect(container.textContent).toBe("Second workset");
+});
+
 it("shows server delivery for a fresh browser and defers to settled History", async () => {
   const settled = entity({
     case: "command",
@@ -1742,6 +1773,51 @@ it("keeps unseen delivery issues visible when acknowledgement reads or writes fa
   await act(async () => buttonIn(panel, "Acknowledge")!.click());
   expect(panel.textContent).toContain("Delivery refused");
   expect(panel.textContent).toContain("Could not acknowledge the delivery issue.");
+});
+
+it.each(["conversation", "archive"])("shares an exact acknowledgement from the %s across both views", async (from) => {
+  const issue = issueReceipt("shared-issue", "41", "Current delivery failure");
+  vi.mocked(listSessionDispatches).mockResolvedValue(
+    create(ListSessionDispatchesResponseSchema, {
+      dispatches: [dispatchFromJson({ ...issue, sessionId: THREAD.metadata.threadId })],
+    })
+  );
+  const writes = vi.fn();
+  const lookups = vi.fn();
+  const olderResponse = Promise.withResolvers<Response>();
+  deliveryRequest = (url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (url.pathname.endsWith(":batchGet")) {
+      lookups(body.notices);
+      return lookups.mock.calls.length === 1 ? olderResponse.promise : Response.json({ acknowledgements: [] });
+    }
+    writes(body.notice);
+    return Response.json({});
+  };
+
+  const container = await render({ window: null, error: null });
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, issue);
+  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
+  expect(listSessionDispatches).not.toHaveBeenCalled();
+  if (from === "conversation") await act(async () => buttonIn(panel, "Acknowledge")!.click());
+  await act(async () => buttonIn(container, "Delivery history")!.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain(issue.reason);
+  if (from === "archive") await act(async () => buttonIn(dialog, "Acknowledge")!.click());
+  const exact = { commandId: issue.commandId, receiptVersion: issue.receiptVersion };
+  expect(writes.mock.calls).toEqual([[exact]]);
+  expect(lookups.mock.calls).toEqual([[[exact]]]);
+  expect(dialog.textContent).toContain("Acknowledged");
+  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
+  expect(panel.isConnected).toBe(false);
+
+  await act(async () => olderResponse.resolve(Response.json({ acknowledgements: [] })));
+  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
+  await showIssues(watch, issueReceipt(issue.commandId, "42", "A newer delivery failure"));
+  expect(container.textContent).toContain("A newer delivery failure");
+  expect(buttonIn(container, "Acknowledge")).toBeDefined();
+  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
 });
 
 it("keeps older issues actionable after every recent issue is acknowledged", async () => {
@@ -2089,7 +2165,7 @@ it("checks an ambiguous submission against the stored command without resending 
 
   await act(async () => retry(container, "hung").click());
   expect(sentIds()).toEqual(["hung"]);
-  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, "hung");
+  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, "hung", expect.any(AbortSignal));
   expect(progressLabel(container, "hung")).toContain("Runner accepted · waiting for agent confirmation");
   expect(progressLabel(container, "hung")).not.toContain("signal timed out");
 });
@@ -2109,7 +2185,7 @@ it("keeps authored input when reconnect cannot recover its receipt", async () =>
   const container = await render();
   expect(progressLabel(container, "offline")).toContain("lost reply");
   await act(async () => window.dispatchEvent(new Event("online")));
-  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId);
+  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId, expect.any(AbortSignal));
   expect(sentIds()).toEqual(["offline"]);
   expect(progressLabel(container, "offline")).toContain("receipt lookup unavailable");
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands[0].command).toEqual(command);
@@ -2134,12 +2210,36 @@ it.each([
   );
   const container = await render();
   expect(sentIds()).toEqual([]);
-  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId);
+  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId, expect.any(AbortSignal));
   expect(pendingRow(container, command.commandId).querySelector('[data-stage="unconfirmed"]')).not.toBeNull();
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands[0]).toMatchObject({
     command,
     dispatch: null,
   });
+});
+
+it("does not retry an old Session after leaving while its recovery read is pending", async () => {
+  const command = message("navigate-during-recovery");
+  const store = new LocalCommands(THREAD.metadata.threadId);
+  store.remember(command);
+  expect(store.markAttempted(command.commandId)).toBe(true);
+  const read = Promise.withResolvers<null>();
+  vi.mocked(getDispatch).mockReturnValueOnce(read.promise);
+  const container = await render();
+  const call = vi.mocked(getDispatch).mock.calls[0];
+  expect(call).toEqual([THREAD.metadata.threadId, command.commandId, expect.any(AbortSignal)]);
+  const view = mounted.find((entry) => entry.container === container)!;
+  await act(async () =>
+    view.root.render(
+      <TestLiveProviders>
+        {page(threadState(), view.topbarTitle!, view.topbarActions!, undefined, "other-session")}
+      </TestLiveProviders>
+    )
+  );
+  expect(call[2]?.aborted).toBe(true);
+  await act(async () => read.resolve(null));
+  expect(submitInput).not.toHaveBeenCalled();
+  expect(store.getSnapshot().commands[0]?.command).toEqual(command);
 });
 
 it("moves a local control into chronological history once projected and retains its effected outcome", async () => {

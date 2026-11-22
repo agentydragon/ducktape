@@ -1,5 +1,5 @@
 import { Button, Divider, Group, Modal, ScrollArea, Stack, Tabs, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
+import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { CommandNoticeAcknowledgement, CommandNoticeRevision } from "../../app_service_pb";
 import type {
   Dispatch,
@@ -9,12 +9,13 @@ import { displayableError } from "../transport/client";
 import { TopbarActions } from "../shell/topbar";
 import { TimeAgo } from "../ui/time_ago";
 import { listSessionDispatches } from "./client";
-import { isDeliveryIssue, noticeKey, useCommandNoticeAttention } from "./command_notice_attention";
+import { isDeliveryIssue, noticeKey } from "./command_notice_attention";
 import { listCommandNoticeAcknowledgements } from "./command_notice_client";
 import { deliveryOperationLabel, deliveryStateLabel } from "./delivery_labels";
-import { readSelectedDispatchReceipts, worksetItemFromReceipt } from "./dispatch_workset";
+import { readSelectedDispatchReceipts, worksetItemFromReceipt, type ReadDispatchReceipts } from "./dispatch_workset";
 import { AcknowledgeDeliveryIssue, WorksetRow } from "./dispatch_workset_panel";
 import { StoredCommandDetails } from "./stored_command_details";
+import type { ThreadDeliveryState } from "./thread_delivery";
 import { timestampLabel } from "./thread_presentation";
 
 interface Page<T> {
@@ -26,28 +27,36 @@ export function PagedHistory<T>({
   sessionId,
   load,
   renderRows,
+  revision = 0,
 }: {
   sessionId: string;
   load: (sessionId: string, token: string, signal: AbortSignal) => Promise<Page<T>>;
   renderRows: (rows: T[], more: boolean) => ReactNode;
+  revision?: number;
 }): JSX.Element {
   const [tokens, setTokens] = useState([""]);
   const [retry, setRetry] = useState(0);
   const token = tokens[tokens.length - 1];
-  const [result, setResult] = useState<{ token: string; retry: number; page?: Page<T>; error?: string } | null>(null);
+  const [result, setResult] = useState<{
+    token: string;
+    retry: number;
+    revision: number;
+    page?: Page<T>;
+    error?: string;
+  } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     load(sessionId, token, controller.signal).then(
       (page) => {
-        if (!controller.signal.aborted) setResult({ token, retry, page });
+        if (!controller.signal.aborted) setResult({ token, retry, revision, page });
       },
       (error: unknown) => {
-        if (!controller.signal.aborted) setResult({ token, retry, error: displayableError(error) });
+        if (!controller.signal.aborted) setResult({ token, retry, revision, error: displayableError(error) });
       }
     );
     return () => controller.abort();
-  }, [load, retry, sessionId, token]);
-  const loaded = result?.token === token && result.retry === retry ? result : null;
+  }, [load, retry, revision, sessionId, token]);
+  const loaded = result?.token === token && result.retry === retry && result.revision === revision ? result : null;
   const next = loaded?.page?.nextPageToken;
   return (
     <Stack gap="sm">
@@ -104,11 +113,11 @@ async function retained(sessionId: string, pageToken: string, signal: AbortSigna
   return { rows: dispatches, nextPageToken };
 }
 
-function RetainedReceiptRows({ sessionId, rows }: { sessionId: string; rows: Dispatch[] }) {
-  const notices = new Map(
-    rows.filter((row) => isDeliveryIssue(row.state)).map((row) => [row.commandId, worksetItemFromReceipt(row)])
-  );
-  const attention = useCommandNoticeAttention(sessionId, [...notices.values()], false);
+function RetainedReceiptRows({ delivery, rows }: { delivery: ThreadDeliveryState; rows: Dispatch[] }) {
+  const { attention, registerArchiveIssues } = delivery;
+  const notices = useMemo(() => rows.filter((row) => isDeliveryIssue(row.state)).map(worksetItemFromReceipt), [rows]);
+  useEffect(() => registerArchiveIssues(notices), [notices, registerArchiveIssues]);
+  const byCommand = new Map(notices.map((notice) => [notice.commandId, notice]));
   if (rows.length === 0)
     return (
       <Text size="sm" c="dimmed">
@@ -124,7 +133,7 @@ function RetainedReceiptRows({ sessionId, rows }: { sessionId: string; rows: Dis
       )}
       {rows.map((row) => {
         const time = timestampLabel(row.updatedAt);
-        const notice = notices.get(row.commandId);
+        const notice = byCommand.get(row.commandId);
         return (
           <Stack key={row.commandId} gap={2} style={{ overflowWrap: "anywhere" }}>
             <Divider />
@@ -164,17 +173,16 @@ function RetainedReceiptRows({ sessionId, rows }: { sessionId: string; rows: Dis
   );
 }
 
-export function RetainedDispatches({ sessionId }: { sessionId: string }): JSX.Element {
+function RetainedDispatches({ delivery }: { delivery: ThreadDeliveryState }): JSX.Element {
   return (
     <Stack gap="sm">
       <Text size="xs" c="dimmed">
         Showing retained commands, newest first. Older deletion receipts are outside this history.
       </Text>
       <PagedHistory
-        key={sessionId}
-        sessionId={sessionId}
+        sessionId={delivery.sessionId}
         load={retained}
-        renderRows={(rows) => <RetainedReceiptRows sessionId={sessionId} rows={rows} />}
+        renderRows={(rows) => <RetainedReceiptRows delivery={delivery} rows={rows} />}
       />
     </Stack>
   );
@@ -189,7 +197,13 @@ async function acknowledged(
   return { rows: acknowledgements, nextPageToken };
 }
 
-function AcknowledgedReceiptEvidence({ sessionId, notice }: { sessionId: string; notice: CommandNoticeRevision }) {
+function AcknowledgedReceiptEvidence({
+  readReceipts,
+  notice,
+}: {
+  readReceipts: ReadDispatchReceipts;
+  notice: CommandNoticeRevision;
+}) {
   const controllerRef = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ item: DispatchWorksetItem } | { unavailable: string; retry: boolean } | null>(
@@ -201,7 +215,7 @@ function AcknowledgedReceiptEvidence({ sessionId, notice }: { sessionId: string;
     controllerRef.current?.abort();
     controllerRef.current = controller;
     setLoading(true);
-    void readSelectedDispatchReceipts(sessionId, [notice.commandId], controller.signal)
+    void readSelectedDispatchReceipts(readReceipts, [notice.commandId], controller.signal)
       .then(([receipt]) => {
         if (controller.signal.aborted) return;
         setResult(
@@ -223,7 +237,8 @@ function AcknowledgedReceiptEvidence({ sessionId, notice }: { sessionId: string;
         if (!controller.signal.aborted) setLoading(false);
       });
   };
-  if (result && "item" in result) return <WorksetRow sessionId={sessionId} item={result.item} showCommandId={false} />;
+  if (result && "item" in result)
+    return <WorksetRow readReceipts={readReceipts} item={result.item} showCommandId={false} />;
   return (
     <Group gap="xs">
       {(!result || result.retry) && (
@@ -240,12 +255,14 @@ function AcknowledgedReceiptEvidence({ sessionId, notice }: { sessionId: string;
   );
 }
 
-function AcknowledgedIssues({ sessionId, issues }: { sessionId: string; issues: readonly DispatchWorksetItem[] }) {
-  const current = new Map(issues.map((item) => [noticeKey(item), item]));
+function AcknowledgedIssues({ delivery }: { delivery: ThreadDeliveryState }) {
+  const { sessionId, readReceipts, attention } = delivery;
+  const current = new Map(attention.issues.map((item) => [noticeKey(item), item]));
   return (
     <PagedHistory
       sessionId={sessionId}
       load={acknowledged}
+      revision={attention.historyRevision}
       renderRows={(rows) =>
         rows.length === 0 ? (
           <Text size="sm" c="dimmed">
@@ -270,9 +287,9 @@ function AcknowledgedIssues({ sessionId, issues }: { sessionId: string; issues: 
                   )}
                 </Group>
                 {item ? (
-                  <WorksetRow sessionId={sessionId} item={item} showCommandId={false} />
+                  <WorksetRow readReceipts={readReceipts} item={item} showCommandId={false} />
                 ) : (
-                  <AcknowledgedReceiptEvidence sessionId={sessionId} notice={notice} />
+                  <AcknowledgedReceiptEvidence readReceipts={readReceipts} notice={notice} />
                 )}
               </Stack>
             );
@@ -295,13 +312,11 @@ export function DeliveryHistoryFallback({ onOpen }: { onOpen: () => void }): JSX
 }
 
 export function CommandDeliveryHistory({
-  sessionId,
-  issues,
+  delivery,
   opened,
   onClose,
 }: {
-  sessionId: string;
-  issues: readonly DispatchWorksetItem[];
+  delivery: ThreadDeliveryState;
   opened: boolean;
   onClose: () => void;
 }): JSX.Element {
@@ -320,10 +335,10 @@ export function CommandDeliveryHistory({
             <Tabs.Tab value="acknowledged">Acknowledged</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="receipts">
-            <RetainedDispatches sessionId={sessionId} />
+            <RetainedDispatches delivery={delivery} />
           </Tabs.Panel>
           <Tabs.Panel value="acknowledged">
-            <AcknowledgedIssues sessionId={sessionId} issues={issues} />
+            <AcknowledgedIssues delivery={delivery} />
           </Tabs.Panel>
         </Tabs>
       )}

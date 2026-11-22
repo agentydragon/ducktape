@@ -36,17 +36,31 @@ export function worksetItemFromReceipt(row: Dispatch): DispatchWorksetItem {
   });
 }
 
-/** Read the exact current or legacy receipt, with an explicit bound on diagnostic lookups. */
-export async function readSelectedDispatchReceipts(
+export type ReadDispatchReceipts = (
+  commandIds: readonly string[],
+  signal: AbortSignal
+) => ReturnType<typeof batchGetDispatches>;
+
+/** Keep current, legacy, and missing results distinct at the Session boundary. */
+export function readDispatchReceipts(
   sessionId: string,
   commandIds: readonly string[],
   signal: AbortSignal
-): Promise<Dispatch[]> {
-  const results = await batchGetDispatches(
+): ReturnType<ReadDispatchReceipts> {
+  return batchGetDispatches(
     sessionId,
     commandIds,
     AbortSignal.any([signal, AbortSignal.timeout(RECEIPT_LOOKUP_TIMEOUT_MS)])
   );
+}
+
+/** Diagnostics can use the metadata in a current or legacy receipt. */
+export async function readSelectedDispatchReceipts(
+  readReceipts: ReadDispatchReceipts,
+  commandIds: readonly string[],
+  signal: AbortSignal
+): Promise<Dispatch[]> {
+  const results = await readReceipts(commandIds, signal);
   return results.flatMap(({ result }) =>
     result.case === "dispatch" || result.case === "legacyDeletionReceipt" ? [result.value] : []
   );
@@ -131,12 +145,12 @@ export function watchDispatchWorkset(sessionId: string, publish: (view: WorksetV
 export type ReasonLookup = { reason: string } | { error: string };
 
 export function readFullDispatchReason(
-  sessionId: string,
+  readReceipts: ReadDispatchReceipts,
   item: DispatchWorksetItem,
   publish: (result: ReasonLookup) => void
 ): () => void {
   const controller = new AbortController();
-  void readSelectedDispatchReceipts(sessionId, [item.commandId], controller.signal).then(
+  void readSelectedDispatchReceipts(readReceipts, [item.commandId], controller.signal).then(
     ([row]) => {
       if (controller.signal.aborted) return;
       const sameUpdate =

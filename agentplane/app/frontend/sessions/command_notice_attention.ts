@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CommandNoticeRevisionSchema, type CommandNoticeRevision } from "../../app_service_pb";
 import {
@@ -8,8 +8,6 @@ import {
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError } from "../transport/client";
 import { acknowledgeCommandNotice, getCommandNoticeAcknowledgements } from "./command_notice_client";
-
-const noticeChanged = new EventTarget();
 
 type Receipt = { commandId: string; receiptVersion?: bigint };
 
@@ -23,16 +21,10 @@ export function isDeliveryIssue(state: DeliveryState): boolean {
 
 export interface NoticeAttention {
   issues: readonly DispatchWorksetItem[];
-  stale: boolean;
   acknowledged: (item: Receipt) => boolean;
+  canAcknowledge: (item: DispatchWorksetItem) => boolean;
   acknowledge: (item: DispatchWorksetItem) => void;
-  pending: string | null;
-  error: string | null;
-}
-
-interface Scope {
-  sessionId: string;
-  keys: ReadonlySet<string>;
+  historyRevision: number;
   pending: string | null;
   error: string | null;
 }
@@ -42,25 +34,29 @@ export const NO_ISSUES: readonly DispatchWorksetItem[] = [];
 export function useCommandNoticeAttention(
   sessionId: string,
   issues: readonly DispatchWorksetItem[],
-  stale: boolean
+  stale: boolean,
+  archiveIssues: readonly DispatchWorksetItem[]
 ): NoticeAttention {
-  // A new watch checkpoint can carry identical issues. Only a change of exact identities triggers a read.
-  const revisions = JSON.stringify(
-    stale
-      ? []
-      : issues
-          .filter((item) => (item.receiptVersion ?? 0n) > 0n)
-          .map(noticeKey)
-          .sort()
+  const eligible = new Set(
+    [...(stale ? NO_ISSUES : issues), ...archiveIssues]
+      .filter((item) => isDeliveryIssue(item.state) && (item.receiptVersion ?? 0n) > 0n)
+      .map(noticeKey)
   );
-  const [scope, setScope] = useState<Scope | null>(null);
-  const current = scope?.sessionId === sessionId ? scope : null;
-  const inSession = (state: Scope | null): Scope =>
-    state?.sessionId === sessionId ? state : { sessionId, keys: new Set(), pending: null, error: null };
+  // Workset checkpoints and a mounted archive page can describe the same revision.
+  const revisions = JSON.stringify([...eligible].sort());
+  const [acknowledged, setAcknowledged] = useState<ReadonlySet<string>>(() => new Set());
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [pending, setPending] = useState<string | null>(null);
+  const writing = useRef(false);
 
   useEffect(() => {
     const keys = new Set(JSON.parse(revisions) as string[]);
-    if (!keys.size) return;
+    if (!keys.size) {
+      setLookupError(null);
+      return;
+    }
     const notices = [...keys].map((key) => {
       const [commandId, version] = JSON.parse(key) as [string, string];
       return create(CommandNoticeRevisionSchema, { commandId, receiptVersion: BigInt(version) });
@@ -73,23 +69,20 @@ export function useCommandNoticeAttention(
       getCommandNoticeAcknowledgements(sessionId, notices, controller.signal)
         .then((acknowledgements) => {
           if (controller.signal.aborted) return;
-          setScope((previous) => {
-            const next = previous?.sessionId === sessionId ? previous : null;
-            const matches = new Set([...keys].filter((key) => next?.keys.has(key)));
+          setAcknowledged((previous) => {
+            // Recorded acknowledgements are additive. A lookup started before a successful
+            // mutation can return a page that does not yet include it.
+            const matches = new Set([...keys].filter((key) => previous.has(key)));
             for (const { notice } of acknowledgements) {
               if (notice && keys.has(noticeKey(notice))) matches.add(noticeKey(notice));
             }
-            return { sessionId, keys: matches, pending: next?.pending ?? null, error: null };
+            return matches;
           });
+          setLookupError(null);
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
-          setScope((previous) => ({
-            sessionId,
-            keys: previous?.sessionId === sessionId ? previous.keys : new Set(),
-            pending: previous?.sessionId === sessionId ? previous.pending : null,
-            error: `Could not load acknowledgements. ${displayableError(error)}`,
-          }));
+          setLookupError(`Could not load acknowledgements. ${displayableError(error)}`);
         });
     };
     const refreshWhenVisible = () => {
@@ -97,49 +90,48 @@ export function useCommandNoticeAttention(
     };
     refresh();
     document.addEventListener("visibilitychange", refreshWhenVisible);
-    noticeChanged.addEventListener("change", refresh);
     return () => {
       request?.abort();
       document.removeEventListener("visibilitychange", refreshWhenVisible);
-      noticeChanged.removeEventListener("change", refresh);
     };
   }, [sessionId, revisions]);
 
   return {
     issues,
-    stale,
-    acknowledged: (item) => current?.keys.has(noticeKey(item)) ?? false,
-    pending: current?.pending ?? null,
-    error: current?.error ?? null,
+    acknowledged: (item) => acknowledged.has(noticeKey(item)),
+    canAcknowledge: (item) => isDeliveryIssue(item.state) && eligible.has(noticeKey(item)),
+    historyRevision,
+    pending,
+    error: writeError ?? lookupError,
     acknowledge: (item) => {
       const receiptVersion = item.receiptVersion;
       const key = noticeKey(item);
-      if (stale || receiptVersion === undefined || receiptVersion <= 0n || !issues.includes(item) || current?.pending)
+      if (
+        !isDeliveryIssue(item.state) ||
+        !eligible.has(key) ||
+        receiptVersion === undefined ||
+        acknowledged.has(key) ||
+        writing.current
+      )
         return;
-      setScope((previous) => ({ ...inSession(previous), pending: key, error: null }));
+      writing.current = true;
+      setPending(key);
+      setWriteError(null);
       const notice: CommandNoticeRevision = create(CommandNoticeRevisionSchema, {
         commandId: item.commandId,
         receiptVersion,
       });
       acknowledgeCommandNotice(sessionId, notice)
         .then(() => {
-          setScope((previous) =>
-            previous?.sessionId === sessionId
-              ? { ...previous, keys: new Set([...previous.keys, key]), pending: null, error: null }
-              : previous
-          );
-          noticeChanged.dispatchEvent(new Event("change"));
+          setAcknowledged((previous) => new Set([...previous, key]));
+          setHistoryRevision((revision) => revision + 1);
         })
         .catch((error: unknown) => {
-          setScope((previous) =>
-            previous?.sessionId === sessionId
-              ? {
-                  ...previous,
-                  pending: null,
-                  error: `Could not acknowledge the delivery issue. ${displayableError(error)}`,
-                }
-              : previous
-          );
+          setWriteError(`Could not acknowledge the delivery issue. ${displayableError(error)}`);
+        })
+        .finally(() => {
+          writing.current = false;
+          setPending(null);
         });
     },
   };

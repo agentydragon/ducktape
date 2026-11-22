@@ -8,21 +8,10 @@ import {
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { waitingReasonLabel } from "./command_progress";
-import {
-  isDeliveryIssue,
-  NO_ISSUES,
-  noticeKey,
-  useCommandNoticeAttention,
-  type NoticeAttention,
-} from "./command_notice_attention";
-import {
-  EMPTY_WORKSET,
-  readFullDispatchReason,
-  watchDispatchWorkset,
-  type ReasonLookup,
-  type WorksetView,
-} from "./dispatch_workset";
+import { isDeliveryIssue, noticeKey, type NoticeAttention } from "./command_notice_attention";
+import { readFullDispatchReason, type ReadDispatchReceipts, type ReasonLookup } from "./dispatch_workset";
 import type { LocalCommand } from "./local_commands";
+import type { ThreadDeliveryState } from "./thread_delivery";
 
 export function AcknowledgeDeliveryIssue({
   item,
@@ -31,7 +20,7 @@ export function AcknowledgeDeliveryIssue({
   item: DispatchWorksetItem;
   attention: NoticeAttention;
 }): JSX.Element | null {
-  if (attention.stale || !attention.issues.includes(item) || (item.receiptVersion ?? 0n) <= 0n) return null;
+  if (!attention.canAcknowledge(item)) return null;
   const saving = attention.pending === noticeKey(item);
   return (
     <Button
@@ -48,12 +37,12 @@ export function AcknowledgeDeliveryIssue({
 }
 
 export function WorksetRow({
-  sessionId,
+  readReceipts,
   item,
   action,
   showCommandId = true,
 }: {
-  sessionId: string;
+  readReceipts: ReadDispatchReceipts;
   item: DispatchWorksetItem;
   action?: ReactNode;
   showCommandId?: boolean;
@@ -66,7 +55,7 @@ export function WorksetRow({
     if (stopLookup.current) return;
     setResult(null);
     setLoading(true);
-    stopLookup.current = readFullDispatchReason(sessionId, item, (next) => {
+    stopLookup.current = readFullDispatchReason(readReceipts, item, (next) => {
       stopLookup.current = null;
       setResult(next);
       setLoading(false);
@@ -118,21 +107,22 @@ export function WorksetRow({
 }
 
 export function DispatchWorksetPanel({
-  sessionId,
-  view,
+  delivery,
   onOpenDeliveryHistory,
   localCommands = [],
   entities = [],
 }: {
-  sessionId: string;
-  view: WorksetView;
+  delivery: ThreadDeliveryState;
   onOpenDeliveryHistory: () => void;
   localCommands?: readonly LocalCommand[];
   entities?: readonly ThreadEntity[];
 }): JSX.Element | null {
-  const { snapshot, stale, coverageLost } = view;
-  const attention = useCommandNoticeAttention(sessionId, snapshot?.recentIssues ?? NO_ISSUES, stale);
-  const rows = snapshot ? [...snapshot.active, ...attention.issues, ...snapshot.recentAdmittedOrCancelled] : [];
+  const {
+    workset: { snapshot, stale, coverageLost },
+    attention,
+    readReceipts,
+  } = delivery;
+  const rows = snapshot ? [...snapshot.active, ...snapshot.recentIssues, ...snapshot.recentAdmittedOrCancelled] : [];
   const hidden = new Set(localCommands.map((command) => command.command.commandId));
   const pendingInHistory = new Set<string>();
   for (const row of entities) {
@@ -203,7 +193,7 @@ export function DispatchWorksetPanel({
               {visible.map((item) => (
                 <WorksetRow
                   key={`${noticeKey(item)}:${item.state}:${item.updatedAt?.seconds}:${item.updatedAt?.nanos}`}
-                  sessionId={sessionId}
+                  readReceipts={readReceipts}
                   item={item}
                   action={<AcknowledgeDeliveryIssue item={item} attention={attention} />}
                 />
@@ -214,12 +204,4 @@ export function DispatchWorksetPanel({
       </Stack>
     </Paper>
   );
-}
-
-export function useDispatchWorkset(sessionId: string | null): WorksetView {
-  const [state, setState] = useState<{ sessionId: string; view: WorksetView } | null>(null);
-  useEffect(() => {
-    if (sessionId !== null) return watchDispatchWorkset(sessionId, (view) => setState({ sessionId, view }));
-  }, [sessionId]);
-  return state?.sessionId === sessionId ? state.view : EMPTY_WORKSET;
 }

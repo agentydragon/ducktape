@@ -81,6 +81,8 @@ preference for the verified OIDC operator, Thread, command ID, and exact receipt
 browser signed in as that operator sees it when it opens or returns focus to the Thread. A newer
 receipt revision needs separate attention. When the workset clips issues, Older delivery issues
 opens the paginated receipt history, where retained failures can still be acknowledged.
+The selected Thread shares acknowledgement state between the conversation and Delivery history.
+Opening the archive loads one page at a time. Acknowledging a receipt updates both views.
 Delivery history remains available independently of the History projection and includes previous
 acknowledgements. When an exact revision has expired or was superseded, the interface reports that
 loss of evidence.
