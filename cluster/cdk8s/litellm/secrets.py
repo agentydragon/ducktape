@@ -19,8 +19,8 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import write_kustomization
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.litellm.endpoint import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -182,7 +182,4 @@ def _chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[*_SOPS_FILES, write_charts(root, OUTPUT_DIR, _chart)]),
-    )
+    write_kustomization(root / OUTPUT_DIR, resources=[*_SOPS_FILES, write_charts(root, OUTPUT_DIR, _chart)])

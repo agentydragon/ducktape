@@ -1594,7 +1594,6 @@ py_library(
     name = "talos_cloud_controller_manager",
     srcs = ["talos_cloud_controller_manager.py"],
     deps = [
-        ":generation",
         ":helm",
         ":manifest_roots",
         ":node_scheduling",

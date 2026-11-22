@@ -15,9 +15,9 @@ from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
-    kustomize_kustomization,
+    write_kustomization,
 )
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 
@@ -44,7 +44,7 @@ def write_namespace_bindings(root: Path, flux_chart: Chart, roles: Kustomization
     for namespace in NAMESPACE_DIAGNOSTICS:
         directory = f"{GENERATED_ROOT}/agents/namespace-rbac/{namespace}"
         manifest = write_charts(root, directory, partial(chart, namespace=namespace))
-        write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
+        write_kustomization(root / directory, resources=[manifest])
         flux_kustomization(
             flux_chart,
             f"agent-namespace-rbac-{namespace}",

@@ -24,10 +24,10 @@ from cluster.cdk8s import node_scheduling, public_web_pki
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
+from cluster.cdk8s.flux import ConfigMapArgs, write_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, GROCY_SF, GROCY_VALLEJO, add_consumer_credentials
@@ -232,11 +232,9 @@ def household_chart(app: App, *, household: str) -> Chart:
 def write_manifests(root: Path) -> None:
     for household in grocy.HOUSEHOLDS:
         directory = output_dir(household)
-        write_yaml(
-            root / directory / "kustomization.yaml",
-            kustomize_kustomization(
-                resources=[write_charts(root, directory, partial(household_chart, household=household))],
-                components=[posixpath.relpath(PINS_DIR, directory)],
-                config_map_generator=[_config_map(household)],
-            ),
+        write_kustomization(
+            root / directory,
+            resources=[write_charts(root, directory, partial(household_chart, household=household))],
+            components=[posixpath.relpath(PINS_DIR, directory)],
+            config_map_generator=[_config_map(household)],
         )
