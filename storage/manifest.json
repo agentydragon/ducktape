@@ -18,11 +18,12 @@
   },
   "report_html_sha256": "8e7360a4e425b6a8adc93f580f01f155a5d6748d5d436dde63a41c6c98d7cd7b",
   "current_script_sha256": "c1c176447707d7d00664dcd3a18616b88dcf746c2c3c335806a6c332915f242d",
-  "current_evidence_sha256": "30b9fc48f5b08b7a894c39b4d8cbf607ff493a0a643696e6ce022f91fa116d29",
+  "current_evidence_sha256": "1570f09c0e5178f98145925846a78eedf0cf36b4cfc0f4e4d59502932a8c88a2",
   "remediation_script_sha256": "3460ba18a3e0be3e566f16e68c90cb0cc6910e8b17af5bf29d9242b2dcf8114b",
   "remediation_evidence_sha256": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
   "evidence_sha256": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
   "followup_devel_commit": "9eaaaa053b89ea1567d69410872dc6c03056ab5c",
   "ownership_observed_utc": "2026-11-22T11:32:42Z",
-  "discard_observed_utc": "2026-11-22T11:37:38Z"
+  "discard_observed_utc": "2026-11-22T11:37:38Z",
+  "operator_cleanup_verified_utc": "2026-11-22T11:47:51Z"
 }

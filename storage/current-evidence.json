@@ -265,7 +265,7 @@
     },
     "census": "22 November, 11:32–11:34 UTC. The cluster had 185 persistent volumes, including 47 Released. Every diskful copy on the three OVH HDD pools still belonged to a Bound volume. The 37 current definitions match the earlier commitment model.",
     "idle_claims": "Two capture volumes had no active pod reference. The older Quest capture on A was left after a provider rename. It reserves 20 GiB and uses 0.50 GB. Check whether its recordings must be archived before retiring it. The MyQuest capture on C reserves 20 GiB and uses 0.53 GB. GitOps still declares it and preserves recordings while capture is off. All 14 copies on B had an active pod reference.",
-    "other_pools": "The 32 Released HDD volumes are all on a different host. Together they reserve 320 GiB and use 37.10 GB. A first cleanup batch there has 16 former staging test HDD volumes (160 GiB declared, 3.28 GB allocated) and one SSD probe. Check artifact retention with the owners before retiring each by its original volume and claim UID. This batch frees zero capacity on A, B or C.",
+    "other_pools": "At 11:32 UTC, all 32 Released HDD volumes were on a different host. Together they reserved 320 GiB and used 37.10 GB. At 11:47 UTC the operator retired 16 staging HDD volumes and one SSD probe on that host. Their claims totaled 161 GiB and their thin volumes held 3.33 GB. Kubernetes, LINSTOR and the host volume list confirmed all 17 were gone. The other 30 previously Released PVs remained. This cleanup freed zero capacity on A, B or C.",
     "method": "Joined PVs by CSI volume handle, current PVC UID and bound PV name, pod claim references, and LINSTOR diskful identities. Released capacity is counted once per backing copy. Checked workload and GitOps ownership for the two idle OVH claims. A separate manual SSD snapshot of a bound service remains outside this comparison. Eight released volumes have claim names already reused by newer PVCs.",
     "owner_sources": {
       "provider_migration": "https://github.com/agentydragon/ducktape/pull/16270",
@@ -282,6 +282,20 @@
         "declared_gib": 1,
         "allocated_gb": 0.052
       }
+    },
+    "synthetic_retirement_result": {
+      "verified_utc": "2026-11-22T11:47:51.255544+00:00",
+      "retired_pvs": 17,
+      "declared_bytes": 172872433664,
+      "allocated_bytes_before_retirement": 3328138240,
+      "remaining_matches": {
+        "pv": 0,
+        "linstor_definition": 0,
+        "linstor_copy": 0,
+        "thin_lv": 0
+      },
+      "remaining_previously_released_pvs": 30,
+      "ovh_hdd_capacity_freed_bytes": 0
     }
   },
   "discard_review": {
