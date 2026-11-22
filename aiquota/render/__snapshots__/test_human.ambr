@@ -3,11 +3,11 @@
   '''
   Anthropic API
     Main org
-      Available balance: $123
+      Balance: $123
       Grant: $85 remaining · expires Jul 1
       Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet), Claude Code
     Secondary org
-      Available balance: $50
+      Balance: $50
   '''
 # ---
 # name: test_renders_shared_fixture[banked_resets_exhausted]
@@ -59,7 +59,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance]
   '''
   Claude
-    Available balance: $123
+    Balance: $123
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -67,7 +67,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance_stale]
   '''
   Claude
-    Available balance: $123 · stale 1h
+    Balance: $123 · stale 1h
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -75,7 +75,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance_unavailable]
   '''
   Claude
-    Available balance: unavailable
+    Balance: unavailable
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -195,7 +195,7 @@
   Subscriptions
   
   Claude
-    Available balance: $0
+    Balance: $0
     7d:  96% used  ↻ 1d 15h  0% in ~5h 22m
   
   Codex
@@ -206,13 +206,13 @@
   API balances
   
   OpenAI API
-    Available balance: $557
+    Balance: $557
     Grant: $490 remaining · expires Dec 1
     Grant: $17 remaining · expires Jan 1, 2027
     Grant: $50 remaining · expires Feb 1, 2027
   
   Anthropic API · Wide-scope promo org
-    Available balance: $220
+    Balance: $220
     Grant: $22 remaining · expires Jul 1, 2027
     Promo grant: $198 remaining · expires Nov 25
   '''
@@ -220,7 +220,7 @@
 # name: test_renders_shared_fixture[openai_platform_credits]
   '''
   OpenAI API
-    Available balance: $126
+    Balance: $126
     Grant: $100 remaining · expires Feb 1
     Grant: $26 remaining · expires Dec 1
   '''
@@ -239,7 +239,7 @@
   Subscriptions
   
   Claude
-    Available balance: $26
+    Balance: $26
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   
@@ -251,11 +251,11 @@
   API balances
   
   OpenAI API
-    Available balance: $60
+    Balance: $60
     Grant: $60 remaining · expires Jun 1
   
   Anthropic API · Shared org
-    Available balance: $75
+    Balance: $75
     Grant: $50 remaining · expires Jul 1
     Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet)
   '''
@@ -282,7 +282,7 @@
     Stale data · last observed 1d ago
     Refresh failed · showing available data
     Reset time passed · awaiting updated usage
-    Available balance: $123
+    Balance: $123
     5h:  35% used  ↻ awaiting update
     7d:  72% used  ↻ 4d 3h
   
@@ -298,7 +298,7 @@
   '''
   Claude
     Stale data · last observed 20m ago
-    Available balance: $123
+    Balance: $123
     5h:  45% used  ↻ 1h 40m
   '''
 # ---

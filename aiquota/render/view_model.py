@@ -453,7 +453,7 @@ def _credit_rows(
         )
         balances.append(
             BalanceView(
-                label="Available balance",
+                label="Balance",
                 value=summary,
                 pool_detail="Claude prepaid credits",
                 exact_value=(
@@ -478,7 +478,7 @@ def _credit_rows(
         summary = format_summary_usd(openai.total_available_usd)
         balances.append(
             BalanceView(
-                label="Available balance",
+                label="Balance",
                 value=summary,
                 exact_value=exact if summary_hides_fraction(openai.total_available_usd) else None,
             )
@@ -519,7 +519,7 @@ def _credit_rows(
                 value = "lookup failed"
             balances.append(
                 BalanceView(
-                    label="Available balance",
+                    label="Balance",
                     value=value,
                     exact_value=(
                         exact

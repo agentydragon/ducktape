@@ -108,7 +108,7 @@ function sampleQuotas(): AllQuotasView {
       {
         provider: "anthropic_platform",
         label: "Anthropic API",
-        balances: [{ label: "Available balance", value: "$75.00", group: "Research org" }],
+        balances: [{ label: "Balance", value: "$75.00", group: "Research org" }],
         grants: [
           {
             label: "Promo grant",
