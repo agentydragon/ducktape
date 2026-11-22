@@ -277,7 +277,10 @@ as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on envi
 
 Deletion cleanup commits the Session status and delivery outcomes together. The retained Session owns
 the original commands and their receipts. Authorized Get, List and Watch reads continue across
-Environment deletion and Dispatcher restart. Previously deleted commands have only the receipt
+Environment deletion and Dispatcher restart. During a rolling upgrade, a pre-`00029` replica may
+revisit every retained Environment UID on each full reconciliation. Migration `00029` suppresses its
+cleanup deletes for owned commands, so those extra scans preserve terminal outcomes and versions.
+Previously deleted commands have only the receipt
 evidence still present in legacy watch tombstones. Runtime journals and History retain their own evidence.
 
 Treating an unmarked claim as known-unsent requires a cutover with no old command writers still

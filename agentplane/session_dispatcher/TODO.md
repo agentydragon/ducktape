@@ -1,7 +1,7 @@
 # Session dispatcher TODOs
 
-- [ ] Allow central-sampler Sessions to open and accept input without an executor Environment.
-      Define command delivery and tool availability when no Environment is attached.
+- [ ] When central-sampler Sessions can exist without an Environment, revisit command and receipt retention,
+      read authority and delivery fencing for those Sessions without relying on a Sandbox UID.
 - [ ] Remove the redundant string representation of session-dispatcher state and operation. The
       dispatcher stores lowercase names (`submit_input`) and maps them by hand to protobuf enums in
       `agentplane/session_dispatcher/internal/store/snapshots.go`, which duplicates the enum. Store
