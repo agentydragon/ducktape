@@ -24,12 +24,14 @@
 - Command-running Actions (SSH, Pod and sandbox exec) read alike: the label is "Run command on/in
   <target>", the pane never repeats the target, and the settings that change how it runs are one
   line of `ShellCommandView` notes built by a `schemas/` helper that the notification text shares.
-- For mutations, show the target, scope, and consequential effects before offering card decision
-  buttons. If review needs the opened preview or live resolution of a target, gate the buttons on
-  that preview and its resolved data. Creating an unsent Gmail draft stores a message for later
-  review, so the collapsed card can offer a decision with the recipients, subject, and any reply
-  thread visible. Keep the full message body available on expansion.
-- A compact card for a read may leave narrowing constraints in the opened or full view when the
-  broader read is clear from the card. Show the data source and account or target scope, and any
-  option that can broaden the read, change what it returns, or cause side effects. Unknown or
-  unsupported arguments require full review.
+- Match the detail on the decision surface to the risk of the Action. Show the operation, target
+  and account scope, material effects, and any exposure. Require fuller review when those depend
+  on additional arguments or resolved data. Keep the exact arguments available in full review,
+  and send unknown or unsupported arguments there for a decision.
+- Low-risk details can stay under disclosure. An unsent Gmail draft can be decided on the
+  collapsed card when its subject, recipients, and any reply thread are visible. The full body
+  remains available on expansion.
+- For a read with inline decisions, show the source, account or target scope, and options that
+  materially change access or exposure. A Calendar event list can leave its date window under
+  disclosure when the card makes the broader read clear. Give changes to scope or side effects
+  the scrutiny their consequences warrant, even when the primary operation is a read.
