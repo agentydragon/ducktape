@@ -95,12 +95,12 @@ private def declaration : (s : Stmt) → Option { d : Declaration // d.toStmt = 
     ⟨.decl kind x v, congrArg (Stmt.decl kind x) h⟩
   | _ => none
 
-private def stmtMatches (expected actual : Stmt) : Bool :=
+def stmtMatches (expected actual : Stmt) : Bool :=
   match declaration expected, declaration actual with
   | some e, some a => decide (e.val = a.val)
   | _, _ => false
 
-private theorem stmtMatches_sound {expected actual : Stmt} (h : stmtMatches expected actual = true) :
+theorem stmtMatches_sound {expected actual : Stmt} (h : stmtMatches expected actual = true) :
     expected = actual := by
   unfold stmtMatches at h
   split at h

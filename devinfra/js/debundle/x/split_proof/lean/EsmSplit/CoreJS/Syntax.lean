@@ -175,6 +175,7 @@ def Func.opaqueBody : Func → Option (Nat × Nat × List Name)
 structure Import where
   source : String
   names : List (Name × Name)
+  deriving DecidableEq
 
 /-- A module: its `import`s in source order, its top-level statements each with its identity, and what it exports,
 `(public, local)` for `export { local as public }`. -/
