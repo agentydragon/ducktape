@@ -62,13 +62,17 @@ export function renderActionOutcome(action: ActionIdentity, result: CallToolResu
 }
 
 /** An Action's human-facing name; `undefined` uses the host label and `null` suppresses the label. */
-export function renderActionLabel(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
+export function renderActionLabel(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const actionPresentation = presentation(action);
   if (!actionPresentation) return undefined;
   const { label, fallbackLabel } = actionPresentation;
   if (label === undefined) return fallbackLabel;
   if (label === null) return null;
-  const rendered = renderPreview(label, args);
+  const rendered = renderPreview(label, args, requestId);
   return rendered === undefined ? fallbackLabel : rendered;
 }
 

@@ -106,7 +106,7 @@ Health methods remain public. Linkage methods remain bearer-free because the cal
 single-use state itself and the client metadata document is public. A new RPC stays denied until it
 is assigned an explicit boundary.
 
-Operator integration summaries use only the saved request UUID. Gmail reads thread subjects for
+Operator integration summaries use only the saved request UUID. GitHub resolves up to eight distinct label names from a recorded issue update through the linked MCP server and returns their colors. Gmail reads thread subjects for
 recorded thread reads, relabeling, draft replies and search results. Its resource summary reads
 draft and message subjects, label names and filter rules. For message and thread receipts, Gmail
 resolves label IDs in the successful saved result after verifying that the current mailbox

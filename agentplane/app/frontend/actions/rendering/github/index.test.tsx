@@ -44,6 +44,39 @@ function fileBlocks(container: HTMLElement): Array<{ summary: HTMLButtonElement;
   }));
 }
 
+describe("GitHub issue label updates", () => {
+  const action = create(ActionIdentitySchema, { group: "github", name: "issue_write" });
+  const args = { ...REPOSITORY, method: "update", issue_number: 42, labels: ["bug", "upstream-waiting"] };
+
+  it("shows the replacement label set and permits a decision on the closed card", async () => {
+    const label = await mount(renderActionLabel(action, args));
+    expect(shownText(label)).toContain("Set labels on test-owner/test-repo#42:");
+    expect([...label.querySelectorAll(".mantine-Badge-label")].map((badge) => badge.textContent)).toEqual([
+      "bug",
+      "upstream-waiting",
+    ]);
+    expect(shownText(await mount(renderPaneCollapsed(action, args)))).toBe("");
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionCompactCardExpands(action, args)).toBe(false);
+    const clear = { ...args, labels: [] };
+    expect(shownText(await mount(renderActionLabel(action, clear)))).toBe("Clear labels on test-owner/test-repo#42");
+    expect(actionOffersCardDecisionButtons(action, clear)).toBe(true);
+  });
+
+  it.each([
+    { ...args, title: "New title" },
+    { ...args, state: "closed" },
+    { ...args, future_field: true },
+    { ...args, method: "create" },
+    { ...args, issue_number: 0 },
+    { ...args, labels: [""] },
+    { ...args, labels: undefined },
+  ])("requires full review for other or invalid arguments: %j", (input) => {
+    expect(actionOffersCardDecisionButtons(action, input)).toBe(false);
+    expect(actionCompactCardExpands(action, input)).toBe(true);
+  });
+});
+
 describe("GitHub push_files", () => {
   const files = [
     { path: "docs/test-notes.md", content: "# Test notes\n\nA paragraph." },

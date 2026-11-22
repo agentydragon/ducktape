@@ -216,7 +216,7 @@ export function ActionHistoryCard({
     prettyResult !== undefined ||
     renderDetailsArguments(action, args) !== undefined ||
     combinedCall !== undefined;
-  const actionLabel = renderActionLabel(action, args);
+  const actionLabel = renderActionLabel(action, args, request.id);
   const receipt = (
     <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <ActionCall

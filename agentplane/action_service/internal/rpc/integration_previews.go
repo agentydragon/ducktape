@@ -25,6 +25,9 @@ type gmailPreviewProvider interface {
 
 // IntegrationPreviews binds operator lookups to the configured providers.
 type IntegrationPreviews struct {
+	GitHub interface {
+		GitHubLabelSummaries(context.Context, string, string, []string) []*operator_action_servicepb.GitHubLabelSummary
+	}
 	GoogleCalendar interface {
 		GoogleCalendarEventPreview(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
 		GoogleCalendarSummary(context.Context, string) *operator_action_servicepb.GoogleCalendarSummary
@@ -195,6 +198,42 @@ func gmailReadLabelIDs(receipt store.ActionRequest, id string, thread bool) []st
 		}
 	}
 	return previewIDs(ids)
+}
+
+func (s *OperatorService) GetGitHubLabelSummaries(ctx context.Context, request *operator_action_servicepb.GetGitHubLabelSummariesRequest) (*operator_action_servicepb.GetGitHubLabelSummariesResponse, error) {
+	receipt, err := s.previewRequest(ctx, request.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	if receipt.Action.Group != "github" || receipt.Action.Name != "issue_write" {
+		return nil, invalidRequest("request has no matching GitHub preview")
+	}
+	var args struct {
+		Owner       string   `json:"owner"`
+		Repo        string   `json:"repo"`
+		Method      string   `json:"method"`
+		IssueNumber int      `json:"issue_number"`
+		Labels      []string `json:"labels"`
+	}
+	if json.Unmarshal(receipt.Arguments, &args) != nil || args.Method != "update" || args.IssueNumber < 1 || args.Owner == "" || args.Repo == "" {
+		return nil, invalidRequest("invalid GitHub preview arguments")
+	}
+	response := &operator_action_servicepb.GetGitHubLabelSummariesResponse{}
+	if s.previews.GitHub != nil {
+		seen := make(map[string]bool)
+		var names []string
+		for _, name := range args.Labels {
+			if name != "" && len(name) <= 256 && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+			if len(names) == 8 {
+				break
+			}
+		}
+		response.Labels = s.previews.GitHub.GitHubLabelSummaries(ctx, args.Owner, args.Repo, names)
+	}
+	return response, nil
 }
 
 func (s *OperatorService) GetTanaNodeSummaries(ctx context.Context, request *operator_action_servicepb.GetTanaNodeSummariesRequest) (*operator_action_servicepb.GetTanaNodeSummariesResponse, error) {

@@ -101,6 +101,7 @@ func New(options Options) *Gate {
 		action_servicepb.ActionService_WatchActionPolicy_FullMethodName:                           g.authenticateAction(action_servicepb.ActionService_WatchActionPolicy_FullMethodName),
 		operator_action_servicepb.OperatorActionService_DecideActionRequest_FullMethodName:        g.authenticateOperator,
 		operator_action_servicepb.OperatorActionService_GetGmailResourceSummaries_FullMethodName:  g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_GetGitHubLabelSummaries_FullMethodName:    g.authenticateOperator,
 		operator_action_servicepb.OperatorActionService_GetGmailThreadSummaries_FullMethodName:    g.authenticateOperator,
 		operator_action_servicepb.OperatorActionService_GetTanaNodeSummaries_FullMethodName:       g.authenticateOperator,
 		operator_action_servicepb.OperatorActionService_WatchMcpServers_FullMethodName:            g.authenticateOperator,

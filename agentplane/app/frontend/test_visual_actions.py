@@ -3414,5 +3414,39 @@ async def test_action_presentations(
         await expect(receipt).to_contain_text(r"\"item_id\": 52")
 
 
+@DESKTOP_AND_MOBILE
+async def test_issue_label_update_compact(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    args = {**GITHUB_ISSUE, "method": "update", "labels": ["bug", "upstream-waiting", "needs investigation"]}
+    await app.show_action_preview(
+        "github",
+        "issue_write",
+        args,
+        {
+            "github-label-summaries": {
+                "labels": [
+                    {"name": "bug", "color": "d73a4a"},
+                    {"name": "upstream-waiting", "color": "0052cc"},
+                    {"name": "needs investigation", "color": "fbca04"},
+                ]
+            }
+        },
+    )
+    await app.show_action_receipt(
+        "github", "issue_write", args, {"content": [], "structuredContent": {"id": "7700"}, "isError": False}
+    )
+    sidebar_width = (viewport.width if viewport == MOBILE else 240) - 16
+    detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
+    await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
+    sidebar = view.page.locator("[data-action-visual=sidebar]")
+    await expect(sidebar.locator(".mantine-Badge-label").get_by_text("needs investigation")).to_be_visible()
+    await expect(sidebar.locator(".mantine-Badge-root").filter(has_text="bug")).to_have_css(
+        "border-top-color", "rgb(215, 58, 74)"
+    )
+    await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+    await expect(sidebar.get_by_role("button", name="Expand ", exact=False)).to_have_count(0)
+    await wait_for_stable(view.page)
+    await view.capture(target=sidebar)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -71,7 +71,7 @@ export function PendingActionList({
         const expanded = expands && expandedId === request.id;
         // A card without an expanded version shows all it has at once.
         const unclamped = expanded || !expands;
-        const actionLabel = renderActionLabel(action, args);
+        const actionLabel = renderActionLabel(action, args, request.id);
         const collapsedPreview = renderPaneCollapsed(action, args, request.id);
         const openedPreview = renderPaneOpened(action, args, request.id);
         const showRequestTitle = shouldRenderPaneRequestTitle(action, args, request.title);
