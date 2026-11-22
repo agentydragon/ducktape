@@ -197,10 +197,15 @@ def test_staging_sampler_delegation_and_credential_files(staging_manifests: list
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
-    assert any(
-        endpoint.get("matchLabels") == sampler_labels
+    sampler_rule = one(
+        rule
         for rule in action_policy["spec"]["ingress"]
-        for endpoint in rule.get("fromEndpoints", [])
+        if any(endpoint.get("matchLabels") == sampler_labels for endpoint in rule.get("fromEndpoints", []))
+    )
+    assert any(
+        port == {"port": str(actions.service(staging.ENV.namespace).pod_port), "protocol": "TCP"}
+        for port_rule in sampler_rule.get("toPorts", [])
+        for port in port_rule.get("ports", [])
     )
     assert "database_url" not in settings
     assert "private_key_pem" not in settings["web_push"]
@@ -265,22 +270,10 @@ def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> N
     assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == alloy_endpoints.OTLP_GRPC_ENDPOINT
 
 
-def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -> None:
-    props = SessionDelegationProps(
-        direct_tools_by_group={
-            actions.ENVIRONMENTS_GROUP: frozenset({"list", "get", "resume"}),
-            actions.SESSIONS_GROUP: frozenset(
-                {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
-            ),
-        }
-    )
-    env = replace(
-        staging.ENV,
-        namespace="actions-delegation-fixture",
-        actions=replace(staging.ENV.actions, session_delegation=props),
-    )
+def test_disabling_sampler_delegation_removes_its_caller_and_ingress_rule(scratch_app: App) -> None:
+    env = replace(staging.ENV, actions=replace(staging.ENV.actions, central_sampler_session_delegation=False))
     chart = Chart(scratch_app, "delegation-actions", disable_resource_name_hashes=True)
-    actions.Actions(
+    component = actions.Actions(
         chart,
         "actions",
         env,
@@ -289,8 +282,22 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         dispatcher=runner_gateway.sessions_service(env.namespace),
         environment_service_endpoint=environment_service.environments_service(env.namespace),
     )
+    component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)
     settings = config_map_yaml(documents, f"{actions.NAME}-settings", "settings.yaml")
+    assert not settings.get("session_delegation_service")
+    policy = find_resource(documents, "CiliumNetworkPolicy", actions.NAME)
+    sampler = central_sampler.service(env.namespace).pods.cilium
+    assert all(
+        endpoint.get("matchLabels") != sampler
+        for rule in policy["spec"]["ingress"]
+        for endpoint in rule.get("fromEndpoints", [])
+    )
+
+
+def test_staging_session_delegation_tools_and_peer_credentials(staging_manifests: list[dict[str, Any]]) -> None:
+    namespace = staging.ENV.namespace
+    settings = config_map_yaml(staging_manifests, f"{actions.NAME}-settings", "settings.yaml")
     groups = settings["action_groups"]
     assert groups["environments"]["executor"]["kind"] == "session_delegation"
     assert set(groups["environments"]["direct_tools"]) == {"get", "list", "resume"}
@@ -304,17 +311,17 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         "read_turns",
         "submit_input",
     }
-    dispatcher = runner_gateway.sessions_service(env.namespace)
-    history = history_service.service(env.namespace)
-    environments = environment_service.environments_service(env.namespace)
+    dispatcher = runner_gateway.sessions_service(namespace)
+    history = history_service.service(namespace)
+    environments = environment_service.environments_service(namespace)
     assert settings["environment_service"]["target"] == environments.authority
     assert settings["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    deployment = find_resource(documents, "Deployment", actions.NAME)
+    deployment = find_resource(staging_manifests, "Deployment", actions.NAME)
     pod = deployment["spec"]["template"]["spec"]
     container = one(item for item in pod["containers"] if item["name"] == actions.NAME)
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {mount["mountPath"]: volumes[mount["name"]] for mount in container["volumeMounts"]}
-    certificate = one(doc for doc in documents if doc["kind"] == "Certificate")
+    certificate = find_resource(staging_manifests, "Certificate", f"{actions.NAME}-workload")
     assert certificate["spec"]["uris"] == [ACTIONS_URI]
     for peer_name, server_uri, target in [
         ("session_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
@@ -338,34 +345,6 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
             if peer_name.startswith("session_delegation_")
             else actions._PEER_TIMEOUT_SECONDS
         )
-
-
-def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -> None:
-    env = replace(staging.ENV, actions=replace(staging.ENV.actions, central_sampler_session_delegation=True))
-    chart = Chart(scratch_app, "sampler-delegation-actions", disable_resource_name_hashes=True)
-    action_component = actions.Actions(
-        chart,
-        "actions",
-        env,
-        database_url=EnvValue.from_value("postgres://unused"),
-        history=history_service.service(env.namespace),
-        dispatcher=runner_gateway.sessions_service(env.namespace),
-    )
-    action_component.add_platform_resources()
-    documents = Cdk8sTesting.synth(chart)
-    settings = config_map_yaml(documents, "actions-settings", "settings.yaml")
-    assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
-    action_policy = find_resource(documents, "CiliumNetworkPolicy", actions.NAME)
-    sampler_labels = central_sampler.service(env.namespace).pods.cilium
-    action_port = str(actions.service(env.namespace).pod_port)
-    assert any(
-        any(endpoint.get("matchLabels") == sampler_labels for endpoint in rule.get("fromEndpoints", []))
-        and any(
-            any(port["port"] == action_port and port["protocol"] == "TCP" for port in port_rule.get("ports", []))
-            for port_rule in rule.get("toPorts", [])
-        )
-        for rule in action_policy["spec"]["ingress"]
-    )
 
 
 def test_session_delegation_network_caller_requires_the_group() -> None:
