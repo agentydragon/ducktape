@@ -1180,31 +1180,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_terraform_vars",
-    srcs = ["test_terraform_vars.py"],
-    data = [
-        "//tf/gitops/cdviz-github-webhook:variables.tf",
-        "//tf/gitops/forgejo-images:variables.tf",
-        "//tf/gitops/home-switch:variables.tf",
-        "//tf/gitops/route53-domain-delegation:variables.tf",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":route53_domain_delegation",
-        "//:conftest",
-        "//cluster/cdk8s/cdviz:github_webhook",
-        "//cluster/cdk8s/forgejo_registry:chart",
-        "//cluster/cdk8s/monitoring:home_switch",
-        "@pypi//pydantic",
-        "@pypi//pygohcl",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
-    ],
-)
-
 py_library(
     name = "image_automation",
     srcs = ["image_automation.py"],
@@ -2160,6 +2135,8 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
+        "//tf/gitops/gitlab-spike:variables.tf",
+        "//tf/gitops/home-switch:variables.tf",
     ],
     env = {
         "GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)",
