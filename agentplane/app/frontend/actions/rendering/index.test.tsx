@@ -183,16 +183,16 @@ describe("Action presentation slots", () => {
   });
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
-    const calendar = await mount(
-      renderPaneCollapsed(identity("tana", "get_or_create_calendar_node"), {
-        workspaceId: "workspace-123",
-        granularity: "week",
-        date: "2026-10-12",
-      })
-    );
+    const calendarAction = identity("tana", "get_or_create_calendar_node");
+    const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
+    const calendar = await mount(renderPaneCollapsed(calendarAction, args));
     expect(calendar.textContent).toContain("week containing");
     expect(calendar.textContent).toContain("2026-10-12");
     expect(calendar.textContent).toContain("workspace-123");
+    expect(actionOffersCardDecisionButtons(calendarAction, args)).toBe(true);
+    const unknown = { ...args, mode: "unknown" };
+    expect(actionOffersCardDecisionButtons(calendarAction, unknown)).toBe(false);
+    expect(actionCompactCardExpands(calendarAction, unknown)).toBe(true);
 
     const deletion = await mount(
       renderPaneCollapsed(identity("kubernetes_admin", "resources_delete"), {
@@ -243,7 +243,7 @@ describe("Action presentation slots", () => {
     const opened = await mount(renderPaneOpened(action, args));
     const details = await mount(renderDetailsArguments(action, args));
 
-    expect(label.textContent).toContain("Gmail: Draft email");
+    expect(label.textContent).toContain("Gmail: Create unsent draft");
     expect(collapsed.textContent).toContain("reader@example.com");
     expect(collapsed.textContent).toContain("Release notes");
     expect(collapsed.textContent).toContain("The release is ready.");
@@ -1137,8 +1137,8 @@ describe("expanded Kubernetes Action coverage", () => {
   it("shows Pod run networking scope and waits for returned readiness evidence", async () => {
     const action = identity("kubernetes_admin", "pods_run");
     const details = await mount(renderDetailsArguments(action, { image: "web:v1", port: 8080 }));
-    expect(details.textContent).toContain("ClusterIP Service");
-    expect(details.textContent).toContain("OpenShift Route");
+    expect(details.textContent).toContain("Expose TCP port 8080 through a ClusterIP Service.");
+    expect(details.textContent).not.toContain("OpenShift Route");
     const result: CallToolResult = {
       isError: false,
       content: [
@@ -1445,6 +1445,35 @@ describe("card decision buttons capability", () => {
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(true);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(true);
     expect(actionOffersCardDecisionButtons(search, { labelIds: ["Label_19"] })).toBe(false);
+  });
+
+  it("limits compact Grocy creation to the one fully displayed record", async () => {
+    const action = identity("grocy_sf", "locations_create");
+    const location = { name: "Chest freezer", is_freezer: true, description: "Basement" };
+    const args = { items: [location] };
+    const collapsed = await mount(renderPaneCollapsed(action, args));
+    expect(collapsed.textContent).toContain("Chest freezer");
+    expect(collapsed.textContent).toContain("Adjusts due dates");
+    expect(collapsed.textContent).toContain("Basement");
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionCompactCardExpands(action, args)).toBe(false);
+    for (const items of [[location, { name: "Another location" }], [{ ...location, inherited_permissions: true }]]) {
+      expect(actionOffersCardDecisionButtons(action, { items })).toBe(false);
+      expect(actionCompactCardExpands(action, { items })).toBe(true);
+    }
+  });
+
+  it("keeps Grocy stock transfers in full review", () => {
+    const transfer = identity("grocy_sf", "stock_transfer");
+    expect(
+      actionOffersCardDecisionButtons(transfer, {
+        product: 24,
+        amount: 2,
+        qu: 7,
+        from_location: 3,
+        to_location: 4,
+      })
+    ).toBe(false);
   });
 
   it("offers card decisions for complete PR calls and rejects unknown actions", () => {

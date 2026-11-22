@@ -9,8 +9,8 @@ import type { JSX, ReactNode } from "react";
 import { type CallToolResult, toolContentRestatesValue, toolValue } from "../call_tool_result";
 import type { ActionIdentity } from "../../../../action_service/api/contracts/action_service_pb";
 import { JsonBlock } from "../../ui/text_block";
-import { renderPreview } from "./entry";
-import type { ActionOutcome, ActionPresentation } from "./presentation";
+import { CompactPaneContent, renderPreview } from "./entry";
+import type { ActionOutcome, ActionPresentation, ExpandedCardDecisionProps } from "./presentation";
 import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
 import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
@@ -83,7 +83,8 @@ export function renderPaneCollapsed(
   requestId?: string
 ): ReactNode | null | undefined {
   const preview = presentation(action)?.pane?.collapsed;
-  return preview === undefined || preview === null ? preview : renderPreview(preview, args, requestId);
+  const content = preview === undefined || preview === null ? preview : renderPreview(preview, args, requestId);
+  return content == null ? content : <CompactPaneContent>{content}</CompactPaneContent>;
 }
 
 /** An Action's opened-pane view; `undefined` uses the generic argument view and `null` suppresses it. */
@@ -182,6 +183,11 @@ export function renderDetailsResult(
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
 export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
   return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
+}
+
+export function renderExpandedCardDecision(action: ActionIdentity, props: ExpandedCardDecisionProps): ReactNode {
+  const Decision = presentation(action)?.expandedCardDecision;
+  return Decision === undefined ? props.fallback : <Decision {...props} />;
 }
 
 /** Whether this invocation's compact card opens; unknown Actions open to their recorded arguments. */

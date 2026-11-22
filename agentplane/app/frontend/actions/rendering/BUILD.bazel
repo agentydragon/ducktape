@@ -118,6 +118,7 @@ ts_library(
     srcs = ["integration_previews.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
@@ -170,6 +171,7 @@ ts_library(
     srcs = ["gmail/common.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
@@ -591,6 +593,7 @@ agentplane_vitest_test(
     name = "google_calendar_test",
     srcs = ["google_calendar.test.tsx"],
     deps = [
+        ":google_calendar",
         ":index",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",

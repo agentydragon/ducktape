@@ -2,7 +2,7 @@ import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { defineCallPreview, defineReceiptPreview } from "./entry";
+import { defineCallPreview, defineReceiptPreview, useCompactPane } from "./entry";
 import {
   batchError,
   batchOutcome,
@@ -74,10 +74,12 @@ function ShoppingTarget({
   recordedName?: string;
 }): JSX.Element {
   const item = useGrocyReferences()?.get(`shopping_list/${id}`);
+  const compact = useCompactPane();
   const current = item?.shoppingItemCurrent;
+  const name = item?.name || recordedName || `Shopping item #${id}`;
   return (
     <Line>
-      {objectLink("shoppinglistitem", id, item?.name || recordedName || `Shopping item #${id}`)}
+      {compact ? name : objectLink("shoppinglistitem", id, name)}
       {current?.listName && ` · ${current.listName}`}
       {showAmount && current?.amount !== undefined && ` · ${shoppingAmount(current.amount, current.unitName)}`}
     </Line>
@@ -268,12 +270,17 @@ function NewLists({ args }: { args: z.infer<typeof createLists> }) {
       {args.items.map((item, i) => (
         <Line key={i}>
           <strong>{item.name}</strong>
-          {item.description && ` · ${item.description}`}
+          {item.description != null && ` · ${item.description || "(empty description)"}`}
         </Line>
       ))}
     </Stack>
   );
 }
+
+const canReviewNewListCompactly = (args: unknown): boolean => {
+  const parsed = createLists.safeParse(args);
+  return parsed.success && parsed.data.items.length === 1 && !!parsed.data.items[0]?.name.trim();
+};
 
 export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
@@ -282,7 +289,8 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
       "View Grocy shopping list",
       selectList,
       ({ args }) => <Line>{displayRef(args.shopping_list, "shopping_lists")}</Line>,
-      listItems
+      listItems,
+      ({ args }) => <Line>{displayRef(args.shopping_list, "shopping_lists")}</Line>
     ),
   ],
   [
@@ -293,7 +301,10 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
       ({ args }) => (
         <Line>Remove every item from {displayRef(args.shopping_list, "shopping_lists")} and keep the list.</Line>
       ),
-      cleared
+      cleared,
+      ({ args }) => (
+        <Line>Remove every item from {displayRef(args.shopping_list, "shopping_lists")} and keep the list.</Line>
+      )
     ),
   ],
   [
@@ -315,7 +326,18 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
             ))}
           </Stack>
         ),
-        itemBatchReceipt("added")
+        itemBatchReceipt("added"),
+        ({ args }) => (
+          <Stack gap={4}>
+            {args.items.slice(0, 2).map((item, i) => (
+              <Line key={i}>
+                {item.amount ?? 1} · {item.product == null ? item.note : displayRef(item.product, "products")} for{" "}
+                {displayRef(item.shopping_list, "shopping_lists")}
+              </Line>
+            ))}
+            {args.items.length > 2 && <Line>{args.items.length - 2} more items</Line>}
+          </Stack>
+        )
       ),
       outcome: itemBatchOutcome,
     },
@@ -336,7 +358,15 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
             ))}
           </Stack>
         ),
-        itemBatchReceipt("removed")
+        itemBatchReceipt("removed"),
+        ({ args }) => (
+          <Stack gap={4}>
+            {args.item_ids.slice(0, 2).map((itemId, i) => (
+              <ShoppingTarget key={i} id={itemId} showAmount />
+            ))}
+            {args.item_ids.length > 2 && <Line>{args.item_ids.length - 2} more items</Line>}
+          </Stack>
+        )
       ),
       call: removeShoppingItemsCall,
       outcome: itemBatchOutcome,
@@ -345,7 +375,20 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
   [
     "shopping_list_item_edit",
     {
-      ...grocyRequest("Edit Grocy shopping item", editItem, ShoppingEdit, editedItem),
+      ...grocyRequest("Edit Grocy shopping item", editItem, ShoppingEdit, editedItem, ({ args }) => (
+        <Stack gap={4}>
+          <ShoppingTarget id={args.item_id} />
+          <Line>
+            {[
+              args.amount != null && `Set amount to ${args.amount}`,
+              args.done != null && `Mark ${args.done ? "done" : "not done"}`,
+              args.clear_fields?.includes("note") ? "Clear note" : args.note != null && "Replace note",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Line>
+        </Stack>
+      )),
       call: editShoppingItemCall,
       outcome: (value) => {
         const parsed = itemOutcome.safeParse(value);
@@ -367,8 +410,21 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
         "Create Grocy shopping lists",
         createLists,
         NewLists,
-        defineResultPreview(createdLists, ({ result }) => createdReceipt(result))
+        defineResultPreview(createdLists, ({ result }) => createdReceipt(result)),
+        ({ args }) =>
+          canReviewNewListCompactly(args) ? (
+            <NewLists args={args} />
+          ) : (
+            <Stack gap={4}>
+              {args.items.slice(0, 2).map((item, i) => (
+                <Line key={i}>{item.name}</Line>
+              ))}
+              {args.items.length > 2 && <Line>{args.items.length - 2} more lists</Line>}
+            </Stack>
+          )
       ),
+      offersCardDecisionButtons: canReviewNewListCompactly,
+      compactCardExpands: (args) => !canReviewNewListCompactly(args),
       call: defineCallPreview(createLists, createdLists, ({ args, result }) => (
         <Stack gap="sm">
           <NewLists args={args} />

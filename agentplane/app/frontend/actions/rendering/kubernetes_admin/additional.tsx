@@ -283,9 +283,7 @@ const runArguments = definePreview(podRun, ({ args }) => (
       </Text>
     )}
     {args.port && args.port > 0 ? (
-      <Text size="sm">
-        Expose TCP port {args.port} through a ClusterIP Service. May also create an OpenShift Route where supported.
-      </Text>
+      <Text size="sm">Expose TCP port {args.port} through a ClusterIP Service.</Text>
     ) : (
       <Text size="sm">No Service port requested.</Text>
     )}
@@ -416,7 +414,7 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
     {
       fallbackLabel: "Run Kubernetes Pod",
       label: runLabel,
-      pane: { opened: runArguments },
+      pane: { collapsed: runArguments },
       details: { arguments: runArguments, result: kubernetesResourcesResult },
       outcome: (value) => {
         const parsed = kubernetesResourcesSchema.safeParse(value);
@@ -425,6 +423,7 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
           : undefined;
       },
       offersCardDecisionButtons: (args) => podRun.safeParse(args).success,
+      compactCardExpands: expandsForRejectedArguments(podRun),
     },
   ],
   [
@@ -432,9 +431,10 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
     {
       fallbackLabel: "Read or set Kubernetes resource scale",
       label: scaleLabel,
-      pane: { opened: scaleArguments },
+      pane: { collapsed: scaleArguments },
       details: { arguments: scaleArguments, result: scaleResult },
       offersCardDecisionButtons: (args) => scale.safeParse(args).success,
+      compactCardExpands: expandsForRejectedArguments(scale),
     },
   ],
 ];

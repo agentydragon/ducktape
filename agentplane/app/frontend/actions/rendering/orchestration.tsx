@@ -44,13 +44,13 @@ const launch = z.strictObject({
   inbox_tags: z.array(name).optional(),
   bootstrap: z.string().optional(),
   wake_on_send: z.boolean().optional(),
-  idle_suspend_after_seconds: z.number().nullable().optional(),
+  idle_suspend_after_seconds: z.int().min(60).max(31_536_000).nullable().optional(),
   launcher_grants: z.array(name).optional(),
 });
 
 function Grants({ title, grants }: { title: string; grants?: string[] }): ReactNode {
   return (
-    <Text size="sm">
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       {title} ·{" "}
       {grants?.length
         ? grants.map((grant) => (grant === "send_message" ? "Send inbox messages" : grant)).join(", ")
@@ -59,23 +59,37 @@ function Grants({ title, grants }: { title: string; grants?: string[] }): ReactN
   );
 }
 
-const launchPreview = definePreview(launch, ({ args }) => (
-  <Stack gap="xs">
-    <Text size="sm" fw={600}>
-      {args.name} · Template {args.template}
-    </Text>
-    <Grants title="Sandbox policy sets" grants={args.policy_sets} />
-    <Grants title="Launcher grants" grants={args.launcher_grants} />
-    {args.inbox_tags?.length ? <Text size="sm">Inbox tags · {args.inbox_tags.join(", ")}</Text> : null}
-    <Text size="sm">{args.wake_on_send ? "Wake on incoming work" : "Wake on incoming work is off"}</Text>
-    {args.idle_suspend_after_seconds && (
-      <Text size="sm">Suspend after {args.idle_suspend_after_seconds} seconds idle</Text>
-    )}
-    {args.bootstrap && (
-      <ShellCommandView command={args.bootstrap} notes={["Runs once before the first Session"]} surface="framed" />
-    )}
-  </Stack>
-));
+function LaunchArguments({ args, compact = false }: { args: z.infer<typeof launch>; compact?: boolean }): ReactNode {
+  return (
+    <Stack gap={compact ? 4 : "xs"}>
+      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+        {args.name} · Template {args.template}
+      </Text>
+      {(!compact || !!args.policy_sets?.length) && <Grants title="Sandbox policy sets" grants={args.policy_sets} />}
+      {(!compact || !!args.launcher_grants?.length) && <Grants title="Launcher grants" grants={args.launcher_grants} />}
+      {!compact && (
+        <>
+          {args.inbox_tags?.length ? <Text size="sm">Inbox tags · {args.inbox_tags.join(", ")}</Text> : null}
+          <Text size="sm">{args.wake_on_send ? "Wake on incoming work" : "Wake on incoming work is off"}</Text>
+          <Text size="sm">
+            {args.idle_suspend_after_seconds == null
+              ? "No idle suspension"
+              : `Suspend after ${args.idle_suspend_after_seconds} seconds idle`}
+          </Text>
+        </>
+      )}
+      {args.bootstrap &&
+        (compact ? (
+          <Text size="sm">Runs bootstrap before the first Session</Text>
+        ) : (
+          <ShellCommandView command={args.bootstrap} notes={["Runs once before the first Session"]} surface="framed" />
+        ))}
+    </Stack>
+  );
+}
+
+const launchPreview = definePreview(launch, LaunchArguments);
+const launchSummary = definePreview(launch, ({ args }) => <LaunchArguments args={args} compact />);
 
 const launchResult = defineResultPreview(
   z.object({ sandbox, launcher_grants: z.array(name).nullable() }),
@@ -254,7 +268,14 @@ const wait = defineResultPreview(
 );
 
 export const orchestrationRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
-  ["launch_sandbox", details("Launch Session Sandbox", launchPreview, launchResult)],
+  [
+    "launch_sandbox",
+    {
+      fallbackLabel: "Launch Session Sandbox",
+      pane: { collapsed: launchSummary, opened: launchPreview },
+      details: { arguments: launchPreview, nativeResult: launchResult },
+    },
+  ],
   ["list_launch_presets", onlyResult("List launch presets", presets)],
   ["create_session", details("Create Session in Sandbox", createSession, created)],
   [
