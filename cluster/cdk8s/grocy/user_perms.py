@@ -19,9 +19,9 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
+from cluster.cdk8s.flux import ConfigMapArgs, write_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.provisioners.grocy_user_perms.provision import Policy
@@ -195,23 +195,19 @@ def base_chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     """The base, and each household's directory placing it in the household's namespace."""
-    write_yaml(
-        root / BASE_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[write_charts(root, BASE_DIR, base_chart)],
-            components=[posixpath.relpath(PINS_DIR, BASE_DIR)],
-            config_map_generator=[
-                ConfigMapArgs(name=_POLICY_CONFIG_MAP, namespace=None, data={_POLICY_FILE: yaml_config(_POLICY)})
-            ],
-            namespaced_by_overlay=True,
-        ),
+    write_kustomization(
+        root / BASE_DIR,
+        resources=[write_charts(root, BASE_DIR, base_chart)],
+        components=[posixpath.relpath(PINS_DIR, BASE_DIR)],
+        config_map_generator=[
+            ConfigMapArgs(name=_POLICY_CONFIG_MAP, namespace=None, data={_POLICY_FILE: yaml_config(_POLICY)})
+        ],
+        namespaced_by_overlay=True,
     )
     for household in grocy.HOUSEHOLDS:
         directory = output_dir(household)
-        (root / directory).mkdir(parents=True, exist_ok=True)
-        write_yaml(
-            root / directory / "kustomization.yaml",
-            kustomize_kustomization(
-                namespace=grocy.service(household).pods.namespace, resources=[posixpath.relpath(BASE_DIR, directory)]
-            ),
+        write_kustomization(
+            root / directory,
+            namespace=grocy.service(household).pods.namespace,
+            resources=[posixpath.relpath(BASE_DIR, directory)],
         )

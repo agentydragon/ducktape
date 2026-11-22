@@ -18,11 +18,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Annotated
 
 import jsii
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart, Yaml
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
@@ -375,7 +375,8 @@ class _KustomizeKustomization(BaseModel):
     patches: list[PatchFile | Json6902Patch] | None = None
 
 
-def kustomize_kustomization(
+def write_kustomization(
+    directory: Path,
     *,
     resources: list[str],
     namespace: str | None = None,
@@ -386,8 +387,8 @@ def kustomize_kustomization(
     configurations: Sequence[str] = (),
     patches: Sequence[PatchFile | Json6902Patch] = (),
     namespaced_by_overlay: bool = False,
-) -> dict[str, object]:
-    """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
+) -> None:
+    """Write the plain `kustomize.config.k8s.io` `Kustomization` to `directory/kustomization.yaml`.
 
     `components` names ordinary Kustomize `Component` directories. Today's callers pass
     a hand-written one carrying a Flux image-automation marker (see
@@ -416,4 +417,7 @@ def kustomize_kustomization(
         configurations=list(configurations) if configurations else None,
         patches=list(patches) if patches else None,
     )
-    return manifest.model_dump(by_alias=True, exclude_none=True)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "kustomization.yaml").write_text(
+        Yaml.format_objects([manifest.model_dump(by_alias=True, exclude_none=True)])
+    )

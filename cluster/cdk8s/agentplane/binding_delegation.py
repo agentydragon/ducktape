@@ -22,9 +22,9 @@ from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
-    kustomize_kustomization,
+    write_kustomization,
 )
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
@@ -86,7 +86,7 @@ def write_delegations(
     for target_namespace, build in external_charts(env, assignable_grants).items():
         directory = f"{GENERATED_ROOT}/agentplane/binding-delegation/{env.namespace}/{target_namespace}"
         manifest = write_charts(root, directory, build)
-        write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
+        write_kustomization(root / directory, resources=[manifest])
 
         # Bootstrap creates these namespaces before the generated owners reconcile.
         depends_on = (

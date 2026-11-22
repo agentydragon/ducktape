@@ -36,10 +36,10 @@ from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
+from cluster.cdk8s.flux import ConfigMapArgs, write_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.home_assistant.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -601,15 +601,13 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / _OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                write_charts(root, _OUTPUT_DIR, chart),
-                "break-glass-credentials.sops.yaml",
-                "home-location.sops.yaml",
-            ],
-            components=["./image-pins"],
-            config_map_generator=[_ONBOARDING_SETTINGS],
-        ),
+    write_kustomization(
+        root / _OUTPUT_DIR,
+        resources=[
+            write_charts(root, _OUTPUT_DIR, chart),
+            "break-glass-credentials.sops.yaml",
+            "home-location.sops.yaml",
+        ],
+        components=["./image-pins"],
+        config_map_generator=[_ONBOARDING_SETTINGS],
     )

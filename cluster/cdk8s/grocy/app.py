@@ -37,8 +37,8 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s import cilium, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import write_kustomization
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -332,12 +332,10 @@ def _backup(chart: Chart, namespace: str) -> None:
 def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
     """The household's chart, and a `kustomization.yaml` that also includes its MCP server's `mcp_dir`."""
     directory = output_dir(household)
-    write_yaml(
-        root / directory / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                posixpath.relpath(mcp_dir, directory),
-                write_charts(root, directory, partial(household_chart, household=household)),
-            ]
-        ),
+    write_kustomization(
+        root / directory,
+        resources=[
+            posixpath.relpath(mcp_dir, directory),
+            write_charts(root, directory, partial(household_chart, household=household)),
+        ],
     )
