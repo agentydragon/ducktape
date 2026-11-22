@@ -38,7 +38,8 @@ private def group (j : Json) : Except String DeclarationGroup := do
     unless (← j.getObjValAs? (Array Json) "specifiers").isEmpty do throw "expected an inline declaration export"
     j.getObjVal? "declaration"
   else pure j
-  unless (← field declaration "type") == "VariableDeclaration" do throw "expected a variable declaration"
+  let nodeType ← field declaration "type"
+  unless nodeType == "VariableDeclaration" do throw s!"expected a variable declaration, got {nodeType}"
   let kind ← declKind declaration
   let ds ← declaration.getObjValAs? (Array Json) "declarations"
   let first :: rest := ds.toList | throw "expected at least one declarator"

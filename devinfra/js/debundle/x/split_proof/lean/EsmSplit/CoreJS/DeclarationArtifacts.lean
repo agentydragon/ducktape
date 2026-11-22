@@ -14,6 +14,10 @@ private def fileSegment (s : String) : Bool :=
   !s.isEmpty && s != "." && s != ".." &&
     s.toList.all fun c => c.isAlphanum || ['.', '_', '-', '~'].contains c
 
+/-- A relative module filename suitable for both the filesystem and the URL resolver. -/
+def supportedFilename (name : String) : Bool :=
+  (name.splitOn "/").all fileSegment
+
 /-- Resolve a local URL request from the importing file's directory. Refuse paths that need
 URL decoding, query or fragment semantics, or access outside the supplied module tree. -/
 private def resolve (importer request : String) : Except String String := do
@@ -87,7 +91,7 @@ private def readModule (file : Json) (md : EsmSplit.Module) : Except String Modu
 Require the complete file set, including empty modules. -/
 def decode (files : Json) (P : EsmSplit.Plan) : Except String Program := do
   let names := (← files.getObj?).toList.map Prod.fst
-  unless names.all (fun n => (n.splitOn "/").all fileSegment) do throw "unsupported module filename"
+  unless names.all supportedFilename do throw "unsupported module filename"
   unless names.Perm (P.mods.map (·.name)) do throw "output filenames differ from the plan"
   let modules ← P.mods.mapM fun m => do
     (readModule (← files.getObjVal? m.name) m).mapError fun why => s!"{m.name}: {why}"

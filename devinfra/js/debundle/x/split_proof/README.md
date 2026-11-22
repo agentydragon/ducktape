@@ -28,7 +28,30 @@ Acorn supplies an unsplit module AST and eslint-scope annotates its binding occu
 
 `lowersplit` derives the CoreJS program from the same annotated AST for bundles of primitive literals, module-binding reads, logical negation, negated number literals, simple declarations, expression and throw statements, and local named exports. The verdict identifies this input as `Lean ESTree lowering`. When it encounters unsupported syntax, it reports the statement index. Passing `--corejs <program.json>` supplies the remaining statements by ID. Even in a mixed bundle the checker derives every supported statement from the AST, and the move report counts the externally lowered statements. Produce that file with `node translation/core_program.mjs <bundle.mjs>`. A split that keeps the order preserves every modeled outcome. For reordered splits, the checker proves equivalence of successful executions using syntax-based moves, checked binding footprints, or a class-heritage schedule. The last rule establishes the superclass from an earlier class declaration and checks that each intervening statement preserves it. An accepted split reaches exactly the same final CoreJS states as its bundle on normal completion. Outside imports bind before any statement runs. The checker verifies that removing them leaves the rest of the plan intact. [Move rules and proof inventory](docs/footprint_soundness.md).
 
-For a closed module containing only identifier declarations, the checker can also report `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. A checked move gives the same guarantee for normal completion as the existing move theorem. This result ends at the modeled plan; printed JavaScript and the namespace observed by outside importers have separate correctness obligations. [Declaration certificate](lean/EsmSplit/CoreJS/DeclarationCertificate.lean)
+For a closed module containing only identifier declarations, the checker can also report `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. A checked move gives the same guarantee for normal completion as the existing move theorem. The optional certified mode also checks the emitted modules. [Declaration certificate](lean/EsmSplit/CoreJS/DeclarationCertificate.lean)
+
+## Request a CoreJS guarantee
+
+Pass the unsplit annotated module AST, the placement spec and a fresh output directory to the normal splitter command.
+
+```sh
+bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.json spec.json output --require all-outcomes
+```
+
+The final stdout line is JSON. A successful order-preserving split reports
+`{"requested":"all-outcomes","scope":"closed-declarations","status":"certified","guarantee":"all-outcomes"}`.
+This covers normal completion, exceptions and every other modeled outcome at the same fuel. With
+`--require normal-completion`, a proved reorder may succeed. Its guarantee means the two programs
+complete normally in exactly the same final states. A stronger available guarantee is reported as
+`all-outcomes`. An unsupported request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
+
+The strict command stages the `.mjs` files beside the destination, reparses them and the original
+source text with the shared Acorn and eslint-scope frontend, and publishes the directory after
+Lean accepts. Lean checks the complete file set, relative import targets, import order, binding
+names, declaration initializers and the public exports of the entry. Use the same command with
+`--check-output` to verify an existing directory against the source and placement.
+Acorn’s parsing and scope annotations, and CoreJS’s interpretation of the supported JavaScript
+subset, remain assumptions. [Artifact correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
 
 ## The example
 
