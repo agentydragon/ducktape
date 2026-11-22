@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
+import pytest
 import pytest_bazel
 from cdk8s import (
     App,
@@ -13,8 +17,13 @@ from python.runfiles import Runfiles
 from cluster.cdk8s.haku import mailbox
 
 
-def test_mailbox_initialization_is_serialized_and_init_only(scratch_app: App) -> None:
-    deployment = one(obj for obj in Cdk8sTesting.synth(mailbox.chart(scratch_app)) if obj["kind"] == "Deployment")
+@pytest.fixture(scope="module")
+def mailbox_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    return Cdk8sTesting.synth(mailbox.chart(scratch_app_factory()))
+
+
+def test_mailbox_initialization_is_serialized_and_init_only(mailbox_manifests: list[dict[str, Any]]) -> None:
+    deployment = one(obj for obj in mailbox_manifests if obj["kind"] == "Deployment")
 
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod_spec = deployment["spec"]["template"]["spec"]
@@ -25,14 +34,14 @@ def test_mailbox_initialization_is_serialized_and_init_only(scratch_app: App) ->
     assert "STALWART_RECOVERY_ADMIN" not in initialize_env | production_env
 
 
-def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(scratch_app: App) -> None:
+def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(
+    mailbox_manifests: list[dict[str, Any]], runfiles: Runfiles
+) -> None:
     smtp_service = one(
-        obj
-        for obj in Cdk8sTesting.synth(mailbox.chart(scratch_app))
-        if obj["kind"] == "Service" and obj["metadata"]["name"] == "smtp"
+        obj for obj in mailbox_manifests if obj["kind"] == "Service" and obj["metadata"]["name"] == "smtp"
     )
     smtp_service_port = one(smtp_service["spec"]["ports"])
-    ingress_config = (Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/haku/mailbox/nginx.conf").read_text()
+    ingress_config = (runfiles.root() / "ducktape/cluster/k8s/haku/mailbox/nginx.conf").read_text()
 
     assert "proxy_protocol on;" in ingress_config
     assert (
