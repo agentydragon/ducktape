@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
@@ -708,18 +708,56 @@ js_test(
     tags = ["manual"],
 )
 
+_EXCALIDRAW_GRAPHS = "//devinfra/js/debundle/excalidraw:spec_graphs"
+
+_EXCALIDRAW_SPEC_DIR = "excalidraw_lean_specs"
+
+_EXCALIDRAW_EDITOR_SPEC = _EXCALIDRAW_SPEC_DIR + "/editor.json"
+
+_EXCALIDRAW_MAIN_SPEC = _EXCALIDRAW_SPEC_DIR + "/main.json"
+
+js_binary(
+    name = "generate_excalidraw_lean_specs",
+    entry_point = "debug/excalidraw_certificates/generate_specs.mjs",
+)
+
+js_run_binary(
+    name = "excalidraw_lean_specs",
+    testonly = True,
+    srcs = [_EXCALIDRAW_GRAPHS],
+    outs = [
+        _EXCALIDRAW_EDITOR_SPEC,
+        _EXCALIDRAW_MAIN_SPEC,
+    ],
+    args = [
+        "$(execpath " + _EXCALIDRAW_GRAPHS + ")",
+        "$(RULEDIR)/" + _EXCALIDRAW_SPEC_DIR,
+    ],
+    tool = ":generate_excalidraw_lean_specs",
+)
+
+js_test(
+    name = "excalidraw_lean_specs_test",
+    data = ["debug/excalidraw_certificates/generate_specs.mjs"],
+    entry_point = "debug/excalidraw_certificates/generate_specs_test.mjs",
+)
+
 js_test(
     name = "excalidraw_authored_placements",
     size = "large",
     data = _COREJS_DIFFERENTIAL_DATA + [
+        ":" + _EXCALIDRAW_EDITOR_SPEC,
+        ":" + _EXCALIDRAW_MAIN_SPEC,
         "//devinfra/js/debundle/excalidraw:inputs",
-        "//devinfra/js/debundle/excalidraw:spec_graphs",
+        _EXCALIDRAW_GRAPHS,
     ],
     entry_point = "debug/excalidraw_certificates/authored.mjs",
     env = dict(
         _COREJS_DIFFERENTIAL_ENV,
+        EDITOR_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
         EXCALIDRAW_INPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
-        SPEC_GRAPHS = "$(rootpath //devinfra/js/debundle/excalidraw:spec_graphs)",
+        MAIN_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_MAIN_SPEC + ")",
+        SPEC_GRAPHS = "$(rootpath " + _EXCALIDRAW_GRAPHS + ")",
     ),
     tags = ["manual"],
 )
