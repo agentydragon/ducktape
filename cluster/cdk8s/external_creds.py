@@ -178,11 +178,10 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "external-creds", disable_resource_name_hashes=True)
     for credential in CREDENTIALS:
         if credential.consumers:
-            role_name = f"{credential.secret_name}-reader"
-            Role(
+            role = Role(
                 chart,
                 f"role-{credential.secret_name}",
-                metadata=ApiObjectMetadata(name=role_name, namespace=NAMESPACE),
+                metadata=ApiObjectMetadata(name=f"{credential.secret_name}-reader", namespace=NAMESPACE),
                 rules=[
                     RolePolicyRule(
                         resources=[
@@ -199,7 +198,7 @@ def chart(app: App) -> Chart:
                     chart,
                     f"binding-{credential.secret_name}-{index}",
                     metadata=ApiObjectMetadata(name=consumer.binding_name, namespace=NAMESPACE),
-                    role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
+                    role=role,
                 ).add_subjects(
                     ServiceAccount.from_service_account_name(
                         chart,

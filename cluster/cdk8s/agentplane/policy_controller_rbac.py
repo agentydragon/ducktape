@@ -36,7 +36,6 @@ class PolicyControllerRbac(Construct):
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
-        role_name = NAME
         own_roles = sorted(
             {
                 grant.role_ref.name
@@ -49,10 +48,10 @@ class PolicyControllerRbac(Construct):
         cluster_roles = sorted(
             {grant.role_ref.name for grant in assignable_grants if grant.role_ref.kind == "ClusterRole"}
         )
-        Role(
+        role = Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 # A ManagedServiceAccount's EgressCredential and use PolicySet, which it owns.
                 RolePolicyRule(
@@ -105,10 +104,7 @@ class PolicyControllerRbac(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "role-binding",
-            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", role_name),
+            self, "role-binding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
         ).add_subjects(account)
         # Narrows the EgressCredential and PolicySet writes above to managed accounts' use.
         add_managed_account_admission(
@@ -121,7 +117,7 @@ class PolicyControllerRbac(Construct):
         accounts_role = Role(
             self,
             "accounts-role",
-            metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-accounts", namespace=accounts_namespace),
             rules=[
                 RolePolicyRule(
                     resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)],
@@ -132,7 +128,7 @@ class PolicyControllerRbac(Construct):
         RoleBinding(
             self,
             "accounts-role-binding",
-            metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-accounts", namespace=accounts_namespace),
             role=accounts_role,
         ).add_subjects(account)
         # The workload-identity issuer: it alone writes WorkloadCredential status and workload
@@ -141,7 +137,7 @@ class PolicyControllerRbac(Construct):
             issuer_role = Role(
                 self,
                 f"workload-credentials-role-{workload_namespace}",
-                metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
+                metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=workload_namespace),
                 rules=[
                     RolePolicyRule(
                         resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get", "list", "watch"]
@@ -165,7 +161,7 @@ class PolicyControllerRbac(Construct):
             RoleBinding(
                 self,
                 f"workload-credentials-role-binding-{workload_namespace}",
-                metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
+                metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=workload_namespace),
                 role=issuer_role,
             ).add_subjects(account)
         cluster_role_name = f"{namespace}-policy-controller"

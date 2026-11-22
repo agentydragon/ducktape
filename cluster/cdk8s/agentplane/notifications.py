@@ -164,11 +164,10 @@ class Notifications(Construct):
             path="/etc/agentplane-notifications/settings.yaml",
             content=yaml_config(settings_model.model_dump(mode="json", exclude_none=True)),
         )
-        role_name = NAME
-        Role(
+        role = Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             rules=[
                 # Resolving a destination reads its Sandbox, not the Pod.
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
@@ -187,10 +186,7 @@ class Notifications(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
-            role=Role.from_role_name(self, "role-ref", role_name),
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), role=role
         ).add_subjects(workload.account)
         if github is not None:
             secret = SecretRef(namespace=env.namespace, name=github.secret_name)

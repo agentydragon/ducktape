@@ -646,12 +646,9 @@ class Egress(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
             ]
         )
-        Role(self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), rules=role_rules)
+        role = Role(self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), rules=role_rules)
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), role=role
         ).add_subjects(service_account)
         # A standing workload's record lives in its own namespace; its Identity subject in the policy
         # namespace, read above.
