@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency (15–21 November UTC):** [Report](latency/index.html). Across 245 heads sampled on 15–21 November, 175 reached required green. Median 3m04s, p90 8m57s. Backend retries, browser shard placement and a Nix bootstrap failure explain different parts of the tail. [Browser experiment](latency/#shard-replay) · [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json).
+- **Latency (15–21 November UTC):** [Report](latency/index.html). Across 245 heads sampled on 15–21 November, 175 reached required green. Median 3m04s, p90 8m57s. Backend retries, browser shard placement and a Nix bootstrap failure explain different parts of the tail. [Browser experiment](latency/#shard-replay) · [KVM scale-up replay](latency/#kvm-scale-up-signal) · [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json).
 
 - **Reliability (13–19 November UTC):** [report](reliability/index.html), [evidence](reliability/evidence.json), [manifest](reliability/manifest.json). Four of 350 sampled PR heads had a verified intermittent failure. The daily trend counts each affected head once. The separate 20 November VM cohort includes one Bazel retry recovery in 16 fresh PR verdicts. Nineteen of 63 mainline failures share a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry. The failed attempt reached the baseline rebuild guard in an already-prepared Docker cgroup.
 

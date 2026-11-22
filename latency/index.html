@@ -63,7 +63,7 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=102db93a4ea8e3f8971f88c15faa2d7e5029a12c9afca62facef837131f0968c",
+        "./evidence.json?v=9ed88ba260defa16b63231c8751e7c22fc2ca2ea6886f5fd2e50e87fa9564c3d",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
@@ -81,6 +81,7 @@
         simultaneous: "Simultaneous",
         staggered: "Staggered",
       };
+      const kvmScaleUp = evidence.kvm_scale_up_signal;
       const cacheTrial = evidence.kvm_shared_cache_trial;
       const kvmPlacement = evidence.kvm_worker_placement;
       const kvmWorkDisk = evidence.kvm_work_disk_trial;
@@ -241,6 +242,15 @@
  <${Text} my="sm">Holding each observed pool size for 15 extra minutes after demand fell would have added 173 requested worker-minutes over these four hours, a 12% increase from 1,463. This replay prices capacity. Which worker stays, which action it gets and how quickly the PR finishes all require a live comparison.<//>
  <${Text} my="sm"><strong>Next decision.</strong> Compare the current 15-minute scale-down window with 30 minutes in alternating, time-limited trial windows. Keep the 5s runner preference and both required suites. Compare critical-path VM runs at similar arrival rates and fixture fingerprints. Record local matches, enqueue-to-completion time, final required-check time and extra worker-minutes. Revert to 15 minutes if the longer window buys no repeatable feedback-time improvement.<//>
  <${Text} size="sm">${link(evidence.kvm_runner_dispatch.retention_sample.metrics, "Four-hour pool history")} · ${file("cluster/cdk8s/buildbuddy_kvm_worker.py", "Worker scale-down policy")}<//>
+</section>
+<section id="kvm-scale-up-signal">
+ <${Title} order=${2}>The KVM scale-up signal can rise while a worker has room<//>
+ <${Text} my="sm">The live two-to-eight-worker pool allows one task per worker. Its autoscaler adds busy workers to the sum of reservations in local executor queues. An action can have reservations on several executors, even after it starts. Replay found ${kvmScaleUp.raw_increase_samples} samples where every desired worker reported, the pool was below eight and the raw target exceeded the desired size. ${kvmScaleUp.raw_increase_samples_with_cpu_idle_worker} had a CPU-idle worker. In ${kvmScaleUp.raw_increase_samples_with_full_size_headroom} of those samples, at least one healthy nondeleting worker showed 4 unassigned CPUs, 7 GiB unassigned estimated RAM, at least 50 GB of free work disk and no observed active task stage.<//>
+ <${Text} my="sm">At 00:41:30 UTC on 22 November, two of five workers had assigned CPU and the local queues reported four reservations, for a raw target of six. Three workers met the full-size headroom check. Both required actions had reached workers by 00:41:02. ${link("#kvm-runner-dispatch", "Dispatch trace")}. Other arrivals are unknown. This replay counts evaluation samples. Actual scale-ups, distinct waiting executions and excess VM-hours are unmeasured.<//>
+ <${Text} my="sm">An earlier isolated reproduction recorded three extra reservations for two running actions. A separate action really waited 85.7s while the assigned-and-queued CPU gauge equaled assigned CPU. The hosted metrics inventory had no distinct pending count for this pool. Six hours of executor logs contained 106 runner lookups and zero queue-add debug records. The available logs help trace dispatch. Queue deduplication needs fresh waiting execution and attempt IDs and resource requirements. ${link(kvmScaleUp.earlier_isolated_reproduction.issue, "Reproduction and telemetry gap")}<//>
+ <${Text} my="sm">Among ${kvmScaleUp.full_size_shadow_replay.samples_with_reservations} samples with reservations and complete worker telemetry below the limit, both the current signal and a probe for zero full-size headroom called for growth in ${kvmScaleUp.full_size_shadow_replay.both_signals_call_for_growth}. The current signal alone called for growth in ${kvmScaleUp.full_size_shadow_replay.raw_target_only} and the probe alone in ${kvmScaleUp.full_size_shadow_replay.shadow_probe_only}. All six probe-only points fell in one 2m30s interval. The idle worker showed 31.3 GB free at 08:06 UTC on 21 November. Its advertised disk capacity was 70.1 GB. The 50 GB filesystem threshold estimates suitability for KubeVirt and can overstate the needs of Firecracker, which requests 20 GB.<//>
+ <${Text} my="sm"><strong>Test in shadow mode.</strong> For required actions that reserve a full VM, propose one additional VM when queued work remains after accounting for eligible ready and booting capacity. Count a booting VM once and hold on missing telemetry. Compare distinct enqueue-to-start times, idle warm VM-hours, false adds and burst regressions before enabling any change. ${pr(kvmScaleUp.two_task_draft_pr)} separately tests two slots per worker for actions that fit together.<//>
+ <${Text} size="sm" c="dimmed">21 November 04:47 to 22 November 04:47 UTC · 30s evaluation, about 60s executor scrapes · ${kvmScaleUp.usable_samples.toLocaleString("en-US")} of ${kvmScaleUp.possible_samples.toLocaleString("en-US")} samples usable · ${link(kvmScaleUp.autoscaler_source, "Inspected scale-up policy")} · ${link(kvmScaleUp.metrics_dashboard, "Pool metrics")} · ${link("./evidence.json", "Replay method and examples")}<//>
 </section>
 <section id="shard-replay">
  <${Title} order=${2}>Time the longest browser shard<//>
