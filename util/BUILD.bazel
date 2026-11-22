@@ -269,3 +269,22 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
 )
+
+py_library(
+    name = "openapi",
+    srcs = ["openapi.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_openapi",
+    srcs = ["test_openapi.py"],
+    deps = [
+        ":openapi",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
