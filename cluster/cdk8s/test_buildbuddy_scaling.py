@@ -1,22 +1,22 @@
 """Exercise the KVM worker's KEDA query against executor and scrape failures."""
 
 import pytest_bazel
-from cdk8s import (
-    App,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+import yaml
+from python.runfiles import Runfiles
 
-from cluster.cdk8s import buildbuddy_kvm_worker
+from cluster.cdk8s.testing.manifests import find_resource
 from cluster.cdk8s.testing.promtool import PromtoolRules
 
+pytest_plugins = ("cluster.cdk8s.testing.promtool",)
 
-def test_demand_query(scratch_app: App, promtool: PromtoolRules) -> None:
-    chart = buildbuddy_kvm_worker.autoscaler_chart(scratch_app)
-    worker_chart = buildbuddy_kvm_worker.chart(scratch_app)
-    (scaled_object,) = Cdk8sTesting.synth(chart)
-    alert_rule = next(obj for obj in Cdk8sTesting.synth(worker_chart) if obj["kind"] == "PrometheusRule")
-    spec = scaled_object["spec"]
-    query = spec["triggers"][0]["metadata"]["query"]
+
+def test_demand_query(runfiles: Runfiles, promtool: PromtoolRules) -> None:
+    cluster = runfiles.root() / "ducktape/cluster"
+    autoscaler = cluster / "generated/buildbuddy-kvm-worker-autoscaler/buildbuddy-kvm-worker-autoscaler.k8s.yaml"
+    worker = cluster / "k8s/buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml"
+    scaled_object = find_resource(yaml.safe_load_all(autoscaler.read_text()), "ScaledObject", "buildbuddy-kvm-worker")
+    alert_rule = find_resource(yaml.safe_load_all(worker.read_text()), "PrometheusRule", "buildbuddy-kvm-worker")
+    query = scaled_object["spec"]["triggers"][0]["metadata"]["query"]
     promtool(
         "ducktape/cluster/cdk8s/testdata/buildbuddy_scaling_rules.yaml",
         {

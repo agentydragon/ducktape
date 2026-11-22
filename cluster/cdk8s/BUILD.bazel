@@ -2192,20 +2192,19 @@ py_test(
     srcs = ["test_buildbuddy_scaling.py"],
     data = [
         "testdata/buildbuddy_scaling_rules.yaml",
+        "//cluster:generated/buildbuddy-kvm-worker-autoscaler/buildbuddy-kvm-worker-autoscaler.k8s.yaml",
+        "//cluster/k8s:buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml",
         "@multitool//tools/promtool",
-        "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":buildbuddy_kvm_worker",
-        ":conftest",
         "//:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )
