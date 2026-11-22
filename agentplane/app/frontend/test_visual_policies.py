@@ -754,7 +754,7 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_pretty_{viewport.width}")
     await _open_raw_switches(page)
     await expect(page.get_by_role("switch", name="Raw")).to_be_checked()
-    await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Exact arguments", exact=True).filter(visible=True)).to_be_visible()
     await expect(page.get_by_text('"command": "systemctl --user restart test-backup.service')).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_raw_{viewport.width}")
 
@@ -1312,7 +1312,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, kind: 
     await expect(block).to_have_attribute("data-expanded", "false")
     if kind == "email":
         await _open_raw_switches(page)
-        await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Exact arguments", exact=True).filter(visible=True)).to_be_visible()
         await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
         await view.capture("raw")
 
@@ -1424,7 +1424,7 @@ async def test_kubernetes_pods_delete_success_receipt(
     await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
 
     await _open_raw_switches(page)
-    await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Exact arguments", exact=True).filter(visible=True)).to_be_visible()
     await expect(page.get_by_text('"name": "web-0"', exact=False)).to_be_visible()
     await expect(page.get_by_text('"Pod deleted successfully"', exact=False)).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"pods_delete_raw_{viewport.width}")
