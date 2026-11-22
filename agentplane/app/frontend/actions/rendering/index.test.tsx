@@ -791,9 +791,9 @@ describe("Action presentation slots", () => {
     expect((await mount(renderDetailsArguments(action, args))).textContent).toContain(
       "matching Services and OpenShift Routes"
     );
-    expect((await mount(renderPaneCollapsed(action, args))).textContent).toContain(
-      "matching Services and OpenShift Routes"
-    );
+    const collapsed = await mount(renderPaneCollapsed(action, args));
+    expect(collapsed.textContent).toContain("matching Services");
+    expect(collapsed.textContent).not.toContain("OpenShift");
 
     const recorded = await mount(
       renderDetailsArguments(action, { name: "web-0", namespace: "apps", futureField: true })
