@@ -1,6 +1,7 @@
 """Render all ten system-test suite fixtures in one Bazel action."""
 
 import argparse
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
     Backend,
+    McpInputs,
+    RenderedFixture,
     SandboxRuntime,
 )
 from agentplane.system_tests.suites import native_deployment
@@ -44,7 +47,7 @@ def main() -> None:
         render(args.output_dir / filename, runtime=runtime, backend=backend, include_mcp_edge=include_mcp_edge)
 
     shared_model = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
-    renderers = [
+    renderers: list[tuple[str, Callable[[], RenderedFixture], McpInputs | None]] = [
         ("pod_native_manifests.json", partial(native_deployment.render, SandboxRuntime.POD), None),
         ("firecracker_manifests.json", partial(native_deployment.render, SandboxRuntime.FIRECRACKER), None),
         ("recovery_manifests.json", recovery_deployment.render, None),
