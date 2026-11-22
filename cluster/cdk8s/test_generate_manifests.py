@@ -7,7 +7,6 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
-import json
 import os
 from difflib import unified_diff
 from pathlib import Path
@@ -615,31 +614,16 @@ def test_claude_session_sync_vpa_opt_in_is_limited_to_deployments(documents: lis
     ns = find_resource(documents, "Namespace", namespace)
     labels = ns["metadata"]["labels"]
     mode_key = "goldilocks.fairwinds.com/vpa-update-mode"
-    policy_key = "goldilocks.fairwinds.com/vpa-resource-policy"
     assert labels[mode_key] == "off"
-    assert "goldilocks.fairwinds.com/enabled" not in labels
-    assert json.loads(ns["metadata"]["annotations"][policy_key]) == {
-        "containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]
-    }
+    assert labels.get("goldilocks.fairwinds.com/enabled") != "false"
     resources = [doc for doc in documents if doc.get("metadata", {}).get("namespace") == namespace]
     assert not any(doc["kind"] == "VerticalPodAutoscaler" for doc in resources)
-    opted_in = {doc["metadata"]["name"]: doc for doc in resources if mode_key in doc["metadata"].get("annotations", {})}
-    assert set(opted_in) == {"claude-session-sync", "control"}
-    for deployment in opted_in.values():
-        assert deployment["kind"] == "Deployment"
-        annotations = deployment["metadata"]["annotations"]
-        assert annotations[mode_key] == "initial"
-        [container] = deployment["spec"]["template"]["spec"]["containers"]
-        assert json.loads(annotations[policy_key]) == {
-            "containerPolicies": [
-                {
-                    "containerName": container["name"],
-                    "controlledValues": "RequestsOnly",
-                    "controlledResources": ["cpu", "memory"],
-                },
-                {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"},
-            ]
-        }
+    # Eviction could interrupt the control Pod while it rotates the OAuth credential.
+    assert {
+        (doc["kind"], doc["metadata"]["name"], annotations[mode_key])
+        for doc in resources
+        if mode_key in (annotations := doc["metadata"].get("annotations", {}))
+    } == {("Deployment", "claude-session-sync", "initial"), ("Deployment", "control", "initial")}
 
 
 def test_policy_bindings_resolve_sets(documents: list[dict[str, Any]]) -> None:

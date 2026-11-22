@@ -7,7 +7,14 @@ from cdk8s import Chart
 from cdk8s_plus_34 import Namespace, k8s
 
 from cluster.cdk8s.namespace_access import AgentReadable
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, VpaProfile, namespace, namespace_patch
+from cluster.cdk8s.namespaces import (
+    VPA_UPDATE_MODE_LABEL,
+    Vpa,
+    VpaProfile,
+    initial_request_annotations,
+    namespace,
+    namespace_patch,
+)
 from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION, ContainerPolicy, ControlledValues
 
 
@@ -46,6 +53,18 @@ def test_auto_preserves_explicit_annotation(
 def test_non_auto_does_not_acquire_a_default_policy(scratch_chart: Chart, vpa: Vpa) -> None:
     rendered = namespace(scratch_chart, "namespace", name="test-ns", vpa=vpa)
     assert VPA_RESOURCE_POLICY_ANNOTATION not in rendered.metadata.to_json().get("annotations", {})
+
+
+def test_initial_sizing_leaves_unlisted_containers_alone() -> None:
+    annotations = initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only("worker"))
+    [worker, fallback] = json.loads(annotations[VPA_RESOURCE_POLICY_ANNOTATION])["containerPolicies"]
+    assert worker == {
+        "containerName": "worker",
+        "controlledValues": "RequestsOnly",
+        "controlledResources": ["cpu", "memory"],
+    }
+    assert fallback["containerName"] == "*"
+    assert fallback["mode"] == "Off"
 
 
 def test_vpa_profile_renders_explicit_container_policies(scratch_chart: Chart) -> None:
