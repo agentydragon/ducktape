@@ -81,7 +81,7 @@ def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:
 
 
 def test_writer_accepts_a_copied_component_the_directory_includes(tmp_path: Path) -> None:
-    write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), components=["../pins"])
+    write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), include_copied_components=True)
     assert yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())["components"] == ["../pins"]
 
 
