@@ -63,7 +63,7 @@ HTTP = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _IMAP = ServiceRef(name=HTTP.name, port=Port(name="imap", number=1143), pods=HTTP.pods)
-_SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=HTTP.pods)
+SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=HTTP.pods)
 _CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
@@ -183,7 +183,7 @@ def _add_deployment(chart: Chart) -> None:
                             # failure is a black box to agent sessions.
                             termination_message_policy="FallbackToLogsOnError",
                             ports=[
-                                _SMTP.port.k8s_container_port(),
+                                SMTP.port.k8s_container_port(),
                                 HTTP.port.k8s_container_port(),
                                 _IMAP.port.k8s_container_port(),
                             ],
@@ -223,7 +223,7 @@ def _add_services(chart: Chart) -> None:
         chart,
         "smtp-service",
         metadata=k8s.ObjectMeta(
-            name=_SMTP.name,
+            name=SMTP.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -233,7 +233,7 @@ def _add_services(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=SMTP.pods.selector, ports=[SMTP.k8s_service_port()]),
     )
     k8s.KubeService(
         chart,
@@ -365,7 +365,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 ],
             )
         ],
-        egress=[cilium.dns_egress(), EgressRule.to_endpoints(_SMTP.pods.selector, _SMTP.pod_port)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints(SMTP.pods.selector, SMTP.pod_port)],
     )
     NetworkPolicy(
         chart,
@@ -373,7 +373,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=HTTP.pods.selector,
         ingress=[
-            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP.pod_port]),
+            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[SMTP.pod_port]),
             IngressRule.from_gateway(HTTP.pod_port),
             IngressRule.from_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP.pod_port]
