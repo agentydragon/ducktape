@@ -1,7 +1,8 @@
 # CoreJS differential coverage
 
 [`differential.mjs`](differential.mjs) runs JavaScript in Node and the Lean interpreter,
-then sends split plans through the real `lowersplit` emitter. CI:
+then sends split plans through the real `lowersplit` emitter in diagnostic mode. Those
+test runs compare the model and Node; emitted files are uncertified previews. CI:
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/translation:corejs_differential_test \
@@ -38,8 +39,9 @@ Handwritten cases cover null, throwing getters, rebinding the receiver and expor
 
 [`generate.mjs`](generate.mjs) generates the whole-program families above without
 discarding units or retrying after `unknown`. Every seed must complete in Node and the
-model, and must execute in an accepted reordered split whose verdict names the proved
-`moves` slice. The test requires every promised family and every generated linked graph
+model, and must execute in an accepted reordered split whose model diagnostic finds the
+`moves` condition. This model result does not certify the emitted JavaScript artifacts.
+The test requires every promised family and every generated linked graph
 to run; removing a family cannot leave an empty successful coverage assertion.
 
 The required reorder swaps independent prefix allocations: an object or array for those

@@ -158,7 +158,7 @@ for (const moved of [selected, selected.slice(0, 1)]) {
   const candidate = path.join(process.env.TEST_TMPDIR, "candidate-" + tag + ".json");
   writeFileSync(candidate, JSON.stringify(placement(moved)));
   const plan = path.join(process.env.TEST_TMPDIR, "plan-" + tag + ".json");
-  const args = [ast, candidate, diagnostic, "--force", "--plan", plan];
+  const args = ["--diagnostic", ast, candidate, diagnostic, "--force", "--plan", plan];
   if (moved.length === 1) args.push("--all-conflicts");
   const render = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
   if (render.error) throw render.error;

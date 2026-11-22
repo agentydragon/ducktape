@@ -39,47 +39,34 @@ cp "bazel-bin/$dir/generated/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
 bbr test "//$dir/lean:instance_freshness_test"
 ```
 
-`lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The `orderConflicts` field counts conflicting pairs that the plan reverses and gives up to five examples. Each example names the earlier and later source ordinals. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
-
 Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
 
-`lowersplit` derives the CoreJS program from the same annotated AST for bundles of primitive literals, module-binding reads, logical negation, negated number literals, simple declarations, expression and throw statements, and local named exports. The verdict identifies this input as `Lean ESTree lowering`. When it encounters unsupported syntax, it reports the statement index. Passing `--corejs <program.json>` supplies the remaining statements by ID. Even in a mixed bundle the checker derives every supported statement from the AST, and the move report counts the externally lowered statements. Produce that file with `node translation/core_program.mjs <bundle.mjs>`. A split that keeps the order preserves every modeled outcome. For reordered splits, the checker proves equivalence of successful executions using syntax-based moves, checked binding footprints, or a class-heritage schedule. The last rule establishes the superclass from an earlier class declaration and checks that each intervening statement preserves it. An accepted split reaches exactly the same final CoreJS states as its bundle on normal completion. Outside imports bind before any statement runs. The checker verifies that removing them leaves the rest of the plan intact. [Move rules and proof inventory](docs/footprint_soundness.md).
-
-For a closed module containing only identifier declarations, the checker can also report `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. A checked move gives the same guarantee for normal completion as the existing move theorem. The optional certified mode also checks the emitted modules. [Declaration certificate](lean/EsmSplit/CoreJS/DeclarationCertificate.lean)
+For a closed module containing only identifier declarations, the checker also handles `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. [Declaration certificate](lean/EsmSplit/CoreJS/DeclarationCertificate.lean)
 
 ## Request a CoreJS guarantee
 
-Pass the unsplit JavaScript module (`.mjs` or `.js`), the placement spec and a fresh output directory to the normal splitter command. The shared Acorn frontend parses JavaScript input. An annotated module AST in JSON is also accepted.
+Pass the source module, placement spec and a fresh output directory to the normal splitter command. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
 
 ```sh
-bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output --require all-outcomes
+bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output
 ```
 
-The final stdout line is JSON. A successful order-preserving split reports
-`{"requested":"all-outcomes","scope":"closed-declarations","status":"certified","guarantee":"all-outcomes"}`.
-This covers normal completion, exceptions and every other modeled outcome at the same fuel. With
-`--require normal-completion`, a proved reorder may succeed. Its guarantee means the two programs
-complete normally in exactly the same final states. A stronger available guarantee is reported as
-`all-outcomes`. An unsupported request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
+The command prints one JSON verdict. A successful split reports `status: "certified"` only after the emitted files have been verified as artifacts of the checked plan. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
-The strict command stages the `.mjs` files beside the destination, reparses them and the original
-source text with the shared Acorn and eslint-scope frontend, and publishes the directory after
-Lean accepts. Lean checks the complete file set, relative import targets, import order, binding
-names, declaration initializers and the public exports of the entry. Use the same command with
-`--check-output` to verify an existing directory against the source and placement.
-Acorn’s parsing and scope annotations, and CoreJS’s interpretation of the supported JavaScript
-subset, remain assumptions. [Artifact correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
+Lean checks the proposed split against the JavaScript staged for publication. Parsing those files catches differences introduced by emission, including changed import targets and extra public exports. Use `--check-output` to apply the same checks to an existing directory. The correspondence theorems for closed declarations start from annotated ASTs. Acorn’s parsing, eslint-scope’s annotations and CoreJS’s interpretation of the JavaScript subset remain assumptions. [Artifact correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
 
-For a module that calls functions or imports named bindings from relative JavaScript files,
-request `--require normal-completion` with the original source path. The splitter parses
+For a module that calls functions or imports named bindings from relative JavaScript files, use
+the normal three-positional command with the original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
-Lean decodes the source graph and the reparsed output graph independently. It checks statement
-placement, live binding addresses and the entry’s exports, then asks the kernel to prove
-that both CoreJS programs initialize normally in the same final state for every modeled world.
+Lean lowers the original and reparsed modules to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about those two decoded programs. Both must initialize normally in the same final state for every modeled world.
 The state includes the heap and captured bindings of exported closures. The proof uses
 a fixed interpreter fuel witness. Insufficient fuel, unsupported syntax or a proof that fails
 to reduce yields a rejection. A successful comparison reports `"scope":"linked-programs"`.
 [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
+
+### Inspect an uncertified preview
+
+`lowersplit --diagnostic bundle.mjs spec.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## The example
 
@@ -243,15 +230,15 @@ The main development does not use `native_decide`, so the compiler is not truste
    The checker trusts the interpreter's rules and its printed premises ([`effects/`](effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
    golden cases with reorders, fuzzers over random bundles and splits, a mutation harness that removes one rule at a time. A wrong rule shows up as a wrong accept.
    A `var` inside a top-level block declares a module-scope name ([`debundle_cases/`](debundle_cases/README.md)).
-   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. `lowersplit --lean` writes a certificate from the interpreter's footprints instead.
+   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. The legacy `lowersplit --diagnostic … --lean` instance writer uses the interpreter's footprints, but does not certify emitted artifacts.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
 5. **Emission.** Lean builds the output module ASTs and Astring prints them. A binding that the glue exports under another name is imported back under its own. The standalone kernel example renders its embedded statement strings with [`FixtureRender.lean`](lean/Experiments/FixtureRender.lean).
-6. **The lowering front end around the model.** Both paths trust the parser and scope annotations. Certified mode checks the emitted files against the plan by reparsing them. The external path also trusts the supplied CoreJS program to represent the same bundle. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes the CoreJS program directly for its supported syntax. Its agreement with JavaScript semantics is tested against Node.
+6. **The lowering front end around the model.** Certification trusts the shared parser and its scope annotations. It reparses the actual emitted files and uses a domain-specific Lean decoder to check their correspondence with the plan; this does not prove parser correctness or that CoreJS agrees with JavaScript. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes CoreJS directly from supported source syntax. Its agreement with JavaScript semantics is tested against Node. An external `--corejs` program and the legacy `--lean` instance writer are available only under `--diagnostic`; neither certifies a split.
    - **One statement per declarator.** Lean splits a top-level `var`, `let` or `const` list into one AST node per declarator, including under `export`. The declaration extraction theorem relates these units to the original lists for the supported CoreJS subset.
-   - **Imports and exports stay in the entry.** `lowersplit` rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. When the rule fails, `lowersplit --lean` writes no certificate. Moving it into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
+   - **Imports and exports stay in the entry.** The normal command rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. Diagnostic mode may still write a preview after this rejection, but it cannot certify it. Moving the rule into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
    - **Outside modules run first.** The model has no outside modules. An `import` statement declares nothing and does nothing in it, and an imported name is a global: the same binding in every module. [The output AST builder](lean/EsmSplit/ESTreeEmit.lean) places the entry's `import` and `export … from` statements before its glue imports, in their order, so the outside modules run before every statement and in the bundle's order. Another module gets an `import` line of its own for the outside names it mentions. That this keeps the order is argued, not proved. It assumes that no outside module awaits at its top level, and that the modules are written where the bundle was, so a relative specifier names the same file. `export * from` is rejected.
    - **What an `export` statement publishes** (`Stmt.exports`) is read from its AST by the front end. `ExportsUnique` and `Linkable` rest on it. A glue export adds a name to the entry's interface (`m$1` when `m` is taken); nothing says the interface is otherwise unchanged ([`PLAN.md`](PLAN.md) step 4).
 

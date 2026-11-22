@@ -37,6 +37,7 @@ function emit(name, code, selectedSide, force = false) {
   return {
     dir,
     result: run(process.env.LOWERSPLIT, [
+      "--diagnostic",
       ast,
       spec,
       dir,

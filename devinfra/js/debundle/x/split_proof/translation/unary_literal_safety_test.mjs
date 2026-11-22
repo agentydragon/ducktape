@@ -46,7 +46,7 @@ for (const [name, expression] of [
 ]) {
   const code = `const watched = 7;\nconst value = ${expression};\nfunction get() { return watched; }\nconsole.log(get(),String(value));`;
   const { dir, source, input, spec } = prepare(`safe_${name}`, code, [1]);
-  const checked = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  const checked = run(process.env.LOWERSPLIT, ["--diagnostic", input, spec, dir]);
   assert.equal(checked.status, 0, `${name}: ${checked.stdout}\n${checked.stderr}`);
   assert(existsSync(path.join(dir, "entry.mjs")), name);
   const before = run(process.execPath, [source]),

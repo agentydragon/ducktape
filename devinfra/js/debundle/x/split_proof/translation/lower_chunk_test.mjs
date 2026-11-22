@@ -73,6 +73,7 @@ function split(name, { code, outside = {}, modules, force = false, spec = {} }) 
   const checked = spawnSync(
     process.env.LOWERSPLIT,
     [
+      "--diagnostic",
       path.join(dir, "ast.json"),
       path.join(dir, "spec.json"),
       dir,

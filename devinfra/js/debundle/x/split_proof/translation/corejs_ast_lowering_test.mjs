@@ -108,7 +108,7 @@ for (const [i, expression] of unsupportedOperands.entries()) {
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpOf(source)));
-  return execFileSync(process.env.LOWERSPLIT, [ast, spec, dir, ...args], { encoding: "utf8" });
+  return execFileSync(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, dir, ...args], { encoding: "utf8" });
 }
 
 const source = "var a = 1, b = a;";
@@ -131,9 +131,12 @@ assert.match(rendered, /export var b = a;/);
 const badRange = dumpOf("/*😀*/ var a = 1, b = a;");
 badRange.body[0].declarations[0].start = 3;
 const invalid = file("bad-range.json", JSON.stringify(badRange));
-assert.throws(() => execFileSync(process.env.LOWERSPLIT, [invalid, spec, dir], { stdio: "pipe" }), /surrogate pair/);
+assert.throws(
+  () => execFileSync(process.env.LOWERSPLIT, ["--diagnostic", invalid, spec, dir], { stdio: "pipe" }),
+  /surrogate pair/
+);
 const moves = path.join(dir, "moves.json");
-assert.match(split(source, ["--move-report", moves]), /proved slice: order kept/);
+assert.match(split(source, ["--move-report", moves]), /model diagnostic: order kept/);
 const nativeReport = JSON.parse(readFileSync(moves));
 assert.equal(nativeReport.footprintsOfSyntax, true);
 assert.equal(nativeReport.externallyLowered, 0);
@@ -141,16 +144,16 @@ assert.equal(nativeReport.externallyLowered, 0);
 const sidecar = file("other.json", JSON.stringify(reference("var a = 2, b = a;")));
 assert.match(split(source, ["--corejs", sidecar]), /FootprintsOfSyntax: against Lean ESTree lowering/);
 const unsupported = "var a = [], b = a;";
-assert.match(split(unsupported), /proved slice: none\..*statement 0: unsupported expression ArrayExpression/);
+assert.match(split(unsupported), /model diagnostic: none\..*statement 0: unsupported expression ArrayExpression/);
 const legacy = file("external.json", JSON.stringify(reference(unsupported)));
 assert.match(split(unsupported, ["--corejs", legacy]), /externally lowered statements: 1/);
 
 // External input may supply unsupported arrays, but cannot omit their initialization.
 const missing = file("missing.json", JSON.stringify(reference("")));
-assert.match(split(unsupported, ["--corejs", missing]), /proved slice: none\..*omits statement 0/);
+assert.match(split(unsupported, ["--corejs", missing]), /model diagnostic: none\..*omits statement 0/);
 // A call has no declarations, so footprint agreement alone could mistake its missing unit for an empty block.
 file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "#1"] } }));
-assert.match(split("var a = 1; a();", ["--corejs", missing]), /proved slice: none\..*omits statement 1/);
+assert.match(split("var a = 1; a();", ["--corejs", missing]), /model diagnostic: none\..*omits statement 1/);
 
 // Use both forms of the Lean placement spec. For each generated declaration list,
 // keep source order in one plan and move its final independent binding in the other.

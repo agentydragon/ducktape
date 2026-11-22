@@ -17,13 +17,18 @@ function prepare(source, modules, order) {
   return ast;
 }
 function requestFile(file, out, requested, ...args) {
-  const result = spawnSync(process.env.LOWERSPLIT, [file, placement, out, "--require", requested, ...args], {
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    process.env.LOWERSPLIT,
+    [file, placement, out, ...(requested ? ["--require", requested] : []), ...args],
+    {
+      encoding: "utf8",
+    }
+  );
   if (result.error) throw result.error;
   const diagnostics = result.stdout + result.stderr;
   const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
-  assert.equal(verdict.requested, requested);
+  assert.equal(verdict.requested, requested ?? normal);
+  assert.equal(result.stdout.trim().split("\n").length, 1, diagnostics);
   assert(["certified", "rejected"].includes(verdict.status), diagnostics);
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, diagnostics);
   if (verdict.status === "rejected") {
@@ -61,7 +66,7 @@ assert.equal(check(out, all, "certified").guarantee, all);
 const sourceFile = path.join(root, "source.mjs");
 const rawOutput = path.join(root, "from-source");
 fs.writeFileSync(sourceFile, source);
-assert.equal(requestFile(sourceFile, rawOutput, all).status, "certified");
+assert.equal(requestFile(sourceFile, rawOutput, undefined).status, "certified");
 assert.equal(requestFile(sourceFile, out, all, "--check-output").status, "certified");
 assert.deepEqual(await observe(pathToFileURL(path.join(rawOutput, entry))), await observe(pathToFileURL(sourceFile)));
 const entryFile = path.join(out, entry);
@@ -140,13 +145,16 @@ const leakingSource = "const first = later; var later = 1; export const publicVa
 prepare(leakingSource, { [left]: ["#0"], [entry]: ["#1", "#2"] }, [left]);
 const leakage = path.join(root, "leakage");
 const structuralOutput = path.join(root, "structural-leakage");
-const legacy = spawnSync(process.env.LOWERSPLIT, [input, placement, structuralOutput], { encoding: "utf8" });
+const legacy = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", input, placement, structuralOutput], {
+  encoding: "utf8",
+});
 assert.equal(legacy.status, 0, legacy.stdout + legacy.stderr);
+assert.match(legacy.stdout, /uncertified preview/);
 assert.notDeepEqual(
   await observe(pathToFileURL(path.join(structuralOutput, entry))),
   await observe("data:text/javascript," + encodeURIComponent(leakingSource))
 );
-assert.match(check(leakage, all, "rejected").reason, /entry public exports/);
+assert.match(check(leakage, undefined, "rejected").reason, /entry public exports/);
 assert(!fs.existsSync(leakage));
 
 const reordered = path.join(root, "reordered");
@@ -158,7 +166,10 @@ assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["r
 prepare("const opaque = [];", { [entry]: ["#0"] }, []);
 const unsupported = path.join(root, "unsupported");
 check(unsupported, normal, "rejected");
-check(unsupported, normal, "rejected", "--force");
+check(unsupported, undefined, "rejected", "--force");
+const mixed = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", input, placement, unsupported, "--require", all]);
+assert.notEqual(mixed.status, 0);
+assert.match(mixed.stderr.toString(), /cannot be combined/);
 assert(!fs.existsSync(unsupported));
 
 // A valid module AST under another extension has no portable ESM loading contract.
@@ -191,7 +202,9 @@ for (let seed = 0; seed < 8; seed++) {
   const expected = await observe("data:text/javascript," + encodeURIComponent(code));
   prepare(code, owners, [left]);
   const structural = path.join(root, "structural-partition-" + seed);
-  const baseline = spawnSync(process.env.LOWERSPLIT, [input, placement, structural], { encoding: "utf8" });
+  const baseline = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", input, placement, structural], {
+    encoding: "utf8",
+  });
   if (baseline.error) throw baseline.error;
   assert([0, 1].includes(baseline.status), baseline.stderr);
   const output = path.join(root, "partition-" + seed);

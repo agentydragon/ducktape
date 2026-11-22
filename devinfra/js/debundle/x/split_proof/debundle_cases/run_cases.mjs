@@ -7,7 +7,7 @@
 // A case is `main.js` (one ESM chunk), a spec, and `expect.yaml` (accept or reject per spec). For every spec entry:
 //   1. translate the spec to a `lowersplit` spec: binding selectors and hole-free matches become statement numbers,
 //      unclaimed statements follow `unassigned_mode`, `import_order` becomes the import priority;
-//   2. `lowersplit --force` checks the split and writes the modules even when it rejects them;
+//   2. `lowersplit --diagnostic --force` checks the split and writes the modules even when it rejects them;
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
@@ -346,6 +346,7 @@ function runCase(dir, specName, expected) {
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
     const checked = run(lowersplit, [
+      "--diagnostic",
       path.join(stage, "bundle.json"),
       path.join(stage, "lean_spec.json"),
       path.join(stage, "split"),

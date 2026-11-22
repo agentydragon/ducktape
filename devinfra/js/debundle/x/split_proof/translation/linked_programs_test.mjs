@@ -77,7 +77,7 @@ function observe(file, exportNames) {
 }
 
 function lower(source, spec, out, extra = []) {
-  const result = spawnSync(process.env.LOWERSPLIT, [source, spec, out, "--require", "normal-completion", ...extra], {
+  const result = spawnSync(process.env.LOWERSPLIT, [source, spec, out, ...extra], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });

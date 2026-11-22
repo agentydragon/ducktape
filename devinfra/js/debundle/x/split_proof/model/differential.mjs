@@ -655,6 +655,7 @@ function split(job, bundle, dump, kind, spec, named) {
   const run = spawnSync(
     lowersplit,
     [
+      "--diagnostic",
       path.join(dir, "ast.json"),
       path.join(dir, "spec.json"),
       out,
@@ -682,7 +683,7 @@ function split(job, bundle, dump, kind, spec, named) {
   const statements = order.flatMap((m) => modules[m]);
   const orderKept = statements.every((id, k) => k === 0 || statements[k - 1] < id);
   // The verdict names the order-kept slice exactly when the split keeps the order: its other hypotheses hold here.
-  const slice = run.stdout.match(/^ {2}proved slice: (.*)$/m)?.[1];
+  const slice = run.stdout.match(/^ {2}model diagnostic: (.*)$/m)?.[1];
   if (orderKept !== Boolean(slice?.startsWith("order kept")))
     failures.push(
       `${label}: the plan ${orderKept ? "keeps" : "does not keep"} the order, and the verdict says ${slice}`
@@ -739,6 +740,7 @@ function split(job, bundle, dump, kind, spec, named) {
       return spawnSync(
         lowersplit,
         [
+          "--diagnostic",
           path.join(dir, "ast.json"),
           path.join(dir, "spec.json"),
           path.join(dir, "replay"),
@@ -754,14 +756,14 @@ function split(job, bundle, dump, kind, spec, named) {
     assert.equal(pristine.status, 0, `${label}: actual summaries must reload\n${pristine.stderr}`);
     assert.match(
       pristine.stdout,
-      /proved slice: moves \(certified bindings\)/,
+      /model diagnostic: moves \(certified bindings\)/,
       `${label}: actual serialized summaries must certify`
     );
     assert(footprints[named.poisonWrite].writes.length > 0, `${label}: mutation must remove a real write`);
     footprints[named.poisonWrite].writes = [];
     const poisoned = replay();
     assert.equal(poisoned.status, 0, `${label}: missing-write control must reach the semantic certificate check`);
-    assert.match(poisoned.stdout, /proved slice: none\./, `${label}: missing write must not certify`);
+    assert.match(poisoned.stdout, /model diagnostic: none\./, `${label}: missing write must not certify`);
   }
   if ((job.focused || job.opaqueCase?.move) && kind === "named") {
     assert(!orderKept, `${label}: the required move kept the order`);

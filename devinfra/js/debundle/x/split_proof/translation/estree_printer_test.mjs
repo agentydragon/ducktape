@@ -91,7 +91,7 @@ const modules = {
 };
 writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules }));
 
-const lowered = spawnSync(process.env.LOWERSPLIT, [ast, spec, out], { encoding: "utf8" });
+const lowered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, out], { encoding: "utf8" });
 assert.equal(lowered.status, 0, `${lowered.stdout}\n${lowered.stderr}`);
 
 for (const [file, selectors] of Object.entries(modules)) {

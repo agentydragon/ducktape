@@ -1,4 +1,4 @@
-# Excalidraw certificate coverage
+# Excalidraw CoreJS proof and artifact coverage
 
 Run the experimental Lean checker against the public, pinned Excalidraw bundle:
 
@@ -24,6 +24,9 @@ prefix just before it (`prefix-before-factory`). Both use the original chunk
 filename so the entry can be served at the original URL. The other probes use
 `entry.mjs`. A successful investigation target means the measurements
 completed, not that its splits were certified or executed successfully in a browser.
+The census results below are historical structural and CoreJS model diagnostics.
+Only an artifact-verified success from the normal `lowersplit` command certifies
+emitted JavaScript; diagnostic model proofs do not validate the printer's output.
 
 Each subprocess has a 180-second budget. A killed process is reported separately
 from rejection. Outputs retain the complete AST, model, actual footprints, plans,
@@ -83,9 +86,10 @@ on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. With
 with `expected a single declarator`. The splitter publishes no modules. The test outputs
 include the source filename, placement spec and verdict. [Full editor replay](https://app.buildbuddy.io/invocation/4ac19c1e-8230-4cc0-8d2d-81d82c3f5ed8)
 
-The same target renders two diagnostic placements with `--force` into separate directories,
-reparses their entries and compares their public names against the editor's 611 names.
-The `--plan` report counts source-order conflicts in Lean's structural checker.
+The same target renders two diagnostic placements with `--diagnostic … --force` into separate
+directories, reparses their entries and compares their public names against the editor's 611 names.
+Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
+Lean's structural checker; it is diagnostic evidence only.
 
 | Units moved                         | Entry names added                | Entry names lost | Inverted conflicts | Failed check |
 | ----------------------------------- | -------------------------------- | ---------------: | -----------------: | ------------ |
@@ -95,7 +99,7 @@ The `--plan` report counts source-order conflicts in Lean's structural checker.
 Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
 reads `Jb` and five bindings resident in the entry. Extracting both requires the renderer to
 expose all five to the new module. Comparing export names here detects additions and removals.
-Certified mode also needs to establish which live binding each name denotes.
+Artifact certification also needs to establish which live binding each name denotes.
 
 The first five conflicts for the single-arrow placement are with units 5–9. Unit 5 is the
 first statement after five named-import declarations and initializes `po` with `Ve(callback)`.
@@ -104,7 +108,7 @@ provider export with a counting callback. Creating the wrapper calls the callbac
 Loading it twice calls the callback once and returns the same exports object both times.
 The probe runs the provider in Node. It does not execute the complete editor.
 
-The separate CoreJS proof covers wrapper creation and the independent arrow declaration from
+The separate CoreJS theorem covers wrapper creation and the independent arrow declaration from
 a common linked environment. Both orders reach exactly the same successful final states.
 [Linked reproduction](../../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
 
@@ -257,9 +261,10 @@ The model covers this subclass's implicit constructor and opaque method body.
 Closing the seven proof gaps requires stable reads of the existing superclass and
 its prototype; the plain-class locality theorem does not permit those heap reads.
 
-## Certified roughjs alternating split
+## Roughjs alternating split: model proof
 
-The checker now certifies the alternating placement of the 73 roughjs units.
+The diagnostic checker now covers every move in the alternating placement of the 73 roughjs units.
+This proves the plan in CoreJS under its stated premises; it does not verify emitted JavaScript artifacts.
 All 630 inverted pairs are covered. The JSON move report records the seven
 pairs listed above under `pairwiseFailedPairExamples`, sets
 `certifiedClassHeritage` to true, and reports zero remaining failures.
@@ -278,18 +283,18 @@ frontend flags neither `import.meta` nor dynamic `import()`. Main, editor, and
 the subset worker are outside this count. Each row counts only placements that
 move at least one unit into `part.mjs`. A unit can appear in both rows.
 
-| Placement   | Nonempty candidates | Pass structural checks | Certified by CoreJS | Units moved in certified splits |
-| ----------- | ------------------: | ---------------------: | ------------------: | ------------------------------: |
-| Prefix      |                  64 |                     64 |                  64 |                             783 |
-| Alternating |                  65 |                     60 |                  60 |                             801 |
+| Placement   | Nonempty candidates | Pass structural checks | CoreJS model proof applies | Units moved in model-proved plans |
+| ----------- | ------------------: | ---------------------: | -------------------------: | --------------------------------: |
+| Prefix      |                  64 |                     64 |                         64 |                               783 |
+| Alternating |                  65 |                     60 |                         60 |                               801 |
 
-Choosing the larger certified placement per chunk gives **837 units moved across
+Choosing the larger placement with a CoreJS model proof per chunk gives **837 units moved across
 65 chunks**. The 53 nonempty locale chunks account for 742 of those units
-(14 apiece); the other 12 chunks contribute 95. Each certificate covers one complete chunk under the checker's
+(14 apiece); the other 12 chunks contribute 95. Each model proof covers one complete chunk under the checker's
 outside-import premises. The census checks each chunk separately. It does not
 establish equivalence of loading all 65 splits together.
 
-All 64 certified prefixes preserve order. Of the 60 certified alternating splits,
+All 64 prefixes with a model proof preserve order. Of the 60 alternating plans with a model proof,
 57 invert at least one pair. All five rejected alternating splits fail `OrderOk`;
 `chunk-ZQ22LJCO.js` also fails `AssignsHome`. Eleven chunks have no nonempty
 placement in either family. One of those, the pica wrapper, fails even the
@@ -302,10 +307,10 @@ report lists all 20 inversions as unproved.
 
 Ending the prefix immediately before the factory moves **867 units** and passes
 all nine structural checks with zero inversions. The emitted plan places unit
-872 among the 920 units in the original editor filename. CoreJS still declines
-a certificate because its correspondence check sees the factory's
+872 among the 920 units in the original editor filename. The CoreJS model checker still declines
+a model proof because its correspondence check sees the factory's
 `import.meta.url` in the complete input. This run checked the placement and
-certificate verdict; it did not execute the editor in a browser.
+model-proof verdict; it did not verify emitted artifacts or execute the editor in a browser.
 [Census results and emitted plans](https://app.buildbuddy.io/invocation/eac77bf3-3e55-42ce-b345-28952b567496)
 
 ## Editor units 474 and 475
