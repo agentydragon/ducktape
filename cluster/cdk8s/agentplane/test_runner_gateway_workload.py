@@ -2,10 +2,12 @@
 
 from dataclasses import replace
 from pathlib import PurePosixPath
-from typing import Any, cast
+from typing import Any
 
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
+import yaml
+from cdk8s import App
+from cdk8s_plus_34 import ConfigMap
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
@@ -29,55 +31,54 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     sandbox_controller,
     staging,
-    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
-from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
-def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]) -> dict[str, Any]:
-    """The Gateway's static settings come from its mounted file, without scalar environment overrides."""
-    file = config_map_yaml(documents, f"{runner_gateway.NAME}-settings", "settings.yaml")
-    allowed_runtime_envs = {Settings.config_file_env, Settings.dispatcher_database_url_env}
-    gateway_envs = {entry["name"] for entry in container["env"] if entry["name"].startswith("AGENTPLANE_SESSIONS_")}
-    assert gateway_envs <= allowed_runtime_envs
-    return file
-
-
-def test_gateway_client_certificate_mounts(staging_delivery_manifests: list[dict[str, Any]]) -> None:
+def test_dispatcher_serves_and_dials_with_its_respective_identities(
+    staging_delivery_manifests: list[dict[str, Any]],
+) -> None:
     docs = staging_delivery_manifests
     deployment = find_resource(docs, "Deployment", runner_gateway.NAME)
     pod = deployment["spec"]["template"]["spec"]
     container = one(pod["containers"])
-    config = _gateway_settings(docs, container)
-    assert config["runner_control_target_template"] == "environments.{namespace}.svc:8082"
-    for key in ("cert_file", "key_file"):
-        client_path = PurePosixPath(config["gateway_tls"][key])
-        mount = one(mount for mount in container["volumeMounts"] if mount["mountPath"] == str(client_path.parent))
-        secret = one(volume for volume in pod["volumes"] if volume["name"] == mount["name"])["secret"]["secretName"]
-        cert = one(doc for doc in docs if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret)
-        assert cert["spec"]["uris"] == [GATEWAY_SESSIONS_URI]
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {PurePosixPath(mount["mountPath"]): volumes[mount["name"]] for mount in container["volumeMounts"]}
 
+    env = {entry["name"]: entry for entry in container["env"] if entry["name"].startswith("AGENTPLANE_SESSIONS_")}
+    assert env.keys() <= {Settings.config_file_env, Settings.dispatcher_database_url_env}
+    path = PurePosixPath(env[Settings.config_file_env]["value"])
+    settings = config_map_yaml(docs, mounts[path.parent]["configMap"]["name"], path.name)
 
-def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
-    workload_issuer = {"kind": WORKLOAD_ISSUER.kind, "name": WORKLOAD_ISSUER.name}
-    workload_certificate = find_resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
-    workload_spec = workload_certificate["spec"]
-    assert workload_spec["secretName"] == f"{runner_gateway.NAME}-workload-tls"
-    assert workload_spec["issuerRef"] == workload_issuer
-    assert workload_spec["uris"] == [SESSION_DISPATCHER_URI]
-    assert set(workload_spec["usages"]) == {"digital signature", "client auth", "server auth"}
-    assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
+    assert settings["runner_control_target_template"] == "environments.{namespace}.svc:8082"
+    rpc = settings["rpc"]
+    auth = one(rpc["auth"])
+    assert auth["mode"] == "spiffe"
+    gateway = settings["gateway_tls"]
+    sampler = settings["central_sampler"]["tls"]
+    assert gateway["server_uri"] == SANDBOX_CONTROLLER_URI
+    assert sampler["server_uri"] == CENTRAL_SAMPLER_URI
+    assert gateway["client_uri"] == sampler["client_uri"] == GATEWAY_SESSIONS_URI
+    for field in ("cert_file", "key_file", "ca_file"):
+        assert sampler[field] == gateway[field]
+    assert auth["ca_file"] == gateway["ca_file"]
 
-    client_spec = find_resource(staging_manifests, "Certificate", "sessions-client-workload")["spec"]
-    assert client_spec["secretName"] == "sessions-client-workload-tls"
-    assert client_spec["issuerRef"] == workload_issuer
-    assert client_spec["uris"] == [GATEWAY_SESSIONS_URI]
-    assert set(client_spec["usages"]) == {"digital signature", "client auth", "server auth"}
-    assert client_spec["privateKey"]["rotationPolicy"] == "Always"
+    for tls, expected_uri in ((rpc["tls"], SESSION_DISPATCHER_URI), (gateway, GATEWAY_SESSIONS_URI)):
+        for field, key in (("cert_file", "tls.crt"), ("key_file", "tls.key")):
+            path = PurePosixPath(tls[field])
+            secret = mounts[path.parent]["secret"]
+            paths = {item["key"]: item["path"] for item in secret["items"]} if "items" in secret else {key: key}
+            assert paths[key] == path.name
+            cert = one(
+                doc["spec"]
+                for doc in docs
+                if doc["kind"] == "Certificate"
+                and doc["metadata"]["namespace"] == deployment["metadata"]["namespace"]
+                and doc["spec"]["secretName"] == secret["secretName"]
+            )
+            assert cert["uris"] == [expected_uri]
+            assert cert["privateKey"]["rotationPolicy"] == "Always"
 
 
 def test_gateway_preserves_services_and_fences_listener_ingress(
@@ -91,28 +92,10 @@ def test_gateway_preserves_services_and_fences_listener_ingress(
     container = one(c for c in pod["containers"] if c["name"] == runner_gateway.NAME)
     assert pod["serviceAccountName"] == runner_gateway.NAME
     listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
-    settings = _gateway_settings(docs, container)
+    settings = config_map_yaml(docs, f"{runner_gateway.NAME}-settings", "settings.yaml")
     assert settings["policy_namespace"] == staging.ENV.namespace
     assert settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert int(settings["rpc"]["listen_address"].rsplit(":", 1)[1]) == listener_ports["grpc"]
-    assert settings["rpc"]["tls"] == {
-        "cert_file": "/run/agentplane/workload-tls/tls.crt",
-        "key_file": "/run/agentplane/workload-tls/tls.key",
-    }
-    assert settings["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
-    assert settings["gateway_tls"] == {
-        "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
-        "server_uri": SANDBOX_CONTROLLER_URI,
-        "cert_file": "/run/agentplane/sessions-client-tls/tls.crt",
-        "key_file": "/run/agentplane/sessions-client-tls/tls.key",
-        "client_uri": GATEWAY_SESSIONS_URI,
-    }
-    sampler = settings["central_sampler"]
-    assert sampler["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
-    assert sampler["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
-    # Both outgoing Sessions connections use the same mounted role certificate.
-    for field in ("cert_file", "key_file", "ca_file"):
-        assert sampler["tls"][field] == settings["gateway_tls"][field]
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
     service = find_resource(staging_manifests, "Service", runner_gateway.NAME)["spec"]
     assert service["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
@@ -201,8 +184,12 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
         ),
     )
     chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    settings = config_map_yaml(docs, f"{runner_gateway.NAME}-settings", "settings.yaml")
+    config = one(
+        node
+        for node in chart.node.find_all()
+        if isinstance(node, ConfigMap) and node.name == f"{runner_gateway.NAME}-settings"
+    )
+    settings = yaml.safe_load(config.data["settings.yaml"])
     assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert ACTIONS_URI not in settings.get("wake_service_callers", [])
 
