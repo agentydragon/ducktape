@@ -108,10 +108,20 @@ Preserving is the default; storage is mostly cheap. Dropping data happens only a
 design-level decision, such as compacting streamed deltas once a turn completes, never as a side
 effect of a convenient schema.
 
-Errors follow the same rule. There is no `except: return "something went wrong"`: a failure
-propagates with its cause, or is logged with its detail where a fallback is genuinely correct
-([`STYLE.md`](../../STYLE.md) § Exceptions). A failed Thread, Action or request says what failed and
-why.
+Errors follow the same rule. There is no `except: return "something went wrong"`: a failed Thread,
+Action or request tells the operator what failed, why, and what is known about its outcome. Show
+failure and stale-update details where the operator is working, without requiring a hover or a
+log search. Retain enough evidence to inspect the failure after a reload or from another browser.
+Distinguish a confirmed refusal from an unknown outcome; do not present an uncertain operation as
+safe to retry. A fallback logs its cause when it is genuinely correct
+([`STYLE.md`](../../STYLE.md) § Exceptions).
+
+The app user is currently the trusted system operator, not an untrusted tenant. Give that operator
+useful diagnostic context, including the failing component and actionable upstream cause when
+available. This does not grant the same visibility to workload identities or external clients, or
+require exposing credentials and bearer tokens. If a detail cannot cross a boundary, preserve it in
+operator-accessible diagnostics and identify the affected component and operation in the user-facing
+failure.
 
 **Question for a proposal:** what does it discard or summarize, and who decided that? If it fails,
 what will the operator see?
