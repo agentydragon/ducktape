@@ -67,6 +67,5 @@ configMapGenerator:
               method: POST
         rotate_below_hours: 24
         github_repo: agentydragon/ducktape
-        sops_config: .sops.yaml
         git_author_name: authentik-jwt-rotation
         git_author_email: noreply@allegedly.works

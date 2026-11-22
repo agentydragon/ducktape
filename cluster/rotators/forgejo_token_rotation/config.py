@@ -76,6 +76,5 @@ class Rotation(BaseModel):
 class Config(BaseModel):
     rotations: list[Rotation]
     github_repo: str = "agentydragon/ducktape"
-    sops_config: str = Field(default=".sops.yaml", description="Repo path sops reads to pick the recipient set")
     git_author_name: str = "forgejo-token-rotation"
     git_author_email: str = "noreply@allegedly.works"

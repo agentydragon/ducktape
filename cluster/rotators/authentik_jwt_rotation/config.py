@@ -131,6 +131,5 @@ class Config(BaseModel):
         default=24, description="Mint a fresh token once remaining validity drops below this"
     )
     github_repo: str = "agentydragon/ducktape"
-    sops_config: str = Field(default=".sops.yaml", description="Repo path sops reads to pick the recipient set")
     git_author_name: str = "authentik-jwt-rotation"
     git_author_email: str = "noreply@allegedly.works"
