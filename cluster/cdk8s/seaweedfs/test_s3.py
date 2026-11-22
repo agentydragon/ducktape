@@ -3,6 +3,7 @@ import pytest_bazel
 from cdk8s import Chart
 
 from cluster.cdk8s.seaweedfs import cluster, namespace, s3
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME
 
 _TENANT = min(cluster.TENANTS)
 _NOT_A_TENANT = "test-not-a-tenant"
@@ -10,7 +11,7 @@ _NOT_A_TENANT = "test-not-a-tenant"
 
 @pytest.mark.parametrize(
     ("owner", "expected_ref"),
-    [(namespace.NAME, {"name": cluster.NAME}), (_TENANT, {"name": cluster.NAME, "namespace": namespace.NAME})],
+    [(namespace.NAME, {"name": CLUSTER_NAME}), (_TENANT, {"name": CLUSTER_NAME, "namespace": namespace.NAME})],
 )
 def test_s3_objects_reference_the_seaweed_cluster(
     scratch_chart: Chart, owner: str, expected_ref: dict[str, str]

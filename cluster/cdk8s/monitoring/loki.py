@@ -17,6 +17,7 @@ from cluster.cdk8s.monitoring.loki_endpoints import HTTP, NAME
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3, S3_HTTP_URL
 from cluster.cdk8s.vpa_policy import (
     VPA_RESOURCE_POLICY_ANNOTATION,
     ContainerPolicy,
@@ -25,7 +26,6 @@ from cluster.cdk8s.vpa_policy import (
 )
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
-_SEAWEEDFS = "seaweedfs"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
@@ -56,12 +56,7 @@ def _loki_values() -> dict[str, object]:
             "commonConfig": {"replication_factor": 2},
             "storage": {
                 "type": "s3",
-                "s3": {
-                    "endpoint": "http://seaweedfs-s3.seaweedfs.svc:8333",
-                    "region": "us-east-1",
-                    "s3ForcePathStyle": True,
-                    "insecure": True,
-                },
+                "s3": {"endpoint": S3_HTTP_URL, "region": "us-east-1", "s3ForcePathStyle": True, "insecure": True},
                 "bucketNames": {"chunks": NAME, "ruler": NAME, "admin": NAME},
             },
             "schemaConfig": {
@@ -270,14 +265,7 @@ def _network_policy(chart: Chart) -> None:
             # Loki → kube-dns (DNS resolution)
             cilium.dns_egress(),
             # Loki → SeaweedFS S3 (S3 chunk/index storage)
-            EgressRule.to_endpoints(
-                {
-                    "app.kubernetes.io/component": "s3",
-                    "app.kubernetes.io/name": _SEAWEEDFS,
-                    namespace_label: _SEAWEEDFS,
-                },
-                8333,
-            ),
+            S3.egress(),
             # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
             EgressRule.to_endpoints(loki_pods, 80, 8080, 7946, 9095, http_port),
         ],

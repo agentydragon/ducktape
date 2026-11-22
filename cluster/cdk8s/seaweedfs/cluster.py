@@ -90,8 +90,8 @@ from cluster.cdk8s import node_scheduling, piraeus_storage, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME
 
-NAME = "seaweedfs"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster"
 # The operator's API group, which a ResourceReferenceGrant names on both sides.
 GROUP = "seaweed.seaweedfs.com"
@@ -129,7 +129,7 @@ _HOSTNAME = "kubernetes.io/hostname"
 
 def _component_labels(component: str) -> dict[str, str]:
     """The operator's pod labels for one component: the anti-affinity and the PDB select on them."""
-    return {"app.kubernetes.io/component": component, "app.kubernetes.io/name": NAME}
+    return {"app.kubernetes.io/component": component, "app.kubernetes.io/name": CLUSTER_NAME}
 
 
 def _volume_topology(
@@ -187,7 +187,7 @@ def _volume_topology(
                 required_during_scheduling_ignored_during_execution=[
                     SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
                         label_selector=SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                            match_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")}
+                            match_labels={"app.kubernetes.io/instance": CLUSTER_NAME, **_component_labels("volume")}
                         ),
                         topology_key=_HOSTNAME,
                     )
@@ -210,7 +210,7 @@ def seaweed(scope: Construct) -> Seaweed:
     return Seaweed(
         scope,
         "seaweed",
-        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
+        metadata=ApiObjectMetadata(name=CLUSTER_NAME, namespace=namespace.NAME),
         spec=SeaweedSpec(
             # 4.x is required for the Bucket CR's access wiring: the filer's gRPC server
             # unconditionally registers `iam_pb.SeaweedIdentityAccessManagement` starting at
@@ -548,13 +548,13 @@ def _tenants_grant(scope: Construct) -> None:
                 ResourceReferenceGrantSpecFrom(group=GROUP, kind=kind, namespace_selector=tenants)
                 for kind in ("Bucket", "S3Identity", "S3Credentials")
             ],
-            to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=NAME)],
+            to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=CLUSTER_NAME)],
         ),
     )
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, CLUSTER_NAME, disable_resource_name_hashes=True)
     seaweed(chart)
     AdminScript(
         chart,
@@ -565,7 +565,7 @@ def chart(app: App) -> Chart:
             annotations={"description": "Hourly copy-only repair of SeaweedFS volume replica placement."},
         ),
         spec=AdminScriptSpec(
-            cluster_ref=AdminScriptSpecClusterRef(name=NAME),
+            cluster_ref=AdminScriptSpecClusterRef(name=CLUSTER_NAME),
             schedule="17 * * * *",
             time_zone="Etc/UTC",
             suspend=False,
