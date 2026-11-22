@@ -1208,6 +1208,14 @@ const behavior = ({ status, stdout, stderr }) => ({
 });
 const sameBehavior = (a, b) => a.status === b.status && a.stdout === b.stdout && a.error === b.error;
 
+function differsOnlyAtNameProbes(bundle, plan, reference, observed) {
+  if (!plan.rename || plan.capture || reference.status !== 0 || observed.status !== 0) return false;
+  const probes = new Set(bundle.units.flatMap((unit, index) => (unit.tmpl === "fnName" ? [String(index)] : [])));
+  const mask = (stdout) =>
+    stdout.replace(/^name#(\d+) \d+$/gm, (line, index) => (probes.has(index) ? `name#${index}` : line));
+  return probes.size > 0 && mask(reference.stdout) === mask(observed.stdout);
+}
+
 const checkerVerdicts = new Map([
   [0, { name: "accept", output: /^PLAN SOUND$/m }],
   [1, { name: "reject", output: /^(TRANSLATION REJECT|PLAN NOT SOUND):/m }],
@@ -1394,7 +1402,8 @@ async function main() {
           .filter((l) => /^(TRANSLATION REJECT|PLAN|OBLIGATIONS|\s+FAIL)/.test(l))
           .join(" | "),
       };
-      if (verdict === "accept" && !same && record.templates.includes("fnName")) assumedAccepts.push(record);
+      if (verdict === "accept" && !same && differsOnlyAtNameProbes(bundle, plan, reference, tree))
+        assumedAccepts.push(record);
       else if (verdict === "accept" && !same) {
         wrongAccepts.push(record);
         if (outDir) {
@@ -1522,7 +1531,7 @@ async function main() {
         .map(([t, k]) => `${t} ${k}`)
         .join(", ")}`
     );
-  if (leaks) console.log(`accepted by the renaming assumption (bundles with fn.name): ${assumedAccepts.length}`);
+  if (leaks) console.log(`accepted with only fn.name probe differences: ${assumedAccepts.length}`);
   console.log(`wrong rejects of plain relocations (checker stricter than Node needed): ${wrongRejects.length}`);
   const reasons = {};
   for (const w of wrongRejects) reasons[w.checker.slice(0, 90)] = (reasons[w.checker.slice(0, 90)] ?? 0) + 1;
@@ -1534,6 +1543,8 @@ async function main() {
   for (const c of checkerCrashes.slice(0, 5)) console.log(`  bundle ${c.round} tree ${c.tree}: ${c.message}`);
   if (wrongAccepts.length > 0) throw new Error(`${wrongAccepts.length} wrong accepts`);
   if (checkerCrashes.length > 0) throw new Error(`${checkerCrashes.length} crashes of the checker`);
+  if (args.includes("--require-name-leak") && assumedAccepts.length === 0)
+    throw new Error("no accepted rename changed a function-name probe");
   if (args.includes("--require-accepted") && cell("accept", "same") === 0)
     throw new Error("no accepted tree matched its bundle");
 }
