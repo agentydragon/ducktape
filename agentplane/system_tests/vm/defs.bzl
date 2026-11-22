@@ -30,7 +30,11 @@ def vm_test(
             "dockerNetwork": "bridge",
             "test.EstimatedCPU": "4",
             "test.EstimatedFreeDiskBytes": "30GB",
-            "test.EstimatedMemory": "7GiB",
+            # Both KubeVirt cases passed with a 5 GiB cap and swap disabled:
+            # https://app.buildbuddy.io/invocation/3019fd35-3795-41dd-823f-2714ae254ef8
+            # At 4 GiB both failed and the test cgroup recorded 79 s of full memory stalls:
+            # https://app.buildbuddy.io/invocation/7ff14002-8aac-4ec0-adc0-0ee5f306b5e6
+            "test.EstimatedMemory": "5GiB",
         } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties
     else:
         # The two routes share one PyCompile output. Scope VM sizing to TestRunner

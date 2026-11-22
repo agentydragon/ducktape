@@ -38,7 +38,11 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
             "dockerNetwork": "bridge",
             "test.EstimatedCPU": "4",
             "test.EstimatedFreeDiskBytes": "20GB",
-            "test.EstimatedMemory": "6GB",
+            # Both Firecracker cases passed with a 5 GiB cap and swap disabled, peaking at 4.44 GiB:
+            # https://app.buildbuddy.io/invocation/3019fd35-3795-41dd-823f-2714ae254ef8
+            # At 4 GiB both passed but the test cgroup recorded 34 s of full memory stalls:
+            # https://app.buildbuddy.io/invocation/7ff14002-8aac-4ec0-adc0-0ee5f306b5e6
+            "test.EstimatedMemory": "5GiB",
         } | KVM_EXEC_PROPERTIES | {
             "test.Pool": pool,
             "test.recycle-runner": "true" if recycle else "false",
