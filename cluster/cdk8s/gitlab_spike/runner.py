@@ -2,7 +2,6 @@
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
-from cilium_crds.io.cilium import CiliumNetworkPolicySpecEndpointSelector
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
@@ -20,7 +19,7 @@ _MEMORY_LIMIT = "512Mi"
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespace = gitlab.RUNNER_NAMESPACE
-    ServiceAccount(
+    job_account = ServiceAccount(
         chart,
         "job-account",
         metadata=ApiObjectMetadata(name="gitlab-spike-job", namespace=namespace),
@@ -28,15 +27,12 @@ def chart(app: App) -> Chart:
     )
     # The Helm chart uses this dedicated service account for the manager; jobs use a different one.
     # The manager alone needs the API. Build/helper pods cannot reach it.
-    for name, selector, api_access in (
-        ("manager", {"io.cilium.k8s.policy.serviceaccount": NAME}, True),
-        ("jobs", {"app.kubernetes.io/name": "gitlab-spike-job"}, False),
-    ):
+    for name, account, api_access in (("manager", NAME, True), ("jobs", job_account.name, False)):
         NetworkPolicy(
             chart,
             f"egress-{name}",
             metadata=ApiObjectMetadata(name=f"{NAME}-{name}", namespace=namespace),
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=selector),
+            endpoint_selector={"io.cilium.k8s.policy.serviceaccount": account},
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_endpoints(
