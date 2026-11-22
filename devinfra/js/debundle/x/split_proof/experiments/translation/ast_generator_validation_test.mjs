@@ -7,6 +7,10 @@ import { generateAstBundle } from "./ast_generator.mjs";
 
 const kinds = new Set();
 const programs = new Set();
+const heritageShapes = new Set();
+const memberKinds = new Set();
+const chainDepths = new Set();
+let classPrograms = 0;
 let functions = 0;
 let blocks = 0;
 let shadows = 0;
@@ -26,8 +30,8 @@ function walk(value, depth = 0) {
   for (const child of Object.values(value)) if (typeof child === "object") walk(child, depth);
 }
 
-for (const seed of [1, 2026]) {
-  for (let round = 0; round < 16; round++) {
+for (const seed of [1, 2026, 2027, 1337]) {
+  for (let round = 0; round < 32; round++) {
     const bundle = generateAstBundle(seed, round);
     assert.equal(bundle.source, generateAstBundle(seed, round).source, "generation must be deterministic");
     programs.add(bundle.source);
@@ -75,6 +79,29 @@ for (const seed of [1, 2026]) {
     });
     assert.ifError(result.error);
     assert.equal(result.status, 0, `seed ${seed} round ${round} did not complete: ${result.stderr}`);
+    const classes = ast.body
+      .flatMap((st) => st.declarations ?? [])
+      .map((d) => d.init)
+      .filter((e) => e?.type === "ClassExpression");
+    if (classes.length) {
+      classPrograms++;
+      chainDepths.add(classes.length);
+      assert.equal(classes[0].superClass, null);
+      assert(classes.length >= 2 && classes.slice(1).every((cls) => cls.superClass?.type === "Identifier"));
+      const methods = classes.flatMap((cls) => cls.body.body);
+      const observed = result.stdout
+        .split("\n")
+        .filter((line) => line.startsWith("class "))
+        .map((line) => line.split(" ")[1]);
+      assert.deepEqual(
+        observed,
+        methods.map((m) => m.key.name),
+        "every generated member must run through the leaf"
+      );
+      const shape = (m) => `${m.static ? "static" : "instance"} ${m.kind}`;
+      methods.forEach((m) => memberKinds.add(shape(m)));
+      heritageShapes.add(classes.map((cls) => cls.body.body.map(shape).join(",")).join("/"));
+    }
   }
 }
 
@@ -89,9 +116,13 @@ for (const type of [
   "CallExpression",
 ])
   assert(kinds.has(type), `sample did not exercise ${type}`);
+assert.equal(classPrograms, 32, "each seed must execute a class program in one quarter of rounds");
+assert.deepEqual([...chainDepths].sort(), [2, 3, 4]);
+assert(heritageShapes.size >= 24, "class programs must vary in structure across seeds and rounds");
+assert.deepEqual([...memberKinds].sort(), ["instance get", "instance method", "static get", "static method"]);
 assert(functions > 0 && blocks > 0 && shadows > 0, "sample lacks function scope, block scope or shadowing");
 assert(maxDepth >= 6 && maxDepth <= 40, `unexpected generated AST depth: ${maxDepth}`);
-assert(programs.size >= 24, `too few distinct programs: ${programs.size}`);
+assert(programs.size === 128, `too few distinct programs: ${programs.size}`);
 console.log(
-  `validated ${programs.size} programs, ${kinds.size} syntax types, depth ${maxDepth}, ${functions} function scopes, ${blocks} blocks, ${shadows} shadows`
+  `validated ${programs.size} programs, ${kinds.size} syntax types, depth ${maxDepth}, ${functions} function scopes, ${blocks} blocks, ${shadows} shadows; ${classPrograms} class programs, ${heritageShapes.size} distinct inheritance shapes`
 );
