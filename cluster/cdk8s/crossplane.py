@@ -13,6 +13,7 @@ from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     ProviderSpecPackagePullSecrets,
     ProviderSpecRuntimeConfigRef,
 )
+from external_secrets_crds.io.external_secrets import ExternalSecret
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderers,
     HelmReleaseSpecPostRenderersKustomize,
@@ -55,16 +56,16 @@ OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
 OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
 OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
 PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="pkg.crossplane.io/v1",
-    kind="Provider",
+    api_version=Provider.GVK.api_version,
+    kind=Provider.GVK.kind,
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
 )
 _CORE_CPU_REQUEST = "100m"
 _CORE_MEMORY_FLOOR = "256Mi"
 _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="external-secrets.io/v1",
-    kind="ExternalSecret",
+    api_version=ExternalSecret.GVK.api_version,
+    kind=ExternalSecret.GVK.kind,
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')",
 )

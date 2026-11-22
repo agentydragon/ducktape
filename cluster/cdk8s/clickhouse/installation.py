@@ -658,19 +658,13 @@ def clickhouse(
         timeout="20m",
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
-                api_version="clickhouse-keeper.altinity.com/v1",
-                kind="ClickHouseKeeperInstallation",
+                api_version=gvk.api_version,
+                kind=gvk.kind,
                 current="status.status == 'Completed'",
                 failed="status.status == 'Aborted'",
                 in_progress="status.status != 'Completed' && status.status != 'Aborted'",
-            ),
-            KustomizationSpecHealthCheckExprs(
-                api_version="clickhouse.altinity.com/v1",
-                kind="ClickHouseInstallation",
-                current="status.status == 'Completed'",
-                failed="status.status == 'Aborted'",
-                in_progress="status.status != 'Completed' && status.status != 'Aborted'",
-            ),
+            )
+            for gvk in (ClickHouseKeeperInstallation.GVK, ClickHouseInstallation.GVK)
         ],
         depends_on=[
             flux_kustomization_depends_on(clickhouse_operator),
