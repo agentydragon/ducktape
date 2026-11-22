@@ -126,7 +126,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	wantCommand := input(command, "owned")
 	if got, err := client.SubmitInput(actingFor(ownerIdentity), &dispatcherpb.SubmitInputRequest{
 		CommandId: command, SessionId: owned, ExpectedSandboxUid: ownerSandbox.UID, Text: "owned",
-	}); err != nil || !proto.Equal(got.GetDispatch().GetCommand(), wantCommand) {
+	}); err != nil || got.GetDispatch().GetCommandId() != command || got.GetDispatch().GetCommand() != nil {
 		t.Fatalf("delegated Identity SubmitInput: %v, %v", got, err)
 	}
 	queued, err := queueStore.GetDispatch(t.Context(), command)

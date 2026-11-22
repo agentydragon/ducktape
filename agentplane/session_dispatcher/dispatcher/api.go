@@ -366,7 +366,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSan
 	if err != nil {
 		return nil, apiError(err)
 	}
-	return store.DescribeDispatch(row)
+	return store.DescribeDispatch(row, false)
 }
 
 func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -610,7 +610,7 @@ func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDisp
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := store.DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row, true)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -646,7 +646,7 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := store.DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row, false)
 	if err != nil {
 		return nil, apiError(err)
 	}

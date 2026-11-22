@@ -158,6 +158,6 @@ func scanDispatchChange(row interface{ Scan(...any) error }) (DispatchChange, er
 	if err != nil {
 		return change, err
 	}
-	change.Dispatch, err = DescribeDispatch(&dispatch)
+	change.Dispatch, err = DescribeDispatch(&dispatch, true)
 	return change, err
 }

@@ -105,9 +105,9 @@ message Dispatch {
   agentplane.proto.DeliveryBlocker delivery_blocker = 11;
   // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the command.
   agentplane.proto.WakeAssessment wake_assessment = 12;
-  // The command stored by Dispatcher. Present on individual reads and mutation receipts.
+  // The command stored by Dispatcher. Present on GetDispatch. Mutation receipts omit it for ProtoJSON clients.
   // List and watch require include_command; legacy deletion receipts lack the stored command.
-  agentplane.proto.Command command = 13;
+  optional agentplane.proto.Command command = 13;
 }
 
 message SubmitInputRequest {

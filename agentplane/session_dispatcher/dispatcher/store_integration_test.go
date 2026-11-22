@@ -559,7 +559,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
 	}
 	first, err := service.InterruptTurn(ctx, request)
-	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != commandpb.Operation_OPERATION_INTERRUPT_TURN || first.GetDispatch().GetCommand().GetInterruptTurn().GetTurnId() != request.GetTurnId() {
+	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != commandpb.Operation_OPERATION_INTERRUPT_TURN {
 		t.Fatalf("queued interrupt: %v %v", first, err)
 	}
 	retry, err := service.InterruptTurn(ctx, request)
@@ -2315,7 +2315,7 @@ func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
 			t.Fatalf("%s assessment: blocker=%v wake=%v", name, got.blocker, got.assessment)
 		}
 	}
-	wireDispatch, err := store.DescribeDispatch(gotDispatch)
+	wireDispatch, err := store.DescribeDispatch(gotDispatch, true)
 	if err != nil || !proto.Equal(wireDispatch.GetWakeAssessment(), assessment) || !proto.Equal(wireDispatch.GetDeliveryBlocker(), blocker) {
 		t.Fatalf("dispatch projection: %+v %v", wireDispatch, err)
 	}
