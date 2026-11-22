@@ -16,7 +16,8 @@ def _scrape(upstream: httpx.Response) -> httpx.Response:
         return upstream
 
     with TestClient(create_app(settings, httpx.MockTransport(github))) as client:
-        return client.get("/metrics")
+        response: httpx.Response = client.get("/metrics")
+        return response
 
 
 def _response(*, remaining: int, errors: bool = False) -> httpx.Response:
