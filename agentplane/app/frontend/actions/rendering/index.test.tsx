@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // @vitest-environment happy-dom
 import { env } from "node:process";
 import { describe, expect, it, vi } from "vitest";
