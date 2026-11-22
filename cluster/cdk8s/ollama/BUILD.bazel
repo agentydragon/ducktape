@@ -82,6 +82,7 @@ py_library(
     deps = [
         ":tabby_endpoint",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",

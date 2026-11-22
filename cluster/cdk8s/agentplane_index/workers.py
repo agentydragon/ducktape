@@ -28,6 +28,7 @@ from agentplane.x.indexing.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.cnpg.health import database_health
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -185,13 +186,7 @@ def _worker(
                             ],
                             ports=[worker.k8s_container_port()],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("250m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("2Gi")},
-                            ),
+                            resources=container_resources(cpu="250m", memory="512Mi", memory_limit="2Gi"),
                             readiness_probe=_health_probe(),
                             liveness_probe=_health_probe(period_seconds=30),
                             startup_probe=_health_probe(period_seconds=5, failure_threshold=60),
