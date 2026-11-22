@@ -7,8 +7,8 @@ with service deployment.
 import contextlib
 import json
 import logging
+import subprocess
 import time
-from datetime import UTC, datetime
 
 from kubernetes import client, watch
 from kubernetes.client import ApiException
@@ -96,32 +96,16 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
 
 
 def restart_cilium_operator_gateway_controller(timeout: int = 120) -> None:
-    """Restart the Cilium operator to ensure the gateway controller starts cleanly.
-
-    The gateway controller is a one-shot job inside the operator. If it fails to sync
-    the API cache during startup (e.g., because kube-apiserver was restarting during
-    talos_machine_configuration_apply), it dies permanently for that pod's lifetime.
-    Existing Envoy routes continue serving but new HTTPRoutes are never programmed.
-
-    Restarting the operator here is cheap (~30s) and guarantees the gateway controller
-    starts with a healthy apiserver after tofu apply completes.
+    """Restart the operator after the API settles. If its gateway controller fails its initial
+    cache sync during Talos configuration, it stops programming new HTTPRoutes until restarted.
     """
-    logger.info("Restarting Cilium operator to ensure gateway controller starts cleanly...")
-    apps_v1 = client.AppsV1Api()
-    deployment = apps_v1.read_namespaced_deployment("cilium-operator", "kube-system")
-    annotations = deployment.spec.template.metadata.annotations or {}
-    annotations["kubectl.kubernetes.io/restartedAt"] = datetime.now(UTC).isoformat()
-    deployment.spec.template.metadata.annotations = annotations
-    apps_v1.patch_namespaced_deployment("cilium-operator", "kube-system", deployment)
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        dep = apps_v1.read_namespaced_deployment("cilium-operator", "kube-system")
-        if dep.status.updated_replicas == dep.spec.replicas and dep.status.available_replicas == dep.spec.replicas:
-            logger.info("Cilium operator restarted and ready")
-            return
-        time.sleep(5)
-    logger.warning("Cilium operator restart did not complete within %ds (continuing anyway)", timeout)
+    rollout = ["kubectl", "--namespace=kube-system", "rollout"]
+    deployment = "deployment/cilium-operator"
+    subprocess.run([*rollout, "restart", deployment], check=True)
+    try:
+        subprocess.run([*rollout, "status", deployment], timeout=timeout, check=True)
+    except subprocess.TimeoutExpired:
+        logger.warning("Cilium operator restart did not complete within %ds (continuing anyway)", timeout)
 
 
 def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval: int = 10) -> None:
