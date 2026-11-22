@@ -2039,6 +2039,21 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_tofu_controller_release",
+    srcs = ["test_tofu_controller_release.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":terraform",
+        ":tofu_controller_release",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "tofu_controller_release",
     srcs = ["tofu_controller_release.py"],
