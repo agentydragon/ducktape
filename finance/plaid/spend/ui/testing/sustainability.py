@@ -204,6 +204,11 @@ def window(days: int, *, history: list[SustainabilityHistoryPoint] | None = None
     )
 
 
+def single_point_windows() -> list[SustainabilityView]:
+    windows = (window(days) for days in (30, 90, 365))
+    return [with_history(view, view.history[-1:]) for view in windows]
+
+
 def partial_window() -> SustainabilityView:
     result = view()
     return result.model_copy(
