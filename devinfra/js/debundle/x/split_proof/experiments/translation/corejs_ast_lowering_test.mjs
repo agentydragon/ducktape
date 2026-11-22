@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import * as acorn from "acorn";
+import * as eslintScope from "eslint-scope";
+import { dumpParsed } from "../lowering/dump_core.mjs";
+import { coreFromParsed } from "../model/to_core.mjs";
+import { bundleFromParsed } from "./frontend.mjs";
+import { parseModule } from "./scope_metadata.mjs";
 import { coreOf, dumpOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
@@ -94,3 +100,47 @@ assert.match(split(unsupported, ["--corejs", missing]), /proved slice: none\..*o
 // A call has no declarations, so footprint agreement alone could mistake its missing unit for an empty block.
 file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "#1"] } }));
 assert.match(split("var a = 1; a();", ["--corejs", missing]), /proved slice: none\..*omits statement 1/);
+
+// Gaps in executable bodies still have source ordinals. Vary the width of an
+// exported list before a destructuring and an opaque closure so their IDs move.
+for (let width = 1; width <= 6; width++) {
+  const names = Array.from({ length: width }, (_, i) => `n${i}`);
+  const code = `import {bag} from "./dep.mjs";
+    export var ${names.map((n, i) => `${n} = ${i}`).join(", ")},
+      {value: x = n0} = bag, read = ({v}) => x + v;
+    export {x as renamed}; debugger; import "./side.mjs"; read;`;
+  const parsed = parseModule(code, acorn.parse, eslintScope);
+  const dump = dumpParsed(parsed);
+  const tree = bundleFromParsed(parsed, "entry.mjs");
+  const core = coreFromParsed(parsed, { external: true });
+  const bindings = [...names, "x", "read"];
+  assert.equal(dump.statements.length, width + 7);
+  assert.equal(core.numbered, dump.statements.length);
+  assert.deepEqual(
+    dump.statements.slice(1, width + 3).map((s) => s.ast.declaration.declarations.length),
+    bindings.map(() => 1)
+  );
+  assert.deepEqual(
+    tree.units.map((n) => n.type),
+    [...bindings.map(() => "VariableDeclaration"), "DebuggerStatement", "ExpressionStatement"]
+  );
+  assert.deepEqual(
+    tree.exports.map((s) => s.exported),
+    [...bindings, "renamed"]
+  );
+  assert.deepEqual(
+    core.exports.map(([name]) => name),
+    [...bindings, "renamed"]
+  );
+  assert.deepEqual(core.ids, [...bindings.map((_, i) => i + 1), width + 6]);
+  assert.deepEqual(
+    core.opaque.map((o) => o.id),
+    [width + 1, width + 2]
+  );
+  assert.deepEqual(dump.statements[width + 1].oracle.free.toSorted(), ["bag", "n0"]);
+  assert.deepEqual(dump.statements[width + 2].oracle.free, ["x"]);
+  // Linked programs take their IDs from the caller's compact table (imports are linked separately).
+  const ids = Array.from({ length: width + 5 }, (_, i) => 100 + 2 * i);
+  const linked = coreFromParsed(parsed, { ids });
+  assert.deepEqual(linked.ids, [...ids.slice(0, bindings.length), ids.at(-1)]);
+}

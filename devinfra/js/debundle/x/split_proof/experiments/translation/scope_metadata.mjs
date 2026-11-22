@@ -1,12 +1,43 @@
 // Shared scope facts for the translation frontend and LowerSplit's raw ESTree.
 // The parser and eslint-scope remain trusted; this module does not resolve names itself.
 
-/** The source, ESTree and (when requested) scope manager for one JavaScript module.
+/** Array indices are source ordinals, including imports and export lists. Split var/let/const lists
+ * at declarator boundaries, including under export. Keep the original identifier nodes for scope lookup. */
+function topLevelStatements(program, code) {
+  return program.body.flatMap((statement) => {
+    const exported = statement.type === "ExportNamedDeclaration" && statement.declaration;
+    const list = exported || statement;
+    if (
+      list.type !== "VariableDeclaration" ||
+      list.declarations.length < 2 ||
+      !["var", "let", "const"].includes(list.kind)
+    )
+      return [
+        {
+          node: statement,
+          start: statement.start,
+          end: statement.end,
+          src: code.slice(statement.start, statement.end),
+        },
+      ];
+    return list.declarations.map((declarator) => {
+      const declaration = { ...list, declarations: [declarator] };
+      return {
+        node: exported ? { ...statement, declaration } : declaration,
+        start: declarator.start,
+        end: declarator.end,
+        src: `${exported ? "export " : ""}${list.kind} ${code.slice(declarator.start, declarator.end)};`,
+      };
+    });
+  });
+}
+
+/** The ESTree, source units and (when requested) scope manager for one JavaScript module.
  * Scope references point to identifier objects in this exact tree. */
 export function parseModule(code, parse, analyzer = null, scopeOptions = {}) {
   const ast = parse(code, { ecmaVersion: "latest", sourceType: "module", ranges: true });
   const scopes = analyzer?.analyze(ast, { ecmaVersion: 2022, sourceType: "module", ...scopeOptions }) ?? null;
-  return { code, ast, scopes };
+  return { code, ast, scopes, units: topLevelStatements(ast, code) };
 }
 
 /** Identifier node -> what it means. `isExternal(source)` identifies external imports. */

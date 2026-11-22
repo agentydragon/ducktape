@@ -624,6 +624,7 @@ _COREJS_DIFFERENTIAL_ENV = {
 js_test(
     name = "corejs_ast_lowering_test",
     data = [
+        "frontend.mjs",
         "scope_metadata.mjs",
         "split_dump.mjs",
         ":node_modules/acorn",

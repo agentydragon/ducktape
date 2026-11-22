@@ -1,44 +1,10 @@
 import { annotateLower, parseModule, resolveIdentifiers } from "../translation/scope_metadata.mjs";
 
-/** The statements of the dump: the top-level statements, except that a `var`/`let`/`const` list of several
- * declarators becomes one declaration per declarator, in order, also under `export`. The declarators run in order
- * either way. Each statement has its node, the source range its identifiers lie in and standalone source text. */
-function topLevelStatements(program, code) {
-  return program.body.flatMap((statement) => {
-    const exported = statement.type === "ExportNamedDeclaration" && statement.declaration;
-    const list = exported || statement;
-    if (
-      list.type !== "VariableDeclaration" ||
-      list.declarations.length < 2 ||
-      !["var", "let", "const"].includes(list.kind)
-    )
-      return [
-        {
-          node: statement,
-          start: statement.start,
-          end: statement.end,
-          src: code.slice(statement.start, statement.end),
-        },
-      ];
-    return list.declarations.map((declarator) => {
-      const declaration = { ...list, declarations: [declarator] };
-      return {
-        node: exported ? { ...statement, declaration } : declaration,
-        start: declarator.start,
-        end: declarator.end,
-        src: `${exported ? "export " : ""}${list.kind} ${code.slice(declarator.start, declarator.end)};`,
-      };
-    });
-  });
-}
-
 export function lowerDump(code, acorn, eslintScope) {
   return dumpParsed(parseModule(code, acorn.parse, eslintScope));
 }
 
-export function dumpParsed({ code, ast, scopes: sm }) {
-  const stmts = topLevelStatements(ast, code);
-
+export function dumpParsed({ units: stmts, scopes: sm }) {
   const find = (pos) => {
     let lo = 0,
       hi = stmts.length - 1;
