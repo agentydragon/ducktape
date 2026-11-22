@@ -268,8 +268,8 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.LAYOUT, staging.chart
     )
-    staging_assignable_grants = staging.assignable_grants()
-    binding_delegation.write_manifests(root, staging.ENV, staging_assignable_grants)
+    delegation_charts = binding_delegation.external_charts(staging.ENV, staging.assignable_grants())
+    binding_delegation.write_manifests(root, staging.ENV, delegation_charts)
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
     )
@@ -2481,9 +2481,7 @@ def generate_manifests(root: Path) -> None:
         "study-casino": study_casino_kustomization,
         "tana-mcp": tana_mcp_kustomization,
     }
-    binding_delegation.add_flux_kustomizations(
-        flux_chart, staging.ENV, namespace_dependencies, staging_assignable_grants
-    )
+    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, namespace_dependencies, delegation_charts)
     agent_namespace_rbac.write_manifests(root)
     agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
     write_artifact_generators(

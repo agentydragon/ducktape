@@ -211,11 +211,10 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
 @pytest.fixture(scope="module")
 def external_delegation(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     app = scratch_app_factory()
-    env = staging.ENV
-    grants = staging.assignable_grants()
+    charts = binding_delegation.external_charts(staging.ENV, staging.assignable_grants())
     objects: list[dict[str, Any]] = []
-    for target in binding_delegation.external_scopes(env, grants):
-        chart = binding_delegation.chart(app, env, target, grants)
+    for build in charts.values():
+        chart = build(app)
         objects.extend(cast(ApiObject, obj).to_json() for obj in chart.node.find_all() if ApiObject.is_api_object(obj))
     return objects
 
