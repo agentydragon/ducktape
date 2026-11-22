@@ -88,8 +88,9 @@ See [native supervision](../../supervision/docs/supervision.md) for the backend 
    fresh idle companion generation before admitting an incarnation. In VMs it fences old owned
    systemd services in the expected slices.
 2. When adopting an incarnation with Codex execution configured, Runtime starts the embedded
-   Execution Service and waits for the backend to be ready. The probe initializes a WebSocket session
-   and reads `environment/status`. The native backend must also pass a typed gRPC health check.
+   Execution Service and waits for the backend to be ready. The native backend uses a typed gRPC
+   health check without opening an execution session. The Codex backend initializes a WebSocket
+   session and reads `environment/status`.
    Runtime starts the app-server when requested, with the configured executor URL.
 3. Execution Service repeats the applicable checks every five seconds with a three-second deadline.
    Three consecutive failures end its lifetime and fence the backend. Runtime proves the old service

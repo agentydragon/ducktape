@@ -10,7 +10,7 @@ backend, process placement, collective resource limits and failure scope.
 
 Environment Runtime runs the admission proxy in-process and forwards typed RPCs to the backend. Host asks Runtime
 for in-process readiness before starting its shared Codex app-server; Runtime owns startup, health,
-shutdown and fencing. Readiness checks both the typed service and Codex protocol endpoint. In Pods,
+shutdown and fencing. Native readiness checks the typed service; Codex-backed readiness checks its WebSocket protocol endpoint. In Pods,
 the `companion` subcommand runs as PID 1 in the isolated executor container and owns its process namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
 protocol. `//agentplane/env/e2e:test_executor_container` exercises process output, session resume,
 filesystem access, incarnation fencing and shutdown through Runtime with the real native executor.
@@ -67,8 +67,8 @@ implementation and cannot be set with the Codex-backed implementation. A new con
 effect when the backend is restarted; restarting abandons its live process handles and never
 replays uncertain work.
 
-Runtime publishes the proxy after bounded typed and Codex protocol readiness probes. The service
-probes native dispatch every five seconds with a three-second deadline; three consecutive failures
+Runtime publishes the proxy after a bounded backend-specific readiness probe. The service
+checks native gRPC health or the Codex WebSocket protocol every five seconds with a three-second deadline; three consecutive failures
 end the service lifetime and fence the backend. Shutdown closes held sessions, joins direct calls and stops
 the backend. Backend exit ends this service lifetime; Environment Runtime proves the old service
 fenced before attempting one replacement while the incarnation remains RUNNING. A failed fence or
