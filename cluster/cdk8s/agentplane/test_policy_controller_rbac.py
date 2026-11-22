@@ -31,7 +31,9 @@ def _allowed(permissions: set[Permission], group: str, resource: str, *verbs: st
 
 @pytest.fixture(scope="module")
 def settings(staging_manifests: list[dict[str, Any]]) -> Settings:
-    return Settings.model_validate(config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml"))
+    return Settings.model_validate(
+        config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml"), strict=False
+    )
 
 
 def test_service_account_writes_are_scoped_to_the_accounts_namespace(
