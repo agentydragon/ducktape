@@ -639,13 +639,25 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 			t.Fatalf("invalid page request %v: %v", req, err)
 		}
 	}
+	initial := page("", 3)
+	if len(initial.Dispatches) != 3 {
+		t.Fatalf("initial receipt page: %v", initial)
+	}
+	oldVersion := initial.Dispatches[1].GetReceiptVersion()
+	if oldVersion <= 0 || initial.Dispatches[1].GetCommandId() != "test-second" {
+		t.Fatalf("initial receipt version: %v", initial)
+	}
+	point, err := peers.component.GetDispatch(authoritySVIDContext(t), &dispatcherpb.GetDispatchRequest{CommandId: "test-second"})
+	if err != nil || point.GetDispatch() == nil || point.GetDispatch().ReceiptVersion != nil {
+		t.Fatalf("point receipt version presence: %v, %v", point, err)
+	}
 	enqueue("test-later")
 	reason := strings.Repeat("test-reason-", 100)
 	if _, err := queueStore.Settle(ctx, "test-second", claimSessionOwner(t, queueStore, id), []string{store.QueueState}, store.FailedState, reason, nil); err != nil {
 		t.Fatal(err)
 	}
 	last := page(first.NextPageToken, 2)
-	if len(last.Dispatches) != 2 || last.Dispatches[0].GetCommandId() != "test-second" || last.Dispatches[0].GetReason() != reason ||
+	if len(last.Dispatches) != 2 || last.Dispatches[0].GetCommandId() != "test-second" || last.Dispatches[0].GetReason() != reason || last.Dispatches[0].GetReceiptVersion() <= oldVersion ||
 		last.Dispatches[1].GetCommandId() != "test-first" || last.NextPageToken != "" || last.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
 		t.Fatalf("continued after admission and receipt update: %v", last)
 	}

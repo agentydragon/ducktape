@@ -80,7 +80,8 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def ListSessionDispatches(self, request, context):
         self.receipt_pages.append(request)
         return session_dispatcher_pb2.ListSessionDispatchesResponse(
-            coverage=session_dispatcher_pb2.ListSessionDispatchesResponse.RETAINED_DISPATCH_ROWS
+            dispatches=[session_dispatcher_pb2.Dispatch(command_id="test-command", receipt_version=9007199254740993)],
+            coverage=session_dispatcher_pb2.ListSessionDispatchesResponse.RETAINED_DISPATCH_ROWS,
         )
 
     @override
@@ -172,6 +173,7 @@ async def test_session_receipt_page_preserves_scope_and_cursor(http: httpx.Async
     )
     assert response.status_code == 200, response.text
     assert response.json()["coverage"] == "RETAINED_DISPATCH_ROWS"
+    assert response.json()["dispatches"][0]["receiptVersion"] == "9007199254740993"
     assert peer.service.receipt_pages == [
         session_dispatcher_pb2.ListSessionDispatchesRequest(session_id="test-session", limit=4, page_token="test-page")
     ]

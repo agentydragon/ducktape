@@ -50,7 +50,7 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 		if deleted {
 			return status.Error(codes.OutOfRange, "dispatch rows were deleted; restart without a page token")
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT position,command_id,operation,state,reason,created_at,updated_at
+		rows, err := tx.QueryContext(ctx, `SELECT position,command_id,operation,state,reason,created_at,updated_at,version
 			FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
 			AND ($4::bigint=0 OR position<$4) ORDER BY position DESC LIMIT $5`, sessionID, name, uid, cursor.Before, limit+1)
 		if err != nil {
@@ -66,7 +66,7 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 			summary := &dispatcherpb.Dispatch{SessionId: sessionID, Sandbox: name, SandboxUid: uid}
 			var operation, state string
 			var created, updated time.Time
-			if err := rows.Scan(&last, &summary.CommandId, &operation, &state, &summary.Reason, &created, &updated); err != nil {
+			if err := rows.Scan(&last, &summary.CommandId, &operation, &state, &summary.Reason, &created, &updated, &summary.ReceiptVersion); err != nil {
 				return err
 			}
 			summary.Operation, err = dispatchOperation(operation)

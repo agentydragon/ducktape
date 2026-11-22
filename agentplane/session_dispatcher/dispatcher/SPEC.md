@@ -299,7 +299,8 @@ loses the forwarding-evidence guarantee even if the column remains present.
 
 `ListSessionDispatches` pages one retained Session's current Dispatch rows in descending submission
 position. Each page checks the Session's recorded owner and exact placement. Its metadata includes
-the full delivery reason. Use `GetDispatch` for individual admission evidence. The default page
+the full delivery reason and positive database receipt revision. The ProtoJSON `receiptVersion`
+is a decimal string and changes on each row update. Use `GetDispatch` for individual admission evidence. The default page
 contains up to 25 rows and the maximum is 100.
 
 The first page fixes membership for later admissions. Receipt updates read at each page's snapshot
