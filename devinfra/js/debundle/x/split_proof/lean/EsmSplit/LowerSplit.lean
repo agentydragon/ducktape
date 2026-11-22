@@ -563,7 +563,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
 private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
   IO.FS.withTempDir fun work => runInDir work required checkOnly args
 
-def main (args : List String) : IO UInt32 := do
+def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
   if !args.contains "--require" then
     return ← runSplitter none false args
   let (level?, args) := Effects.takeFlag "--require" args

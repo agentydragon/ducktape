@@ -225,9 +225,11 @@ lean_binary(
         "EsmSplit/Intrinsics.lean",
         "EsmSplit/Lower.lean",
         "EsmSplit/LowerSplit.lean",
+        "EsmSplit/LowerSplitMain.lean",
         "EsmSplit/SplitFiles.lean",
     ] + _ESTREE_SOURCES,
-    entry = "EsmSplit/LowerSplit.lean",
+    # The launcher elaborates its entry on each invocation. Import the compiled splitter.
+    entry = "EsmSplit/LowerSplitMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 

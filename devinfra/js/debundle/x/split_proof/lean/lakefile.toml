@@ -17,7 +17,7 @@ root = "EsmSplit.LowerMain"
 
 [[lean_exe]]
 name = "lowersplit"
-root = "EsmSplit.LowerSplit"
+root = "EsmSplit.LowerSplitMain"
 
 [[lean_exe]]
 name = "evalorder"
