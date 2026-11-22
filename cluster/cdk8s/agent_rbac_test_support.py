@@ -48,7 +48,7 @@ def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -
 
 
 class Rbac:
-    """Resolve declared RBAC from the dictionaries returned by ``Testing.synth``.
+    """Resolve declared RBAC from the rendered resource dictionaries.
 
     This is not an apiserver authorizer: admission, egress, and access obtained through exec/node
     proxy are outside this declarative contract, as is impersonation other than the egress proxy's

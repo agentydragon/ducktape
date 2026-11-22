@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import cdk8s
 import pytest_bazel
 import yaml
 from cdk8s import Chart
@@ -35,7 +34,7 @@ def _route(namespace: str, version: str, name: str) -> dict[str, Any]:
 
 async def test_agent_route_admission(scratch_chart: Chart) -> None:
     add_agent_gateway_admission(scratch_chart)
-    documents = cast(list[dict[str, Any]], cdk8s.Testing.synth(scratch_chart))
+    documents = scratch_chart.to_json()
     policy = one(resource for resource in documents if resource["kind"] == "ValidatingAdmissionPolicy")
     binding = one(resource for resource in documents if resource["kind"] == "ValidatingAdmissionPolicyBinding")
     runfiles = Runfiles.CreateOrRaise()

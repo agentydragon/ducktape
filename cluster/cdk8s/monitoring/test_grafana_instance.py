@@ -4,13 +4,13 @@ import json
 import re
 
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting  # Avoid pytest collection of the SDK Testing class.
+from cdk8s import App
 
 from cluster.cdk8s.monitoring import grafana_instance
 
 
 def test_embedded_dashboard_inputs_resolve_to_provisioned_datasource_uids(scratch_app: App) -> None:
-    resources = Cdk8sTesting.synth(grafana_instance.chart(scratch_app))
+    resources = grafana_instance.chart(scratch_app).to_json()
     datasource_uids = {
         doc["spec"]["datasource"]["uid"]
         for doc in resources

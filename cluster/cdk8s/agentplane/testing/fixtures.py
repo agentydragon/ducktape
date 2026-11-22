@@ -6,29 +6,30 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-from cdk8s import App, Testing
+from cdk8s import App
 
 from cluster.cdk8s.agentplane import staging
 
 
 @pytest.fixture(scope="session")
 def staging_delivery_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    return cast(list[dict[str, Any]], Testing.synth(staging.delivery_chart(scratch_app_factory())))
+    return staging.delivery_chart(scratch_app_factory()).to_json()
 
 
 @pytest.fixture(scope="session")
 def staging_manifests(
     scratch_app_factory: Callable[[], App], staging_delivery_manifests: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    return cast(list[dict[str, Any]], Testing.synth(staging.chart(scratch_app_factory()))) + staging_delivery_manifests
+    return staging.chart(scratch_app_factory()).to_json() + staging_delivery_manifests
 
 
 @pytest.fixture(scope="session")
 def identity_catalog_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     """Staging with its policy catalog in the identity shapes, which staging does not render yet."""
     env = staging.environment(identity_catalog=True)
-    return cast(list[dict[str, Any]], Testing.synth(staging.chart(scratch_app_factory(), env))) + cast(
-        list[dict[str, Any]], Testing.synth(staging.delivery_chart(scratch_app_factory(), env))
+    return (
+        staging.chart(scratch_app_factory(), env).to_json()
+        + staging.delivery_chart(scratch_app_factory(), env).to_json()
     )
 
 

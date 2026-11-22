@@ -7,7 +7,6 @@ import copy
 from collections.abc import Callable
 from typing import Any, cast
 
-import cdk8s
 import pytest_bazel
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
@@ -100,7 +99,7 @@ async def test_controller_writes_only_its_accounts_use(scratch_chart: Chart) -> 
     add_managed_account_admission(
         scratch_chart, namespace=NAMESPACE, controller=CONTROLLER, accounts_namespace=ACCOUNTS_NAMESPACE
     )
-    documents = cast(list[Body], cdk8s.Testing.synth(scratch_chart))
+    documents = scratch_chart.to_json()
     static_credential = one(d for d in documents if d["kind"] == "EgressCredential")
     static_set = one(d for d in documents if d["kind"] == "PolicySet")
     credential = _owned(static_credential, [OWNER])
