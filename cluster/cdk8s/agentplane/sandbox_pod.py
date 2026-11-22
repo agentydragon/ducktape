@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
@@ -297,9 +297,7 @@ def pod_spec(
 
 def render_pod_template(labels: Mapping[str, str], spec: k8s.PodSpec) -> dict[str, Any]:
     """`spec` under `labels`, as a PodTemplateSpec's Kubernetes JSON."""
-    rendered: dict[str, Any] = k8s.KubePodTemplate(
-        Chart(App(), "pod-template"),
-        "podtemplate",
-        template=k8s.PodTemplateSpec(metadata=k8s.ObjectMeta(labels=dict(labels)), spec=spec),
-    ).to_json()["template"]
+    rendered: dict[str, Any] = k8s.KubePodTemplate.manifest(
+        template=k8s.PodTemplateSpec(metadata=k8s.ObjectMeta(labels=dict(labels)), spec=spec)
+    )["template"]
     return rendered

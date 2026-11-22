@@ -13,9 +13,12 @@ launcher.
 
 from __future__ import annotations
 
-from typing import Any
-
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
+from agentplane_sandboxtemplate_crds.works.allegedly.agentplane import (
+    SandboxTemplate,
+    SandboxTemplateSpec,
+    SandboxTemplateSpecWorkspaceVolumeLayoutType,
+)
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap
 from constructs import Construct
 from kubevirt_virtualmachine_crds.io.kubevirt import (
@@ -31,7 +34,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
 )
 
-from agentplane.crd_group import GROUP
+from cluster.cdk8s.agentplane import template_storage
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
@@ -50,7 +53,7 @@ def _memory_quantity(memory_bytes: int) -> str:
     return f"{memory_bytes // mebibyte}Mi" if memory_bytes % mebibyte == 0 else str(memory_bytes)
 
 
-class EnvironmentVmTemplate(Construct):
+class EnvironmentVmTemplate(SandboxTemplate):
     """Build one VM SandboxTemplate from an explicitly composed guest ConfigMap."""
 
     def __init__(
@@ -63,12 +66,11 @@ class EnvironmentVmTemplate(Construct):
         root_image: str,
         config_map: ConfigMap,
         labels: dict[str, str],
-        state_volume: dict[str, Any],
-        workspace_volume: dict[str, Any],
+        state_storage_class: str,
+        workspace_storage_class: str,
         firmware: VirtualMachineSpecTemplateSpecDomainFirmware | None = None,
         root_disk_serial: str | None = None,
     ) -> None:
-        super().__init__(scope, id)
         namespace = env.namespace
         resources = env.vm_resources
         if resources is None:
@@ -115,12 +117,15 @@ class EnvironmentVmTemplate(Construct):
         vm = VirtualMachine.manifest(
             metadata=ApiObjectMetadata(name=template_name), spec=VirtualMachineSpec(template=template)
         )["spec"]
-        ApiObject(
-            self,
-            "sandboxtemplate",
-            api_version=f"{GROUP}/v1alpha1",
-            kind="SandboxTemplate",
+        super().__init__(
+            scope,
+            id,
             metadata=ApiObjectMetadata(name=template_name, namespace=namespace),
-        ).add_json_patch(
-            JsonPatch.add("/spec", {"vm": vm, "stateVolume": state_volume, "workspaceVolume": workspace_volume})
+            spec=SandboxTemplateSpec(
+                vm=vm,
+                state_volume=template_storage.state_volume(state_storage_class, volume_mode="Filesystem"),
+                workspace_volume=template_storage.workspace_volume(
+                    workspace_storage_class, SandboxTemplateSpecWorkspaceVolumeLayoutType.BLOCK_FILESYSTEM
+                ),
+            ),
         )

@@ -2,6 +2,7 @@
 
 # gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
+# gazelle:resolve py agentplane_sandboxtemplate_crds //agentplane/crds:sandboxtemplate
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
 # gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
@@ -502,8 +503,9 @@ py_library(
         ":platform_routes",
         ":sandbox_pod",
         ":telemetry",
+        ":template_storage",
         ":workload_routes",
-        "//agentplane:crd_group",
+        "//agentplane/crds:sandboxtemplate",
         "//agentplane/egress:platform_routes",
         "//agentplane/env:config",
         "//agentplane/net/peertls:config",
@@ -538,7 +540,8 @@ py_library(
     srcs = ["environment_vm.py"],
     deps = [
         ":environment",
-        "//agentplane:crd_group",
+        ":template_storage",
+        "//agentplane/crds:sandboxtemplate",
         "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "@pypi//cdk8s",
@@ -1745,11 +1748,12 @@ py_library(
     deps = [
         ":environment",
         ":environment_guest",
-        ":environment_sandbox",
         ":platform_routes",
         ":sandbox_pod",
+        ":template_storage",
         ":workload_routes",
-        "//agentplane:crd_group",
+        "//agentplane/crds:sandboxtemplate",
+        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//agentplane/env:config",
         "//agentplane/firecracker:config",
@@ -1835,4 +1839,13 @@ py_library(
     name = "environment_service",
     srcs = ["environment_service.py"],
     deps = ["//cluster/cdk8s:service_ref"],
+)
+
+py_library(
+    name = "template_storage",
+    srcs = ["template_storage.py"],
+    deps = [
+        "//agentplane/crds:sandboxtemplate",
+        "@pypi//cdk8s_plus_34",
+    ],
 )

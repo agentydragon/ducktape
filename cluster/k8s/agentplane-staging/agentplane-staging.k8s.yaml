@@ -5713,28 +5713,28 @@ spec:
             defaultMode: 288
             secretName: buildbuddy-api-key
   stateVolume:
-    name: state
+    claim:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: piraeus-hdd-local
     layout:
       type: DirectoryTree
-    claim:
-      storageClassName: piraeus-hdd-local
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
+    name: state
   workspaceVolume:
-    name: workspace
     claim:
-      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+      storageClassName: piraeus-hdd-local
       volumeMode: Filesystem
     layout:
       type: DirectoryTree
+    name: workspace
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -6023,13 +6023,25 @@ metadata:
   name: environment-vm
   namespace: agentplane-staging
 spec:
+  stateVolume:
+    claim:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: piraeus-ssd-2-autodiskful
+      volumeMode: Filesystem
+    layout:
+      type: DirectoryTree
+    name: state
   vm:
     template:
       metadata:
         labels:
-          app.kubernetes.io/name: agentplane-environment-runtime
-          agentplane.io/otel-emitter: "true"
           agentplane.io/otel-class: environment-runtime
+          agentplane.io/otel-emitter: "true"
+          app.kubernetes.io/name: agentplane-environment-runtime
       spec:
         domain:
           cpu:
@@ -6088,31 +6100,19 @@ spec:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
               imagePullPolicy: IfNotPresent
             name: runner
-  stateVolume:
-    name: state
-    layout:
-      type: DirectoryTree
-    claim:
-      storageClassName: piraeus-ssd-2-autodiskful
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-      volumeMode: Filesystem
   workspaceVolume:
-    name: workspace
     claim:
-      storageClassName: piraeus-ssd-2-autodiskful
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+      storageClassName: piraeus-ssd-2-autodiskful
       volumeMode: Block
     layout:
-      type: BlockFilesystem
       filesystem: ext4
+      type: BlockFilesystem
+    name: workspace
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -6249,6 +6249,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   firecracker:
+    bootImage: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset
+    memoryMiB: 8192
     pod:
       metadata:
         labels:
@@ -6368,36 +6370,34 @@ spec:
               path: /dev/net/tun
               type: CharDevice
             name: tun
-    bootImage: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset
     runnerImage: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
     vcpuCount: 1
-    memoryMiB: 8192
   stateVolume:
-    name: state
-    layout:
-      type: RawDiskImage
-      filesystem: ext4
     claim:
-      storageClassName: piraeus-ssd-2-autodiskful
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 100Gi
-      volumeMode: Filesystem
-  workspaceVolume:
-    name: workspace
-    claim:
       storageClassName: piraeus-ssd-2-autodiskful
+      volumeMode: Filesystem
+    layout:
+      filesystem: ext4
+      type: RawDiskImage
+    name: state
+  workspaceVolume:
+    claim:
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+      storageClassName: piraeus-ssd-2-autodiskful
       volumeMode: Filesystem
     layout:
-      type: RawDiskImage
       filesystem: ext4
+      type: RawDiskImage
+    name: workspace
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
