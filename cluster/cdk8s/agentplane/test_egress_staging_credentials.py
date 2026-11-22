@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.clickhouse import client as clickhouse
@@ -22,64 +23,42 @@ def credentials(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     return Cdk8sTesting.synth(chart)
 
 
-def test_forgejo_password_has_one_reader_and_exact_source_access(credentials: list[dict[str, Any]]) -> None:
-    binding = find_resource(credentials, "RoleBinding", "agentplane-staging-forgejo-reader")
-    assert binding["subjects"] == [
-        {
-            "apiGroup": "",
-            "kind": "ServiceAccount",
-            "name": "external-creds-reader",
-            "namespace": STAGING_CREDENTIALS_NAMESPACE,
-        }
-    ]
-
-    source_role = find_resource(credentials, "Role", "agentplane-staging-forgejo-reader")
-    assert source_role["metadata"]["namespace"] == "haku-sandbox"
-    assert source_role["rules"] == [
-        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["haku-forgejo-git"], "verbs": ["get"]}
-    ]
-    store = find_resource(credentials, "ClusterSecretStore", "kubernetes-agentplane-staging-forgejo-secret-store")
-    assert store["spec"]["conditions"] == [{"namespaces": [STAGING_CREDENTIALS_NAMESPACE]}]
-    provider = store["spec"]["provider"]["kubernetes"]
-    assert provider["remoteNamespace"] == "haku-sandbox"
+@pytest.mark.parametrize(
+    ("credential", "source_namespace", "secret", "key"),
+    [
+        ("forgejo-haku", "haku-sandbox", "haku-forgejo-git", "password"),
+        (
+            clickhouse.AIQUOTA_HISTORY_CREDENTIALS,
+            clickhouse.NAMESPACE,
+            clickhouse.AIQUOTA_HISTORY_CREDENTIALS,
+            clickhouse.PASSWORD_KEY,
+        ),
+    ],
+)
+def test_credential_copy_uses_a_scoped_source_reader(
+    credentials: list[dict[str, Any]], credential: str, source_namespace: str, secret: str, key: str
+) -> None:
+    source = find_resource(credentials, "EgressCredential", credential)["spec"]["source"]["secretRef"]
+    copy = find_resource(credentials, "ExternalSecret", source["name"], namespace=STAGING_CREDENTIALS_NAMESPACE)["spec"]
+    assert copy["target"].get("name", source["name"]) == source["name"]
+    assert copy["data"] == [{"secretKey": source["key"], "remoteRef": {"key": secret, "property": key}}]
+    ref = copy["secretStoreRef"]
+    store = find_resource(credentials, ref["kind"], ref["name"])["spec"]
+    assert store["conditions"] == [{"namespaces": [STAGING_CREDENTIALS_NAMESPACE]}]
+    provider = store["provider"]["kubernetes"]
+    assert provider["remoteNamespace"] == source_namespace
     assert provider["auth"]["serviceAccount"] == {"name": "external-creds-reader"}
 
-
-def test_clickhouse_history_password_has_one_exact_source_reader(credentials: list[dict[str, Any]]) -> None:
-    secret = clickhouse.AIQUOTA_HISTORY_CREDENTIALS
-    role_name = "agentplane-staging-aiquota-history-clickhouse-reader"
-    store_name = "kubernetes-agentplane-staging-aiquota-history-clickhouse-secret-store"
-
-    source_role = find_resource(credentials, "Role", role_name)
-    assert source_role["metadata"]["namespace"] == clickhouse.NAMESPACE
-    assert source_role["rules"] == [
-        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": [secret], "verbs": ["get"]}
-    ]
-
-    source_binding = find_resource(credentials, "RoleBinding", role_name)
-    assert source_binding["metadata"]["namespace"] == clickhouse.NAMESPACE
-    assert source_binding["roleRef"]["name"] == role_name
-    assert source_binding["subjects"] == [
-        {
-            "apiGroup": "",
-            "kind": "ServiceAccount",
-            "name": "external-creds-reader",
-            "namespace": STAGING_CREDENTIALS_NAMESPACE,
-        }
-    ]
-
-    store = find_resource(credentials, "ClusterSecretStore", store_name)
-    assert store["spec"]["conditions"] == [{"namespaces": [STAGING_CREDENTIALS_NAMESPACE]}]
-    provider = store["spec"]["provider"]["kubernetes"]
-    assert provider["remoteNamespace"] == clickhouse.NAMESPACE
-    assert provider["auth"]["serviceAccount"] == {"name": "external-creds-reader"}
-
-    external_secret = find_resource(credentials, "ExternalSecret", secret)
-    assert external_secret["metadata"]["namespace"] == STAGING_CREDENTIALS_NAMESPACE
-    assert external_secret["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": store_name}
-    assert external_secret["spec"]["data"] == [
-        {"secretKey": clickhouse.PASSWORD_KEY, "remoteRef": {"key": secret, "property": clickhouse.PASSWORD_KEY}}
-    ]
+    rbac = Rbac(credentials)
+    read = Permission(source_namespace, "", "secrets", "get", secret)
+    readers: set[tuple[str, str | None, str]] = set()
+    for binding in rbac.bindings:
+        for grant in rbac.binding_rules(binding):
+            if not grant.covers(Permission(source_namespace, "", "secrets", grant.verb, secret)):
+                continue
+            assert grant == read
+            readers.update((s["kind"], s.get("namespace"), s["name"]) for s in binding["subjects"])
+    assert readers == {("ServiceAccount", STAGING_CREDENTIALS_NAMESPACE, provider["auth"]["serviceAccount"]["name"])}
 
 
 def test_thrive_read_has_scoped_bearer_and_get_rules(credentials: list[dict[str, Any]]) -> None:
