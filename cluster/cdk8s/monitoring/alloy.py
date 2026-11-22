@@ -17,7 +17,7 @@ from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import alloy_endpoints as endpoints, grafana_helmrepository, loki, mimir, tempo
+from cluster.cdk8s.monitoring import alloy_endpoints as endpoints, grafana_helmrepository, loki_endpoints, mimir, tempo
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/alloy"
@@ -42,7 +42,7 @@ _GATEWAY_SYSLOG_LISTEN_PORT = 5515
 _CONFIG_ENV = {
     "MIMIR_PUSH_URL": mimir.PUSH_URL,
     "MIMIR_GATEWAY_URL": mimir.GATEWAY_URL,
-    "LOKI_PUSH_URL": loki.PUSH_URL,
+    "LOKI_PUSH_URL": loki_endpoints.PUSH_URL,
     "TEMPO_OTLP_GRPC_ENDPOINT": tempo.OTLP_GRPC_ENDPOINT,
     "OTLP_GRPC_LISTEN_ADDRESS": f"0.0.0.0:{endpoints.OTLP_GRPC.pod_port}",
     "OTLP_HTTP_LISTEN_ADDRESS": f"0.0.0.0:{endpoints.OTLP_HTTP.pod_port}",
@@ -126,7 +126,7 @@ def chart(app: App) -> Chart:
                 },
                 "extraEnv": [
                     {"name": "MIMIR_PUSH_URL", "value": mimir.PUSH_URL},
-                    {"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL},
+                    {"name": "LOKI_PUSH_URL", "value": loki_endpoints.PUSH_URL},
                     {"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}},
                 ],
                 # Keep both the metrics working set and Promtail's measured page-cache
@@ -161,7 +161,7 @@ def chart(app: App) -> Chart:
             "alloy": {
                 "configMap": {"name": journal_config_map.name, "key": _JOURNAL_CONFIG_KEY, "create": False},
                 "storagePath": _JOURNAL_STORAGE_PATH,
-                "extraEnv": [{"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL}],
+                "extraEnv": [{"name": "LOKI_PUSH_URL", "value": loki_endpoints.PUSH_URL}],
                 "mounts": {
                     "extra": [
                         {"name": name, "mountPath": path, "readOnly": name != "positions"}
@@ -198,7 +198,7 @@ def chart(app: App) -> Chart:
             "alloy": {
                 "configMap": {"name": syslog_config_map.name, "key": _SYSLOG_CONFIG_KEY, "create": False},
                 "extraEnv": [
-                    {"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL},
+                    {"name": "LOKI_PUSH_URL", "value": loki_endpoints.PUSH_URL},
                     {"name": "SYSLOG_LISTEN_ADDRESS", "value": f"0.0.0.0:{_SYSLOG_LISTEN_PORT}"},
                     {"name": "GATEWAY_SYSLOG_LISTEN_ADDRESS", "value": f"0.0.0.0:{_GATEWAY_SYSLOG_LISTEN_PORT}"},
                 ],
