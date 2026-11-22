@@ -2287,6 +2287,7 @@ py_test(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/agentplane/testing:fixtures",  # keep: pytest_plugins
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",
         "//cluster/cdk8s/haku:rbac",
@@ -2297,7 +2298,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -2313,26 +2313,6 @@ py_test(
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/haku:namespace",
         "//cluster/cdk8s/haku:rbac",
-        "//cluster/cdk8s/haku:ui_egress",
-        "//cluster/cdk8s/testing:manifests",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_anki_egress",
-    size = "medium",
-    srcs = ["test_haku_anki_egress.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        "//cluster/cdk8s/agentplane:actions_staging_policies",
-        "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/haku:ui_egress",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
