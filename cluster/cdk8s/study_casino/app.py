@@ -224,15 +224,8 @@ def _readonly_provisioner(scope: Construct) -> None:
     )
 
 
-def _probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
-    return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_SERVICE.pod_port)),
-        initial_delay_seconds=initial_delay_seconds,
-        period_seconds=period_seconds,
-    )
-
-
 def _deployment(scope: Construct) -> None:
+    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_SERVICE.pod_port))
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -291,8 +284,8 @@ def _deployment(scope: Construct) -> None:
                             ],
                             volume_mounts=[public_web_pki.VOLUME_MOUNT],
                             resources=container_resources(cpu="25m", memory="64Mi", memory_limit="256Mi"),
-                            readiness_probe=_probe(3, 10),
-                            liveness_probe=_probe(15, 20),
+                            readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=3, period_seconds=10),
+                            liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=15, period_seconds=20),
                         )
                     ],
                 ),

@@ -41,15 +41,8 @@ def _database(chart: Chart) -> None:
     backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
-def _http_probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
-    return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_number(SERVER.pod_port)),
-        initial_delay_seconds=initial_delay_seconds,
-        period_seconds=period_seconds,
-    )
-
-
 def _server(chart: Chart) -> None:
+    health = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_number(SERVER.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -79,8 +72,8 @@ def _server(chart: Chart) -> None:
                             resources=container_resources(
                                 cpu="50m", memory="64Mi", cpu_limit="500m", memory_limit="256Mi"
                             ),
-                            liveness_probe=_http_probe(initial_delay_seconds=10, period_seconds=10),
-                            readiness_probe=_http_probe(initial_delay_seconds=5, period_seconds=5),
+                            liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=10, period_seconds=10),
+                            readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=5),
                         )
                     ],
                 ),
