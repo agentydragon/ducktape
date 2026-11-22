@@ -124,6 +124,7 @@ py_library(
         ":namespace",
         ":ui_egress",
         "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:manifest_roots",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
