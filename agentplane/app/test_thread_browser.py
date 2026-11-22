@@ -1914,9 +1914,13 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     assert source.runner.commands.empty()
 
 
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
 async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input(
-    thread_browser: ThreadBrowser,
+    review_thread_browser: ThreadBrowser, review_view: VisualPage, viewport_name: str
 ) -> None:
+    thread_browser = review_thread_browser
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1947,6 +1951,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
         await history.get_by_role("button", name="Show original command").click()
     assert (await read.value).ok
     await expect(history.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    await review_view.capture(label=f"Retained command after reload on {viewport_name}")
     assert source.runner.commands.empty()
 
 
