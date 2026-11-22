@@ -2,11 +2,11 @@
 
 `gh-pages` is the publication branch for
 <https://agentydragon.github.io/ducktape/>. It holds independent, latest-only
-report snapshots. The CI reports are:
+report snapshots. The [report index](index.html) links each review and its observation window.
 
 - **Agentplane test architecture:** [current required suites](agentplane-test-architecture/index.html), [fixture ownership](agentplane-test-architecture/index.html#pytest-fixtures), [case inventory and evidence](agentplane-test-architecture/evidence.json), [manifest](agentplane-test-architecture/manifest.json). Current Pod coverage spans 15 App scenarios, eight native platform checks and one native workspace replacement. Earlier benchmarks retain their original test inventories and revisions.
 
-- **Bazel target and wiring audit:** [source review](bazel-audit/) and [query results](bazel-audit/evidence.json). All 328 tracked frontend TypeScript files reach the typed-lint group. A simulated package omission drops six.
+- **Bazel target and wiring audit:** [source review](bazel-audit/) and [query results](bazel-audit/evidence.json). At d1402061ea, all 329 tracked frontend TypeScript files reach the typed-lint group. A simulated package omission drops six.
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with fresh Action and Thread browser costs, devel push controls, and a current dependency graph probe. [Evidence](ci-test-cost/evidence.json) · [Manifest](ci-test-cost/manifest.json)
 

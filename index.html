@@ -74,33 +74,20 @@
           <header>
             <${Title} order=${1} mt="md" mb="sm"> ${"Ducktape reports"} <//>
             <${Text} component="p" my="sm">
-              ${" Latest-only snapshots served by GitHub Pages at "}
-              <${Anchor} href=${"https://agentydragon.github.io/ducktape/"}>
-                ${"agentydragon.github.io/ducktape"}
-              <//>
-              ${", published from the "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/tree/gh-pages"}
-              >
-                <${Code}
-                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                >
-                  ${"gh-pages"}
-                <//>
-              <//>
-              ${" branch. CI reports include their reviewed measurements as "}
-              <${Code}
-                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-              >
-                ${"evidence.json"}
-              <//>
-              ${" and source commit and observation window in "}
-              <${Code}
-                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-              >
-                ${"manifest.json"}
-              <//>
-              ${". Other reports describe their scope and dates on the page. Earlier versions are in the branch's git history. "}
+              22 November 2026 review against ${" "}<${Anchor}
+                href="https://github.com/agentydragon/ducktape/tree/bfa209746f112ed329ea7ab1f1f3b28ba5f48404"
+                >devel bfa209746f<//
+              >. Each report gives the observation window for its CI or cluster
+              measurements.
+            <//>
+            <${Text} component="p" my="sm">
+              ${"The "}<${Anchor} href="upstream-patches/"
+                >stable Gazelle trial<//
+              >${" produced zero BUILD-file changes. The "}
+              <${Anchor} href="bazel-audit/#K">typed-lint check<//
+              >${" caught all six files in an omitted package. For HDD capacity, the "}
+              <${Anchor} href="storage/#current-actions">storage scenarios<//
+              >${" show which pools would still miss the reserve."}
             <//>
           </header>
           <${SimpleGrid}
@@ -247,11 +234,9 @@
                 <${Anchor} href=${"bazel-audit/"}> ${"Bazel build audit"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${"The typed-lint roster covers 328 of 328 frontend files. A six-file omission control passed. Recheck provider dependencies one consumer at a time."}
+                ${"The typed-lint roster covers 329 of 329 frontend files at d1402061ea. A six-file omission control passed. Recheck provider dependencies one consumer at a time."}
               <//>
-              <${Text} component="span" size="sm" c="dimmed">
-                ${"Source review: bfa209746f · 22 November UTC"}
-              <//>
+              <${ManifestStamp} src="bazel-audit/evidence.json" />
               <${Text} component="p" my="sm">
                 <${Anchor} href=${"bazel-audit/evidence.json"}>
                   ${"evidence"}

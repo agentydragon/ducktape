@@ -6,12 +6,14 @@
     {
       "id": "K",
       "title": "Check typed-lint coverage when splitting a frontend package",
-      "finding": "The 22 child groups and the root glob supply all 328 tracked TypeScript and TSX files under agentplane/app/frontend. Removing the observability group from the query left 322. The six missing files include two specs.",
+      "finding": "The 22 child groups and the root glob supply all 328 then-tracked TypeScript and TSX files under agentplane/app/frontend. Removing the observability group from the query left 322. The six missing files include two specs. At d1402061ea the new Sessions command ownership module brought coverage to 329 of 329. Repeating the omission control left 323, with the same six files missing.",
       "action": "Use the set difference during package splits. It caught the simulated omission and found zero omissions on devel. Keep the existing whole-program ESLint test. Its generated declarations and external source inputs sit outside this file census.",
       "links": {
         "Frontend roster": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/app/frontend/BUILD.bazel#L24",
         "Current source closure": "https://app.buildbuddy.io/invocation/bf2184bf-d4fb-49d6-a0a0-9f29b15003b4",
-        "Omission experiment": "https://app.buildbuddy.io/invocation/5f704bcb-2ee6-41fe-b514-8a36fbb3b89c"
+        "Omission experiment": "https://app.buildbuddy.io/invocation/5f704bcb-2ee6-41fe-b514-8a36fbb3b89c",
+        "329-file source closure": "https://app.buildbuddy.io/invocation/d0849c2a-f677-427d-9a25-8ba9f8b82a3b",
+        "Repeated omission control": "https://app.buildbuddy.io/invocation/7b6ed069-45c7-49f7-9aec-1ee31ca63348"
       }
     },
     {
@@ -85,5 +87,29 @@
     ],
     "downstream_commit": "37474aa6318d85581b3013435b09d22392342199",
     "downstream_exact_label_matches": 0
+  },
+  "coverage_followup": {
+    "baseline": {
+      "files": 329,
+      "missing": [],
+      "extra": [],
+      "invocation": "https://app.buildbuddy.io/invocation/d0849c2a-f677-427d-9a25-8ba9f8b82a3b"
+    },
+    "control": {
+      "files": 323,
+      "missing": [
+        "agentplane/app/frontend/observability/langfuse_search.test.ts",
+        "agentplane/app/frontend/observability/langfuse_search.ts",
+        "agentplane/app/frontend/observability/langfuse_search_fixture.ts",
+        "agentplane/app/frontend/observability/trace_search.test.ts",
+        "agentplane/app/frontend/observability/trace_search.ts",
+        "agentplane/app/frontend/observability/tracing.ts"
+      ],
+      "extra": [],
+      "invocation": "https://app.buildbuddy.io/invocation/7b6ed069-45c7-49f7-9aec-1ee31ca63348"
+    },
+    "source_devel_commit": "d1402061eace1ef26e4b2ce526bb010814dce398",
+    "tracked": 329,
+    "added_file": "agentplane/app/frontend/sessions/command_ownership.ts"
   }
 }
