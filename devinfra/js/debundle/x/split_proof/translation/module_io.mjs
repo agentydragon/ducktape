@@ -101,9 +101,6 @@ try {
       return [name, program(file)];
     });
     writeJson(output, Object.fromEntries(modules));
-  } else if (mode === "--upgrade") {
-    const [input, output] = args;
-    writeJson(output, upgradeLowerDump(readJson(input), acorn, eslintScope));
   } else throw new Error(`unknown mode: ${mode}`);
 } catch (error) {
   console.error(error.message);

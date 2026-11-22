@@ -38,7 +38,7 @@ def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) : IO Jso
     return program
   | .error _ =>
     let upgraded := work / "upgraded.json"
-    javascript #["--upgrade"] #[path, upgraded]
+    javascript #["--load-input"] #[path, upgraded]
     readJson upgraded
 
 def printModules (programs : Json) (dir work source : System.FilePath) : IO Unit := do
