@@ -2918,10 +2918,10 @@ EXAMPLES = (
     ),
     _tana_example(
         "tag",
-        {"nodeId": "task-1", "action": "add", "tagIds": ["tag-1", "tag-2"]},
-        'Adding tags on "Plan review" (task-1):\n✓ Task: Added tag "Task"\n✓ Milestone: Tag "Milestone" is already applied',
-        'Tag "Milestone" is already applied',
-        nodes=(_TASK, _TASK_TAG, ("tag-2", "Milestone")),
+        {"nodeId": "task-1", "action": "add", "tagIds": ["tag-1"]},
+        'Adding tags on "Plan review" (task-1):\n✓ Task: Added tag "Task"',
+        'Added tag "Task"',
+        nodes=(_TASK, _TASK_TAG),
     ),
     _tana_example(
         "set_tag_checkbox",
@@ -3255,7 +3255,15 @@ async def test_action_presentations(
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     elif example.key == "grocy_sf.shopping_list_item_edit":
         await expect(sidebar).to_contain_text("Kefir")
-        await expect(sidebar).to_contain_text("Mark done")
+        await expect(sidebar).to_contain_text("Mark done · Clear note")
+    elif example.key == "grocy_sf.shopping_list_items_add":
+        await expect(sidebar).to_contain_text("2 stock units of Kefir for Weekly groceries")
+        await expect(sidebar).to_contain_text("Note · Plain")
+    elif example.key in {"tana.check_node", "tana.uncheck_node"}:
+        await expect(sidebar).to_contain_text("Plan review")
+        await expect(sidebar).to_contain_text("Syncs the mapped field if configured")
+    elif example.key == "tana.tag":
+        await expect(sidebar).to_contain_text("Add Task to Plan review")
     elif example.key == "tana.move_node":
         await expect(sidebar).to_contain_text("Draft notes")
         await expect(sidebar).to_contain_text("Website project")
@@ -3284,9 +3292,14 @@ async def test_action_presentations(
         "grocy_sf.product_groups_create",
         "grocy_sf.quantity_units_create",
         "grocy_sf.shopping_lists_create",
+        "grocy_sf.shopping_list_item_edit",
+        "grocy_sf.shopping_list_items_add",
         "kubernetes_admin.pods_run",
         "kubernetes_admin.resources_scale",
+        "tana.check_node",
         "tana.get_or_create_calendar_node",
+        "tana.tag",
+        "tana.uncheck_node",
     }:
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await wait_for_stable(page)

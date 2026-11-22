@@ -362,6 +362,158 @@ it("offers draft creation decisions while keeping the full message one expansion
   }
 });
 
+const shoppingTarget = {
+  key: "shopping_list/52",
+  name: "Kefir",
+  shoppingItemCurrent: { listName: "Weekly groceries", amount: 2, unitName: "Bottle", done: false, note: "Plain" },
+};
+const tanaTarget = { nodeId: "task-1", name: "Plan review" };
+const tanaTag = { nodeId: "tag-1", name: "Task" };
+const shoppingAddArgs = { items: [{ shopping_list: 3, product: 21, amount: 2, note: "Plain" }] };
+const tagArgs = { nodeId: "task-1", action: "add", tagIds: ["tag-1"] };
+
+const collapsedDecisionCases: {
+  group: string;
+  name: string;
+  endpoint: string;
+  args: NonNullable<ActionRequest["arguments"]>;
+  unsupported?: NonNullable<ActionRequest["arguments"]>;
+  response: unknown;
+  partial: unknown;
+  visible: readonly string[];
+}[] = [
+  {
+    group: "grocy_sf",
+    name: "shopping_list_item_edit",
+    endpoint: "grocy-reference-summaries",
+    args: { item_id: 52, done: true, amount: 3, clear_fields: ["note"] },
+    unsupported: { item_id: 52, note: "New", clear_fields: ["note"] },
+    response: { references: [shoppingTarget] },
+    partial: {
+      references: [{ ...shoppingTarget, shoppingItemCurrent: { ...shoppingTarget.shoppingItemCurrent, unitName: "" } }],
+    },
+    visible: ["Kefir · Weekly groceries", "Set quantity to 3 Bottle", "Mark done · Clear note"],
+  },
+  {
+    group: "grocy_sf",
+    name: "shopping_list_item_edit",
+    endpoint: "grocy-reference-summaries",
+    args: { item_id: 52, note: "" },
+    unsupported: { item_id: 52, note: "line one\nline two" },
+    response: { references: [shoppingTarget] },
+    partial: { references: [{ ...shoppingTarget, key: "shopping_list/53" }] },
+    visible: ["Kefir · Weekly groceries", "Replace note", "New note · (empty text)"],
+  },
+  {
+    group: "grocy_sf",
+    name: "shopping_list_items_add",
+    endpoint: "grocy-reference-summaries",
+    args: shoppingAddArgs,
+    unsupported: { items: [...shoppingAddArgs.items, { shopping_list: 3, note: "Check supplies" }] },
+    response: {
+      references: [
+        { key: "products/21", name: "Kefir" },
+        { key: "shopping_lists/3", name: "Weekly groceries" },
+      ],
+    },
+    partial: { references: [{ key: "products/21", name: "Kefir" }] },
+    visible: ["2 stock units of Kefir for Weekly groceries", "Note · Plain"],
+  },
+  {
+    group: "tana",
+    name: "check_node",
+    endpoint: "tana-node-summaries",
+    args: { nodeId: "task-1" },
+    response: { nodes: [tanaTarget] },
+    partial: { nodes: [{ nodeId: "task-2", name: "Different node" }] },
+    visible: ["Complete Tana node", "Plan review", "Syncs the mapped field if configured"],
+  },
+  {
+    group: "tana",
+    name: "uncheck_node",
+    endpoint: "tana-node-summaries",
+    args: { nodeId: "task-1" },
+    response: { nodes: [tanaTarget] },
+    partial: { nodes: [{ nodeId: "task-1", name: " " }] },
+    visible: ["Reopen Tana node", "Plan review", "Syncs the mapped field if configured"],
+  },
+  {
+    group: "tana",
+    name: "tag",
+    endpoint: "tana-node-summaries",
+    args: tagArgs,
+    unsupported: { ...tagArgs, tagIds: ["tag-1", "tag-2"] },
+    response: { nodes: [tanaTarget, tanaTag, { nodeId: "tag-2", name: "Milestone" }] },
+    partial: { nodes: [tanaTarget] },
+    visible: ["Add Task to Plan review"],
+  },
+  {
+    group: "tana",
+    name: "tag",
+    endpoint: "tana-node-summaries",
+    args: { ...tagArgs, action: "remove" },
+    response: { nodes: [tanaTarget, tanaTag] },
+    partial: { nodes: [tanaTag] },
+    visible: ["Remove Task from Plan review"],
+  },
+];
+
+it.each(collapsedDecisionCases)("offers compact $group $name decisions for a clear single target", async (example) => {
+  const container = await mount(
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
+  );
+  const action = create(ActionIdentitySchema, { group: example.group, name: example.name });
+  const unknown = { ...example.args, unknown: true };
+  const fixtures = [example.args, example.args, example.args, example.unsupported ?? unknown, unknown].map(
+    (argumentsValue, index) => ({
+      ...request(ActionState.DECISION_PENDING, index + 1),
+      action,
+      arguments: argumentsValue,
+    })
+  );
+  let completeLookup!: (data: unknown) => void;
+  const pending = new Promise<unknown>((resolve) => {
+    completeLookup = resolve;
+  });
+  answerApi(({ path }) => {
+    if (!path.endsWith(example.endpoint)) return undefined;
+    const index = fixtures.findIndex(({ id }) => path.includes(id));
+    return [pending, Response.json({}, { status: 503 }), example.partial, example.response][index];
+  });
+  await send(fixtures);
+
+  const cards = [...container.querySelectorAll(".agentplane-actions-sidebar-request")];
+  expect(cards).toHaveLength(fixtures.length);
+  const [eligible] = cards;
+  if (!eligible) throw new Error("missing eligible card");
+  function expectDecisions(card: Element, visible: boolean) {
+    for (const label of ["Approve", "Deny"]) {
+      expect(!!card.querySelector(`button[aria-label^="${label} "]`)).toBe(visible);
+    }
+  }
+  async function open(card: Element) {
+    const toggle = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+    if (!toggle) throw new Error("missing action disclosure");
+    await act(async () => toggle.click());
+  }
+  expectDecisions(eligible, false);
+  await act(async () => completeLookup(example.response));
+  await vi.waitFor(() => expectDecisions(eligible, true));
+  for (const text of example.visible) expect(eligible.textContent).toContain(text);
+  await open(eligible);
+  expectDecisions(eligible, true);
+
+  for (const card of cards.slice(1)) {
+    expectDecisions(card, false);
+    await open(card);
+    expectDecisions(card, false);
+    expect(card.textContent).toContain("Decisions require full review.");
+  }
+  expect(cards.at(-1)?.textContent).toContain("unknown");
+});
+
 const expandedDecisionCases: {
   group: string;
   name: string;

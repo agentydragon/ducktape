@@ -1,7 +1,8 @@
 import { Stack } from "@mantine/core";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
+import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { defineCallPreview, defineReceiptPreview, useCompactPane } from "./entry";
 import {
   batchError,
@@ -11,9 +12,10 @@ import {
   Line,
   objectLink,
   reference,
+  useGrocyRequestReferences,
   useGrocyReferences,
 } from "./grocy_shared";
-import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
+import { type ActionPresentation, type CardDecisionProps, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const id = z.number().int();
@@ -93,7 +95,51 @@ const editItem = z.strictObject({
   done: z.boolean().nullish(),
   clear_fields: z.array(z.literal("note")).nullish(),
 });
-function ShoppingEdit({ args, recordedName }: { args: z.infer<typeof editItem>; recordedName?: string }): JSX.Element {
+type EditItem = z.infer<typeof editItem>;
+
+function compactNote(note: string): boolean {
+  return note.length <= 120 && !/[\r\n]/.test(note) && (!note || !!note.trim());
+}
+
+function ShoppingEditSummary({ args }: { args: EditItem }): JSX.Element {
+  const current = useGrocyReferences()?.get(`shopping_list/${args.item_id}`)?.shoppingItemCurrent;
+  const changes = [
+    args.amount != null && `Set quantity to ${shoppingAmount(args.amount, current?.unitName)}`,
+    args.done != null && `Mark ${args.done ? "done" : "not done"}`,
+    args.clear_fields?.includes("note") ? "Clear note" : args.note != null && "Replace note",
+  ].filter(Boolean);
+  return (
+    <Stack gap={4}>
+      <ShoppingTarget id={args.item_id} />
+      {changes.length > 0 && <Line>{changes.join(" · ")}</Line>}
+      {args.note != null && !args.clear_fields?.includes("note") && compactNote(args.note) && (
+        <Line>New note · {args.note || "(empty text)"}</Line>
+      )}
+    </Stack>
+  );
+}
+
+function ShoppingEditDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
+  const parsed = editItem.safeParse(args);
+  const item = parsed.success ? parsed.data : undefined;
+  const refs = useGrocyRequestReferences(item ? requestId : undefined);
+  if (!item || item.item_id <= 0) return fallback;
+  const target = refs?.get(`shopping_list/${item.item_id}`);
+  const current = target?.shoppingItemCurrent;
+  if (!target?.name.trim() || !current?.listName.trim()) return fallback;
+  const clearsNote = item.clear_fields?.includes("note");
+  if (item.amount == null && item.done == null && item.note == null && !clearsNote) return fallback;
+  if (item.done != null && current.done === undefined) return fallback;
+  if (item.amount != null && (item.amount <= 0 || current.amount === undefined || !current.unitName.trim())) {
+    return fallback;
+  }
+  if (item.note != null && (clearsNote || !compactNote(item.note))) return fallback;
+  // A note can be the item's only identifying content.
+  if (clearsNote && current.note === target.name) return fallback;
+  return buttons;
+}
+
+function ShoppingEdit({ args, recordedName }: { args: EditItem; recordedName?: string }): JSX.Element {
   const current = useGrocyReferences()?.get(`shopping_list/${args.item_id}`)?.shoppingItemCurrent;
   const clearNote = args.clear_fields?.includes("note");
   const oldNote = current && (current.note === undefined ? "None" : current.note || "(empty text)");
@@ -137,6 +183,59 @@ const addItems = z.strictObject({
       .refine((item) => item.product != null || item.note != null)
   ),
 });
+type AddItems = z.infer<typeof addItems>;
+
+function ShoppingAdd({ args }: { args: AddItems }): JSX.Element {
+  const compact = useCompactPane();
+  const items = compact ? args.items.slice(0, 2) : args.items;
+  return (
+    <Stack gap={4}>
+      {items.map((item, index) => {
+        const amount = item.amount ?? 1;
+        const list = displayRef(item.shopping_list, "shopping_lists");
+        return (
+          <Stack key={index} gap={2}>
+            <Line>
+              {item.product == null ? (
+                <>
+                  Note for {list} · Quantity {amount}
+                </>
+              ) : (
+                <>
+                  {amount} stock {amount === 1 ? "unit" : "units"} of{" "}
+                  <strong>{displayRef(item.product, "products")}</strong> for {list}
+                </>
+              )}
+            </Line>
+            {item.note != null && (
+              <Line>Note · {compact && !compactNote(item.note) ? "Open to read" : item.note || "(empty text)"}</Line>
+            )}
+          </Stack>
+        );
+      })}
+      {items.length < args.items.length && <Line>{args.items.length - items.length} more items</Line>}
+    </Stack>
+  );
+}
+
+function namedReference(
+  refs: ReadonlyMap<string, GrocyReferenceSummary> | undefined,
+  kind: "shopping_lists" | "products",
+  value: string | number
+): boolean {
+  return typeof value === "string" ? !!value.trim() : value > 0 && !!refs?.get(`${kind}/${value}`)?.name.trim();
+}
+
+function ShoppingAddDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
+  const parsed = addItems.safeParse(args);
+  const item = parsed.success && parsed.data.items.length === 1 ? parsed.data.items[0] : undefined;
+  const refs = useGrocyRequestReferences(item ? requestId : undefined);
+  if (!item || (item.amount !== undefined && item.amount <= 0)) return fallback;
+  if (!namedReference(refs, "shopping_lists", item.shopping_list)) return fallback;
+  if (item.product == null ? !item.note?.trim() : !namedReference(refs, "products", item.product)) return fallback;
+  return item.note == null || compactNote(item.note) ? buttons : fallback;
+}
+
 const removeItems = z.strictObject({ item_ids: z.array(id) });
 
 const shoppingItemOk = z.strictObject({
@@ -310,35 +409,8 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
   [
     "shopping_list_items_add",
     {
-      ...grocyRequest(
-        "Add Grocy shopping items",
-        addItems,
-        ({ args }) => (
-          <Stack gap="xs">
-            {args.items.map((item, i) => (
-              <Stack key={i} gap={2}>
-                <Line>
-                  <strong>{item.product == null ? item.note : displayRef(item.product, "products")}</strong> ·{" "}
-                  {item.amount ?? 1} for {displayRef(item.shopping_list, "shopping_lists")}
-                </Line>
-                {item.product != null && item.note != null && <Line>Note · {item.note || "(empty text)"}</Line>}
-              </Stack>
-            ))}
-          </Stack>
-        ),
-        itemBatchReceipt("added"),
-        ({ args }) => (
-          <Stack gap={4}>
-            {args.items.slice(0, 2).map((item, i) => (
-              <Line key={i}>
-                {item.amount ?? 1} · {item.product == null ? item.note : displayRef(item.product, "products")} for{" "}
-                {displayRef(item.shopping_list, "shopping_lists")}
-              </Line>
-            ))}
-            {args.items.length > 2 && <Line>{args.items.length - 2} more items</Line>}
-          </Stack>
-        )
-      ),
+      ...grocyRequest("Add Grocy shopping items", addItems, ShoppingAdd, itemBatchReceipt("added"), ShoppingAdd),
+      liveCardDecision: { component: ShoppingAddDecision, collapsed: true },
       outcome: itemBatchOutcome,
     },
   ],
@@ -375,20 +447,8 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
   [
     "shopping_list_item_edit",
     {
-      ...grocyRequest("Edit Grocy shopping item", editItem, ShoppingEdit, editedItem, ({ args }) => (
-        <Stack gap={4}>
-          <ShoppingTarget id={args.item_id} />
-          <Line>
-            {[
-              args.amount != null && `Set amount to ${args.amount}`,
-              args.done != null && `Mark ${args.done ? "done" : "not done"}`,
-              args.clear_fields?.includes("note") ? "Clear note" : args.note != null && "Replace note",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </Line>
-        </Stack>
-      )),
+      ...grocyRequest("Edit Grocy shopping item", editItem, ShoppingEdit, editedItem, ShoppingEditSummary),
+      liveCardDecision: { component: ShoppingEditDecision, collapsed: true },
       call: editShoppingItemCall,
       outcome: (value) => {
         const parsed = itemOutcome.safeParse(value);

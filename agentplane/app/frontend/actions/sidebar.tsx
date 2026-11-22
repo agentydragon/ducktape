@@ -8,7 +8,7 @@ import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_hand
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
-  renderExpandedCardDecision,
+  renderLiveCardDecision,
   renderActionLabel,
   renderPaneCollapsed,
   renderPaneOpened,
@@ -95,9 +95,7 @@ export function PendingActionList({
         };
 
         const summary = (
-          <div
-            className={`agentplane-actions-sidebar-request-label${unclamped ? " is-unclamped" : ""}${decision === null ? "" : " offers-card-decision"}`}
-          >
+          <div className={`agentplane-actions-sidebar-request-label${unclamped ? " is-unclamped" : ""}`}>
             <div className="agentplane-actions-sidebar-name">
               {actionLabel === undefined ? `${action.group} / ${action.name}` : actionLabel}
             </div>
@@ -140,7 +138,21 @@ export function PendingActionList({
                 </Link>
               </Tooltip>
             </div>
-            {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
+            {!expanded &&
+              (decision !== null ? (
+                <div className="agentplane-actions-sidebar-decision">{decision}</div>
+              ) : (
+                renderLiveCardDecision(
+                  action,
+                  {
+                    args,
+                    requestId: request.id,
+                    buttons: <div className="agentplane-actions-sidebar-decision">{buttons}</div>,
+                    fallback: null,
+                  },
+                  false
+                )
+              ))}
             {expanded && (
               <Stack className="agentplane-actions-sidebar-preview" gap="xs" data-operation-density="compact">
                 {openedPreview === undefined ? (
@@ -155,16 +167,20 @@ export function PendingActionList({
                 )}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
                   {decision ??
-                    renderExpandedCardDecision(action, {
-                      args,
-                      requestId: request.id,
-                      buttons,
-                      fallback: (
-                        <Text size="xs" c="dimmed">
-                          Decisions require full review.
-                        </Text>
-                      ),
-                    })}
+                    renderLiveCardDecision(
+                      action,
+                      {
+                        args,
+                        requestId: request.id,
+                        buttons,
+                        fallback: (
+                          <Text size="xs" c="dimmed">
+                            Decisions require full review.
+                          </Text>
+                        ),
+                      },
+                      true
+                    )}
                   <Tooltip label="View full details" withArrow>
                     <Link
                       className="agentplane-actions-sidebar-details"

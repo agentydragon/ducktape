@@ -10,7 +10,7 @@ import { type CallToolResult, toolContentRestatesValue, toolValue } from "../cal
 import type { ActionIdentity } from "../../../../action_service/api/contracts/action_service_pb";
 import { JsonBlock } from "../../ui/text_block";
 import { CompactPaneContent, renderPreview } from "./entry";
-import type { ActionOutcome, ActionPresentation, ExpandedCardDecisionProps } from "./presentation";
+import type { ActionOutcome, ActionPresentation, CardDecisionProps } from "./presentation";
 import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
 import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
@@ -185,9 +185,11 @@ export function actionOffersCardDecisionButtons(action: ActionIdentity, args: un
   return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
 }
 
-export function renderExpandedCardDecision(action: ActionIdentity, props: ExpandedCardDecisionProps): ReactNode {
-  const Decision = presentation(action)?.expandedCardDecision;
-  return Decision === undefined ? props.fallback : <Decision {...props} />;
+export function renderLiveCardDecision(action: ActionIdentity, props: CardDecisionProps, expanded: boolean): ReactNode {
+  const decision = presentation(action)?.liveCardDecision;
+  if (!decision || (!expanded && !decision.collapsed)) return props.fallback;
+  const Decision = decision.component;
+  return <Decision {...props} />;
 }
 
 /** Whether this invocation's compact card opens; unknown Actions open to their recorded arguments. */

@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 
 import { definePreview, defineReceiptPreview, type PreviewProps } from "./entry";
-import { type ActionPresentation, type ExpandedCardDecisionProps, expandsForRejectedArguments } from "./presentation";
+import { type ActionPresentation, type CardDecisionProps, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 import {
   batchError,
@@ -380,7 +380,7 @@ const compactProductEdit = z.strictObject({
   ]),
 });
 
-function ProductEditDecision({ args, requestId, buttons, fallback }: ExpandedCardDecisionProps): ReactNode {
+function ProductEditDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
   const parsed = compactProductEdit.safeParse(args);
   const refs = useGrocyRequestReferences(parsed.success ? requestId : undefined);
   if (!parsed.success) return fallback;
@@ -500,7 +500,7 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
         opened: edits,
       },
       details: { arguments: edits, pendingPreviewOnly: true, result: editProductReceipt },
-      expandedCardDecision: ProductEditDecision,
+      liveCardDecision: { component: ProductEditDecision },
       outcome: (result) => {
         const parsed = editProductResult.safeParse(result);
         return parsed.success ? batchOutcome(parsed.data) : undefined;
