@@ -86,13 +86,6 @@ py_library(
 )
 
 py_library(
-    name = "flux_bootstrap_auth",
-    testonly = True,
-    srcs = ["flux_bootstrap_auth.py"],
-    deps = [":k8s"],
-)
-
-py_library(
     name = "dependencies",
     testonly = True,
     srcs = ["dependencies.py"],
@@ -186,10 +179,13 @@ py_test(
 py_test(
     name = "test_flux",
     srcs = ["test_flux.py"],
+    data = ["//cluster/k8s/flux/flux-system:gotk-sync.yaml"],
     deps = [
         ":flux",
-        ":flux_bootstrap_auth",
+        "//:conftest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -277,7 +273,6 @@ py_test(
         ":conftest",
         ":dependencies",
         ":flux",
-        ":flux_bootstrap_auth",
         ":health_checks",
         ":image_automation",
         ":k8s",
