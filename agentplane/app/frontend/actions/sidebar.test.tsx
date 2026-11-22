@@ -342,6 +342,10 @@ it("offers draft creation decisions while keeping the full message one expansion
   expect(cards[1]?.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-123"]')?.textContent).toBe(
     "thread-123"
   );
+  for (const card of [...cards].slice(0, 2)) {
+    expect(card.textContent).toContain("Create unsent draft");
+    expect(card.textContent).toContain("archive@example.test");
+  }
   for (const [index, card] of cards.entries()) {
     const supported = index < 2;
     const expectDecisions = (element: Element | null) => {
@@ -349,10 +353,6 @@ it("offers draft creation decisions while keeping the full message one expansion
       expect(!!element?.querySelector('button[aria-label^="Deny "]')).toBe(supported);
     };
     expectDecisions(card);
-    if (supported) {
-      expect(card.textContent).toContain("Create unsent draft");
-      expect(card.textContent).toContain("archive@example.test");
-    }
     const disclosure = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
     if (!disclosure) throw new Error("missing draft disclosure");
     await act(async () => disclosure.click());
