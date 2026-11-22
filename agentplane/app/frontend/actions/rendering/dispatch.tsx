@@ -7,6 +7,7 @@ import { JsonBlock } from "../../ui/text_block";
 import { CompactPaneContent, renderPreview } from "./entry";
 import type { ActionOutcome, ActionPresentation, CardDecisionProps } from "./presentation";
 import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
+
 export interface RenderedActionCall {
   content: ReactNode;
   /** Whether this view includes a successfully parsed result and can replace the separate result block. */

@@ -3,7 +3,7 @@ import { homeAssistantOperationsRenderers } from "./operations";
 import { homeAssistantHistoryRenderers } from "./history";
 import { homeAssistantRenderers } from "../home_assistant";
 
-const homeAssistantGroup = new Map([
+const homeAssistantGroup: typeof homeAssistantRenderers = new Map([
   ...homeAssistantRenderers,
   ...homeAssistantHistoryRenderers,
   ...homeAssistantOrganizationRenderers,
