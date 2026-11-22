@@ -4,6 +4,7 @@ go_library(
     name = "store",
     srcs = [
         "activity.go",
+        "dispatch_workset.go",
         "execution.go",
         "retention.go",
         "service_attribution.go",

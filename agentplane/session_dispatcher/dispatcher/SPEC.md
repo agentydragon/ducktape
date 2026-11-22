@@ -346,6 +346,28 @@ Direct `GetDispatch` and `ListDispatches` read current rows. The tombstones prov
 and replay coverage. Supported rollback images must serve versioned watches and keep migration
 `00024` installed.
 
+### Session delivery workset
+
+`WatchDispatches` accepts `workset_session_id` in place of its ordinary filter. The workset
+uses the same Session authorization and includes metadata for up to 1,024 queued or delivering
+commands, 20 recent failed or unknown receipts, and 20 recent admissions or cancellations.
+The last group lets the browser bridge the interval between delivery and History projection.
+Each group indicates overflow. Recent receipts include legacy tombstones. A reason excerpt
+carries `reason_truncated` when a command-ID-filtered ordinary watch is needed to show the
+full retained reason. The ordinary watch includes legacy tombstones, including after their
+live rows become unavailable. Payloads and journal entries remain available through their
+existing reads. History determines command effects.
+Each item includes its positive Dispatcher receipt version. A live row update and a legacy
+deletion receipt each receive a distinct version. The legacy deletion flag identifies rows
+held by the expiring tombstone store.
+
+The first frame on every connection replaces the previous workset. Later replacements follow
+Session-specific changes, including pruning of that Session's legacy tombstones. A PostgreSQL
+listener interruption ends the stream with `UNAVAILABLE`. A resume token is scoped to the workset
+and Session and detects expired tombstone coverage with `OUT_OF_RANGE`. Clearing the token
+requests a new current snapshot. Omission from a workset gives no evidence that a command was
+unsent. Older facades and Dispatchers reject requests that omit the ordinary filter.
+
 ## Session resource
 
 `SessionSpec.placement` carries `environment_hosted` or `central_sampler_v1`; there is no flat harness

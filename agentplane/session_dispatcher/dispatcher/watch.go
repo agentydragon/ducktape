@@ -59,6 +59,12 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	if err != nil {
 		return err
 	}
+	if sessionID := request.GetWorksetSessionId(); sessionID != "" {
+		if request.GetFilter() != nil {
+			return status.Error(codes.InvalidArgument, "dispatch workset cannot be combined with a filter")
+		}
+		return s.watchDispatchWorkset(ctx, caller, sessionID, request.GetResumeToken(), stream)
+	}
 	filter, err := dispatchFilter(request.GetFilter())
 	if err != nil {
 		return err
