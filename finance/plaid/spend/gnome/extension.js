@@ -976,17 +976,18 @@ const PlaidSpendIndicator = GObject.registerClass(
             else if (points.some((point) => point?.observed_daily_minor_units == null))
               this._addReadOnly("Pace history has coverage gaps", "plaid-spend-caption");
           }
-          for (const [periodId, label] of [
+          const unmatchedSummaries = [
             ["rolling_7d", "7d"],
             ["rolling_30d", "30d"],
-          ]) {
+          ].flatMap(([periodId, label]) => {
             const unmatched = periodReport(allowance, "recorded_pace_periods", periodId)?.unmatched_charges;
-            if (unmatched?.count > 0)
-              this._addReadOnly(
-                `${label} unmatched ${unmatched.count} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
-                "plaid-spend-caution"
-              );
-          }
+            return unmatched?.count > 0
+              ? [
+                  `${label} unmatched ${unmatched.count} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
+                ]
+              : [];
+          });
+          if (unmatchedSummaries.length) this._addReadOnly(unmatchedSummaries.join(" · "), "plaid-spend-caution");
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
         if (allowance.last_synced_at)
           this._addReadOnly(`Oldest linked sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
