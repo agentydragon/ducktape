@@ -60,7 +60,6 @@ py_library(
     testonly = True,
     srcs = ["apply_inputs.py"],
     deps = [
-        ":policies",
         "@pypi//cdk8s",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
@@ -77,10 +76,10 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":apply",
+        ":policies",
         ":test_support",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -96,6 +95,7 @@ py_test(
     deps = [
         ":apply",
         ":janitor",
+        ":test_support",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
@@ -117,6 +117,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":apply",
+        ":policies",
         ":test_support",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
