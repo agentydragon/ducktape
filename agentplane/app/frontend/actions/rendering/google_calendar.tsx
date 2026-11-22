@@ -310,6 +310,7 @@ function Target({
   kind,
   showEvent = true,
   compact = false,
+  summaryOnly = false,
 }: {
   id: string;
   calendarId?: string;
@@ -318,6 +319,7 @@ function Target({
   kind: "read" | "change" | "series";
   showEvent?: boolean;
   compact?: boolean;
+  summaryOnly?: boolean;
 }): JSX.Element {
   const data = useCalendarPreview(requestId);
   const preview = data?.event?.eventId === id ? data.event : undefined;
@@ -337,12 +339,12 @@ function Target({
           <EventName id={id} name={preview?.summary} link={compact ? undefined : preview?.htmlLink} />
         </Field>
       )}
-      {(start || end) && (
+      {!summaryOnly && (start || end) && (
         <Field>
           <Schedule start={start} end={end} />
         </Field>
       )}
-      {original && (
+      {!summaryOnly && original && (
         <Field label="Original occurrence">
           <ExactTime display={formatEventTime(original)} exact={submittedTimeText(original)} />
         </Field>
@@ -355,7 +357,7 @@ function Target({
           name={recordedCalendarName ?? (calendar?.calendarId === calendarId ? calendar?.summary : undefined)}
         />
       )}
-      {scope && <Field>{scope}</Field>}
+      {!summaryOnly && scope && <Field>{scope}</Field>}
     </Stack>
   );
 }
@@ -386,15 +388,6 @@ const createSummary = definePreview(createArguments, ({ args, requestId }) => (
       <Schedule start={args.start} end={args.end} />
     </Text>
     <CalendarTarget id={args.calendar_id} requestId={requestId} compact />
-    {args.location && <Field label="Location">{args.location}</Field>}
-    {!!args.attendees?.length && <Field label="Attendees">{args.attendees.join(", ")}</Field>}
-    {args.recurrence && <Recurrence lines={args.recurrence} start={args.start} />}
-    <Field label="Reminders">{remindersText(args.reminders ?? [])}</Field>
-    {args.description && (
-      <Text size="xs" c="dimmed">
-        Includes a description
-      </Text>
-    )}
   </Stack>
 ));
 const createDetails = definePreview(createArguments, ({ args, requestId }) => (
@@ -418,12 +411,11 @@ function Update({
   args,
   requestId,
   showEvent,
-  compact,
-}: PreviewProps<z.infer<typeof updateArguments>> & { showEvent?: boolean; compact?: boolean }): JSX.Element {
+}: PreviewProps<z.infer<typeof updateArguments>> & { showEvent?: boolean }): JSX.Element {
   const changes = [
     args.summary != null && (
-      <Field key="title" label={compact ? undefined : "Title"}>
-        {args.summary ? (compact ? `Rename to ${args.summary}` : args.summary) : "Clear title"}
+      <Field key="title" label="Title">
+        {args.summary || "Clear title"}
       </Field>
     ),
     (args.start || args.end) && (
@@ -440,23 +432,14 @@ function Update({
       </Field>
     ),
     args.reminders != null && (
-      <Field key="reminders" label={compact ? undefined : "Reminders"}>
-        {compact
-          ? args.reminders.length
-            ? "Change reminders"
-            : "Use calendar default reminders"
-          : remindersText(args.reminders)}
+      <Field key="reminders" label="Reminders">
+        {remindersText(args.reminders)}
       </Field>
     ),
-    args.recurrence != null &&
-      (compact ? (
-        <Field key="recurrence">Change recurrence</Field>
-      ) : (
-        <Recurrence key="recurrence" lines={args.recurrence} start={args.start} />
-      )),
+    args.recurrence != null && <Recurrence key="recurrence" lines={args.recurrence} start={args.start} />,
     args.description != null && (
       <Field key="description" label="Description">
-        {args.description ? (compact ? "Replace description" : args.description) : "Clear description"}
+        {args.description || "Clear description"}
       </Field>
     ),
   ].filter(Boolean);
@@ -468,14 +451,11 @@ function Update({
         requestId={requestId}
         kind="change"
         showEvent={showEvent}
-        compact={compact}
       />
       <Stack gap={4}>
-        {(!compact || args.start || args.end || changes.length === 0) && (
-          <Text size="sm" fw={600}>
-            {changes.length === 0 ? "No field changes requested" : "Requested changes"}
-          </Text>
-        )}
+        <Text size="sm" fw={600}>
+          {changes.length === 0 ? "No field changes requested" : "Requested changes"}
+        </Text>
         {changes}
       </Stack>
     </Stack>
@@ -748,7 +728,30 @@ const listInstancesCall = defineReceiptPreview(instanceArguments, namedEventPage
 ));
 
 const updateDetails = definePreview(updateArguments, Update);
-const updateSummary = definePreview(updateArguments, (props) => <Update {...props} compact />);
+const updateSummary = definePreview(updateArguments, ({ args, requestId }) => {
+  const fields = [
+    args.summary != null && "title",
+    (args.start || args.end) && "time",
+    args.location != null && "location",
+    args.attendees != null && "attendees",
+    args.reminders != null && "reminders",
+    args.recurrence != null && "recurrence",
+    args.description != null && "description",
+  ].filter(Boolean);
+  return (
+    <Stack gap={4}>
+      <Target
+        id={args.event_id}
+        calendarId={args.calendar_id}
+        requestId={requestId}
+        kind="change"
+        compact
+        summaryOnly
+      />
+      <Field>{fields.length ? `Changes: ${fields.join(", ")}` : "No field changes requested"}</Field>
+    </Stack>
+  );
+});
 const eventDetails = definePreview(eventTarget, EventTarget);
 const deleteDetails = definePreview(eventTarget, Delete);
 const listDetails = definePreview(listArguments, ListDetails);
@@ -763,7 +766,6 @@ const listSummary = definePreview(listArguments, ({ args, requestId }) => (
   <Stack gap={4}>
     <CalendarTarget id={args.calendar_id} requestId={requestId} compact showId />
     {args.query && <Field label="Search">{args.query}</Field>}
-    {pageScope(args, false)}
     <RecurringEvents expand={args.expand_recurring} />
   </Stack>
 ));

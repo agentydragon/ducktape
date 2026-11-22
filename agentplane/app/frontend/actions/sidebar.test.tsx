@@ -279,7 +279,7 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
   expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).not.toBeNull();
 });
 
-it("shows compact decisions only for a fully displayed mutation", async () => {
+it("shows compact decisions for a simple Calendar creation", async () => {
   const container = await mount(
     <ActionsTestApp>
       <ActionsSidebarSection />
@@ -303,7 +303,7 @@ it("shows compact decisions only for a fully displayed mutation", async () => {
   const cards = container.querySelectorAll(".agentplane-actions-sidebar-request");
   expect(cards[0]?.textContent).toContain("Office closure");
   expect(cards[0]?.textContent).toContain("Primary calendar");
-  expect(cards[0]?.textContent).toContain("Use calendar defaults");
+  expect(cards[0]?.textContent).not.toContain("Use calendar defaults");
   expect(cards[0]?.querySelector('button[aria-label^="Approve "]')).not.toBeNull();
   expect(cards[0]?.querySelector('button[aria-label^="Deny "]')).not.toBeNull();
   expect(cards[0]?.querySelector("button[aria-expanded]")).toBeNull();
