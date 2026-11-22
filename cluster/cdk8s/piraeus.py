@@ -429,7 +429,21 @@ def cluster_chart(app: App) -> Chart:
                         }
                     },
                 },
-                "csiNode": {"enabled": True},
+                "csiNode": {
+                    "enabled": True,
+                    "podTemplate": {
+                        "spec": {
+                            "containers": [
+                                {"name": name, "resources": {"requests": {"cpu": cpu, "memory": memory}}}
+                                for name, cpu, memory in (
+                                    ("linstor-csi", "75m", "96Mi"),
+                                    ("csi-node-driver-registrar", "15m", "48Mi"),
+                                    ("csi-livenessprobe", "15m", "48Mi"),
+                                )
+                            ]
+                        }
+                    },
+                },
                 # Keep local PV affinity updates; omit the unrelated NFS server.
                 "affinityController": {
                     "enabled": True,
