@@ -35,12 +35,24 @@ Contains:
 Service charts own exceptional and sensitive grants. Those bindings follow the service's Flux
 dependencies. For example, the `haku-rbac` Kustomization depends on `haku-namespace`.
 
-### 4. `agents/namespace-rbac/<namespace>/` — common diagnostics
+### 4. Common namespace diagnostics
 
-The reviewed namespace classification in <../cdk8s/namespace_access.py> drives both static
-readers and managed grants. The namespace builder derives descriptive labels from the classification.
-The [Flux bootstrap overlay](../k8s/flux/flux-system/kustomization.yaml) sets the `flux-system` label
-explicitly.
+The [namespace classification](../cdk8s/namespace_access.py) selects the common readers for
+static and managed agents. The namespace builder derives one descriptive label from it.
+The [Flux bootstrap overlay](../k8s/flux/flux-system/kustomization.yaml) sets the label on
+`flux-system`. RoleBindings grant access. Editing the live label alone changes no permissions.
+
+- `rbac.ducktape.io/agent-readable-metadata` describes the metadata reader. Its ClusterRole can read **all ConfigMaps** in the namespace, along with
+  workload state, PVCs, Events, autoscaling, networking and Flux image automation resources.
+  Secrets, pod logs and write verbs are excluded. The exact rules live in
+  [agent_rbac_base.py](../cdk8s/agent_rbac_base.py).
+- `rbac.ducktape.io/agent-readable-logs` describes the same metadata access plus a second
+  binding granting `get` on `pods/log`.
+
+Both classifications bind the same static subjects: Haku's OIDC and Console groups and its
+ServiceAccount, the interactive kubectl group, and the staging `claude-ai` ServiceAccount.
+Their identities are declared together in
+[`NAMESPACE_READER_SUBJECTS`](../cdk8s/agent_access_profiles.py).
 
 The [reader generator](../cdk8s/agent_namespace_rbac.py) gives each classified namespace its own
 `agent-namespace-rbac-<namespace>` Flux Kustomization, with `claude-rbac` as its only dependency.
@@ -95,46 +107,11 @@ Haku's durable Console Agent profile is represented to SubjectAccessReview as th
 non-login group `haku:access-profile:haku`. The existing OIDC group
 `oidc-ksbx-groups:haku` and in-cluster `haku` ServiceAccount remain the direct login/runtime
 identities for callers that carry Kubernetes credentials. All three are co-subjected onto the same
-roles: full CRUD in `haku-sandbox`, plus general cluster diagnostics and safe log reading. The
-transport or runtime that authenticated Haku therefore does not select a different permission set;
-Console-launched CLI runners carry no ServiceAccount token and use the synthetic group through the
-authorization proxy:
-
-- **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
-  ClusterRoleBinding). It has no `secrets`/`pods/log`/`configmaps` permission and no write or
-  exec permission. OpenTofu Workspace specs and statuses are readable, so sensitive inputs must
-  stay in referenced Secrets rather than inline Workspace fields; the role cannot read those
-  Secret objects.
-- **Metadata and logs in explicitly classified namespaces**. `namespace_access.py`
-  is the source of truth. Its static projection generates
-  namespaced RoleBindings for both Haku groups, the direct Haku ServiceAccount,
-  `kubectl-sandbox-users`, and `claude-ai` (section 6).
-
-The labels describe the shared policy; changing a live Namespace label **does not**
-grant or revoke access. RoleBindings grant access, and ClusterRoles define the
-resource permissions. Adding an agent identity means updating the shared subjects
-once, rather than changing every namespace.
-
-There are exactly two generated namespace classifications:
-
-- `rbac.ducktape.io/agent-readable-metadata: "true"` describes the common metadata baseline:
-  workload/controller state, Events, PVCs, Jobs/CronJobs, and explicitly classified ConfigMaps.
-  It excludes Secrets and pod logs.
-- `rbac.ducktape.io/agent-readable-logs: "true"` means the same metadata is readable **and**
-  pod logs are readable. A LOGS classification generates both bindings and the logs
-  label; the namespace does not need both labels. The additive logs role grants only `get` on `pods/log`.
-
-Both labels use the same agent subject set. This keeps Haku's synthetic SAR identity structurally
-at least as capable as public-coder and makes the label a statement about the namespace's data
-sensitivity, not about a particular authentication transport.
-
-The separate `oidc-ksbx-groups:kubectl-sandbox-users` group belongs to the interactive Claude
-Code Web/kubectl sandbox environment. It is not a parent group of Haku, but it participates in
-the same explicit namespace classifications.
-
-This widens the original `haku-sandbox`-only perimeter (<../../haku/PLAN.md>) to read-only
-diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
-unchanged. Haku's full enforcement inventory: <../../haku/docs/security.md>.
+roles. Each can manage resources in `haku-sandbox` and read cluster diagnostics and the
+[common namespace diagnostics](#4-common-namespace-diagnostics).
+Console-launched CLI runners carry no ServiceAccount token and use the synthetic group through
+the authorization proxy. Haku's full enforcement inventory lives in
+[its security guide](../../haku/docs/security.md).
 
 ### 5. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key
 
@@ -467,43 +444,13 @@ verify by the Sandbox UID annotation, without dumping Secret contents.
 
 ### Grant inventory
 
-This doc intentionally avoids a hand-maintained namespace matrix. Service-specific and
-sensitive grants are sourced from the set of `*rolebinding-*.yaml` files under:
-
-- `cluster/k8s/**/agent-rbac/`
-- `cluster/k8s/**/gateway-agent-rbac/`
-- `cluster/generated/agents/shared-rbac/`
-- `cluster/generated/agents/namespace-rbac/`
-
-Use `roleRef.name` in those files to determine which permission class is bound:
-`namespace-diagnostics-reader`, `agent-readable-namespace-metadata`,
-`agent-readable-namespace-logs`,
-`logs-configmaps-reader`, or `secrets-reader`
-(`secrets-reader` is an explicit per-service opt-in for
-`kubectl-sandbox-users` only — never Haku), or a
-service-specific reader Role/ClusterRole such as `reader` in `ollama`,
-`log-reader` in `langfuse`, or `claude-props-reader`.
-
-The common generated grants live in `agents/namespace-rbac/`. The shared policy
-projects one of two descriptive labels onto each classified Namespace:
-
-- `rbac.ducktape.io/agent-readable-metadata: "true"` describes the secret-free, log-free
-  `agent-readable-namespace-metadata` baseline. Alongside core workload state, it covers
-  safe operational metadata for autoscaling, disruption, standard/Gateway API networking, and
-  Flux image automation. It deliberately excludes Secrets, ExternalSecret/SecretStore resources,
-  Terraform controller objects, Helm/source/Kustomization values, Prometheus rules, pod logs,
-  exec-like subresources, and all writes. The namespace must be explicitly classified in `namespace_access.py`. The existing
-  `flux-system` Namespace has its descriptive label in the bootstrap patch at
-  `cluster/k8s/flux/flux-system/kustomization.yaml`; its Flux-owned reader bindings
-  grant access without a cluster-wide grant.
-- `rbac.ducktape.io/agent-readable-logs: "true"` describes that metadata baseline plus the additive
-  `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
-
-Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
-its in-cluster ServiceAccounts, `kubectl-sandbox-users`, and
-agentplane-staging's `claude-ai` ServiceAccount. The Flux-owned bindings come from
-`agent_namespace_rbac.py`; the Kyverno generator is retired. Sensitive or
-identity-specific access remains explicit service RBAC.
+Inspect a binding's `metadata.namespace`, `subjects` and `roleRef`, then read the referenced
+Role or ClusterRole for the permitted verbs and resources. Common static readers are rendered
+under [agents/namespace-rbac](../generated/agents/namespace-rbac/), one directory per namespace.
+Service-specific bindings can share a manifest with the workload. From the repository root,
+`rg -l '^kind: (Cluster)?RoleBinding$' cluster/{generated,k8s}` finds manifest files containing
+bindings, including multi-document chart output. For managed accounts, follow the
+[preset's selected role sets](../cdk8s/agent_access_profiles.py) and its active PolicyBindings.
 
 Augur is parked in `gaffer-private` and has no namespace in the cluster. Its agent RBAC
 is parked with it at `gaffer-private/k8s/parked/augur/agent-rbac/`, including an
@@ -512,12 +459,15 @@ debugging the single-replica augur deployment.
 
 ## Adding Agent RBAC for a New Service
 
-1. For service-specific or sensitive access, create `<service>/agent-rbac/` with:
-   - `kustomization.yaml` — lists the RoleBinding YAML(s)
-   - RoleBinding YAML(s) referencing the appropriate ClusterRole from `agent-rbac-base`
-2. Add the service's Flux Kustomization generator under `cluster/cdk8s/`; wire its
-   namespace and agent RBAC dependencies in `generate_manifests.py`.
-3. The service namespace kustomization has **zero coupling** to agent infrastructure.
+For common diagnostics, review what the namespace's ConfigMaps expose and, for log access,
+what its workloads log. Add the appropriate classification in
+[namespace_access.py](../cdk8s/namespace_access.py). The reader generator wires the bindings
+and their Flux Kustomization independently of application readiness.
+
+For an exceptional grant, declare the RoleBinding with the service that owns the data.
+For example, [Study Casino](../cdk8s/study_casino/app.py) binds `secrets-reader` to the
+interactive kubectl group. Keep the shared RBAC base independent of service deployments.
+Regenerate and inspect the affected manifests with `bb run //cluster/cdk8s:generate_manifests`.
 
 ## Authentication
 
