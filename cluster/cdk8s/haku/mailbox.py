@@ -11,13 +11,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 
 from cluster.cdk8s import cilium, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -28,7 +21,7 @@ from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import mailbox_endpoint, namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
     ClusterSecretStoreRef,
@@ -346,21 +339,11 @@ def _add_smtp_ingress(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=_INGRESS_OBJECT_NAME, namespace=NAMESPACE),
         endpoint_selector=_INGRESS_LABELS,
         ingress=[
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[
-                    CiliumNetworkPolicySpecIngressFromEntities.WORLD,
-                    # Kubelet TCP readiness/liveness probes originate from the node.
-                    CiliumNetworkPolicySpecIngressFromEntities.HOST,
-                ],
-                to_ports=[
-                    CiliumNetworkPolicySpecIngressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_SMTP_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                            )
-                        ]
-                    )
-                ],
+            IngressRule.from_entities(
+                Entity.WORLD,
+                # Kubelet TCP readiness/liveness probes originate from the node.
+                Entity.HOST,
+                ports=[_SMTP_PORT],
             )
         ],
         egress=[cilium.dns_egress(), EgressRule.to_endpoints(SMTP.pods.selector, SMTP.pod_port)],

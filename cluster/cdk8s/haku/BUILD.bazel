@@ -229,7 +229,6 @@ py_library(
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cert_manager:certificate",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "@pypi//cdk8s",

@@ -9,13 +9,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
@@ -29,7 +22,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterDataFrom,
     ClusterExternalSecret,
@@ -265,21 +258,6 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
     )
 
 
-def _ingress_from(entity: CiliumNetworkPolicySpecIngressFromEntities) -> CiliumNetworkPolicySpecIngress:
-    return CiliumNetworkPolicySpecIngress(
-        from_entities=[entity],
-        to_ports=[
-            CiliumNetworkPolicySpecIngressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                        port=str(SERVICE.pod_port), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                    )
-                ]
-            )
-        ],
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -342,9 +320,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
-            _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
+            IngressRule.from_gateway(SERVICE.pod_port),
             # Kubelet liveness/readiness probes originate from the node host.
-            _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.HOST),
+            IngressRule.from_entities(Entity.HOST, ports=[SERVICE.pod_port]),
         ],
     )
     # google-access-token carries read-only Google scopes. Never mirrored into a namespace an agent

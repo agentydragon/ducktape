@@ -12,13 +12,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -34,7 +27,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -224,19 +217,7 @@ def _network_policy(scope: Construct) -> None:
             # CLIProxyAPI management endpoint.
             IngressRule.from_endpoints(cilium.endpoint_labels(NAMESPACE, "aiquota"), ports=[SERVICE.pod_port]),
             # Kubelet readiness/liveness tcpSocket probes originate from the node host.
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[CiliumNetworkPolicySpecIngressFromEntities.HOST],
-                to_ports=[
-                    CiliumNetworkPolicySpecIngressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(SERVICE.pod_port),
-                                protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                            )
-                        ]
-                    )
-                ],
-            ),
+            IngressRule.from_entities(Entity.HOST, ports=[SERVICE.pod_port]),
         ],
     )
 
