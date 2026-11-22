@@ -63,11 +63,12 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=cb6357d2628f655a4ae14e651ccad3f75d5f965e6c34daeb868b86cf2efc27d6",
+        "./evidence.json?v=bbacd23cc55c68ee007e8fa6885279478e432fb04c61f92722616bb8017a2b71",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
       const [dispatchA, dispatchB] = evidence.kvm_runner_dispatch.cases;
+      const morning = evidence.nov22_morning_feedback;
       const fresh = evidence.nov22_feedback;
       const podAdmission = evidence.managed_pod_admission;
       const cas = evidence.cas_followup;
@@ -174,12 +175,55 @@
 <header>
  ${link("../", "Ducktape reports")}
  <${Title} order=${1} mt="md">PR time to green<//>
- <${Text} size="lg" mt="sm">Required checks took 3m04s at the median and 8m57s at p90 from CI workflow creation, among 175 green heads. Of 245 sampled, 48 ended canceled and 22 failed. Five reached green on a later attempt.<//>
- <${Text} size="sm" c="dimmed" mt="sm">15–21 November 2026 UTC · 35 same-repository PR heads per day · each day has equal weight · push, review, conflict and subscriber receipt times are unobserved.<//>
- <${Group} gap="md" mt="sm">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}${link("#method-current", "Sampling and policy")}<//>
+ <${Text} size="lg" mt="sm">Required checks took 5m16s at the median and 11m45s at p90 among 63 green heads. Nine of the 72 sampled heads ended canceled. Test & Build finished last on 62 green heads, including one tie with imports.<//>
+ <${Text} size="sm" c="dimmed" mt="sm">22 November 2026, 00:00–08:00 UTC · sampled from 93 eligible PR heads · CI workflow creation through the last required check to first reach an accepted result.<//>
+ <${Group} gap="md" mt="sm">${link("#kvm-pilot-results", "KVM pilot results")}${link("#morning-workloads", "Workloads and sampling")}${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
 </header>
+<section id="kvm-pilot-results">
+ <${Title} order=${2}>Keep serial Firecracker cleanup and the current K3s image import<//>
+ <${Text} my="sm">Both variants passed the same test cases in their final comparisons.<//>
+ ${table(
+   ["Measured interval", "Control → candidate", "Change"],
+   [
+     [
+       "Firecracker · end of live assertions through final cleanup",
+       "108.7 → 133.1s",
+       "+24.4s",
+     ],
+     [
+       "K3s seed · worker start through test process end",
+       "289.01 → 293.98s",
+       "+4.97s",
+     ],
+   ],
+   330,
+ )}
+ <${Text} mt="sm">Firecracker overlapped 68.3s of cleanup with the next case. Its shorter total process time compared a cold control with a warm candidate on a different worker. The 1.15 GB K3s seed saved 0.81s in stack setup, while worker input fetch went from 0.73s to 6.10s. Both final arms passed the Claude and Codex cases. ${link("https://github.com/agentydragon/ducktape/blob/e00c429eff17e7a6c049947bb381768e02a7a15a/devinfra/ci/debug/system_test_feedback/kvm_pilots_2026_11_22.md", "Decision record and BuildBuddy runs")}<//>
+</section>
+<section id="morning-workloads">
+ <${Title} order=${2}>Which tests still determine the finish?<//>
+ <${Text} my="sm">The median was 9m38s for 17 green Agentplane backend edits and 4m57s for 16 green frontend edits. Test & Build finished last on every green head in both groups.<//>
+ ${table(
+   ["Changed PR files", "Sample", "Green", "Median", "p90"],
+   Object.entries(morning.groups).map(([name, g]) => [
+     name,
+     g.n,
+     g.green,
+     time(g.median_s),
+     g.green >= 10 ? time(g.p90_s) : "—",
+   ]),
+   470,
+ )}
+ <${Text} mt="md"><strong>Check which browser suite finishes last after the Action harness split.</strong> On the file-disclosure change, 28 of 36 reported test targets had fresh work. The last policy shard finished four seconds after the last Action shard. The shared UI files in that change also feed the routed UI. The split in #18979 verified separate harness dependencies and matched 534 cases and 3,035 screenshot identities. Compare Action-only edits with shared-UI edits before assigning a PR-time saving. ${pr(18824)} · ${build(morning.examples[0].invocation, "Browser timings")} · ${pr(18979)}<//>
+ <${Text} mt="md"><strong>Trace the last system test on backend changes.</strong> The mixed App and Dispatcher change in #18943 reached green in 11m45s. All 148 reported test targets had fresh work. Firecracker finished last, 21s before the required check. The native Pod storage split subsequently removed the App session handler dependency from workspace replacement and its manual recovery control. The reverse-dependency probe still selected the required VM test. Only required work on the critical path can move the PR finish. ${pr(18943)} · ${build(morning.examples[1].invocation, "System-test timings")} · ${pr(18984)} · ${build("285c5263-bda5-416f-9682-7d0a4b42580b", "Selection probe")}<//>
+ <${Accordion} mt="md" variant="contained"><${Accordion.Item} value="coverage"><${Accordion.Control}>Sampling and comparison limits<//><${Accordion.Panel}>
+ <${Text} size="sm">Of 418 pull-request CI runs, 228 had a fork or unavailable repository and 97 lacked a qualifying devel association. The remaining 93 distinct heads included 67 runs recovered by an exact PR head SHA and branch match. We selected 72 by a deterministic hash of the head SHA. Full PR paths determined each group only when the SHA and file count matched the API response. Fourteen heads were unclassified, including all nine cancellations. One green head recovered from a failed Test & Build attempt. Percentiles use nearest rank among green heads, with p90 shown for groups of at least ten. Push and subscriber notification times are unobserved.<//>
+ <${Text} size="sm" mt="sm">The browser and backend examples predate the relevant selection changes. #18984 merged after the sample window. The prior week used a different PR association rule and equal daily sample sizes. Differences between these cohorts cannot isolate the effect of a merge. ${pr(19006)} covers native setup in additional manual VM probes.<//>
+ <//><//><//>
+</section>
 <section id="weekly-trend">
- <${Title} order=${2}>Daily required-check feedback<//>
+ <${Title} order=${2}>15–21 November · daily required-check feedback<//>
+ <${Text} my="sm">Among 245 heads sampled at 35 per day, 175 reached required green, 48 ended canceled and 22 failed. Five reached green on a later attempt. Median 3m04s, p90 8m57s among green heads. The following weekly breakdowns use this earlier cohort.<//>
  <${Box} role="img" aria-label="Median and p90 minutes among green heads by UTC day">
  <${LineChart} h=${230} data=${Object.entries(fresh.daily).map(([date, r]) => ({ day: date.slice(-2), Median: r.median_s / 60, p90: r.p90_s / 60 }))} dataKey="day" withLegend curveType="linear" yAxisLabel="Minutes" yAxisProps=${{ tickFormatter: (v) => String(v) }} series=${[
    { name: "Median", color: "blue.6" },

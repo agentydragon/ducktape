@@ -189,8 +189,11 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${"Across 245 heads sampled on 15\u201321 November, 175 reached required green. Median 3m04s, p90 8m57s. Backend retries, browser shard placement and a Nix bootstrap failure explain different parts of the tail."}
-                ${" The KVM worker pool now admits "}
+                ${"On 22 November, 63 of 72 sampled heads reached required green. Median 5m16s, p90 11m45s. Two KVM pilots closed after both candidates lengthened their measured finish times."}
+                <${Anchor} href="latency/#kvm-pilot-results"
+                  >KVM pilot results<//
+                >
+                ${" · The KVM worker pool now admits "}
                 <${Anchor} href="latency/#kvm-placement">wyrm2<//>
                 ${"."} ${" The "}<${Anchor} href="latency/#kvm-work-disk"
                   >work-disk comparison<//
