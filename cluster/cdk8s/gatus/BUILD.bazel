@@ -30,7 +30,7 @@ py_library(
         "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/grocy:app",
-        "//cluster/cdk8s/litellm:proxy",
+        "//cluster/cdk8s/litellm:endpoint",
         "//cluster/cdk8s/matrix",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/monitoring:loki",

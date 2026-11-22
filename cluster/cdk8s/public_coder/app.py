@@ -36,6 +36,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.public_coder import config as public_coder_config, egress as public_coder_egress, egress_proxy_url
@@ -66,7 +67,7 @@ _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
 _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
-_NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
+_NO_PROXY = f"127.0.0.1,localhost,{litellm.SERVICE.host},{litellm.SERVICE.fqdn}"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
@@ -77,7 +78,7 @@ def chart(app: App) -> Chart:
         chart_name=_CONFIG_MAP_NAME,
         configmap_name=_CONFIG_MAP_NAME,
         namespace=NAMESPACE,
-        data={"openclaw.json5": json_config(public_coder_config.config())},
+        data={"openclaw.json5": json_config(public_coder_config.config(litellm_url=litellm.API_BASE))},
     )
 
 
@@ -473,7 +474,7 @@ def _network_policies(scope: Construct) -> None:
                     ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
+                    to=[_peer(litellm.NAMESPACE, litellm.SERVICE.pods.selector)], ports=[_tcp(litellm.SERVICE.pod_port)]
                 ),
             ],
         ),

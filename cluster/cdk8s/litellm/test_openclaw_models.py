@@ -9,7 +9,7 @@ from model_catalog.catalog import GPT6_2_ASTRA_RESPONSES
 
 
 def _public_coder_agent_models() -> list[dict]:
-    providers = public_coder_config.config()["models"]["providers"]
+    providers = public_coder_config.config(litellm_url="http://proxy.test")["models"]["providers"]
     return [model for provider in providers.values() for model in provider["models"]]
 
 
@@ -35,7 +35,7 @@ def test_public_coder_rejects_unknown_reasoning_capability() -> None:
 
 
 def test_public_coder_memory_model_is_a_served_embedding_route() -> None:
-    model = public_coder_config.config()["memory"]["search"]["model"]
+    model = public_coder_config.config(litellm_url="http://proxy.test")["memory"]["search"]["model"]
     served = _litellm_models()
 
     assert model in served

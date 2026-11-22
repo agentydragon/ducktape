@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -75,7 +76,7 @@ class LlmIngress(Construct):
         id: str,
         env: Environment,
         *,
-        litellm_url: str = "http://litellm.litellm.svc.cluster.local:4000",
+        litellm_url: str = litellm.API_BASE,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
@@ -204,7 +205,11 @@ class LlmIngress(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
+                    {
+                        "k8s:io.kubernetes.pod.namespace": litellm.NAMESPACE,
+                        **{f"k8s:{key}": value for key, value in litellm.SERVICE.pods.labels},
+                    },
+                    litellm.SERVICE.pod_port,
                 ),
             ],
         )
