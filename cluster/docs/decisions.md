@@ -244,9 +244,11 @@ barman-cloud backups and continuous WAL archiving with a 30-day retention policy
 They are stored in SeaweedFS in the same OVH failure domain; offsite backup remains
 open in <plan.md>.
 
-All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
-in the same `tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`).
-PG advisory locks auto-release on runner-pod death — no more stale-Lease problem.
+Crossplane's OpenTofu provider manages state for the migrated GitOps roots. Its
+Workspaces and the remaining tofu-controller runners use the same PostgreSQL backend.
+Reflector mirrors the credentials into `flux-system`. Each GitOps root keeps its
+schema through a controller handoff or module rename. Infra-drift plans the bootstrap
+root against its existing `main` schema.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
