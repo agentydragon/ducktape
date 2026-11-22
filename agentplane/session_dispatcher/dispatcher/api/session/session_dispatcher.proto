@@ -57,6 +57,11 @@ service SessionDispatcher {
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
   }
+  // Ordered full receipts for 1-16 command IDs in one authorized retained Session.
+  // A returned Dispatch remains readable across Environment deletion while its Session is retained.
+  rpc BatchGetDispatches(BatchGetDispatchesRequest) returns (BatchGetDispatchesResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/dispatches:batchGet"};
+  }
   // Current and retained deleted Dispatches of a Session or Sandbox, followed by versioned changes.
   // CaughtUp checkpoints may repeat; every frame carries a resumable position. No token requests
   // a fresh snapshot. Expired deletion coverage returns OUT_OF_RANGE: surface the loss and resync.
@@ -255,14 +260,32 @@ message ListDispatchesResponse {
   repeated Dispatch dispatches = 1;  // oldest first
 }
 
+message BatchGetDispatchesRequest {
+  string session_id = 1;
+  // 1-16 distinct nonempty command IDs.
+  repeated string command_ids = 2;
+}
+
+message BatchGetDispatchesResponse {
+  message Result {
+    string command_id = 1;
+    oneof result {
+      Dispatch dispatch = 2;
+      // No current row in this Session. Older delivery evidence may have expired.
+      google.protobuf.Empty not_found = 3;
+    }
+  }
+  // One result per requested ID in the request's order. Includes original commands on hits.
+  repeated Result results = 1;
+}
+
 message ListSessionDispatchesRequest {
   string session_id = 1;
   // 1-100 rows. Zero selects 25.
   uint32 limit = 2;
   string page_token = 3;
-  // Optional exact membership check against the same retained rows as an ordinary page.
-  // Supply 1-16 distinct command IDs without limit or page_token to verify storage retention.
-  repeated string verify_retained_command_ids = 4;
+  reserved 4;
+  reserved "verify_retained_command_ids";
 }
 
 message ListSessionDispatchesResponse {
@@ -277,9 +300,8 @@ message ListSessionDispatchesResponse {
     RETAINED_DISPATCH_ROWS = 1;
   }
   Coverage coverage = 3;
-  // Present only for an exact membership check. True when the database protects the returned
-  // Session rows from both current and previous Dispatcher writers after Environment deletion.
-  optional bool retains_commands_after_environment_deletion = 4;
+  reserved 4;
+  reserved "retains_commands_after_environment_deletion";
 }
 
 message CancelDispatchRequest {

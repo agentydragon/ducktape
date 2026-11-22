@@ -626,26 +626,33 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	if len(first.Dispatches) != 1 || first.Dispatches[0].GetCommandId() != "test-third" || first.NextPageToken == "" {
 		t.Fatalf("first receipt page: %v", first)
 	}
-	if first.RetainsCommandsAfterEnvironmentDeletion != nil {
-		t.Fatalf("ordinary page unexpectedly reported retention capability: %v", first)
+	if _, err := enqueueWithSession(t, queueStore, ctx, uuid.NewString(), "foreign-env", uuid.NewString(), input("foreign", "private"), nil); err != nil {
+		t.Fatal(err)
 	}
-	verify := &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, VerifyRetainedCommandIds: []string{"test-first", "absent"}}
-	verifyMembership := func(wantProtected bool) {
-		t.Helper()
-		page, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), verify)
-		if err != nil || page.RetainsCommandsAfterEnvironmentDeletion == nil ||
-			page.GetRetainsCommandsAfterEnvironmentDeletion() != wantProtected ||
-			len(page.Dispatches) != 1 || page.Dispatches[0].CommandId != "test-first" || page.NextPageToken != "" {
-			t.Fatalf("retention membership, protection %v: %v, %v", wantProtected, page, err)
+	batch := &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: []string{"foreign", "test-first", "test-third"}}
+	values, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), batch)
+	if err != nil || len(values.GetResults()) != 3 || values.Results[0].CommandId != "foreign" || values.Results[0].GetNotFound() == nil {
+		t.Fatalf("partial batch: %v, %v", values, err)
+	}
+	for i, id := range batch.CommandIds[1:] {
+		row := values.Results[i+1]
+		if row.CommandId != id || row.GetDispatch().GetReceiptVersion() <= 0 || !proto.Equal(row.GetDispatch().GetCommand(), input(id, "test retained text")) {
+			t.Fatalf("ordered batch command %s: %v", id, row)
 		}
 	}
-	verifyMembership(true)
 	if _, err := queueStore.DB.ExecContext(ctx, "ALTER TABLE dispatch DISABLE TRIGGER keep_session_command_on_environment_deletion"); err != nil {
 		t.Fatal(err)
 	}
-	verifyMembership(false)
-	if _, err := peers.otherIdentity.ListSessionDispatches(authoritySVIDContext(t), verify); status.Code(err) != codes.NotFound {
-		t.Fatalf("cross-owner retention lookup: %v", err)
+	if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), batch); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("unprotected database returned batch: %v", err)
+	}
+	if _, err := peers.otherIdentity.BatchGetDispatches(authoritySVIDContext(t), batch); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-owner lookup: %v", err)
+	}
+	for _, ids := range [][]string{nil, {""}, {"a", "a"}, make([]string, 17)} {
+		if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: ids}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid batch: %v", err)
+		}
 	}
 	for _, session := range []string{id, "test-no-such-session"} {
 		_, err := peers.otherIdentity.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: session})
@@ -654,11 +661,6 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 		}
 	}
 	for _, req := range []*dispatcherpb.ListSessionDispatchesRequest{
-		{SessionId: id, VerifyRetainedCommandIds: []string{""}},
-		{SessionId: id, VerifyRetainedCommandIds: []string{"a", "a"}},
-		{SessionId: id, VerifyRetainedCommandIds: make([]string, 17)},
-		{SessionId: id, Limit: 1, VerifyRetainedCommandIds: []string{"a"}},
-		{SessionId: id, PageToken: first.NextPageToken, VerifyRetainedCommandIds: []string{"a"}},
 		{SessionId: id, Limit: 101},
 		{SessionId: id, PageToken: "invalid"},
 		{SessionId: "other-session", PageToken: first.NextPageToken},
@@ -704,5 +706,34 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	fresh := page("", 0)
 	if len(fresh.Dispatches) != 3 || fresh.Dispatches[0].GetCommandId() != "test-later" || fresh.NextPageToken != "" || fresh.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
 		t.Fatalf("fresh retained-row enumeration: %v", fresh)
+	}
+}
+
+func TestBatchGetDispatchesRetainsOriginalsAcrossEnvironmentDeletionAndLimitsResponseBytes(t *testing.T) {
+	ctx := t.Context()
+	queueStore := testStore(t, 5)
+	id, uid := uuid.NewString(), uuid.NewString()
+	text := strings.Repeat("x", 2<<20)
+	for _, cmd := range []string{"one", "two"} {
+		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-batch-env", uid, input(cmd, text), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := queueStore.EndSandbox(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	peers := authorityClients(t, queueStore, &authorityInventory{sandboxErr: errors.New("inventory down")}, nil)
+	req := &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: []string{"one", "two"}}
+	if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), req); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("batch byte limit: %v", err)
+	}
+	req.CommandIds = []string{"two"}
+	result, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), req)
+	if err != nil || len(result.GetResults()) != 1 {
+		t.Fatalf("retained command read: %v", err)
+	}
+	row := result.Results[0].GetDispatch()
+	if row.GetSessionId() != id || row.GetSandboxUid() != uid || row.GetCommand().GetSubmitInput().GetText() != text || row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED {
+		t.Fatal("did not recover the original and final delivery outcome")
 	}
 }
