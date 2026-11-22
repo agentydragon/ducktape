@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import type { z } from "zod";
 
 import type { ArgumentsPreview, CallPreview } from "./entry";
@@ -7,6 +7,13 @@ import type { ResultPreview } from "./result_entry";
 export interface ActionOutcome {
   label: string;
   failed: boolean;
+}
+
+export interface ExpandedCardDecisionProps {
+  args: unknown;
+  requestId: string;
+  buttons: ReactNode;
+  fallback: ReactNode;
 }
 
 export interface ActionPresentation {
@@ -37,6 +44,8 @@ export interface ActionPresentation {
   };
   /** A custom view does not grant decision buttons. The Action checks whether the current card shows the complete call. */
   offersCardDecisionButtons?: (args: unknown, expanded: boolean) => boolean;
+  /** When the opened preview depends on live data, use that same lookup to gate the decisions. */
+  expandedCardDecision?: ComponentType<ExpandedCardDecisionProps>;
   /** Whether this invocation's compact card has an expanded version; omitted, it does. Return false only when the
       closed card already shows everything the opened one would, so arguments the schemas reject keep it for their
       recorded-data view. */

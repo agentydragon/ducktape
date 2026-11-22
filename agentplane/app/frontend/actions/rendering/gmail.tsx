@@ -1,10 +1,10 @@
-import { Stack, Text } from "@mantine/core";
-import type { JSX } from "react";
+import { Code, Stack, Text } from "@mantine/core";
+import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
 import { TextBlock } from "../../ui/text_block";
 import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
-import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps } from "./entry";
+import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps, useCompactPane } from "./entry";
 import {
   draftHref,
   EmailField,
@@ -20,7 +20,7 @@ import { draftResult, mailReadRenderers, DraftTarget, messageHeader } from "./gm
 import { labelRenderers } from "./gmail/labels";
 import { filterRenderers } from "./gmail/filters";
 import { useIntegrationPreviewNames } from "./integration_previews";
-import { type ActionPresentation } from "./presentation";
+import type { ActionPresentation, ExpandedCardDecisionProps } from "./presentation";
 import { defineResultPreview, type ResultPreviewProps } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -210,18 +210,25 @@ function LabelChanges({ add, remove }: { add?: string[] | null; remove?: string[
 
 function ThreadsRelabel({ args, requestId }: PreviewProps<z.infer<typeof modifyThreadLabelsArguments>>): JSX.Element {
   const names = useIntegrationPreviewNames("gmail", requestId);
+  const compact = useCompactPane();
   return (
     <Stack gap={4}>
       <LabelChanges add={args.add} remove={args.remove} />
       {args.add?.length ? (
         <Text size="sm" c="dimmed">
-          Creates any missing labels in Add.
+          Creates any missing labels in Add and shows them in the Gmail sidebar and message lists.
         </Text>
       ) : null}
       {!args.add?.length && !args.remove?.length && <Text size="sm">No label changes specified.</Text>}
       {args.thread_ids.map((id, index) => (
         <Text size="sm" key={index}>
           <ThreadTarget id={id} subject={names?.get(id)} />
+          {!compact && names?.get(id) && (
+            <>
+              {" "}
+              · <Code>{id}</Code>
+            </>
+          )}
         </Text>
       ))}
     </Stack>
@@ -235,8 +242,24 @@ const relabelResult = z.object({
   removed: z.array(labelRef),
 });
 const relabelPreview = definePreview(modifyThreadLabelsArguments, ThreadsRelabel);
+
+function RelabelDecision({ args, requestId, buttons, fallback }: ExpandedCardDecisionProps): ReactNode {
+  const parsed = modifyThreadLabelsArguments.safeParse(args);
+  const thread = parsed.success && parsed.data.thread_ids.length === 1 ? parsed.data.thread_ids[0] : undefined;
+  const names = useIntegrationPreviewNames("gmail", thread === undefined ? undefined : requestId);
+  if (thread === undefined || !names?.get(thread)?.trim() || !parsed.success) return fallback;
+  const labels = [...(parsed.data.add ?? []), ...(parsed.data.remove ?? [])];
+  const complete =
+    labels.length > 0 &&
+    labels.length <= 4 &&
+    new Set(labels).size === labels.length &&
+    labels.every((label) => label.length <= 80 && !!label.trim() && !/[,\r\n]/.test(label));
+  return complete ? buttons : fallback;
+}
+
 const relabelPresentation: ActionPresentation = {
   fallbackLabel: "Change Gmail thread labels",
+  expandedCardDecision: RelabelDecision,
   pane: {
     collapsed: definePreview(modifyThreadLabelsArguments, function RelabelSummary(props) {
       const { args } = props;

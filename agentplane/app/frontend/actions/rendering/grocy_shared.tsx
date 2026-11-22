@@ -45,14 +45,18 @@ export function GrocyReview({ requestId, children }: { requestId?: string; child
 }
 
 export function useGrocyReferences(): ReadonlyMap<string, GrocyReferenceSummary> | undefined {
-  const requestId = useContext(review);
-  return useQuery({
+  return useGrocyRequestReferences(useContext(review));
+}
+
+export function useGrocyRequestReferences(requestId?: string): ReadonlyMap<string, GrocyReferenceSummary> | undefined {
+  const query = useQuery({
     queryKey: ["action-integration-preview", "grocy_sf", requestId],
     queryFn: ({ signal }) => getGrocyReferenceSummaries(requestId ?? "", signal),
     enabled: Boolean(requestId),
     retry: false,
     staleTime: 30_000,
-  }).data;
+  });
+  return query.isSuccess ? query.data : undefined;
 }
 
 function GrocyReference({ kind, id }: { kind: GrocyReferenceKind; id: number }): JSX.Element {

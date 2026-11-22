@@ -12,7 +12,7 @@ import {
 } from "../../../action_service/api/contracts/action_service_pb";
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { mount, request, send, unmountLast } from "./testing/harness";
+import { answerApi, mount, request, send, unmountLast } from "./testing/harness";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
@@ -340,6 +340,129 @@ it("shows draft decisions only after opening the complete new draft", async () =
   expect(preview?.textContent).toContain("Last line");
   expect(preview?.textContent).toContain("archive@example.test");
   expect(preview?.querySelector('button[aria-label^="Approve "]')).not.toBeNull();
+});
+
+const expandedDecisionCases: {
+  group: string;
+  name: string;
+  endpoint: string;
+  args: NonNullable<ActionRequest["arguments"]>;
+  bulk: NonNullable<ActionRequest["arguments"]>;
+  hidden: NonNullable<ActionRequest["arguments"]>;
+  response: unknown;
+  partial: unknown;
+  completeText: string[];
+  partialText: string;
+}[] = [
+  {
+    group: "gmail",
+    name: "threads_modify_labels",
+    endpoint: "gmail-thread-summaries",
+    args: { thread_ids: ["thread-123"], add: ["Reviewed"], remove: ["Needs review"] },
+    bulk: { thread_ids: ["thread-123", "thread-456"], add: ["Reviewed"] },
+    hidden: { thread_ids: ["thread-123"], add: ["Needs review, Reviewed"] },
+    response: {
+      threads: [
+        { threadId: "thread-123", subject: "Deployment review" },
+        { threadId: "thread-456", subject: "Quarterly review" },
+      ],
+    },
+    partial: { threads: [{ threadId: "thread-456", subject: "Unrelated thread" }] },
+    completeText: ["Deployment review", "Add Reviewed", "Remove Needs review"],
+    partialText: "thread-123",
+  },
+  {
+    group: "grocy_sf",
+    name: "products_edit",
+    endpoint: "grocy-reference-summaries",
+    args: { items: [{ product: 2, name: "Rolled oats", location: 5 }] },
+    bulk: {
+      items: [
+        { product: 2, location: 5 },
+        { product: 3, name: "Rice" },
+      ],
+    },
+    hidden: { items: [{ product: 2, stock_qu: 6 }] },
+    response: {
+      references: [
+        { key: "product_edits/2", name: "Oats", productEditCurrent: { locationId: "4", stockUnitId: "7" } },
+        { key: "product_edits/3", name: "Brown rice", productEditCurrent: {} },
+        { key: "locations/4", name: "Cupboard" },
+        { key: "locations/5", name: "Pantry" },
+        { key: "quantity_units/6", name: "Kilogram" },
+        { key: "quantity_units/7", name: "Bag" },
+      ],
+    },
+    partial: {
+      references: [
+        { key: "product_edits/2", name: "Oats", productEditCurrent: { locationId: "4" } },
+        { key: "locations/4", name: "Cupboard" },
+      ],
+    },
+    completeText: ["Oats → Rolled oats", "Cupboard → Pantry"],
+    partialText: "Cupboard → Location #5",
+  },
+];
+
+it.each(expandedDecisionCases)("keeps $group decisions behind the fully resolved expanded preview", async (example) => {
+  const container = await mount(
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
+  );
+  const { args, bulk, hidden, response, partial } = example;
+  const action = create(ActionIdentitySchema, { group: example.group, name: example.name });
+  const fixtures = [args, args, args, bulk, hidden, { ...args, unknown: true }].map((argumentsValue, index) => ({
+    ...request(ActionState.DECISION_PENDING, index + 1),
+    action,
+    arguments: argumentsValue,
+  }));
+  let completeLookup!: (value: unknown) => void;
+  const pendingLookup = new Promise<unknown>((resolve) => {
+    completeLookup = resolve;
+  });
+  const sent = answerApi(({ path }) => {
+    if (!path.endsWith(example.endpoint)) return undefined;
+    const fixtureIndex = fixtures.findIndex(({ id }) => path.includes(id));
+    return [pendingLookup, Response.json({}, { status: 503 }), partial, response, response][fixtureIndex];
+  });
+  await send(fixtures);
+
+  const cards = [...container.querySelectorAll(".agentplane-actions-sidebar-request")];
+  expect(cards).toHaveLength(fixtures.length);
+  function decision(card: Element) {
+    return card.querySelector('button[aria-label^="Approve "]');
+  }
+  async function open(card: Element) {
+    const toggle = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+    if (!toggle) throw new Error("missing action disclosure");
+    await act(async () => toggle.click());
+  }
+  const [matching, failed, incomplete, multiple, undisplayed, unknown] = cards as [
+    Element,
+    Element,
+    Element,
+    Element,
+    Element,
+    Element,
+  ];
+  expect(decision(matching)).toBeNull();
+  await open(matching);
+  expect(decision(matching)).toBeNull();
+  completeLookup(response);
+  await vi.waitFor(() => expect(decision(matching)).not.toBeNull());
+  for (const text of example.completeText) expect(matching.textContent).toContain(text);
+
+  for (const card of [failed, incomplete, multiple, undisplayed, unknown]) {
+    await open(card);
+    expect(decision(card)).toBeNull();
+  }
+  await vi.waitFor(() => {
+    expect(sent.filter(({ path }) => path.endsWith(example.endpoint))).toHaveLength(5);
+  });
+  await open(incomplete);
+  await vi.waitFor(() => expect(incomplete.textContent).toContain(example.partialText));
+  expect(decision(incomplete)).toBeNull();
 });
 
 it("shows the first two pending requests in the closed-sidebar strip and the rest behind its expansion", async () => {

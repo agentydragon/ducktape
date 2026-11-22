@@ -2322,13 +2322,13 @@ EXAMPLES = (
     ActionExample(
         "gmail",
         "threads_modify_labels",
-        {"thread_ids": ["thread-123", "thread-456"], "add": ["Reviewed"], "remove": ["Needs review"]},
+        {"thread_ids": ["thread-123"], "add": ["Reviewed"], "remove": ["Needs review"]},
         {
-            "thread_count": 2,
+            "thread_count": 1,
             "added": [{"id": "Label_17", "name": "Reviewed"}],
             "removed": [{"id": "Label_14", "name": "Needs review"}],
         },
-        "Updated labels on 2 threads.",
+        "Updated labels on 1 thread.",
         live_preview=(
             "gmail-thread-summaries",
             {"threads": [{"threadId": "thread-123", "subject": "Deployment review"}]},
@@ -2454,7 +2454,7 @@ EXAMPLES = (
     ActionExample(
         "grocy_sf",
         "products_edit",
-        {"items": [{"product": 2, "name": "Rolled oats", "location": "Pantry", "clear_fields": ["description"]}]},
+        {"items": [{"product": 2, "name": "Rolled oats", "location": 5, "clear_fields": ["description"]}]},
         [{"kind": "ok", "object_id": 2}],
         "1 product edited",
         live_preview=(
@@ -2467,6 +2467,7 @@ EXAMPLES = (
                         "productEditCurrent": {"locationId": "4", "description": "Keep dry"},
                     },
                     {"key": "locations/4", "name": "Cupboard"},
+                    {"key": "locations/5", "name": "Pantry"},
                 ]
             },
             "Cupboard",
@@ -3257,9 +3258,11 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("docs-read")
         await expect(sidebar).to_contain_text("Send inbox messages")
     elif example.key == "gmail.threads_modify_labels":
-        await expect(sidebar).to_contain_text("2 threads")
+        await expect(sidebar).to_contain_text("Deployment review")
         await expect(sidebar).to_contain_text("Reviewed")
         await expect(sidebar).to_contain_text("Needs review")
+    if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
     if example.key in {
         "grocy_sf.locations_create",
         "grocy_sf.product_groups_create",
@@ -3275,6 +3278,8 @@ async def test_action_presentations(
     if example.compact_card_expands:
         await disclosure.click()
         await _expect_live_preview(sidebar, example)
+        if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)

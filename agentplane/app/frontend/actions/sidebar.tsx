@@ -8,6 +8,7 @@ import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_hand
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
+  renderExpandedCardDecision,
   renderActionLabel,
   renderPaneCollapsed,
   renderPaneOpened,
@@ -75,14 +76,15 @@ export function PendingActionList({
         const collapsedPreview = renderPaneCollapsed(action, args, request.id);
         const openedPreview = renderPaneOpened(action, args, request.id);
         const showRequestTitle = shouldRenderRequestTitle(action, args, request.title, actionLabel);
-        const decision = actionOffersCardDecisionButtons(action, args, expanded) ? (
+        const buttons = (
           <ActionDecisionButtons
             size="xs"
             deciding={actions.deciding === request.id}
             title={request.title}
             onDecide={(verdict) => actions.decide(request, verdict)}
           />
-        ) : null;
+        );
+        const decision = actionOffersCardDecisionButtons(action, args, expanded) ? buttons : null;
         const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
         const navigationState = {
           returnTo: {
@@ -152,11 +154,17 @@ export function PendingActionList({
                   openedPreview
                 )}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
-                  {decision ?? (
-                    <Text size="xs" c="dimmed">
-                      Decisions require full review.
-                    </Text>
-                  )}
+                  {decision ??
+                    renderExpandedCardDecision(action, {
+                      args,
+                      requestId: request.id,
+                      buttons,
+                      fallback: (
+                        <Text size="xs" c="dimmed">
+                          Decisions require full review.
+                        </Text>
+                      ),
+                    })}
                   <Tooltip label="View full details" withArrow>
                     <Link
                       className="agentplane-actions-sidebar-details"

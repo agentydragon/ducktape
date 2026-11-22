@@ -16,7 +16,7 @@ export function useIntegrationPreviewNames(
     retry: false,
     staleTime: 30_000,
   });
-  return query.data;
+  return query.isSuccess ? query.data : undefined;
 }
 
 export function LiveResourceLink({
