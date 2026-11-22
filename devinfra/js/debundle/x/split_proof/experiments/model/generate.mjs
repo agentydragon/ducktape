@@ -205,6 +205,37 @@ export function generatedOpaqueCase(seed) {
   };
 }
 
+// Build a prototype chain inside one opaque statement. Registers 0 and 1 are reserved
+// by the statement protocol. Every request appends one result register.
+export function generatedObjectRequestCase(seed) {
+  const depth = 1 + ((seed >>> 1) % 4);
+  const fromBase = seed % 2 === 0;
+  const n = 1 + ((seed >>> 0) % 97);
+  const steps = fromBase ? [["readVar", 2]] : [["newObject"]];
+  let expression = fromBase ? "base" : "{}";
+  let root = "made";
+  for (let i = 0; i < depth; i++) {
+    steps.push(["newObject", ["r", steps.length + 1]]);
+    expression = `Object.create(${expression})`;
+    root = `Object.getPrototypeOf(${root})`;
+  }
+  steps.push(["initVar", 0, ["r", steps.length + 1]]);
+  return {
+    name: `opaque object allocation chain of depth ${depth} from ${expression} seed ${seed}`,
+    source: `
+      const base = { inherited: ${n} };
+      const [made] = [${expression}];
+      const parent = Object.getPrototypeOf(made);
+      console.log(made.inherited, made === parent);
+      parent.added = ${n + 1};
+      console.log(made.added);
+      console.log(${fromBase ? `${root} === base` : `Object.getPrototypeOf(${root}) === Object.getPrototypeOf({})`});
+    `,
+    scripts: { "1/0": steps },
+    expectedOutput: [`${fromBase ? n : "undefined"} false`, String(n + 1), "true"],
+  };
+}
+
 // Each member renders both its JavaScript body and the requests needed to execute it.
 // The observation must call back into modeled JavaScript with the live operands.
 function observedClassMember(signature, role, arity, value, capture, finish) {

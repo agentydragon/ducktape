@@ -28,6 +28,8 @@ random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 | Opaque statements and function bodies                             | [`opaque_cases.mjs`](opaque_cases.mjs): binding/property access, callbacks, explicit throws, allocation, construction, engine-error propagation        | Opaque parameter destructuring calls a captured model function, returning normally or throwing into a model catch.                                   |
 | Opaque closure-only moves                                         | `opaque_cases.mjs`: constructor closure                                                                                                                | A closure captures an uninitialized binding, crosses an independent declaration, and is invoked after initialization. Both callback endings execute. |
 
+Generated opaque allocations build prototype chains of varying depths from a fresh ordinary object or a supplied handle, then observe inherited writes and prototype identity.
+
 Flat, nonempty `var` object patterns with static keys and identifier targets use the
 ordinary property-read interpreter. The model keeps the RHS value through all reads,
 including getters and exceptions, and hoists the target bindings. The objects generator
