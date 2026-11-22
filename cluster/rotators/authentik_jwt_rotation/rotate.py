@@ -277,10 +277,6 @@ def write_k8s_secret(out: K8sSecretOutput, token: str, exp_epoch: int) -> None:
     write_sops_yaml(path=out.path, document=build_secret_manifest(out, token, exp_epoch))
 
 
-def _output_paths(rotation: Rotation) -> list[Path]:
-    return [rotation.sops_file, rotation.k8s_secret.path] if rotation.k8s_secret else [rotation.sops_file]
-
-
 def main(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="rotations.yaml")],
     github_pat_file: Annotated[Path, typer.Option("--github-pat-file")] = Path("/var/run/secrets/github-pat/token"),
@@ -292,30 +288,30 @@ def main(
     enter_sparse_checkout(
         Path("/tmp/repo"),
         github_remote(config.github_repo, github_pat),
-        [config.sops_config, *(path for rotation in config.rotations for path in _output_paths(rotation))],
+        [config.sops_config, *(path for rotation in config.rotations for path in rotation.output_paths)],
     )
 
     # Isolate entries: one broken rotation must not starve the others (a bad
     # entry otherwise stalls every token in the cluster until someone notices).
     # Failures still fail the Job at the end, after healthy entries commit.
-    rotated: list[str] = []
+    rotated: list[Rotation] = []
     failed: list[str] = []
     with httpx.Client(timeout=30) as client:
         for rotation in config.rotations:
             try:
                 if rotate_one(client, rotation, config):
-                    rotated.append(rotation.name)
+                    rotated.append(rotation)
             except Exception:
                 logger.exception("%s: rotation failed; continuing with remaining entries", rotation.name)
                 failed.append(rotation.name)
 
     if rotated:
         push_outputs(
-            (path for rotation in config.rotations if rotation.name in rotated for path in _output_paths(rotation)),
+            (path for rotation in rotated for path in rotation.output_paths),
             author_name=config.git_author_name,
             author_email=config.git_author_email,
             subject="authentik JWTs",
-            names=rotated,
+            names=(rotation.name for rotation in rotated),
         )
     else:
         logger.info("no rotations needed this cycle")
