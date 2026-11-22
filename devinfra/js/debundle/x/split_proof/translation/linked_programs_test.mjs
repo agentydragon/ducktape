@@ -287,9 +287,8 @@ function eagerProvider() {
   ]);
 }
 
-// Execute the conditional during module initialization so certification exercises the
-// interpreter. The Node observation independently checks which branch supplied the value.
-function assertConditionalSplit(name, source, expected) {
+// Move the first declaration to its own module and observe the result exported by the entry.
+function workerSplit(name, source) {
   const dir = path.join(root, name);
   const files = prepare(dir, {
     source,
@@ -297,28 +296,36 @@ function assertConditionalSplit(name, source, expected) {
     spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] }, order: ["worker.mjs"] },
   });
   const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
+  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
+}
+
+function assertWorkerResult(name, source, expected) {
+  const { files, out, verdict, log } = workerSplit(name, source);
+  assert.equal(verdict.status, "certified", `${name}: ${log}`);
   assert.equal(verdict.guarantee, "normal-completion", log);
   for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
     assert.deepEqual(observe(file, "result"), { result: expected }, name);
   }
 }
 
-for (const [seed, value] of [0, "taken", "", 3].entries()) {
-  const selected = literal(seed + 30);
-  const skipped = call(arrow([], block([throws(literal(seed))])));
-  const choose = conditional(literal(value), value ? selected : skipped, value ? skipped : selected);
-  const source = program([
-    variable("const", "worker", arrow([], choose)),
+function observedProgram(initializer, result) {
+  return program([
+    variable("const", "worker", initializer),
     {
       type: "ExportNamedDeclaration",
-      declaration: variable("const", "result", call(id("worker"))),
+      declaration: variable("const", "result", result),
       specifiers: [],
       source: null,
     },
   ]);
-  assertConditionalSplit(`generated-conditional-${seed}`, source, seed + 30);
+}
+
+for (const [seed, value] of [0, "taken", "", 3].entries()) {
+  const selected = literal(seed + 30);
+  const skipped = call(arrow([], block([throws(literal(seed))])));
+  const choose = conditional(literal(value), value ? selected : skipped, value ? skipped : selected);
+  const source = observedProgram(arrow([], choose), call(id("worker")));
+  assertWorkerResult(`generated-conditional-${seed}`, source, seed + 30);
 }
 
 // The temporal dead zone throws from the test and from the selected arm respectively.
@@ -331,7 +338,42 @@ for (const [name, expr] of [
     try { return ${expr}; let later; } catch { return 7; }
   };
   export const result = worker();`;
-  assertConditionalSplit(`conditional-abrupt-${name}`, source, 7);
+  assertWorkerResult(`conditional-abrupt-${name}`, source, 7);
+}
+
+// Generate both operand orders and equality outcomes.
+for (const [index, [operand, tag, expected]] of [
+  [id("undefined"), "undefined", false],
+  [arrow([], literal(0)), "object", true],
+  [literal(null), "object", false],
+  [literal(3), "string", true],
+].entries()) {
+  const type = { type: "UnaryExpression", operator: "typeof", prefix: true, argument: operand };
+  const [left, right] = index % 2 === 0 ? [literal(tag), type] : [type, literal(tag)];
+  const expr = { type: "BinaryExpression", operator: "!=", left, right };
+  assertWorkerResult(`generated-string-inequality-${index}`, observedProgram(expr, id("worker")), expected);
+}
+
+// Different numeric spellings compare by string contents.
+assertWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
+assertWorkerResult(
+  "typeof-local-tdz",
+  'const worker = () => { try { return "undefined" != typeof later; let later; } catch { return 7; } }; export const result = worker();',
+  7
+);
+assertWorkerResult(
+  "typeof-shadowed-host-name",
+  'const window = null; export const result = "undefined" != typeof window;',
+  true
+);
+for (const [name, expr, reason] of [
+  ["mixed-inequality", '"01" != 1', /requires two string operands/],
+  ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
+]) {
+  const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, reason);
+  assert(!existsSync(out));
 }
 
 // Generated aliases, layouts and provider-body shapes exercise the ordinary

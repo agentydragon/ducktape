@@ -144,8 +144,17 @@ export function generateAstBundle(seed, round) {
     const operand = operandExpression(scope, depth);
     // Sample operators separately so adding a value transformation preserves the seed's
     // statement layout, including the write/read and callback mutation witnesses.
-    if (unaryPick(8) !== 0) return operand;
-    return { type: "UnaryExpression", operator: unaryPick(2) ? "!" : "-", prefix: true, argument: operand };
+    const form = unaryPick(8);
+    if (form === 0)
+      return { type: "UnaryExpression", operator: unaryPick(2) ? "!" : "-", prefix: true, argument: operand };
+    if (form === 1) {
+      const type = { type: "UnaryExpression", operator: "typeof", prefix: true, argument: operand };
+      const tags = ["undefined", "number", "string", "boolean", "function", "object"];
+      const tag = { type: "Literal", value: tags[unaryPick(tags.length)] };
+      const [left, right] = unaryPick(2) ? [type, tag] : [tag, type];
+      return { type: "BinaryExpression", operator: "!=", left, right };
+    }
+    return operand;
   }
   function operandExpression(scope, depth) {
     const available = [...scope.values, ...scope.locals];

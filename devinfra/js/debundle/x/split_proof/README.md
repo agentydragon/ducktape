@@ -61,6 +61,8 @@ reachable `.mjs` and `.js` providers as ES modules and copies them alongside the
 Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world.
 In linked programs, a conditional expression evaluates its test once and runs the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes.
 
+Linked expressions support `typeof` on modeled operands. For `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
+
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
 The state includes the heap and captured bindings of exported closures. The proof uses
 a fixed interpreter fuel witness. Insufficient fuel, unsupported syntax or a proof that fails

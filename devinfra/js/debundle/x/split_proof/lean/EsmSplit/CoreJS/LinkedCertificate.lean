@@ -29,6 +29,11 @@ private partial def exprEq : MatchEq Expr
     let ⟨o⟩ ← scalarEq op op'
     let ⟨v⟩ ← exprEq a b
     return ⟨o ▸ v ▸ rfl⟩
+  | .binary op a b, .binary op' a' b' => do
+    let ⟨o⟩ ← scalarEq op op'
+    let ⟨left⟩ ← exprEq a a'
+    let ⟨right⟩ ← exprEq b b'
+    return ⟨o ▸ left ▸ right ▸ rfl⟩
   | .cond c t e, .cond c' t' e' => do
     let ⟨test⟩ ← exprEq c c'
     let ⟨yes⟩ ← exprEq t t'
