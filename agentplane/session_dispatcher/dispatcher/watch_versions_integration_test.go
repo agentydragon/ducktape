@@ -106,7 +106,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	// All source rows are gone before the replacement service starts.
+	// The replacement service reads terminal changes from the retained Session.
 	restarted := startVersionWatch(t, ctx, store.NewStore(queueStore.DB, 5), testWatchHub(t, queueStore), filter, checkpoint.GetResumeToken())
 	var ids []string
 	var deletionToken string
@@ -118,8 +118,8 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 		}
 		row := frame.GetDispatch()
 		ids = append(ids, row.GetCommandId())
-		if row.GetSandbox() != "" || row.GetSandboxUid() != "" {
-			t.Fatalf("deletion receipt contains a Sandbox address: %v", row)
+		if row.GetSandbox() != "test-resume-sandbox" || row.GetSandboxUid() != sandboxUID {
+			t.Fatalf("retained receipt lost its exact Sandbox: %v", row)
 		}
 		want := dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
 		if row.GetCommandId() == "test-resume-b" {
@@ -143,7 +143,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	// A fresh legacy caller still sees retained deletion outcomes without sending a token.
 	fresh := startVersionWatch(t, ctx, queueStore, hub, &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_Sandbox{Sandbox: "test-resume-sandbox"}}, "")
 	for range 3 {
-		if row := fresh.next(t).GetDispatch(); row == nil || row.GetSandboxUid() != "" {
+		if row := fresh.next(t).GetDispatch(); row == nil || row.GetSandboxUid() != sandboxUID {
 			t.Fatalf("fresh Sandbox snapshot omitted retained deletion: %v", row)
 		}
 	}
@@ -244,7 +244,8 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 		WHERE application_name='test-dispatch-retention-reconnect' AND datname=current_database()`).Scan(&terminated); err != nil || !terminated {
 		t.Fatalf("terminate watch listener: %t %v", terminated, err)
 	}
-	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
+	// Model a legacy receipt physically deleted before Session command retention.
+	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id='test-expired-command'"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'"); err != nil {
@@ -305,7 +306,7 @@ func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 	}
 	for replica, watch := range replicas {
 		row := watch.next(t).GetDispatch()
-		if row.GetCommandId() != "test-replicas-command" || row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || row.GetReason() != "sandbox_deleted" || row.GetSandboxUid() != "" {
+		if row.GetCommandId() != "test-replicas-command" || row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || row.GetReason() != "sandbox_deleted" || row.GetSandboxUid() != sandboxUID {
 			t.Fatalf("replica %d missed deletion: %v", replica, row)
 		}
 		if watch.next(t).GetCaughtUp() == nil {

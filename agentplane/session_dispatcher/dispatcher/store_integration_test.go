@@ -2168,7 +2168,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	var state string
-	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != store.UnknownState {

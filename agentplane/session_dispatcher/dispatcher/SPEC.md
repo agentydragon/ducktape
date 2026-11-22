@@ -206,8 +206,7 @@ SPEC for its policy and mutation contract.
 
 Once Dispatcher cleanup for an exact Sandbox UID commits, later `CreateSession` and queued-command
 admissions for that UID fail with `FAILED_PRECONDITION`, including privileged callers using an
-inventory snapshot read before cleanup. The durable UID tombstone survives removal of command receipts and
-process restart. A same-name environment with a different UID has independent admission.
+inventory snapshot read before cleanup. The durable UID fence survives process restart. A same-name environment with a different UID has independent admission.
 
 Cleanup retains Sessions with their immutable placement and execution principal. It records that
 the required Environment is deleted separately from owner materialization: a not-yet-sent opening
@@ -276,9 +275,13 @@ unknown later execution/effect outcome on deletion; its terminal snapshot retain
 entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
-Deletion cleanup keeps the Session row and writes tombstones in the same transaction that removes
-Dispatch rows. Runtime journals and History remain separate evidence owners; cleanup neither deletes
-retained History nor converts missing evidence into failure.
+Deletion cleanup commits the Session status and delivery outcomes together. The retained Session owns
+the original commands and their receipts. Authorized Get, List and Watch reads continue across
+Environment deletion and Dispatcher restart. During a rolling upgrade, a pre-`00029` replica may
+revisit every retained Environment UID on each full reconciliation. Migration `00029` suppresses its
+cleanup deletes for owned commands, so those extra scans preserve terminal outcomes and versions.
+Previously deleted commands have only the receipt
+evidence still present in legacy watch tombstones. Runtime journals and History retain their own evidence.
 
 Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
 running; overlapping old writers do not provide this evidence. A lost marker-commit reply is retried
@@ -379,7 +382,7 @@ Acquiring a lease requires only the Session ID, including when no Environment ex
 
 Worker writes take the shared side of the existing Sandbox deletion advisory lock, then the
 Session admission advisory lock, then fence the Session lease. Environment cleanup takes the
-exclusive deletion lock while classifying Dispatch outcomes and deleting the rows. This
+exclusive deletion lock while settling Dispatch outcomes and marking Sessions. This
 serializes `MarkDeliveryAttempt` and settlement with deletion without holding the lock between
 transactions or across an RPC.
 

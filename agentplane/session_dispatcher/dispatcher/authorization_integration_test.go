@@ -449,6 +449,13 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	commandID := uuid.NewString()
+	if _, err := client.SubmitInput(authoritySVIDContext(t), &dispatcherpb.SubmitInputRequest{
+		SessionId: stored.SessionID, CommandId: commandID, Text: "test retained input",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	// An accepted receipt retry does not need live inventory or rebind the execution Identity.
 	inventory.failSandboxRead(errors.New("inventory unavailable after accepted opening"))
 	again, err := client.CreateSession(authoritySVIDContext(t), request)
@@ -483,6 +490,14 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	inventory.failSandboxRead(nil)
 	if err := queueStore.EndSandbox(t.Context(), snapshot.UID); err != nil {
 		t.Fatal(err)
+	}
+	read := &dispatcherpb.GetDispatchRequest{CommandId: commandID}
+	if got, err := client.GetDispatch(authoritySVIDContext(t), read); err != nil ||
+		got.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || got.GetDispatch().GetSandboxUid() != snapshot.UID {
+		t.Fatalf("component read after Environment deletion: %v, %v", got, err)
+	}
+	if _, err := peers.otherIdentity.GetDispatch(authoritySVIDContext(t), read); status.Code(err) != codes.NotFound {
+		t.Fatalf("other Identity could discover retained command: %v", err)
 	}
 	retained, err := client.CreateSession(authoritySVIDContext(t), request)
 	if err != nil || retained.GetSession().GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED ||
