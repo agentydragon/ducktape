@@ -1,3 +1,5 @@
+load(":certificate.bzl", "lowered_certificate")
+
 genrule(
     name = "generate_instance",
     srcs = ["//devinfra/js/debundle/x/split_proof:generated_instance"],
@@ -14,21 +16,11 @@ genrule(
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
 
-genrule(
+lowered_certificate(
     name = "generate_lowered_example_certificate",
-    srcs = [
-        "//devinfra/js/debundle/x/split_proof:example/spec.json",
-        "//devinfra/js/debundle/x/split_proof:example_ast",
-    ],
-    outs = ["Experiments/Generated.lean"],
-    cmd = """
-work=$$(mktemp -d "$(@D)/split.XXXXXX")
-export BAZEL_BINDIR="$(BINDIR)"
-trap 'rm -rf "$$work"' EXIT
-$(execpath //devinfra/js/debundle/x/split_proof/lean:lowersplit) --diagnostic \
-    $(location //devinfra/js/debundle/x/split_proof:example_ast) \
-    $(location //devinfra/js/debundle/x/split_proof:example/spec.json) "$$work" --lean "$@"
-""",
-    tools = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
+    out = "Experiments/Generated.lean",
+    ast = "//devinfra/js/debundle/x/split_proof:example_ast",
+    spec = "//devinfra/js/debundle/x/split_proof:example/spec.json",
+    splitter = "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
