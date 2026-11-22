@@ -19,5 +19,5 @@ Tested: `default-disable-service-links`, `require-gitops` (the request user come
 `--userinfo`), `require-secret-store-conditions` and the janitor `NamespacedDeletingPolicy`
 (`janitor.py`, which `test_janitor.py` builds inline and applies to Pods of different ages).
 Offline `kyverno apply` cannot map a custom resource's kind, so `require-secret-store-conditions`
-runs in JSON mode (`apply_inputs.policy(json_mode=True)`): its CEL `validations` are evaluated,
-its admission match is not.
+exercises its CEL validations in JSON mode and checks admission and background matching on the
+original policy.
