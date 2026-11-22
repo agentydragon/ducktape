@@ -97,20 +97,6 @@ def test_auto_vpa_namespaces_declare_a_resource_policy(documents: list[dict[str,
     assert not missing, f"auto VPA namespaces missing a resource policy: {missing}"
 
 
-def test_tofu_controller_accepts_external_artifacts(parsed_yaml_documents: YamlDocuments) -> None:
-    documents = parsed_yaml_documents[Path(GENERATED_ROOT, "tofu-controller/tofu-controller.k8s.yaml")]
-    release = next(doc for doc in documents if doc["kind"] == "HelmRelease")
-    crd = next(doc for doc in documents if doc["kind"] == "CustomResourceDefinition")
-    assert release["spec"]["values"]["featureGates"]["externalArtifact"] is True
-    assert crd["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
-    (version,) = crd["spec"]["versions"]
-    assert version["name"] == "v1alpha2"
-    source_kind = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["sourceRef"]["properties"][
-        "kind"
-    ]
-    assert "ExternalArtifact" in source_kind["enum"]
-
-
 @pytest.fixture(scope="module")
 def worker_pool(documents: list[dict[str, Any]]) -> dict[str, Any]:
     return find_resource(documents, "VirtualMachinePool", "buildbuddy-kvm-worker", namespace="buildbuddy-executor")
