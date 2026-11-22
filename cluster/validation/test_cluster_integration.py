@@ -31,7 +31,7 @@ from cluster.validation.checks import (
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
-from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, FluxKustomizationSpec
+from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import (
@@ -344,9 +344,7 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
     assert not errors, "\n".join(errors)
 
 
-def test_agent_binding_delegation_dependencies_follow_namespace_owners(
-    cluster: ParsedCluster, staging_policy_sets: dict[str, list[dict]], k8s_dir: Path
-) -> None:
+def test_agent_binding_delegation_dependencies_follow_namespace_owners(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """Delegated binding applies follow the namespace owner that creates their targets."""
     retained_resources = cluster.flux_kust_resources(include_suspended=True)
     namespace_owners: dict[str, set[str]] = {}
@@ -356,10 +354,12 @@ def test_agent_binding_delegation_dependencies_follow_namespace_owners(
                 continue
             namespace_owners.setdefault(resource.name, set()).add(owner)
 
+    staging = k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml"
     policy_set_namespaces = {
         namespace
-        for rules in staging_policy_sets.values()
-        for rule in rules
+        for doc in yaml.safe_load_all(staging.read_text())
+        if doc["kind"] == "PolicySet"
+        for rule in doc["spec"]["rules"]
         if rule["type"] == "kubernetes_role_binding"
         for namespace in rule["namespaces"]
     }
@@ -372,39 +372,26 @@ def test_agent_binding_delegation_dependencies_follow_namespace_owners(
         "litellm",
     }
 
-    flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
-    delegation_name = "agentplane-staging-binding-delegation-"
-    flux_by_name = {
-        doc["metadata"]["name"]: doc
-        for doc in flux_objects
-        if doc["kind"] == "Kustomization" and doc["metadata"]["name"].startswith(delegation_name)
+    prefix = "agentplane-staging-binding-delegation-"
+    delegations = {
+        owner.removeprefix(prefix): owner for owner in cluster.flux_kustomizations if owner.startswith(prefix)
     }
-    expected_flux_names = {f"{delegation_name}{namespace}" for namespace in expected_external_scopes}
-    assert set(flux_by_name) == expected_flux_names
+    assert delegations.keys() == expected_external_scopes
 
-    namespace_owners["haku-sandbox"] = {"haku-rbac"}
-    namespace_owners["flux-system"] = set()
-    namespace_owners["ducktape-flux"] = set()
-    delegation_owner_overrides = {"clickhouse": "clickhouse"}
-    for namespace in expected_external_scopes:
-        owners = namespace_owners[namespace]
-        is_bootstrap_root = namespace in {"flux-system", "ducktape-flux"}
-        expected_dependency = (
-            None
-            if is_bootstrap_root
-            else [delegation_owner_overrides.get(namespace, owner) for owner in sorted(owners)]
-        )
-        assert is_bootstrap_root or len(owners) == 1, (namespace, owners)
-
-        flux = flux_by_name[f"{delegation_name}{namespace}"]
-        assert flux["spec"]["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
-        assert flux["spec"]["path"] == (
-            f"./cluster/generated/agentplane/binding-delegation/agentplane-staging/{namespace}"
-        )
-        if expected_dependency is None:
-            assert "dependsOn" not in flux["spec"]
+    # Haku and ClickHouse gate delegation on a later reconciliation step.
+    namespace_owners.update({"haku-sandbox": {"haku-rbac"}, "clickhouse": {"clickhouse"}})
+    source = SourceRef(kind="GitRepository", name="ducktape", namespace="ducktape-flux")
+    for namespace, owner in delegations.items():
+        spec = cluster.flux_kustomizations[owner]
+        assert spec.source_ref == source, owner
+        assert {resource.namespace for resource in retained_resources[owner] if resource.kind == "RoleBinding"} == {
+            namespace
+        }, owner
+        if namespace in {"flux-system", "ducktape-flux"}:
+            assert not spec.depends_on, owner
         else:
-            assert flux["spec"]["dependsOn"] == [{"name": expected_dependency[0], "namespace": "ducktape-flux"}]
+            [dependency] = namespace_owners[namespace]
+            assert spec.depends_on == [DependsOn(name=dependency, namespace="ducktape-flux")], owner
 
 
 def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
@@ -470,18 +457,6 @@ def agent_permission_resources(cluster: ParsedCluster, bootstrap_resources: list
     ]
     resources.extend(bootstrap_resources)
     return resources
-
-
-@pytest.fixture(scope="module")
-def staging_manifest_docs(k8s_dir: Path) -> list[dict]:
-    return list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
-
-
-@pytest.fixture(scope="module")
-def staging_policy_sets(staging_manifest_docs: list[dict]) -> dict[str, list[dict]]:
-    return {
-        doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifest_docs if doc["kind"] == "PolicySet"
-    }
 
 
 def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
