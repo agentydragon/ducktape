@@ -6,6 +6,7 @@ import {
   changeReasoningEffort,
   CommandSubmissionRefused,
   interruptTurn,
+  getDispatch,
   submitInput,
   type CommandSubmission,
 } from "./client";
@@ -68,7 +69,6 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
 
   const deliver = useCallback(
     async (value: LocalCommand): Promise<void> => {
-      if (value.destination.kind === "reconcile-only") return;
       const id = value.command.commandId;
       if (active.current.has(id)) return;
       active.current.add(id);
@@ -84,7 +84,24 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           setErrors((previous) => new Map(previous).set(id, issue));
       };
       try {
-        if (!navigator.onLine || !store.markAttempted(id)) return;
+        if (!navigator.onLine) return;
+        if (value.attempted || value.destination.kind === "reconcile-only") {
+          const receipt = await getDispatch(threadId, id);
+          if (
+            !receipt?.command ||
+            (value.destination.kind === "reconcile-only" && value.destination.target && !receipt.sandboxUid)
+          ) {
+            settle({
+              kind: "unconfirmed",
+              message: "Dispatcher could not verify the stored command. The original is saved in this browser.",
+            });
+            return;
+          }
+          store.acknowledgeDispatch(value.command, receipt);
+          settle(null);
+          return;
+        }
+        if (!store.markAttempted(id)) return;
         const operation = value.command.operation;
         const commandId = value.command.commandId;
         let result: CommandSubmission;
@@ -121,26 +138,28 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
     },
     [store, threadId]
   );
-  // Try Session-addressed commands with no server receipt on mount. An exact retry is safe after
-  // a lost reply because durable Dispatcher writes deduplicate the same command ID and payload.
   useEffect(() => {
-    for (const value of store.getSnapshot().commands)
-      if (value.admission === null && value.dispatch === null && !value.interruptResult) void deliver(value);
-  }, [deliver, store]);
-  useEffect(() => {
-    const redeliverFailed = () => {
-      for (const value of store.getSnapshot().commands)
-        if (
-          value.admission === null &&
-          value.dispatch === null &&
-          !value.interruptResult &&
-          (!value.attempted || errors.has(value.command.commandId))
-        )
-          void deliver(value);
+    let stopped = false;
+    const recover = async () => {
+      const checks: LocalCommand[] = [];
+      for (const value of store.getSnapshot().commands) {
+        if (value.admission || value.dispatch || value.interruptResult) continue;
+        if (value.attempted || value.destination.kind === "reconcile-only") checks.push(value);
+        else void deliver(value);
+      }
+      // A slow receipt lookup must not block a fresh draft's first attempt.
+      for (const value of checks) {
+        if (stopped || !navigator.onLine) break;
+        await deliver(value);
+      }
     };
-    window.addEventListener("online", redeliverFailed);
-    return () => window.removeEventListener("online", redeliverFailed);
-  }, [deliver, errors, store]);
+    void recover();
+    window.addEventListener("online", recover);
+    return () => {
+      stopped = true;
+      window.removeEventListener("online", recover);
+    };
+  }, [deliver, store]);
   const watchedIds = local.commands
     .filter(
       (value) =>

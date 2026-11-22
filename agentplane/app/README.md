@@ -124,10 +124,10 @@ The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `In
 the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
 stable command ID and addresses its Session. The Dispatcher checks Session authority and resolves its
 placement. Each command returns its stored `Dispatch`, including an exact-turn interrupt. If a
-response is lost, the browser keeps the Session command for exact-ID retry and History reconciliation.
-Older saved commands remain visible for History reconciliation and updates to known Dispatches.
-Their original Sandbox UID, when recorded, fences Dispatch updates. Only Session-addressed commands
-are eligible for delivery.
+response is lost, the browser keeps the authored command. Reload, reconnect and **Check status** read
+`GetDispatch` by the original ID. An exact stored payload and Session allow the browser to apply
+the receipt. Missing or mismatched payloads keep the command unconfirmed.
+Their original Sandbox UID, when recorded, fences Dispatch updates. Only never-attempted Session-addressed commands make a submission.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
@@ -292,7 +292,7 @@ shards. Traces and screenshots are test artifacts; inspect the images as well as
 
 Coverage includes older-item streaming, selective bodies/debug, archived threads,
 reload/offline/reconnect, admission responses ahead of projection, lost HTTP replies, exact
-same-ID retries, and failed/noop outcomes after history eviction and explicit dismissal.
+command reconciliation, and failed/noop outcomes after history eviction and explicit dismissal.
 Fault injection holds actual Electric responses while ingestion continues. A suffix the fold
 cannot apply preserves verified history, reports the verified cursor, and disables controls.
 Scrolling checks cover live growth, reader anchors, desktop/phone layouts, and returning to the

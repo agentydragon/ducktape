@@ -1412,7 +1412,7 @@ async def test_a_reader_can_scroll_up_through_an_unsent_message_taller_than_the_
     await composer.press("Enter")
     async with asyncio.timeout(15):
         await lost.get()
-    await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
+    await expect(page.get_by_role("button", name="Check status", exact=True)).to_be_enabled()
     history = page.get_by_role("region", name="Thread history", exact=True)
     unsent = history.get_by_role("region", name="Input messages", exact=True)
     await expect_history_bottom(page)
@@ -1799,7 +1799,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect_history_bottom(page)
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect_input_confirmed(page)
-    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("button", name="Check status", exact=True)).to_have_count(0)
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
     await expect(page.get_by_role("img", name="Incomplete", exact=True)).to_have_count(1)
     await expect(composer).to_be_enabled()
@@ -1942,7 +1942,9 @@ def _posted_input(request: Request) -> command_pb2.Command:
     return command_pb2.Command(command_id=body["commandId"], submit_input=command_pb2.SubmitInput(text=body["text"]))
 
 
-async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
+async def test_reload_checks_an_attempted_command_and_preserves_input_if_the_receipt_is_missing(
+    thread_browser: ThreadBrowser,
+) -> None:
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1962,29 +1964,18 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     command = _posted_input(original)
     assert command.command_id
     assert command.submit_input.text == "Test input retained across an unsent request"
-    await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
+    await expect(page.get_by_role("button", name="Check status", exact=True)).to_be_enabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.last_cursor(thread.id) == 4
 
-    async with page.expect_request(original.url) as redelivered:
+    async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as checked:
         await page.reload()
-    redelivery = await redelivered.value
-    assert redelivery.post_data is not None
-    assert _posted_input(redelivery) == command
-    assert json.loads(redelivery.post_data) == json.loads(original.post_data)
-    async with asyncio.timeout(15):
-        assert await source.runner.commands.get() == command
-    await expect_pending_message_bubble(page, command.submit_input.text)
-    await expect(page.locator('[data-stage="local"]')).to_have_count(0)
-    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-    # The command receipt can arrive before its admission event is replicated into the app.
-    await expect_projected_cursor(page, source.entries[-1].cursor)
-    admissions = [
-        entry.event.command_admitted.command
-        for entry in await thread_browser.event_logs.events(thread.id, limit=100)
-        if entry.event.HasField("command_admitted")
-    ]
-    assert admissions == [command]
+    assert (await checked.value).status == 404
+    bubble = page.locator(f'[data-command-id="{command.command_id}"]')
+    await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
+    await expect(bubble.locator(".transcript-verbatim")).to_have_text(command.submit_input.text)
+    assert source.runner.commands.empty()
+    assert await thread_browser.event_logs.last_cursor(thread.id) == 4
 
 
 async def expect_input_confirmed(page: Page) -> None:
@@ -2041,7 +2032,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await expect(page.locator('[data-stage="local"]')).to_have_count(0)
         await page.reload()
         await expect_pending_message_bubble(page, command.submit_input.text)
-        await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+        await expect(page.get_by_role("button", name="Check status", exact=True)).to_have_count(0)
     finally:
         drop_reply.set()
         if reply_started.is_set():
@@ -2075,22 +2066,22 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
     assert any(entry.event.command_admitted.command == original for entry in archived)
     await expect_pending_message_bubble(page, original.submit_input.text)
     await expect(page.locator('[data-stage="unconfirmed"]')).to_have_count(0)
-    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("button", name="Check status", exact=True)).to_have_count(0)
     await page.reload()
     await expect_pending_message_bubble(page, original.submit_input.text)
     assert source.runner.commands.empty()
 
 
-async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(thread_browser: ThreadBrowser) -> None:
+async def test_check_status_preserves_an_unconfirmed_command_after_a_missing_receipt(
+    thread_browser: ThreadBrowser,
+) -> None:
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
-    submitted_bodies: list[dict[str, object]] = []
 
     async def lose_receipt(route: Route) -> None:
         assert route.request.post_data is not None
-        submitted_bodies.append(json.loads(route.request.post_data))
         requests.put_nowait(_posted_input(route.request))
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
@@ -2106,24 +2097,14 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         bubble = page.locator(f'[data-command-id="{original.command_id}"]')
         await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(bubble.locator('[data-stage="failed"]')).to_have_count(0)
-        await expect(bubble.get_by_role("button", name="Retry", exact=True)).to_be_visible()
+        await expect(bubble.get_by_role("button", name="Check status", exact=True)).to_be_visible()
 
-        async with page.expect_request("**/upstream/dispatcher/v1/sessions/*:submitInput") as retried:
-            await bubble.get_by_role("button", name="Retry", exact=True).click()
-        retry = await retried.value
-        assert retry.post_data is not None
-        assert _posted_input(retry) == original
-        assert json.loads(retry.post_data) == submitted_bodies[0]
-        async with asyncio.timeout(15):
-            assert await source.runner.commands.get() == original
-        await expect_pending_message_bubble(page, original.submit_input.text)
-        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
-        assert any(
-            entry.event.HasField("command_admitted") and entry.event.command_admitted.command == original
-            for entry in archived
-        )
-        await expect(bubble.locator('[data-stage="unconfirmed"]')).to_have_count(0)
+        async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{original.command_id}") as checked:
+            await bubble.get_by_role("button", name="Check status", exact=True).click()
+        assert (await checked.value).status == 404
+        await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
+        await expect(bubble.locator(".transcript-verbatim")).to_have_text(original.submit_input.text)
+        assert source.runner.commands.empty()
     finally:
         await page.unroute_all(behavior="wait")
 
@@ -2183,13 +2164,15 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.transcript-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
-        # Reload abandons the held Electric response. The new document delivers the same local
-        # Command again, and Dispatcher answers its durable row while replay is still held.
-        async with page.expect_response(response.url) as redelivered:
+        # Reload reads the durable Dispatch while History replay is still held.
+        async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as checked:
             await page.reload()
-        redelivery = await redelivered.value
-        assert redelivery.status == 200
-        assert dispatched_command_id(await redelivery.text()) == command.command_id
+        receipt = await checked.value
+        assert receipt.status == 200
+        assert (
+            json_format.ParseDict((await receipt.json())["dispatch"], session_dispatcher_pb2.Dispatch()).command
+            == command
+        )
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
@@ -2202,7 +2185,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(pending).to_have_count(0)
         await expect(pending.locator('[data-stage="local"]')).to_have_count(0)
-        await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+        await expect(page.get_by_role("button", name="Check status", exact=True)).to_have_count(0)
         source.confirm_input(command, message_id="test-input-recovered-from-unobserved-admission")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text

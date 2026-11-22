@@ -591,7 +591,7 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await expect(row).to_contain_text("Sandbox is waking; message is queued")
     await expect(row.locator('[data-stage="queued"]')).to_be_visible()
     await expect(row.locator(".agentplane-command-light")).to_have_count(4)
-    await expect(row.get_by_role("button", name="Retry")).to_have_count(0)
+    await expect(row.get_by_role("button", name="Check status")).to_have_count(0)
     await expect(row.get_by_role("button", name="Cancel")).to_have_count(0)
     await view.capture(name="wake_composer_placeholder")
     await page.get_by_role("textbox", name="Message").fill("Please wake the Sandbox and continue.")

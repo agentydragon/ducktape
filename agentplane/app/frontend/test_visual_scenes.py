@@ -649,7 +649,7 @@ async def test_session_pending_failed(
     await expect(outcome).to_contain_text(reason)
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
     await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="local"]', state="attached")
-    await view.page.locator(".transcript-user-message-aside").get_by_role("button", name="Retry").wait_for()
+    await view.page.locator(".transcript-user-message-aside").get_by_role("button", name="Check status").wait_for()
     await outcome.scroll_into_view_if_needed()
     await expect(outcome).to_be_in_viewport(ratio=1)
     await view.capture()
