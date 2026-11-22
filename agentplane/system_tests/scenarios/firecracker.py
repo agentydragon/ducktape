@@ -26,6 +26,7 @@ from tenacity import (
 
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
 from agentplane.system_tests.driver.cluster import Cluster
@@ -209,7 +210,7 @@ async def preserves_live_guest(
             shell_call_id=f"guest-proof-{number}",
             response="Guest proof observed.",
         )
-        summary = await AsyncRetrying(
+        summary: history_service_pb2.SessionSummary = await AsyncRetrying(
             stop=stop_after_delay(30),
             wait=wait_fixed(0.1),
             retry=retry_if_result(lambda row: row.folded_through < session.cursor),
@@ -303,7 +304,7 @@ async def preserves_live_guest(
     await _wait_for_served_certificate(cluster, pod.name, running_credential)
 
     async def runtime_diagnostics() -> session_pb2.EnvironmentRuntimeStatus:
-        response = await environment.unary(
+        response: environment_service_pb2.GetRuntimeDiagnosticsResponse = await environment.unary(
             environment.stub.GetRuntimeDiagnostics,
             environment_service_pb2.GetRuntimeDiagnosticsRequest(target=view.target),
         )
@@ -337,7 +338,7 @@ async def preserves_live_guest(
     assert resumed.kubernetes_diagnostics.pod.uid == pod.uid
     resumed_sandbox = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
     assert resumed_sandbox["status"]["firecrackerSuspension"]["phase"] == "Released", resumed_sandbox["status"]
-    restored = await AsyncRetrying(
+    restored: session_pb2.EnvironmentRuntimeStatus = await AsyncRetrying(
         stop=stop_after_delay(RUNNER_READY_SECONDS),
         wait=wait_fixed(2),
         retry=retry_if_exception(lambda err: isinstance(err, ServiceError) and err.code == grpc.StatusCode.UNAVAILABLE),
