@@ -185,6 +185,7 @@ lean_binary(
         exclude = [
             "Experiments/CoreJS/CellFootprint.lean",
             "Experiments/CoreJS/CellFootprintExamples.lean",
+            "Experiments/CoreJS/ClassOrigin.lean",
             "Experiments/CoreJS/ClassParents.lean",
             "Experiments/CoreJS/Frame.lean",
             "Experiments/CoreJS/Fuel.lean",
@@ -216,6 +217,7 @@ lean_axiom_test(
         "Experiments/CoreJS/BindingMoves.lean",
         "Experiments/CoreJS/CellFootprint.lean",
         "Experiments/CoreJS/CellFootprintExamples.lean",
+        "Experiments/CoreJS/ClassOrigin.lean",
         "Experiments/CoreJS/ClassParents.lean",
         "Experiments/CoreJS/Eval.lean",
         "Experiments/CoreJS/Fragment.lean",
@@ -239,6 +241,7 @@ lean_axiom_test(
         "Experiments.CoreJS.BindingMoves",
         "Experiments.CoreJS.CellFootprint",
         "Experiments.CoreJS.CellFootprintExamples",
+        "Experiments.CoreJS.ClassOrigin",
         "Experiments.CoreJS.ClassParents",
         "Experiments.CoreJS.Frame",
         "Experiments.CoreJS.Fuel",
@@ -254,6 +257,7 @@ lean_axiom_test(
     theorems = [
         "CoreJS.cellFootprint_lift",
         "CoreJS.CellFootprint.bind",
+        "CoreJS.plainClassVar_origin",
         "CoreJS.CellFootprint.preserves",
         "CoreJS.CellFootprintExamples.copy_footprint",
         "CoreJS.CellFootprintExamples.independent_writes",
