@@ -71,14 +71,6 @@ runs:
       run: |
         set -euo pipefail
 
-        # Skip [skip ci] commits
-        subject=$(git log -1 --format=%s)
-        if [[ "$subject" == *"[skip ci]"* ]]; then
-          echo "$PKG: commit has [skip ci], skipping"
-          echo "should_release=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
         # Where the build put each asset: the SSOT names targets and released
         # filenames; the build's own event stream says where the files landed
         # (and under which configuration — debundle's -c opt included).

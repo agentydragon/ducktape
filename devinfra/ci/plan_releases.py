@@ -43,7 +43,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 from devinfra.buildbuddy.ci.bes import Output
-from devinfra.ci import publication_cli, publication_evidence
+from devinfra.ci import publication_cli
+from devinfra.ci.publication_test_verdicts import TestEvidence, TestGate
 from devinfra.ci.release_assets import Release, load_releases, resolve_asset_output
 from devinfra.ci.release_content_hash import content_tag, release_content_hash_from_digests
 
@@ -110,18 +111,19 @@ def plan(
     return list(zip(releases, published, strict=True))
 
 
-def matrix_include(
-    decided: list[tuple[Release, bool]], reusable_tests: set[str] | None = None, blocked_tests: set[str] | None = None
-) -> list[dict[str, str]]:
+def matrix_include(decided: list[tuple[Release, bool]], tests: TestEvidence) -> list[dict[str, str]]:
     """Matrix rows for releases; one whose tests push CI already failed never starts a job."""
-    reusable_tests = reusable_tests or set()
-    blocked_tests = blocked_tests or set()
     rows = []
     for release, published in decided:
-        if published or (release.tests and release.tests in blocked_tests):
+        if published:
+            continue
+        gate = tests.publication_gate(
+            release.pkg, release.tests, action="released", uses_default_config=release.uses_default_config
+        )
+        if gate is TestGate.BLOCK:
             continue
         row = release.as_matrix_row()
-        if release.uses_default_config and release.tests and release.tests in reusable_tests:
+        if gate is TestGate.REUSE:
             row["reuse_test_verdict"] = "true"
         rows.append(row)
     return rows
@@ -140,32 +142,22 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = parser.parse_args(argv)
-    releases = load_releases(args.artifact_targets, args.skills_registry)
-
     if "[skip ci]" in args.commit_subject:
         print("Commit is marked [skip ci]; releasing nothing.", file=sys.stderr)
         publication_cli.write_matrix([])
         return
 
+    releases = load_releases(args.artifact_targets, args.skills_registry)
     evidence = publication_cli.load_evidence(args)
     by_label = evidence.outputs.by_label() if evidence.outputs is not None else {}
 
     decided = plan(releases, by_label, gh_tag_exists, args.workers)
-    reusable_tests, blocked_tests = evidence.test_gates(
-        (
-            publication_evidence.TestGateCandidate(
-                release.pkg, release.tests, uses_default_config=release.uses_default_config
-            )
-            for release, published in decided
-            if not published
-        ),
-        action="released",
-    )
-    include = matrix_include(decided, reusable_tests, blocked_tests)
+    include = matrix_include(decided, evidence.tests)
+    publishing = {row["pkg"] for row in include}
 
-    for release, published in sorted(decided, key=lambda d: d[0].pkg):
-        skipped = published or (release.tests and release.tests in blocked_tests)
-        print(f"{'skip' if skipped else 'RELEASE':>7}  {release.pkg}", file=sys.stderr)
+    for release in sorted(releases, key=lambda r: r.pkg):
+        marker = "RELEASE" if release.pkg in publishing else "skip"
+        print(f"{marker:>7}  {release.pkg}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decided)} releases need publishing.", file=sys.stderr)
 
     publication_cli.write_matrix(include)

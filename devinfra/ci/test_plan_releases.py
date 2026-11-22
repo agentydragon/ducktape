@@ -8,6 +8,7 @@ import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import content_hash, is_published, main, matrix_include, plan
+from devinfra.ci.publication_test_verdicts import TestEvidence
 from devinfra.ci.release_assets import Release, load_releases
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
@@ -15,6 +16,8 @@ from devinfra.ci.release_content_hash import release_content_hash_from_digests
 # the planner defaults to when it runs from the repo root in CI.
 ARTIFACT_TARGETS = Path("devinfra/ci/artifact_targets.json")
 SKILLS_REGISTRY = Path("skills/skills_registry.json")
+
+NO_CI = TestEvidence(problem="no CI invocation")
 
 BIN = "bazel-out/k8-fastbuild/bin"
 
@@ -105,18 +108,18 @@ def by_label_a(digest: str = "aa" * 32) -> dict[str, list[Output]]:
 
 def test_published_release_is_dropped() -> None:
     decided = plan([SINGLE_ASSET], by_label_a(), lambda _: True, workers=2)
-    assert matrix_include(decided) == []
+    assert matrix_include(decided, NO_CI) == []
 
 
 def test_unpublished_release_is_kept() -> None:
     decided = plan([SINGLE_ASSET], by_label_a(), lambda _: False, workers=2)
-    assert [row["pkg"] for row in matrix_include(decided)] == ["pkg"]
+    assert [row["pkg"] for row in matrix_include(decided, NO_CI)] == ["pkg"]
 
 
 def test_a_release_whose_tests_push_ci_already_failed_gets_no_job() -> None:
     release = dataclasses.replace(SINGLE_ASSET, tests="//:a_test")
     decided = plan([release], by_label_a(), lambda _: False, workers=2)
-    assert matrix_include(decided, blocked_tests={"//:a_test"}) == []
+    assert matrix_include(decided, TestEvidence(problem=None, failed_labels=frozenset({"//:a_test"}))) == []
 
 
 def test_the_tag_looked_up_is_the_content_tag() -> None:
@@ -133,7 +136,7 @@ def test_the_tag_looked_up_is_the_content_tag() -> None:
 def test_an_unreported_output_keeps_the_release() -> None:
     """Fail open: dropping a release silently is far worse than one wasted job."""
     decided = plan([SINGLE_ASSET], {}, lambda _: True, workers=2)
-    assert [row["pkg"] for row in matrix_include(decided)] == ["pkg"]
+    assert [row["pkg"] for row in matrix_include(decided, NO_CI)] == ["pkg"]
 
 
 def test_a_failing_tag_lookup_keeps_the_release() -> None:
@@ -157,7 +160,7 @@ def test_custom_bazel_flags_never_take_the_fast_path() -> None:
     """debundle builds under -c opt, so bazel-ci's outputs are not its outputs."""
     custom = dataclasses.replace(SINGLE_ASSET, pkg="debundle", bazel_flags="-c opt")
     assert not is_published(custom, by_label_a(), lambda _: True)
-    assert [row["pkg"] for row in matrix_include(plan([custom], by_label_a(), lambda _: True, workers=2))] == [
+    assert [row["pkg"] for row in matrix_include(plan([custom], by_label_a(), lambda _: True, workers=2), NO_CI)] == [
         "debundle"
     ]
 
@@ -165,18 +168,8 @@ def test_custom_bazel_flags_never_take_the_fast_path() -> None:
 def test_skip_ci_releases_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_file = tmp_path / "gh_output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
-    main(
-        [
-            "--artifact-targets",
-            str(ARTIFACT_TARGETS),
-            "--skills-registry",
-            str(SKILLS_REGISTRY),
-            "--invocations",
-            "",
-            "--commit-subject",
-            "chore: update images [skip ci]",
-        ]
-    )
+    monkeypatch.chdir(tmp_path)  # A skipped commit needs neither release registry.
+    main(["--commit-subject", "chore: update images [skip ci]"])
     written = output_file.read_text()
     assert "count=0" in written
     assert json.loads(written.split("matrix=", 1)[1].splitlines()[0]) == {"include": []}
