@@ -8,11 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from agentplane_policybinding_crds.works.allegedly.agentplane import (
-    PolicyBinding,
-    PolicyBindingSpec,
-    PolicyBindingSpecSubject,
-)
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBinding, PolicyBindingSpec
 from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySet,
     PolicySetSpec,
@@ -175,11 +171,6 @@ def _identity_caller_policies(
     return selected
 
 
-def _kubernetes_account_use(caller: StandingCaller) -> list[str]:
-    """The use set of `caller`'s own Kubernetes account, named after its Identity."""
-    return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name]
-
-
 def _policy_set(scope: Construct, name: str, *, description: str, rules: Sequence[PolicySetSpecRules]) -> None:
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
     # kind or key, an invalid JSON Schema); a set it refuses grants nothing on the cluster, so
@@ -208,10 +199,10 @@ def _exact_actions_policy_set(
     )
 
 
-def _account_binding(
-    scope: Construct, account: ServiceAccount, *, subject: PolicyBindingSpecSubject, policies: Sequence[str]
-) -> None:
-    """What `account`, and every sandbox running as it, may reach and have auto-approved."""
+def _account_binding(scope: Construct, caller: StandingCaller, *, policies: Sequence[str]) -> None:
+    """Bind the caller's Identity to its policies and its own Kubernetes account."""
+    account = caller.service_account
+    account_use = kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name
     PolicyBinding(
         scope,
         f"policybinding-{account.name}",
@@ -222,7 +213,7 @@ def _account_binding(
                 "description": f"What the {account.name} ServiceAccount, and sandboxes running as it, may reach and have auto-approved."
             },
         ),
-        spec=PolicyBindingSpec(subject=subject, policy_sets=policies),
+        spec=PolicyBindingSpec(subject=caller.identity_subject(), policy_sets=[*policies, account_use]),
     )
 
 
@@ -445,7 +436,7 @@ def add_staging_action_policies(
     # that account's authority. haku-agent is a static caller identity, not the per-Sandbox
     # ServiceAccount on managed runner Pods; Coinbase key delivery to those runners is tracked
     # in #8596.
-    haku_agent = ServiceAccount(
+    ServiceAccount(
         scope,
         "serviceaccount-haku-agent",
         metadata=ApiObjectMetadata(
@@ -761,22 +752,21 @@ def add_staging_action_policies(
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
     # out-of-cluster infrastructure, so it still needs Haku's credentials (haku/TODO.md). Revisit
     # whether claude-ai should keep carrying them once haku-agent has been in use for a while.
+    shared_policies = _identity_caller_policies(
+        _HAKU_CLAUDE_BASE_POLICIES,
+        identity_catalog=identity_catalog,
+        identity_egress_set_names=identity_egress_set_names,
+    )
     _account_binding(
         scope,
-        claude_ai,
-        subject=CLAUDE_AI.identity_subject(),
+        CLAUDE_AI,
         policies=[
-            *_identity_caller_policies(
-                _HAKU_CLAUDE_BASE_POLICIES,
-                identity_catalog=identity_catalog,
-                identity_egress_set_names=identity_egress_set_names,
-            ),
+            *shared_policies,
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
             # claude-ai is the account that launches orchestration_v1 workers.
             ORCHESTRATION_PRESETS_SET,
             *HAKU_SHARED_ACTION_SETS,
-            *_kubernetes_account_use(CLAUDE_AI),
         ],
     )
 
@@ -892,20 +882,7 @@ def add_staging_action_policies(
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
-    _account_binding(
-        scope,
-        haku_agent,
-        subject=HAKU_AGENT.identity_subject(),
-        policies=[
-            *_identity_caller_policies(
-                _HAKU_CLAUDE_BASE_POLICIES,
-                identity_catalog=identity_catalog,
-                identity_egress_set_names=identity_egress_set_names,
-            ),
-            *HAKU_SHARED_ACTION_SETS,
-            *_kubernetes_account_use(HAKU_AGENT),
-        ],
-    )
+    _account_binding(scope, HAKU_AGENT, policies=[*shared_policies, *HAKU_SHARED_ACTION_SETS])
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
     # boundary: a sandbox runs as the account that asked for it, so the whole group can do
