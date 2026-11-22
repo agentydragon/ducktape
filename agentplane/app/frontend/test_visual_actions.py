@@ -3267,10 +3267,12 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("Draft notes")
         await expect(sidebar).to_contain_text("Website project")
     elif example.key == "tana.get_tag_schema":
-        await expect(sidebar.get_by_text("Task", exact=True)).to_be_visible()
+        tag = sidebar.get_by_role("link", name="Task", exact=True)
+        await expect(tag).to_have_attribute("href", "https://app.tana.inc?nodeid=tag-1")
         await expect(sidebar).not_to_contain_text("Include inherited fields")
         await expect(sidebar).not_to_contain_text("Include edit instructions")
-        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
     elif example.key == "kubernetes_admin.pods_run":
         await expect(sidebar).to_contain_text("Expose TCP port 8080 through a ClusterIP Service.")
         await expect(sidebar).not_to_contain_text("OpenShift Route")
@@ -3361,7 +3363,7 @@ async def test_action_presentations(
         elif example.key == "tana.get_tag_schema":
             await expect(sidebar).to_contain_text("Include inherited fields")
             await expect(sidebar).to_contain_text("Include edit instructions")
-            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         elif example.key == "github.issue_write":
             await expect(sidebar).to_contain_text("Priority P1")
             await expect(sidebar).to_contain_text("Decisions require full review.")

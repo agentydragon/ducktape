@@ -1515,13 +1515,16 @@ describe("card decision buttons capability", () => {
     }
   );
 
-  it("requires full review when a Tana tag read adds inherited fields or edit instructions", () => {
+  it("keeps Tana tag-schema decisions on the named tag as optional detail expands", () => {
     const action = identity("tana", "get_tag_schema");
     for (const flags of [{ includeInheritedFields: true }, { includeEditInstructions: true }]) {
       const args = { tagId: "tag-1", ...flags };
-      expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+      expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
       expect(actionCompactCardExpands(action, args)).toBe(true);
     }
+    expect(actionCompactCardExpands(action, { tagId: "tag-1" })).toBe(false);
+    expect(actionOffersCardDecisionButtons(action, { tagId: "tag-1", includeOtherTags: true })).toBe(false);
+    expect(actionCompactCardExpands(action, { tagId: "tag-1", includeOtherTags: true })).toBe(true);
   });
 
   it.each([

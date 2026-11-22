@@ -145,10 +145,6 @@ const tagSchemaArguments = z.strictObject({
   includeEditInstructions: z.boolean().optional(),
   includeInheritedFields: z.boolean().optional(),
 });
-const basicTagSchemaArguments = tagSchemaArguments.extend({
-  includeEditInstructions: z.literal(false).optional(),
-  includeInheritedFields: z.literal(false).optional(),
-});
 const edit = z.strictObject({ old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() });
 const editArguments = nodeArguments
   .extend({ name: edit.optional(), description: edit.optional() })
@@ -244,7 +240,7 @@ function readNodeLink(nodeId: string, names: ReadonlyMap<string, string> | undef
   const href = `https://app.tana.inc?nodeid=${encodeURIComponent(nodeId)}`;
   return (
     <Anchor href={href} target="_blank" rel="noreferrer" inherit>
-      {names?.get(nodeId) || <Code>{nodeId}</Code>}
+      {names?.get(nodeId)?.trim() || <Code>{nodeId}</Code>}
     </Anchor>
   );
 }
@@ -761,8 +757,11 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
         tagSchemaReceipt,
         (args, names) => <Line>{readNodeLink(args.tagId, names)}</Line>
       ),
-      compactCardExpands: expandsForRejectedArguments(basicTagSchemaArguments),
-      offersCardDecisionButtons: (args) => basicTagSchemaArguments.safeParse(args).success,
+      compactCardExpands: (args) => {
+        const parsed = tagSchemaArguments.safeParse(args);
+        return !parsed.success || Boolean(parsed.data.includeEditInstructions || parsed.data.includeInheritedFields);
+      },
+      offersCardDecisionButtons: (args) => tagSchemaArguments.safeParse(args).success,
     },
   ],
   [
