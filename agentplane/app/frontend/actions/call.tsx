@@ -1,4 +1,4 @@
-import { Code, Group, Stack, Text } from "@mantine/core";
+import { Box, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
 import { serviceAccountKey } from "../connections/service_accounts";
@@ -13,6 +13,7 @@ import {
   renderActionCall,
   renderActionLabel,
   renderDetailsArguments,
+  shouldRenderRequestTitle,
   type RenderedActionCall,
 } from "./rendering/index";
 
@@ -121,7 +122,7 @@ export function ActionCall({
 }): JSX.Element {
   const action = actionIdentity(request);
   const args = actionArguments(request);
-  const actionLabel = renderActionLabel(action, args, request.id);
+  const actionLabel = renderActionLabel(action, args);
   const prettyArguments = renderDetailsArguments(
     action,
     args,
@@ -130,9 +131,16 @@ export function ActionCall({
   );
   const combinedCall =
     providedCombinedCall === undefined ? renderActionCall(action, args, undefined, request.id) : providedCombinedCall;
-  const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
+  const callContent =
+    !raw && combinedCall?.content != null ? (
+      combinedCall.content
+    ) : raw || prettyArguments === undefined ? (
+      <JsonBlock heading="Exact arguments" value={args} />
+    ) : (
+      prettyArguments
+    );
   return (
-    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
+    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="xs">
       <Stack gap={2}>
         {!detailsOnly && (
           <Group justify="space-between" align="flex-start" gap="xs">
@@ -154,37 +162,23 @@ export function ActionCall({
             </Group>
           </Group>
         )}
-        {/* TODO: the caller's own framing renders verbatim as plain text; markdown rendering is a
-            possible later addition. */}
-        {!detailsOnly && <Text size="sm">{request.title}</Text>}
-        {request.description && (
-          <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
-            <Text size="xs" c="dimmed">
-              {request.description}
-            </Text>
-          </ClampedBlock>
+        {!detailsOnly && shouldRenderRequestTitle(action, args, request.title, actionLabel) && (
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            {request.title}
+          </Text>
+        )}
+        {request.description?.trim() && (
+          <Box style={{ "--ui-disclosure-gutter": "0px", "--ui-disclosure-body-spacing": "0px" }}>
+            <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
+              <Text size="sm" c="dimmed" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+                {request.description}
+              </Text>
+            </ClampedBlock>
+          </Box>
         )}
         <RequestAuditDetails request={request} />
       </Stack>
-      {showCombinedCall && !raw ? (
-        <div>
-          <Text size="sm" fw={600} mb={4}>
-            Call
-          </Text>
-          {combinedCall.content}
-        </div>
-      ) : (
-        <div>
-          {!(prettyArguments === null && !raw) && (
-            <>
-              <Text size="sm" fw={600} mb={4}>
-                Exact arguments
-              </Text>
-              {prettyArguments === undefined || raw ? <JsonBlock value={args} /> : prettyArguments}
-            </>
-          )}
-        </div>
-      )}
+      {callContent}
     </Stack>
   );
 }

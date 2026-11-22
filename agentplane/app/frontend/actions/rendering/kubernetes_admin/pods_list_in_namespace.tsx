@@ -11,7 +11,7 @@ export function offersCardDecisionButtonsPodsInNamespace(args: unknown): boolean
   return zPodsInNamespaceArguments.safeParse(args).success;
 }
 
-export function podsInNamespaceTitleIsRedundant(title: string, args: unknown): boolean {
+function podsInNamespaceTitleIsRedundant(title: string, args: unknown): boolean {
   const parsed = zPodsInNamespaceArguments.safeParse(args);
   if (!parsed.success) return false;
   const normalizedTitle = title.trim().replace(/\s+/g, " ").toLowerCase();
@@ -19,41 +19,30 @@ export function podsInNamespaceTitleIsRedundant(title: string, args: unknown): b
   return normalizedTitle === actionLabel;
 }
 
-function podsInNamespaceFilters(args: z.infer<typeof zPodsInNamespaceArguments>): JSX.Element {
+function PodsInNamespaceFilters({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element | null {
+  const { fieldSelector, labelSelector } = args;
+  if (fieldSelector === undefined && labelSelector === undefined) return null;
   return (
-    <>
-      {args.fieldSelector !== undefined && (
-        <>
-          {" · field selector "}
-          <Code>{args.fieldSelector}</Code>
-        </>
-      )}
-      {args.labelSelector !== undefined && (
-        <>
-          {" · label selector "}
-          <Code>{args.labelSelector}</Code>
-        </>
-      )}
-    </>
-  );
-}
-
-// The full card's heading already carries the action label and namespace. Show only the extra
-// criteria here, so the arguments add information instead of restating the heading.
-function PodsInNamespaceDetails({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
-  const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
-  return hasFilters ? (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      {podsInNamespaceFilters(args)}
+      Matching pods where{" "}
+      {fieldSelector !== undefined && (
+        <>
+          field selector <Code>{fieldSelector}</Code>
+        </>
+      )}
+      {fieldSelector !== undefined && labelSelector !== undefined ? " and " : ""}
+      {labelSelector !== undefined && (
+        <>
+          label selector <Code>{labelSelector}</Code>
+        </>
+      )}
     </Text>
-  ) : (
-    <></>
   );
 }
 
 export const podsInNamespaceDetails: ArgumentsPreview = definePreview(
   zPodsInNamespaceArguments,
-  PodsInNamespaceDetails
+  PodsInNamespaceFilters
 );
 
 function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
@@ -74,28 +63,10 @@ export const podsInNamespaceLabel: ArgumentsPreview = definePreview(zPodsInNames
 // This is intentionally a separate widget from the details view: each Action owns both
 // representations. Card decision buttons eligibility lives in a separate capability registry.
 function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
-  const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      {hasFilters ? (
-        <>
-          Matching pods where{" "}
-          {args.fieldSelector !== undefined && (
-            <>
-              field selector <Code>{args.fieldSelector}</Code>
-            </>
-          )}
-          {args.fieldSelector !== undefined && args.labelSelector !== undefined ? " and " : ""}
-          {args.labelSelector !== undefined && (
-            <>
-              label selector <Code>{args.labelSelector}</Code>
-            </>
-          )}
-        </>
-      ) : (
-        "List every pod in this namespace."
-      )}
-    </Text>
+  return args.fieldSelector !== undefined || args.labelSelector !== undefined ? (
+    <PodsInNamespaceFilters args={args} />
+  ) : (
+    <Text size="sm">List every pod in this namespace.</Text>
   );
 }
 
@@ -106,10 +77,8 @@ export const podsInNamespaceCollapsed: ArgumentsPreview = definePreview(
 
 export const podsInNamespacePresentation: ActionPresentation = {
   label: podsInNamespaceLabel,
-  pane: {
-    collapsed: podsInNamespaceCollapsed,
-    requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
-  },
+  requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
+  pane: { collapsed: podsInNamespaceCollapsed },
   details: { arguments: podsInNamespaceDetails, envelopeResult: resourceListResult },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
   compactCardExpands: expandsForRejectedArguments(zPodsInNamespaceArguments),

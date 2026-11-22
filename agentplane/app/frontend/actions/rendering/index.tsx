@@ -98,10 +98,16 @@ export function renderPaneOpened(
   return rendered === undefined ? recordedDataFallback(args) : rendered;
 }
 
-/** Whether the caller's title repeats the Action label shown in the pane heading. */
-export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unknown, title: string): boolean {
-  const customCheck = presentation(action)?.pane?.requestTitleIsRedundant;
-  return !(customCheck?.(title, args) ?? false);
+/** Show the caller's own title unless it repeats the operation heading. */
+export function shouldRenderRequestTitle(
+  action: ActionIdentity,
+  args: unknown,
+  title: string,
+  label: ReactNode
+): boolean {
+  const heading = label === undefined ? `${action.group} / ${action.name}` : label;
+  const customCheck = presentation(action)?.requestTitleIsRedundant;
+  return title.trim() !== heading && !(customCheck?.(title, args) ?? false);
 }
 
 /** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */
