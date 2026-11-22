@@ -304,3 +304,16 @@ named fields of unit 103's zlib constants object. A proof would need to establis
 which object is read and that each property access is an own data-property read.
 
 [Pair report](https://app.buildbuddy.io/invocation/30d817ef-4e12-4d32-84a2-8ace0c26cda6)
+
+## Flat object destructuring in the editor
+
+All eight declarators in the constructor census follow-up now lower as property
+reads in a single numbered unit. Units 105, 188, 220 and 287 read 18, 9, 11
+and 8 keys, respectively, from unit 103's zlib constants object `Ui`. Together
+they account for 536 of the 1,072 candidate crossings. Unit 104 reads a
+different object (`s6`) between the creation of `Ui` and its first pattern.
+Unit 200 aliases `Ui` before the last two patterns. A certificate needs to
+establish the receiver and its descriptors in the state at the proposed swap.
+The editor still has 70,439 inverted pairs without move proofs and fails
+`OrderOk`.
+[Authored replay and move report](https://app.buildbuddy.io/invocation/6d74c931-dd6b-4b00-b02f-39a97300c68d)

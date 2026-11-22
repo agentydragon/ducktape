@@ -83,6 +83,32 @@ export const bits = (x) => {
   return view.getBigUint64(0).toString(16).padStart(16, "0");
 };
 
+// Flat, nonempty var object patterns can use ordinary CoreJS property reads.
+// Empty patterns still require an explicit null/undefined check.
+const flatObjectVar = (kind, pattern) =>
+  kind === "var" &&
+  pattern.type === "ObjectPattern" &&
+  pattern.properties.length > 0 &&
+  pattern.properties.every((p) => p.type === "Property" && !p.computed && p.value.type === "Identifier");
+
+/** JavaScript binding names, including declarations handled by the opaque fallback. */
+function bindingNames(pattern) {
+  switch (pattern.type) {
+    case "Identifier":
+      return [pattern.name];
+    case "ObjectPattern":
+      return pattern.properties.flatMap((p) => bindingNames(p.type === "RestElement" ? p.argument : p.value));
+    case "ArrayPattern":
+      return pattern.elements.flatMap((p) => (p ? bindingNames(p) : []));
+    case "RestElement":
+      return bindingNames(pattern.argument);
+    case "AssignmentPattern":
+      return bindingNames(pattern.left);
+    default:
+      return refuse(pattern, "a binding pattern");
+  }
+}
+
 /** The `var` names of statements: they belong to the function around them, through every block. */
 function varNames(statements) {
   const names = [];
@@ -90,7 +116,7 @@ function varNames(statements) {
     if (!s) return;
     switch (s.type) {
       case "VariableDeclaration":
-        if (s.kind === "var") for (const d of s.declarations) if (d.id.type === "Identifier") names.push(d.id.name);
+        if (s.kind === "var") for (const d of s.declarations) names.push(...bindingNames(d.id));
         break;
       case "ExportNamedDeclaration":
       case "ExportDefaultDeclaration":
@@ -130,7 +156,7 @@ function lexicalNames(statements) {
       statement.declaration;
     const s = exported || statement;
     if (s.type === "VariableDeclaration" && s.kind !== "var") {
-      for (const d of s.declarations) if (d.id.type === "Identifier") names.push(d.id.name);
+      for (const d of s.declarations) names.push(...bindingNames(d.id));
     } else if ((s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") && s.id) names.push(s.id.name);
   }
   return names;
@@ -512,6 +538,21 @@ export function toCore(
   /** One declaration statement for each name of a declaration list; the count. */
   function declaration(node) {
     for (const d of node.declarations) {
+      if (flatObjectVar(node.kind, d.id)) {
+        // A getter or an earlier target can rebind the RHS name. Cache the value once
+        // in a block-local cell whose name cannot coincide with any JS identifier.
+        const object = "*destructure*";
+        expr(d.init);
+        emit("decl", "const", object);
+        for (const p of d.id.properties) {
+          emit("var", object);
+          key(p.key, false);
+          emit("get");
+          emit("decl", "var", p.value.name);
+        }
+        emit("block", 1 + d.id.properties.length);
+        continue;
+      }
       if (d.id.type !== "Identifier") refuse(d.id, "a destructuring pattern");
       if (d.init) named(d.init, d.id.name);
       else if (node.kind === "var") {
@@ -699,7 +740,8 @@ export function toCore(
         if (node.declaration) {
           const d = node.declaration;
           topLevel(d);
-          const own = d.type === "VariableDeclaration" ? d.declarations.map((x) => x.id.name) : [d.id.name];
+          const own =
+            d.type === "VariableDeclaration" ? d.declarations.flatMap((x) => bindingNames(x.id)) : [d.id.name];
           for (const name of own) exports.push([name, name]);
         } else {
           for (const s of node.specifiers) exports.push([moduleName(s.exported), moduleName(s.local)]);
