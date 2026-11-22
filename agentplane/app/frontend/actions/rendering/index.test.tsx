@@ -1543,11 +1543,16 @@ describe("card decision buttons capability", () => {
     expect(actionCompactCardExpands(action, args)).toBe(false);
     expect(actionOffersCardDecisionButtons(action, { ...args, all_sessions: true })).toBe(false);
     expect(actionCompactCardExpands(action, { ...args, all_sessions: true })).toBe(true);
-    if ("sandbox" in args) {
-      const unknown = { ...args, sandbox: { ...args.sandbox, namespace: "another-namespace" } };
-      expect(actionOffersCardDecisionButtons(action, unknown)).toBe(false);
-      expect(actionCompactCardExpands(action, unknown)).toBe(true);
-    }
+  });
+
+  it("requires full review for unknown options within a Sandbox target", () => {
+    const action = identity("orchestration_v1", "get_session");
+    const args = {
+      session_id: "session-1",
+      sandbox: { name: "review-box", uid: "uid-1", namespace: "another-namespace" },
+    };
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
   });
 
   it("keeps compact Gmail search approvals for visible scope and sends custom labels to review", () => {
