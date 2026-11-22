@@ -100,7 +100,7 @@ def test_staging_requires_the_tls_hop(catalog_manifests: list[dict[str, Any]]) -
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe"}
     api = admin(staging.ENV.namespace)
-    assert f"{api.fqdn}:{api.port.number}" in settings["tls_passthrough_targets"]
+    assert api.authority in settings["tls_passthrough_targets"]
 
 
 def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
@@ -280,10 +280,10 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     """Keep managed CLI origins credential-free while the sidecar presents its Sandbox SVID."""
     namespace = staging.ENV.namespace
     sessions = runner_gateway.sessions_service(namespace)
-    sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
+    sessions_authority = sessions.authority
     legacy_authority = f"session-dispatcher.{namespace}.svc.cluster.local:8080"
     history = history_service.service(namespace)
-    history_origin = f"{history.fqdn}:{history.port.number}"
+    history_origin = history.authority
     history_route = platform_routes.history_grpc(namespace)
     history_url = f"http://{history_route.local_target}"
     environments = environment_service.environments_service(namespace)

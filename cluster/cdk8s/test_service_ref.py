@@ -12,6 +12,7 @@ _SERVICE = ServiceRef(name="test-app", port=Port(name="http", number=80), pods=_
 
 
 def test_client_addresses_dial_the_service_port() -> None:
+    assert _SERVICE.authority == "test-app.test-namespace.svc.cluster.local:80"
     assert _SERVICE.url == "http://test-app.test-namespace.svc:80"
     assert _SERVICE.fqdn == "test-app.test-namespace.svc.cluster.local"
 

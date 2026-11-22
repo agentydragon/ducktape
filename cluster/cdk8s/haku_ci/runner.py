@@ -67,7 +67,7 @@ FORGEJO_TOKEN_KEY = "token"
 _FORGEJO_URL = "http://forgejo-http.forgejo:3000"
 _EGRESS = egress_gateway.service(NAMESPACE)
 # The fully qualified name: job containers resolve with dind's `svc.cluster.local` search list only.
-_PROXY_URL = f"http://{_EGRESS.fqdn}:{_EGRESS.port.number}"
+_PROXY_URL = f"http://{_EGRESS.authority}"
 # Path kept from haku-egress-proxy: haku-state's CI scripts read the bundle here.
 _CA_DIR = "/egress-proxy-ca"
 _CA_FILE = f"{_CA_DIR}/ca-certificates.crt"

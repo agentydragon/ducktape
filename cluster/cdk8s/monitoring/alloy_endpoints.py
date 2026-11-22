@@ -21,5 +21,5 @@ SYSLOG = _pods(SYSLOG_NAME)
 
 OTLP_GRPC = ServiceRef(name=CENTRAL_NAME, port=Port(name="otlp-grpc", number=4317), pods=CENTRAL)
 OTLP_HTTP = ServiceRef(name=CENTRAL_NAME, port=Port(name="otlp-http", number=4318), pods=CENTRAL)
-OTLP_GRPC_ENDPOINT = f"http://{OTLP_GRPC.fqdn}:{OTLP_GRPC.port.number}"
-OTLP_HTTP_ENDPOINT = f"http://{OTLP_HTTP.fqdn}:{OTLP_HTTP.port.number}"
+OTLP_GRPC_ENDPOINT = f"http://{OTLP_GRPC.authority}"
+OTLP_HTTP_ENDPOINT = f"http://{OTLP_HTTP.authority}"

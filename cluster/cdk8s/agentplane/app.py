@@ -113,7 +113,7 @@ class App(Construct):
         settings = self.props.config.model_copy()
         if environment_service_endpoint is not None:
             settings.environment_service = EnvironmentServicePeer(
-                target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
+                target=environment_service_endpoint.authority,
                 request_timeout_s=settings.session_dispatcher_request_timeout_s,
                 tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             )

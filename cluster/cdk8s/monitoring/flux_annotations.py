@@ -35,8 +35,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=_GRAFANA, namespace=_NAMESPACE),
         spec=GrafanaSpec(
             external=GrafanaSpecExternal(
-                url=f"http://{grafana_instance.SERVICE.fqdn}:{grafana_instance.SERVICE.port.number}",
-                tenant_namespace=_NAMESPACE,
+                url=f"http://{grafana_instance.SERVICE.authority}", tenant_namespace=_NAMESPACE
             ),
             client=GrafanaSpecClient(use_kube_auth=True),
         ),

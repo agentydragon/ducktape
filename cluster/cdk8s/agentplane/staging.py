@@ -154,7 +154,7 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 # request in four answered 503 after 5s. Linking keeps the public URL, the resource its token is for.
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
-_GOOGLE_MCP_ORIGIN = f"http://{google_mcp.SERVICE.fqdn}:{google_mcp.SERVICE.port.number}"
+_GOOGLE_MCP_ORIGIN = f"http://{google_mcp.SERVICE.authority}"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 # Action-attributed Dispatcher sends use the Actions service's independent broker grant. The
 # Environments service keeps its own wake allowlist from sandbox_controller.WAKE_SERVICE_CALLERS.
@@ -403,7 +403,7 @@ _ACTION_GROUPS = {
         title="Tana MCP",
         description="Tana read/write tools; every Action remains subject to operator approval.",
         executor_description="Tana MCP backend (tana-mcp).",
-        url=f"http://{tana_mcp.MCP_PROXY.fqdn}:{tana_mcp.MCP_PROXY.port.number}/mcp",
+        url=f"http://{tana_mcp.MCP_PROXY.authority}/mcp",
     ),
     "gmail": _static_bearer_group(
         _GOOGLE_MCP_MOUNT,
@@ -440,7 +440,7 @@ def _app_config(*, identity_catalog: bool) -> Settings:
         firecracker_template=environment_firecracker.NAME,
         runtime=_RUNTIME_CATALOG,
         action_federation=_ACTION_FEDERATION,
-        connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.fqdn}:{_CONNECTION_SERVICE.port.number}"),
+        connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.authority}"),
         app_origin=f"https://{_HOSTNAME}",
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
@@ -496,7 +496,7 @@ ENV = Environment(
     identity_catalog=False,
     central_sampler=CentralSamplerProps(
         actions=ActionsConfig(
-            target=f"{actions.service(STAGING_NAMESPACE).fqdn}:{actions.service(STAGING_NAMESPACE).port.number}",
+            target=actions.service(STAGING_NAMESPACE).authority,
             tls=TLS(
                 cert_file=workload_tls.CERT_FILE, key_file=workload_tls.KEY_FILE, ca_file=workload_tls.TRUST_BUNDLE_FILE
             ),

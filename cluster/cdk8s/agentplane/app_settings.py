@@ -206,19 +206,15 @@ def settings(
         runner_gateway_target=(
             f"{environment_service.environments_service(namespace).fqdn}:{environment_service.environments_service(namespace).pod_port}"
         ),
-        session_dispatcher_target=(
-            f"{runner_gateway.sessions_service(namespace).fqdn}:{runner_gateway.sessions_service(namespace).port.number}"
-        ),
-        policy_service_target=policy_controller.tls_target(namespace),
+        session_dispatcher_target=(runner_gateway.sessions_service(namespace).authority),
+        policy_service_target=policy_controller.tls_service(namespace).authority,
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
         # Every in-cluster caller uses the app's mounted service SVID, so no peer names a bearer
         # token file. Stated here because the settings model has no implicit projected-token path.
         egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
         runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
         session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
-        history_service_target=(
-            f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
-        ),
+        history_service_target=(history_service.service(namespace).authority),
         history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
         notifications_url=AnyHttpUrl(notifications.service(namespace).url),
         notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),

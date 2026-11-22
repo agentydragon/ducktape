@@ -85,9 +85,9 @@ def test_notifications_use_the_configured_backend_targets(staging_manifests: lis
     config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
-    assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
+    assert settings["actions"]["url"] == f"https://{actions.authority}/"
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
-    assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
+    assert settings["session_dispatcher"]["target"] == dispatcher.authority
     policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     egress_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")

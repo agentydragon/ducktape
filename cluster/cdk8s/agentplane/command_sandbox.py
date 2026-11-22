@@ -93,7 +93,7 @@ class CommandSandbox(Construct):
                 routes={
                     rules.name: PlatformRoute(
                         service_prefixes=rules.service_prefixes,
-                        upstream=f"{rules.service.fqdn}:{rules.service.port.number}",
+                        upstream=rules.service.authority,
                         transport=rules.transport,
                     )
                 },

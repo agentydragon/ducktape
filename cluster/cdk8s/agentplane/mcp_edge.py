@@ -142,7 +142,7 @@ class McpEdge(Construct):
                 key_file=Path(serving_tls.key_file),
                 client_uri=MCP_EDGE_URI,
             ),
-            actions_target=f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            actions_target=actions.service(env.namespace).authority,
             policy_namespace=env.namespace,
             actions_token_file=None,
             oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
