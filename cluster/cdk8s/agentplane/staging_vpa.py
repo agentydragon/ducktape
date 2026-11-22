@@ -4,21 +4,12 @@ Agentplane staging opts out of Goldilocks because it also contains dynamic Sandb
 Haku CI opts out because it runs dynamically created Jobs.
 """
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from vpa_crds.io.k8s.autoscaling import (
-    VerticalPodAutoscaler,
-    VerticalPodAutoscalerSpec,
-    VerticalPodAutoscalerSpecResourcePolicy,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
-    VerticalPodAutoscalerSpecTargetRef,
-    VerticalPodAutoscalerSpecUpdatePolicy,
-)
+from cdk8s import App, Chart
 
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.haku_ci import egress_gateway, runner as haku_ci_runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
 NAME = "agentplane-staging-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
@@ -45,43 +36,14 @@ _UPDATE_MODES = {"frontend": "Recreate"}
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     for deployment, container, memory_floor, memory_ceiling in _WORKLOADS:
-        VerticalPodAutoscaler(
+        requests_only_vpa(
             chart,
             deployment,
-            metadata=ApiObjectMetadata(name=deployment, namespace=STAGING_NAMESPACE),
-            spec=VerticalPodAutoscalerSpec(
-                target_ref=VerticalPodAutoscalerSpecTargetRef(
-                    api_version="apps/v1", kind="Deployment", name=deployment
-                ),
-                update_policy=VerticalPodAutoscalerSpecUpdatePolicy(
-                    update_mode=_UPDATE_MODES.get(deployment, "Initial")
-                ),
-                resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
-                    container_policies=[
-                        VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
-                            container_name=container,
-                            controlled_resources=["cpu", "memory"],
-                            controlled_values="RequestsOnly",
-                            min_allowed={
-                                "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
-                                    memory_floor
-                                )
-                            }
-                            if memory_floor is not None
-                            else None,
-                            max_allowed={
-                                "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
-                                    memory_ceiling
-                                )
-                            }
-                            if memory_ceiling is not None
-                            else None,
-                        ),
-                        # Future sidecars do not silently acquire a resource policy.
-                        VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
-                    ]
-                ),
-            ),
+            namespace=STAGING_NAMESPACE,
+            container_name=container,
+            update_mode=_UPDATE_MODES.get(deployment, "Initial"),
+            min_memory=memory_floor,
+            max_memory=memory_ceiling,
         )
     # The staging Deployment artifact already owns and health-checks the Haku relay.
     egress_gateway.add_vpa(chart, haku_ci_runner.NAMESPACE)

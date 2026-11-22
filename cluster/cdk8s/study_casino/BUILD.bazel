@@ -1,5 +1,4 @@
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
-# gazelle:resolve py vpa_crds //cluster/cdk8s/providers/vpa:verticalpodautoscaler
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -27,7 +26,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
-        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "//cluster/cdk8s/providers/vpa:policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

@@ -1,10 +1,9 @@
 """Admission-only sizing for the KubeVirt and CDI controllers."""
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler, VerticalPodAutoscalerSpecTargetRef
+from cdk8s import App, Chart
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.vpa.policy import initial_requests_spec
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
 NAME = "kubevirt-cdi-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/vpa"
@@ -24,12 +23,7 @@ _TARGETS = (
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     for namespace, kind, name in _TARGETS:
-        VerticalPodAutoscaler(
-            chart,
-            name,
-            metadata=ApiObjectMetadata(name=name, namespace=namespace),
-            spec=initial_requests_spec(
-                VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind=kind, name=name), container_name=name
-            ),
+        requests_only_vpa(
+            chart, name, namespace=namespace, target_kind=kind, container_name=name, update_mode="Initial"
         )
     return chart
