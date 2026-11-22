@@ -2,7 +2,7 @@
 
 The verification frontend parses each module with Acorn and passes its annotated ESTree Program to Lean. The footprint dump, translation checker and CoreJS lowerer use the same Lean definition of a top-level unit. Each declarator in a `var`, `let` or `const` list gets its own unit, including inside a named export. A destructuring pattern stays in one unit. Imports and export lists occupy source ordinals in a bundle. The translation checker derives its links from these declarations and numbers the executable body units for pairing. Linked CoreJS modules handle imports separately and assign body IDs from the caller’s table. In the authored Excalidraw replay the module assignments and evaluation order come from the Rust debundler’s reports. Lean reconstructs that plan, checks it and renders the candidate modules. The synthetic split tests supply their own specs. [Excalidraw replay](debug/excalidraw_certificates/authored.mjs)
 
-[`Translate.lean`](../lean/Experiments/Translate.lean) takes a bundle and a tree of ES modules and decides whether the tree is the bundle with its top-level statements moved between modules and its names changed. It does not need to know how the tree was made, so it can referee a splitter, a debundler or an agent that edits names and comments.
+[`Translate.lean`](../lean/EsmSplit/Translate.lean) takes a bundle and a tree of ES modules and decides whether the tree is the bundle with its top-level statements moved between modules and its names changed. It does not need to know how the tree was made, so it can referee a splitter, a debundler or an agent that edits names and comments.
 
 ## Run it
 
@@ -24,7 +24,7 @@ Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and r
 
 ## Footprints
 
-The footprint of a unit is what it touches: whether it reaches the world, which names it may change, which names it reads through functions it calls. [`Effects.lean`](../lean/Experiments/Effects.lean) computes it by running the bundle's top level over abstract values, and [`Lower.lean`](../lean/Experiments/Lower.lean) scans what the unit declares, mentions and assigns. How it works, the premises and the tests are in [`../effects/README.md`](../effects/README.md). `--premises <file>` is `{"vendor": …, "members": …, "noWorldHooks": true}`; every key is optional, and without a file the checker assumes nothing beyond the premises that are always on. Every verdict starts with the premises it rests on.
+The footprint of a unit is what it touches: whether it reaches the world, which names it may change, which names it reads through functions it calls. [`Effects.lean`](../lean/EsmSplit/Effects.lean) computes it by running the bundle's top level over abstract values, and [`Lower.lean`](../lean/EsmSplit/Lower.lean) scans what the unit declares, mentions and assigns. How it works, the premises and the tests are in [`../effects/README.md`](../effects/README.md). `--premises <file>` is `{"vendor": …, "members": …, "noWorldHooks": true}`; every key is optional, and without a file the checker assumes nothing beyond the premises that are always on. Every verdict starts with the premises it rests on.
 
 A callback can escape before a later `const`, `let`, class or other non-hoisted binding initializes. Any unit that runs code the analysis cannot see may invoke it, so such a unit writes every name that reaches an escaped function's closure, and conflicts with the declaration of a name the function reads. [`inert_escape_test.mjs`](inert_escape_test.mjs) holds the shapes (direct, through aliases in objects and arrays, through a module-local slot, a generated pair, an exported declaration seen by a cyclic importer): Node runs each forced split into a `ReferenceError`, and the checker refuses it. A unit that only builds and changes program objects is not an effect, so reordering two of them gives no obligation.
 
@@ -63,7 +63,7 @@ Anything else that differs is a rejection. Modules outside the tree are assumed 
 
 ## Trusted
 
-The checker trusts Acorn's parse and the frontend's annotations for identifier scope, local binders and literal values. Lean extracts units and resolves imports and exports from the Programs. It compares paired units after removing source positions and treating shorthand properties as explicit ones. The footprints are `Effects.lean`'s and `Lower.lean`'s, under the premises they print. The semantic theorem is about the plan and assumes that renaming preserves meaning. [Frontend](frontend.mjs) · [Lean input projection](../lean/Experiments/TranslateInput.lean)
+The checker trusts Acorn's parse and the frontend's annotations for identifier scope, local binders and literal values. Lean extracts units and resolves imports and exports from the Programs. It compares paired units after removing source positions and treating shorthand properties as explicit ones. The footprints are `Effects.lean`'s and `Lower.lean`'s, under the premises they print. The semantic theorem is about the plan and assumes that renaming preserves meaning. [Frontend](frontend.mjs) · [Lean input projection](../lean/EsmSplit/TranslateInput.lean)
 
 The assumption has a known edge: a program can observe the spelling of a name through `fn.name` and `class.name`, `Function.prototype.toString`, `Error` stacks and messages, and `console.log` of a function (`[Function: f]`). A rename changes all of these, and the checker accepts the rename. The [fuzzer](#fuzzer) reproduces it with `--leaks` and reports it apart.
 
@@ -171,7 +171,7 @@ Runtime coverage uses a seed-specific marker binding absent from the original AS
 
 ## What the generators cover
 
-[`COVERAGE.md`](COVERAGE.md) says, for each generator above, which ES2024 node types and syntax forms its programs contain, and which standard functions they call, next to how [`Effects.lean`](../lean/Experiments/Effects.lean) treats each (an arm of `eval`, `exec`, `evalClass` or `bindPattern`, or a give-up) and which rows [`Intrinsics.lean`](../lean/Experiments/Intrinsics.lean) has. Only programs that complete count, because premise P4 drops the others. The audit is a script, not a test of the checker; it reads the Lean sources, so the table is out of date after a change to them:
+[`COVERAGE.md`](COVERAGE.md) says, for each generator above, which ES2024 node types and syntax forms its programs contain, and which standard functions they call, next to how [`Effects.lean`](../lean/EsmSplit/Effects.lean) treats each (an arm of `eval`, `exec`, `evalClass` or `bindPattern`, or a give-up) and which rows [`Intrinsics.lean`](../lean/EsmSplit/Intrinsics.lean) has. Only programs that complete count, because premise P4 drops the others. The audit is a script, not a test of the checker; it reads the Lean sources, so the table is out of date after a change to them:
 
 ```sh
 node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --write COVERAGE.md

@@ -1,4 +1,4 @@
-// The front end of the CoreJS model (`lean/Experiments/CoreJS`): acorn's tree for a module, as the model's syntax.
+// The front end of the CoreJS model (`lean/EsmSplit/CoreJS`): acorn's tree for a module, as the model's syntax.
 //
 //   node to_core.mjs [--allow-host] program.mjs     one line of JSON on stdout: the program, with the modules it imports
 //

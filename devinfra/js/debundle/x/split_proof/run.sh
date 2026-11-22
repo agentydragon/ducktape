@@ -10,7 +10,7 @@
 #   ./run.sh --splits     also check 2,892 splits of six real bundles and run each in Node (needs --lowering first; about 10 minutes)
 #   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write debundle_cases/results (about 10 seconds)
 #   ./run.sh --translation  also run the golden cases of the effect analysis (effects), then check that tampered output trees are rejected and renamed, reshuffled ones accepted (translation fixtures)
-#   ./run.sh --model      also run the CoreJS model (lean/Experiments/CoreJS) against Node: hand-written cases, programs of several modules, 240 generated programs cut down to its fragment, and splits of them by lowersplit (about a minute)
+#   ./run.sh --model      also run the CoreJS model (lean/EsmSplit/CoreJS) against Node: hand-written cases, programs of several modules, 240 generated programs cut down to its fragment, and splits of them by lowersplit (about a minute)
 #   ./run.sh --translation-fuzz  also fuzz the translation checker: every tree it accepts must behave like its bundle in Node (about 20 seconds; FUZZ_COUNT=N sets the bundles, default 150)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -87,9 +87,9 @@ if [[ " $* " == *" --lowering "* ]]; then
   (cd lowering && node compare.mjs example.json --example && node compare.mjs torture.json bundles/*.json)
   step "Lowering: one Lean program, JSON AST + spec -> modules + kernel certificate (no extract.mjs)"
   out=$(mktemp -d)
-  lean/.lake/build/bin/lowersplit lowering/example.json example/spec.json "$out" --lean lean/Experiments/Generated.lean
+  lean/.lake/build/bin/lowersplit lowering/example.json example/spec.json "$out" --lean lean/EsmSplit/Generated.lean
   rm -rf "$out"
-  (cd lean && lake env lean Experiments/Generated.lean)
+  (cd lean && lake env lean EsmSplit/Generated.lean)
 fi
 
 if [[ " $* " == *" --es-order "* ]]; then
@@ -127,7 +127,7 @@ fi
 
 if [[ " $* " == *" --model "* ]]; then
   step "CoreJS: the executable model of a core of JavaScript, against Node"
-  (cd lean && lake build corejs lowersplit evalorder Experiments.CoreJS.Frame Experiments.CoreJS.Split)
+  (cd lean && lake build corejs lowersplit evalorder EsmSplit.CoreJS.Frame EsmSplit.CoreJS.Split)
   (cd translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent)
   (cd model && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node differential.mjs --count 40 --seed 1 --splits 150)

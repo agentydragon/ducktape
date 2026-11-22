@@ -2,7 +2,7 @@
 //
 //   node pair.mjs <bundle.json> <output.json> --out cert.json
 //
-// Untrusted. `lean/Experiments/Translate.lean` re-checks every pair, so a wrong pairing is rejected there; a pairing
+// Untrusted. `lean/EsmSplit/Translate.lean` re-checks every pair, so a wrong pairing is rejected there; a pairing
 // that cannot be completed is reported here and left out of the certificate.
 //
 // Units with the same shape (identifiers by class, literals, property names) are candidates for each other. Copies of

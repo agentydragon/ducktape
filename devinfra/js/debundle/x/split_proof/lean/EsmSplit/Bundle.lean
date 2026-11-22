@@ -9,7 +9,7 @@ All the splitter and the proof need from each statement is its *footprint*
 (what it declares, what it reads, which names it may assign, whether it has effects), plus its source text,
 which is copied verbatim and never inspected.
 
-Footprints come from the JavaScript front end (`extract/extract.mjs`, or `Experiments/Lower.lean`).
+Footprints come from the JavaScript front end (`extract/extract.mjs`, or `EsmSplit/Lower.lean`).
 That front end is the trusted boundary; everything below it is checked by Lean.
 
 Every check below is stated declaratively (`∀ … ∈ …`) and decided by an indexed algorithm

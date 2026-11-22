@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 export const INTERPRETER_FUNCTIONS = ["eval", "evalClass", "bindPattern", "exec"];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_LEAN_DIR = path.join(here, "../lean/Experiments");
+export const DEFAULT_LEAN_DIR = path.join(here, "../lean/EsmSplit");
 
 /** The text of `partial def <name>` up to the next top-level definition of the file. */
 function definitionText(source, name) {

@@ -14,7 +14,7 @@ Recorded on 2026-11-21, after taking the experiment from a 12-statement example 
 
 ## The footprint analysis is the weak input
 
-The checker reads one footprint per unit: what it declares, reads, may write, and whether it touches the world. [`Effects.lean`](../lean/Experiments/Effects.lean) computes them by abstract interpretation. It is about 2,150 lines, tested and not proved.
+The checker reads one footprint per unit: what it declares, reads, may write, and whether it touches the world. [`Effects.lean`](../lean/EsmSplit/Effects.lean) computes them by abstract interpretation. It is about 2,150 lines, tested and not proved.
 
 - **Every independent attack found dozens of wrong rules.** Three attempts of about half an hour each found 24 wrong accepts (patches of standard objects), then 63 (the table of standard functions), then 29 (the core language). Each looked at a different area and each batch was fixed, so the counts do not show a trend; they show that no area we looked at was clean.
 - **Most units only allocate.** 7,123 of the large bundle's 9,707 top-level units are built from literals, object and array literals, function expressions and plain classes, with no call and no property read. The analysis calls none of them an effect. A rule for this one shape, proved against a model, would cover 73% of the units.
@@ -25,7 +25,7 @@ The checker reads one footprint per unit: what it declares, reads, may write, an
 
 ## The first slice of a model
 
-[`CoreJS`](../lean/Experiments/CoreJS/) is an executable model of a core of JavaScript, with one footprint rule proved in it ([`../experiments/README.md`](../experiments/README.md) § 14).
+[`CoreJS`](../lean/EsmSplit/CoreJS/) is an executable model of a core of JavaScript, with one footprint rule proved in it ([`../experiments/README.md`](../experiments/README.md) § 14).
 
 - **An interpreter can be tested, and the test found the one error.** Model and Node agree on every program both run. The one disagreement on the way was the last bit of `**`, which the specification leaves to the implementation; the operator is refused now.
 - **The program generator barely reaches the model.** No whole generated program is in the fragment, because nearly every one calls the standard library. Cut down to the units the model accepts, about 9% of the units are left. Hand-written cases carry the object model. A few methods of strings and arrays would let whole programs through.
