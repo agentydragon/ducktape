@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/configfile",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/identity/operator",
@@ -39,7 +40,6 @@ go_library(
         "//agentplane/watchhealth",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/util/validation",

@@ -15,6 +15,7 @@ import (
 var (
 	ErrMultipleDocuments = errors.New("settings file must contain exactly one YAML document")
 	ErrInvalidYAML       = errors.New("invalid YAML")
+	ErrTrailingYAML      = errors.New("invalid YAML after the first document")
 )
 
 // MapstructureOptions preserves the few mapping differences used by existing services.
@@ -42,6 +43,14 @@ func DecodeMapstructureYAML(contents []byte, result any, options MapstructureOpt
 		return nil, err
 	}
 
+	if err := DecodeMapstructure(settings, result, options); err != nil {
+		return nil, err
+	}
+	return settings, nil
+}
+
+// DecodeMapstructure decodes a settings mapping after a caller has separated any specially decoded fields.
+func DecodeMapstructure(settings map[string]any, result any, options MapstructureOptions) error {
 	var hook mapstructure.DecodeHookFunc = mapstructure.TextUnmarshallerHookFunc()
 	if options.DecodeHook != nil {
 		hook = mapstructure.ComposeDecodeHookFunc(hook, options.DecodeHook)
@@ -56,12 +65,9 @@ func DecodeMapstructureYAML(contents []byte, result any, options MapstructureOpt
 	}
 	mapDecoder, err := mapstructure.NewDecoder(decoderConfig)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := mapDecoder.Decode(settings); err != nil {
-		return nil, err
-	}
-	return settings, nil
+	return mapDecoder.Decode(settings)
 }
 
 // RedactMapstructureError names the failed loading stage without including input or file details.
@@ -97,7 +103,7 @@ func decodeOne(decoder *yaml.Decoder, result any) error {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err != nil {
-			return fmt.Errorf("%w: %w", ErrInvalidYAML, err)
+			return fmt.Errorf("%w: %w: %w", ErrInvalidYAML, ErrTrailingYAML, err)
 		}
 		return ErrMultipleDocuments
 	}

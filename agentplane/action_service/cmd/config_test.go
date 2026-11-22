@@ -470,8 +470,11 @@ func TestSettingsFileIsRequiredAndContainsOneDocument(t *testing.T) {
 			t.Fatalf("accepted config file %q", path)
 		}
 	}
-	if _, err := loadTestConfig(t, requiredFile+"---\npolicy_namespace: replacement\n"); err == nil {
-		t.Fatal("accepted multiple YAML documents")
+	for _, trailingDocument := range []string{"policy_namespace: replacement\n", "]\n"} {
+		_, err := loadTestConfig(t, requiredFile+"---\n"+trailingDocument)
+		if err == nil || !strings.Contains(err.Error(), "must contain exactly one YAML document") {
+			t.Errorf("expected single-document error for %q, got %v", trailingDocument, err)
+		}
 	}
 }
 
