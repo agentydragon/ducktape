@@ -30,6 +30,7 @@ import { useFrontendConfig } from "../app_config/frontend_config";
 import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
 import { ThreadConversation } from "./conversation";
+import { DispatchWorksetPanel, useDispatchWorkset } from "./dispatch_workset_panel";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
 import "./conversation.css";
@@ -72,6 +73,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
+  const dispatchWorkset = useDispatchWorkset(thread?.metadata.threadId === threadId ? threadId : null);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
@@ -231,8 +233,12 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               traceSearch={traceSearch}
               langfuseSearch={langfuseSearch}
               sandbox={sandbox}
+              dispatchWorkset={dispatchWorkset}
             />
           </sync.Thread>
+        )}
+        {thread && materializationUnconfirmed && !thread.summary.projectionEpoch && (
+          <DispatchWorksetPanel key={threadId} sessionId={threadId} view={dispatchWorkset} />
         )}
       </Stack>
     </ChronologicalDebugProvider>

@@ -245,6 +245,13 @@ beforeEach(() => {
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
       const url = new URL(String(input), window.location.href);
+      const worksetSession = url.searchParams.get("worksetSessionId");
+      if (url.pathname === "/upstream/dispatcher/v1/dispatches:watch" && worksetSession) {
+        const stream = new ServedWatch(String(input), init?.signal ?? undefined);
+        dispatchWatches.push(stream);
+        stream.send({ workset: { sessionId: worksetSession }, resumeToken: "test-workset" });
+        return Promise.resolve(stream.response);
+      }
       if (
         url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
@@ -1518,8 +1525,11 @@ function dispatchRow(commandId: string, state: string, reason: string | undefine
 }
 
 async function openedWatch(): Promise<ServedWatch> {
-  await vi.waitFor(() => expect(dispatchWatches).not.toHaveLength(0));
-  return dispatchWatches[0];
+  return vi.waitFor(() => {
+    const watch = dispatchWatches.find(({ url }) => url.searchParams.has("filter.commandIds"));
+    if (!watch) throw new Error("No command-ID Dispatcher watch");
+    return watch;
+  });
 }
 
 // What the Dispatcher holds, then the frame that says the watch has it all.
@@ -1530,6 +1540,191 @@ async function sendDispatches(rows: object[]): Promise<void> {
     watch.send({ caughtUp: {}, resumeToken: "page-dispatch-checkpoint" });
   });
 }
+
+function selectedWorksetWatch(previous?: ServedWatch): Promise<ServedWatch> {
+  return vi.waitFor(() => {
+    const watch = dispatchWatches.find(
+      ({ url, signal }) => url.searchParams.get("worksetSessionId") === THREAD.metadata.threadId && !signal?.aborted
+    );
+    if (!watch || watch === previous) throw new Error("No Session workset watch");
+    return watch;
+  });
+}
+
+it("shows Dispatcher delivery before History materializes and keeps one watch when History arrives", async () => {
+  const container = await render({ window: null, error: null });
+  const watch = await selectedWorksetWatch();
+  await act(async () =>
+    watch.send({
+      workset: {
+        sessionId: THREAD.metadata.threadId,
+        active: [
+          {
+            commandId: "pre-history",
+            operation: "OPERATION_SUBMIT_INPUT",
+            state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          },
+        ],
+      },
+      resumeToken: "pre-history",
+    })
+  );
+  expect(container.textContent).toContain("Loading thread…");
+  expect(container.textContent).toContain("Send message · Queued in Dispatcher");
+  await rerender(container, threadState());
+  expect(container.textContent).toContain("Send message · Queued in Dispatcher");
+  expect(dispatchWatches.filter(({ url }) => url.searchParams.has("worksetSessionId"))).toEqual([watch]);
+});
+
+it("shows server delivery for a fresh browser and defers to settled History", async () => {
+  const settled = entity({
+    case: "command",
+    value: {
+      operation: Operation.CHANGE_MODEL,
+      outcome: ThreadCommandOutcome.EFFECTED,
+      outcomeCursor: 2n,
+      outcomeReason: undefined,
+      requestedValue: "test-model",
+    },
+  });
+  settled.entityId = "settled-model";
+  settled.cursor = 2n;
+  const container = await render(threadState({ rows: [viewState(), settled] }));
+  const watch = await selectedWorksetWatch();
+  expect(watch.url.searchParams.has("filter.sessionId")).toBe(false);
+  await act(async () => {
+    watch.send({
+      workset: {
+        sessionId: THREAD.metadata.threadId,
+        active: [
+          {
+            commandId: "remote-message",
+            operation: "OPERATION_SUBMIT_INPUT",
+            state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          },
+          {
+            commandId: "remote-interrupt",
+            operation: "OPERATION_INTERRUPT_TURN",
+            state: "DELIVERY_STATE_DELIVERING_TO_RUNNER",
+          },
+        ],
+        recentIssues: [
+          {
+            commandId: "remote-model",
+            operation: "OPERATION_CHANGE_MODEL",
+            state: "DELIVERY_STATE_UNKNOWN",
+            journalAdmitted: true,
+            reason: "Runner closed before confirming the effect",
+          },
+          {
+            commandId: settled.entityId,
+            operation: "OPERATION_CHANGE_MODEL",
+            state: "DELIVERY_STATE_UNKNOWN",
+            reason: "Intermediate delivery receipt",
+          },
+        ],
+        recentAdmittedOrCancelled: [
+          {
+            commandId: "remote-effort",
+            operation: "OPERATION_CHANGE_REASONING_EFFORT",
+            state: "DELIVERY_STATE_RUNNER_ADMITTED",
+          },
+        ],
+        moreActiveAvailable: true,
+        moreRecentIssuesAvailable: true,
+        moreRecentAdmittedOrCancelledAvailable: true,
+      },
+      resumeToken: "initial-workset",
+    });
+  });
+  const panel = container.querySelector('[aria-label="Dispatcher delivery"]');
+  for (const text of [
+    "Send message · Queued in Dispatcher",
+    "Turn interrupt · Sending to runner",
+    "Model change · Outcome unknown",
+    "Runner accepted the command",
+    "Reasoning effort change · Runner accepted",
+    "More active commands are outside this view.",
+    "Older delivery issues are outside this view.",
+    "Older admissions or cancellations are outside this view.",
+  ])
+    expect(panel?.textContent).toContain(text);
+  expect(panel?.textContent).not.toContain("Intermediate delivery receipt");
+  expect(panel?.querySelectorAll("button")).toHaveLength(0);
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
+});
+
+it("leaves a locally retained command with its existing browser row", async () => {
+  const local = message("local-workset");
+  new LocalCommands(THREAD.metadata.threadId).remember(local);
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await act(async () => {
+    watch.send({
+      workset: {
+        sessionId: THREAD.metadata.threadId,
+        active: [
+          {
+            commandId: local.commandId,
+            operation: "OPERATION_SUBMIT_INPUT",
+            state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          },
+        ],
+      },
+      resumeToken: "matching",
+    });
+  });
+  expect(pendingRow(container, local.commandId)).not.toBeNull();
+  expect(container.querySelector(`[data-dispatch-command-id="${local.commandId}"]`)).toBeNull();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
+});
+
+it("reads a full legacy reason by command ID and retains the view across expired coverage", async () => {
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  const updatedAt = "2026-11-20T12:00:00Z";
+  const reason = "Sandbox was deleted while the receipt was still pending.";
+  const row = {
+    commandId: "legacy-dispatch",
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_UNKNOWN",
+    updatedAt,
+  };
+  await act(async () => {
+    watch.send({
+      workset: {
+        sessionId: THREAD.metadata.threadId,
+        recentIssues: [{ ...row, reason: "Sandbox was deleted", reasonTruncated: true }],
+      },
+      resumeToken: "legacy-workset",
+    });
+  });
+  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
+  await act(async () => buttonIn(panel, "Show full reason")?.click());
+  const selected = await openedWatch();
+  expect(selected.url.searchParams.get("filter.sessionId")).toBe(THREAD.metadata.threadId);
+  expect(selected.url.searchParams.getAll("filter.commandIds")).toEqual([row.commandId]);
+  await act(async () => {
+    selected.send({
+      dispatch: { ...row, sessionId: THREAD.metadata.threadId, reason },
+      resumeToken: "legacy-receipt",
+    });
+    selected.send({ caughtUp: {}, resumeToken: "selected-workset" });
+  });
+  expect(panel.textContent).toContain(reason);
+  expect(selected.signal?.aborted).toBe(true);
+  await act(async () => watch.write('{"error":{"code":11,"message":"coverage expired"}}\n'));
+  expect(panel.textContent).toContain("Showing the last delivery update while reconnecting.");
+  expect(panel.textContent).toContain("Some earlier delivery receipts may have expired.");
+  expect(panel.textContent).toContain(reason);
+  await act(async () => window.dispatchEvent(new Event("online")));
+  const replacement = await selectedWorksetWatch(watch);
+  expect(replacement.url.searchParams.has("resumeToken")).toBe(false);
+  await act(async () => replacement.send({ workset: { sessionId: THREAD.metadata.threadId }, resumeToken: "fresh" }));
+  expect(panel.textContent).not.toContain(reason);
+  expect(panel.textContent).not.toContain("while reconnecting");
+  expect(panel.textContent).toContain("Some earlier delivery receipts may have expired.");
+});
 
 it("replaces a queued Dispatcher receipt with the failure its stream reports", async () => {
   const waiting = message("queued-then-failed");
