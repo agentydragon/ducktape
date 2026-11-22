@@ -85,6 +85,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//docker",
         "@pypi//testcontainers",
     ],
 )
