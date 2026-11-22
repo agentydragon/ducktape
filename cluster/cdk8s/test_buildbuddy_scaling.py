@@ -16,6 +16,7 @@ _SHADOW_TARGET = "buildbuddy_kvm:shadow_target_workers"
 _HEALTH_CHECKS = ("registered_to_scheduler", "grpc_app_connection", "grpc_cache_connection", "executor_disk_usage")
 _NAMESPACE = 'namespace="buildbuddy-executor"'
 _POOL = "buildbuddy-kvm-worker"
+_WORK_DISK_THRESHOLD = 50 * 1024**3
 
 
 def _worker_rules(runfiles: Runfiles) -> dict[str, Any]:
@@ -69,7 +70,7 @@ def _worker(ordinal: int, **overrides: int | str | None) -> list[dict[str, str]]
         "assignable_cpu": (f"{execution}_assignable_milli_cpu{{{executor}}}", 4_000),
         "assigned_ram": (f"{execution}_assigned_ram_bytes{{{executor}}}", 0),
         "assignable_ram": (f"{execution}_assignable_ram_bytes{{{executor}}}", 7 * 1024**3),
-        "work_disk": (f'node_filesystem_avail_bytes{{{guest},mountpoint="/buildbuddy"}}', 50_000_000_000),
+        "work_disk": (f'node_filesystem_avail_bytes{{{guest},mountpoint="/buildbuddy"}}', _WORK_DISK_THRESHOLD),
         "root_disk": (f'node_filesystem_avail_bytes{{{guest},mountpoint="/"}}', 60_000_000_000),
         "queue": (f'{execution}_queue_length{{{executor},group_id="test-group"}}', None),
     }
@@ -139,7 +140,7 @@ def test_shadow_target(runfiles: Runfiles, promtool: PromtoolRules) -> None:
             "add one when each worker is short of a different resource",
             _worker(0, assigned_cpu=1, queue=4),
             _worker(1, assigned_ram=1),
-            _worker(2, work_disk=49_999_999_999),
+            _worker(2, work_disk=_WORK_DISK_THRESHOLD - 1),
             desired=3,
             expected=4,
         ),
@@ -173,7 +174,7 @@ def test_shadow_target(runfiles: Runfiles, promtool: PromtoolRules) -> None:
         "launcher is deleting": {"deleting": 1},
         "launcher identity is missing": {"pod": None},
         "launcher identity is 180 seconds old": {"pod": "1 1"},
-        "work disk sample is 180 seconds old": {"work_disk": "50000000000 50000000000"},
+        "work disk sample is 180 seconds old": {"work_disk": f"{_WORK_DISK_THRESHOLD} {_WORK_DISK_THRESHOLD}"},
         **{
             f"{signal} is missing": {signal: None}
             for signal in (
