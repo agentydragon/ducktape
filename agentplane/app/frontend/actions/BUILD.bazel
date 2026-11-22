@@ -1,11 +1,10 @@
-# gazelle:exclude test_visual_actions.py
-# gazelle:exclude test_visual_operation_presentation.py
-
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:visual_tests.bzl", "agentplane_visual_test")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+load(":visual_groups.bzl", "visual_group_tests")
+# gazelle:exclude test_visual_*.py
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -87,7 +86,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/actions/rendering:dispatch",
         "//agentplane/app/frontend/connections:service_accounts",
         "//agentplane/app/frontend/ui:raw_switch",
         "//agentplane/app/frontend/ui:text_block",
@@ -133,7 +132,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/actions/rendering:dispatch",
         "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:resize_handle",
@@ -230,7 +229,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/actions/rendering:dispatch",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:stream_reader",
@@ -418,19 +417,12 @@ agentplane_vitest_test(
 
 check_vitest_specs()
 
-agentplane_visual_test(
-    name = "visual_actions",
-    src = "test_visual_actions.py",
-    bundle = "//agentplane/app/frontend/actions/testing:visual_bundle",
-    index = "//agentplane/app/frontend/actions/testing:visual_index",
-    shard_count = 16,
-    title = "Agentplane: action presentations",
-)
+visual_group_tests()
 
 agentplane_visual_test(
     name = "visual_operation_presentation",
     src = "test_visual_operation_presentation.py",
-    bundle = "//agentplane/app/frontend/actions/testing:visual_bundle",
-    index = "//agentplane/app/frontend/actions/testing:visual_index",
+    bundle = "//agentplane/app/frontend/actions/testing:operation_bundle",
+    index = "//agentplane/app/frontend/actions/testing:operation_index",
     title = "Agentplane: shared Action presentation",
 )

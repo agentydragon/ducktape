@@ -12,20 +12,7 @@ import { CallToolResultView, type CallToolResult } from "../call_tool_result";
 import { answerApi, button, mount, SSH_EXEC_ARGUMENTS, sshExec, toolResult } from "../testing/harness";
 import { ACTION_NOTIFICATION_FORMATTERS } from "../notifications";
 import { executionResult } from "../presentation";
-import {
-  ACTION_RENDERERS,
-  actionCompactCardExpands,
-  actionOffersCardDecisionButtons,
-  renderActionCall,
-  renderActionLabel,
-  renderActionOutcome,
-  renderDetailsArguments,
-  renderDetailsResult,
-  renderNativeDetailsResult,
-  renderPaneCollapsed,
-  renderPaneOpened,
-  shouldRenderRequestTitle,
-} from "./index";
+import { ACTION_RENDERERS, appActionRendering } from "./index";
 
 function identity(group: string, name: string): ActionIdentity {
   return create(ActionIdentitySchema, { group, name });
@@ -34,7 +21,7 @@ function identity(group: string, name: string): ActionIdentity {
 const SSH_EXEC = identity("ssh", "exec");
 
 async function drawDetailsResult(action: ActionIdentity, result: CallToolResult) {
-  const custom = renderDetailsResult(action, result);
+  const custom = appActionRendering.renderDetailsResult(action, result);
   return mount(custom === undefined ? <CallToolResultView result={result} /> : custom);
 }
 
@@ -44,6 +31,10 @@ function stored(returned: Record<string, unknown> = {}): CallToolResult {
 }
 
 describe("Action presentation slots", () => {
+  it("has a visual suite for each registered Action group", () => {
+    expect(process.env.VISUAL_ACTION_GROUPS?.split(",").sort()).toEqual([...ACTION_RENDERERS.keys()].sort());
+  });
+
   it("gives every custom browser Action a push notification format", () => {
     for (const [group, renderers] of ACTION_RENDERERS) {
       const formatters = ACTION_NOTIFICATION_FORMATTERS.get(group);
@@ -57,12 +48,16 @@ describe("Action presentation slots", () => {
   it("summarizes supported Home Assistant service calls using the target and effect", async () => {
     const action = identity("home_assistant", "ha_call_service");
     const fan = { domain: "fan", service: "set_percentage", entity_id: "fan.greenhouse", data: { percentage: 35 } };
-    expect((await mount(renderActionLabel(action, fan))).textContent).toContain("Set fan.greenhouse to 35%");
-    expect((await mount(renderPaneOpened(action, fan))).textContent).toContain("fan.greenhouse");
-    expect(actionOffersCardDecisionButtons(action, fan)).toBe(false);
+    expect((await mount(appActionRendering.renderActionLabel(action, fan))).textContent).toContain(
+      "Set fan.greenhouse to 35%"
+    );
+    expect((await mount(appActionRendering.renderPaneOpened(action, fan))).textContent).toContain("fan.greenhouse");
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, fan)).toBe(false);
     const generic = { domain: "fan", service: "set_percentage", entity_id: ["fan.greenhouse", "fan.study"] };
-    expect((await mount(renderActionLabel(action, generic))).textContent).toContain("Call fan · set percentage");
-    expect((await mount(renderActionLabel(action, { ...fan, future: true }))).textContent).toContain(
+    expect((await mount(appActionRendering.renderActionLabel(action, generic))).textContent).toContain(
+      "Call fan · set percentage"
+    );
+    expect((await mount(appActionRendering.renderActionLabel(action, { ...fan, future: true }))).textContent).toContain(
       "Call Home Assistant service"
     );
   });
@@ -74,9 +69,9 @@ describe("Action presentation slots", () => {
       labelSelector: "app=web",
     };
     const action = identity("kubernetes_admin", "pods_list_in_namespace");
-    const details = await mount(renderDetailsArguments(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
 
-    expect(renderPaneCollapsed(action, args)).toBeNull();
+    expect(appActionRendering.renderPaneCollapsed(action, args)).toBeNull();
     expect(details.textContent).toContain("field selector status.phase=Running");
     expect(details.textContent).not.toContain("List pods in namespace");
     expect(details.textContent).not.toContain("namespace prod");
@@ -85,26 +80,34 @@ describe("Action presentation slots", () => {
   it("uses a human-facing Action label in place of the technical identity", async () => {
     const action = identity("kubernetes_admin", "pods_list_in_namespace");
     const args = { namespace: "tofu-controller" };
-    const heading = renderActionLabel(action, args);
+    const heading = appActionRendering.renderActionLabel(action, args);
     const label = await mount(heading);
 
     expect(label.textContent).toContain("List pods in namespace tofu-controller");
     expect(label.textContent).not.toContain("kubernetes_admin");
     expect(label.textContent).not.toContain("pods_list_in_namespace");
-    const fallback = await mount(renderActionLabel(action, { namespace: "tofu-controller", hidden: true }));
+    const fallback = await mount(
+      appActionRendering.renderActionLabel(action, { namespace: "tofu-controller", hidden: true })
+    );
     expect(fallback.textContent).toContain("List pods in namespace");
-    expect(shouldRenderRequestTitle(action, args, "List pods in namespace tofu-controller", heading)).toBe(false);
-    expect(shouldRenderRequestTitle(action, args, "Inspect the running demo pods", heading)).toBe(true);
+    expect(
+      appActionRendering.shouldRenderRequestTitle(action, args, "List pods in namespace tofu-controller", heading)
+    ).toBe(false);
+    expect(appActionRendering.shouldRenderRequestTitle(action, args, "Inspect the running demo pods", heading)).toBe(
+      true
+    );
   });
 
   it("suppresses a caller title matching the displayed text label", () => {
     const action = identity("gmail", "threads_list");
     const args = {};
-    const heading = renderActionLabel(action, args);
+    const heading = appActionRendering.renderActionLabel(action, args);
 
     expect(heading).toBe("Gmail: Search threads");
-    expect(shouldRenderRequestTitle(action, args, "Gmail: Search threads", heading)).toBe(false);
-    expect(shouldRenderRequestTitle(action, args, "Search for the release email", heading)).toBe(true);
+    expect(appActionRendering.shouldRenderRequestTitle(action, args, "Gmail: Search threads", heading)).toBe(false);
+    expect(appActionRendering.shouldRenderRequestTitle(action, args, "Search for the release email", heading)).toBe(
+      true
+    );
   });
 
   it.each([
@@ -115,7 +118,7 @@ describe("Action presentation slots", () => {
     ["pods_get", { name: "web-0", namespace: "apps" }, "Get Pod apps/web-0"],
     ["pods_log", { name: "web-0", namespace: "apps" }, "View logs for Pod apps/web-0"],
   ] as const)("uses the concise Kubernetes identity for %s", async (name, args, expected) => {
-    const label = await mount(renderActionLabel(identity("kubernetes_admin", name), args));
+    const label = await mount(appActionRendering.renderActionLabel(identity("kubernetes_admin", name), args));
     expect(label.textContent).toContain(expected);
     expect(label.textContent).not.toContain("in namespace apps");
   });
@@ -123,9 +126,9 @@ describe("Action presentation slots", () => {
   it("keeps a Kubernetes target in its heading and shows only additional details below it", async () => {
     const action = identity("kubernetes_admin", "resources_get");
     const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
-    const label = await mount(renderActionLabel(action, args));
-    const opened = await mount(renderPaneOpened(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, args));
+    const opened = await mount(appActionRendering.renderPaneOpened(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Get Deployment apps/web");
     expect(opened.textContent).toContain("Read with API version apps/v1");
@@ -137,10 +140,10 @@ describe("Action presentation slots", () => {
   it("keeps the target in the label without adding namespace boilerplate", async () => {
     const action = identity("kubernetes_admin", "resources_get");
     const args = { apiVersion: "v1", kind: "Pod", name: "web-0" };
-    const opened = await mount(renderPaneOpened(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
-    const label = await mount(renderActionLabel(action, { ...args, namespace: "apps" }));
-    const suppliedNamespace = await mount(renderPaneOpened(action, { ...args, namespace: "apps" }));
+    const opened = await mount(appActionRendering.renderPaneOpened(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, { ...args, namespace: "apps" }));
+    const suppliedNamespace = await mount(appActionRendering.renderPaneOpened(action, { ...args, namespace: "apps" }));
 
     expect(opened.textContent).toContain("Read with API version v1");
     expect(details.textContent).toContain("Read with API version v1");
@@ -148,15 +151,15 @@ describe("Action presentation slots", () => {
     expect(details.textContent).not.toContain("Namespace");
     expect(suppliedNamespace.textContent).not.toContain("Namespace");
     expect(label.textContent).toContain("apps/web-0");
-    expect(actionOffersCardDecisionButtons(action, { ...args, namespace: "" })).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, { ...args, namespace: "" })).toBe(false);
   });
 
   it("keeps Kubernetes list scope visible and folds narrowing selectors", async () => {
     const listArgs = { apiVersion: "v1", kind: "Pod", namespace: "apps", labelSelector: "app=web" };
     const listAction = identity("kubernetes_admin", "resources_list");
-    const listLabel = await mount(renderActionLabel(listAction, listArgs));
-    const listCollapsed = await mount(renderPaneCollapsed(listAction, listArgs));
-    const listPane = await mount(renderPaneOpened(listAction, listArgs));
+    const listLabel = await mount(appActionRendering.renderActionLabel(listAction, listArgs));
+    const listCollapsed = await mount(appActionRendering.renderPaneCollapsed(listAction, listArgs));
+    const listPane = await mount(appActionRendering.renderPaneOpened(listAction, listArgs));
     expect(listLabel.textContent).toContain("List Pod resources in namespace apps");
     expect(listCollapsed.textContent).not.toContain("label selector app=web");
     expect(listCollapsed.textContent).toContain("Using API version v1");
@@ -167,21 +170,25 @@ describe("Action presentation slots", () => {
 
     const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
     const eventsAction = identity("kubernetes_admin", "events_list");
-    const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
-    const eventsOpened = await mount(renderPaneOpened(eventsAction, eventsArgs));
+    const eventsLabel = await mount(appActionRendering.renderActionLabel(eventsAction, eventsArgs));
+    const eventsOpened = await mount(appActionRendering.renderPaneOpened(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
-    expect(renderPaneCollapsed(eventsAction, eventsArgs)).toBeNull();
+    expect(appActionRendering.renderPaneCollapsed(eventsAction, eventsArgs)).toBeNull();
     expect(eventsOpened.textContent).toContain("type=Warning");
     expect(eventsOpened.textContent).not.toContain("apps");
-    expect(renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
+    expect(appActionRendering.renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
   });
 
   it("names a cluster-scoped delete by its kind and name", async () => {
     const action = identity("kubernetes_admin", "resources_delete");
     const args = { apiVersion: "v1", kind: "PersistentVolume", name: "test-volume" };
-    expect((await mount(renderActionLabel(action, args))).textContent).toContain("Delete PersistentVolume test-volume");
-    expect((await mount(renderPaneOpened(action, args))).textContent).toContain("Use API version v1");
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect((await mount(appActionRendering.renderActionLabel(action, args))).textContent).toContain(
+      "Delete PersistentVolume test-volume"
+    );
+    expect((await mount(appActionRendering.renderPaneOpened(action, args))).textContent).toContain(
+      "Use API version v1"
+    );
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
   });
 
   it.each([
@@ -193,28 +200,28 @@ describe("Action presentation slots", () => {
     async (options, expectedLabel, expectedLimit) => {
       const action = identity("kubernetes_admin", "pods_log");
       const args = { name: "web-0", namespace: "apps", ...options };
-      const label = await mount(renderActionLabel(action, args));
+      const label = await mount(appActionRendering.renderActionLabel(action, args));
       expect(label.textContent).toContain(expectedLabel);
       expect(label.textContent).not.toContain("last");
-      expect((await mount(renderPaneOpened(action, args))).textContent).toContain(expectedLimit);
-      expect(actionCompactCardExpands(action, args)).toBe(true);
+      expect((await mount(appActionRendering.renderPaneOpened(action, args))).textContent).toContain(expectedLimit);
+      expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
     }
   );
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
     const calendarAction = identity("tana", "get_or_create_calendar_node");
     const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
-    const calendar = await mount(renderPaneCollapsed(calendarAction, args));
+    const calendar = await mount(appActionRendering.renderPaneCollapsed(calendarAction, args));
     expect(calendar.textContent).toContain("week containing");
     expect(calendar.textContent).toContain("2026-10-12");
     expect(calendar.textContent).toContain("workspace-123");
-    expect(actionOffersCardDecisionButtons(calendarAction, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(calendarAction, args)).toBe(true);
     const unknown = { ...args, mode: "unknown" };
-    expect(actionOffersCardDecisionButtons(calendarAction, unknown)).toBe(false);
-    expect(actionCompactCardExpands(calendarAction, unknown)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(calendarAction, unknown)).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(calendarAction, unknown)).toBe(true);
 
     const deletion = await mount(
-      renderPaneCollapsed(identity("kubernetes_admin", "resources_delete"), {
+      appActionRendering.renderPaneCollapsed(identity("kubernetes_admin", "resources_delete"), {
         apiVersion: "v1",
         kind: "Pod",
         name: "web-0",
@@ -228,10 +235,10 @@ describe("Action presentation slots", () => {
   });
 
   it("puts the SSH target in the label and the command in the pane", async () => {
-    const label = await mount(renderActionLabel(SSH_EXEC, SSH_EXEC_ARGUMENTS));
-    const collapsed = await mount(renderPaneCollapsed(SSH_EXEC, SSH_EXEC_ARGUMENTS));
-    const opened = await mount(renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));
-    const details = await mount(renderDetailsArguments(SSH_EXEC, SSH_EXEC_ARGUMENTS));
+    const label = await mount(appActionRendering.renderActionLabel(SSH_EXEC, SSH_EXEC_ARGUMENTS));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(SSH_EXEC, SSH_EXEC_ARGUMENTS));
+    const opened = await mount(appActionRendering.renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));
+    const details = await mount(appActionRendering.renderDetailsArguments(SSH_EXEC, SSH_EXEC_ARGUMENTS));
 
     expect(label.textContent).toContain("Run command on test-user@test-host.example");
     expect(collapsed.textContent).toContain("echo test-output");
@@ -242,9 +249,9 @@ describe("Action presentation slots", () => {
   });
 
   it("marks an SSH command that runs as root", async () => {
-    const label = await mount(renderActionLabel(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, user: "root" }));
+    const label = await mount(appActionRendering.renderActionLabel(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, user: "root" }));
     expect(label.querySelector('[title="Runs as root"]')?.textContent).toBe("root@test-host.example");
-    const unprivileged = await mount(renderActionLabel(SSH_EXEC, SSH_EXEC_ARGUMENTS));
+    const unprivileged = await mount(appActionRendering.renderActionLabel(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     expect(unprivileged.querySelector('[title="Runs as root"]')).toBeNull();
   });
 
@@ -257,10 +264,10 @@ describe("Action presentation slots", () => {
       body: "The release is ready.\nPlease review it.",
       thread_id: "thread-123",
     };
-    const label = await mount(renderActionLabel(action, args));
-    const collapsed = await mount(renderPaneCollapsed(action, args));
-    const opened = await mount(renderPaneOpened(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args));
+    const opened = await mount(appActionRendering.renderPaneOpened(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Gmail: Create unsent draft");
     expect(collapsed.textContent).toContain("reader@example.com");
@@ -272,7 +279,7 @@ describe("Action presentation slots", () => {
     expect(details.textContent).toContain("Release notes");
 
     const result = toolResult({ content: [], structuredContent: { id: "draft-123" }, isError: false });
-    const renderedResult = await mount(renderDetailsResult(action, result));
+    const renderedResult = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(renderedResult.textContent).toContain("Saved as an unsent draft");
     expect(
       renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
@@ -289,7 +296,7 @@ describe("Action presentation slots", () => {
       body: "The release is ready.\nPlease review it.",
       thread_id: "thread-123",
     };
-    const pending = renderActionCall(action, args);
+    const pending = appActionRendering.renderActionCall(action, args);
     expect(pending?.includesResult).toBe(false);
     const pendingView = await mount(pending?.content ?? null);
     expect(pendingView.textContent).toContain("Release notes");
@@ -306,7 +313,7 @@ describe("Action presentation slots", () => {
       },
       isError: false,
     });
-    const completed = renderActionCall(action, args, result);
+    const completed = appActionRendering.renderActionCall(action, args, result);
     expect(completed?.includesResult).toBe(true);
     const completedView = await mount(completed?.content ?? null);
     expect(completedView.textContent).toContain("Release notes saved");
@@ -317,22 +324,22 @@ describe("Action presentation slots", () => {
     expect(
       completedView.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
     ).not.toBeNull();
-    expect(renderActionCall(action, { ...args, unexpected: true })).toBeUndefined();
+    expect(appActionRendering.renderActionCall(action, { ...args, unexpected: true })).toBeUndefined();
 
     const unexpectedResult = toolResult({
       content: [],
       structuredContent: { id: 123 },
       isError: false,
     });
-    expect(renderActionCall(action, args, unexpectedResult)).toBeUndefined();
+    expect(appActionRendering.renderActionCall(action, args, unexpectedResult)).toBeUndefined();
   });
 
   it("shows Gmail search scope and continuation without exposing the cursor", async () => {
     const action = identity("gmail", "threads_list");
     const args = { q: "from:alerts@example.com", labelIds: ["INBOX"], maxResults: 5, includeSpamTrash: false };
-    const label = await mount(renderActionLabel(action, args));
-    const collapsed = await mount(renderPaneCollapsed(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Gmail: Search threads");
     expect(collapsed.textContent).toContain("from:alerts@example.com");
@@ -341,14 +348,14 @@ describe("Action presentation slots", () => {
     expect(collapsed.textContent).not.toContain("Includes spam and trash");
     expect(details.textContent).toContain("Up to 5 threads");
     expect(details.textContent).toContain("Inbox");
-    expect(actionCompactCardExpands(action, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
 
     const includingSpamAndTrash = await mount(
-      renderPaneCollapsed(action, { q: "from:alerts@example.com", includeSpamTrash: true })
+      appActionRendering.renderPaneCollapsed(action, { q: "from:alerts@example.com", includeSpamTrash: true })
     );
     expect(includingSpamAndTrash.textContent).toContain("Includes spam and trash");
     const continuationPage = await mount(
-      renderPaneCollapsed(action, { q: "from:alerts@example.com", pageToken: "secret-token" })
+      appActionRendering.renderPaneCollapsed(action, { q: "from:alerts@example.com", pageToken: "secret-token" })
     );
     expect(continuationPage.textContent).toContain("Continues a previous search");
     expect(continuationPage.textContent).not.toContain("secret-token");
@@ -361,7 +368,7 @@ describe("Action presentation slots", () => {
       },
       isError: false,
     });
-    const renderedResult = await mount(renderDetailsResult(action, result));
+    const renderedResult = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(renderedResult.textContent).toContain("Your build completed.");
     expect(renderedResult.textContent).toContain("1 thread returned");
     expect(renderedResult.textContent).toContain("More threads available");
@@ -385,8 +392,8 @@ describe("Action presentation slots", () => {
       const receipt: CallToolResult = { content: [], structuredContent: value, isError: false };
 
       for (const preview of [
-        renderActionCall(action, args, receipt, requestId)?.content,
-        renderDetailsResult(action, receipt, { requestId, arguments: args }),
+        appActionRendering.renderActionCall(action, args, receipt, requestId)?.content,
+        appActionRendering.renderDetailsResult(action, receipt, { requestId, arguments: args }),
       ]) {
         const view = await mount(preview);
         await vi.waitFor(() => expect(view.textContent).toContain("Inbox, Deployments/Reviewed, Label_99"));
@@ -424,7 +431,7 @@ describe("Action presentation slots", () => {
       return (
         <>
           <button onClick={() => setResult(receipt)}>Show receipt</button>
-          {renderActionCall(action, args, result, requestId)?.content}
+          {appActionRendering.renderActionCall(action, args, result, requestId)?.content}
         </>
       );
     }
@@ -443,22 +450,22 @@ describe("Action presentation slots", () => {
       criteria: { subject: "Staging", negatedQuery: "is:starred", hasAttachment: true },
       action: { addLabelIds: ["STARRED"], removeLabelIds: ["INBOX"], forward: "reviewer@example.com" },
     };
-    const pane = await mount(renderPaneOpened(action, args));
+    const pane = await mount(appActionRendering.renderPaneOpened(action, args));
     expect(pane.textContent).toContain("Excludes query is:starred");
     expect(pane.textContent).toContain("Forward to reviewer@example.com");
     expect(pane.textContent).toContain("Add labels Starred");
     expect(pane.textContent).toContain("Remove labels Inbox");
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(false);
   });
 
   it("acknowledges a Gmail deletion only for a successful empty result", async () => {
     const action = identity("gmail", "labels_delete");
     const empty = { content: [], isError: false };
-    const receipt = await mount(renderDetailsResult(action, empty));
+    const receipt = await mount(appActionRendering.renderDetailsResult(action, empty));
     expect(receipt.textContent).toContain("Label deleted.");
-    expect(renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
     expect(
-      renderDetailsResult(action, { ...empty, structuredContent: { error: "unexpected variant" } })
+      appActionRendering.renderDetailsResult(action, { ...empty, structuredContent: { error: "unexpected variant" } })
     ).toBeUndefined();
   });
 
@@ -479,9 +486,9 @@ describe("Action presentation slots", () => {
       ["quantity_units_list", {}, "List quantity units", "Can", "quantityunit"],
     ] as const) {
       const action = identity("grocy_sf", name);
-      expect((await mount(renderPaneOpened(action, args))).querySelector("p")).toBeNull();
-      expect((await mount(renderDetailsArguments(action, args))).querySelector("p")).toBeNull();
-      expect((await mount(renderActionLabel(action, args))).textContent).toContain(label);
+      expect((await mount(appActionRendering.renderPaneOpened(action, args))).querySelector("p")).toBeNull();
+      expect((await mount(appActionRendering.renderDetailsArguments(action, args))).querySelector("p")).toBeNull();
+      expect((await mount(appActionRendering.renderActionLabel(action, args))).textContent).toContain(label);
       const receipt = await drawDetailsResult(action, {
         content: [],
         structuredContent: [{ id: 734, name: article }],
@@ -510,8 +517,11 @@ describe("Action presentation slots", () => {
       ],
       isError: false,
     };
-    expect(renderActionOutcome(action, result)).toEqual({ label: "Partially completed", failed: true });
-    const rendered = await mount(renderActionCall(action, args, result)?.content);
+    expect(appActionRendering.renderActionOutcome(action, result)).toEqual({
+      label: "Partially completed",
+      failed: true,
+    });
+    const rendered = await mount(appActionRendering.renderActionCall(action, args, result)?.content);
     expect(rendered.textContent).toContain("Description · Clear");
     expect(rendered.textContent).toContain("Default location · Pantry");
     expect(rendered.textContent).toContain("Disable low-stock threshold");
@@ -533,8 +543,8 @@ describe("Action presentation slots", () => {
       isError: false,
     };
     const args = { item_ids: [51, 52, 53] };
-    expect(renderActionCall(action, args)?.content).toBeNull();
-    const rendered = await mount(renderActionCall(action, args, result)?.content);
+    expect(appActionRendering.renderActionCall(action, args)?.content).toBeNull();
+    const rendered = await mount(appActionRendering.renderActionCall(action, args, result)?.content);
     expect(rendered.textContent).toContain("Kefir · 2 Bottle");
     expect(rendered.textContent).not.toContain("Shopping item #52");
     expect(rendered.textContent).toContain("Shopping item #51");
@@ -545,7 +555,9 @@ describe("Action presentation slots", () => {
   it("shows total inventory stock with the opened subset and matched location", async () => {
     const action = identity("grocy_sf", "stock_get");
     const args = { products: ["Kefir"], locations: ["Fridge"] };
-    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain("Locations · Fridge");
+    expect((await mount(appActionRendering.renderDetailsArguments(action, args))).textContent).toContain(
+      "Locations · Fridge"
+    );
     const view = await drawDetailsResult(action, {
       content: [],
       structuredContent: [
@@ -569,7 +581,7 @@ describe("Action presentation slots", () => {
   it("shows unexpected Grocy entity types and fields as recorded text", async () => {
     const action = identity("grocy_sf", "entity_update");
     const view = await mount(
-      renderDetailsArguments(action, {
+      appActionRendering.renderDetailsArguments(action, {
         entity: "constructor",
         objectId: 7,
         body: { constructor: "Material value" },
@@ -588,11 +600,11 @@ describe("Action presentation slots", () => {
     );
     const action = identity("grocy_sf", "products_merge");
     const args = { productIdToKeep: 11, productIdToRemove: 22 };
-    const receipt = await mount(renderDetailsArguments(action, args, id));
+    const receipt = await mount(appActionRendering.renderDetailsArguments(action, args, id));
     expect(receipt.textContent).toContain("Product #11");
     expect(sent).toEqual([]);
 
-    const view = await mount(renderDetailsArguments(action, args, id, true));
+    const view = await mount(appActionRendering.renderDetailsArguments(action, args, id, true));
     await vi.waitFor(() => {
       expect(view.querySelector('a[href="https://grocy-sf.allegedly.works/product/11"]')?.textContent).toBe("Coffee");
     });
@@ -608,19 +620,24 @@ describe("Action presentation slots", () => {
   it("shows Grocy 204 acknowledgements only for successful empty receipts", async () => {
     const action = identity("grocy_sf", "transaction_undo");
     const empty: CallToolResult = { content: [], isError: false };
-    expect((await mount(renderDetailsResult(action, empty))).textContent).toContain("Transaction undone");
-    expect(renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
+    expect((await mount(appActionRendering.renderDetailsResult(action, empty))).textContent).toContain(
+      "Transaction undone"
+    );
+    expect(appActionRendering.renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
     expect(
-      renderDetailsResult(action, { content: [{ type: "text", text: "Unknown outcome" }], isError: false })
+      appActionRendering.renderDetailsResult(action, {
+        content: [{ type: "text", text: "Unknown outcome" }],
+        isError: false,
+      })
     ).toBeUndefined();
   });
 
   it("falls back to the recorded Tana workspace ID when a name is unavailable", async () => {
     const action = identity("tana", "get_or_create_calendar_node");
     const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
-    const collapsed = await mount(renderPaneCollapsed(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
-    const label = await mount(renderActionLabel(action, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, args));
 
     expect(label.textContent).toContain("Get or create Tana calendar node");
 
@@ -641,10 +658,10 @@ describe("Action presentation slots", () => {
 
     for (const [group, name] of excluded) {
       const action = identity(group, name);
-      expect(renderActionLabel(action, { id: "opaque-id" })).toBeUndefined();
-      expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeUndefined();
-      expect(renderPaneOpened(action, { id: "opaque-id" })).toBeUndefined();
-      expect(renderDetailsArguments(action, { id: "opaque-id" })).toBeUndefined();
+      expect(appActionRendering.renderActionLabel(action, { id: "opaque-id" })).toBeUndefined();
+      expect(appActionRendering.renderPaneCollapsed(action, { id: "opaque-id" })).toBeUndefined();
+      expect(appActionRendering.renderPaneOpened(action, { id: "opaque-id" })).toBeUndefined();
+      expect(appActionRendering.renderDetailsArguments(action, { id: "opaque-id" })).toBeUndefined();
 
       const raw = await drawDetailsResult(action, result);
       expect(raw.textContent).toContain("Structured content");
@@ -655,7 +672,11 @@ describe("Action presentation slots", () => {
   it("shows Gmail label changes and recorded thread IDs while live subjects are unavailable", async () => {
     const action = identity("gmail", "threads_modify_labels");
     const details = await mount(
-      renderDetailsArguments(action, { thread_ids: ["thread-1", "thread-2"], add: ["Reviewed"], remove: ["Inbox"] })
+      appActionRendering.renderDetailsArguments(action, {
+        thread_ids: ["thread-1", "thread-2"],
+        add: ["Reviewed"],
+        remove: ["Inbox"],
+      })
     );
     expect(details.textContent).toContain("Add Reviewed");
     expect(details.textContent).toContain("Remove Inbox");
@@ -666,7 +687,7 @@ describe("Action presentation slots", () => {
   it("shows Tana placement and recorded node IDs while live names are unavailable", async () => {
     const action = identity("tana", "move_node");
     const details = await mount(
-      renderDetailsArguments(action, {
+      appActionRendering.renderDetailsArguments(action, {
         nodeId: "draft",
         targetNodeId: "project",
         sourceParentId: "inbox",
@@ -696,11 +717,17 @@ describe("Action presentation slots", () => {
     );
 
     expect(
-      renderDetailsResult(action, { content: [...content, { type: "text", text: "Extra output" }], isError: false })
+      appActionRendering.renderDetailsResult(action, {
+        content: [...content, { type: "text", text: "Extra output" }],
+        isError: false,
+      })
     ).toBeUndefined();
-    expect(renderDetailsResult(action, { content: [...content], isError: true })).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, { content: [...content], isError: true })).toBeUndefined();
     expect(
-      renderDetailsResult(action, { content: [{ type: "text", text: "New receipt format" }], isError: false })
+      appActionRendering.renderDetailsResult(action, {
+        content: [{ type: "text", text: "New receipt format" }],
+        isError: false,
+      })
     ).toBeUndefined();
   });
 
@@ -711,7 +738,7 @@ describe("Action presentation slots", () => {
       isError: false,
     };
     const receipt = await mount(
-      renderDetailsResult(action, result, {
+      appActionRendering.renderDetailsResult(action, result, {
         requestId: "70000000-0000-4000-8000-000000000007",
         arguments: { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" },
       })
@@ -731,8 +758,11 @@ describe("Action presentation slots", () => {
       ],
       isError: false,
     };
-    expect(renderActionOutcome(action, result)).toEqual({ label: "Partially applied", failed: true });
-    const view = await mount(renderDetailsResult(action, result));
+    expect(appActionRendering.renderActionOutcome(action, result)).toEqual({
+      label: "Partially applied",
+      failed: true,
+    });
+    const view = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(view.textContent).toContain('Added tag "Task"');
     expect(view.textContent).toContain("Tag not found: missing");
     expect(view.querySelector('a[href="https://app.tana.inc?nodeid=task-1"]')?.textContent).toBe("Plan review");
@@ -759,7 +789,7 @@ describe("Action presentation slots", () => {
       content: [{ type: "text", text: "Name edit failed: old_string not found in current name" }],
       isError: true,
     };
-    expect(renderDetailsResult(action, error)).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, error)).toBeUndefined();
     const failed = await drawDetailsResult(action, error);
     expect(failed.textContent).toContain("old_string not found in current name");
 
@@ -767,13 +797,13 @@ describe("Action presentation slots", () => {
       content: [{ type: "text", text: "Future edit result shape" }],
       isError: false,
     };
-    expect(renderDetailsResult(action, unknown)).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, unknown)).toBeUndefined();
     expect((await drawDetailsResult(action, unknown)).textContent).toContain("Future edit result shape");
   });
 
   it("summarizes a Gmail draft with its recipient, subject, and body preview", async () => {
     const collapsed = await mount(
-      renderPaneCollapsed(identity("gmail", "drafts_create"), {
+      appActionRendering.renderPaneCollapsed(identity("gmail", "drafts_create"), {
         to: ["user@example.com"],
         subject: "Deploy",
         body: "Ready",
@@ -785,37 +815,41 @@ describe("Action presentation slots", () => {
   });
 
   it("leaves unregistered slots to the host and preserves arguments rejected by a strict schema", async () => {
-    expect(renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeUndefined();
-    expect(renderPaneOpened(identity("test_group", "exec"), SSH_EXEC_ARGUMENTS)).toBeUndefined();
-    const recorded = await mount(renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true }));
+    expect(
+      appActionRendering.renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })
+    ).toBeUndefined();
+    expect(appActionRendering.renderPaneOpened(identity("test_group", "exec"), SSH_EXEC_ARGUMENTS)).toBeUndefined();
+    const recorded = await mount(
+      appActionRendering.renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })
+    );
     expect(recorded.textContent).toContain("Details shown as recorded data");
-    expect(renderDetailsArguments(identity("__proto__", "constructor"), {})).toBeUndefined();
+    expect(appActionRendering.renderDetailsArguments(identity("__proto__", "constructor"), {})).toBeUndefined();
   });
 
   it("shows recorded Kubernetes arguments when the strict schema does not accept them", async () => {
     const action = identity("kubernetes_admin", "resources_get");
     const args = { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps", futureField: true };
-    const label = await mount(renderActionLabel(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Get Kubernetes resource");
     expect(details.textContent).toContain("Details shown as recorded data");
     expect(details.textContent).toContain('"futureField": true');
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(false);
   });
 
   it("shows pod-deletion scope before approval and keeps unknown arguments visible", async () => {
     const action = identity("kubernetes_admin", "pods_delete");
     const args = { name: "web-0", namespace: "apps" };
-    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain(
+    expect((await mount(appActionRendering.renderDetailsArguments(action, args))).textContent).toContain(
       "matching Services and OpenShift Routes"
     );
-    const collapsed = await mount(renderPaneCollapsed(action, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args));
     expect(collapsed.textContent).toContain("matching Services");
     expect(collapsed.textContent).not.toContain("OpenShift");
 
     const recorded = await mount(
-      renderDetailsArguments(action, { name: "web-0", namespace: "apps", futureField: true })
+      appActionRendering.renderDetailsArguments(action, { name: "web-0", namespace: "apps", futureField: true })
     );
     expect(recorded.textContent).toContain("Details shown as recorded data");
     expect(recorded.textContent).toContain('"futureField": true');
@@ -823,7 +857,7 @@ describe("Action presentation slots", () => {
 
   it("uses the opened-pane argument widget for resources_get when optional fields are omitted", async () => {
     const container = await mount(
-      renderPaneOpened(identity("kubernetes_admin", "resources_get"), {
+      appActionRendering.renderPaneOpened(identity("kubernetes_admin", "resources_get"), {
         apiVersion: "apps/v1",
         kind: "Deployment",
         name: "api",
@@ -835,7 +869,7 @@ describe("Action presentation slots", () => {
 
 describe("details result rendering", () => {
   it("draws the tool's value with the Action's widget", async () => {
-    const container = await mount(renderDetailsResult(SSH_EXEC, stored()));
+    const container = await mount(appActionRendering.renderDetailsResult(SSH_EXEC, stored()));
     expect(container.textContent).toContain("Exit 0");
     expect(container.textContent).not.toContain("Structured content");
   });
@@ -880,7 +914,7 @@ describe("details result rendering", () => {
       isError: false,
     });
 
-    const container = await mount(renderDetailsResult(action, result));
+    const container = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(container.textContent).toContain("ConfigMap apps/settings");
     expect(container.querySelector(".cm-editor")).toBeNull();
     await act(async () => button(container, "Resource YAML").click());
@@ -893,19 +927,20 @@ describe("details result rendering", () => {
     const action = identity("kubernetes_admin", "resources_create_or_update");
     const manifest =
       "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}, data: {mode: safe}}";
-    const formatted = await mount(renderDetailsArguments(action, { resource: manifest }));
+    const formatted = await mount(appActionRendering.renderDetailsArguments(action, { resource: manifest }));
     expect(formatted.textContent).toContain("Manifest · ConfigMap apps/settings");
     expect(formatted.textContent).toContain("apiVersion: v1");
     expect(formatted.querySelector(".cm-editor")).not.toBeNull();
 
-    const malformed = await mount(renderDetailsArguments(action, { resource: "kind: [broken" }));
+    const malformed = await mount(appActionRendering.renderDetailsArguments(action, { resource: "kind: [broken" }));
     expect(malformed.textContent).toContain("Manifest · showing submitted text");
     expect(malformed.textContent).toContain("kind: [broken");
   });
 
   it("names applied resources in the label", async () => {
     const action = identity("kubernetes_admin", "resources_create_or_update");
-    const label = async (resource: string) => (await mount(renderActionLabel(action, { resource }))).textContent;
+    const label = async (resource: string) =>
+      (await mount(appActionRendering.renderActionLabel(action, { resource }))).textContent;
 
     expect(await label("{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}}")).toContain(
       "Apply ConfigMap apps/settings"
@@ -937,7 +972,7 @@ describe("details result rendering", () => {
     ],
   ])("summarizes what an apply sets: %s", async (_, resource, expected) => {
     const action = identity("kubernetes_admin", "resources_create_or_update");
-    const collapsed = await mount(renderPaneCollapsed(action, { resource }));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, { resource }));
     expect(collapsed.textContent).toContain(expected);
     expect(collapsed.textContent).not.toContain("settings");
     expect(collapsed.textContent).not.toContain("test-volume");
@@ -946,14 +981,16 @@ describe("details result rendering", () => {
   it("leaves the collapsed row to the label for several resources or bare identities", () => {
     const action = identity("kubernetes_admin", "resources_create_or_update");
     expect(
-      renderPaneCollapsed(action, {
+      appActionRendering.renderPaneCollapsed(action, {
         resource: "apiVersion: v1\nkind: ConfigMap\n---\napiVersion: v1\nkind: Secret\ndata: {a: b}\n",
       })
     ).toBeNull();
     expect(
-      renderPaneCollapsed(action, { resource: "{apiVersion: v1, kind: Namespace, metadata: {name: x}}" })
+      appActionRendering.renderPaneCollapsed(action, {
+        resource: "{apiVersion: v1, kind: Namespace, metadata: {name: x}}",
+      })
     ).toBeNull();
-    expect(renderPaneCollapsed(action, { resource: "kind: [broken" })).toBeUndefined();
+    expect(appActionRendering.renderPaneCollapsed(action, { resource: "kind: [broken" })).toBeUndefined();
   });
 
   it("renders a returned YAML sequence as separate Kubernetes resources", async () => {
@@ -979,10 +1016,10 @@ describe("details result rendering", () => {
       isError: false,
     });
 
-    const container = await mount(renderDetailsResult(action, result));
+    const container = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(container.textContent).toContain("ConfigMap apps/settings");
     expect(container.textContent).toContain("Secret apps/token");
-    expect(renderActionOutcome(action, result)?.label).toBe("Resources applied");
+    expect(appActionRendering.renderActionOutcome(action, result)?.label).toBe("Resources applied");
     await act(async () => button(container, "Resource YAML").click());
     expect(container.querySelectorAll(".cm-editor")).toHaveLength(2);
   });
@@ -1000,13 +1037,13 @@ describe("details result rendering", () => {
         },
       ],
     });
-    const view = await mount(renderDetailsResult(action, result));
+    const view = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(view.textContent).toContain("apps/web-0");
     expect(view.textContent).toContain("1/2 ready");
     await act(async () => button(view, "Provider output").click());
     expect(view.textContent).toContain("app=web");
     expect(
-      renderDetailsResult(action, {
+      appActionRendering.renderDetailsResult(action, {
         ...result,
         content: [...result.content, { type: "text", text: "separate notice" }],
       })
@@ -1025,13 +1062,16 @@ describe("details result rendering", () => {
       "  Type: Warning",
     ].join("\n");
     const view = await mount(
-      renderDetailsResult(action, { isError: false, content: [{ type: "text", text: report }] })
+      appActionRendering.renderDetailsResult(action, { isError: false, content: [{ type: "text", text: report }] })
     );
     expect(view.textContent).toContain("Pod apps/web-0");
     expect(view.textContent).toContain("BackOff");
     expect(view.textContent).toContain("Warning");
     const empty = await mount(
-      renderDetailsResult(action, { isError: false, content: [{ type: "text", text: "# No events found" }] })
+      appActionRendering.renderDetailsResult(action, {
+        isError: false,
+        content: [{ type: "text", text: "# No events found" }],
+      })
     );
     expect(empty.textContent).toContain("No events found.");
   });
@@ -1039,7 +1079,9 @@ describe("details result rendering", () => {
   it("keeps plain Pod logs intact even when the contents are JSON", async () => {
     const action = identity("kubernetes_admin", "pods_log");
     const text = '{"level":"info","msg":"Ready"}\n';
-    const view = await mount(renderDetailsResult(action, { isError: false, content: [{ type: "text", text }] }));
+    const view = await mount(
+      appActionRendering.renderDetailsResult(action, { isError: false, content: [{ type: "text", text }] })
+    );
     expect(view.textContent).toContain("Container logs");
     const lines = [...view.querySelectorAll(".ui-code-block .cm-line")].map((line) => line.textContent);
     expect(lines).toEqual([text.trimEnd(), ""]);
@@ -1059,12 +1101,12 @@ describe("details result rendering", () => {
       isError: false,
     });
 
-    expect(renderDetailsResult(action, success)).toBeNull();
-    const call = renderActionCall(action, args, success);
+    expect(appActionRendering.renderDetailsResult(action, success)).toBeNull();
+    const call = appActionRendering.renderActionCall(action, args, success);
     expect(call?.includesResult).toBe(true);
-    expect(renderActionOutcome(action, success)?.label).toBe("Deletion accepted");
+    expect(appActionRendering.renderActionOutcome(action, success)?.label).toBe("Deletion accepted");
     expect((await mount(call?.content)).textContent).toContain("request a 0s grace period");
-    const argumentsView = await mount(renderDetailsArguments(action, args));
+    const argumentsView = await mount(appActionRendering.renderDetailsArguments(action, args));
     expect(argumentsView.textContent).toContain("Use API version v1");
     expect(argumentsView.textContent).toContain("request a 0s grace period");
 
@@ -1072,11 +1114,11 @@ describe("details result rendering", () => {
       content: [{ type: "text", text: "Resource deleted successfully, but finalizers are still running" }],
       isError: false,
     });
-    expect(renderDetailsResult(action, warning)).toBeUndefined();
-    expect(renderActionOutcome(action, warning)).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, warning)).toBeUndefined();
+    expect(appActionRendering.renderActionOutcome(action, warning)).toBeUndefined();
     const warningView = await drawDetailsResult(action, warning);
     expect(warningView.textContent).toContain("finalizers are still running");
-    expect(renderActionCall(action, args, warning)).toBeUndefined();
+    expect(appActionRendering.renderActionCall(action, args, warning)).toBeUndefined();
   });
 
   it("shows an exact pod-delete success as accepted and preserves non-success envelopes", async () => {
@@ -1086,8 +1128,11 @@ describe("details result rendering", () => {
       isError: false,
     });
 
-    expect(renderDetailsResult(action, success)).toBeNull();
-    expect(renderActionOutcome(action, success)).toEqual({ label: "Deletion accepted", failed: false });
+    expect(appActionRendering.renderDetailsResult(action, success)).toBeNull();
+    expect(appActionRendering.renderActionOutcome(action, success)).toEqual({
+      label: "Deletion accepted",
+      failed: false,
+    });
 
     const warning = toolResult({
       content: [
@@ -1096,8 +1141,8 @@ describe("details result rendering", () => {
       ],
       isError: false,
     });
-    expect(renderDetailsResult(action, warning)).toBeUndefined();
-    expect(renderActionOutcome(action, warning)).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, warning)).toBeUndefined();
+    expect(appActionRendering.renderActionOutcome(action, warning)).toBeUndefined();
     const warningView = await drawDetailsResult(action, warning);
     expect(warningView.textContent).toContain("Pod deleted successfully");
     expect(warningView.textContent).toContain("Warning: cleanup is still running");
@@ -1110,8 +1155,11 @@ describe("details result rendering", () => {
       structuredContent: "Pod deleted successfully",
       isError: false,
     });
-    expect(renderDetailsResult(action, additionalContent)).toBeUndefined();
-    expect(renderActionOutcome(action, additionalContent)).toEqual({ label: "Deletion accepted", failed: false });
+    expect(appActionRendering.renderDetailsResult(action, additionalContent)).toBeUndefined();
+    expect(appActionRendering.renderActionOutcome(action, additionalContent)).toEqual({
+      label: "Deletion accepted",
+      failed: false,
+    });
     const additionalContentView = await drawDetailsResult(action, additionalContent);
     expect(additionalContentView.textContent).toContain("Pod deleted successfully");
     expect(additionalContentView.textContent).toContain("keep this content");
@@ -1120,16 +1168,16 @@ describe("details result rendering", () => {
       content: [{ type: "text", text: "Pod not found" }],
       isError: false,
     });
-    expect(renderDetailsResult(action, mismatch)).toBeUndefined();
-    expect(renderActionOutcome(action, mismatch)).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, mismatch)).toBeUndefined();
+    expect(appActionRendering.renderActionOutcome(action, mismatch)).toBeUndefined();
     expect((await drawDetailsResult(action, mismatch)).textContent).toContain("Pod not found");
 
     const error = toolResult({
       content: [{ type: "text", text: "Pod deleted successfully" }],
       isError: true,
     });
-    expect(renderDetailsResult(action, error)).toBeUndefined();
-    expect(renderActionOutcome(action, error)).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, error)).toBeUndefined();
+    expect(appActionRendering.renderActionOutcome(action, error)).toBeUndefined();
     const errorView = await drawDetailsResult(action, error);
     expect(errorView.textContent).toContain("Tool error");
     expect(errorView.textContent).toContain("Pod deleted successfully");
@@ -1140,14 +1188,22 @@ describe("expanded Kubernetes Action coverage", () => {
   it("distinguishes reading scale from requesting zero replicas, then shows desired and observed counts separately", async () => {
     const action = identity("kubernetes_admin", "resources_scale");
     const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
-    expect((await mount(renderActionLabel(action, args))).textContent).toContain("Read scale for Deployment apps/web");
+    expect((await mount(appActionRendering.renderActionLabel(action, args))).textContent).toContain(
+      "Read scale for Deployment apps/web"
+    );
     const write = { ...args, scale: 0 };
-    expect((await mount(renderActionLabel(action, write))).textContent).toContain("Set desired replicas");
-    expect((await mount(renderDetailsArguments(action, write))).textContent).toContain("Desired replicas · 0");
+    expect((await mount(appActionRendering.renderActionLabel(action, write))).textContent).toContain(
+      "Set desired replicas"
+    );
+    expect((await mount(appActionRendering.renderDetailsArguments(action, write))).textContent).toContain(
+      "Desired replicas · 0"
+    );
     const text =
       "# Current resource scale (YAML) is below\napiVersion: autoscaling/v1\nkind: Scale\n" +
       "spec: {replicas: 0}\nstatus: {replicas: 2}";
-    const receipt = await mount(renderDetailsResult(action, { isError: false, content: [{ type: "text", text }] }));
+    const receipt = await mount(
+      appActionRendering.renderDetailsResult(action, { isError: false, content: [{ type: "text", text }] })
+    );
     expect(receipt.textContent).toContain("Desired replicas · 0");
     expect(receipt.textContent).toContain("Observed replicas · 2");
     expect(receipt.textContent).not.toContain("Ready");
@@ -1155,7 +1211,7 @@ describe("expanded Kubernetes Action coverage", () => {
 
   it("shows Pod run networking scope and waits for returned readiness evidence", async () => {
     const action = identity("kubernetes_admin", "pods_run");
-    const details = await mount(renderDetailsArguments(action, { image: "web:v1", port: 8080 }));
+    const details = await mount(appActionRendering.renderDetailsArguments(action, { image: "web:v1", port: 8080 }));
     expect(details.textContent).toContain("Expose TCP port 8080 through a ClusterIP Service.");
     expect(details.textContent).not.toContain("OpenShift Route");
     const result: CallToolResult = {
@@ -1169,20 +1225,20 @@ describe("expanded Kubernetes Action coverage", () => {
         },
       ],
     };
-    expect(renderActionOutcome(action, result)?.label).toBe("Pod applied");
-    const receipt = await mount(renderDetailsResult(action, result));
+    expect(appActionRendering.renderActionOutcome(action, result)?.label).toBe("Pod applied");
+    const receipt = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(receipt.textContent).toContain("Pending");
     expect(receipt.textContent).not.toContain("Ready");
   });
 
   it("shows the effective metrics scope and keeps absent data distinct from zero", async () => {
     const pod = identity("kubernetes_admin", "pods_top");
-    expect((await mount(renderActionLabel(pod, { namespace: "apps", all_namespaces: true }))).textContent).toContain(
-      "namespace apps"
-    );
-    expect((await mount(renderActionLabel(pod, {}))).textContent).toContain("all namespaces");
+    expect(
+      (await mount(appActionRendering.renderActionLabel(pod, { namespace: "apps", all_namespaces: true }))).textContent
+    ).toContain("namespace apps");
+    expect((await mount(appActionRendering.renderActionLabel(pod, {}))).textContent).toContain("all namespaces");
     const receipt = await mount(
-      renderDetailsResult(identity("kubernetes_admin", "nodes_stats_summary"), {
+      appActionRendering.renderDetailsResult(identity("kubernetes_admin", "nodes_stats_summary"), {
         isError: false,
         content: [{ type: "text", text: '{"node":{"nodeName":"worker","cpu":{"usageNanoCores":0}}}' }],
       })
@@ -1203,7 +1259,7 @@ describe("expanded Kubernetes Action coverage", () => {
       "users: [{name: operator, user: {token: test-token}}]",
     ].join("\n");
     const receipt = await mount(
-      renderDetailsResult(identity("kubernetes_admin", "configuration_view"), {
+      appActionRendering.renderDetailsResult(identity("kubernetes_admin", "configuration_view"), {
         isError: false,
         content: [{ type: "text", text }],
       })
@@ -1224,9 +1280,11 @@ describe("Home Assistant provider outcomes", () => {
       recurrence_id: "2026-10-12",
       recurrence_range: "THIS_AND_FUTURE",
     };
-    expect((await mount(renderActionLabel(action, args))).textContent).toContain("Delete this and future occurrences");
-    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain("2026-10-12");
-    const future = await mount(renderDetailsArguments(action, { ...args, unknown: "preserve" }));
+    expect((await mount(appActionRendering.renderActionLabel(action, args))).textContent).toContain(
+      "Delete this and future occurrences"
+    );
+    expect((await mount(appActionRendering.renderDetailsArguments(action, args))).textContent).toContain("2026-10-12");
+    const future = await mount(appActionRendering.renderDetailsArguments(action, { ...args, unknown: "preserve" }));
     expect(future.textContent).toContain("Details shown as recorded data");
     expect(future.textContent).toContain('"unknown": "preserve"');
   });
@@ -1238,19 +1296,19 @@ describe("Home Assistant provider outcomes", () => {
       content: [],
       structuredContent: { status: "pending", operation_id: "operation-1" },
     };
-    expect(renderActionOutcome(action, pending)).toEqual({ label: "Pending", failed: false });
-    expect(renderActionOutcome(action, { ...pending, isError: true })).toBeUndefined();
+    expect(appActionRendering.renderActionOutcome(action, pending)).toEqual({ label: "Pending", failed: false });
+    expect(appActionRendering.renderActionOutcome(action, { ...pending, isError: true })).toBeUndefined();
   });
 
   it("surfaces an energy preference dry run and explicit restore scope before approval", async () => {
     const energy = identity("home_assistant", "ha_manage_energy_prefs");
     const args = { mode: "set", dry_run: true, config: { device_consumption: [] } };
-    expect((await mount(renderActionLabel(energy, args))).textContent).toContain(
+    expect((await mount(appActionRendering.renderActionLabel(energy, args))).textContent).toContain(
       "Preview energy preferences replacement"
     );
     const backup = identity("home_assistant", "ha_manage_backup");
     const restore = { scope: "snapshot", action: "restore", backup_id: "snapshot-1", restore_database: true };
-    const view = await mount(renderDetailsArguments(backup, restore));
+    const view = await mount(appActionRendering.renderDetailsArguments(backup, restore));
     expect(view.textContent).toContain("Restore database · Yes");
   });
 });
@@ -1432,14 +1490,15 @@ describe("compact card renderers", () => {
       const action = identity(group, name);
       const container = await mount(
         <>
-          {renderActionLabel(action, args)}
-          {renderPaneCollapsed(action, args)}
-          {actionCompactCardExpands(action, args) && renderPaneOpened(action, args)}
+          {appActionRendering.renderActionLabel(action, args)}
+          {appActionRendering.renderPaneCollapsed(action, args)}
+          {appActionRendering.actionCompactCardExpands(action, args) &&
+            appActionRendering.renderPaneOpened(action, args)}
         </>
       );
       for (const value of visible) expect(container.textContent).toContain(value);
       // Arguments the card cannot draw always open to their recorded data.
-      expect(actionCompactCardExpands(action, { ...args, invisible: "must review" })).toBe(true);
+      expect(appActionRendering.actionCompactCardExpands(action, { ...args, invisible: "must review" })).toBe(true);
     }
   );
 
@@ -1454,7 +1513,7 @@ describe("compact card renderers", () => {
     ["ssh", "exec", SSH_EXEC_ARGUMENTS, true],
     ["__proto__", "constructor", {}, true],
   ] as const)("%s/%s with %o expands: %s", (group, name, args, expands) => {
-    expect(actionCompactCardExpands(identity(group, name), args)).toBe(expands);
+    expect(appActionRendering.actionCompactCardExpands(identity(group, name), args)).toBe(expands);
   });
 
   it.each(["search_code", "search_commits", "search_pull_requests", "search_repositories", "search_users"])(
@@ -1462,31 +1521,35 @@ describe("compact card renderers", () => {
     async (name) => {
       const action = identity("github", name);
       const args = { query: "repo:example/service rollout", page: 3, perPage: 10 };
-      const compact = await mount(renderPaneCollapsed(action, args));
+      const compact = await mount(appActionRendering.renderPaneCollapsed(action, args));
       expect(compact.textContent).toContain(args.query);
       expect(compact.textContent).not.toContain("Page");
-      const details = await mount(renderPaneOpened(action, args));
+      const details = await mount(appActionRendering.renderPaneOpened(action, args));
       expect(details.textContent).toContain("Page 3");
       expect(details.textContent).toContain("Page size 10");
-      expect(actionCompactCardExpands(action, args)).toBe(true);
-      expect(actionCompactCardExpands(action, { query: args.query })).toBe(false);
-      expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-      expect(actionOffersCardDecisionButtons(action, { ...args, unknownScope: true })).toBe(false);
+      expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
+      expect(appActionRendering.actionCompactCardExpands(action, { query: args.query })).toBe(false);
+      expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
+      expect(appActionRendering.actionOffersCardDecisionButtons(action, { ...args, unknownScope: true })).toBe(false);
     }
   );
 
   it("abbreviates the branch-update condition and keeps its exact SHA in details", async () => {
     const action = identity("github", "update_pull_request_branch");
     const args = { owner: "example", repo: "service", pullNumber: 42, expectedHeadSha: "0123456789abcdef" };
-    const label = await mount(renderActionLabel(action, args));
+    const label = await mount(appActionRendering.renderActionLabel(action, args));
     expect(label.textContent).toContain("example/service#42");
     expect(label.textContent).toContain("latest base changes");
     expect(label.textContent).toContain("If unchanged");
     expect(label.textContent).not.toContain(args.expectedHeadSha);
-    expect((await mount(renderPaneOpened(action, args))).textContent).toContain(args.expectedHeadSha);
-    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain(args.expectedHeadSha);
-    expect(actionCompactCardExpands(action, args)).toBe(true);
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect((await mount(appActionRendering.renderPaneOpened(action, args))).textContent).toContain(
+      args.expectedHeadSha
+    );
+    expect((await mount(appActionRendering.renderDetailsArguments(action, args))).textContent).toContain(
+      args.expectedHeadSha
+    );
+    expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
   });
 
   it("shows an explicitly supplied maintainer edit permission in compact and opened PR summaries", async () => {
@@ -1500,8 +1563,8 @@ describe("compact card renderers", () => {
       body: "",
       maintainer_can_modify: true,
     };
-    const collapsed = await mount(renderPaneCollapsed(action, args));
-    const opened = await mount(renderPaneOpened(action, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args));
+    const opened = await mount(appActionRendering.renderPaneOpened(action, args));
 
     expect(collapsed.textContent).toContain("maintainers can edit");
     expect(opened.textContent).toContain("maintainers can edit");
@@ -1512,8 +1575,10 @@ describe("card decision buttons capability", () => {
   it.each(cardDecisionButtonCases)(
     "validates the whole $group/$name request independently",
     ({ group, name, args }) => {
-      expect(actionOffersCardDecisionButtons(identity(group, name), args)).toBe(true);
-      expect(actionOffersCardDecisionButtons(identity(group, name), { ...args, invisible: "must review" })).toBe(false);
+      expect(appActionRendering.actionOffersCardDecisionButtons(identity(group, name), args)).toBe(true);
+      expect(
+        appActionRendering.actionOffersCardDecisionButtons(identity(group, name), { ...args, invisible: "must review" })
+      ).toBe(false);
     }
   );
 
@@ -1521,12 +1586,14 @@ describe("card decision buttons capability", () => {
     const action = identity("tana", "get_tag_schema");
     for (const flags of [{ includeInheritedFields: true }, { includeEditInstructions: true }]) {
       const args = { tagId: "tag-1", ...flags };
-      expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-      expect(actionCompactCardExpands(action, args)).toBe(true);
+      expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
+      expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
     }
-    expect(actionCompactCardExpands(action, { tagId: "tag-1" })).toBe(false);
-    expect(actionOffersCardDecisionButtons(action, { tagId: "tag-1", includeOtherTags: true })).toBe(false);
-    expect(actionCompactCardExpands(action, { tagId: "tag-1", includeOtherTags: true })).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(action, { tagId: "tag-1" })).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, { tagId: "tag-1", includeOtherTags: true })).toBe(
+      false
+    );
+    expect(appActionRendering.actionCompactCardExpands(action, { tagId: "tag-1", includeOtherTags: true })).toBe(true);
   });
 
   it.each([
@@ -1541,10 +1608,10 @@ describe("card decision buttons capability", () => {
     ],
   ] as const)("allows a scoped %s/%s and rejects unknown options", (group, name, args) => {
     const action = identity(group, name);
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-    expect(actionCompactCardExpands(action, args)).toBe(false);
-    expect(actionOffersCardDecisionButtons(action, { ...args, all_sessions: true })).toBe(false);
-    expect(actionCompactCardExpands(action, { ...args, all_sessions: true })).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, { ...args, all_sessions: true })).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(action, { ...args, all_sessions: true })).toBe(true);
   });
 
   it("requires full review for unknown options within a Sandbox target", () => {
@@ -1553,38 +1620,42 @@ describe("card decision buttons capability", () => {
       session_id: "session-1",
       sandbox: { name: "review-box", uid: "uid-1", namespace: "another-namespace" },
     };
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
-    expect(actionCompactCardExpands(action, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
   });
 
   it("keeps compact Gmail search approvals for visible scope and sends custom labels to review", () => {
     const search = identity("gmail", "threads_list");
-    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
-    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(true);
-    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(true);
-    expect(actionOffersCardDecisionButtons(search, { labelIds: ["Label_19"] })).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(
+      true
+    );
+    expect(
+      appActionRendering.actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })
+    ).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(search, { labelIds: ["Label_19"] })).toBe(false);
   });
 
   it("limits compact Grocy creation to the one fully displayed record", async () => {
     const action = identity("grocy_sf", "locations_create");
     const location = { name: "Chest freezer", is_freezer: true, description: "Basement" };
     const args = { items: [location] };
-    const collapsed = await mount(renderPaneCollapsed(action, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args));
     expect(collapsed.textContent).toContain("Chest freezer");
     expect(collapsed.textContent).toContain("Adjusts due dates");
     expect(collapsed.textContent).toContain("Basement");
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-    expect(actionCompactCardExpands(action, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(false);
     for (const items of [[location, { name: "Another location" }], [{ ...location, inherited_permissions: true }]]) {
-      expect(actionOffersCardDecisionButtons(action, { items })).toBe(false);
-      expect(actionCompactCardExpands(action, { items })).toBe(true);
+      expect(appActionRendering.actionOffersCardDecisionButtons(action, { items })).toBe(false);
+      expect(appActionRendering.actionCompactCardExpands(action, { items })).toBe(true);
     }
   });
 
   it("keeps Grocy stock transfers in full review", () => {
     const transfer = identity("grocy_sf", "stock_transfer");
     expect(
-      actionOffersCardDecisionButtons(transfer, {
+      appActionRendering.actionOffersCardDecisionButtons(transfer, {
         product: 24,
         amount: 2,
         qu: 7,
@@ -1597,17 +1668,26 @@ describe("card decision buttons capability", () => {
   it("offers card decisions for complete PR calls and rejects unknown actions", () => {
     const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");
-    expect(actionOffersCardDecisionButtons(identity(pr.group, pr.name), { ...pr.args, body: "important text" })).toBe(
-      true
-    );
-    expect(actionOffersCardDecisionButtons(identity(pr.group, pr.name), { ...pr.args, title: "x".repeat(121) })).toBe(
-      true
-    );
     expect(
-      actionOffersCardDecisionButtons(identity(pr.group, pr.name), { ...pr.args, reviewers: Array(5).fill("reviewer") })
+      appActionRendering.actionOffersCardDecisionButtons(identity(pr.group, pr.name), {
+        ...pr.args,
+        body: "important text",
+      })
     ).toBe(true);
-    expect(actionOffersCardDecisionButtons(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
-    expect(actionOffersCardDecisionButtons(identity("__proto__", "constructor"), {})).toBe(false);
+    expect(
+      appActionRendering.actionOffersCardDecisionButtons(identity(pr.group, pr.name), {
+        ...pr.args,
+        title: "x".repeat(121),
+      })
+    ).toBe(true);
+    expect(
+      appActionRendering.actionOffersCardDecisionButtons(identity(pr.group, pr.name), {
+        ...pr.args,
+        reviewers: Array(5).fill("reviewer"),
+      })
+    ).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(identity("__proto__", "constructor"), {})).toBe(false);
   });
 
   it("renders a long PR description while offering card decision buttons", async () => {
@@ -1615,8 +1695,8 @@ describe("card decision buttons capability", () => {
     if (pr === undefined) throw new Error("missing pull request fixture");
     const args = { ...pr.args, body: "important text" };
 
-    expect(actionOffersCardDecisionButtons(identity(pr.group, pr.name), args)).toBe(true);
-    const container = await mount(renderPaneOpened(identity(pr.group, pr.name), args));
+    expect(appActionRendering.actionOffersCardDecisionButtons(identity(pr.group, pr.name), args)).toBe(true);
+    const container = await mount(appActionRendering.renderPaneOpened(identity(pr.group, pr.name), args));
     expect(container.textContent).toContain("important text");
   });
 });
@@ -1633,12 +1713,20 @@ describe("sandbox rendering", () => {
 
   it("renders create and authorizes compact decisions only for schema-valid arguments", async () => {
     const args = { name: "new-sandbox", template: "python" };
-    expect((await mount(renderActionLabel(action("create"), args))).textContent).toContain("Create sandbox");
-    expect((await mount(renderPaneOpened(action("create"), args))).textContent).toContain("Template: python");
-    expect((await mount(renderPaneCollapsed(action("create"), args))).textContent).toContain("Template: python");
-    expect(actionOffersCardDecisionButtons(action("create"), args)).toBe(true);
-    expect(actionOffersCardDecisionButtons(action("create"), { ...args, hidden: true })).toBe(false);
-    const recorded = await mount(renderDetailsArguments(action("create"), { ...args, hidden: true }));
+    expect((await mount(appActionRendering.renderActionLabel(action("create"), args))).textContent).toContain(
+      "Create sandbox"
+    );
+    expect((await mount(appActionRendering.renderPaneOpened(action("create"), args))).textContent).toContain(
+      "Template: python"
+    );
+    expect((await mount(appActionRendering.renderPaneCollapsed(action("create"), args))).textContent).toContain(
+      "Template: python"
+    );
+    expect(appActionRendering.actionOffersCardDecisionButtons(action("create"), args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action("create"), { ...args, hidden: true })).toBe(false);
+    const recorded = await mount(
+      appActionRendering.renderDetailsArguments(action("create"), { ...args, hidden: true })
+    );
     expect(recorded.textContent).toContain("Details shown as recorded data");
   });
 
@@ -1650,38 +1738,44 @@ describe("sandbox rendering", () => {
       max_output_bytes: 0,
       cwd: "/workspace",
     };
-    expect((await mount(renderActionLabel(action("exec"), args))).textContent).toContain(
+    expect((await mount(appActionRendering.renderActionLabel(action("exec"), args))).textContent).toContain(
       "Run command in sandbox script-sandbox"
     );
-    expect((await mount(renderPaneOpened(action("exec"), args))).textContent).toContain(
+    expect((await mount(appActionRendering.renderPaneOpened(action("exec"), args))).textContent).toContain(
       "Working directory /workspace · Timeout 60 s · Output limit 0 bytes per stream"
     );
-    expect(actionOffersCardDecisionButtons(action("exec"), args)).toBe(false);
-    const recorded = await mount(renderDetailsArguments(action("exec"), { ...args, hidden: true }));
+    expect(appActionRendering.actionOffersCardDecisionButtons(action("exec"), args)).toBe(false);
+    const recorded = await mount(appActionRendering.renderDetailsArguments(action("exec"), { ...args, hidden: true }));
     expect(recorded.textContent).toContain("Details shown as recorded data");
   });
 
   it("summarizes a sandbox script on the collapsed row", async () => {
     const args = { name: "script-sandbox", script: 'echo "$HOME"', timeout_seconds: 60, max_output_bytes: 0 };
-    expect((await mount(renderPaneCollapsed(action("exec"), args))).textContent).toContain('echo "$HOME"');
+    expect((await mount(appActionRendering.renderPaneCollapsed(action("exec"), args))).textContent).toContain(
+      'echo "$HOME"'
+    );
   });
 
   it("shows readiness conditions and empty lists", async () => {
-    const node = await mount(renderNativeDetailsResult(action("get"), result(info)));
+    const node = await mount(appActionRendering.renderNativeDetailsResult(action("get"), result(info)));
     expect(node.textContent).toContain("ContainersNotReady");
     expect(node.textContent).toContain("Image pulling");
-    expect((await mount(renderNativeDetailsResult(action("create"), result(info)))).textContent).toContain("Pending");
-    expect((await mount(renderNativeDetailsResult(action("list"), result({ sandboxes: [] })))).textContent).toContain(
-      "No sandboxes."
-    );
     expect(
-      (await mount(renderNativeDetailsResult(action("list"), result({ sandboxes: [info] })))).textContent
+      (await mount(appActionRendering.renderNativeDetailsResult(action("create"), result(info)))).textContent
+    ).toContain("Pending");
+    expect(
+      (await mount(appActionRendering.renderNativeDetailsResult(action("list"), result({ sandboxes: [] })))).textContent
+    ).toContain("No sandboxes.");
+    expect(
+      (await mount(appActionRendering.renderNativeDetailsResult(action("list"), result({ sandboxes: [info] }))))
+        .textContent
     ).toContain("waiting-sandbox");
   });
 
   it.each([true, false])("distinguishes disposal existed=%s", async (existed) => {
     expect(
-      (await mount(renderNativeDetailsResult(action("dispose"), result({ name: "box", existed })))).textContent
+      (await mount(appActionRendering.renderNativeDetailsResult(action("dispose"), result({ name: "box", existed }))))
+        .textContent
     ).toContain(existed ? "disposed" : "already absent");
   });
 
@@ -1691,7 +1785,7 @@ describe("sandbox rendering", () => {
     [{ kind: "timed_out" }, "Timed out"],
   ])("preserves execution outcomes and truncation", async (exit, label) => {
     const node = await mount(
-      renderNativeDetailsResult(
+      appActionRendering.renderNativeDetailsResult(
         action("exec"),
         result({
           exit,
@@ -1708,7 +1802,7 @@ describe("sandbox rendering", () => {
 
   it("renders pod argv with safe argument quoting, highlighted as the shell words it is displayed as", async () => {
     const node = await mount(
-      renderPaneCollapsed(identity("kubernetes_admin", "pods_exec"), {
+      appActionRendering.renderPaneCollapsed(identity("kubernetes_admin", "pods_exec"), {
         name: "pod",
         command: ["printf", "%s", "$HOME", "a'b", ""],
       })
@@ -1717,7 +1811,7 @@ describe("sandbox rendering", () => {
     expect(node.querySelector(".ui-tok-string")?.textContent).toBe("'%s'");
 
     const opened = await mount(
-      renderPaneOpened(identity("kubernetes_admin", "pods_exec"), {
+      appActionRendering.renderPaneOpened(identity("kubernetes_admin", "pods_exec"), {
         name: "pod",
         namespace: "apps",
         container: "worker",

@@ -664,7 +664,7 @@ const importReceipt = textResult(
   }
 );
 
-export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["get_or_create_calendar_node", calendarNodePresentation],
   ["move_node", moveNodePresentation],
   [
@@ -988,3 +988,5 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     ),
   ],
 ]);
+
+export const tanaPresentationGroup: readonly [string, typeof tanaRenderers] = ["tana", tanaRenderers];

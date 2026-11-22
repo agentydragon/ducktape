@@ -5,15 +5,7 @@ import { Link, useLocation } from "react-router";
 
 import { JsonBlock } from "../ui/text_block";
 import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
-import {
-  actionCompactCardExpands,
-  actionOffersCardDecisionButtons,
-  renderLiveCardDecision,
-  renderActionLabel,
-  renderPaneCollapsed,
-  renderPaneOpened,
-  shouldRenderRequestTitle,
-} from "./rendering/index";
+import { useActionRendering } from "./rendering/dispatch";
 import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionIdentity } from "./presentation";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
@@ -59,6 +51,7 @@ export function PendingActionList({
   pending: readonly ActionRequest[];
   onNavigate?: () => void;
 }): JSX.Element | null {
+  const rendering = useActionRendering();
   const actions = useContext(ActionRequestsContext);
   const location = useLocation();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -68,14 +61,14 @@ export function PendingActionList({
       {pending.map((request) => {
         const action = actionIdentity(request);
         const args = actionArguments(request);
-        const expands = actionCompactCardExpands(action, args);
+        const expands = rendering.actionCompactCardExpands(action, args);
         const expanded = expands && expandedId === request.id;
         // A card without an expanded version shows all it has at once.
         const unclamped = expanded || !expands;
-        const actionLabel = renderActionLabel(action, args, request.id);
-        const collapsedPreview = renderPaneCollapsed(action, args, request.id);
-        const openedPreview = renderPaneOpened(action, args, request.id);
-        const showRequestTitle = shouldRenderRequestTitle(action, args, request.title, actionLabel);
+        const actionLabel = rendering.renderActionLabel(action, args, request.id);
+        const collapsedPreview = rendering.renderPaneCollapsed(action, args, request.id);
+        const openedPreview = rendering.renderPaneOpened(action, args, request.id);
+        const showRequestTitle = rendering.shouldRenderRequestTitle(action, args, request.title, actionLabel);
         const buttons = (
           <ActionDecisionButtons
             size="xs"
@@ -84,7 +77,7 @@ export function PendingActionList({
             onDecide={(verdict) => actions.decide(request, verdict)}
           />
         );
-        const decision = actionOffersCardDecisionButtons(action, args) ? buttons : null;
+        const decision = rendering.actionOffersCardDecisionButtons(action, args) ? buttons : null;
         const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
         const navigationState = {
           returnTo: {
@@ -142,7 +135,7 @@ export function PendingActionList({
               (decision !== null ? (
                 <div className="agentplane-actions-sidebar-decision">{decision}</div>
               ) : (
-                renderLiveCardDecision(
+                rendering.renderLiveCardDecision(
                   action,
                   {
                     args,
@@ -167,7 +160,7 @@ export function PendingActionList({
                 )}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
                   {decision ??
-                    renderLiveCardDecision(
+                    rendering.renderLiveCardDecision(
                       action,
                       {
                         args,

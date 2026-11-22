@@ -3,214 +3,33 @@
 // React-free notification registry lives in ../notifications because the service worker imports it.
 // The group is the name the Action Service configures a backend under. Unknown identities or
 // payloads fall back to the host's generic view.
-import { Stack, Text } from "@mantine/core";
-import type { JSX, ReactNode } from "react";
-
-import { type CallToolResult, toolContentRestatesValue, toolValue } from "../call_tool_result";
-import type { ActionIdentity } from "../../../../action_service/api/contracts/action_service_pb";
-import { JsonBlock } from "../../ui/text_block";
-import { CompactPaneContent, renderPreview } from "./entry";
-import type { ActionOutcome, ActionPresentation, CardDecisionProps } from "./presentation";
-import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
-import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
-import { githubRenderers } from "./github/index";
-import { homeAssistantOrganizationRenderers } from "./home_assistant/organization";
-import { homeAssistantOperationsRenderers } from "./home_assistant/operations";
-import { homeAssistantHistoryRenderers } from "./home_assistant/history";
-import { gmailRenderers } from "./gmail";
-import { googleCalendarRenderers } from "./google_calendar";
-import { homeAssistantRenderers } from "./home_assistant";
-import { grocyRenderers } from "./grocy";
-import { tanaRenderers } from "./tana";
-import { sandboxRenderers } from "./sandbox";
-import { orchestrationRenderers } from "./orchestration";
-import { environmentRenderers, sessionRenderers } from "./session_delegation";
-import { sshRenderers } from "./ssh/index";
+import { ActionRendering, type ActionRegistry } from "./dispatch";
+import { kubernetesAdminPresentationGroup } from "./kubernetes_admin/index";
+import { githubPresentationGroup } from "./github/index";
+import { homeAssistantPresentationGroup } from "./home_assistant/group";
+import { gmailPresentationGroup } from "./gmail";
+import { googleCalendarPresentationGroup } from "./google_calendar";
+import { grocyPresentationGroup } from "./grocy";
+import { tanaPresentationGroup } from "./tana";
+import { sandboxPresentationGroup } from "./sandbox";
+import { orchestrationPresentationGroup } from "./orchestration";
+import { environmentsPresentationGroup, sessionsPresentationGroup } from "./session_delegation";
+import { sshPresentationGroup } from "./ssh/index";
 
 // Maps avoid prototype-key lookups for group and Action names.
-export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
-  ["kubernetes_admin", kubernetesAdminRenderers],
-  ["github", githubRenderers],
-  ["gmail", gmailRenderers],
-  ["google_calendar", googleCalendarRenderers],
-  [
-    "home_assistant",
-    new Map([
-      ...homeAssistantRenderers,
-      ...homeAssistantHistoryRenderers,
-      ...homeAssistantOrganizationRenderers,
-      ...homeAssistantOperationsRenderers,
-    ]),
-  ],
-  ["grocy_sf", grocyRenderers],
-  ["tana", tanaRenderers],
-  ["sandbox", sandboxRenderers],
-  ["environments", environmentRenderers],
-  ["sessions", sessionRenderers],
-  ["orchestration_v1", orchestrationRenderers],
-  ["ssh", sshRenderers],
+export const ACTION_RENDERERS: ActionRegistry = new Map([
+  kubernetesAdminPresentationGroup,
+  githubPresentationGroup,
+  gmailPresentationGroup,
+  googleCalendarPresentationGroup,
+  homeAssistantPresentationGroup,
+  grocyPresentationGroup,
+  tanaPresentationGroup,
+  sandboxPresentationGroup,
+  environmentsPresentationGroup,
+  sessionsPresentationGroup,
+  orchestrationPresentationGroup,
+  sshPresentationGroup,
 ]);
 
-function presentation(action: ActionIdentity): ActionPresentation | undefined {
-  return ACTION_RENDERERS.get(action.group)?.get(action.name);
-}
-
-/** Interpret the tool's outcome using its own protocol; a generic receipt uses the execution state. */
-export function renderActionOutcome(action: ActionIdentity, result: CallToolResult): ActionOutcome | undefined {
-  if (result.isError) return undefined;
-  return presentation(action)?.outcome?.(toolValue(result));
-}
-
-/** An Action's human-facing name; `undefined` uses the host label and `null` suppresses the label. */
-export function renderActionLabel(
-  action: ActionIdentity,
-  args: unknown,
-  requestId?: string
-): ReactNode | null | undefined {
-  const actionPresentation = presentation(action);
-  if (!actionPresentation) return undefined;
-  const { label, fallbackLabel } = actionPresentation;
-  if (label === undefined) return fallbackLabel;
-  if (label === null) return null;
-  const rendered = renderPreview(label, args, requestId);
-  return rendered === undefined ? fallbackLabel : rendered;
-}
-
-/** An Action's collapsed-pane summary; `undefined` uses the host fallback and `null` suppresses it. */
-export function renderPaneCollapsed(
-  action: ActionIdentity,
-  args: unknown,
-  requestId?: string
-): ReactNode | null | undefined {
-  const preview = presentation(action)?.pane?.collapsed;
-  const content = preview === undefined || preview === null ? preview : renderPreview(preview, args, requestId);
-  return content == null ? content : <CompactPaneContent>{content}</CompactPaneContent>;
-}
-
-/** An Action's opened-pane view; `undefined` uses the generic argument view and `null` suppresses it. */
-export function renderPaneOpened(
-  action: ActionIdentity,
-  args: unknown,
-  requestId?: string
-): ReactNode | null | undefined {
-  const preview = presentation(action)?.pane?.opened;
-  if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args, requestId);
-  return rendered === undefined ? recordedDataFallback(args) : rendered;
-}
-
-/** Show the caller's own title unless it repeats the operation heading. */
-export function shouldRenderRequestTitle(
-  action: ActionIdentity,
-  args: unknown,
-  title: string,
-  label: ReactNode
-): boolean {
-  const heading = label === undefined ? `${action.group} / ${action.name}` : label;
-  const customCheck = presentation(action)?.requestTitleIsRedundant;
-  return title.trim() !== heading && !(customCheck?.(title, args) ?? false);
-}
-
-/** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */
-export function renderDetailsArguments(
-  action: ActionIdentity,
-  args: unknown,
-  requestId?: string,
-  pending = false
-): ReactNode | null | undefined {
-  const details = presentation(action)?.details;
-  const preview = details?.arguments;
-  if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args, details?.pendingPreviewOnly && !pending ? undefined : requestId);
-  return rendered === undefined ? recordedDataFallback(args) : rendered;
-}
-
-export interface RenderedActionCall {
-  content: ReactNode;
-  /** Whether this view includes a successfully parsed result and can replace the separate result block. */
-  includesResult: boolean;
-}
-
-/** A combined per-Action request/result view, or `null` when its action-local schemas do not match. */
-export function renderActionCall(
-  action: ActionIdentity,
-  args: unknown,
-  result?: CallToolResult,
-  requestId?: string
-): RenderedActionCall | null | undefined {
-  const preview = presentation(action)?.call;
-  if (!preview) return undefined;
-  const parsedArgs = preview.argumentSchema.safeParse(args);
-  if (!parsedArgs.success) return undefined;
-
-  if (result === undefined || result.isError) {
-    return { content: preview.render(parsedArgs.data as never, undefined, requestId), includesResult: false };
-  }
-
-  const value = toolValue(result);
-  if (value === undefined || !toolContentRestatesValue(result, value)) return undefined;
-  const parsedResult = preview.resultSchema.safeParse(value);
-  if (!parsedResult.success) return undefined;
-  return {
-    content: preview.render(parsedArgs.data as never, parsedResult.data as never, requestId),
-    includesResult: true,
-  };
-}
-
-/** An MCP result's action-specific view; `undefined` asks the host to render the whole MCP envelope. */
-export function renderDetailsResult(
-  action: ActionIdentity,
-  result: CallToolResult,
-  context?: ResultPreviewContext
-): ReactNode | null | undefined {
-  const details = presentation(action)?.details;
-  if (details?.result === null) return null;
-  if (result.isError) return undefined;
-  if (details?.envelopeResult) {
-    const rendered = renderResultPreview(details.envelopeResult, result, context);
-    if (rendered !== undefined) return rendered;
-  }
-  const value = toolValue(result);
-  if (result.content.length === 0 && value == null && details?.emptyResult !== undefined) {
-    return details.emptyResult;
-  }
-  const preview = details?.result;
-  if (preview === undefined) return undefined;
-  if (value === undefined || !toolContentRestatesValue(result, value)) return undefined;
-  return renderResultPreview(preview, value, context);
-}
-
-/** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
-export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
-  return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
-}
-
-export function renderLiveCardDecision(action: ActionIdentity, props: CardDecisionProps, expanded: boolean): ReactNode {
-  const decision = presentation(action)?.liveCardDecision;
-  if (!decision || (!expanded && !decision.collapsed)) return props.fallback;
-  const Decision = decision.component;
-  return <Decision {...props} />;
-}
-
-/** Whether this invocation's compact card opens; unknown Actions open to their recorded arguments. */
-export function actionCompactCardExpands(action: ActionIdentity, args: unknown): boolean {
-  return presentation(action)?.compactCardExpands?.(args) ?? true;
-}
-
-/** Native executors store their result models directly, without an MCP envelope. */
-export function renderNativeDetailsResult(action: ActionIdentity, value: unknown): ReactNode | null | undefined {
-  const preview = presentation(action)?.details?.nativeResult;
-  return preview === undefined || preview === null ? preview : renderResultPreview(preview, value);
-}
-
-/** A strict custom schema that cannot decode stored data gets an explicit, lossless fallback. */
-function recordedDataFallback(value: unknown): JSX.Element {
-  return (
-    <Stack gap="xs">
-      <Text size="xs" c="dimmed">
-        Details shown as recorded data
-      </Text>
-      <JsonBlock value={value} />
-    </Stack>
-  );
-}
+export const appActionRendering: ActionRendering = new ActionRendering(ACTION_RENDERERS);

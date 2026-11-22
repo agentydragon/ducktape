@@ -478,7 +478,7 @@ const stockGetResult = defineResultPreview(
   )
 );
 
-export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ...grocyStockRenderers,
   ...grocyShoppingRenderers,
   ...grocyCatalogRenderers,
@@ -517,3 +517,5 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     },
   ],
 ]);
+
+export const grocyPresentationGroup: readonly [string, typeof grocyRenderers] = ["grocy_sf", grocyRenderers];

@@ -776,7 +776,7 @@ const instanceSummary = definePreview(instanceArguments, ({ args, requestId }) =
   </Stack>
 ));
 
-export const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   [
     "create_event",
     {
@@ -838,3 +838,8 @@ export const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = 
     },
   ],
 ]);
+
+export const googleCalendarPresentationGroup: readonly [string, typeof googleCalendarRenderers] = [
+  "google_calendar",
+  googleCalendarRenderers,
+];

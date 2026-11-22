@@ -1,3 +1,6 @@
+import "@mantine/core/styles.css";
+import "../../shell/shell.css";
+import { mount } from "../../harness/mount";
 import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 
@@ -57,3 +60,7 @@ export function OperationPresentationVisual(): JSX.Element {
     </main>
   );
 }
+
+Object.assign(window, {
+  agentplaneVisual: { mountOperationPresentation: () => mount(<OperationPresentationVisual />) },
+});

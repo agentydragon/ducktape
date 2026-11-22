@@ -285,7 +285,7 @@ const wait = defineResultPreview(
   )
 );
 
-export const orchestrationRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const orchestrationRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
     "launch_sandbox",
     {
@@ -380,3 +380,8 @@ export const orchestrationRenderers: ReadonlyMap<string, ActionPresentation> = n
     ),
   ],
 ]);
+
+export const orchestrationPresentationGroup: readonly [string, typeof orchestrationRenderers] = [
+  "orchestration_v1",
+  orchestrationRenderers,
+];

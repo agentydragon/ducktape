@@ -345,7 +345,7 @@ const draftDeletePreview = definePreview(draftDeleteArguments, ({ args, requestI
   </Text>
 ));
 
-export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   ["drafts_create", draftPresentation],
   [
     "drafts_update",
@@ -383,3 +383,5 @@ export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
   ["threads_list", searchPresentation],
   ["threads_modify_labels", relabelPresentation],
 ]);
+
+export const gmailPresentationGroup: readonly [string, typeof gmailRenderers] = ["gmail", gmailRenderers];

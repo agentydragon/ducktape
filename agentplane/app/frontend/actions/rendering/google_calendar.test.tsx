@@ -6,14 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ActionIdentitySchema } from "../../../../action_service/api/contracts/action_service_pb";
 import { answerApi, mount, toolResult } from "../testing/harness";
 import { eventTime, formatEventRange, formatEventTime } from "./google_calendar_time";
-import {
-  actionOffersCardDecisionButtons,
-  renderActionCall,
-  renderDetailsArguments,
-  renderDetailsResult,
-  renderPaneCollapsed,
-  renderPaneOpened,
-} from "./index";
+import { appActionRendering } from "./index";
 
 const identity = (name: string) => create(ActionIdentitySchema, { group: "google_calendar", name });
 const target = { event_id: "occurrence-1", calendar_id: "facilities@example.test" };
@@ -39,7 +32,7 @@ describe("Calendar Action review", () => {
         ? { calendar: { calendarId: target.calendar_id, summary: "Facilities calendar" } }
         : undefined
     );
-    const collapsed = await mount(renderPaneCollapsed(action, args, "request-1"));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(action, args, "request-1"));
     expect(collapsed.textContent).toContain(target.calendar_id);
     await vi.waitFor(() => expect(collapsed.textContent).toContain("Facilities calendar"));
     expect(collapsed.textContent).toContain(target.calendar_id);
@@ -47,10 +40,10 @@ describe("Calendar Action review", () => {
     expect(collapsed.textContent).not.toContain("Results per page");
     expect(collapsed.textContent).not.toContain("Nov 24");
     expect(collapsed.textContent).not.toContain("Dec 1");
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-    expect(actionOffersCardDecisionButtons(action, {})).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, {})).toBe(true);
 
-    const opened = await mount(renderPaneOpened(action, args, "request-1"));
+    const opened = await mount(appActionRendering.renderPaneOpened(action, args, "request-1"));
     expect(opened.textContent).toContain("Results per page · 120");
     expect(opened.textContent).toContain("Ending after · Tue, Nov 24, 2026");
     expect(opened.textContent).toContain("Starting before · Tue, Dec 1, 2026");
@@ -63,9 +56,9 @@ describe("Calendar Action review", () => {
       { ...args, expand_recurring: "yes" },
       { ...args, time_min: "not a date bound" },
     ]) {
-      expect(actionOffersCardDecisionButtons(action, unreviewable)).toBe(false);
+      expect(appActionRendering.actionOffersCardDecisionButtons(action, unreviewable)).toBe(false);
     }
-    const unknown = await mount(renderPaneOpened(action, { ...args, include_deleted: true }));
+    const unknown = await mount(appActionRendering.renderPaneOpened(action, { ...args, include_deleted: true }));
     expect(unknown.textContent).toContain("include_deleted");
   });
 
@@ -120,7 +113,7 @@ describe("Calendar Action review", () => {
         : undefined
     );
     const card = await mount(
-      renderPaneCollapsed(
+      appActionRendering.renderPaneCollapsed(
         identity("update_event"),
         {
           ...target,
@@ -136,7 +129,7 @@ describe("Calendar Action review", () => {
     expect(card.textContent).not.toContain("Test conference room");
     expect(card.textContent).not.toContain("attendee@example.test");
     const review = await mount(
-      renderDetailsArguments(
+      appActionRendering.renderDetailsArguments(
         identity("update_event"),
         {
           ...target,
@@ -162,23 +155,27 @@ describe("Calendar Action review", () => {
       attendees: ["guest@example.test"],
       location: "Conference room",
     };
-    const collapsed = await mount(renderPaneCollapsed(create, args));
-    const review = await mount(renderDetailsArguments(create, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(create, args));
+    const review = await mount(appActionRendering.renderDetailsArguments(create, args));
     expect(collapsed.textContent).toContain("Planning");
     expect(collapsed.textContent).not.toContain("guest@example.test");
     expect(review.textContent).toContain("guest@example.test");
     expect(review.textContent).toContain("Conference room");
-    expect(actionOffersCardDecisionButtons(create, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(create, args)).toBe(false);
 
     const list = identity("list_events");
     const page = { max_results: 5, page_token: "next" };
-    expect((await mount(renderPaneCollapsed(list, page))).textContent).not.toContain("Results per page");
-    expect((await mount(renderDetailsArguments(list, page))).textContent).toContain("Results per page · 5");
+    expect((await mount(appActionRendering.renderPaneCollapsed(list, page))).textContent).not.toContain(
+      "Results per page"
+    );
+    expect((await mount(appActionRendering.renderDetailsArguments(list, page))).textContent).toContain(
+      "Results per page · 5"
+    );
   });
 
   it("shows only supplied changes and distinguishes clears", async () => {
     const review = await mount(
-      renderDetailsArguments(identity("update_event"), {
+      appActionRendering.renderDetailsArguments(identity("update_event"), {
         ...target,
         description: null,
         location: "",
@@ -210,7 +207,7 @@ describe("Calendar Action review", () => {
         : undefined
     );
     const action = identity("delete_event");
-    const review = await mount(renderDetailsArguments(action, target, "request-1", true));
+    const review = await mount(appActionRendering.renderDetailsArguments(action, target, "request-1", true));
     await vi.waitFor(() =>
       expect([...review.querySelectorAll("a")].map((anchor) => anchor.href)).toEqual([link, calendarLink])
     );
@@ -220,7 +217,7 @@ describe("Calendar Action review", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.query.size).toBe(0);
 
-    const receipt = await mount(renderDetailsArguments(action, target, "request-1"));
+    const receipt = await mount(appActionRendering.renderDetailsArguments(action, target, "request-1"));
     expect(receipt.textContent).toContain(target.event_id);
     expect(receipt.textContent).toContain(target.calendar_id);
     expect(receipt.textContent).not.toContain("Facilities coordination");
@@ -237,12 +234,12 @@ describe("Calendar Action review", () => {
         ? { calendar: { calendarId: target.calendar_id, summary: "Facilities calendar" } }
         : undefined
     );
-    const review = await mount(renderDetailsArguments(identity(name), args, "request-1", true));
+    const review = await mount(appActionRendering.renderDetailsArguments(identity(name), args, "request-1", true));
     await vi.waitFor(() => expect(review.querySelector("a")?.href).toBe(calendarLink));
     expect(review.textContent).toContain("Calendar · Facilities calendar");
     expect(review.textContent).not.toContain(target.calendar_id);
 
-    const receipt = await mount(renderDetailsArguments(identity(name), args, "request-1"));
+    const receipt = await mount(appActionRendering.renderDetailsArguments(identity(name), args, "request-1"));
     expect(receipt.textContent).toContain(target.calendar_id);
     expect(receipt.querySelector("a")).toBeNull();
     expect(sent).toHaveLength(1);
@@ -253,11 +250,15 @@ describe("Calendar Action review", () => {
       event: { eventId: target.event_id, summary: "Office closure", htmlLink: link },
       calendar: { calendarId: "other@example.test", summary: "Unrelated calendar" },
     }));
-    const primary = await mount(renderDetailsArguments(identity("list_events"), {}, "primary-request", true));
+    const primary = await mount(
+      appActionRendering.renderDetailsArguments(identity("list_events"), {}, "primary-request", true)
+    );
     expect(primary.textContent).toContain("Primary calendar");
     expect(primary.querySelector("a")).toBeNull();
 
-    const review = await mount(renderDetailsArguments(identity("get_event"), target, "request-1", true));
+    const review = await mount(
+      appActionRendering.renderDetailsArguments(identity("get_event"), target, "request-1", true)
+    );
     await vi.waitFor(() => expect(review.querySelector("a")?.href).toBe(link));
     expect(review.textContent).toContain(target.calendar_id);
     expect(review.textContent).not.toContain("Unrelated calendar");
@@ -267,7 +268,9 @@ describe("Calendar Action review", () => {
 
   it("retains the IDs and unresolved scope when lookup fails", async () => {
     const sent = answerApi(() => Response.json({}, { status: 404 }));
-    const view = await mount(renderDetailsArguments(identity("delete_event"), target, "missing", true));
+    const view = await mount(
+      appActionRendering.renderDetailsArguments(identity("delete_event"), target, "missing", true)
+    );
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(view.textContent).toContain(target.event_id);
     expect(view.textContent).toContain(target.calendar_id);
@@ -276,7 +279,9 @@ describe("Calendar Action review", () => {
   });
 
   it("keeps unrecognized mutation arguments available as recorded data", async () => {
-    const view = await mount(renderDetailsArguments(identity("update_event"), { ...target, send_updates: "all" }));
+    const view = await mount(
+      appActionRendering.renderDetailsArguments(identity("update_event"), { ...target, send_updates: "all" })
+    );
     expect(view.textContent).toContain("Details shown as recorded data");
     expect(view.textContent).toContain('"send_updates": "all"');
   });
@@ -285,11 +290,14 @@ describe("Calendar Action review", () => {
 describe("Calendar Action results", () => {
   it("keeps the ordinary argument view available before an event result exists", () => {
     const action = identity("get_event");
-    expect(renderActionCall(action, target, undefined, "pending")).toEqual({ content: null, includesResult: false });
+    expect(appActionRendering.renderActionCall(action, target, undefined, "pending")).toEqual({
+      content: null,
+      includesResult: false,
+    });
   });
 
   it("keeps the requested event ID when the result names a different event", async () => {
-    const call = renderActionCall(
+    const call = appActionRendering.renderActionCall(
       identity("get_event"),
       target,
       success({ event_id: "different-event", summary: "A different event" }),
@@ -305,13 +313,13 @@ describe("Calendar Action results", () => {
     const action = identity("list_event_instances");
     const args = { calendar_id: target.calendar_id, recurring_event_id: "series-1" };
     const page = { events: [], summary: "Recorded Facilities calendar" };
-    const call = renderActionCall(action, args, success(page), "completed");
+    const call = appActionRendering.renderActionCall(action, args, success(page), "completed");
     expect(call?.includesResult).toBe(true);
     const view = await mount(call?.content);
     expect(view.querySelector("a")?.href).toBe(calendarLink);
     expect(view.textContent).toContain("series-1");
     expect(view.textContent).not.toContain(target.calendar_id);
-    expect(renderActionCall(action, args, success({ events: [] }), "completed")).toBeUndefined();
+    expect(appActionRendering.renderActionCall(action, args, success({ events: [] }), "completed")).toBeUndefined();
   });
 
   it("links a recorded calendar title using the exact non-primary ID in the saved list arguments", async () => {
@@ -321,20 +329,29 @@ describe("Calendar Action results", () => {
       throw new Error("Calendar receipt should not look up data");
     });
     const receipt = await mount(
-      renderDetailsResult(action, result, { requestId: "completed", arguments: { calendar_id: target.calendar_id } })
+      appActionRendering.renderDetailsResult(action, result, {
+        requestId: "completed",
+        arguments: { calendar_id: target.calendar_id },
+      })
     );
     expect(receipt.querySelector("a")?.textContent).toBe("Recorded Facilities calendar");
     expect(receipt.querySelector("a")?.href).toBe(calendarLink);
 
     const primary = await mount(
-      renderDetailsResult(action, result, { requestId: "completed", arguments: { calendar_id: "primary" } })
+      appActionRendering.renderDetailsResult(action, result, {
+        requestId: "completed",
+        arguments: { calendar_id: "primary" },
+      })
     );
     expect(primary.textContent).toContain("Recorded Facilities calendar");
     expect(primary.querySelector("a")).toBeNull();
 
     const longId = "設備".repeat(180);
     const oversized = await mount(
-      renderDetailsResult(action, result, { requestId: "completed", arguments: { calendar_id: longId } })
+      appActionRendering.renderDetailsResult(action, result, {
+        requestId: "completed",
+        arguments: { calendar_id: longId },
+      })
     );
     expect(oversized.textContent).toContain("Recorded Facilities calendar");
     expect(oversized.querySelector("a")).toBeNull();
@@ -343,7 +360,7 @@ describe("Calendar Action results", () => {
 
   it("renders linked all-day events and cancelled occurrences without leaking page tokens", async () => {
     const agenda = await mount(
-      renderDetailsResult(
+      appActionRendering.renderDetailsResult(
         identity("list_events"),
         success({
           summary: "Facilities calendar",
@@ -371,12 +388,12 @@ describe("Calendar Action results", () => {
 
   it("accepts an empty agenda and keeps unexpected or distinct outputs on the generic path", async () => {
     const action = identity("list_event_instances");
-    const blank = await mount(renderDetailsResult(action, success({ events: [] })));
+    const blank = await mount(appActionRendering.renderDetailsResult(action, success({ events: [] })));
     expect(blank.textContent).toContain("No events on this page");
-    expect(renderDetailsResult(action, success({ items: [] }))).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, success({ items: [] }))).toBeUndefined();
     const valid = success({ events: [] });
     expect(
-      renderDetailsResult(action, {
+      appActionRendering.renderDetailsResult(action, {
         ...valid,
         content: [...valid.content, { type: "text", text: "Provider note" }],
       })
@@ -385,7 +402,7 @@ describe("Calendar Action results", () => {
 
   it("renders a title as plain text if the provider link is outside Google Calendar", async () => {
     const result = await mount(
-      renderDetailsResult(
+      appActionRendering.renderDetailsResult(
         identity("get_event"),
         success({
           event_id: "evt1",
@@ -405,12 +422,12 @@ describe("Calendar Action results", () => {
       structuredContent: { result: null },
       _meta: { fastmcp: { wrap_result: true } },
     });
-    const result = await mount(renderDetailsResult(action, wrapped));
+    const result = await mount(appActionRendering.renderDetailsResult(action, wrapped));
     expect(result.textContent).toContain("Deletion confirmed.");
-    expect(renderDetailsResult(action, { content: [], isError: true })).toBeUndefined();
-    expect(renderDetailsResult(action, success({ unexpected: true }))).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, { content: [], isError: true })).toBeUndefined();
+    expect(appActionRendering.renderDetailsResult(action, success({ unexpected: true }))).toBeUndefined();
     expect(
-      renderDetailsResult(action, {
+      appActionRendering.renderDetailsResult(action, {
         content: [{ type: "text", text: "Provider message" }],
         isError: false,
       })

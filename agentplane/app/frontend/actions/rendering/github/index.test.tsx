@@ -6,16 +6,7 @@ import { ActionIdentitySchema } from "../../../../../action_service/api/contract
 import { describe, expect, it } from "vitest";
 
 import { mount } from "../../testing/harness";
-import {
-  actionCompactCardExpands,
-  actionOffersCardDecisionButtons,
-  renderActionLabel,
-  renderActionOutcome,
-  renderDetailsArguments,
-  renderDetailsResult,
-  renderPaneCollapsed,
-  renderPaneOpened,
-} from "../index";
+import { appActionRendering } from "../index";
 
 const PUSH_FILES = create(ActionIdentitySchema, { group: "github", name: "push_files" });
 const DELETE_FILE = create(ActionIdentitySchema, { group: "github", name: "delete_file" });
@@ -66,32 +57,32 @@ describe("GitHub read approvals", () => {
   ])("offers a scoped compact decision for %s", async (name, fields, scope) => {
     const action = create(ActionIdentitySchema, { group: "github", name });
     const args = { ...REPOSITORY, ...fields };
-    expect(shownText(await mount(renderPaneCollapsed(action, args)))).toContain(scope);
-    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
-    expect(actionOffersCardDecisionButtons(action, { ...args, future_scope: true })).toBe(false);
-    expect(actionOffersCardDecisionButtons(action, { ...args, owner: "" })).toBe(false);
-    expect(actionCompactCardExpands(action, args)).toBe(true);
+    expect(shownText(await mount(appActionRendering.renderPaneCollapsed(action, args)))).toContain(scope);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, { ...args, future_scope: true })).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(action, { ...args, owner: "" })).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(action, args)).toBe(true);
   });
 });
 
 describe("GitHub issue writes", () => {
   it("keeps label-only updates in the label and links the issue", async () => {
     const args = { ...ISSUE_UPDATE, labels: ["bug", "upstream-waiting"] };
-    const label = await mount(renderActionLabel(ISSUE_WRITE, args));
+    const label = await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, args));
     expect(shownText(label)).toContain("Set labels on test-owner/test-repo#42:");
     expect(label.querySelector("a")?.getAttribute("href")).toBe(ISSUE_URL);
     expect([...label.querySelectorAll(".mantine-Badge-label")].map((badge) => badge.textContent)).toEqual([
       "bug",
       "upstream-waiting",
     ]);
-    expect(shownText(await mount(renderPaneCollapsed(ISSUE_WRITE, args)))).toBe("");
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
-    expect(actionCompactCardExpands(ISSUE_WRITE, args)).toBe(false);
+    expect(shownText(await mount(appActionRendering.renderPaneCollapsed(ISSUE_WRITE, args)))).toBe("");
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(ISSUE_WRITE, args)).toBe(false);
     const clear = { ...args, labels: [] };
-    expect(shownText(await mount(renderActionLabel(ISSUE_WRITE, clear)))).toBe(
+    expect(shownText(await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, clear)))).toBe(
       "Clear labels on test-owner/test-repo#42"
     );
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, clear)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, clear)).toBe(true);
   });
 
   it("shows all changes and the issue link on a mixed update with closed-card decisions", async () => {
@@ -105,10 +96,10 @@ describe("GitHub issue writes", () => {
       milestone: 3,
       type: null,
     };
-    const label = await mount(renderActionLabel(ISSUE_WRITE, args));
+    const label = await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, args));
     expect(shownText(label)).toBe("Close test-owner/test-repo#42");
     expect(label.querySelector("a")?.getAttribute("href")).toBe(ISSUE_URL);
-    const preview = await mount(renderPaneCollapsed(ISSUE_WRITE, args));
+    const preview = await mount(appActionRendering.renderPaneCollapsed(ISSUE_WRITE, args));
     expect([...preview.querySelectorAll("p")].map((line) => line.textContent?.trim())).toEqual([
       "New title Review staging",
       "Reason Not planned",
@@ -117,43 +108,49 @@ describe("GitHub issue writes", () => {
       "Set milestone to 3",
       "Clear issue type",
     ]);
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
-    expect(actionCompactCardExpands(ISSUE_WRITE, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(ISSUE_WRITE, args)).toBe(false);
   });
 
   it("distinguishes empty replacement sets and the provider's default close reason", async () => {
     const args = { ...ISSUE_UPDATE, state: "closed", labels: [], assignees: [] };
-    expect(shownText(await mount(renderPaneCollapsed(ISSUE_WRITE, args)))).toContain(
+    expect(shownText(await mount(appActionRendering.renderPaneCollapsed(ISSUE_WRITE, args)))).toContain(
       "Reason CompletedClear assigneesClear labels"
     );
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, args)).toBe(true);
     const reopen = { ...ISSUE_UPDATE, state: "open" };
-    expect(shownText(await mount(renderActionLabel(ISSUE_WRITE, reopen)))).toBe("Reopen test-owner/test-repo#42");
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, reopen)).toBe(true);
+    expect(shownText(await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, reopen)))).toBe(
+      "Reopen test-owner/test-repo#42"
+    );
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, reopen)).toBe(true);
   });
 
   it("names a description replacement and shows its contents on disclosure", async () => {
     const input = { ...ISSUE_UPDATE, body: "Verify staging readiness before deployment." };
-    expect(shownText(await mount(renderPaneCollapsed(ISSUE_WRITE, input)))).toBe("Replace description");
-    const opened = await mount(renderPaneOpened(ISSUE_WRITE, input));
+    expect(shownText(await mount(appActionRendering.renderPaneCollapsed(ISSUE_WRITE, input)))).toBe(
+      "Replace description"
+    );
+    const opened = await mount(appActionRendering.renderPaneOpened(ISSUE_WRITE, input));
     expect(opened.querySelector("[data-operation-heading]")?.textContent).toBe("New description");
     expect(shownText(opened)).toContain(input.body);
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
-    expect(actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
   });
 
   it("links the repository for a create request and keeps full review", async () => {
     const input = { ...REPOSITORY, method: "create", title: "Review staging" };
-    const label = await mount(renderActionLabel(ISSUE_WRITE, input));
+    const label = await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, input));
     expect(shownText(label)).toBe("Create issue in test-owner/test-repo");
     expect(label.querySelector("a")?.getAttribute("href")).toBe("https://github.com/test-owner/test-repo/issues");
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
-    expect(actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
   });
 
   it("preserves recorded data for unknown fields", async () => {
     const input = { ...ISSUE_UPDATE, title: "New title", future_field: true };
-    expect(shownText(await mount(renderActionLabel(ISSUE_WRITE, input)))).toBe("Change GitHub issue");
+    expect(shownText(await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, input)))).toBe(
+      "Change GitHub issue"
+    );
     for (const render of [renderPaneOpened, renderDetailsArguments]) {
       const view = await mount(render(ISSUE_WRITE, input));
       expect(shownText(view)).toContain("Details shown as recorded data");
@@ -175,8 +172,8 @@ describe("GitHub issue writes", () => {
     { ...ISSUE_UPDATE, state: "closed", state_reason: "duplicate", duplicate_of: 7 },
     { ...ISSUE_UPDATE, issue_fields: [{ field_name: "Priority", field_option_name: "P1" }] },
   ])("requires full review for incomplete or more involved requests: %j", (input) => {
-    expect(actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
-    expect(actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(ISSUE_WRITE, input)).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(ISSUE_WRITE, input)).toBe(true);
   });
 });
 
@@ -191,12 +188,12 @@ describe("GitHub push_files", () => {
   const args = { ...REPOSITORY, branch: "test-branch", message: "test: update notes", files };
 
   it("names the file count, branch and repository as given", async () => {
-    const label = await mount(renderActionLabel(PUSH_FILES, args));
+    const label = await mount(appActionRendering.renderActionLabel(PUSH_FILES, args));
     expect(shownText(label)).toBe("Push 5 files to test-branch in test-owner/test-repo");
   });
 
   it("summarizes the commit message and the first files with their sizes", async () => {
-    const collapsed = await mount(renderPaneCollapsed(PUSH_FILES, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(PUSH_FILES, args));
     expect([...collapsed.querySelectorAll("p")].map((line) => line.textContent)).toEqual([
       "test: update notes",
       "docs/test-notes.md · 26 B",
@@ -207,7 +204,7 @@ describe("GitHub push_files", () => {
   });
 
   it("opens each file as its own block with its text, never escaped JSON", async () => {
-    const opened = await mount(renderPaneOpened(PUSH_FILES, args));
+    const opened = await mount(appActionRendering.renderPaneOpened(PUSH_FILES, args));
     expect(opened.textContent).toContain("test: update notes");
     const blocks = fileBlocks(opened);
     expect(blocks.map(({ summary }) => summary.textContent)).toEqual(
@@ -221,7 +218,7 @@ describe("GitHub push_files", () => {
   });
 
   it("shows Markdown as prose and code in monospace", async () => {
-    const opened = await mount(renderDetailsArguments(PUSH_FILES, args));
+    const opened = await mount(appActionRendering.renderDetailsArguments(PUSH_FILES, args));
     const [markdown, code] = fileBlocks(opened);
     await act(async () => markdown.summary.click());
     await act(async () => code.summary.click());
@@ -233,8 +230,8 @@ describe("GitHub push_files", () => {
   });
 
   it("offers card decisions for valid arguments and rejects unknown arguments", () => {
-    expect(actionOffersCardDecisionButtons(PUSH_FILES, args)).toBe(true);
-    expect(actionOffersCardDecisionButtons(PUSH_FILES, { ...args, force: true })).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(PUSH_FILES, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(PUSH_FILES, { ...args, force: true })).toBe(false);
   });
 });
 
@@ -247,19 +244,19 @@ describe("GitHub delete_file", () => {
   };
 
   it("shows the repository, path, branch, and commit message on the compact card", async () => {
-    const label = await mount(renderActionLabel(DELETE_FILE, args));
-    const collapsed = await mount(renderPaneCollapsed(DELETE_FILE, args));
+    const label = await mount(appActionRendering.renderActionLabel(DELETE_FILE, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(DELETE_FILE, args));
 
     expect(shownText(label)).toBe("Delete docs/test-notes.md in test-owner/test-repo");
     expect(shownText(collapsed)).toContain("test-branch");
     expect(shownText(collapsed)).toContain("docs: remove obsolete notes");
-    expect(actionCompactCardExpands(DELETE_FILE, args)).toBe(false);
-    expect(actionOffersCardDecisionButtons(DELETE_FILE, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(DELETE_FILE, args)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(DELETE_FILE, args)).toBe(true);
   });
 
   it("keeps unknown arguments out of the decision-capable compact card", () => {
-    expect(actionOffersCardDecisionButtons(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(false);
-    expect(actionCompactCardExpands(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(true);
   });
 });
 
@@ -276,14 +273,14 @@ describe("GitHub update_pull_request", () => {
       "Update test-owner/test-repo#7: change base to test-base, disallow maintainer edits, request review from test-reviewer-1, test-reviewer-2",
     ],
   ])("names what %j changes", async (changes, expected) => {
-    const label = await mount(renderActionLabel(UPDATE_PULL_REQUEST, { ...base, ...changes }));
+    const label = await mount(appActionRendering.renderActionLabel(UPDATE_PULL_REQUEST, { ...base, ...changes }));
     expect(shownText(label)).toBe(expected);
   });
 
   it("shows a new description as prose under its heading", async () => {
     const args = { ...base, title: "Test title", body: "Test description." };
-    const collapsed = await mount(renderPaneCollapsed(UPDATE_PULL_REQUEST, args));
-    const opened = await mount(renderPaneOpened(UPDATE_PULL_REQUEST, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(UPDATE_PULL_REQUEST, args));
+    const opened = await mount(appActionRendering.renderPaneOpened(UPDATE_PULL_REQUEST, args));
 
     expect(collapsed.textContent).toContain("New title: Test title");
     expect(collapsed.textContent).toContain("Test description.");
@@ -293,15 +290,23 @@ describe("GitHub update_pull_request", () => {
   });
 
   it("leaves nothing below the label when it names every change", async () => {
-    const collapsed = await mount(renderPaneCollapsed(UPDATE_PULL_REQUEST, { ...base, state: "closed" }));
+    const collapsed = await mount(
+      appActionRendering.renderPaneCollapsed(UPDATE_PULL_REQUEST, { ...base, state: "closed" })
+    );
     expect(shownText(collapsed)).toBe("");
   });
 
   it("offers card decisions for changes and rejects unknown or empty calls", () => {
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(true);
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, body: "Updated description." })).toBe(true);
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, invisible: "must review" })).toBe(false);
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, base)).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(
+      true
+    );
+    expect(
+      appActionRendering.actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, body: "Updated description." })
+    ).toBe(true);
+    expect(
+      appActionRendering.actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, invisible: "must review" })
+    ).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, base)).toBe(false);
   });
 });
 
@@ -315,18 +320,22 @@ describe("GitHub create_branch", () => {
       "Create branch test-branch from the default branch in test-owner/test-repo",
     ],
   ])("puts every argument of %j in the label", async (callArgs, expected) => {
-    const label = await mount(renderActionLabel(CREATE_BRANCH, callArgs));
+    const label = await mount(appActionRendering.renderActionLabel(CREATE_BRANCH, callArgs));
     expect(shownText(label)).toBe(expected);
-    expect(actionCompactCardExpands(CREATE_BRANCH, callArgs)).toBe(false);
+    expect(appActionRendering.actionCompactCardExpands(CREATE_BRANCH, callArgs)).toBe(false);
   });
 
   it("offers card decision buttons only for arguments the label shows", async () => {
-    expect(actionOffersCardDecisionButtons(CREATE_BRANCH, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(CREATE_BRANCH, args)).toBe(true);
     const extra = { ...args, sha: "0000000" };
-    expect(actionOffersCardDecisionButtons(CREATE_BRANCH, extra)).toBe(false);
-    expect(shownText(await mount(renderActionLabel(CREATE_BRANCH, extra)))).toBe("Create GitHub branch");
-    expect(actionCompactCardExpands(CREATE_BRANCH, extra)).toBe(true);
-    expect((await mount(renderDetailsArguments(CREATE_BRANCH, extra))).textContent).toContain('"sha": "0000000"');
+    expect(appActionRendering.actionOffersCardDecisionButtons(CREATE_BRANCH, extra)).toBe(false);
+    expect(shownText(await mount(appActionRendering.renderActionLabel(CREATE_BRANCH, extra)))).toBe(
+      "Create GitHub branch"
+    );
+    expect(appActionRendering.actionCompactCardExpands(CREATE_BRANCH, extra)).toBe(true);
+    expect((await mount(appActionRendering.renderDetailsArguments(CREATE_BRANCH, extra))).textContent).toContain(
+      '"sha": "0000000"'
+    );
   });
 });
 
@@ -341,8 +350,8 @@ describe("GitHub create_pull_request", () => {
   };
 
   it("puts the base and title in the label and the head and settings below it", async () => {
-    const label = await mount(renderActionLabel(CREATE_PULL_REQUEST, args));
-    const collapsed = await mount(renderPaneCollapsed(CREATE_PULL_REQUEST, args));
+    const label = await mount(appActionRendering.renderActionLabel(CREATE_PULL_REQUEST, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(CREATE_PULL_REQUEST, args));
 
     expect(shownText(label)).toBe("Open PR into test-base of test-owner/test-repo: Test title");
     expect(collapsed.textContent).toContain("from test-head");
@@ -359,10 +368,10 @@ describe("GitHub create_pull_request", () => {
       expect(container.querySelector("[data-operation-heading]")?.textContent).toBe("Description");
       expect(container.textContent).toContain("Test description.");
     }
-    expect((await mount(renderPaneCollapsed(CREATE_PULL_REQUEST, withBody))).textContent).toContain(
+    expect((await mount(appActionRendering.renderPaneCollapsed(CREATE_PULL_REQUEST, withBody))).textContent).toContain(
       "Test description."
     );
-    expect(actionOffersCardDecisionButtons(CREATE_PULL_REQUEST, withBody)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(CREATE_PULL_REQUEST, withBody)).toBe(true);
   });
 });
 
@@ -379,9 +388,9 @@ describe("GitHub search_pull_requests", () => {
   };
 
   it("shows search scope on both review surfaces and folds pagination", async () => {
-    const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
-    const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
-    const details = await mount(renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
+    const label = await mount(appActionRendering.renderActionLabel(SEARCH_PULL_REQUESTS, args));
+    const collapsed = await mount(appActionRendering.renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
+    const details = await mount(appActionRendering.renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
 
     expect(shownText(label)).toBe("Search GitHub pull requests");
     for (const view of [collapsed, details]) {
@@ -393,15 +402,21 @@ describe("GitHub search_pull_requests", () => {
     }
     expect(shownText(collapsed)).not.toContain("Page");
     expect(shownText(details)).toContain("Page size 10");
-    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(true);
-    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
+    expect(appActionRendering.actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(true);
+    expect(appActionRendering.actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
   });
 
   it("rejects unknown or invalid search arguments from compact-card decisions", () => {
-    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(false);
-    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, page: 0 })).toBe(false);
-    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, perPage: 101 })).toBe(false);
-    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(true);
+    expect(
+      appActionRendering.actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })
+    ).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, page: 0 })).toBe(false);
+    expect(appActionRendering.actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, perPage: 101 })).toBe(
+      false
+    );
+    expect(appActionRendering.actionCompactCardExpands(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(
+      true
+    );
   });
 });
 
@@ -414,7 +429,7 @@ describe("GitHub Action receipts", () => {
       isError: false,
     };
     const receipt = await mount(
-      renderDetailsResult(CREATE_BRANCH, result, {
+      appActionRendering.renderDetailsResult(CREATE_BRANCH, result, {
         requestId: "test-request",
         arguments: { ...REPOSITORY, branch: "docs/test-branch" },
       })
@@ -435,8 +450,8 @@ describe("GitHub Action receipts", () => {
     },
   ])("shows an accepted branch update as queued", async (result) => {
     const action = create(ActionIdentitySchema, { group: "github", name: "update_pull_request_branch" });
-    expect(renderActionOutcome(action, result)).toEqual({ label: "Update queued", failed: false });
-    const receipt = await mount(renderDetailsResult(action, result));
+    expect(appActionRendering.renderActionOutcome(action, result)).toEqual({ label: "Update queued", failed: false });
+    const receipt = await mount(appActionRendering.renderDetailsResult(action, result));
     expect(shownText(receipt)).toContain("GitHub accepted the update");
   });
 
@@ -457,7 +472,7 @@ describe("GitHub Action receipts", () => {
       },
       isError: false,
     };
-    const receipt = await mount(renderDetailsResult(SEARCH_PULL_REQUESTS, result));
+    const receipt = await mount(appActionRendering.renderDetailsResult(SEARCH_PULL_REQUESTS, result));
     expect(shownText(receipt)).toContain("incomplete search results");
     expect(shownText(receipt)).toContain("test-owner/test-repo · Open");
     expect([...receipt.querySelectorAll("a")].map((link) => link.textContent)).toEqual(["Review staging changes"]);
@@ -472,9 +487,9 @@ describe("GitHub workflow outcomes", () => {
       structuredContent: { message: "Workflow run has been cancelled", run_id: 81, status_code: 202 },
       isError: false,
     };
-    expect(renderActionOutcome(action, result)?.label).toBe("Cancellation requested");
+    expect(appActionRendering.renderActionOutcome(action, result)?.label).toBe("Cancellation requested");
     const view = await mount(
-      renderDetailsResult(action, result, {
+      appActionRendering.renderDetailsResult(action, result, {
         requestId: "test-request",
         arguments: { ...REPOSITORY, method: "cancel_workflow_run", run_id: 81 },
       })
@@ -488,12 +503,12 @@ describe("GitHub workflow outcomes", () => {
   it("keeps submitted scan text and opaque scanner responses behind Raw", async () => {
     const action = create(ActionIdentitySchema, { group: "github", name: "run_secret_scanning" });
     const marker = "fixture-only-sensitive-value";
-    const view = await mount(renderDetailsArguments(action, { ...REPOSITORY, files: [marker] }));
+    const view = await mount(appActionRendering.renderDetailsArguments(action, { ...REPOSITORY, files: [marker] }));
     expect(shownText(view)).toContain("One block");
     expect(shownText(view)).not.toContain(marker);
     for (const isError of [true, false]) {
       expect(
-        renderDetailsResult(action, {
+        appActionRendering.renderDetailsResult(action, {
           content: [{ type: "text", text: marker }],
           structuredContent: { message: "This may be a different provider variant." },
           isError,

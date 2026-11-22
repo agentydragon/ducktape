@@ -1,4 +1,5 @@
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//agentplane/app/frontend/actions:visual_groups.bzl", "VISUAL_ACTION_GROUPS")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
@@ -20,33 +21,50 @@ filegroup(
 
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
-# Widgets for particular Actions' requests and responses, registered by the Action's identity:
-# index.tsx dispatches; each Action widget lives under its group.
 ts_library(
-    name = "index",
-    srcs = ["index.tsx"],
+    name = "dispatch",
+    srcs = ["dispatch.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
-        ":github",
-        ":gmail",
-        ":google_calendar",
-        ":grocy",
-        ":home_assistant",
-        ":home_assistant_secondary",
-        ":kubernetes_admin",
-        ":orchestration",
         ":presentation",
         ":result_entry",
-        ":sandbox",
-        ":session_delegation",
-        ":ssh",
-        ":tana",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions:call_tool_result",
         "//agentplane/app/frontend/ui:text_block",
+    ],
+)
+
+ts_library(
+    name = "home_assistant_group",
+    srcs = ["home_assistant/group.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":home_assistant",
+        ":home_assistant_secondary",
+    ],
+)
+
+ts_library(
+    name = "index",
+    srcs = ["index.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":dispatch",
+        ":github",
+        ":gmail",
+        ":google_calendar",
+        ":grocy",
+        ":home_assistant_group",
+        ":kubernetes_admin",
+        ":orchestration",
+        ":sandbox",
+        ":session_delegation",
+        ":ssh",
+        ":tana",
     ],
 )
 
@@ -481,6 +499,7 @@ ts_library(
 agentplane_vitest_test(
     name = "index_test",
     srcs = ["index.test.tsx"],
+    env = {"VISUAL_ACTION_GROUPS": ",".join(VISUAL_ACTION_GROUPS)},
     deps = [
         ":index",
         "//:node_modules/@bufbuild/protobuf",
