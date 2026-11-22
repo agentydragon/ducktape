@@ -313,33 +313,53 @@ it("shows compact decisions only for a fully displayed mutation", async () => {
   expect(cards[3]?.textContent).toContain("send_updates");
 });
 
-it("shows draft decisions only after opening the complete new draft", async () => {
+it("offers draft creation decisions while keeping the full message one expansion away", async () => {
   const container = await mount(
     <ActionsTestApp>
       <ActionsSidebarSection />
     </ActionsTestApp>
   );
-  await send([
-    {
-      ...request(ActionState.DECISION_PENDING, 1),
+  const args = {
+    to: ["reviewer@example.test"],
+    bcc: ["archive@example.test"],
+    subject: "Release notes",
+    body: "First line\nSecond line\nThird line\nLast line",
+  };
+  const drafts: NonNullable<ActionRequest["arguments"]>[] = [
+    args,
+    { ...args, thread_id: "thread-123" },
+    { ...args, unknown: true },
+  ];
+  await send(
+    drafts.map((draft, index) => ({
+      ...request(ActionState.DECISION_PENDING, index + 1),
       action: create(ActionIdentitySchema, { group: "gmail", name: "drafts_create" }),
-      arguments: {
-        to: ["reviewer@example.test"],
-        bcc: ["archive@example.test"],
-        subject: "Release notes",
-        body: "First line\nSecond line\nThird line\nLast line",
-      },
-    },
-  ]);
-  const card = container.querySelector(".agentplane-actions-sidebar-request");
-  expect(card?.querySelector('button[aria-label^="Approve "]')).toBeNull();
-  const disclosure = card?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
-  if (!disclosure) throw new Error("missing draft disclosure");
-  await act(async () => disclosure.click());
-  const preview = card?.querySelector(".agentplane-actions-sidebar-preview");
-  expect(preview?.textContent).toContain("Last line");
-  expect(preview?.textContent).toContain("archive@example.test");
-  expect(preview?.querySelector('button[aria-label^="Approve "]')).not.toBeNull();
+      arguments: draft,
+    }))
+  );
+  const cards = container.querySelectorAll(".agentplane-actions-sidebar-request");
+  expect(cards).toHaveLength(3);
+  expect(cards[1]?.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-123"]')?.textContent).toBe(
+    "thread-123"
+  );
+  for (const [index, card] of cards.entries()) {
+    const supported = index < 2;
+    const expectDecisions = (element: Element | null) => {
+      expect(!!element?.querySelector('button[aria-label^="Approve "]')).toBe(supported);
+      expect(!!element?.querySelector('button[aria-label^="Deny "]')).toBe(supported);
+    };
+    expectDecisions(card);
+    if (supported) {
+      expect(card.textContent).toContain("Create unsent draft");
+      expect(card.textContent).toContain("archive@example.test");
+    }
+    const disclosure = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+    if (!disclosure) throw new Error("missing draft disclosure");
+    await act(async () => disclosure.click());
+    const preview = card.querySelector(".agentplane-actions-sidebar-preview");
+    expectDecisions(preview);
+    expect(preview?.textContent).toContain(supported ? "Last line" : "unknown");
+  }
 });
 
 const expandedDecisionCases: {

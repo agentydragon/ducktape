@@ -42,7 +42,7 @@ export interface ActionPresentation {
     envelopeResult?: ResultPreview;
     nativeResult?: ResultPreview | null;
   };
-  /** A custom view does not grant decision buttons. The Action checks whether the current card shows the complete call. */
+  /** A custom view does not grant decision buttons. The Action checks whether the current card shows enough to decide. */
   offersCardDecisionButtons?: (args: unknown, expanded: boolean) => boolean;
   /** When the opened preview depends on live data, use that same lookup to gate the decisions. */
   expandedCardDecision?: ComponentType<ExpandedCardDecisionProps>;

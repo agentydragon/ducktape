@@ -24,9 +24,11 @@
 - Command-running Actions (SSH, Pod and sandbox exec) read alike: the label is "Run command on/in
   <target>", the pane never repeats the target, and the settings that change how it runs are one
   line of `ShellCommandView` notes built by a `schemas/` helper that the notification text shares.
-- For mutations, offer card decision buttons when the current compact card shows the whole call.
-  If review needs the opened preview or live resolution of a target, gate the buttons on that
-  preview and its resolved data.
+- For mutations, show the target, scope, and consequential effects before offering card decision
+  buttons. If review needs the opened preview or live resolution of a target, gate the buttons on
+  that preview and its resolved data. Creating an unsent Gmail draft stores a message for later
+  review, so the collapsed card can offer a decision with the recipients, subject, and any reply
+  thread visible. Keep the full message body available on expansion.
 - A compact card for a read may leave narrowing constraints in the opened or full view when the
   broader read is clear from the card. Show the data source and account or target scope, and any
   option that can broaden the read, change what it returns, or cause side effects. Unknown or

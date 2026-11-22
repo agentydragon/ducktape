@@ -454,6 +454,18 @@ async def test_sandbox_action_results(
         ),
         pytest.param(
             "gmail",
+            "drafts_create",
+            {
+                "to": ["reviewer@example.com"],
+                "cc": ["team@example.com"],
+                "subject": "Deployment review",
+                "body": "Please review.\nConfirm the rollout.\nCheck the deployment notes.\nReply with any blockers.",
+            },
+            "reviewer@example.com",
+            id="gmail-draft-new",
+        ),
+        pytest.param(
+            "gmail",
             "threads_list",
             {"q": "from:deployments@example.com", "maxResults": 5},
             "from:deployments@example.com",
@@ -495,9 +507,10 @@ async def test_compact_action_summaries(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
     draft = group == "gmail" and name == "drafts_create"
+    reply_draft = draft and "thread_id" in arguments
     summaries: dict[str, object] | None = (
         {"gmail-thread-summaries": {"threads": [{"threadId": "existing-thread-123", "subject": "Rollout planning"}]}}
-        if draft
+        if reply_draft
         else None
     )
     await app.show_action_preview(group, name, arguments, summaries)
@@ -511,10 +524,16 @@ async def test_compact_action_summaries(
     disclosure = section.get_by_role("button", name=f"Expand {title}")
     collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
     if draft:
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Create unsent draft")
         await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
-        thread_link = collapsed_summary.get_by_role("link", name="Rollout planning", exact=True)
-        await expect(thread_link).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/existing-thread-123")
+        if reply_draft:
+            thread_link = collapsed_summary.get_by_role("link", name="Rollout planning", exact=True)
+            await expect(thread_link).to_have_attribute(
+                "href", "https://mail.google.com/mail/u/0/#all/existing-thread-123"
+            )
         await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
         await view.capture("collapsed", target=section)
     if group == "github" and name == "create_pull_request":
         for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
@@ -527,6 +546,11 @@ async def test_compact_action_summaries(
         assert bounds is not None
         await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
+    if draft:
+        preview = section.locator(".agentplane-actions-sidebar-preview")
+        await expect(preview.get_by_text("Reply with any blockers.", exact=False)).to_be_visible()
+        await expect(preview.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(preview.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
     if group == "gmail" and name == "threads_list":

@@ -81,7 +81,7 @@ function DraftReply({ id, requestId }: { id: string; requestId?: string }): JSX.
   const names = useIntegrationPreviewNames("gmail", requestId);
   return (
     <Text size="sm">
-      Reply in thread <ThreadTarget id={id} subject={names?.get(id)} linkInCompact />
+      Reply in thread <ThreadTarget id={id} subject={names?.get(id)?.trim()} linkInCompact />
     </Text>
   );
 }
@@ -294,7 +294,7 @@ const relabelPresentation: ActionPresentation = {
 };
 
 const draftPresentation: ActionPresentation = {
-  fallbackLabel: "Gmail: Draft email",
+  fallbackLabel: "Gmail: Create unsent draft",
   call: defineCallPreview(draftArguments, draftResult, DraftCall),
   pane: { collapsed: definePreview(draftArguments, DraftCollapsed), opened: draftPreview },
   details: {
@@ -308,10 +308,7 @@ const draftPresentation: ActionPresentation = {
       </Text>
     )),
   },
-  offersCardDecisionButtons: (args, expanded) => {
-    const parsed = draftArguments.safeParse(args);
-    return expanded && parsed.success && !parsed.data.thread_id;
-  },
+  offersCardDecisionButtons: (args) => draftArguments.safeParse(args).success,
 };
 
 const draftUpdateArguments = draftArguments.extend({ draft_id: z.string().min(1) });

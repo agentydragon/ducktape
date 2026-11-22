@@ -244,7 +244,7 @@ describe("Action presentation slots", () => {
     const opened = await mount(renderPaneOpened(action, args));
     const details = await mount(renderDetailsArguments(action, args));
 
-    expect(label.textContent).toContain("Gmail: Draft email");
+    expect(label.textContent).toContain("Gmail: Create unsent draft");
     expect(collapsed.textContent).toContain("reader@example.com");
     expect(collapsed.textContent).toContain("Release notes");
     expect(collapsed.textContent).toContain("The release is ready.");
