@@ -880,7 +880,6 @@ py_library(
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/action_service/sandbox/contract:actions",
         "//agentplane/app:action_federation_settings",
-        "//agentplane/app:settings",
         "//agentplane/crds:policyset",
         "//agentplane/env:config",
         "//agentplane/identity/operator:settings",
