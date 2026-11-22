@@ -2129,6 +2129,7 @@ py_test(
         "KUSTOMIZE_RLOCATION": "$(rlocationpath @multitool//tools/kustomize)",
     },
     deps = [
+        ":agent_rbac_test_support",
         ":manifest_roots",
         ":namespace_access",
         "//:conftest",
