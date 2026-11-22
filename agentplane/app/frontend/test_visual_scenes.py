@@ -629,15 +629,26 @@ async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixtu
 
 
 @DESKTOP_AND_MOBILE
-async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.COMMAND_ADMISSION_TIMED_OUT)
+@pytest.mark.parametrize(
+    ("flag", "stage"),
+    [(Flag.COMMAND_ADMISSION_TIMED_OUT, "unconfirmed"), (Flag.COMMAND_SUBMISSION_REFUSED, "refused")],
+    ids=["unconfirmed", "refused"],
+)
+async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture, flag: Flag, stage: str) -> None:
+    await app.set_flag(flag)
     await app.build(Scene.PENDING_COMMANDS)
     await app.build(Scene.REMEMBER_PENDING_INPUT)
     await app.mount_thread(RUNNING_THREAD)
-    await view.page.wait_for_selector('[data-stage="unconfirmed"]', state="attached")
+    await expect(view.page.locator(f'[data-stage="{stage}"]')).to_be_visible()
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
     await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="local"]', state="attached")
     await view.page.locator(".transcript-user-message-aside").get_by_role("button", name="Retry").wait_for()
+    if stage == "refused":
+        refusal = view.page.locator('[data-stage="refused"]')
+        await expect(refusal).to_contain_text("Command refused: HTTP 403")
+        await expect(refusal).to_contain_text("Permission denied by Dispatcher")
+        await refusal.scroll_into_view_if_needed()
+        await expect(refusal).to_be_in_viewport(ratio=1)
     await view.capture()
 
 

@@ -2579,10 +2579,14 @@ function rememberShortRefusedWake(): void {
   rememberDispatched(RUNNING_THREAD, commandId, "Short", { state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER", reason });
 }
 
-function rememberFailedDispatch(): void {
+function rememberFailedAndUnknownDispatches(): void {
   rememberDispatched(RUNNING_THREAD, "wake-deadline-dispatch", "Please start the Sandbox when capacity is available.", {
     state: "DELIVERY_STATE_FAILED",
     reason: "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound",
+  });
+  rememberDispatched(RUNNING_THREAD, "unknown-dispatch", "Continue when you can.", {
+    state: "DELIVERY_STATE_UNKNOWN",
+    reason: "Connection to the runner closed before it returned a receipt",
   });
 }
 
@@ -2752,6 +2756,7 @@ type Flag =
   | "entitySegmentsWithheld"
   | "threadScopeUnavailable"
   | "commandAdmissionTimedOut"
+  | "commandSubmissionRefused"
   | "pendingActions"
   | "pendingActionOverflow"
   | "compactPodAction"
@@ -3552,10 +3557,15 @@ routes.push(
   [
     "POST",
     /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+):(?:submitInput|changeModel|changeReasoningEffort|interruptTurn)$/,
-    () =>
-      flags.has("commandAdmissionTimedOut")
-        ? Response.json({ code: 4, message: "deadline exceeded" }, { status: 504 })
-        : UNANSWERED,
+    () => {
+      if (flags.has("commandAdmissionTimedOut")) {
+        return Response.json({ code: 4, message: "deadline exceeded" }, { status: 504 });
+      }
+      if (flags.has("commandSubmissionRefused")) {
+        return Response.json({ code: 7, message: "Permission denied by Dispatcher" }, { status: 403 });
+      }
+      return UNANSWERED;
+    },
   ]
 );
 
@@ -4408,7 +4418,7 @@ const visualHarness = {
   enableSuspendedSandboxWakeOnMessage,
   rememberDispatch,
   rememberShortRefusedWake,
-  rememberFailedDispatch,
+  rememberFailedAndUnknownDispatches,
   completedRollout(): void {
     serveRollout("Completed diagnostic run", rollout);
   },

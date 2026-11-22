@@ -86,7 +86,7 @@
 }
 
 /* Three evidence stages: solid is reached (grey waiting/done, red failure); hollow is
-   uncertain or unreached. Detail appears only on hover/focus/touch. The tooltip is
+   uncertain or unreached. Failure and unknown outcomes show detail inline. The tooltip is
    CSS-only for hover: a streaming row must not mount a ResizeObserver-backed portal under
    a resting pointer (see EvidenceToggle). Its position does not change the message layout. */
 .agentplane-command-progress {
@@ -94,6 +94,40 @@
   display: inline-flex;
   flex: none;
   vertical-align: middle;
+}
+
+.agentplane-command-progress-inline {
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: min(34rem, 100%);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-command-progress-inline .agentplane-command-lights {
+  flex: none;
+}
+
+/* Let outcome text use the width below the bubble instead of squeezing it into the gutter. */
+.transcript-user-message-row:has(> .transcript-user-message-aside > .agentplane-command-progress-inline) {
+  flex-wrap: wrap;
+}
+
+.transcript-user-message-aside:has(> .agentplane-command-progress-inline) {
+  order: 1;
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+
+.agentplane-command-card-line:has(> .agentplane-command-progress-inline) {
+  flex-wrap: wrap;
+}
+
+.agentplane-command-card-line > .agentplane-command-progress-inline {
+  order: 1;
+  flex-basis: 100%;
 }
 
 .agentplane-command-progress-hit {
