@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
-from devinfra.ci.release_assets import Release, nix_override_assets, release_paths, resolve_asset
+from devinfra.ci.release_assets import Release, main, nix_override_assets, release_paths, resolve_asset
 
 BIN = "bazel-out/k8-fastbuild/bin"
 
@@ -51,23 +51,34 @@ def test_a_basename_contradicting_the_registry_fails_loud() -> None:
         resolve_asset(by_label, "//:a", "a.whl")
 
 
-def test_nix_overrides_cover_exactly_the_gated_pins(tmp_path: Path) -> None:
-    """Every pin of a nixPackage release gets an override row; binary drops the
-    PR gate skips (bazel-ci already rebuilds them) get none."""
+def test_nix_gate_builds_and_overrides_each_pin_of_a_checked_release(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     spec = tmp_path / "artifact_targets.json"
     spec.write_text(
         json.dumps(
             {
                 "pins": {
-                    "gated": {"target": "//:g", "filename": "g.whl", "release": "gated"},
-                    "binary": {"target": "//:x", "filename": "x", "release": "binary"},
+                    "wheel": {"target": "//:wheel", "filename": "app.whl", "release": "bundle"},
+                    "binary": {"target": "//:binary", "filename": "binary", "release": "binary"},
+                    "extension": {"target": "//:extension", "filename": "app.zip", "release": "bundle"},
+                    "ungated": {"target": "//:ungated", "filename": "ungated", "release": "ungated"},
                 },
-                "releases": {"gated": {"nixPackage": True}, "binary": {"nixPackage": False}},
+                "releases": {"bundle": {"nixPackage": True}, "binary": {"nixPackage": False}, "ungated": {}},
             }
         )
     )
-    by_label = {"//:g": [out(f"{BIN}/g.whl", label="//:g")]}
-    assert nix_override_assets(spec, by_label) == [("gated", by_label["//:g"][0])]
+    wheel = out(f"{BIN}/app.whl", label="//:wheel")
+    extension = out(f"{BIN}/app.zip", label="//:extension")
+    main(["nix-wheel-inputs", "--artifact-targets", str(spec)])
+    assert capsys.readouterr().out.splitlines() == [
+        "bazel_targets=//:wheel //:extension",
+        "nix_checks=.#checks.x86_64-linux.artifact-bundle",
+    ]
+    assert nix_override_assets(spec, {wheel.label: [wheel], extension.label: [extension]}) == [
+        ("wheel", wheel),
+        ("extension", extension),
+    ]
 
 
 if __name__ == "__main__":
