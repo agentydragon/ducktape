@@ -7,7 +7,7 @@ import {
   CommandSubmissionRefused,
   interruptTurn,
   getDispatch,
-  verifyRetainedMembers,
+  batchGetDispatches,
   submitInput,
   type CommandSubmission,
 } from "./client";
@@ -51,7 +51,7 @@ interface ThreadCommands {
 export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
   const threadId = thread.metadata.threadId;
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
-  useEffect(() => watchCommandOwnership(store, verifyRetainedMembers), [store]);
+  useEffect(() => watchCommandOwnership(store, batchGetDispatches), [store]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);

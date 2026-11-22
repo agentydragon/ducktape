@@ -55,7 +55,7 @@ import {
   changeReasoningEffort,
   interruptTurn,
   getDispatch,
-  verifyRetainedMembers,
+  batchGetDispatches,
   listSessionDispatches,
   getThread,
   listThreadMetadata,
@@ -99,7 +99,7 @@ vi.mock("./client", async (importOriginal) => ({
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
   getDispatch: vi.fn(),
-  verifyRetainedMembers: vi.fn(),
+  batchGetDispatches: vi.fn(),
   listSessionDispatches: vi.fn(),
   getThread: vi.fn(),
   listThreadMetadata: vi.fn(),
@@ -208,7 +208,7 @@ beforeEach(() => {
     })
   );
   vi.mocked(getDispatch).mockResolvedValue(null);
-  vi.mocked(verifyRetainedMembers).mockResolvedValue([]);
+  vi.mocked(batchGetDispatches).mockResolvedValue([]);
   vi.mocked(getThread).mockImplementation(async () => sharedThreadView());
   vi.spyOn(appConfigClient, "listModels").mockResolvedValue(
     testModelCatalog([{ model: "test-model", displayName: "Test Model", reasoningEfforts: TEST_REASONING_EFFORTS }], [])

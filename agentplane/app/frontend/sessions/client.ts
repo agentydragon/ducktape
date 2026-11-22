@@ -34,6 +34,7 @@ import {
   type ReadThreadEntitiesResponse,
 } from "../../../history_service/api/history/history_service_pb";
 import {
+  BatchGetDispatchesResponseSchema,
   ChangeModelRequestSchema,
   ChangeModelResponseSchema,
   ChangeReasoningEffortRequestSchema,
@@ -341,24 +342,48 @@ export function listSessionDispatches(
   return readReceiptPage(sessionId, query, limit, signal);
 }
 
-export async function verifyRetainedMembers(
+/** A successful batch returns originals from the same retained Session rows as paginated history. */
+export async function batchGetDispatches(
   sessionId: string,
   ids: readonly string[],
   signal: AbortSignal
 ): Promise<Dispatch[]> {
-  if (!ids.length || ids.length > 16 || new Set(ids).size !== ids.length) throw new Error("Invalid receipt IDs");
+  if (!ids.length || ids.length > 16 || ids.includes("") || new Set(ids).size !== ids.length)
+    throw new Error("Invalid receipt IDs");
   const query = new URLSearchParams();
-  for (const id of ids) query.append("verifyRetainedCommandIds", id);
-  const page = await readReceiptPage(sessionId, query, ids.length, signal);
-  if (
-    page.retainsCommandsAfterEnvironmentDeletion !== true ||
-    page.nextPageToken ||
-    page.dispatches.some(
-      (row) => !ids.includes(row.commandId) || !row.sandbox || !row.sandboxUid || (row.receiptVersion ?? 0n) <= 0n
+  for (const id of ids) query.append("commandIds", id);
+  let value: JsonValue;
+  try {
+    value = await fetchJson(
+      `/upstream/dispatcher/v1/sessions/${encodeURIComponent(sessionId)}/dispatches:batchGet?${query}`,
+      { signal, headers: { Accept: "application/json" } }
+    );
+  } catch (error) {
+    // Large originals can exceed the aggregate transport limit. Retry only the read, in smaller groups.
+    if (ids.length < 2 || !(error instanceof HttpError) || error.code !== 8) throw error;
+    const middle = Math.ceil(ids.length / 2);
+    const first = await batchGetDispatches(sessionId, ids.slice(0, middle), signal);
+    return [...first, ...(await batchGetDispatches(sessionId, ids.slice(middle), signal))];
+  }
+  const { results } = fromJson(BatchGetDispatchesResponseSchema, value, { ignoreUnknownFields: true });
+  if (results.length !== ids.length) throw new Error("Incomplete Dispatcher batch");
+  const hits: Dispatch[] = [];
+  for (const [index, row] of results.entries()) {
+    if (row.commandId !== ids[index]) throw new Error("Unexpected command in Dispatcher batch");
+    if (row.result.case === "notFound") continue;
+    if (row.result.case !== "dispatch") throw new Error("Missing Dispatcher result");
+    const hit = confirmedDispatch(row.result.value, sessionId, row.commandId);
+    if (
+      !hit.sandbox ||
+      !hit.sandboxUid ||
+      (hit.receiptVersion ?? 0n) <= 0n ||
+      hit.command?.commandId !== row.commandId ||
+      !hit.command.operation.case
     )
-  )
-    return [];
-  return page.dispatches;
+      throw new Error("Incomplete stored Dispatcher command");
+    hits.push(hit);
+  }
+  return hits;
 }
 
 /** A missing current receipt leaves any earlier submission unconfirmed. */

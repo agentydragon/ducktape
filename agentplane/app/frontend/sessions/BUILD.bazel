@@ -164,7 +164,6 @@ ts_library(
     srcs = ["command_ownership.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
         ":local_commands",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
@@ -187,7 +186,6 @@ agentplane_vitest_test(
     name = "local_commands_test",
     srcs = ["local_commands.test.ts"],
     deps = [
-        ":client",
         ":command_ownership",
         ":local_commands",
         "//:node_modules/@bufbuild/protobuf",

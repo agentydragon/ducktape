@@ -1,9 +1,8 @@
 import type { Dispatch } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { getDispatch } from "./client";
 import type { LocalCommands } from "./local_commands";
 
 /** Only returned, protected members of the Session's paged command history belong in this set. */
-export type CheckRetainedMembers = (
+export type ReadRetainedDispatches = (
   sessionId: string,
   ids: readonly string[],
   signal: AbortSignal
@@ -11,7 +10,7 @@ export type CheckRetainedMembers = (
 
 /** Run while the browser offers paginated, payload-readable receipt history for this Session.
  * This observer only reads the server. Submission and same-ID recovery have their own owner. */
-export function watchCommandOwnership(store: LocalCommands, checkMembers: CheckRetainedMembers): () => void {
+export function watchCommandOwnership(store: LocalCommands, readDispatches: ReadRetainedDispatches): () => void {
   const stop = new AbortController();
   const checked = new Map<string, boolean>();
   let running = false;
@@ -33,7 +32,7 @@ export function watchCommandOwnership(store: LocalCommands, checkMembers: CheckR
         if (batch.length === 0) return;
         let members: readonly Dispatch[];
         try {
-          members = await checkMembers(store.threadId, batch, stop.signal);
+          members = await readDispatches(store.threadId, batch, stop.signal);
         } catch {
           // A mixed rollout or outage leaves the authored copy intact. Retry on reconnect/focus.
           continue;
@@ -42,12 +41,7 @@ export function watchCommandOwnership(store: LocalCommands, checkMembers: CheckR
         for (const member of members) {
           if (stop.signal.aborted) return;
           if (!requested.delete(member.commandId) || member.sessionId !== store.threadId) continue;
-          try {
-            const receipt = await getDispatch(store.threadId, member.commandId, stop.signal);
-            if (receipt && !stop.signal.aborted) store.transferToDispatcher(member, receipt);
-          } catch {
-            // Missing, malformed, conflicting and unavailable evidence cannot release the local copy.
-          }
+          store.transferToDispatcher(member);
         }
       }
     } catch {

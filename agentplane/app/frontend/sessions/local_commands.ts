@@ -264,22 +264,18 @@ export class LocalCommands {
     return result;
   }
 
-  /** A protected member of paged Session history and a point read must agree on the exact
-   * placement. Re-read the authored record after both asynchronous requests. */
-  transferToDispatcher(member: Dispatch, receipt: Dispatch): boolean {
-    const id = member.commandId;
+  /** Re-read the authored bytes after the asynchronous batch lookup before releasing them. */
+  transferToDispatcher(receipt: Dispatch): boolean {
+    const id = receipt.commandId;
     const key = this.key(id);
     const raw = localStorage.getItem(key);
     if (
-      !member.sandbox ||
-      !member.sandboxUid ||
-      member.sessionId !== this.threadId ||
+      !receipt.sandbox ||
+      !receipt.sandboxUid ||
+      receipt.sessionId !== this.threadId ||
       !receipt.command ||
-      receipt.commandId !== id ||
-      receipt.sessionId !== member.sessionId ||
-      receipt.sandbox !== member.sandbox ||
-      receipt.sandboxUid !== member.sandboxUid ||
-      receipt.operation !== member.operation
+      receipt.command.commandId !== id ||
+      (receipt.receiptVersion ?? 0n) <= 0n
     )
       return false;
     if (raw === null) {
@@ -305,10 +301,12 @@ export class LocalCommands {
     if (
       !existing.attempted ||
       !sameCommand(existing.command, receipt.command) ||
+      (existing.dispatch?.sandboxUid &&
+        (existing.dispatch.sandboxUid !== receipt.sandboxUid || existing.dispatch.sandbox !== receipt.sandbox)) ||
       (existing.destination.kind === "reconcile-only" &&
         (!existing.destination.target ||
-          existing.destination.target.sandbox !== member.sandbox ||
-          existing.destination.target.sandboxUid !== member.sandboxUid))
+          existing.destination.target.sandbox !== receipt.sandbox ||
+          existing.destination.target.sandboxUid !== receipt.sandboxUid))
     )
       return false;
     if (!this.acknowledgeDispatch(existing.command, receipt)) return false;
@@ -333,7 +331,12 @@ export class LocalCommands {
     if (dispatch.command && !sameCommand(command, dispatch.command))
       throw new Error("Dispatcher stored a different command payload");
     // Older open tabs use a Dispatch schema without the command field. The authored copy is already stored.
-    const normalizedDispatch = { ...dispatch, command: undefined, state: normalizeDeliveryState(dispatch.state) };
+    const normalizedDispatch = {
+      ...dispatch,
+      command: undefined,
+      receiptVersion: undefined,
+      state: normalizeDeliveryState(dispatch.state),
+    };
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
       this.checkKnownAdmission(command, dispatch.admission);

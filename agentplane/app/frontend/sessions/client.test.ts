@@ -14,7 +14,7 @@ import {
   threadNativeFrames,
   threadObservations,
   listThreadMetadata,
-  verifyRetainedMembers,
+  batchGetDispatches,
   selectThreadWindow,
 } from "./client";
 import { SessionSchema, DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
@@ -566,26 +566,59 @@ it("retries the same Session command and payload after a lost transport reply", 
   }
 });
 
-it.each([
-  [{}, false],
-  [{ retainsCommandsAfterEnvironmentDeletion: false }, false],
-  [{ retainsCommandsAfterEnvironmentDeletion: true }, true],
-  [{ retainsCommandsAfterEnvironmentDeletion: true, nextPageToken: "another" }, false],
-])("requires positive database retention and complete named membership %j", async (fields, accepted) => {
+const batchHit = {
+  commandId: "b",
+  dispatch: {
+    sessionId: "thread",
+    commandId: "b",
+    sandbox: "box",
+    sandboxUid: "uid",
+    receiptVersion: "3",
+    state: "DELIVERY_STATE_UNKNOWN",
+    command: { commandId: "b", submitInput: { text: "original" } },
+  },
+};
+const batchMiss = { commandId: "a", notFound: {} };
+
+it("returns ordered validated originals from one GET, preserving explicit missing and unknown outcomes", async () => {
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input.toString(), location.href);
-    expect(url.pathname).toBe("/upstream/dispatcher/v1/sessions/thread/dispatches");
+    expect(url.pathname).toBe("/upstream/dispatcher/v1/sessions/thread/dispatches:batchGet");
     expect([...url.searchParams]).toEqual([
-      ["verifyRetainedCommandIds", "a"],
-      ["verifyRetainedCommandIds", "b"],
+      ["commandIds", "a"],
+      ["commandIds", "b"],
     ]);
     expect(init?.method ?? "GET").toBe("GET");
-    return Response.json({
-      coverage: "RETAINED_DISPATCH_ROWS",
-      dispatches: [{ sessionId: "thread", commandId: "b", sandbox: "box", sandboxUid: "uid", receiptVersion: "3" }],
-      ...fields,
-    });
+    return Response.json({ results: [batchMiss, batchHit] });
   });
-  const result = await verifyRetainedMembers("thread", ["a", "b"], new AbortController().signal);
-  expect(result.map((row) => row.commandId)).toEqual(accepted ? ["b"] : []);
+  const rows = await batchGetDispatches("thread", ["a", "b"], new AbortController().signal);
+  expect(rows.map((row) => [row.commandId, row.state, row.command?.operation.case])).toEqual([
+    ["b", DeliveryState.UNKNOWN, "submitInput"],
+  ]);
+});
+
+it.each([
+  { results: [] },
+  { dispatches: [] },
+  { results: [batchHit, batchMiss] },
+  { results: [batchMiss, { commandId: "b" }] },
+  { results: [batchMiss, { ...batchHit, dispatch: { ...batchHit.dispatch, command: undefined } }] },
+  { results: [batchMiss, { ...batchHit, dispatch: { ...batchHit.dispatch, sessionId: "another" } }] },
+])("rejects incomplete or unexpected batch responses", async (body) => {
+  vi.stubGlobal("fetch", () => Response.json(body));
+  await expect(batchGetDispatches("thread", ["a", "b"], new AbortController().signal)).rejects.toThrow();
+});
+
+it("splits oversized reads and fails closed on an older server", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ code: 8 }, { status: 429 }))
+    .mockResolvedValueOnce(Response.json({ results: [batchMiss] }))
+    .mockResolvedValueOnce(Response.json({ results: [batchHit] }))
+    .mockResolvedValueOnce(Response.json({ code: 12 }, { status: 501 }));
+  vi.stubGlobal("fetch", fetch);
+  const signal = new AbortController().signal;
+  expect((await batchGetDispatches("thread", ["a", "b"], signal)).map((row) => row.commandId)).toEqual(["b"]);
+  await expect(batchGetDispatches("thread", ["a"], signal)).rejects.toThrow();
+  expect(fetch).toHaveBeenCalledTimes(4);
 });

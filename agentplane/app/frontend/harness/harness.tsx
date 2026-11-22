@@ -3355,15 +3355,16 @@ function retiredConnectionRows(): Connection[] {
 }
 
 routes.push(
-  // These scenes seed browser-local commands. The Dispatcher has no protected originals for them.
+  // These scenes seed browser-local commands with no corresponding stored records.
   [
     "GET",
     /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+)\/dispatches$/,
-    (_match, query) => ({
-      coverage: "RETAINED_DISPATCH_ROWS",
-      dispatches: [],
-      ...(query.has("verifyRetainedCommandIds") && { retainsCommandsAfterEnvironmentDeletion: true }),
-    }),
+    () => ({ coverage: "RETAINED_DISPATCH_ROWS", dispatches: [] }),
+  ],
+  [
+    "GET",
+    /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+)\/dispatches:batchGet$/,
+    (_match, query) => ({ results: query.getAll("commandIds").map((commandId) => ({ commandId, notFound: {} })) }),
   ],
   [
     "GET",
