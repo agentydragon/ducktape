@@ -105,6 +105,7 @@ def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str
     "copy",
     [
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/other/"),
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/*/**", to="@artifact/test/*/"),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/*.yaml", to="@artifact/test/app/"),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/app/", exclude=["*.md"]),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/secrets/../test.yaml", to="@artifact/test/app/test.sops.yaml"),
@@ -112,8 +113,14 @@ def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str
     ],
 )
 def test_artifact_directory_refuses_a_partial_or_moved_copy(copy: ArtifactGeneratorSpecArtifactsCopy) -> None:
-    # The helper reports the offending first copy; the "copies nothing" error does not.
-    with pytest.raises(ValueError, match=r"first\.from_="):
+    first = artifact("test-app", "test/app").copy[0]
+    with pytest.raises(ValueError, match=r"copy\.from_="):
+        artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[first, copy]))
+
+
+def test_a_file_copy_cannot_supply_the_kustomization_directory() -> None:
+    copy = ArtifactGeneratorSpecArtifactsCopy(from_="@repo/conf.yaml", to="@artifact/test/app/conf.yaml")
+    with pytest.raises(ValueError, match=r"copy\.from_="):
         artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[copy]))
 
 
