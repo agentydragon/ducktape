@@ -374,6 +374,40 @@ js_test(
     },
 )
 
+_REFLECTIVE_RECEIVER_DATA = _EFFECTS_CASES_DATA + [
+    "gen/core.mjs",
+    "reflective_receivers.mjs",
+]
+
+_REFLECTIVE_RECEIVER_ENV = dict(
+    _EFFECTS_CASES_ENV,
+    CASES = "../translation/reflective_receivers.mjs",
+)
+
+js_test(
+    name = "reflective_receivers_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "20261121",
+    ],
+    data = _REFLECTIVE_RECEIVER_DATA,
+    entry_point = _EFFECTS + ":run",
+    env = _REFLECTIVE_RECEIVER_ENV,
+)
+
+js_test(
+    name = "reflective_receivers_second_seed_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "77",
+    ],
+    data = _REFLECTIVE_RECEIVER_DATA,
+    entry_point = _EFFECTS + ":run",
+    env = _REFLECTIVE_RECEIVER_ENV,
+)
+
 js_test(
     name = "prototype_guard_test",
     data = [

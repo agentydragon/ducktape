@@ -14,6 +14,26 @@ const getTrap = "get(target, key, receiver) { hits.n += 1; return Reflect.get(ta
 const proxy = (traps) => `const px = new Proxy(t, { ${traps} });`;
 
 export const cases = [
+  c(
+    "Reflect.get runs a getter with another receiver",
+    `
+const target = { n: 0 };
+const src = { get v() { this.n = 1; return 1; } };
+Reflect.get(src, "v", target);
+console.log(target.n);
+`,
+    [0, 1, 3, 2]
+  ),
+  c(
+    "Reflect.set stores into another receiver",
+    `
+const o = {};
+const target = { n: 0 };
+Reflect.set(o, "n", 1, target);
+console.log(target.n);
+`,
+    [0, 1, 3, 2]
+  ),
   // callbacks of standard functions: which parameter holds what, and `thisArg`
   c(
     "reduce: the element is the 2nd callback parameter",
