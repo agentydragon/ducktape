@@ -35,11 +35,7 @@ from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
-from cluster.validation.image_automation import (
-    check_image_automation_webhook,
-    check_image_policy_markers,
-    check_no_flow_mappings_where_flux_writes,
-)
+from cluster.validation.image_automation import check_image_automation_webhook, check_image_policy_markers
 from cluster.validation.k8s import AgentplaneSandboxTemplateResource, K8sResource, load_k8s_resources
 from cluster.validation.kustomize import run_kustomize_build, stage_artifact_copies
 
@@ -323,8 +319,7 @@ def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Every `$imagepolicy` marker names a defined ImagePolicy, so no image silently stops rolling."""
+def test_files_flux_rewrites_have_valid_markers_and_block_style(cluster: ParsedCluster, k8s_dir: Path) -> None:
     errors = check_image_policy_markers(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
@@ -377,16 +372,6 @@ def test_agent_binding_delegation_dependencies_follow_namespace_owners(cluster: 
         else:
             [dependency] = namespace_owners[namespace]
             assert spec.depends_on == [DependsOn(name=dependency, namespace="ducktape-flux")], owner
-
-
-def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
-    """A flow mapping in a file Flux rewrites fails prettier on every open PR at once.
-
-    Flux re-serialises the whole document to set a tag, dropping prettier's inner spaces, and
-    that lands on `devel` with `[skip ci]` — so the failure surfaces in unrelated PRs.
-    """
-    errors = check_no_flow_mappings_where_flux_writes(k8s_dir)
-    assert not errors, "\n".join(errors)
 
 
 def test_sops_secrets_have_decryption_block(cluster: ParsedCluster) -> None:

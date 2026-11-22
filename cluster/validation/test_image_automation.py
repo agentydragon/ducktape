@@ -6,7 +6,7 @@ from typing import Any
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.image_automation import check_image_automation_webhook, check_no_flow_mappings_where_flux_writes
+from cluster.validation.image_automation import check_image_automation_webhook, check_image_policy_markers
 from cluster.validation.k8s import parse_k8s_resources
 
 
@@ -44,7 +44,7 @@ def test_wrong_namespace_reports_both_the_unwatched_repo_and_the_dangling_ref() 
     assert "forgejo-images/image" in stale
 
 
-def test_flow_mapping_check_ignores_embedded_configuration(tmp_path: Path) -> None:
+def test_marked_file_reports_missing_policy_and_nonempty_flow_mapping(tmp_path: Path) -> None:
     manifest = tmp_path / "deployment.yaml"
     manifest.write_text(
         'image: app:latest # {"$imagepolicy": "flux-system:app"}\n'
@@ -52,7 +52,8 @@ def test_flow_mapping_check_ignores_embedded_configuration(tmp_path: Path) -> No
         "emptyDir: {}\n"
         "env: [{name: MODE, value: test}]\n"
     )
-    [error] = check_no_flow_mappings_where_flux_writes(tmp_path)
+    missing, error = check_image_policy_markers(_cluster(), tmp_path)
+    assert "flux-system:app" in missing
     assert "deployment.yaml:5" in error
 
 
