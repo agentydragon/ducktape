@@ -43,12 +43,12 @@
 # name: test_renders_shared_fixture[binding_summary]
   '''
   Claude
-    burst (5h)    :  60% used  ↻ 2h 30m  exhausts ~50m before reset
+    burst (5h)    :  60% used  ↻ 2h 30m  0% in ~1h 40m
     weekly (7d)   :  15% used  ↻ 4d 21h  leaves ~50% unused at reset
   
   Codex
     primary (5h)  :  30% used  ↻ 3h 30m  on pace
-    secondary (7d):  48% used  ↻ 4d 21h  exhausts ~2d 15h before reset
+    secondary (7d):  48% used  ↻ 4d 21h  0% in ~2d 6h
   
   z.ai
     1x burn — next 3x window in 18h
@@ -85,7 +85,7 @@
   Claude
     Fable resets: 2 remaining · expires Jan 29, 12:00
     Full resets: 1 remaining · expires Feb 15 · paused
-    7d:  95% used  ↻ 2d  exhausts ~1d 17h before reset
+    7d:  95% used  ↻ 2d  0% in ~6h 18m
   '''
 # ---
 # name: test_renders_shared_fixture[empty]
@@ -104,10 +104,10 @@
   '''
   Claude
     5h:   0% used  ↻ 0m
-    7d:  88% used  ↻ 3d 15h  exhausts ~3d 3h before reset
+    7d:  88% used  ↻ 3d 15h  0% in ~11h 2m
   
   Codex
-    7d:  36% used  ↻ 5d 21h  exhausts ~3d 21h before reset
+    7d:  36% used  ↻ 5d 21h  0% in ~2d
   
   z.ai
     1x burn — next 3x window in 18h
@@ -130,7 +130,7 @@
   
   Codex
     5h:  30% used  ↻ 3h 30m  on pace
-    7d:  30% used  ↻ 5d      exhausts ~8h before reset
+    7d:  30% used  ↻ 5d      0% in ~4d 16h
   
   z.ai
     1x burn — next 3x window in 18h
@@ -151,7 +151,7 @@
   '''
   Claude
     Extra spend this month: $3,142 of $5,000 limit · extra usage enabled
-    5h:  50% used  ↻ 3h 30m  exhausts ~2h before reset
+    5h:  50% used  ↻ 3h 30m  0% in ~1h 30m
     7d: 100% used  ↻ 4d 21h  exhausted
   
   Codex
@@ -161,7 +161,7 @@
   
   z.ai
     1x burn — next 3x window in 18h
-    7d:  40% used  ↻ 4d 21h  exhausts ~1d 18h before reset
+    7d:  40% used  ↻ 4d 21h  0% in ~3d 3h
   '''
 # ---
 # name: test_renders_shared_fixture[multi_window_reset_pending]
@@ -182,7 +182,7 @@
 # name: test_renders_shared_fixture[multiple_accounts]
   '''
   Codex · main · Pro
-    5h:  35% used  ↻ 3h 30m  exhausts ~42m before reset
+    5h:  35% used  ↻ 3h 30m  0% in ~2h 47m
   
   Codex · alt · Plus
     Stale data · last observed 5m ago
@@ -196,7 +196,7 @@
   
   Claude
     Available balance: $0
-    7d:  96% used  ↻ 1d 15h  exhausts ~1d 9h before reset
+    7d:  96% used  ↻ 1d 15h  0% in ~5h 22m
   
   Codex
     Paid credits: 45,191 credits
@@ -321,12 +321,12 @@
     Authentication failed
   
   Codex
-    5h:  60% used  ↻ 2h 30m  exhausts ~50m before reset
+    5h:  60% used  ↻ 2h 30m  0% in ~1h 40m
     7d:  15% used  ↻ 4d 21h  leaves ~50% unused at reset
   
   z.ai
     1x burn — next 3x window in 18h
-    5h:  90% used  ↻ 2h 30m  exhausts ~2h 13m before reset
+    5h:  90% used  ↻ 2h 30m  0% in ~16m
     7d:  30% used  ↻ 4d 21h  on pace
   '''
 # ---
@@ -341,6 +341,6 @@
   z.ai
     🔥 3x burn until 10:00 (2h) — GLM-5.3, GLM-5-Turbo
     5h:  55% used  ↻ 2h  leaves ~8% unused at reset
-    7d:  40% used  ↻ 5d  exhausts ~2d before reset
+    7d:  40% used  ↻ 5d  0% in ~3d
   '''
 # ---

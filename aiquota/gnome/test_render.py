@@ -702,7 +702,7 @@ def test_client_freshness_deadline_suppresses_cached_projections(session: GnomeS
     session.call("SetViewForTest", json.dumps(data))
     codex = _ProviderPopup(session, "codex")
     rows = "\n".join(codex.windows)
-    assert "exhausts" not in rows
+    assert "0% in" not in rows
     assert "on pace" not in rows
     assert " pace:" not in codex.details
 
