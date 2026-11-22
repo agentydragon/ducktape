@@ -113,6 +113,10 @@
 /* Keep feedback compact and beside the message, even when the message is long. */
 .transcript-user-message-aside:has(> :is(.agentplane-command-progress-inline, .agentplane-message-delivery)) {
   max-width: 100%;
+  flex-direction: row;
+  align-items: center;
+  align-self: center;
+  column-gap: 0.25rem;
 }
 
 .transcript-user-message-aside:has(> :is(.agentplane-command-progress-inline, .agentplane-message-delivery))
