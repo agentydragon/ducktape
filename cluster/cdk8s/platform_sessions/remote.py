@@ -566,7 +566,10 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
 
 
 def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
-    if record_upstream_traffic:
+    recorded = set(BASE_PROVIDERS) - {"myquest"} if record_upstream_traffic else set()
+    if config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC:
+        recorded.add("myquest-canary")
+    if recorded:
         interception_root_ca(
             chart,
             name="platform-sessions-recorder-root-ca",
@@ -579,14 +582,8 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     for integration in config.INTEGRATIONS["integrations"]:
         instance = str(integration["id"])
         _add_provider(chart, instance)
-        if instance == "myquest-canary":
-            provider_recording = config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
-        elif instance == "myquest":
-            provider_recording = False
-        else:
-            provider_recording = record_upstream_traffic
         _provider_workload(
-            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=provider_recording
+            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=instance in recorded
         )
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)

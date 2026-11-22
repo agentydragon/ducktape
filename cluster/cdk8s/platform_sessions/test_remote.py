@@ -189,7 +189,8 @@ def test_myquest_recording_switch_is_canary_only(
     assert integration["id"] == "myquest-canary"
     assert integration["type"] == "myquest"
 
-    objects = remote.chart(scratch_app).to_json()
+    # Exercise both directions of the canary override.
+    objects = remote.chart(scratch_app, record_upstream_traffic=not record_upstream_traffic).to_json()
     gateway = find_resource(objects, "Deployment", "gateway")["spec"]["template"]["spec"]
     [gateway_container] = gateway["containers"]
     refs = {
@@ -203,6 +204,11 @@ def test_myquest_recording_switch_is_canary_only(
     }
     assert refs["PLATFORM_SESSIONS_PROVIDER_CONNECTIONS"] == {"name": canary_config.name, "key": "connections.json"}
     canary = find_resource(objects, "Deployment", "myquest-canary")["spec"]["template"]["spec"]
+    if record_upstream_traffic:
+        volumes = {volume["name"]: volume for volume in canary["volumes"]}
+        ca_secret = volumes["recorder-ca"]["secret"]["secretName"]
+        assert any(obj["kind"] == "Certificate" and obj["spec"]["secretName"] == ca_secret for obj in objects)
+        find_resource(objects, "Bundle", volumes["recorder-trust"]["configMap"]["name"])
     config_volume = next(volume for volume in canary["volumes"] if volume["name"] == "config")
     assert config_volume["configMap"]["name"] == canary_config.name
     production = find_resource(objects, "Deployment", "myquest")["spec"]["template"]["spec"]
