@@ -51,7 +51,7 @@ def add_service_workload(
     readiness: Probe,
     liveness: Probe,
     resources: ContainerResources,
-    termination_grace: Duration,
+    termination_grace: Duration | None = None,
     startup: Probe | None = None,
     extra_ports: list[ContainerPort] | None = None,
     replica_profile: ReplicaProfile | None = None,

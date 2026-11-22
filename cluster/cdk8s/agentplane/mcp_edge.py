@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -97,7 +97,6 @@ class McpEdge(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=memory_request, limit=Size.mebibytes(512)),
             ),
-            termination_grace=Duration.seconds(30),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,

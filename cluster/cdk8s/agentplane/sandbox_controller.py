@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -153,7 +153,6 @@ def _add_controller_workload(
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(10)), memory=MemoryResources(request=memory_request, limit=memory_limit)
         ),
-        termination_grace=Duration.seconds(30),
         placement=placement,
         telemetry_enabled=True,
         registry_secret_name=registry_secret_name,
