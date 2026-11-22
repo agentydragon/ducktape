@@ -82,6 +82,24 @@ def test_gaffer_archive_reads_app_ids_and_signing_key_from_same_secret(documents
     assert reconciler["spec"]["postBuild"]["substituteFrom"] == [{"kind": "Secret", "name": key["name"]}]
 
 
+def test_gitops_variables_match_the_module(active_api_objects: list[dict[str, Any]], checkout: Path) -> None:
+    """OpenTofu warns on unknown variables and can silently use an optional input's default."""
+    for obj in active_api_objects:
+        if obj["kind"] == "Workspace" and obj["apiVersion"].startswith("opentofu.upbound.io/"):
+            params = obj["spec"]["forProvider"]
+            source = params["module"]
+            supplied = {entry["key"] for entry in params.get("vars", [])}
+        elif obj["kind"] == "Terraform" and obj["spec"]["path"].removeprefix("./").startswith("tf/gitops/"):
+            spec = obj["spec"]
+            source = (checkout / spec["path"] / "variables.tf").read_text()
+            supplied = {entry["name"] for entry in spec.get("vars", [])}
+        else:
+            continue
+        declared = pygohcl.loads(source).get("variable", {})
+        required = {name for name, declaration in declared.items() if "default" not in declaration}
+        assert required <= supplied <= declared.keys(), obj["metadata"]["name"]
+
+
 def test_auto_vpa_namespaces_declare_a_resource_policy(documents: list[dict[str, Any]], checkout: Path) -> None:
     # Parked third-party applications keep their hand-written manifests. Check those too,
     # so reviving one does not silently lose the default when the admission rule is retired.
