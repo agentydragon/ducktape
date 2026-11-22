@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
-from devinfra.ci.plan_releases import content_hash, content_tag, is_published, main, matrix_include, plan
+from devinfra.ci.plan_releases import content_hash, is_published, main, matrix_include, plan
 from devinfra.ci.release_assets import Release, load_releases
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
@@ -43,7 +43,6 @@ def test_a_single_asset_release_is_identified_by_its_digest() -> None:
     # A real digest, as BES reports it: 64 lowercase hex characters.
     digest = "2fe232c3911f0548e3b4eb3970cfb19fc9c91928592d200f8712345678901234"
     assert content_hash(make_release(), {"//:a": [output(f"{BIN}/a.whl", digest)]}) == digest
-    assert content_tag("skill-backtrace", digest) == "skill-backtrace-2fe232c3911f"
 
 
 def test_a_multi_asset_release_composes_the_same_identity_from_digests() -> None:

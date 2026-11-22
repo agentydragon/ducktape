@@ -26,7 +26,8 @@ import httpx
 from github import Auth, Github
 from github.GithubException import GithubException
 
-from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
+from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, sources_path, url_sha256
+from devinfra.ci.release_content_hash import tag_package
 
 # gazelle:include_dep @pypi//httpx
 
@@ -98,7 +99,7 @@ def main() -> None:
             (
                 r
                 for r in releases
-                if is_tag_for_pkg(r.tag_name, artifact.release_tag_prefix)
+                if tag_package(r.tag_name) == artifact.release_tag_prefix
                 and release_is_on_devel(repo, r, devel_sha, reachable)
             ),
             None,

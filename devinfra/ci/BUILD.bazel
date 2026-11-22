@@ -23,6 +23,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        ":release_content_hash",
         "@pypi//httpx",  # keep: sync-pins downloads wheel candidates
         "@pypi//pygithub",
     ],
@@ -46,6 +47,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        ":release_content_hash",
         "@pypi//pydantic",
         "@pypi//pygithub",
     ],
@@ -241,6 +243,7 @@ py_test(
     deps = [
         ":plan_releases",
         ":release_assets",
+        ":release_content_hash",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

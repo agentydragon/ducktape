@@ -97,9 +97,7 @@ runs:
         # Content-addressed skip check: tag by the complete release asset set.
         # Single-artifact hashes retain their historical value so this change
         # does not cause every existing package to be republished.
-        content_sha=$(python3 devinfra/ci/release_content_hash.py "${artifacts[@]}")
-        tag="${PKG}-${content_sha:0:12}"
-        echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
+        tag=$(python3 devinfra/ci/release_content_hash.py --package "$PKG" "${artifacts[@]}")
         echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
         # Use the REST endpoint explicitly: `gh release view` spends one GraphQL
