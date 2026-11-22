@@ -17,6 +17,7 @@ different PostgreSQL image can override ``postgres_image`` in their conftest.
 
 import contextlib
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Generator, Iterator
 
@@ -34,6 +35,7 @@ from testing.postgres import (
     DatabaseClones,
     DatabaseNames,
     PostgresDatabaseTemplate,
+    create_temporary_database,
     database_name_for_test,
     migrated_database_template,
 )
@@ -96,6 +98,17 @@ def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> Postg
         return container
 
 
+def dump_schema_for_migration_check(container: PostgresContainer, database: str) -> str:
+    """Dump schema for repeat-upgrade comparisons, ignoring the Alembic stamp."""
+    result = container.get_wrapped_container().exec_run(
+        ["pg_dump", "-U", "postgres", "--schema-only", "--no-owner", "--exclude-table=public.alembic_version", database]
+    )
+    output = result.output.decode()
+    assert result.exit_code == 0, output
+    # Random psql restriction keys are transport framing, not schema.
+    return re.sub(r"^\\(?:un)?restrict .*\n", "", output, flags=re.MULTILINE)
+
+
 @pytest.fixture(scope="session")
 def postgres_image() -> str:
     """Default PostgreSQL image; suites can override this fixture for extensions or settings."""
@@ -129,6 +142,13 @@ def postgres_admin_url(postgres_container: PostgresContainer) -> str:
 def database_names(request: pytest.FixtureRequest) -> DatabaseNames:
     """Allocate safe unique PostgreSQL names scoped to the current pytest node."""
     return DatabaseNames(request.node.nodeid)
+
+
+@pytest.fixture
+def empty_postgres_url(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
+    """Create a fresh database for a test that applies its own migrations."""
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        yield url
 
 
 @pytest.fixture

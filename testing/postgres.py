@@ -30,9 +30,8 @@ fixture name. For setup that also needs role creation,
 a source template, or extensions, compose `migrated_database_template` inside an explicit fixture.
 For application-specific initialization that is not a `MigrationRunner`, use
 `PostgresDatabaseTemplate` directly and perform that initialization once on `template.url`. It also
-supports `template=` when one test schema must extend another. Keep tests that verify starting from an
-empty database or applying a specific old migration state on `create_temporary_database` instead of
-cloning a migrated template.
+supports `template=` when one test schema must extend another. Use the `empty_postgres_url` fixture
+for tests that start from an empty database and apply their own migration state.
 
 PostgreSQL refuses to clone a template while it has open connections. Let migration engines and
 pools close before the first clone, and keep the template connection-free afterwards. Schema-level
@@ -70,6 +69,10 @@ _TERMINATE_SQL = text(
 )
 
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
+
+PUBLIC_RELATION_IDENTITIES = text(
+    "SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid"
+)
 
 
 def database_name_for_test(node_id: str, *, counter: int | None = None) -> str:
