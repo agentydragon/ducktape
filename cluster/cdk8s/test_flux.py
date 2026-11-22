@@ -79,25 +79,25 @@ def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> Non
 
 
 def test_artifact_maps_one_source_file_into_its_consumer_directory() -> None:
-    result = artifact("test-app", "test/app", files={"secrets/shared/test.yaml": "test/app/test.sops.yaml"})
+    result = artifact("test-app", "test/app", files={"secrets/shared/test.yaml": "nested/test.sops.yaml"})
     assert artifact_directories(result) == ["test/app"]
     assert artifact_directory(result) == "test/app"
     assert [(copy.from_, copy.to) for copy in result.copy] == [
         ("@repo/test/app/**", "@artifact/test/app/"),
-        ("@repo/secrets/shared/test.yaml", "@artifact/test/app/test.sops.yaml"),
+        ("@repo/secrets/shared/test.yaml", "@artifact/test/app/nested/test.sops.yaml"),
     ]
 
 
 @pytest.mark.parametrize(
     ("source", "destination"),
     [
-        ("secrets/shared/*.yaml", "test/app/test.sops.yaml"),
-        ("secrets/../public.yaml", "test/app/test.sops.yaml"),
-        ("secrets/shared/test.yaml", "test/app/../outside.yaml"),
+        ("secrets/shared/*.yaml", "test.sops.yaml"),
+        ("secrets/../public.yaml", "test.sops.yaml"),
+        ("secrets/shared/test.yaml", "../outside.yaml"),
     ],
 )
 def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str) -> None:
-    with pytest.raises(ValueError, match=r"repository file path|file destination"):
+    with pytest.raises(ValueError, match="artifact file paths"):
         artifact("test-app", "test/app", files={source: destination})
 
 
