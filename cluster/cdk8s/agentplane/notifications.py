@@ -120,7 +120,6 @@ class Notifications(Construct):
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
-            replica_profile=env.replicas,
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
