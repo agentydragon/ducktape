@@ -6,7 +6,7 @@ The process trust bundle also includes Dex's CA for HTTP clients used by MCP sce
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -16,6 +16,7 @@ from agentplane.system_tests.deployment import rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import Backend, LocalModel, PublicLiteLLM, SandboxRuntime
 from agentplane.system_tests.deployment.stack import Stack, StackInputs, running_stack
 from agentplane.system_tests.deployment.virtualization import RuntimeFactory
+from agentplane.system_tests.driver import scripted_upstream
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import node_ip
 
@@ -29,6 +30,15 @@ def scripted_listener() -> Iterator[Listener]:
     """Retain the scripted model's binding until the deployment and all scenarios stop."""
     with listen_tcp(host=node_ip()) as listener:
         yield listener
+
+
+@pytest.fixture
+async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
+    """The model behind this target's LLM ingress, played by the scenario. One per test, so a request
+    a scenario leaves unanswered fails that scenario."""
+    upstream = scripted_upstream.ScriptedUpstream()
+    async with upstream.serving(listener=scripted_listener.socket):
+        yield upstream
 
 
 def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
