@@ -1,16 +1,16 @@
 {
   "source_devel_commit": "16a394a1518add3599ace7b57968edc81fef8628",
   "window_start_utc": "2026-11-15T00:00:00Z",
-  "window_end_utc": "2026-11-22T03:09:42.440587+00:00",
-  "published_at_utc": "2026-11-22T03:09:42.492851+00:00",
+  "window_end_utc": "2026-11-22T03:54:12Z",
+  "published_at_utc": "2026-11-22T04:06:06.201720+00:00",
   "attribution": "not collected",
   "weekly_feedback_window_utc": [
     "2026-11-15T00:00:00Z",
     "2026-11-22T00:00:00Z"
   ],
-  "previous_report_commit": "208d6f705e2fe4ae78204b3dc9f1d1c472f17b54",
-  "report_sha256": "56c9bf42b4520464683cedd4344d26388fb1afda9bf26f510b5a7778f7e049ba",
-  "evidence_sha256": "18a30ec8f94413a204fa905c36f3b4f35bdecf552751d66654ca8d8ef6d043d9",
+  "previous_report_commit": "4462f301c2472463770c14dbba0f2a3ab3472d46",
+  "report_sha256": "66346c428c572c2d89fd2b4f344d39eb464e8a17c2ff736906a090fb8a3c70de",
+  "evidence_sha256": "99c6e70760e96a0a63a5e63c58bde2e2ec1f58b9c40c9831fdac58f35130e3e5",
   "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "682d7b9247b122680bda2a4207835bc2a0d8a866cd7c8f647d3ca8af00665eb4"
+  "visual_validation_sha256": "76d4d3f617247821ba2468b63aeeae003b4a788a7d5c849a0be15866f0c00dd9"
 }
