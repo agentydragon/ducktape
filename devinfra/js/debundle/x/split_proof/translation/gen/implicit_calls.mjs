@@ -11,6 +11,10 @@ const arrMethods = {
   flatMap: "(x) => [x]",
 };
 
+// Assignment leaves these six implicit calls unreported. Descriptor installation and assignment followed by filter
+// already get a conflict, so their reorders are strict regressions.
+const speciesAssignmentGaps = new Set(["map", "slice", "splice", "concat", "flat", "flatMap"]);
+
 const regexpConsumers = {
   exec: (pattern, text) => `${pattern}.exec(${text})`,
   test: (pattern, text) => `${pattern}.test(${text})`,
@@ -142,10 +146,11 @@ export function generateCases(seed) {
   const species = Object.entries(arrMethods).flatMap(([method, args]) =>
     Object.entries(speciesInstallation).map(([kind, store]) => {
       const init = pick(["[1, 2]", "Array.of(1, 2)"]);
+      const gap = kind === "assignment" && speciesAssignmentGaps.has(method) ? "intrinsic summaries" : undefined;
       return program(
         `species via ${method} after ${kind}`,
         "species",
-        "intrinsic summaries",
+        gap,
         [meter, `const array = ${init};`, `function make() { meter.n += ${score()}; return {}; }`, store],
         `array.${method}(${args});`
       );

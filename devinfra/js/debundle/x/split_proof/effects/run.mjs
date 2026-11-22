@@ -178,12 +178,13 @@ for (const [n, raw] of cases.entries()) {
     const expectedWrongAccept = gap && res.verdict === "accepted";
     const differs = !sameNodeOutput(res.node, original);
     const problems = [];
+    if ((gap || generatedGaps) && (original.status !== 0 || res.node.status !== 0))
+      problems.push("the two Node runs must complete");
     if (differs !== (r.behavior === "differs"))
       problems.push(`Node ${differs ? "differs" : "agrees"}, the case says ${r.behavior}`);
     if (r.stdoutDiffers && res.node.stdout === original.stdout) problems.push("Node stdout did not differ");
     if (gap) {
-      if (original.status !== 0 || res.node.status !== 0 || original.stdout === res.node.stdout)
-        problems.push("known gap requires both Node runs to complete and print different output");
+      if (original.stdout === res.node.stdout) problems.push("known gap requires different Node output");
       if (c.knownGap && !expectedWrongAccept)
         problems.push(`known gap no longer accepted (${res.verdict}); move to a regression test`);
       if (gap === "P3") {
