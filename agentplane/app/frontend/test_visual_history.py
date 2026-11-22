@@ -767,6 +767,12 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await expect(model.locator(".transcript-user-bubble")).to_have_css("background-color", "rgba(0, 0, 0, 0)")
     await _expect_delivery_gutter(model)
     await expect(model.get_by_role("status")).to_have_text("Outcome unknown")
+    if viewport.has_touch:
+        model_bubble = await model.locator(".transcript-user-bubble").bounding_box()
+        queued_bubble = await queued.locator(".transcript-user-bubble").bounding_box()
+        assert model_bubble
+        assert queued_bubble
+        assert queued_bubble["width"] > model_bubble["width"]
     await view.page.mouse.move(0, 0)
     await view.capture(name="outstanding_controls_and_new_input")
     model_collapsed = await model.bounding_box()
