@@ -212,6 +212,42 @@ def test_finance_spend_policy_role_is_named_get_only(rendering: Rendering) -> No
     assert rendering.rbac.bound({role}) == {Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")}
 
 
+def test_launch_accounts_receive_their_scoped_roles(rendering: Rendering) -> None:
+    # Expand the ServiceAccountGrant through its actual KubernetesRoleSets. An additional
+    # binding or an accidental promotion to a ClusterRoleBinding must be visible here.
+    shared = {
+        BoundRole("ClusterRole", "cluster-diagnostics-reader", None),
+        BoundRole("Role", "agent-haku-console-metadata-reader", "haku-console"),
+        BoundRole("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
+        BoundRole("Role", "ducktape-flux-reader", "ducktape-flux"),
+        BoundRole("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
+        BoundRole("Role", "public-coder-agent-reader", "public-coder-agent"),
+    }
+    for namespace, classification in NAMESPACE_DIAGNOSTICS.items():
+        shared.add(BoundRole("ClusterRole", "agent-readable-namespace-metadata", namespace))
+        if classification is AgentReadable.LOGS:
+            shared.add(BoundRole("ClusterRole", "agent-readable-namespace-logs", namespace))
+    inventory = {
+        BoundRole("ClusterRole", "public-coder-agent-node-reader", None),
+        BoundRole("ClusterRole", "public-coder-agent-cluster-metadata-reader", None),
+    }
+    credentials = {
+        BoundRole("Role", "claude-ai-coinbase-reader", _NAMESPACE),
+        BoundRole("Role", "ovh-billing-reader", _NAMESPACE),
+        BoundRole("Role", "plaid-finance-diagnostics-reader", "plaid-mcp"),
+    }
+    expected = {
+        "public-coder": shared | inventory,
+        "finance-agent": shared
+        | inventory
+        | credentials
+        | {BoundRole("Role", "plaid-spend-finance-config-reader", "plaid-mcp")},
+        "haku": shared | credentials | {BoundRole("Role", "haku-sandbox-admin", "haku-sandbox")},
+    }
+    for account, roles in expected.items():
+        assert rendering.rbac.account_roles(_ACCOUNTS_NAMESPACE, account) == roles, account
+
+
 def test_agent_permission_superset_and_finance_parity(rendering: Rendering) -> None:
     public = rendering.launch("public-coder")
     haku = rendering.launch("haku")

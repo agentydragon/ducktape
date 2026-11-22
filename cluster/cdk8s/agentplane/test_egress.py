@@ -6,7 +6,6 @@ import json
 from pathlib import PurePosixPath
 from typing import Any
 
-import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
@@ -32,7 +31,6 @@ from cluster.cdk8s.agentplane import (
     platform_routes,
     runner_gateway,
     staging,
-    staging_grants,
 )
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -437,142 +435,24 @@ def test_ovh_billing_is_a_named_read_only_credential_with_scoped_egress(
     assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" not in presets["public-coder"].policy_sets
 
 
-@pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
-def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
-    preset: str, staging_manifests: list[dict[str, Any]]
-) -> None:
+def test_coinbase_egress_and_standing_identity_selections(staging_manifests: list[dict[str, Any]]) -> None:
     config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    assert "kubernetes_grants" not in config
-    grant_models = staging_grants.catalog(staging.ENV.namespace)
-    catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
-    account_grants = {
-        grant["spec"]["serviceAccount"]["name"]: set(grant["spec"]["roleSets"])
-        for grant in staging_manifests
-        if grant["kind"] == "ServiceAccountGrant"
-    }
-    selected_role_sets = account_grants[preset]
-    selected = {
-        grant for role_set in selected_role_sets for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    public_selected = {
-        grant
-        for role_set in account_grants["public-coder"]
-        for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    credential_grants = (
-        {
-            "coinbase-credentials",
-            "ovh-billing-credentials",
-            "spend-policy-config",
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
-        }
-        if preset == "finance-agent"
-        else set()
-    )
-    # Coinbase and Plaid keep their GET egress in the Identity policy sibling; their Kubernetes
-    # permissions are provisioned on the preset account.
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity" in config["sandbox_presets"][preset]["policy_sets"]
-    ) == (preset == "finance-agent")
-    assert selected == public_selected | credential_grants
-    assert "cluster-diagnostics" in selected
-    haku = {
-        grant for role_set in account_grants["haku"] for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    assert "cluster-diagnostics" in haku
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    )
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    coinbase_rules = find_resource(staging_manifests, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"][
-        "rules"
-    ]
-    assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
+    presets = config["sandbox_presets"]
+    assert "coinbase-identity" in presets["finance-agent"]["policy_sets"]
+    assert "coinbase-identity" not in presets["public-coder"]["policy_sets"]
+    for caller in ("claude-ai", "haku-agent"):
+        selected = find_resource(staging_manifests, "PolicyBinding", caller)["spec"]["policySets"]
+        assert {"coinbase-identity", "plaid-diagnostics-identity"} <= set(selected)
+    get_coinbase = {"type": "egress", "hosts": ["api.coinbase.com"], "methods": ["GET"]}
+    assert find_resource(staging_manifests, "PolicySet", "coinbase-identity")["spec"]["rules"] == [get_coinbase]
+    mixed = find_resource(staging_manifests, "PolicySet", "coinbase")["spec"]["rules"]
+    assert len(mixed) == 2
+    assert get_coinbase in mixed
     assert {
-        (rule["role"]["kind"], rule["role"]["name"], tuple(rule["namespaces"]))
-        for rule in coinbase_rules
-        if rule["type"] == "kubernetes_role_binding"
-    } == {("Role", "claude-ai-coinbase-reader", ("agentplane-staging",))}
-    egress_rule = one(rule for rule in coinbase_rules if rule["type"] == "egress")
-    assert egress_rule["hosts"] == ["api.coinbase.com"]
-    assert egress_rule["methods"] == ["GET"]
-    assert "paths" not in egress_rule
-    assert "credentialRef" not in egress_rule
-    assert (
-        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    )
-    assert (
-        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    assert (
-        set(haku) - set(selected)
-        == {
-            "haku-sandbox-write",
-            "coinbase-credentials",
-            "ovh-billing-credentials",
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
-        }
-        - credential_grants
-    )
-    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-policy-config"} if preset == "finance-agent" else set()
-    )
-    assert {
-        "agentplane-staging-metadata",
-        "agentplane-staging-logs",
-        "haku-console-metadata",
-        "clickhouse-diagnostics",
-        "ducktape-flux-read",
-        "public-coder-volsync-status",
-        "public-coder-agent-reader",
-    } <= set(selected)
-    # Cluster-wide reads are explicit inventory and diagnostics grants. Namespaced
-    # log and metadata readers remain namespaced.
-    assert {name: catalog[name] for name in selected if catalog[name]["kind"] == "ClusterRoleBinding"} == {
-        "public-coder-node-read": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-node-reader"},
-        },
-        "public-coder-cluster-metadata-read": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-cluster-metadata-reader"},
-        },
-        "cluster-diagnostics": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
-        },
-    }
-    assert {
-        catalog[name]["role_ref"]["name"]
-        for name in selected
-        if catalog[name]["kind"] == "RoleBinding" and catalog[name]["role_ref"]["kind"] == "ClusterRole"
-    } == {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
-    assert {
-        (catalog[name]["namespace"], catalog[name]["role_ref"]["name"])
-        for name in selected
-        if catalog[name]["role_ref"]["kind"] == "Role"
-    } == {
-        ("haku-console", "agent-haku-console-metadata-reader"),
-        ("clickhouse", "agent-clickhouse-diagnostics-reader"),
-        ("ducktape-flux", "ducktape-flux-reader"),
-        ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
-        ("public-coder-agent", "public-coder-agent-reader"),
-    } | (
-        {
-            ("agentplane-staging", "claude-ai-coinbase-reader"),
-            ("agentplane-staging", "ovh-billing-reader"),
-            ("plaid-mcp", "plaid-spend-finance-config-reader"),
-            ("plaid-mcp", "plaid-finance-diagnostics-reader"),
-        }
-        if preset == "finance-agent"
-        else set()
-    )
+        "type": "kubernetes_role_binding",
+        "role": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
+        "namespaces": [staging.ENV.namespace],
+    } in mixed
 
 
 def test_inference_is_granted_separately_from_platform_operations(catalog_manifests: list[dict[str, Any]]) -> None:
