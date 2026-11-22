@@ -4,4 +4,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/ai-session-archive-importer
     newTag: devel-20261121133109-ed5f7f6 # {"$imagepolicy": "flux-system:ai-session-archive-importer:tag"}
   - name: git.allegedly.works/ducktape-ci/ai-session-archive-web
-    newTag: devel-20261122032304-dfd8025 # {"$imagepolicy": "flux-system:ai-session-archive-web:tag"}
+    newTag: devel-20261122110238-5f380b9 # {"$imagepolicy": "flux-system:ai-session-archive-web:tag"}
