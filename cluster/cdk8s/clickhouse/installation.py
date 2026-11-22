@@ -599,13 +599,13 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
     Secrets, pod exec, writes, or status-subresource mutation.
     """
     chart = Chart(app, "agent-diagnostics-rbac", disable_resource_name_hashes=True)
-    name = "agent-clickhouse-diagnostics-reader"
+    reader = access.role_ref("clickhouse-diagnostics")
     read = ["get", "list", "watch"]
     k8s.KubeRole(
         chart,
         "role",
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=reader.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Read-only ClickHouse operator and observability resource status."},
         ),
@@ -631,11 +631,11 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
         chart,
         "binding",
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=reader.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to secret-free ClickHouse status."},
         ),
-        role_ref=access.role_ref("clickhouse-diagnostics"),
+        role_ref=reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("clickhouse-diagnostics")],
     )
     return chart

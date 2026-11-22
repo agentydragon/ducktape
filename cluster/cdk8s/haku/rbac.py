@@ -17,7 +17,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "haku-rbac"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/rbac"
 SERVICE_ACCOUNT = "haku"
-ADMIN_ROLE = "haku-sandbox-admin"
 
 
 def chart(app: App) -> Chart:
@@ -63,11 +62,12 @@ def chart(app: App) -> Chart:
     # Haku's only write-capable RBAC. Deliberately an explicit resource allowlist with NO
     # httproutes/gateways/networkpolicies -- Haku must never open a public door or loosen its own
     # fences. Invariants + full enforcement inventory: haku/docs/security.md.
+    admin = access.role_ref("haku-sandbox-write")
     k8s.KubeRole(
         chart,
         "admin-role",
         metadata=k8s.ObjectMeta(
-            name=ADMIN_ROLE,
+            name=admin.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -113,7 +113,7 @@ def chart(app: App) -> Chart:
         chart,
         "haku-binding",
         metadata=k8s.ObjectMeta(name="haku", namespace=NAMESPACE),
-        role_ref=access.role_ref("haku-sandbox-write"),
+        role_ref=admin,
         subjects=[access.HAKU_SERVICE_ACCOUNT.k8s(), access.HAKU_CONSOLE.k8s()],
     )
     k8s.KubeRoleBinding(
@@ -130,7 +130,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        role_ref=access.role_ref("haku-sandbox-write"),
+        role_ref=admin,
         subjects=[access.HAKU_OIDC.k8s()],
     )
     # Shared by everything in haku-sandbox: the managed-agent worker, haku-ui, AND the sandbox warm
