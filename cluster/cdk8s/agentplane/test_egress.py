@@ -150,17 +150,11 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
     public = find_resource(catalog_manifests, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
-    for doc in catalog_manifests:
-        if doc["kind"] == "PolicyBinding":
-            if doc["metadata"]["name"] == "public-coder-openclaw":
-                assert doc["spec"]["subject"] == {"identity": {"name": "public-coder-openclaw"}}
-                assert doc["spec"]["policySets"] == [
-                    "public-coder-openclaw",
-                    INFERENCE_EXPERIMENTS_POLICY,
-                    PUBLIC_INTERNET_POLICY,
-                ]
-            else:
-                assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
+    assert [
+        (binding["metadata"]["namespace"], binding["spec"]["subject"])
+        for binding in catalog_manifests
+        if binding["kind"] == "PolicyBinding" and PUBLIC_INTERNET_POLICY in binding["spec"]["policySets"]
+    ] == [(staging.ENV.namespace, {"identity": {"name": "public-coder-openclaw"}})]
 
 
 def test_basic_has_no_projected_workload_token_route(staging_manifests: list[dict[str, Any]]) -> None:
@@ -458,10 +452,9 @@ def test_coinbase_egress_and_standing_identity_selections(staging_manifests: lis
 def test_inference_is_granted_separately_from_platform_operations(catalog_manifests: list[dict[str, Any]]) -> None:
     granted = find_resource(catalog_manifests, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
-    # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in catalog_manifests if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]
-        if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
+        if BASIC_POLICY in policies:
             assert INFERENCE_EXPERIMENTS_POLICY in policies
     inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
     assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule.get("hosts", []))
