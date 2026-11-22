@@ -58,7 +58,6 @@ def add_service_workload(
     replica_profile: ReplicaProfile | None = None,
     env_variables: dict[str, EnvValue] | None = None,
     service_account: ServiceAccount | None = None,
-    annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
     create_service: bool = True,
@@ -89,7 +88,7 @@ def add_service_workload(
     deployment = Deployment(
         scope,
         "deployment",
-        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels, annotations=annotations),
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
         pod_metadata=ApiObjectMetadata(
             labels={**labels, **(telemetry.EMITTER_SERVICE_CLASS_LABELS if telemetry_enabled else {})}
         ),

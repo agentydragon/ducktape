@@ -187,9 +187,6 @@ class App(Construct):
 
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
-        oidc_secret_reload = self.oidc.name
-        if self.props.oidc_session_secret_name != self.oidc.name:
-            oidc_secret_reload += f",{self.props.oidc_session_secret_name}"
         workload = add_service_workload(
             self,
             self.env,
@@ -218,12 +215,6 @@ class App(Construct):
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
-            annotations={
-                # A re-minted client secret otherwise leaves the pod on the old
-                # one, and every login 401s.
-                "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                "configmap.reloader.stakater.com/reload": f"{config.config_map.name},public-web-pki",
-            },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.service_certificate(self, self.env, container=workload.container, name=NAME, uri=APP_URI)

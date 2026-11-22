@@ -105,18 +105,6 @@ class LlmIngress(Construct):
             serves=[self.service],
             container="ingress",
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
-            annotations={
-                "configmap.reloader.stakater.com/reload": ",".join(
-                    config_map
-                    for config_map in (
-                        f"{_NAME}-settings",
-                        "public-web-pki",
-                        None if catalog_map is None else catalog_map.name,
-                    )
-                    if config_map is not None
-                ),
-                "secret.reloader.stakater.com/reload": env.llm_ingress.litellm_key_secret_name,
-            },
             env_variables={
                 "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
                 # The only real model credential in this service; runners never mount it.

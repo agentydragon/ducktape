@@ -69,10 +69,6 @@ def test_egress_reads_its_settings_file_and_database_url(staging_manifests: list
 
 def test_staging_requires_the_tls_hop(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = find_resource(staging_manifests, "Deployment", "egress")
-    assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
-        f"{staging.ENV.namespace}-egress-upstream-ca",
-        "public-web-pki",
-    }
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )

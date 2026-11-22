@@ -57,9 +57,6 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     assert mount["readOnly"]
     volume = one(v for v in pod["volumes"] if v["name"] == mount["name"])
     key = one(i for i in volume["secret"]["items"] if i["path"] == bearer_file.name)["key"]
-    assert volume["secret"]["secretName"] in deployment["metadata"]["annotations"][
-        "secret.reloader.stakater.com/reload"
-    ].split(",")
     # The mounted Secret is ESO's copy of the one ssh-mcp mints.
     copy = one(
         doc
