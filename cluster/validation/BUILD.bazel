@@ -132,6 +132,7 @@ py_library(
     deps = [
         ":cluster",
         ":k8s",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -346,7 +347,6 @@ py_test(
     srcs = ["test_image_automation.py"],
     deps = [
         ":cluster",
-        ":flux",
         ":image_automation",
         ":k8s",
         "@pypi//pytest_bazel",
