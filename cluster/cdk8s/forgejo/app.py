@@ -7,8 +7,6 @@ come from `tf/gitops/sso-providers/`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
@@ -32,9 +30,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo import cache, db
 from cluster.cdk8s.forgejo.namespace import NAMESPACE
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.seaweedfs.endpoints import S3_AUTHORITY
@@ -42,7 +38,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
 
-_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 _NAME = "forgejo"
 HOSTNAME = "git.allegedly.works"
 _METRICS_TOKEN = SecretRef(namespace=NAMESPACE, name="forgejo-metrics-token").key("token")
@@ -383,7 +378,3 @@ def chart(app: App) -> Chart:
     # Public SSH on git.allegedly.works:2222, on the HIL gateway nodes.
     tcp_listener(chart, "ssh-listener", service=_SSH)
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart, manifest_name="app.k8s.yaml")
