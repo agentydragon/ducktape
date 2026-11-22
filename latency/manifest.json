@@ -2,16 +2,17 @@
   "source_devel_commit": "16a394a1518add3599ace7b57968edc81fef8628",
   "window_start_utc": "2026-11-15T00:00:00Z",
   "window_end_utc": "2026-11-22T04:00:00Z",
-  "published_at_utc": "2026-11-22T04:52:17.323157+00:00",
+  "published_at_utc": "2026-11-22T05:12:28.173568+00:00",
   "attribution": "not collected",
   "weekly_feedback_window_utc": [
     "2026-11-15T00:00:00Z",
     "2026-11-22T00:00:00Z"
   ],
   "previous_report_commit": "23794d295215d423202f7a989195803fd75f8316",
-  "report_sha256": "6da97cb899810fa80696d8322f4a2c12a0fbb58cfec60f64efebb36e62e04a7f",
-  "evidence_sha256": "9ed88ba260defa16b63231c8751e7c22fc2ca2ea6886f5fd2e50e87fa9564c3d",
+  "report_sha256": "9002f8cf203ecbd3009d16df33b76b829031a66683c468bc00773ee0a2e6d3eb",
+  "evidence_sha256": "198e5140b977fee156a0bfd5b69d9a99a3411a87bdaa031f10b195f36e2abd5a",
   "kvm_scale_up_window_utc": ["2026-11-21T04:47:00Z", "2026-11-22T04:47:00Z"],
   "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "0f2194a8eca99fac2ca6710c95ef56c8365433e9688f992a2c0c2887340eb442"
+  "visual_validation_sha256": "d8ea204b8d18c36bd391764732d2efc9162ad0f1a36199bf8e444b21887ed258",
+  "kvm_work_disk_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"]
 }
