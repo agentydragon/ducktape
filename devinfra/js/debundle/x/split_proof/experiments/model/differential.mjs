@@ -944,11 +944,35 @@ assert.equal(
 );
 const generatedClassJobs = jobs.filter((j) => j.opaqueCase?.generatedClass);
 assert.equal(generatedClassJobs.length, broad ? count : 0, "every seed must generate an opaque class case");
+const generatedClassMoves = opaqueMoved.filter((j) => j.of.opaqueCase?.generatedClass);
 assert.equal(
-  opaqueMoved.filter((j) => j.of.opaqueCase?.generatedClass).length,
+  generatedClassMoves.length,
   generatedClassJobs.length,
   "every generated opaque class must execute in an accepted reordered split"
 );
+for (const job of generatedClassMoves) {
+  const { bodyCalls } = job.of.opaqueCase;
+  assert(job.moves, `${job.label}: the reordered class must have a move certificate`);
+  for (const [runName, run] of Object.entries({
+    "bundle in Node": job.of.node,
+    "bundle in CoreJS": job.of.numbered.result,
+    "split in Node": job.node,
+    "split in CoreJS": job.result,
+    "split replaying the bundle's world": job.inBundleWorld.result,
+  })) {
+    assert.equal(run.end, "normal", `${job.label}: ${runName} must complete`);
+    assert.deepEqual(
+      run.out.filter((line) => line.startsWith("body:")).map((line) => line.split(" ")[0]),
+      bodyCalls.map((body) => `body:${body}`),
+      `${job.label}: ${runName} must invoke every generated opaque body in order`
+    );
+  }
+  assert.equal(
+    job.inBundleWorld.result.state,
+    job.of.numbered.result.state,
+    `${job.label}: the reordered class must preserve the bundle's final model state`
+  );
+}
 console.log(`opaque closure and class moves: ${opaqueMoved.length}, four runs and final state compared`);
 console.log(
   `generated units: ${total("units")}; accepted alone: ${total("unitsAccepted")}; in the programs that ran: ` +

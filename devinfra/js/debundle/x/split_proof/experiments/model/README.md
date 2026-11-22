@@ -97,9 +97,12 @@ syntax-based `moves` slice, not the binding-certificate slice.
 Handwritten cases cover deferred execution, receivers/arguments, class self names,
 nested lexical captures, constructor returns/throws, invocation restrictions,
 accessors, stable part identities, and eager static/field behavior. Each generated
-seed also moves a class across an independent declaration, then constructs it and
-calls an opaque method. Every such split must use a proved move and agree in all
-four executions and in the final model-state hash.
+seed also moves a class across an independent declaration before its captured
+bindings are initialized. The generated class varies member order, receiver,
+captures, and whether it has accessors. Its constructor and each selected method
+or accessor call back into modeled JavaScript after initialization. The harness
+checks that each body runs in the expected order and that the proved split
+preserves both the Node observations and the final model-state hash.
 
 ## Default derived classes
 
