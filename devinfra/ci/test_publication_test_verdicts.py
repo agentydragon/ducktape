@@ -14,7 +14,7 @@ from python.runfiles import Runfiles
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci import publication_evidence
-from devinfra.ci.publication_test_verdicts import TestEvidence, verify
+from devinfra.ci.publication_test_verdicts import TestEvidence, TestGate, verify
 
 RUN_ID = "4077673030700"
 ATTEMPT = "1"
@@ -110,14 +110,17 @@ def test_a_verified_successful_sweep_can_supply_a_passing_verdict(summaries: lis
 
 
 def test_custom_publication_configuration_keeps_its_test_gate() -> None:
-    candidate = publication_evidence.TestGateCandidate("optimized", "//a:test", uses_default_config=False)
-    passing = publication_evidence.PublicationEvidence(None, evidence_for(push_sweep([summary("//a:test", "PASSED")])))
-    assert passing.test_gates([candidate], action="released") == (set(), set())
-    default_config = dataclasses.replace(candidate, uses_default_config=True)
-    assert passing.test_gates([default_config], action="released") == ({"//a:test"}, set())
+    passing = evidence_for(push_sweep([summary("//a:test", "PASSED")]))
+    assert (
+        passing.publication_gate("optimized", "//a:test", action="released", uses_default_config=False) is TestGate.KEEP
+    )
+    assert passing.publication_gate("default", "//a:test", action="released") is TestGate.REUSE
 
-    failing = publication_evidence.PublicationEvidence(None, evidence_for(push_sweep([summary("//a:test", "FAILED")])))
-    assert failing.test_gates([candidate], action="released") == (set(), {"//a:test"})
+    failing = evidence_for(push_sweep([summary("//a:test", "FAILED")]))
+    assert (
+        failing.publication_gate("optimized", "//a:test", action="released", uses_default_config=False)
+        is TestGate.BLOCK
+    )
 
 
 def test_passing_tests_from_a_failed_sweep_are_not_reused() -> None:
