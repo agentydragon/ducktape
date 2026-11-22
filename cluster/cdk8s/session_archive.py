@@ -60,11 +60,10 @@ CREDENTIALS = SecretGeneratorArgs(
     namespace=NAMESPACE,
     files=[f"{_CREDENTIALS_PATH.name}={CREDENTIALS_SOURCE}"],
 )
-_WEB_PORT = 8080
-_WEB_LABELS = {"app.kubernetes.io/name": NAME}
-_WEB = ServiceRef(name=NAME, port=Port(name="http", number=_WEB_PORT), pods=Pods(NAMESPACE, tuple(_WEB_LABELS.items())))
-_IMPORTER_LABELS = session_backup.IMPORTER_LABELS
-_IMPORTER_ENDPOINT = cilium.endpoint_labels(NAMESPACE, _IMPORTER_LABELS["app.kubernetes.io/name"])
+_WEB = ServiceRef(
+    name=NAME, port=Port(name="http", number=8080), pods=Pods(NAMESPACE, (("app.kubernetes.io/name", NAME),))
+)
+IMPORTER = Pods(NAMESPACE, (("app.kubernetes.io/name", f"{NAME}-importer"),))
 _CLAUDE_ROOT = "/.claude"
 _CODEX_ROOT = "/.codex"
 _SOURCE_HOSTS = (
@@ -113,7 +112,7 @@ def _web_environment(chart: Chart) -> dict[str, EnvValue]:
     return {
         env_name(WebSettings, "database_url"): DATABASE.app_secret.key("uri").env_value(chart, "database-url-ref"),
         env_name(WebSettings, "public_base_url"): EnvValue.from_value(f"https://{HOSTNAME}"),
-        env_name(WebSettings, "port"): EnvValue.from_value(str(_WEB_PORT)),
+        env_name(WebSettings, "port"): EnvValue.from_value(str(_WEB.pod_port)),
         **{
             env_name(WebSettings, field): _OIDC.key(env_name(WebSettings, field)).env_value(chart, f"{field}-ref")
             for field in (
@@ -134,10 +133,10 @@ def _web(chart: Chart) -> None:
         metadata=ApiObjectMetadata(
             name=NAME,
             namespace=NAMESPACE,
-            labels=_WEB_LABELS,
+            labels=_WEB.pods.selector,
             annotations={"description": "Owner-authenticated browser and API for the session archive."},
         ),
-        pod_metadata=ApiObjectMetadata(labels=_WEB_LABELS),
+        pod_metadata=ApiObjectMetadata(labels=_WEB.pods.selector),
         replicas=2,
         strategy=DeploymentStrategy.rolling_update(),
         select=False,
@@ -146,15 +145,15 @@ def _web(chart: Chart) -> None:
         security_context=PodSecurityContextProps(ensure_non_root=True, user=_UID, group=_UID, fs_group=_UID),
     )
     # Deployment selectors are immutable, so keep the existing labels.
-    workload.select(LabelSelector.of(labels=_WEB_LABELS))
+    workload.select(LabelSelector.of(labels=_WEB.pods.selector))
     workload.add_container(
         name=NAME,
         image=_WEB_IMAGE,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         env_variables=_web_environment(chart),
         ports=[_WEB.container_port()],
-        readiness=Probe.from_http_get("/healthz", port=_WEB_PORT, period_seconds=Duration.seconds(10)),
-        liveness=probes.http_probe("/healthz", port=_WEB_PORT, initial_delay_seconds=30, period_seconds=20),
+        readiness=Probe.from_http_get("/healthz", port=_WEB.pod_port, period_seconds=Duration.seconds(10)),
+        liveness=probes.http_probe("/healthz", port=_WEB.pod_port, initial_delay_seconds=30, period_seconds=20),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(50)),
             memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
@@ -187,7 +186,7 @@ def _web(chart: Chart) -> None:
 
 
 def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> k8s.KubeCronJob:
-    labels = {**_IMPORTER_LABELS, "app.kubernetes.io/instance": host}
+    labels = {**IMPORTER.selector, "app.kubernetes.io/instance": host}
     credentials_volume = k8s.Volume(
         name="restic-credentials",
         secret=k8s.SecretVolumeSource(
@@ -296,7 +295,7 @@ def _network_policies(chart: Chart) -> None:
         chart,
         "importer-network-policy",
         metadata=ApiObjectMetadata(name=f"{NAME}-importer", namespace=NAMESPACE),
-        endpoint_selector=_IMPORTER_ENDPOINT,
+        endpoint_selector=IMPORTER.cilium,
         ingress=[],
         egress=[
             cilium.dns_egress(resolves=["*"]),

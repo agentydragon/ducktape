@@ -609,7 +609,6 @@ py_library(
     name = "session_backup",
     srcs = ["session_backup.py"],
     deps = [
-        ":cilium",
         ":flux",
         ":namespaces",
         ":piraeus_storage",

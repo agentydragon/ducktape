@@ -1592,7 +1592,12 @@ def generate_manifests(root: Path) -> None:
     session_backup_artifact = artifact("session-backup", session_backup.OUTPUT_DIR)
     session_backup_kustomization = session_backup.session_backup(
         flux_chart,
-        write_directory(root, session_backup_artifact, session_backup.chart, siblings=["rest-server-auth.sops.yaml"]),
+        write_directory(
+            root,
+            session_backup_artifact,
+            functools.partial(session_backup.chart, importer=session_archive.IMPORTER),
+            siblings=["rest-server-auth.sops.yaml"],
+        ),
         piraeus_cluster_kustomization,
     )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
