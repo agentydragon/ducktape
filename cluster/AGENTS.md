@@ -62,9 +62,8 @@ minting fresh values for fields you can't recover (i.e. rotate).
   obvious.
 - In-cluster VMs should forward guest logs to a destination the cluster already collects;
   see <docs/troubleshooting.md> § Loki for the KubeVirt path and query.
-- YAML consumed by `configMapGenerator` stays `.yaml` (never disguised as `.txt`): add
-  `cluster-manifest-ignored=true` in root `.gitattributes`, add the path to the kubeconform
-  exclusion in `.pre-commit-config.yaml`, and mark the file as a `configMapGenerator` input.
+- List configuration YAML in its consuming `configMapGenerator` and keep the `.yaml`
+  extension. Exclude application-specific YAML from kubeconform in `.pre-commit-config.yaml`.
 - A `HelmRepository`/`GitRepository` consumed by exactly one `HelmRelease` in the same
   component directory: put it first in `helmrelease.yaml` and list only that file in
   `kustomization.yaml`. Keep separate if reused, independently owned, or a consumer needs
