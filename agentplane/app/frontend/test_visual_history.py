@@ -621,11 +621,18 @@ async def test_dispatch_watch_interruption_and_recovery(view: VisualPage, app: A
 @DESKTOP_AND_MOBILE
 async def test_dispatcher_workset(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.DISPATCH_WORKSET)
+    await app.set_flag(Flag.THREAD_SCOPE_UNAVAILABLE)
     await app.mount_thread(RUNNING_THREAD)
     queued = view.page.locator('[data-command-id="7988d401-0000-4000-8000-000000000002"]')
     unknown = view.page.locator('[data-command-id="5034baaf-0000-4000-8000-000000000001"]')
     cancelled = view.page.locator('[data-command-id="2e08b63a-0000-4000-8000-000000000003"]')
     await expect(queued).to_contain_text("Continue when the Sandbox is ready.")
+    history = view.page.get_by_role("region", name="Thread history")
+    await expect(history).to_have_count(0)
+    await view.capture(name="pending_before_history")
+    await app.set_flag(Flag.THREAD_SCOPE_UNAVAILABLE, on=False)
+    await expect(history).to_be_visible()
+    await expect(queued).to_have_count(1)
     await expect(unknown).to_contain_text("Outcome unknown")
     await expect(cancelled).to_have_count(0)
     await expect(view.page.get_by_role("button", name="Older delivery issues")).to_be_visible()
