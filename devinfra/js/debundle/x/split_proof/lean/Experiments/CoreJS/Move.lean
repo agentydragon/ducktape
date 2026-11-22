@@ -835,17 +835,26 @@ end commute
 /-- The states `A` can end well in, from a state of `X`. -/
 def Img {α : Type} (A : M W α) (X : State W → Prop) : State W → Prop := fun s' => ∃ s a, X s ∧ A s = .ok a s'
 
-theorem img_comm {α β : Type} {A : M W α} {B : M W β} (hab : Commute A B) (hba : Commute B A) (X : State W → Prop) :
+/-- A successful swap from a state satisfying `P`. -/
+def CommuteOn {α β : Type} (P : State W → Prop) (A : M W α) (B : M W β) : Prop :=
+  ∀ s, P s → ∀ u s' a b, A s = .ok a u → B u = .ok b s' → ∃ u', B s = .ok b u' ∧ A u' = .ok a s'
+
+theorem img_comm_on {α β : Type} {P X : State W → Prop} {A : M W α} {B : M W β}
+    (hX : ∀ s, X s → P s) (hab : CommuteOn P A B) (hba : CommuteOn P B A) :
     Img B (Img A X) = Img A (Img B X) := by
   funext s'
   apply propext
   constructor
-  · rintro ⟨u, b, ⟨s, a, hX, ha⟩, hb⟩
-    obtain ⟨u', hb', ha'⟩ := hab s u s' a b ha hb
-    exact ⟨u', a, ⟨s, b, hX, hb'⟩, ha'⟩
-  · rintro ⟨u, a, ⟨s, b, hX, hb⟩, ha⟩
-    obtain ⟨u', ha', hb'⟩ := hba s u s' b a hb ha
-    exact ⟨u', b, ⟨s, a, hX, ha'⟩, hb'⟩
+  · rintro ⟨u, b, ⟨s, a, hx, ha⟩, hb⟩
+    obtain ⟨u', hb', ha'⟩ := hab s (hX s hx) u s' a b ha hb
+    exact ⟨u', a, ⟨s, b, hx, hb'⟩, ha'⟩
+  · rintro ⟨u, a, ⟨s, b, hx, hb⟩, ha⟩
+    obtain ⟨u', ha', hb'⟩ := hba s (hX s hx) u s' b a hb ha
+    exact ⟨u', b, ⟨s, a, hx, ha'⟩, hb'⟩
+
+theorem img_comm {α β : Type} {A : M W α} {B : M W β} (hab : Commute A B) (hba : Commute B A) (X : State W → Prop) :
+    Img B (Img A X) = Img A (Img B X) :=
+  img_comm_on (P := fun _ => True) (fun _ _ => trivial) (fun s _ => hab s) (fun s _ => hba s)
 
 def unitStep (n : Nat) (u : Nat × Stmt × Env) : M W Flow := runUnit n u.2.2 u.1 u.2.1
 
@@ -870,6 +879,42 @@ theorem runUnits_img (n : Nat) : ∀ (us : List (Nat × Stmt × Env)) (X : State
       unfold runUnits
       rw [bind_of_ok ht]
       exact h
+
+/-- A unit can cross a block after a prefix establishes the condition for each successive swap. -/
+theorem runUnits_pivot (n : Nat) (pre crossed suffix : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env)
+    (P : State W → Prop) (s s' : State W)
+    (hprefix : ∀ t, runUnits n pre s = .ok () t → P t)
+    (hkeep : ∀ u ∈ crossed, ∀ t t' f, P t → unitStep n u t = .ok f t' → P t')
+    (hcomm : ∀ u ∈ crossed, CommuteOn P (unitStep n pivot) (unitStep n u) ∧
+      CommuteOn P (unitStep n u) (unitStep n pivot)) :
+    runUnits n (pre ++ [pivot] ++ crossed ++ suffix) s = .ok () s' ↔
+      runUnits n (pre ++ crossed ++ [pivot] ++ suffix) s = .ok () s' := by
+  let step (X : State W → Prop) (u : Nat × Stmt × Env) := Img (unitStep n u) X
+  have hfold : ∀ (us : List (Nat × Stmt × Env)) (X : State W → Prop),
+      (∀ t, X t → P t) →
+      (∀ u ∈ us, ∀ t t' f, P t → unitStep n u t = .ok f t' → P t') →
+      (∀ u ∈ us, CommuteOn P (unitStep n pivot) (unitStep n u) ∧
+        CommuteOn P (unitStep n u) (unitStep n pivot)) →
+      us.foldl step (step X pivot) = step (us.foldl step X) pivot := by
+    intro us
+    induction us with
+    | nil => intros; rfl
+    | cons u us ih =>
+      intro X hX hk hc
+      obtain ⟨hab, hba⟩ := hc u List.mem_cons_self
+      simp only [List.foldl_cons]
+      rw [show step (step X pivot) u = step (step X u) pivot from img_comm_on hX hab hba]
+      refine ih (step X u) ?_ (fun v hv => hk v (List.mem_cons_of_mem u hv)) fun v hv =>
+        hc v (List.mem_cons_of_mem u hv)
+      rintro t' ⟨t, f, ht, hrun⟩
+      exact hk u List.mem_cons_self t t' f (hX t ht) hrun
+  have hrun (us : List (Nat × Stmt × Env)) (t : State W) :
+      runUnits n us s = .ok () t ↔ us.foldl step (· = s) t := by
+    rw [← runUnits_img]
+    exact ⟨fun h => ⟨s, rfl, h⟩, fun ⟨_, rfl, h⟩ => h⟩
+  rw [hrun, hrun]
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil]
+  rw [hfold crossed _ (fun t ht => hprefix t ((hrun pre t).2 ht)) hkeep hcomm]
 
 /-- The unit of the bundle with identity `j`. -/
 def bundleUnit (ss : List Stmt) (frames : List (Nat × List (Name × Addr))) (j : Nat) : Nat × Stmt × Env :=
@@ -976,13 +1021,15 @@ theorem map_bundleUnit_keys {ss : List Stmt} (frames : List (Nat × List (Name �
 
 theorem Agree.refl (N : List Name) (env : Env) : Agree N env env := ⟨rfl, fun _ _ => rfl⟩
 
-/-- **A split that moves only units that commute ends well as its bundle does.** For a plan that `Valid` accepts,
-in which every pair of statements that runs out of the bundle's order is certified by a sound move relation, the split ends well in a
-state exactly when the bundle ends well in that state, for every bound on the depth and every world. -/
-theorem moves_preserve_run_of_sound {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B)
-    {allows : Nat → Nat → Bool} (hsound : MovesSound W ss allows)
-    (hmove : P.execOrder.Pairwise fun a b => a < b ∨ allows a b = true) (n : Nat) (s : State W) :
+/-- A successful-run equivalence between the orders in the linked bundle scope also holds for the split program. -/
+theorem moves_preserve_run_of_order {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B) (n : Nat)
+    (horder : ∀ frames (t t1 t2 : State W),
+      declareTops ((List.range ss.length).zip ss) t = .ok frames t1 →
+      initFunctions ((List.range ss.length).map (bundleUnit ss frames)) t1 = .ok () t2 →
+      ∀ s', runUnits n ((List.range ss.length).map (bundleUnit ss frames)) t2 = .ok () s' ↔
+        runUnits n (P.execOrder.map (bundleUnit ss frames)) t2 = .ok () s')
+    (s : State W) :
     runProgram W n (Program.single ss) = .ok () s ↔ runProgram W n (splitProgram ss B P) = .ok () s := by
   have hperm := valid_perm hvalid hfp.1
   obtain ⟨hregions, htops⟩ := split_holds_statements (B := B) hperm
@@ -1024,8 +1071,6 @@ theorem moves_preserve_run_of_sound {W : World} {ss : List Stmt} {B : EsmSplit.B
         mergeSort_numbered ss hperm]
     · rw [henv0 u hu, h2]
       exact hagree u' ((List.mergeSort_perm _ _).mem_iff.1 hu')
-  rw [sorted_units hsorted0, initFunctions_same hinit]
-  refine bind_ok_congr (fun _ t2 _ b s' => ?_) b s'
   -- the bundle's units, and the split's, as units of the bundle
   have hbundle : SameUnits (unitsOf [(bundleModule ss, bundleEnv ss frames)])
       ((List.range ss.length).map (bundleUnit ss frames)) := by
@@ -1040,10 +1085,24 @@ theorem moves_preserve_run_of_sound {W : World} {ss : List Stmt} {B : EsmSplit.B
     · obtain ⟨i, _, rfl⟩ := List.mem_map.1 hu
       rw [h2]
       exact hagree u' hu'
+  rw [sorted_units hsorted0, ← initFunctions_same hinit, initFunctions_same hbundle]
+  refine bind_ok_congr (fun a t2 hfunctions b s' => ?_) b s'
   rw [runUnits_same n hbundle, ← runUnits_same n hsplit]
+  cases a
   cases b
-  exact (reorder_units_of_commute n (bundleUnit ss frames) allows
-    (hsound frames t t1 (single_tops ss ▸ hframes) n) hperm hmove t2 s').symm
+  exact horder frames t t1 t2 (single_tops ss ▸ hframes) hfunctions s'
+
+/-- **A split that moves only units that commute ends well as its bundle does.** For a plan that `Valid` accepts,
+in which every pair of statements that runs out of the bundle's order is certified by a sound move relation, the split ends well in a
+state exactly when the bundle ends well in that state, for every bound on the depth and every world. -/
+theorem moves_preserve_run_of_sound {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B)
+    {allows : Nat → Nat → Bool} (hsound : MovesSound W ss allows)
+    (hmove : P.execOrder.Pairwise fun a b => a < b ∨ allows a b = true) (n : Nat) (s : State W) :
+    runProgram W n (Program.single ss) = .ok () s ↔ runProgram W n (splitProgram ss B P) = .ok () s :=
+  moves_preserve_run_of_order hvalid hfp n (fun frames t t1 t2 hframes _ s' =>
+    (reorder_units_of_commute n (bundleUnit ss frames) allows (hsound frames t t1 hframes n)
+      (valid_perm hvalid hfp.1) hmove t2 s').symm) s
 
 /-- The syntax-based move checker instantiates the semantic program-equivalence theorem. -/
 theorem moves_preserve_run {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}

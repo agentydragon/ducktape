@@ -300,6 +300,8 @@ lean_axiom_test(
         "CoreJS.mayMove_commutes",
         "CoreJS.mayMove_sound",
         "CoreJS.reorder_units_of_commute",
+        "CoreJS.runUnits_pivot",
+        "CoreJS.moves_preserve_run_of_order",
         "CoreJS.moves_preserve_run_of_sound",
         "CoreJS.moves_preserve_of_sound",
         "CoreJS.moves_preserve_run",
