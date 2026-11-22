@@ -152,7 +152,7 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> Identit
                             name=sidecar_config.CONTAINER_NAME,
                             image=f"{_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
                             env=[settings.path_env],
-                            ports=[gateway.port.k8s_container_port()],
+                            ports=[gateway.k8s_container_port()],
                             readiness_probe=k8s.Probe(
                                 http_get=k8s.HttpGetAction(
                                     path=sidecar_config.READINESS_PATH,

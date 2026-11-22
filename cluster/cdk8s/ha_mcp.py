@@ -225,7 +225,7 @@ class HaMcpApp(Construct):
             name="facade",
             image=f"{_APP_FACADE_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[FACADE.port.container_port(), _METRICS.port.container_port()],
+            ports=[FACADE.container_port(), _METRICS.container_port()],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
                 # The same token agentplane-staging's Action Service presents (its ESO copy of
@@ -256,7 +256,7 @@ class HaMcpApp(Construct):
             "service",
             metadata=ApiObjectMetadata(name=FACADE.name, namespace=_NAMESPACE, labels=FACADE.labels),
             selector=deployment,
-            ports=[FACADE.port.service_port(), _METRICS.port.service_port()],
+            ports=[FACADE.service_port(), _METRICS.service_port()],
         )
 
     def _add_network_policy(self) -> None:

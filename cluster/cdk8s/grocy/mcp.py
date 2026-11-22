@@ -151,7 +151,7 @@ def _server(scope: Construct, household: str) -> None:
                             name="server",
                             image=_IMAGE,
                             image_pull_policy="Always",
-                            ports=[http.port.k8s_container_port(), metrics.port.k8s_container_port()],
+                            ports=[http.k8s_container_port(), metrics.k8s_container_port()],
                             env=[
                                 *(
                                     key.env_var(env_name(ServerSettings, *path))

@@ -68,7 +68,7 @@ def _server(chart: Chart) -> None:
                             name=NAME,
                             image="ghcr.io/atuinsh/atuin:18.22.0",
                             args=["start"],
-                            ports=[SERVER.port.k8s_container_port()],
+                            ports=[SERVER.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="ATUIN_HOST", value="0.0.0.0"),
                                 k8s.EnvVar(name="ATUIN_PORT", value=str(SERVER.pod_port)),

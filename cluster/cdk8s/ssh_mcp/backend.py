@@ -166,7 +166,7 @@ class SshMcp(Construct):
                 "SSH_MCP_HOST": EnvValue.from_value("0.0.0.0"),
                 "SSH_MCP_PORT": EnvValue.from_value(str(SERVICE.pod_port)),
             },
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(_MEMORY_LIMIT_MIB)),
@@ -200,7 +200,7 @@ class SshMcp(Construct):
             "service",
             metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAMESPACE),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_network_policy(self, config: SshMcpConfig, mesh: Mesh) -> None:

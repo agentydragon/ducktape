@@ -193,7 +193,7 @@ def _deployment(chart: Chart) -> None:
                             name=NAME,
                             image=f"git.allegedly.works/ducktape-ci/airlock:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),

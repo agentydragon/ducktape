@@ -183,7 +183,7 @@ def _worker(
                                 *env,
                                 _READ_TOKEN.env_var(env_name(Settings, "read_token")),
                             ],
-                            ports=[worker.port.k8s_container_port()],
+                            ports=[worker.k8s_container_port()],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
                             resources=k8s.ResourceRequirements(
                                 requests={

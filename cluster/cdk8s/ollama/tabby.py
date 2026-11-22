@@ -96,7 +96,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),

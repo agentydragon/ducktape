@@ -169,7 +169,7 @@ def _deployment(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/plaid-mcp-server:unset",
                             image_pull_policy="Always",
                             security_context=_container_security_context(),
-                            ports=[_WEB.port.k8s_container_port()],
+                            ports=[_WEB.k8s_container_port()],
                             env=[
                                 *_env(),
                                 k8s.EnvVar(name="PLAID_MCP_OIDC_ISSUER", value=_OIDC_ISSUER),

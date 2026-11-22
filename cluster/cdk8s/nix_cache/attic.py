@@ -289,7 +289,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
                                 .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             resources=container_resources(cpu="50m", memory="1280Mi", memory_limit="8Gi"),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),

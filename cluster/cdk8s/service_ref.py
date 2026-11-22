@@ -123,6 +123,9 @@ class ServiceRef(_Service):
     def container_port(self) -> ContainerPort:
         return Port(name=self.port.name, number=self.pod_port).container_port()
 
+    def k8s_container_port(self) -> k8s.ContainerPort:
+        return Port(name=self.port.name, number=self.pod_port).k8s_container_port()
+
     def service_port(self) -> ServicePort:
         """This port on the Service, targeting the Pods' port."""
         return ServicePort(name=self.port.name, port=self.port.number, target_port=self.pod_port, protocol=Protocol.TCP)

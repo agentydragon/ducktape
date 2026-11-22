@@ -188,7 +188,7 @@ def _deployment(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/plaid-spend:unset",
                             image_pull_policy="Always",
                             security_context=_container_security_context(),
-                            ports=[_WEB.port.k8s_container_port()],
+                            ports=[_WEB.k8s_container_port()],
                             env=[
                                 *(
                                     k8s.EnvVar(

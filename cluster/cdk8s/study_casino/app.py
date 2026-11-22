@@ -269,7 +269,7 @@ def _deployment(scope: Construct) -> None:
                             name="app",
                             image=f"git.allegedly.works/ducktape-ci/study-casino:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[_SERVICE.port.k8s_container_port()],
+                            ports=[_SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="STUDY_CASINO_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 public_web_pki.SSL_CERT_FILE,

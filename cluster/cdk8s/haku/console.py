@@ -21,7 +21,6 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -36,13 +35,11 @@ from cdk8s_plus_34 import (
     Pods,
     PodSecurityContextProps,
     Probe,
-    Protocol,
     Role,
     RoleBinding,
     RolePolicyRule,
     Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -253,7 +250,7 @@ class Console(Construct):
             name="server",
             image=f"{IMAGE}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[_API.port.container_port()],
+            ports=[_API.container_port()],
             env_variables=self._container_env(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
@@ -295,15 +292,7 @@ class Console(Construct):
             "service",
             metadata=ApiObjectMetadata(name=_API.name, namespace=NAMESPACE, labels=_API.labels),
             selector=Pods.select(self, "pods", labels=_API.pods.selector),
-            ports=[
-                _API.port.service_port(),
-                ServicePort(
-                    name=_METRICS.port.name,
-                    port=_METRICS.port.number,
-                    target_port=_METRICS.pod_port,
-                    protocol=Protocol.TCP,
-                ),
-            ],
+            ports=[_API.service_port(), _METRICS.service_port()],
         )
 
     def _add_service_monitor(self) -> None:
@@ -345,7 +334,7 @@ class Console(Construct):
                 "HAKU_CONSOLE_AUTH_ORIGIN": EnvValue.from_value(_AUTHENTIK),
                 "HAKU_CONSOLE_API_UPSTREAM": EnvValue.from_value(f"{_API.host}:{_API.port.number}"),
             },
-            ports=[ContainerPort(name=_STATIC.port.name, number=_STATIC.pod_port, protocol=Protocol.TCP)],
+            ports=[_STATIC.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
@@ -365,14 +354,7 @@ class Console(Construct):
             "static-service",
             metadata=ApiObjectMetadata(name=_STATIC.name, namespace=NAMESPACE, labels=_STATIC.labels),
             selector=Pods.select(self, "static-pods", labels=_STATIC.pods.selector),
-            ports=[
-                ServicePort(
-                    name=_STATIC.port.name,
-                    port=_STATIC.port.number,
-                    target_port=_STATIC.pod_port,
-                    protocol=Protocol.TCP,
-                )
-            ],
+            ports=[_STATIC.service_port()],
         )
 
     def _add_http_route(self) -> None:

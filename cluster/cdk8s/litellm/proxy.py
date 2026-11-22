@@ -189,7 +189,7 @@ class LiteLLMProxy(Construct):
             name="litellm",
             image=f"git.allegedly.works/ducktape-ci/tana-litellm-proxy:{_PLACEHOLDER_TAG}",
             args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             env_variables=self._env_variables(),
             image_pull_policy=ImagePullPolicy.ALWAYS,
             liveness=_http_probe("/health/liveliness", 30, 3),
@@ -232,7 +232,7 @@ class LiteLLMProxy(Construct):
             "service",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.labels),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
             type=ServiceType.CLUSTER_IP,
         )
 

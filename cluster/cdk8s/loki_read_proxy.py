@@ -132,11 +132,7 @@ def _deployment(chart: Chart) -> None:
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            ports=[
-                                k8s.ContainerPort(
-                                    name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
-                                )
-                            ],
+                            ports=[SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="NAMESPACE_ALLOWLIST", value=",".join(NAMESPACE_ALLOWLIST)),
                                 # Query loki-read directly: the gateway's nginx can stay pinned to a dead

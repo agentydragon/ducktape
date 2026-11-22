@@ -224,7 +224,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[_SERVICE.port.k8s_container_port()],
+        ports=[_SERVICE.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which hid
         # two different outages during the 2026.8.1 recovery: a gateway crash-looping every ~4
         # minutes, and one that started but never bound its port. /healthz answers 200

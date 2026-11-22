@@ -198,7 +198,7 @@ def _gateway(scope: Construct) -> None:
                                 f"weed -logtostderr=true s3 -port={_S3.pod_port} -filer=seaweedfs-filer:8888"
                                 f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS.pod_port} -ip.bind=0.0.0.0",
                             ],
-                            ports=[_S3.port.k8s_container_port(), _METRICS.port.k8s_container_port()],
+                            ports=[_S3.k8s_container_port(), _METRICS.k8s_container_port()],
                             readiness_probe=k8s.Probe(
                                 http_get=k8s.HttpGetAction(
                                     path="/status", port=k8s.IntOrString.from_number(_S3.pod_port)

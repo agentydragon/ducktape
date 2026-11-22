@@ -173,11 +173,7 @@ def _add_deployment(chart: Chart) -> None:
                             # status is diagnostics-readable -- without this, an initialization
                             # failure is a black box to agent sessions.
                             termination_message_policy="FallbackToLogsOnError",
-                            ports=[
-                                SMTP.port.k8s_container_port(),
-                                HTTP.port.k8s_container_port(),
-                                _IMAP.port.k8s_container_port(),
-                            ],
+                            ports=[SMTP.k8s_container_port(), HTTP.k8s_container_port(), _IMAP.k8s_container_port()],
                             env=[_DB_PASSWORD.env_var("STALWART_DB_PASSWORD"), public_url],
                             volume_mounts=_stalwart_mounts(),
                             resources=_stalwart_resources(),

@@ -140,7 +140,7 @@ def _deployment(scope: Construct) -> None:
                                     )
                                 ),
                             ],
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=30, period_seconds=30),
                             resources=container_resources(

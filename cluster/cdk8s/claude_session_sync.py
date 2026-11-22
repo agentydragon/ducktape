@@ -154,7 +154,7 @@ def _deployment(
                             name=container,
                             image=_IMAGE,
                             args=args,
-                            ports=[service.port.k8s_container_port()],
+                            ports=[service.k8s_container_port()],
                             env=env,
                             readiness_probe=_healthz(service, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=_healthz(service, initial_delay_seconds=30, period_seconds=20),

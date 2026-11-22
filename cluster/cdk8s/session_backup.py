@@ -81,7 +81,7 @@ def chart(app: App) -> Chart:
             "PASSWORD_FILE": EnvValue.from_value("/auth/.htpasswd"),
             "OPTIONS": EnvValue.from_value("--append-only --private-repos"),
         },
-        ports=[SERVER.port.container_port()],
+        ports=[SERVER.container_port()],
         readiness=Probe.from_tcp_socket(port=SERVER.pod_port),
         liveness=Probe.from_tcp_socket(port=SERVER.pod_port, initial_delay_seconds=Duration.seconds(15)),
         resources=ContainerResources(
@@ -103,7 +103,7 @@ def chart(app: App) -> Chart:
         "rest-server-service",
         metadata=ApiObjectMetadata(name=SERVER.name, namespace=NAMESPACE, labels=SERVER.labels),
         selector=deployment,
-        ports=[SERVER.port.service_port()],
+        ports=[SERVER.service_port()],
     )
     https_route(
         chart,
