@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
+import pytest
 import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
@@ -40,17 +42,50 @@ def test_history_duration_is_seconds_and_missing_is_zero() -> None:
     assert FluxReconcileHistoryEntry().duration_s == 0.0
 
 
-def test_bootstrap_source_fetches_anonymously(runfiles: Runfiles) -> None:
-    """Terraform waits for this source before Flux can decrypt any Git credentials."""
-    path = runfiles.root() / "ducktape/cluster/k8s/flux/flux-system/gotk-sync.yaml"
+_BOOTSTRAP_SYNC = "cluster/k8s/flux/flux-system/gotk-sync.yaml"
+
+
+def _git_repository(path: Path, namespace: str, name: str) -> dict[str, Any]:
     [source] = [
         doc["spec"]
         for doc in yaml.safe_load_all(path.read_text())
-        if isinstance(doc, dict)
-        and doc.get("kind") == "GitRepository"
-        and doc["metadata"]["name"] == "flux-system"
-        and doc["metadata"]["namespace"] == "flux-system"
+        if doc["kind"] == "GitRepository"
+        and (doc["metadata"]["namespace"], doc["metadata"]["name"]) == (namespace, name)
     ]
+    assert isinstance(source, dict)
+    return source
+
+
+@pytest.mark.parametrize(
+    ("namespace", "name", "manifest"),
+    [
+        ("ducktape-flux", "ducktape", "cluster/k8s/flux/ducktape-flux/ducktape-flux.k8s.yaml"),
+        ("flux-system", "flux-system", _BOOTSTRAP_SYNC),
+    ],
+)
+def test_artifact_copies_are_in_the_source_checkout(
+    runfiles: Runfiles, namespace: str, name: str, manifest: str
+) -> None:
+    repo = runfiles.root() / "ducktape"
+    source = _git_repository(repo / manifest, namespace, name)
+    generators = repo / "cluster/generated/artifact-generators/artifact-generators.k8s.yaml"
+    [(generator, alias)] = [
+        (doc["spec"], ref["alias"])
+        for doc in yaml.safe_load_all(generators.read_text())
+        for ref in doc["spec"]["sources"]
+        if ref["kind"] == "GitRepository"
+        and (ref.get("namespace", doc["metadata"]["namespace"]), ref["name"]) == (namespace, name)
+    ]
+    for artifact in generator["artifacts"]:
+        for copy in artifact["copy"]:
+            # The artifact builder supports literal files and whole-directory copies ending in /**.
+            path = Path(copy["from"]).relative_to(f"@{alias}")
+            assert any(path.is_relative_to(root) for root in source["sparseCheckout"]), (name, artifact["name"], path)
+
+
+def test_bootstrap_source_fetches_anonymously(runfiles: Runfiles) -> None:
+    """Terraform waits for this source before Flux can decrypt any Git credentials."""
+    source = _git_repository(runfiles.root() / "ducktape" / _BOOTSTRAP_SYNC, "flux-system", "flux-system")
     url = urlsplit(source["url"])
     assert url.scheme == "https"
     assert url.username is None

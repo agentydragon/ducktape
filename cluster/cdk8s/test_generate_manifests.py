@@ -487,41 +487,6 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(documents: lis
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(parsed_yaml_documents: YamlDocuments) -> None:
-    documents = [doc for docs in parsed_yaml_documents.values() for doc in docs]
-    source = find_resource(documents, "GitRepository", "ducktape", namespace="ducktape-flux")
-    sparse_roots = tuple(path.strip("/") for path in source["spec"].get("sparseCheckout", []))
-    generator = find_resource(documents, "ArtifactGenerator", "ducktape-artifacts", namespace="ducktape-flux")
-    repo_aliases = {
-        artifact_source["alias"]
-        for artifact_source in generator["spec"]["sources"]
-        if artifact_source["kind"] == "GitRepository"
-        and artifact_source["name"] == "ducktape"
-        and artifact_source.get("namespace", "ducktape-flux") == "ducktape-flux"
-    }
-    assert repo_aliases, "ducktape-artifacts must read the ducktape GitRepository"
-
-    missing: list[str] = []
-    for artifact in generator["spec"]["artifacts"]:
-        for copy in artifact["copy"]:
-            alias, separator, pattern = copy["from"].removeprefix("@").partition("/")
-            if alias not in repo_aliases or not separator:
-                continue
-            literal_parts = []
-            for part in pattern.split("/"):
-                if any(character in part for character in "*?[{"):
-                    break
-                literal_parts.append(part)
-            required_root = "/".join(literal_parts)
-            if not any(required_root == root or required_root.startswith(f"{root}/") for root in sparse_roots):
-                missing.append(f"{artifact['name']}: {copy['from']}")
-
-    assert not missing, (
-        "ducktape ArtifactGenerator copy sources must be covered by the ducktape GitRepository sparseCheckout:\n"
-        + "\n".join(missing)
-    )
-
-
 def test_namespace_readers_can_reconcile_before_the_application(parsed_yaml_documents: YamlDocuments) -> None:
     # Diagnostics must come up even when the application in the target namespace is unhealthy.
     graph = parsed_yaml_documents[Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")]
