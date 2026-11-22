@@ -62,6 +62,14 @@ export function printAst(node, marked = false) {
       return `function ${p(node.id)}(${node.params.map(p).join(", ")}) ${p(node.body)}`;
     case "ArrowFunctionExpression":
       return `(${node.params.map(p).join(", ")}) => ${p(node.body)}`;
+    case "ClassExpression":
+      return `class${node.superClass ? ` extends ${p(node.superClass)}` : ""} ${p(node.body)}`;
+    case "ClassBody":
+      return `{ ${node.body.map(p).join(" ")} }`;
+    case "MethodDefinition":
+      return `${node.static ? "static " : ""}${node.kind === "get" ? "get " : ""}${p(node.key)}(${node.value.params.map(p).join(", ")}) ${p(node.value.body)}`;
+    case "NewExpression":
+      return `new ${p(node.callee)}(${node.arguments.map(p).join(", ")})`;
     case "ArrayExpression":
       return `[${node.elements.map(p).join(", ")}]`;
     case "ObjectExpression":
@@ -517,6 +525,62 @@ export function generateAstBundle(seed, round) {
   const observed = snapshots.length ? choose(snapshots) : null;
   if (observed) units.push({ ast: log(ref(observed), "write snapshot"), defs: [] });
   units.push({ ast: log(expression(env, 3), "final"), defs: [] });
+  // Compose field-free classes with the lexical environment built by the rest of the
+  // generator. Access every installed member through the leaf to exercise inherited lookup.
+  if (round % 4 === 0) {
+    let parent = null;
+    const members = [];
+    const levels = 2 + pick(3);
+    for (let level = 0; level < levels; level++) {
+      const binding = { name: fresh(), scope: "top" };
+      const body = [];
+      const count = 1 + pick(2);
+      for (let i = 0; i < count; i++) {
+        const getter = pick(2) === 0;
+        const param = { name: fresh(), scope: "local" };
+        const key = id(`m${level}_${i}`, "property");
+        const isStatic = pick(2) === 0;
+        const scope = getter ? env : { ...env, locals: [param] };
+        const value = {
+          type: "FunctionExpression",
+          id: null,
+          params: getter ? [] : [ref(param)],
+          body: block([{ type: "ReturnStatement", argument: expression(scope, 2) }]),
+        };
+        body.push({
+          type: "MethodDefinition",
+          kind: getter ? "get" : "method",
+          static: isStatic,
+          computed: false,
+          key,
+          value,
+        });
+        members.push({ key, getter, isStatic });
+      }
+      const cls = {
+        type: "ClassExpression",
+        id: null,
+        superClass: parent && ref(parent),
+        body: { type: "ClassBody", body },
+      };
+      units.push({ ast: declare(binding, cls, "var"), defs: [binding.name] });
+      parent = binding;
+    }
+    const instance = { name: fresh(), scope: "top" };
+    units.push({
+      ast: declare(instance, { type: "NewExpression", callee: ref(parent), arguments: [] }, "const"),
+      defs: [instance.name],
+    });
+    for (const { key, getter, isStatic } of members) {
+      const access = {
+        type: "MemberExpression",
+        object: ref(isStatic ? parent : instance),
+        property: key,
+        computed: false,
+      };
+      units.push({ ast: log(getter ? access : call(access, [expression(env, 1)]), `class ${key.name}`), defs: [] });
+    }
+  }
   for (const u of units) {
     const uses = new Set();
     const locals = new Set();
