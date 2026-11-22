@@ -496,7 +496,7 @@ async def test_compact_action_summaries(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
     draft = group == "gmail" and name == "drafts_create"
-    summaries = (
+    summaries: dict[str, object] | None = (
         {"gmail-thread-summaries": {"threads": [{"threadId": "existing-thread-123", "subject": "Rollout planning"}]}}
         if draft
         else None
