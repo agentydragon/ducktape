@@ -105,7 +105,7 @@ for (const chunk of selected) {
   copyFileSync(path.join(saved, "ast.json"), astFile);
   copyFileSync(path.join(saved, "program.json"), programFile);
   const dump = JSON.parse(readFileSync(astFile, "utf8"));
-  const units = topLevelStatements(dump, dump.sourceText);
+  const units = topLevelStatements(dump);
   const analysis = await run(process.env.LOWER, [astFile], path.join(dir, "lower"));
   const row = {
     file: chunk.file,

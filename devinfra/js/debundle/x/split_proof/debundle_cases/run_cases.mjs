@@ -119,7 +119,7 @@ function declaredNames(statement) {
 function analyze(code) {
   const parsed = parseModule(code, acorn.parse, eslintScope);
   // These ordinals propose a placement. The checker derives its units from the Program.
-  const statements = topLevelStatements(parsed.ast, code).map(({ node }) => ({
+  const statements = topLevelStatements(parsed.ast).map(({ node }) => ({
     node,
     declared: declaredNames(node),
     shape: shape(node),

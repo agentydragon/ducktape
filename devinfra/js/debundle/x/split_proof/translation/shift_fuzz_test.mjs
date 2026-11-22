@@ -351,7 +351,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     record("loweringRejected");
     continue;
   }
-  const total = topLevelStatements(dump, source).length;
+  const total = topLevelStatements(dump).length;
   const side = [];
   for (let i = 0; i < total - 1; i++) if (random() < 0.5) side.push(i);
   if (!side.length) side.push(0);

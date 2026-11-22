@@ -444,7 +444,7 @@ private def printModules (programs : Json) (dir work source : System.FilePath) :
   javascript #["--print"] #[manifest, dir, source]
 
 private def certifyFiles (program : Json) (ss : List CoreJS.Stmt) (B : Bundle) (P : Plan)
-    (out work input : System.FilePath) (checkOnly : Bool) (programs : Except String Json) : IO Unit := do
+    (out work input : System.FilePath) (checkOnly : Bool) (asts : Array Json) (source : String) : IO Unit := do
   let verify (dir : System.FilePath) : IO Unit := do
     let reply := work / "reparsed.json"
     javascript #[] #[dir, input, reply]
@@ -460,7 +460,8 @@ private def certifyFiles (program : Json) (ss : List CoreJS.Stmt) (B : Bundle) (
     let stage := parent / (".split-proof-" ++ work.fileName.get!)
     IO.FS.createDir stage
     try
-      printModules (← IO.ofExcept programs) stage work input
+      let programs ← IO.ofExcept (ESTreeEmit.programs asts B P source)
+      printModules programs stage work input
       verify stage
       IO.FS.rename stage out
     finally
@@ -574,7 +575,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
     if request == .allOutcomes && level != .allOutcomes then
       throw (IO.userError "the checked reorder proves only normal-completion")
     let body ← IO.ofExcept model
-    certifyFiles program body.stmts B P out work input checkOnly (ESTreeEmit.programs outputAsts B P source)
+    certifyFiles program body.stmts B P out work input checkOnly outputAsts source
     return ← emitVerdict request.label (.ok level)
   if let some l := leanOut? then
     if bad then

@@ -25,14 +25,11 @@ export function isGeneratedScaffolding(node) {
 
 export function parseSourceUnits(source) {
   const program = acorn.parse(source, { sourceType: "module", ecmaVersion: "latest" });
-  return topLevelStatements(program, source).map(({ node }) => node);
+  return topLevelStatements(program).map(({ node }) => node);
 }
 
 export function assertSelectedSourceUnits(sourceUnits, outputText, selected, context) {
-  const emitted = topLevelStatements(
-    acorn.parse(outputText, { sourceType: "module", ecmaVersion: "latest" }),
-    outputText
-  )
+  const emitted = topLevelStatements(acorn.parse(outputText, { sourceType: "module", ecmaVersion: "latest" }))
     .map(({ node }) => node)
     .filter((node) => !isGeneratedScaffolding(node))
     .map(astShape);
@@ -55,7 +52,7 @@ export function assertSourceUnitsReparse(source, outputDir, outputFiles, context
   const actual = outputFiles
     .flatMap((file) => {
       const text = readFileSync(path.join(outputDir, file), "utf8");
-      return topLevelStatements(acorn.parse(text, { sourceType: "module", ecmaVersion: "latest" }), text)
+      return topLevelStatements(acorn.parse(text, { sourceType: "module", ecmaVersion: "latest" }))
         .map(({ node }) => node)
         .filter((node) => !isGeneratedScaffolding(node))
         .map(astShape);

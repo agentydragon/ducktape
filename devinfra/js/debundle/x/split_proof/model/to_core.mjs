@@ -189,9 +189,9 @@ export function toCore(source, { opaque = null, ...options } = {}) {
 }
 
 export function coreFromParsed(
-  { ast, code, scopes: resolvedScopes },
+  { ast, scopes: resolvedScopes },
   { allowHost = false, ids = null, idBase = 0, external = false, census = false, opaque = true } = {},
-  units = topLevelStatements(ast, code)
+  units = topLevelStatements(ast)
 ) {
   const scopeManager = opaque ? resolvedScopes : null;
   const opaqueUnits = [];

@@ -28,7 +28,7 @@ const trial = placement(selected);
 const code = readFileSync(path.join(chunks, "editor.js"), "utf8");
 const parsed = parseModule(code, acorn.parse, eslintScope);
 const program = dumpParsed(parsed);
-const units = topLevelStatements(parsed.ast, code);
+const units = topLevelStatements(parsed.ast);
 assert.equal(units.length, all.length);
 const moduleScope = parsed.scopes.scopes.find((s) => s.type === "module");
 const imports = parsed.ast.body.filter((s) => s.type === "ImportDeclaration");

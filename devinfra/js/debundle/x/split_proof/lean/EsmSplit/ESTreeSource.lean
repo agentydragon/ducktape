@@ -1,31 +1,29 @@
 import Lean.Data.Json
 
-/-- Acorn reports offsets in UTF-16 code units. Lean stores strings in UTF-8.
-Check that source ranges end at character boundaries. -/
+/-- Acorn reports offsets in UTF-16 code units. Record which offsets do not split a
+supplementary Unicode character, since Lean strings iterate over Unicode code points. -/
 structure ESTreeSource where
-  byteOffsets : Array Nat
+  validOffsets : Array Bool
 
 namespace ESTreeSource
 
 def ranges (text : String) : ESTreeSource := Id.run do
-  let mut offsets := #[0]
-  let mut byte := 0
+  let mut offsets := #[true]
   for c in text do
     if c.toNat > 0xffff then
-      -- Zero is a valid byte offset only at the start of the source.
-      offsets := offsets.push 0
-    byte := byte + c.utf8Size
-    offsets := offsets.push byte
+      offsets := offsets.push false
+    offsets := offsets.push true
   return ⟨offsets⟩
 
-private def offset (source : ESTreeSource) (i : Nat) : Except String Nat := do
-  let some byte := source.byteOffsets[i]? | throw s!"source offset {i} past end of module"
-  if i != 0 && byte == 0 then throw s!"source offset {i} splits a surrogate pair"
-  return byte
+private def validateOffset (source : ESTreeSource) (i : Nat) : Except String Unit := do
+  let some valid := source.validOffsets[i]? | throw s!"source offset {i} past end of module"
+  unless valid do throw s!"source offset {i} splits a surrogate pair"
 
 def validate (source : ESTreeSource) (node : Lean.Json) : Except String Unit := do
-  let start ← source.offset (← node.getObjValAs? Nat "start")
-  let stop ← source.offset (← node.getObjValAs? Nat "end")
+  let start ← node.getObjValAs? Nat "start"
+  let stop ← node.getObjValAs? Nat "end"
+  source.validateOffset start
+  source.validateOffset stop
   if start > stop then throw "source range ends before its start"
 
 end ESTreeSource

@@ -83,6 +83,17 @@ function closureSizes(fps) {
   });
 }
 
+/** Render the split declarator snippets used by the legacy comparison report. */
+function unitSource({ node, start, end }, source) {
+  const declaration = node.type === "ExportNamedDeclaration" ? node.declaration : node;
+  const splitDeclarator = start !== node.start || end !== node.end;
+  if (splitDeclarator && declaration?.type === "VariableDeclaration") {
+    const prefix = node.type === "ExportNamedDeclaration" ? "export " : "";
+    return `${prefix}${declaration.kind} ${source.slice(start, end)};`;
+  }
+  return source.slice(start, end);
+}
+
 const median = (a) => {
   const s = [...a].sort((x, y) => x - y);
   return s.length ? s[s.length >> 1] : 0;
@@ -92,7 +103,7 @@ const rows = [];
 for (const file of files) {
   const dump = JSON.parse(readFileSync(file, "utf8"));
   const parsed = parseModule(dump.sourceText, acorn.parse, eslintScope);
-  const units = topLevelStatements(parsed.ast, parsed.code);
+  const units = topLevelStatements(parsed.ast);
   const oracle = scopeFootprints(parsed.scopes, units);
   const t0 = performance.now();
   const out = execFileSync(LOWER, [file], { maxBuffer: 1 << 30, encoding: "utf8" });
@@ -113,7 +124,9 @@ for (const file of files) {
   const examples = [];
   const fallbackTypes = new Map();
   const effShapes = new Map();
-  units.forEach(({ node, src }, i) => {
+  units.forEach((unit, i) => {
+    const { node } = unit;
+    const src = unitSource(unit, parsed.code);
     const f = fps[i];
     const lean = set([...f.rawEager, ...f.rawLazy]);
     const { free, eager, ambiguous } = oracle[i];
@@ -206,8 +219,8 @@ console.table(
 if (process.argv.includes("--example")) {
   const dump = JSON.parse(readFileSync(files[0], "utf8"));
   const mine = footprints(
-    topLevelStatements(dump, dump.sourceText)
-      .map(({ src }) => src)
+    topLevelStatements(dump)
+      .map((unit) => unitSource(unit, dump.sourceText))
       .join("\n")
   );
   const fps = execFileSync(LOWER, [files[0]], { encoding: "utf8" })
