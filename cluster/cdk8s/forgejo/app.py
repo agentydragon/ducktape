@@ -129,15 +129,11 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
         # Pin to OVH kimsufi nodes: required by the SeaweedFS CSI (OVH-only) and
         # co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
         "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
-        "affinity": {
-            "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-            # Keep the two replicas on different hosts so a single node loss can't take
-            # both down. Required (not preferred): with two off-CP workers they land one
-            # each; if a worker is gone the second can still schedule elsewhere (the off-CP
-            # rule above is only a soft preference), so this never blocks the second
-            # replica — it only forbids co-location.
-            **node_scheduling.one_per_host(_RELEASE_LABELS),
-        },
+        # Use separate hosts so Forgejo survives a node loss. If a worker is down,
+        # the second replica can use an eligible control-plane node.
+        "affinity": node_scheduling.one_per_host(
+            _RELEASE_LABELS, node_affinity=node_scheduling.PREFER_WORKERS.node_affinity
+        ),
         # Forgejo configuration (chart retains the legacy `gitea:` values key)
         "gitea": {
             "admin": {
