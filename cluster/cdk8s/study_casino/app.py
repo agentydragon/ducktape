@@ -30,15 +30,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
-from vpa_crds.io.k8s.autoscaling import (
-    VerticalPodAutoscaler,
-    VerticalPodAutoscalerSpec,
-    VerticalPodAutoscalerSpecResourcePolicy,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
-    VerticalPodAutoscalerSpecTargetRef,
-    VerticalPodAutoscalerSpecUpdatePolicy,
-)
 
 from cluster.cdk8s import namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.cnpg import backup, cluster
@@ -57,6 +48,7 @@ from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -380,29 +372,8 @@ def chart(app: App) -> Chart:
 
 def vpa_chart(app: App) -> Chart:
     chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
-    VerticalPodAutoscaler(
-        chart,
-        _NAME,
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=VerticalPodAutoscalerSpec(
-            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=_NAME),
-            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
-            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
-                container_policies=[
-                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
-                        container_name="app",
-                        controlled_resources=["cpu", "memory"],
-                        controlled_values="RequestsOnly",
-                        min_allowed={
-                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
-                                "224Mi"
-                            )
-                        },
-                    ),
-                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
-                ]
-            ),
-        ),
+    requests_only_vpa(
+        chart, _NAME, namespace=_NAMESPACE, container_name="app", update_mode="Initial", min_memory="224Mi"
     )
     return chart
 

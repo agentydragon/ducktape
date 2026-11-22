@@ -27,7 +27,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/haku_ci:egress_gateway",
         "//cluster/cdk8s/haku_ci:runner",
-        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "//cluster/cdk8s/providers/vpa:policy",
         "@pypi//cdk8s",
     ],
 )
