@@ -231,8 +231,8 @@ py_library(
     srcs = ["rotator_cron_job.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":container_resources",
         ":public_web_pki",
-        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -1274,6 +1274,7 @@ py_library(
     name = "agent_sandbox",
     srcs = ["agent_sandbox.py"],
     deps = [
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":vpa_policy",
@@ -2197,6 +2198,7 @@ py_library(
         "piraeus-reactor-patch.yaml",
     ],
     deps = [
+        ":container_resources",
         ":flux",
         ":helm",
         ":manifest_roots",

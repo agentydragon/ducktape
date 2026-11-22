@@ -117,7 +117,9 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   `dns_egress`, ...), generic shapes in `providers/cilium/network_policy.py`
   (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
   `node_scheduling.py`, `pod_policy.py`, `volume_claim.volume_claim`,
-  `api_resource.custom_resource`. Parameterize only variation call sites actually have.
+  `api_resource.custom_resource`. For typed container requests and limits, use
+  `container_resources.container_resources` for CPU and memory or `quantities` for a
+  map that includes other resources. Parameterize only variation call sites actually have.
 - **A value feeding two artifacts lives once** (web-push hosts: one tuple in
   `agentplane/staging.py` feeds both the Action Service allowlist and its egress rule).
   Derive both; never a test reading both.

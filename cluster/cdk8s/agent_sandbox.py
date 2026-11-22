@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import quantities
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, initial_request_annotations
 from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
@@ -60,10 +61,7 @@ def controller_patches(app: App) -> Chart:
                             # Reserve for bootstrap before Goldilocks has a recommendation.
                             # The 30-day sampled working-set peak was 74 MiB.
                             resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string(_CPU_REQUEST),
-                                    "memory": k8s.Quantity.from_string(_MEMORY_REQUEST),
-                                }
+                                requests=quantities({"cpu": _CPU_REQUEST, "memory": _MEMORY_REQUEST})
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])

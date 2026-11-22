@@ -17,6 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics, piraeus_storage
+from cluster.cdk8s.container_resources import quantities
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -319,16 +320,8 @@ def cluster_chart(app: App) -> Chart:
                             # pod stayed Ready. See
                             # docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md.
                             resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                    "ephemeral-storage": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("250m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                    "ephemeral-storage": k8s.Quantity.from_string("640Mi"),
-                                },
+                                requests=quantities({"cpu": "10m", "memory": "256Mi", "ephemeral-storage": "64Mi"}),
+                                limits=quantities({"cpu": "250m", "memory": "512Mi", "ephemeral-storage": "640Mi"}),
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/etc/alloy", read_only=True),

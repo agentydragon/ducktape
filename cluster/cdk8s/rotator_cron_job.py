@@ -2,11 +2,11 @@
 
 from collections.abc import Sequence
 
-from cdk8s import Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from cluster.cdk8s import public_web_pki
+from cluster.cdk8s.container_resources import container_resources
 
 _CONFIG_DIR = "/config"
 GITHUB_PAT_SECRET_NAME = "github-secrets-sync-pat"
@@ -71,13 +71,7 @@ class RotatorCronJob(k8s.KubeCronJob):
                         k8s.VolumeMount(name="github-pat", mount_path="/var/run/secrets/github-pat", read_only=True),
                         *(mount for _, mount in credential_mounts),
                     ],
-                    resources=k8s.ResourceRequirements(
-                        requests={
-                            "cpu": k8s.Quantity.from_string(Cpu.millis(100).amount),
-                            "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
-                        },
-                        limits={"memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string())},
-                    ),
+                    resources=container_resources(cpu="100m", memory="128Mi", memory_limit="256Mi"),
                 )
             ],
         )
