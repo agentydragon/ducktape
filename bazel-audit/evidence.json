@@ -1,188 +1,89 @@
 {
-  "source_commit": "e964b0b3fb699a129e0b86a3beb93337f83ac144",
-  "inspected_utc": "2026-11-02",
-  "scope": "Selected repository-wide Bazel build and wiring audit, not exhaustive dead-code proof",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "audited_at_utc": "2026-11-22T11:01:17+00:00",
+  "scope": "Five previously published wiring findings and a focused lint omission control. Reverse dependencies use the unconfigured Bazel graph.",
   "findings": [
     {
-      "id": "A",
-      "priority": "High",
-      "category": "Ownership",
-      "title": "Move Augur’s application model contracts out of x/",
-      "refresh_status": "present_at_current_source_review",
-      "deployment_note": "Current cluster documentation at https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/agent_rbac.md#L523 says Augur is parked; a live deployment was not verified."
-    },
-    {
-      "id": "B",
-      "priority": "High",
-      "category": "Ownership",
-      "title": "Decouple Haku’s schema build from an experimental service implementation",
-      "status": "deferred_at_owner_request_as_of_2026-11-02",
-      "refresh_status": "dependency_present_at_current_source_review"
+      "id": "K",
+      "title": "Check typed-lint coverage when splitting a frontend package",
+      "finding": "The 22 child groups and the root glob supply all 328 tracked TypeScript and TSX files under agentplane/app/frontend. Removing the observability group from the query left 322. The six missing files include two specs.",
+      "action": "Use the set difference during package splits. It caught the simulated omission and found zero omissions on devel. Keep the existing whole-program ESLint test. Its generated declarations and external source inputs sit outside this file census.",
+      "links": {
+        "Frontend roster": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/app/frontend/BUILD.bazel#L24",
+        "Current source closure": "https://app.buildbuddy.io/invocation/bf2184bf-d4fb-49d6-a0a0-9f29b15003b4",
+        "Omission experiment": "https://app.buildbuddy.io/invocation/5f704bcb-2ee6-41fe-b514-8a36fbb3b89c"
+      }
     },
     {
       "id": "J",
-      "priority": "Medium",
-      "category": "Lint wiring",
-      "title": "Untangle checker-only provider dependencies from runtime libraries",
-      "refresh_status": "partially_addressed_by_open_pull_request",
-      "related_pull_request": 11497,
-      "related_pull_request_status": "open_checks_successful",
-      "related_pull_request_scope": "Python and mypy rules plus Props targets; eval-infra and Haku remain follow-up.",
-      "related_pull_request_head": "f0f596e8e20e6a6eaa5d842a63b862608fce17fa",
-      "related_pull_request_checked_utc": "2026-11-05T03:20:43Z",
-      "related_pull_request_checks": [
-        {
-          "name": "PR visual review",
-          "status": "completed",
-          "conclusion": "success",
-          "completed_at": "2026-11-04T02:09:21Z"
-        },
-        {
-          "name": "PR visual diffs",
-          "status": "completed",
-          "conclusion": "success",
-          "completed_at": "2026-11-04T02:09:16Z"
-        },
-        {
-          "name": "release",
-          "status": "completed",
-          "conclusion": "skipped",
-          "completed_at": "2026-11-04T01:59:54Z"
-        },
-        {
-          "name": "push-images",
-          "status": "completed",
-          "conclusion": "skipped",
-          "completed_at": "2026-11-04T01:59:54Z"
-        },
-        {
-          "name": "bazel-ci / Test & Build",
-          "status": "completed",
-          "conclusion": "success",
-          "completed_at": "2026-11-04T01:59:54Z"
-        },
-        {
-          "name": "Build artifacts + imports check",
-          "status": "completed",
-          "conclusion": "success",
-          "completed_at": "2026-11-04T01:49:15Z"
-        },
-        {
-          "name": "Pre-commit checks",
-          "status": "completed",
-          "conclusion": "success",
-          "completed_at": "2026-11-04T01:49:41Z"
-        },
-        {
-          "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
-          "status": "completed",
-          "conclusion": "skipped",
-          "completed_at": "2026-11-04T01:47:08Z"
-        },
-        {
-          "name": "nix-wheel-check",
-          "status": "completed",
-          "conclusion": "skipped",
-          "completed_at": "2026-11-04T01:47:08Z"
-        },
-        {
-          "name": "bazel-ci",
-          "status": "completed",
-          "conclusion": "skipped",
-          "completed_at": "2026-11-04T01:47:08Z"
-        },
-        {
-          "name": "fork-context / Resolve fork PR context",
-          "status": "completed",
-          "conclusion": "skipped",
-          "completed_at": "2026-11-04T01:47:08Z"
-        }
-      ]
+      "title": "Measure one checker-only provider before changing image dependencies",
+      "finding": "Five eval-infra libraries declare the Anthropic, Claude and OpenAI providers beside the core library. af_chat_client directly imports the Anthropic and OpenAI clients. Haku\u2019s agent also imports the OpenAI client. Those runtime imports rule out moving every provider to checker-only dependencies.",
+      "action": "Start with transcript, which imports only core symbols directly. Compare its Bazel runtime files and default mypy build with the Props prototype in PR #11497. Check a real consumer image before attributing any byte savings. The PR remains open at f0f596e8e2.",
+      "links": {
+        "Eval-infra declarations": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/skills/eval_infra/BUILD.bazel#L33",
+        "Direct provider imports": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/skills/eval_infra/af_chat_client.py#L24",
+        "Haku client": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/haku/runtime/x/agent_framework/agent.py#L31",
+        "Props prototype": "https://github.com/agentydragon/ducktape/pull/11497"
+      }
     },
     {
-      "id": "K",
-      "priority": "Medium",
-      "category": "Lint wiring",
-      "title": "Make whole-program ESLint inputs auditable across package boundaries",
-      "refresh_status": "present_at_current_source_review",
-      "current_manual_child_group_count": 12,
-      "previous_manual_child_group_count_at_2026_11_02": 11
+      "id": "A",
+      "title": "Limit the Augur move to contracts used by its API",
+      "finding": "API configuration imports provider_config, state_space and trained_private_equity from x/models. Two other API modules import sample_sanity. Calibration imports private_equity_risk. The cluster documentation describes the service as parked.",
+      "action": "Defer a package move until Augur resumes development. If it resumes, migrate the API and calibration contracts with their config readers and exercise configured provider startup. The reviewed imports give a narrower scope than moving the experimental model tree.",
+      "links": {
+        "Configuration imports": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/finance/augur/api/config.py#L31",
+        "API response models": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/finance/augur/api/calibration_wire.py",
+        "Calibration consumer": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/finance/augur/calibration/ipo_prior.py",
+        "Deployment record": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/cluster/docs/agent_rbac.md#L455"
+      }
     },
     {
       "id": "M",
-      "priority": "Low",
-      "category": "Dead target candidate",
-      "title": "Review the frozen benchmark filegroup as an entry point",
-      "refresh_status": "wrapper_present; latest_no_edge_query_at_2026-11-02"
+      "title": "Keep the frozen benchmark inputs",
+      "finding": "The public HumanEval+ filegroup returned only itself in a depth-one reverse-dependency query across all workspace packages. A tracked exact-name search of the downstream repository also had zero matches. The run notes name all three input files directly.",
+      "action": "Leave the wrapper alone unless its public CLI entry point is explicitly retired. Removing one small filegroup has no demonstrated build-time benefit. Preserve the cohort, prompts and metadata.",
+      "links": {
+        "Reverse-dependency query": "https://app.buildbuddy.io/invocation/96de7b25-6a1d-4dd8-8f14-217b41ffad3b",
+        "Run inputs": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/cluster/docs/inference/runs/2026-10-13_rugged_coding/README.md#L118"
+      }
+    },
+    {
+      "id": "B",
+      "title": "Closed \u00b7 Haku\u2019s exporter has a producer-owned dependency",
+      "finding": "The launch-routine exporter depends on haku/console/tools:routine. The former experimental service dependency disappeared with the Grocy preview move in #18051.",
+      "action": "Remove this refactor from the work list.",
+      "links": {
+        "Exporter BUILD": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/haku/console/mcp/BUILD.bazel",
+        "Implementation": "https://github.com/agentydragon/ducktape/pull/18051"
+      }
     }
   ],
-  "filegroup_query": {
-    "expression": "kind(\"filegroup\", //...)",
-    "invocation_id": "5cded8b9-3661-452b-9449-fbedd6e87118",
-    "status": "succeeded",
-    "returned_local_labels": 2272,
-    "note": "kind uses a regex substring: 2225 filegroup and 47 pkg_filegroup labels"
+  "coverage": {
+    "baseline_query": "kind('source file', deps(//agentplane/app/frontend:typed_lint_srcs))",
+    "control_query": "kind('source file', deps(labels(srcs, //agentplane/app/frontend:typed_lint_srcs) except //agentplane/app/frontend/observability:typed_lint_srcs))",
+    "reference": "git ls-files 'agentplane/app/frontend/*.ts' 'agentplane/app/frontend/*.tsx'",
+    "child_groups": 22,
+    "tracked": 328,
+    "baseline": 328,
+    "baseline_missing": [],
+    "baseline_extra": [],
+    "control": 322,
+    "control_missing": [
+      "agentplane/app/frontend/observability/langfuse_search.test.ts",
+      "agentplane/app/frontend/observability/langfuse_search.ts",
+      "agentplane/app/frontend/observability/langfuse_search_fixture.ts",
+      "agentplane/app/frontend/observability/trace_search.test.ts",
+      "agentplane/app/frontend/observability/trace_search.ts",
+      "agentplane/app/frontend/observability/tracing.ts"
+    ]
   },
-  "reverse_dependency_query": {
-    "expression": "rdeps(//..., kind(\"filegroup\", //...), 1)",
-    "invocation_id": "ed6d371f-5335-4a19-abfa-d1f54113fd1b",
-    "status": "succeeded",
-    "result_nodes": 3209,
-    "no_incoming_rule_edges": [
-      "//finance/plaid/db:migrations",
-      "//cluster/schemas:schemas",
-      "//haku/runtime/x/managed_agent/self_hosted:deploy_manifests",
+  "wrapper": {
+    "query": "rdeps(//..., //cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs, 1)",
+    "returned": [
       "//cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs"
     ],
-    "visual_bundle_consumers_per_target": 10
-  },
-  "limitations": [
-    "No automatic conclusion of dead code from no in-repo consumers",
-    "External consumers and dynamically constructed labels not exhaustively known",
-    "The original audit did not implement its recommendations; status fields record subsequent work"
-  ],
-  "burndown_updated_utc": "2026-11-02T13:36:55Z",
-  "dispatched_in_progress": [],
-  "status_refresh": {
-    "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
-    "checked_utc": "2026-11-02T11:05:00Z",
-    "scope": "Focused status update and selected new cases; not an exhaustive liveness audit.",
-    "filegroup_query": {
-      "expression": "kind(\"filegroup\", //...)",
-      "invocation_id": "5d39759f-cd41-4012-b4f5-5d877cf28a0e",
-      "status": "succeeded",
-      "returned_local_labels": 2266,
-      "note": "The regex includes pkg_filegroup and generated workspace labels."
-    },
-    "reverse_dependency_query": {
-      "expression": "rdeps(//..., kind(\"filegroup\", //...), 1)",
-      "invocation_id": "e16b8416-6828-4e26-8770-38681b2d8f5d",
-      "status": "succeeded"
-    },
-    "focused_wrapper_query": {
-      "expression": "rdeps(//..., set(//finance/plaid/db:migrations //cluster/schemas:schemas //haku/runtime/x/managed_agent/self_hosted:deploy_manifests //cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs), 1)",
-      "invocation_id": "1c9cab47-c21d-4ca1-963f-27f17177b026",
-      "status": "succeeded",
-      "no_incoming_rule_edges": [
-        "//finance/plaid/db:migrations",
-        "//cluster/schemas:schemas",
-        "//haku/runtime/x/managed_agent/self_hosted:deploy_manifests",
-        "//cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs"
-      ]
-    },
-    "note": "The original top-level source_commit and query evidence remain tied to the original snapshot."
-  },
-  "current_source_review": {
-    "source_commit": "79a2524e7fc9878299c9589312c0ba25df2b50ac",
-    "checked_utc": "2026-11-05T03:20:43Z",
-    "scope": "Rechecked findings A, B, J, K and M against current source and inspected PR 11497.",
-    "bazel_queries_rerun": false,
-    "findings": {
-      "A": "Experimental model imports and BUILD dependencies remain.",
-      "B": "Experimental schema exporter dependencies remain; owner status was last recorded as deferred on 2026-11-02.",
-      "J": "Partially addressed; PR 11497 remains open and its relevant hosted checks succeeded.",
-      "K": "Manual whole-program ESLint roster remains and now lists 12 child groups.",
-      "M": "Wrapper remains; latest no-incoming-edge query is the dated 2026-11-02 result."
-    }
+    "downstream_commit": "37474aa6318d85581b3013435b09d22392342199",
+    "downstream_exact_label_matches": 0
   }
 }
