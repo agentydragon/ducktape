@@ -50,20 +50,9 @@ BRANCH = "devel"
 # which bound an apply.
 CLONE_TIMEOUT = "5m"
 TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
-_READER = "ducktape-flux-reader"
 _FINANCE_READER_SECRET = "finance-agent-flux-read-credentials"
 _FINANCE_SOURCE = "finance-agent"
 _SPEND_POLICY_APPLIER = "plaid-spend-config-applier"
-
-
-def _reader_binding(chart: Chart, name: str, *, description: str, subjects: list[k8s.Subject]) -> None:
-    k8s.KubeRoleBinding(
-        chart,
-        name,
-        metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE, annotations={"description": description}),
-        role_ref=access.role_ref("ducktape-flux-read"),
-        subjects=subjects,
-    )
 
 
 def chart(app: App) -> Chart:
@@ -170,11 +159,12 @@ def chart(app: App) -> Chart:
     )
     # Only the two public control-plane CRDs in this namespace. In particular no access to
     # the controller-only SOPS key Secret, ConfigMaps, Pods, logs, exec, or writes.
+    diagnostics_role = access.role_ref("ducktape-flux-read")
     k8s.KubeRole(
         chart,
         "reader",
         metadata=k8s.ObjectMeta(
-            name=_READER,
+            name=diagnostics_role.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only public Ducktape Flux diagnostics."},
         ),
@@ -187,10 +177,15 @@ def chart(app: App) -> Chart:
             ),
         ],
     )
-    _reader_binding(
+    k8s.KubeRoleBinding(
         chart,
         "haku-ducktape-flux-reader",
-        description="Binds the Haku OIDC group to public Ducktape Flux diagnostics.",
+        metadata=k8s.ObjectMeta(
+            name="haku-ducktape-flux-reader",
+            namespace=NAMESPACE,
+            annotations={"description": "Binds the Haku OIDC group to public Ducktape Flux diagnostics."},
+        ),
+        role_ref=diagnostics_role,
         subjects=[subject.k8s() for subject in access.HAKU_IDENTITIES],
     )
     return chart

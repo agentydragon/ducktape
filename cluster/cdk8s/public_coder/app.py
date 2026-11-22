@@ -537,12 +537,12 @@ def _rbac(scope: Construct) -> None:
     #
     # Expand by adding RoleBindings in other namespaces that reference the deploy-owned
     # access-profile group, or by graduating to a ClusterRole when the scope warrants it.
-    reader = "public-coder-agent-reader"
+    reader = access.role_ref("public-coder-agent-reader")
     k8s.KubeRole(
         scope,
         "reader",
         metadata=k8s.ObjectMeta(
-            name=reader,
+            name=reader.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only diagnostic access for the public-coder access profile."},
         ),
@@ -578,21 +578,21 @@ def _rbac(scope: Construct) -> None:
         scope,
         "reader-binding",
         metadata=k8s.ObjectMeta(
-            name=reader,
+            name=reader.name,
             namespace=NAMESPACE,
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
-        role_ref=access.role_ref("public-coder-agent-reader"),
+        role_ref=reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-agent-reader")],
     )
 
     # Additional secret-free status for the public-coder workload itself.
-    diagnostics = "agent-public-coder-extended-diagnostics-reader"
+    diagnostics = access.role_ref("public-coder-volsync-status")
     k8s.KubeRole(
         scope,
         "extended-diagnostics-reader",
         metadata=k8s.ObjectMeta(
-            name=diagnostics,
+            name=diagnostics.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only VolSync backup status for Haku and public-coder."},
         ),
@@ -606,25 +606,25 @@ def _rbac(scope: Construct) -> None:
         scope,
         "extended-diagnostics-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=diagnostics,
+            name=diagnostics.name,
             namespace=NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to VolSync status."},
         ),
-        role_ref=access.role_ref("public-coder-volsync-status"),
+        role_ref=diagnostics,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-volsync-status")],
     )
 
     # Cluster-scoped node inventory for scheduling and health diagnostics.
     #
     # Nodes are cluster infrastructure rather than Git-managed application state, so this is
-    # intentionally the sole cluster-wide grant for the public coder. In particular, it does
+    # a separate cluster-wide grant for the public coder. In particular, it does
     # not include nodes/proxy, node logs, metrics, or any write verbs.
-    node_reader = "public-coder-agent-node-reader"
+    node_reader = access.role_ref("public-coder-node-read")
     k8s.KubeClusterRole(
         scope,
         "node-reader",
         metadata=k8s.ObjectMeta(
-            name=node_reader,
+            name=node_reader.name,
             annotations={"description": "Read-only node inventory for public-coder-agent diagnostics."},
         ),
         rules=[k8s.PolicyRule(api_groups=[""], resources=["nodes"], verbs=_READ)],
@@ -633,10 +633,10 @@ def _rbac(scope: Construct) -> None:
         scope,
         "node-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=node_reader,
+            name=node_reader.name,
             annotations={"description": "Binds public-coder and its Haku superset to read-only node inventory."},
         ),
-        role_ref=access.role_ref("public-coder-node-read"),
+        role_ref=node_reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-node-read")],
     )
 
@@ -646,12 +646,12 @@ def _rbac(scope: Construct) -> None:
     # here to make the Haku-superset invariant explicit. Keep public-coder on this smaller
     # surface rather than binding it to that broad role, which also exposes all Pods, PVs, RBAC,
     # and webhooks.
-    metadata_reader = "public-coder-agent-cluster-metadata-reader"
+    metadata_reader = access.role_ref("public-coder-cluster-metadata-read")
     k8s.KubeClusterRole(
         scope,
         "cluster-metadata-reader",
         metadata=k8s.ObjectMeta(
-            name=metadata_reader,
+            name=metadata_reader.name,
             annotations={"description": "Read-only CRD schemas and node metrics for public-coder diagnostics."},
         ),
         rules=[
@@ -663,12 +663,12 @@ def _rbac(scope: Construct) -> None:
         scope,
         "cluster-metadata-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=metadata_reader,
+            name=metadata_reader.name,
             annotations={
                 "description": "Binds public-coder and its Haku superset to CRD schemas and node metrics only."
             },
         ),
-        role_ref=access.role_ref("public-coder-cluster-metadata-read"),
+        role_ref=metadata_reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-cluster-metadata-read")],
     )
 
