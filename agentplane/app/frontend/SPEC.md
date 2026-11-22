@@ -99,8 +99,9 @@ its ID as a placeholder; clearing the name restores that placeholder.
 
 ## Thread command outcomes
 
-The thread shows command failures, refusals and unknown delivery outcomes below the command,
-including the reason when available. Unknown delivery has its own status.
+The thread shows command failures, refusals, unconfirmed Dispatcher receipts and unknown delivery
+outcomes below the command, including the reason when available. Unconfirmed submissions offer
+Retry when the browser can resend the command.
 
 ## Composer activity
 

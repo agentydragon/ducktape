@@ -1376,7 +1376,10 @@ function pendingRow(container: Element, commandId: string): HTMLElement {
 }
 
 function progressLabel(container: HTMLDivElement, commandId: string): string | null | undefined {
-  return pendingRow(container, commandId).querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label");
+  const progress = pendingRow(container, commandId).querySelector(".agentplane-command-progress");
+  return (
+    progress?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label") ?? progress?.textContent
+  );
 }
 
 function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {

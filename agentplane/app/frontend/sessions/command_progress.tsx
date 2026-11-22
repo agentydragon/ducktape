@@ -92,6 +92,7 @@ export function CommandProgress({
           ? reasonLabel
           : `${labels[stage]}${reasonLabel ? `: ${reasonLabel}` : ""}`;
   const failed = stage === "failed" || stage === "dispatch_failed" || stage === "refused";
+  const uncertain = stage === "unconfirmed" || stage === "unknown";
   // The first light means submitted, not proof that another browser saved it locally.
   const current =
     stage === "local" || stage === "unconfirmed" || stage === "refused"
@@ -106,7 +107,7 @@ export function CommandProgress({
         ? "future"
         : failed || stage === "cancelled"
           ? "failed"
-          : stage === "unconfirmed" || stage === "unknown"
+          : uncertain
             ? "uncertain"
             : "waiting"
   );
@@ -120,7 +121,7 @@ export function CommandProgress({
         ))}
       </span>
     );
-  if (failed || stage === "unknown") {
+  if (failed || uncertain) {
     return (
       <span
         className="agentplane-command-progress agentplane-command-progress-inline"

@@ -86,7 +86,7 @@
 }
 
 /* Three evidence stages: solid is reached (grey waiting/done, red failure); hollow is
-   uncertain or unreached. Failure and unknown outcomes show detail inline. The tooltip is
+   uncertain or unreached. Failures and uncertain outcomes show detail inline. The tooltip is
    CSS-only for hover: a streaming row must not mount a ResizeObserver-backed portal under
    a resting pointer (see EvidenceToggle). Its position does not change the message layout. */
 .agentplane-command-progress {
