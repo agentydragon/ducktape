@@ -9,13 +9,7 @@ import { JsonBlock } from "../ui/text_block";
 import { RawSwitch } from "../ui/raw_switch";
 import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
-import {
-  renderActionCall,
-  renderActionLabel,
-  renderDetailsArguments,
-  shouldRenderRequestTitle,
-  type RenderedActionCall,
-} from "./rendering/index";
+import { useActionRendering, type RenderedActionCall } from "./rendering/dispatch";
 
 /** Who asked and when, on one summary line ("claude-ai · 2 minutes ago"), over the request's own
  * verbose identifiers nobody reads at a glance: the UUID, the caller's namespace, and the later
@@ -120,17 +114,20 @@ export function ActionCall({
   /** Precomputed by history so it can hide a result already shown in this view. */
   combinedCall?: RenderedActionCall | null;
 }): JSX.Element {
+  const rendering = useActionRendering();
   const action = actionIdentity(request);
   const args = actionArguments(request);
-  const actionLabel = renderActionLabel(action, args, request.id);
-  const prettyArguments = renderDetailsArguments(
+  const actionLabel = rendering.renderActionLabel(action, args, request.id);
+  const prettyArguments = rendering.renderDetailsArguments(
     action,
     args,
     request.id,
     request.state === ActionState.DECISION_PENDING
   );
   const combinedCall =
-    providedCombinedCall === undefined ? renderActionCall(action, args, undefined, request.id) : providedCombinedCall;
+    providedCombinedCall === undefined
+      ? rendering.renderActionCall(action, args, undefined, request.id)
+      : providedCombinedCall;
   const callContent =
     !raw && combinedCall?.content != null ? (
       combinedCall.content
@@ -162,7 +159,7 @@ export function ActionCall({
             </Group>
           </Group>
         )}
-        {!detailsOnly && shouldRenderRequestTitle(action, args, request.title, actionLabel) && (
+        {!detailsOnly && rendering.shouldRenderRequestTitle(action, args, request.title, actionLabel) && (
           <Text size="sm" style={{ overflowWrap: "anywhere" }}>
             {request.title}
           </Text>

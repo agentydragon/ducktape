@@ -116,7 +116,7 @@ const resumeLabels: Readonly<Record<string, string>> = {
   RESUME_OUTCOME_STATE_CHANGED: "Environment state changed",
 };
 
-export const environmentRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const environmentRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
     "list",
     presentation(
@@ -350,7 +350,7 @@ const observedInput = defineResultPreview(
   )
 );
 
-export const sessionRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const sessionRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["create", presentation("Create Session", createSession, createdSession)],
   [
     "get",
@@ -438,3 +438,10 @@ export const sessionRenderers: ReadonlyMap<string, ActionPresentation> = new Map
     ),
   ],
 ]);
+
+export const environmentsPresentationGroup: readonly [string, typeof environmentRenderers] = [
+  "environments",
+  environmentRenderers,
+];
+
+export const sessionsPresentationGroup: readonly [string, typeof sessionRenderers] = ["sessions", sessionRenderers];

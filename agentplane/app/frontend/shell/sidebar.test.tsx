@@ -1,3 +1,5 @@
+import { appActionRendering } from "../actions/rendering/index";
+import { ActionRenderingContext } from "../actions/rendering/dispatch";
 import type * as ThreadClientModule from "../sessions/client";
 // @vitest-environment happy-dom
 import { toJson } from "@bufbuild/protobuf";
@@ -286,24 +288,26 @@ async function render(
   const onClose = vi.fn();
   await act(async () =>
     root.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
-          <RoutedThreadsLiveProvider>
-            <SandboxesLiveProvider>
-              <ConnectionIndicator />
-              <Sidebar
-                settingsOpen={options.settingsOpen ?? false}
-                onOpenSettings={onOpenSettings}
-                open={options.open ?? false}
-                onClose={onClose}
-              />
-              <Routes>
-                <Route path="*" element={<LocationProbe />} />
-              </Routes>
-            </SandboxesLiveProvider>
-          </RoutedThreadsLiveProvider>
-        </MemoryRouter>
-      </MantineProvider>
+      <ActionRenderingContext.Provider value={appActionRendering}>
+        <MantineProvider env="test">
+          <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
+            <RoutedThreadsLiveProvider>
+              <SandboxesLiveProvider>
+                <ConnectionIndicator />
+                <Sidebar
+                  settingsOpen={options.settingsOpen ?? false}
+                  onOpenSettings={onOpenSettings}
+                  open={options.open ?? false}
+                  onClose={onClose}
+                />
+                <Routes>
+                  <Route path="*" element={<LocationProbe />} />
+                </Routes>
+              </SandboxesLiveProvider>
+            </RoutedThreadsLiveProvider>
+          </MemoryRouter>
+        </MantineProvider>
+      </ActionRenderingContext.Provider>
     )
   );
   return {
