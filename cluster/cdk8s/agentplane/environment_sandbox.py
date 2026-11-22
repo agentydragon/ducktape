@@ -289,7 +289,7 @@ class EnvironmentSandboxTemplate(Construct):
                 ),
             ),
             ingress=Endpoint(
-                target=f"{history_service.service(self.env.namespace).fqdn}:{history_service.service(self.env.namespace).pod_port}",
+                target=history_service.service(self.env.namespace).authority,
                 svid=SVIDEndpoint(
                     server_uri=HISTORY_SERVICE_URI, proxy_address=f"127.0.0.1:{sandbox_pod.SIDECAR_LISTEN_PORT}"
                 ),

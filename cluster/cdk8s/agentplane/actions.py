@@ -339,7 +339,7 @@ class Actions(Construct):
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
             )
             history_peer = ServicePeer(
-                target=f"{history.fqdn}:{history.pod_port}",
+                target=history.authority,
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
             )
@@ -351,7 +351,7 @@ class Actions(Construct):
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
             )
             delegated_history_peer = ServicePeer(
-                target=f"{history.fqdn}:{history.pod_port}",
+                target=history.authority,
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
             )

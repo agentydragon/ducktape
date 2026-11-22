@@ -80,7 +80,7 @@ def guest_config_data(
             ),
         ),
         ingress=Endpoint(
-            target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
+            target=history_service.service(namespace).authority,
             svid=SVIDEndpoint(
                 server_uri=HISTORY_SERVICE_URI, proxy_address=guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)
             ),

@@ -127,7 +127,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
 
     gateway = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
     target = gateway["central_sampler"]
-    assert target["target"] == central_sampler.target(namespace)
+    assert target["target"] == central_sampler.service(namespace).authority
     assert "token_file" not in target
     assert target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
     assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI

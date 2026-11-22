@@ -450,7 +450,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     )
     assert _host_port(runner_config["model_config_target"]) == pod_listener
     history = history_service.service(fixture.namespace)
-    assert runner_config["ingress"]["target"] == f"{history.fqdn}:{history.pod_port}"
+    assert runner_config["ingress"]["target"] == history.authority
     assert runner_config["ingress"]["svid"] == {
         "server_uri": HISTORY_SERVICE_URI,
         "proxy_address": sidecar_settings["listen_address"],
@@ -686,7 +686,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     guest_listener = ("10.0.2.1", vm_listener[1])
     assert _host_port(config["model_config_target"]) == guest_listener
     history = history_service.service(vm_fixture.namespace)
-    assert config["ingress"]["target"] == f"{history.fqdn}:{history.pod_port}"
+    assert config["ingress"]["target"] == history.authority
     assert config["ingress"]["svid"]["server_uri"] == HISTORY_SERVICE_URI
     assert _host_port(config["ingress"]["svid"]["proxy_address"]) == (
         "10.0.2.1",
@@ -818,7 +818,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert "litellm_key" not in llm_config
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
     sampler_target = gateway_config["central_sampler"]
-    assert sampler_target["target"] == central_sampler.target(NAMESPACE)
+    assert sampler_target["target"] == central_sampler.service(NAMESPACE).authority
     assert "token_file" not in sampler_target
     assert sampler_target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
     assert sampler_target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI

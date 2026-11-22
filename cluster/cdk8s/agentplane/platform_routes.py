@@ -128,9 +128,7 @@ def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> Platfor
         listen_address=f"{listen_host}:{PLATFORM_ROUTES_PORT}",
         routes={
             route.name: PlatformRoute(
-                service_prefixes=route.service_prefixes,
-                upstream=f"{route.service.fqdn}:{route.service.pod_port}",
-                transport=route.transport,
+                service_prefixes=route.service_prefixes, upstream=route.service.authority, transport=route.transport
             )
             for route in routes(namespace)
         },

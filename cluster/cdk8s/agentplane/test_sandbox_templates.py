@@ -301,7 +301,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     for route in platform_routes.routes(staging.ENV.namespace):
         rendered = runner_routes["routes"][route.name]
         assert rendered["service_prefixes"] == list(route.service_prefixes)
-        assert rendered["upstream"] == f"{route.service.fqdn}:{route.service.pod_port}"
+        assert rendered["upstream"] == route.service.authority
         assert rendered["transport"] == route.transport.model_dump(mode="json", exclude_none=True)
     pod = staging_runner_pod
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
@@ -336,7 +336,7 @@ def test_llm_sidecar_route_uses_the_svid_listener(
     settings = config_map_yaml(staging_manifests, settings_volume["configMap"]["name"], "settings.yaml")
     service = llm_ingress.service(staging.ENV.namespace)
     route = settings["workload_routes"][service.authority]
-    assert route["upstream"] == f"{service.fqdn}:{service.pod_port}"
+    assert route["upstream"] == service.authority
     assert route["server_uri"] == LLM_INGRESS_URI
 
 

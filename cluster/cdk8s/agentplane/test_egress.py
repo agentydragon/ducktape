@@ -221,7 +221,7 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: l
     )
     proxy_settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     endpoint = notifications.service(staging.ENV.namespace)
-    assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
+    assert endpoint.authority in proxy_settings["tls_passthrough_targets"]
     notification_settings = config_map_yaml(catalog_manifests, f"{notifications.NAME}-settings", "settings.yaml")
     assert notification_settings["rpc"]["listen_address"] == f"0.0.0.0:{endpoint.pod_port}"
     assert notification_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
@@ -233,7 +233,7 @@ def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[
 
     settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     workload = llm_ingress.service(staging.ENV.namespace)
-    assert f"{workload.fqdn}:{workload.pod_port}" in settings["tls_passthrough_targets"]
+    assert workload.authority in settings["tls_passthrough_targets"]
 
     llm_settings = config_map_yaml(staging_manifests, "llm-ingress-settings", "settings.yaml")
     assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
@@ -283,11 +283,9 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     basic = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)
     assert all(sessions.fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"])
     proxy_settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
-    assert {
-        sessions_authority,
-        f"{history.fqdn}:{history.pod_port}",
-        f"{environments.fqdn}:{environments.pod_port}",
-    } <= set(proxy_settings["tls_passthrough_targets"])
+    assert {sessions_authority, history.authority, environments.authority} <= set(
+        proxy_settings["tls_passthrough_targets"]
+    )
 
     session_routes: list[dict[str, Any]] = []
     history_configured: list[dict[str, Any]] = []
@@ -315,13 +313,13 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     assert history_configured
     for route in history_configured:
         assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]
-        assert route["upstream"] == f"{history.fqdn}:{history.pod_port}"
+        assert route["upstream"] == history.authority
         assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI}
 
     assert environments_configured
     for route in environments_configured:
         assert route["service_prefixes"] == ["/agentplane.environments.v1.EnvironmentService/"]
-        assert route["upstream"] == f"{environments.fqdn}:{environments.pod_port}"
+        assert route["upstream"] == environments.authority
         assert route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
 
     pod_template = find_resource(staging_manifests, "SandboxTemplate", "environment-tools")
