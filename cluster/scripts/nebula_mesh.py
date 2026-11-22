@@ -62,6 +62,11 @@ class Host(BaseModel):
         return None if self.endpoint is None else self.endpoint.rpartition(":")[0]
 
 
+def public_dns_targets(nodes: dict[str, Host]) -> list[str]:
+    """Sorted, distinct public addresses for an ExternalDNS record."""
+    return sorted({ip for node in nodes.values() if (ip := node.public_ip) is not None})
+
+
 class Mesh(BaseModel):
     """The full mesh roster."""
 

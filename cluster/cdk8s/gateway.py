@@ -156,9 +156,7 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     chart = Chart(app, "gateway-system", disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND)
     add_agent_gateway_admission(chart)
-    public_gateway_ips = sorted(
-        ip for host in mesh.public_kubernetes_nodes().values() if (ip := host.public_ip) is not None
-    )
+    public_gateway_ips = nebula_mesh.public_dns_targets(mesh.public_kubernetes_nodes())
     if not public_gateway_ips:
         raise ValueError("cluster Gateway needs at least one public node for ExternalDNS")
     # Every listener admits routes from all namespaces. Per-listener Selector restriction is

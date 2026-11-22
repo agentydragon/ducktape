@@ -102,8 +102,7 @@ def test_at_least_two_reachable_lighthouses(nebula_roster: nebula_mesh.Mesh) -> 
 
 def test_at_least_one_control_plane(nebula_roster: nebula_mesh.Mesh) -> None:
     """k8s-worker.nix derives controlPlaneEndpoints from role=control-plane."""
-    cps = [h for h in nebula_roster.hosts.values() if h.role == "control-plane"]
-    assert cps, "roster must contain at least one role=control-plane host"
+    assert nebula_roster.control_planes(), "roster must contain at least one role=control-plane host"
 
 
 def test_public_kubernetes_nodes_are_reachable_cluster_members() -> None:
