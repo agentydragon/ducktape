@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files([".tflint.hcl"])
 
@@ -53,6 +53,17 @@ py_library(
     deps = [
         "@pypi//kubernetes",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_network_readiness",
+    srcs = ["test_network_readiness.py"],
+    deps = [
+        ":network_readiness",
+        "@pypi//kubernetes",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
