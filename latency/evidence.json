@@ -45528,7 +45528,7 @@
         "idle_worker_available_work_disk_gb": 31.3,
         "idle_worker_advertised_work_disk_gb": 70.1
       },
-      "method": "Require desired below eight and complete current-worker coverage for registration, health, CPU, RAM and disk. Evaluate positive local reservations with no worker meeting 4 unassigned CPU, 7 GiB unassigned RAM and 50 GB filesystem thresholds. Filesystem availability is a proxy for suitability for the KubeVirt action, whose scratch request exceeds Firecracker’s 20 GB. This probe has no distinct execution IDs or shapes and does not predict scheduler admission."
+      "method": "Require desired below eight and complete current-worker coverage for registration, health, CPU, RAM and disk. Evaluate positive local reservations with no worker meeting 4 unassigned CPU, 7 GiB unassigned RAM and 50 GB filesystem thresholds. Filesystem availability is a proxy for suitability for the KubeVirt action, whose scratch request exceeds Firecracker\u2019s 20 GB. This probe has no distinct execution IDs or shapes and does not predict scheduler admission."
     }
   },
   "kvm_work_disk_requirements": {
@@ -63992,5 +63992,3968 @@
       "exit_clock": "recycled-runner.json memory.current, memory.stat and lifetime memory.peak immediately before and after pytest\u2019s explicit reclaim; cumulative cgroup counts include descendants. Cgroup samples do not provide component mix at the exact kernel peak. Current and stat are read sequentially and may have a small residual. The launcher sample is a child cgroup with its own limit; never add it to Docker or node usage.",
       "guest_clock": "Worker incarnation joined by native execution ID and Loki guest-console receipt. Timestamp-matched Mimir worker node-exporter samples, one-minute scrapes deduplicated at actual scrape timestamps. PSI difference is first to last sample fully inside assignment. Swap and OOM counters are separate from action cgroup or launcher metrics."
     }
+  },
+  "nov22_morning_feedback": {
+    "window_utc": ["2026-11-22T00:00:00Z", "2026-11-22T08:00:00Z"],
+    "source": "beaa21fbb688687431cf3b4c6e03d24d87fae037",
+    "frame": {
+      "recovered_run_links": 67,
+      "runs": 418,
+      "eligible": 93,
+      "excluded": {
+        "fork or deleted": 228,
+        "unlinked or other base": 97
+      },
+      "sample": 72
+    },
+    "sampling": "Unique same-repository heads associated with devel PRs, ordered by SHA-256 of pilotrefresh followed by the full lowercase head SHA. Retain the first 72. Recover missing associations only for an exact match of PR head branch and SHA.",
+    "clock": "Earliest GitHub CI workflow creation through the latest of the first accepted results of the three required checks, restricted to matching head, repository and branch suites. Percentiles use nearest rank among green heads.",
+    "overall": {
+      "n": 72,
+      "green": 63,
+      "outcomes": {
+        "green": 63,
+        "cancelled": 9
+      },
+      "median_s": 316.0,
+      "p90_s": 705.0
+    },
+    "groups": {
+      "Agentplane backend": {
+        "n": 17,
+        "green": 17,
+        "outcomes": {
+          "green": 17
+        },
+        "median_s": 578.0,
+        "p90_s": 922.0
+      },
+      "Agentplane tests": {
+        "n": 8,
+        "green": 8,
+        "outcomes": {
+          "green": 8
+        },
+        "median_s": 579.0,
+        "p90_s": 1030.0
+      },
+      "Cluster manifests or cdk8s": {
+        "n": 6,
+        "green": 6,
+        "outcomes": {
+          "green": 6
+        },
+        "median_s": 151.0,
+        "p90_s": 229.0
+      },
+      "Documentation": {
+        "n": 2,
+        "green": 2,
+        "outcomes": {
+          "green": 2
+        },
+        "median_s": 95.0,
+        "p90_s": 128.0
+      },
+      "Frontend": {
+        "n": 16,
+        "green": 16,
+        "outcomes": {
+          "green": 16
+        },
+        "median_s": 297.0,
+        "p90_s": 414.0
+      },
+      "Other code or tooling": {
+        "n": 7,
+        "green": 7,
+        "outcomes": {
+          "green": 7
+        },
+        "median_s": 213.0,
+        "p90_s": 575.0
+      },
+      "Other infrastructure": {
+        "n": 2,
+        "green": 2,
+        "outcomes": {
+          "green": 2
+        },
+        "median_s": 99.0,
+        "p90_s": 103.0
+      },
+      "Unclassified": {
+        "n": 14,
+        "green": 5,
+        "outcomes": {
+          "cancelled": 9,
+          "green": 5
+        },
+        "median_s": 269.0,
+        "p90_s": 392.0
+      }
+    },
+    "rows": [
+      {
+        "sha": "86a8523e3e98c0639d3479f6dcf9751a50acf119",
+        "pr": 18813,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44978558766",
+        "start": "2026-11-22T02:59:42Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:59:45Z",
+            "completed_at": "2026-11-22T03:00:54Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978558797/job/137073819682"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:59:44Z",
+            "completed_at": "2026-11-22T03:05:33Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978558766/job/137073819628"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:59:44Z",
+            "completed_at": "2026-11-22T03:00:45Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978558752/job/137073819450"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 351.0,
+          "Build artifacts + imports check": 72.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "34140766236215fb348e01f4a4c7100b8016fe6e",
+        "pr": 18884,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44987550371",
+        "start": "2026-11-22T05:01:13Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:01:16Z",
+            "completed_at": "2026-11-22T05:02:42Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44987550265/job/137101327354"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:01:16Z",
+            "completed_at": "2026-11-22T05:10:51Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44987550371/job/137101327299"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:01:16Z",
+            "completed_at": "2026-11-22T05:02:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44987550301/job/137101326845"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 578.0,
+          "Build artifacts + imports check": 89.0,
+          "Pre-commit checks": 65.0
+        },
+        "files": 14
+      },
+      {
+        "sha": "a91d7a918d76fa9a347c06e1a05229b2c05ed501",
+        "pr": 18985,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44998338107",
+        "start": "2026-11-22T07:27:47Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:27:49Z",
+            "completed_at": "2026-11-22T07:29:15Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998338268/job/137134159220"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:27:50Z",
+            "completed_at": "2026-11-22T07:32:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998338107/job/137134158621"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:27:49Z",
+            "completed_at": "2026-11-22T07:28:47Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998338117/job/137134158365"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 293.0,
+          "Build artifacts + imports check": 88.0,
+          "Pre-commit checks": 60.0
+        },
+        "files": 3
+      },
+      {
+        "sha": "80167b8ad39e21cd5b37da63da6c2ab71ba7a995",
+        "pr": 18956,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44995091433",
+        "start": "2026-11-22T06:44:33Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:44:35Z",
+            "completed_at": "2026-11-22T06:54:08Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44995091433/job/137124297097"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:44:35Z",
+            "completed_at": "2026-11-22T06:45:32Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44995091463/job/137124296876"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:44:35Z",
+            "completed_at": "2026-11-22T06:45:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44995091390/job/137124296618"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 575.0,
+          "Build artifacts + imports check": 83.0,
+          "Pre-commit checks": 59.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "86642ff392443847530fe7b047f2976a67680a77",
+        "pr": 18815,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44977648875",
+        "start": "2026-11-22T02:46:52Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:46:54Z",
+            "completed_at": "2026-11-22T02:52:12Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44977648875/job/137071019077"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:46:55Z",
+            "completed_at": "2026-11-22T02:48:20Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44977648786/job/137071018536"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:46:54Z",
+            "completed_at": "2026-11-22T02:47:57Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44977648865/job/137071018465"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 320.0,
+          "Build artifacts + imports check": 88.0,
+          "Pre-commit checks": 65.0
+        },
+        "files": 19
+      },
+      {
+        "sha": "f3996f6bc78bb62606c7dda098e95ab0c1732bd8",
+        "pr": 18802,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44976428778",
+        "start": "2026-11-22T02:30:41Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:30:44Z",
+            "completed_at": "2026-11-22T02:35:50Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976428778/job/137067270038"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:30:43Z",
+            "completed_at": "2026-11-22T02:31:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976428727/job/137067269796"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:30:43Z",
+            "completed_at": "2026-11-22T02:32:09Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976428697/job/137067269680"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 309.0,
+          "Build artifacts + imports check": 88.0,
+          "Pre-commit checks": 75.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "a393dae50376d85d7523f66b85042512a5ae64ce",
+        "pr": 18897,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44988087302",
+        "start": "2026-11-22T05:08:24Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:08:26Z",
+            "completed_at": "2026-11-22T05:09:42Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988087371/job/137102959561"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:08:26Z",
+            "completed_at": "2026-11-22T05:11:24Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988087302/job/137102959551"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:08:26Z",
+            "completed_at": "2026-11-22T05:09:55Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988087250/job/137102959251"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 78.0,
+          "Pre-commit checks": 91.0
+        },
+        "files": null
+      },
+      {
+        "sha": "13eb1dd7e426762be17085bd9ae51f839d62bd1d",
+        "pr": 18758,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44970147707",
+        "start": "2026-11-22T01:10:02Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T01:10:05Z",
+            "completed_at": "2026-11-22T01:17:59Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44970147707/job/137047943432"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T01:10:04Z",
+            "completed_at": "2026-11-22T01:11:05Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44970147709/job/137047942730"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T01:10:05Z",
+            "completed_at": "2026-11-22T01:11:38Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44970147706/job/137047942682"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 477.0,
+          "Build artifacts + imports check": 96.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 9
+      },
+      {
+        "sha": "c80bbb31d11dd7a66d698602769a227ad86d5eb4",
+        "pr": 18897,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44989709160",
+        "start": "2026-11-22T05:30:39Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:30:41Z",
+            "completed_at": "2026-11-22T05:31:28Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989709176/job/137107880615"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:30:41Z",
+            "completed_at": "2026-11-22T05:33:53Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989709160/job/137107880487"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:30:41Z",
+            "completed_at": "2026-11-22T05:32:15Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989709148/job/137107880245"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 194.0,
+          "Build artifacts + imports check": 96.0,
+          "Pre-commit checks": 49.0
+        },
+        "files": 11
+      },
+      {
+        "sha": "a6217382eed9eb2c7d254b661450e3b0857db922",
+        "pr": 18862,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44983795961",
+        "start": "2026-11-22T04:09:31Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T04:09:33Z",
+            "completed_at": "2026-11-22T04:17:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44983795961/job/137089838223"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T04:09:33Z",
+            "completed_at": "2026-11-22T04:10:52Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44983795966/job/137089838001"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T04:09:33Z",
+            "completed_at": "2026-11-22T04:10:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44983795933/job/137089837829"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 467.0,
+          "Build artifacts + imports check": 81.0,
+          "Pre-commit checks": 47.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "0eb40ab4ce58bdf466f36a494feb654f4c1202dc",
+        "pr": 18979,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44998696907",
+        "start": "2026-11-22T07:32:27Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:32:30Z",
+            "completed_at": "2026-11-22T07:39:21Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998696907/job/137135227695"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:32:29Z",
+            "completed_at": "2026-11-22T07:33:21Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998696961/job/137135227660"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:32:30Z",
+            "completed_at": "2026-11-22T07:33:57Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998696849/job/137135227158"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 414.0,
+          "Build artifacts + imports check": 90.0,
+          "Pre-commit checks": 54.0
+        },
+        "files": 14
+      },
+      {
+        "sha": "caf5d4b51e7324ce980e5a5a2db556ddd16f3f09",
+        "pr": 18740,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44967468317",
+        "start": "2026-11-22T00:36:49Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Documentation",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:36:51Z",
+            "completed_at": "2026-11-22T00:38:57Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967468317/job/137039635523"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:36:51Z",
+            "completed_at": "2026-11-22T00:38:32Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967468210/job/137039634932"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:36:51Z",
+            "completed_at": "2026-11-22T00:37:45Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967468224/job/137039634818"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 128.0,
+          "Build artifacts + imports check": 103.0,
+          "Pre-commit checks": 56.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "9381cf594cf2e5d2d7a60192e0bb11e12ea89419",
+        "pr": 18918,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990371317",
+        "start": "2026-11-22T05:39:50Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:39:52Z",
+            "completed_at": "2026-11-22T05:43:36Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990371317/job/137109891956"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:39:52Z",
+            "completed_at": "2026-11-22T05:41:19Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990371173/job/137109891234"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:39:52Z",
+            "completed_at": "2026-11-22T05:40:52Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990371168/job/137109890990"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 226.0,
+          "Build artifacts + imports check": 89.0,
+          "Pre-commit checks": 62.0
+        },
+        "files": 1
+      },
+      {
+        "sha": "15ae4c6117c5744a26e77d07e967283f07e3840f",
+        "pr": 18930,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44991920427",
+        "start": "2026-11-22T06:02:05Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Cluster manifests or cdk8s",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:02:17Z",
+            "completed_at": "2026-11-22T06:05:06Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44991920427/job/137114623749"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:02:11Z",
+            "completed_at": "2026-11-22T06:03:09Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44991920371/job/137114623466"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:02:07Z",
+            "completed_at": "2026-11-22T06:03:26Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44991920313/job/137114623033"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 181.0,
+          "Build artifacts + imports check": 81.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": 3
+      },
+      {
+        "sha": "b6038150e7c5440e3e0b11468050a7d594828b86",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990292771",
+        "start": "2026-11-22T05:38:41Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:38:43Z",
+            "completed_at": "2026-11-22T05:42:40Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990292771/job/137109645536"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:38:43Z",
+            "completed_at": "2026-11-22T05:40:06Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990292692/job/137109645192"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:38:43Z",
+            "completed_at": "2026-11-22T05:39:44Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990292696/job/137109645104"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 85.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": null
+      },
+      {
+        "sha": "7146c5da69670131700c06809fde4b13fadaeb7c",
+        "pr": 18749,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44968807936",
+        "start": "2026-11-22T00:53:21Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other infrastructure",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:53:23Z",
+            "completed_at": "2026-11-22T00:55:04Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968807936/job/137043810290"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:53:23Z",
+            "completed_at": "2026-11-22T00:54:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968807898/job/137043810082"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:53:23Z",
+            "completed_at": "2026-11-22T00:55:00Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968807866/job/137043810001"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 103.0,
+          "Build artifacts + imports check": 99.0,
+          "Pre-commit checks": 57.0
+        },
+        "files": 1
+      },
+      {
+        "sha": "796b6a376454fd2a7aa8b8771e94c1c3ef96cb9a",
+        "pr": 18915,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990179536",
+        "start": "2026-11-22T05:37:05Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:37:07Z",
+            "completed_at": "2026-11-22T05:40:23Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990179536/job/137109297004"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:37:08Z",
+            "completed_at": "2026-11-22T05:38:45Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990179521/job/137109296873"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:37:07Z",
+            "completed_at": "2026-11-22T05:38:07Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990179506/job/137109296651"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 198.0,
+          "Build artifacts + imports check": 100.0,
+          "Pre-commit checks": 62.0
+        },
+        "files": 10
+      },
+      {
+        "sha": "131398f1664e067700127187ce882c3ace316e90",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990847089",
+        "start": "2026-11-22T05:46:33Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:46:35Z",
+            "completed_at": "2026-11-22T05:47:35Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990847089/job/137111341137"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:46:35Z",
+            "completed_at": "2026-11-22T05:47:22Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990847070/job/137111340904"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:46:35Z",
+            "completed_at": "2026-11-22T05:47:17Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990847054/job/137111340775"
+          }
+        ],
+        "offsets": {},
+        "files": null
+      },
+      {
+        "sha": "be18e96fdde2a2ccbda71f0497c58e655f7ada55",
+        "pr": 18824,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44979968386",
+        "start": "2026-11-22T03:17:46Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T03:17:48Z",
+            "completed_at": "2026-11-22T03:18:49Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44979968374/job/137078114731"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T03:17:48Z",
+            "completed_at": "2026-11-22T03:23:02Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44979968386/job/137078114695"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T03:17:48Z",
+            "completed_at": "2026-11-22T03:19:07Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44979968351/job/137078114362"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 316.0,
+          "Build artifacts + imports check": 81.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "4a128b0d9064f99237536b9f74ac93ce8568339f",
+        "pr": 18877,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44997050159",
+        "start": "2026-11-22T07:10:54Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Cluster manifests or cdk8s",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:10:56Z",
+            "completed_at": "2026-11-22T07:11:51Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997050162/job/137130228575"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:10:57Z",
+            "completed_at": "2026-11-22T07:12:12Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997050159/job/137130228469"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:10:57Z",
+            "completed_at": "2026-11-22T07:12:12Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997050101/job/137130228423"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 78.0,
+          "Build artifacts + imports check": 78.0,
+          "Pre-commit checks": 57.0
+        },
+        "files": 7
+      },
+      {
+        "sha": "caa2dcb8ff56b6f380633163830e9901f28863bf",
+        "pr": 18978,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44997942547",
+        "start": "2026-11-22T07:22:30Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:22:32Z",
+            "completed_at": "2026-11-22T07:23:32Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997942573/job/137132928088"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:22:33Z",
+            "completed_at": "2026-11-22T07:26:09Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997942547/job/137132927956"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:22:32Z",
+            "completed_at": "2026-11-22T07:23:59Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997942497/job/137132927487"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 219.0,
+          "Build artifacts + imports check": 89.0,
+          "Pre-commit checks": 62.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "01e318f437d90b448a599bc9d4a761a0faa3c156",
+        "pr": 18897,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44988883929",
+        "start": "2026-11-22T05:19:12Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:19:14Z",
+            "completed_at": "2026-11-22T05:25:41Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988883929/job/137105378094"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:19:14Z",
+            "completed_at": "2026-11-22T05:20:22Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988883868/job/137105377729"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:19:13Z",
+            "completed_at": "2026-11-22T05:20:47Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988883806/job/137105377554"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 389.0,
+          "Build artifacts + imports check": 95.0,
+          "Pre-commit checks": 70.0
+        },
+        "files": null
+      },
+      {
+        "sha": "ae6a2df453e61a6465832668f42fab08d833f7d4",
+        "pr": 18803,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44976496591",
+        "start": "2026-11-22T02:31:27Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:39:17Z",
+            "completed_at": "2026-11-22T02:41:36Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496591/job/137069287776"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:31:30Z",
+            "completed_at": "2026-11-22T02:32:34Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496669/job/137067466478"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:31:30Z",
+            "completed_at": "2026-11-22T02:36:24Z",
+            "conclusion": "failure",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496591/job/137067466401"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:31:30Z",
+            "completed_at": "2026-11-22T02:32:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496610/job/137067466225"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 609.0,
+          "Build artifacts + imports check": 89.0,
+          "Pre-commit checks": 67.0
+        },
+        "files": 3
+      },
+      {
+        "sha": "dc0051d19cfe6ae21728bd669a85985f8138f7c2",
+        "pr": 18800,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44976177040",
+        "start": "2026-11-22T02:27:33Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:27:35Z",
+            "completed_at": "2026-11-22T02:32:58Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976177040/job/137066518976"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:27:35Z",
+            "completed_at": "2026-11-22T02:29:00Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976177035/job/137066518688"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:27:35Z",
+            "completed_at": "2026-11-22T02:28:37Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44976176946/job/137066518607"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 325.0,
+          "Build artifacts + imports check": 87.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "b3d685a89929c793ce78cd1fec3df3b54b19dfaf",
+        "pr": 18727,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44965400760",
+        "start": "2026-11-22T00:11:22Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other infrastructure",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:11:25Z",
+            "completed_at": "2026-11-22T00:13:01Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44965400782/job/137033159863"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:11:25Z",
+            "completed_at": "2026-11-22T00:12:27Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44965400760/job/137033158363"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:11:25Z",
+            "completed_at": "2026-11-22T00:12:23Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44965400735/job/137033157921"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 65.0,
+          "Build artifacts + imports check": 99.0,
+          "Pre-commit checks": 61.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "b989dc1977d99357974ff32aaf5257e91e4beab7",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44992450252",
+        "start": "2026-11-22T06:09:18Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:09:20Z",
+            "completed_at": "2026-11-22T06:10:22Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44992450540/job/137116258703"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:09:21Z",
+            "completed_at": "2026-11-22T06:13:37Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44992450252/job/137116258388"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:09:20Z",
+            "completed_at": "2026-11-22T06:10:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44992450231/job/137116257993"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 259.0,
+          "Build artifacts + imports check": 82.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": null
+      },
+      {
+        "sha": "c8d9b334749d3352fed594dfaf0a664de12fbbde",
+        "pr": 18909,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44989866341",
+        "start": "2026-11-22T05:32:46Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:32:48Z",
+            "completed_at": "2026-11-22T05:36:15Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989866341/job/137108349041"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:32:48Z",
+            "completed_at": "2026-11-22T05:33:49Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989866229/job/137108348606"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:32:48Z",
+            "completed_at": "2026-11-22T05:34:24Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989866222/job/137108348457"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 209.0,
+          "Build artifacts + imports check": 98.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 3
+      },
+      {
+        "sha": "61a8029f7ff65edd7740893f0f4b6858b1c9412c",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44991330933",
+        "start": "2026-11-22T05:53:35Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:53:37Z",
+            "completed_at": "2026-11-22T05:58:04Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44991330933/job/137112813741"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:53:37Z",
+            "completed_at": "2026-11-22T05:54:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44991330968/job/137112813604"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:53:37Z",
+            "completed_at": "2026-11-22T05:55:01Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44991330903/job/137112813397"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 269.0,
+          "Build artifacts + imports check": 86.0,
+          "Pre-commit checks": 65.0
+        },
+        "files": null
+      },
+      {
+        "sha": "224a9ff353ef85697207cb8bf55e24658c5038e1",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44992282868",
+        "start": "2026-11-22T06:07:00Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:07:02Z",
+            "completed_at": "2026-11-22T06:09:40Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44992282868/job/137115742193"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:07:02Z",
+            "completed_at": "2026-11-22T06:08:04Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44992282800/job/137115741929"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:07:01Z",
+            "completed_at": "2026-11-22T06:08:24Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44992282802/job/137115741828"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 84.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": null
+      },
+      {
+        "sha": "279ed651cbb2e7e206909b54fec4b7b533ee9ac3",
+        "pr": 18898,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44988198985",
+        "start": "2026-11-22T05:09:59Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Cluster manifests or cdk8s",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:10:01Z",
+            "completed_at": "2026-11-22T05:12:30Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988198985/job/137103312824"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:10:01Z",
+            "completed_at": "2026-11-22T05:11:30Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988198875/job/137103312339"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:10:01Z",
+            "completed_at": "2026-11-22T05:10:54Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988198853/job/137103312212"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 151.0,
+          "Build artifacts + imports check": 91.0,
+          "Pre-commit checks": 55.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "b198a6544c74e2022befc966c1e83cca16f1c5e2",
+        "pr": 18900,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44988329844",
+        "start": "2026-11-22T05:11:40Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:11:43Z",
+            "completed_at": "2026-11-22T05:22:38Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988329844/job/137103704357"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:11:42Z",
+            "completed_at": "2026-11-22T05:12:36Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988329791/job/137103703814"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:11:42Z",
+            "completed_at": "2026-11-22T05:12:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988329729/job/137103703806"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 658.0,
+          "Build artifacts + imports check": 76.0,
+          "Pre-commit checks": 56.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "e4f306ec87affdf454317303ae2746b4128024e8",
+        "pr": 18889,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44988706526",
+        "start": "2026-11-22T05:16:43Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:16:45Z",
+            "completed_at": "2026-11-22T05:29:43Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988706526/job/137104836514"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:16:45Z",
+            "completed_at": "2026-11-22T05:17:46Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988706499/job/137104836455"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:16:45Z",
+            "completed_at": "2026-11-22T05:18:19Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988706513/job/137104836266"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 780.0,
+          "Build artifacts + imports check": 96.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 8
+      },
+      {
+        "sha": "e940540c1c2f636b0883de45176705703ba732e6",
+        "pr": 18877,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44986044443",
+        "start": "2026-11-22T04:39:57Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T04:39:59Z",
+            "completed_at": "2026-11-22T04:42:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44986044443/job/137096721042"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T04:40:00Z",
+            "completed_at": "2026-11-22T04:40:52Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44986044404/job/137096720826"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T04:39:59Z",
+            "completed_at": "2026-11-22T04:41:13Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44986044413/job/137096720737"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 163.0,
+          "Build artifacts + imports check": 76.0,
+          "Pre-commit checks": 55.0
+        },
+        "files": null
+      },
+      {
+        "sha": "efd0ef8c89b9aafd830f427f8c7425b9fd3354f5",
+        "pr": 18848,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44981700502",
+        "start": "2026-11-22T03:40:27Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T03:40:29Z",
+            "completed_at": "2026-11-22T03:41:37Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44981700473/job/137083384837"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T03:40:29Z",
+            "completed_at": "2026-11-22T03:42:26Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44981700502/job/137083384751"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T03:40:29Z",
+            "completed_at": "2026-11-22T03:41:55Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44981700445/job/137083384536"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 119.0,
+          "Build artifacts + imports check": 88.0,
+          "Pre-commit checks": 70.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "d116d0be1aa3b388221bf6afd17bc8ea0c1b0907",
+        "pr": 18897,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44988487630",
+        "start": "2026-11-22T05:13:49Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:13:51Z",
+            "completed_at": "2026-11-22T05:19:33Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988487630/job/137104176369"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:13:51Z",
+            "completed_at": "2026-11-22T05:15:10Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988487525/job/137104176164"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:13:51Z",
+            "completed_at": "2026-11-22T05:14:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44988487522/job/137104175934"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 81.0,
+          "Pre-commit checks": 67.0
+        },
+        "files": null
+      },
+      {
+        "sha": "9bf529ff92006333df2700f1494c5a75bb10988f",
+        "pr": 18893,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44989108680",
+        "start": "2026-11-22T05:22:11Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:22:13Z",
+            "completed_at": "2026-11-22T05:27:57Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989108680/job/137106052182"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:22:13Z",
+            "completed_at": "2026-11-22T05:23:42Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989108649/job/137106052109"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:22:13Z",
+            "completed_at": "2026-11-22T05:23:23Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989108565/job/137106051925"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 346.0,
+          "Build artifacts + imports check": 91.0,
+          "Pre-commit checks": 72.0
+        },
+        "files": 12
+      },
+      {
+        "sha": "ad1fa1941ed51072921530fc45d071ddc1dfeef6",
+        "pr": 18806,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44978492300",
+        "start": "2026-11-22T02:58:40Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:58:43Z",
+            "completed_at": "2026-11-22T03:03:37Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978492300/job/137073608728"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:58:42Z",
+            "completed_at": "2026-11-22T02:59:45Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978492251/job/137073608445"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:58:43Z",
+            "completed_at": "2026-11-22T02:59:58Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978492241/job/137073608217"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 297.0,
+          "Build artifacts + imports check": 78.0,
+          "Pre-commit checks": 65.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "13a7e40e427595c979826594952b1bb9a6cab866",
+        "pr": 18748,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44968992132",
+        "start": "2026-11-22T00:55:41Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:55:43Z",
+            "completed_at": "2026-11-22T00:56:45Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968992139/job/137044379986"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:55:44Z",
+            "completed_at": "2026-11-22T00:58:40Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968992132/job/137044379875"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:55:43Z",
+            "completed_at": "2026-11-22T00:57:07Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968992088/job/137044379471"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 86.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": null
+      },
+      {
+        "sha": "b55324d06825975391c0933f4f7d5b24ebc9f277",
+        "pr": 18748,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44969197524",
+        "start": "2026-11-22T00:58:17Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:58:19Z",
+            "completed_at": "2026-11-22T01:00:50Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44969197524/job/137045012528"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:58:19Z",
+            "completed_at": "2026-11-22T00:59:43Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44969197505/job/137045012358"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:58:19Z",
+            "completed_at": "2026-11-22T00:59:23Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44969197511/job/137045012280"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 86.0,
+          "Pre-commit checks": 66.0
+        },
+        "files": null
+      },
+      {
+        "sha": "9fed54cc3323d680258ad66cb67eb0c3dd9865ea",
+        "pr": 18843,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44981261847",
+        "start": "2026-11-22T03:34:34Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T03:34:49Z",
+            "completed_at": "2026-11-22T03:40:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44981261847/job/137082043004"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T03:34:50Z",
+            "completed_at": "2026-11-22T03:36:14Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44981261778/job/137082042866"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T03:34:50Z",
+            "completed_at": "2026-11-22T03:35:55Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44981261795/job/137082042798"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 382.0,
+          "Build artifacts + imports check": 100.0,
+          "Pre-commit checks": 81.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "e27a12e598a8e42947bccc1a1e6744b530eb0ec7",
+        "pr": 18941,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44993083067",
+        "start": "2026-11-22T06:17:50Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:17:52Z",
+            "completed_at": "2026-11-22T06:35:00Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44993083067/job/137118204899"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:17:52Z",
+            "completed_at": "2026-11-22T06:19:26Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44993083057/job/137118204765"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:17:52Z",
+            "completed_at": "2026-11-22T06:19:10Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44993083048/job/137118204644"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 1030.0,
+          "Build artifacts + imports check": 96.0,
+          "Pre-commit checks": 80.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "3e6bac52a460c25af8ddca78c31ed310fdbf20b4",
+        "pr": 18755,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44975700066",
+        "start": "2026-11-22T02:21:21Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:21:24Z",
+            "completed_at": "2026-11-22T02:22:55Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44975700145/job/137064993484"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:21:24Z",
+            "completed_at": "2026-11-22T02:24:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44975700066/job/137064992770"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:21:23Z",
+            "completed_at": "2026-11-22T02:22:27Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44975700007/job/137064992138"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 177.0,
+          "Build artifacts + imports check": 94.0,
+          "Pre-commit checks": 66.0
+        },
+        "files": 28
+      },
+      {
+        "sha": "5380012d53eb50e4336713159c9b0fc6ef541066",
+        "pr": 18911,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990620826",
+        "start": "2026-11-22T05:43:21Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:43:24Z",
+            "completed_at": "2026-11-22T05:44:23Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990620805/job/137110655439"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:43:24Z",
+            "completed_at": "2026-11-22T05:46:38Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990620826/job/137110655275"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:43:24Z",
+            "completed_at": "2026-11-22T05:44:35Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990620793/job/137110655052"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 197.0,
+          "Build artifacts + imports check": 74.0,
+          "Pre-commit checks": 62.0
+        },
+        "files": 8
+      },
+      {
+        "sha": "519e0e744628a86b3ed91cfa475f4fc4230bc9c4",
+        "pr": 18748,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44969362525",
+        "start": "2026-11-22T01:00:26Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T01:00:28Z",
+            "completed_at": "2026-11-22T01:13:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44969362525/job/137045518164"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T01:00:29Z",
+            "completed_at": "2026-11-22T01:01:54Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44969362198/job/137045516914"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T01:00:28Z",
+            "completed_at": "2026-11-22T01:01:20Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44969362145/job/137045516734"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 794.0,
+          "Build artifacts + imports check": 88.0,
+          "Pre-commit checks": 54.0
+        },
+        "files": 18
+      },
+      {
+        "sha": "d7ddcf487184d17e17e8c80f45489a7ac3de1ae5",
+        "pr": 18917,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990309156",
+        "start": "2026-11-22T05:38:55Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:39:05Z",
+            "completed_at": "2026-11-22T05:40:05Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990309126/job/137109697279"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:39:04Z",
+            "completed_at": "2026-11-22T05:41:42Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990309156/job/137109697223"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:39:00Z",
+            "completed_at": "2026-11-22T05:40:29Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990309152/job/137109697211"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 167.0,
+          "Build artifacts + imports check": 94.0,
+          "Pre-commit checks": 70.0
+        },
+        "files": 3
+      },
+      {
+        "sha": "39667566e01d4efe2ad510d7b93f1d107bffb2c7",
+        "pr": 18943,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44993115565",
+        "start": "2026-11-22T06:18:17Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:18:18Z",
+            "completed_at": "2026-11-22T06:19:20Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44993115447/job/137118305036"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:18:18Z",
+            "completed_at": "2026-11-22T06:30:02Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44993115565/job/137118305000"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:18:19Z",
+            "completed_at": "2026-11-22T06:19:32Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44993115531/job/137118304988"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 705.0,
+          "Build artifacts + imports check": 75.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 8
+      },
+      {
+        "sha": "93fcedb7b4585737e563bd9f199217b2236716e3",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990111708",
+        "start": "2026-11-22T05:36:06Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:36:09Z",
+            "completed_at": "2026-11-22T05:42:43Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990111708/job/137109089950"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:36:08Z",
+            "completed_at": "2026-11-22T05:37:37Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990111621/job/137109089830"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:36:08Z",
+            "completed_at": "2026-11-22T05:37:10Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990111646/job/137109089660"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 91.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": null
+      },
+      {
+        "sha": "d7ec15ae49716eab5c6bc48f10123952f8dc11d4",
+        "pr": 18977,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44997736594",
+        "start": "2026-11-22T07:19:57Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:19:59Z",
+            "completed_at": "2026-11-22T07:24:42Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997736594/job/137132314198"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:19:59Z",
+            "completed_at": "2026-11-22T07:21:01Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997736610/job/137132313920"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:19:59Z",
+            "completed_at": "2026-11-22T07:21:14Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997736513/job/137132313623"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 285.0,
+          "Build artifacts + imports check": 77.0,
+          "Pre-commit checks": 64.0
+        },
+        "files": 1
+      },
+      {
+        "sha": "3864150607e05452ef9d0500605f603f0507a775",
+        "pr": 18914,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44997424424",
+        "start": "2026-11-22T07:15:43Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:15:45Z",
+            "completed_at": "2026-11-22T07:31:05Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997424424/job/137131361703"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:15:45Z",
+            "completed_at": "2026-11-22T07:16:39Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997424265/job/137131361262"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:15:45Z",
+            "completed_at": "2026-11-22T07:16:53Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997424245/job/137131360949"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 922.0,
+          "Build artifacts + imports check": 70.0,
+          "Pre-commit checks": 56.0
+        },
+        "files": 10
+      },
+      {
+        "sha": "fdebbaa2c449c044416166ae672a862ed05e69e0",
+        "pr": 18730,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44967337730",
+        "start": "2026-11-22T00:35:12Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:35:14Z",
+            "completed_at": "2026-11-22T00:36:26Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967337962/job/137039236055"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:35:14Z",
+            "completed_at": "2026-11-22T00:36:44Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967337737/job/137039235494"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:35:15Z",
+            "completed_at": "2026-11-22T00:46:24Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967337730/job/137039235480"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 672.0,
+          "Build artifacts + imports check": 92.0,
+          "Pre-commit checks": 74.0
+        },
+        "files": 18
+      },
+      {
+        "sha": "4ef09bd6663756d615e19610247c6c68326344e6",
+        "pr": 18997,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44999681841",
+        "start": "2026-11-22T07:45:36Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:45:38Z",
+            "completed_at": "2026-11-22T07:54:19Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44999681841/job/137138246334"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:45:38Z",
+            "completed_at": "2026-11-22T07:47:08Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44999681864/job/137138246281"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:45:38Z",
+            "completed_at": "2026-11-22T07:46:42Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44999681831/job/137138246112"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 523.0,
+          "Build artifacts + imports check": 92.0,
+          "Pre-commit checks": 66.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "4cf2db0f8399315406ce481e8a3fd46830cc8495",
+        "pr": 18896,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990292540",
+        "start": "2026-11-22T05:38:40Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:38:43Z",
+            "completed_at": "2026-11-22T05:55:28Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990292540/job/137109644916"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:38:42Z",
+            "completed_at": "2026-11-22T05:39:58Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990292538/job/137109644830"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:38:42Z",
+            "completed_at": "2026-11-22T05:40:15Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990292541/job/137109644678"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 1008.0,
+          "Build artifacts + imports check": 95.0,
+          "Pre-commit checks": 78.0
+        },
+        "files": 10
+      },
+      {
+        "sha": "57d238d9299d004e778d155d1154b6a8e7018ca7",
+        "pr": 18808,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44978522193",
+        "start": "2026-11-22T02:59:07Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:59:09Z",
+            "completed_at": "2026-11-22T03:04:43Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978522193/job/137073702239"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:59:09Z",
+            "completed_at": "2026-11-22T03:00:07Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978521992/job/137073701383"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:59:09Z",
+            "completed_at": "2026-11-22T03:00:32Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978521985/job/137073701380"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 336.0,
+          "Build artifacts + imports check": 85.0,
+          "Pre-commit checks": 60.0
+        },
+        "files": 14
+      },
+      {
+        "sha": "4b3e74f2c176af24afeedd4c2a9a7e882e30baf8",
+        "pr": 18741,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44967614735",
+        "start": "2026-11-22T00:38:36Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:38:38Z",
+            "completed_at": "2026-11-22T00:50:57Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967614735/job/137040089693"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:38:38Z",
+            "completed_at": "2026-11-22T00:40:13Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967614625/job/137040089248"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:38:38Z",
+            "completed_at": "2026-11-22T00:39:43Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967614573/job/137040088877"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 741.0,
+          "Build artifacts + imports check": 97.0,
+          "Pre-commit checks": 67.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "4e7da5958691f14fceb112389dd501133dcb0378",
+        "pr": 18988,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44998662971",
+        "start": "2026-11-22T07:32:02Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:32:04Z",
+            "completed_at": "2026-11-22T07:43:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998662971/job/137135128828"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:32:04Z",
+            "completed_at": "2026-11-22T07:33:28Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998662981/job/137135128778"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:32:04Z",
+            "completed_at": "2026-11-22T07:33:02Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44998662984/job/137135128660"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 698.0,
+          "Build artifacts + imports check": 86.0,
+          "Pre-commit checks": 60.0
+        },
+        "files": 9
+      },
+      {
+        "sha": "d3735045d82665b16409a6255c89ed71fa042d1c",
+        "pr": 18810,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44978233614",
+        "start": "2026-11-22T02:54:54Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:54:57Z",
+            "completed_at": "2026-11-22T02:56:07Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978233565/job/137072810814"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:54:57Z",
+            "completed_at": "2026-11-22T02:55:50Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978233564/job/137072810239"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:54:57Z",
+            "completed_at": "2026-11-22T03:00:28Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44978233614/job/137072809906"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 334.0,
+          "Build artifacts + imports check": 73.0,
+          "Pre-commit checks": 56.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "f0e8ea35d7a90e56576ff6bb6f71be68ebbf46cc",
+        "pr": 18763,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44971204855",
+        "start": "2026-11-22T01:23:00Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T01:23:02Z",
+            "completed_at": "2026-11-22T01:30:50Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44971204855/job/137051155185"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T01:23:02Z",
+            "completed_at": "2026-11-22T01:24:01Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44971204909/job/137051154977"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T01:23:02Z",
+            "completed_at": "2026-11-22T01:25:33Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44971204857/job/137051154952"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 470.0,
+          "Build artifacts + imports check": 153.0,
+          "Pre-commit checks": 61.0
+        },
+        "files": 7
+      },
+      {
+        "sha": "58541786cba6b9396e76d527e78feac403c9065b",
+        "pr": 18919,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990924330",
+        "start": "2026-11-22T05:47:40Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:47:42Z",
+            "completed_at": "2026-11-22T05:50:54Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990924330/job/137111578307"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:47:42Z",
+            "completed_at": "2026-11-22T05:49:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990924230/job/137111578125"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:47:42Z",
+            "completed_at": "2026-11-22T05:48:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990924193/job/137111577718"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 194.0,
+          "Build artifacts + imports check": 98.0,
+          "Pre-commit checks": 60.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "c94dcd11a450e933b0644cd0d7db7fea06198511",
+        "pr": 18912,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990046085",
+        "start": "2026-11-22T05:35:11Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:35:14Z",
+            "completed_at": "2026-11-22T05:39:37Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990046085/job/137108888006"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:35:13Z",
+            "completed_at": "2026-11-22T05:36:41Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990046042/job/137108887716"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:35:13Z",
+            "completed_at": "2026-11-22T05:36:06Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990046000/job/137108887642"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 266.0,
+          "Build artifacts + imports check": 90.0,
+          "Pre-commit checks": 55.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "8ed979d5ad02204f5e1518662a099109d6a85021",
+        "pr": 18883,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44986701770",
+        "start": "2026-11-22T04:49:05Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Cluster manifests or cdk8s",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T04:49:07Z",
+            "completed_at": "2026-11-22T04:51:44Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44986701770/job/137098731192"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T04:49:07Z",
+            "completed_at": "2026-11-22T04:50:13Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44986701702/job/137098730905"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T04:49:07Z",
+            "completed_at": "2026-11-22T04:50:25Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44986701679/job/137098730724"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 159.0,
+          "Build artifacts + imports check": 80.0,
+          "Pre-commit checks": 68.0
+        },
+        "files": 3
+      },
+      {
+        "sha": "086c5053ed5bb77e57c1adb70137e0ee7e57e4a9",
+        "pr": 18921,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44990713961",
+        "start": "2026-11-22T05:44:44Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:44:46Z",
+            "completed_at": "2026-11-22T05:46:21Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990714030/job/137110943664"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:44:46Z",
+            "completed_at": "2026-11-22T05:48:17Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990713961/job/137110943656"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:44:46Z",
+            "completed_at": "2026-11-22T05:45:44Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44990713943/job/137110943196"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 213.0,
+          "Build artifacts + imports check": 97.0,
+          "Pre-commit checks": 60.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "30143f52ac3217ae992830547ddcaa377bfdb396",
+        "pr": 18894,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44987740521",
+        "start": "2026-11-22T05:03:45Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Cluster manifests or cdk8s",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:03:47Z",
+            "completed_at": "2026-11-22T05:05:18Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44987740519/job/137101901820"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:03:47Z",
+            "completed_at": "2026-11-22T05:07:34Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44987740521/job/137101901693"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:03:46Z",
+            "completed_at": "2026-11-22T05:04:51Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44987740510/job/137101901557"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 229.0,
+          "Build artifacts + imports check": 93.0,
+          "Pre-commit checks": 66.0
+        },
+        "files": 8
+      },
+      {
+        "sha": "86df7e61a9882fcd390279bc471fcc223e3a0247",
+        "pr": 18902,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44989047304",
+        "start": "2026-11-22T05:21:22Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T05:21:24Z",
+            "completed_at": "2026-11-22T05:22:41Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989047343/job/137105868122"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T05:21:24Z",
+            "completed_at": "2026-11-22T05:22:29Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989047307/job/137105868119"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T05:21:25Z",
+            "completed_at": "2026-11-22T05:31:16Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44989047304/job/137105868086"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 594.0,
+          "Build artifacts + imports check": 79.0,
+          "Pre-commit checks": 67.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "4e0514892ed70c36991b9d6da00960e5160cbd06",
+        "pr": 18748,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44968802720",
+        "start": "2026-11-22T00:53:17Z",
+        "day": "2026-11-22",
+        "outcome": "cancelled",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:53:20Z",
+            "completed_at": "2026-11-22T00:56:08Z",
+            "conclusion": "cancelled",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968802720/job/137043795199"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:53:19Z",
+            "completed_at": "2026-11-22T00:54:22Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968802562/job/137043794577"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:53:19Z",
+            "completed_at": "2026-11-22T00:54:54Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44968802555/job/137043794472"
+          }
+        ],
+        "offsets": {
+          "Build artifacts + imports check": 97.0,
+          "Pre-commit checks": 65.0
+        },
+        "files": null
+      },
+      {
+        "sha": "1486c08e56c7a19dccece658ce16a07dd746d7fd",
+        "pr": 19002,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/45000210390",
+        "start": "2026-11-22T07:52:44Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Cluster manifests or cdk8s",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:52:46Z",
+            "completed_at": "2026-11-22T07:53:58Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/45000210356/job/137139870836"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:52:46Z",
+            "completed_at": "2026-11-22T07:54:39Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/45000210390/job/137139870760"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:52:46Z",
+            "completed_at": "2026-11-22T07:53:34Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/45000210337/job/137139870634"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 115.0,
+          "Build artifacts + imports check": 74.0,
+          "Pre-commit checks": 50.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "e7d28d0d49b3de1c4fc9989d31d3736cfa3035fa",
+        "pr": 18786,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44974430405",
+        "start": "2026-11-22T02:05:21Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Documentation",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T02:05:23Z",
+            "completed_at": "2026-11-22T02:06:56Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44974430405/job/137061026686"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T02:05:22Z",
+            "completed_at": "2026-11-22T02:06:47Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44974430371/job/137061026277"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T02:05:23Z",
+            "completed_at": "2026-11-22T02:06:24Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44974430395/job/137061026170"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 95.0,
+          "Build artifacts + imports check": 86.0,
+          "Pre-commit checks": 63.0
+        },
+        "files": 1
+      },
+      {
+        "sha": "c823bc30248f772364b4a376f13ea1d49b4b97ec",
+        "pr": 18904,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44996124523",
+        "start": "2026-11-22T06:58:55Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane backend",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:58:57Z",
+            "completed_at": "2026-11-22T07:06:38Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44996124523/job/137127439010"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:58:58Z",
+            "completed_at": "2026-11-22T07:00:06Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44996124485/job/137127438740"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:58:57Z",
+            "completed_at": "2026-11-22T06:59:49Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44996124504/job/137127438698"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 463.0,
+          "Build artifacts + imports check": 71.0,
+          "Pre-commit checks": 54.0
+        },
+        "files": 15
+      },
+      {
+        "sha": "c1c1f0c4047a91284c6f68b4e190ab15869f6242",
+        "pr": 18744,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44967875650",
+        "start": "2026-11-22T00:41:48Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Frontend",
+        "checks": [
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T00:41:55Z",
+            "completed_at": "2026-11-22T00:43:15Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967875617/job/137040909300"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T00:41:50Z",
+            "completed_at": "2026-11-22T00:46:32Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967875650/job/137040889159"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T00:41:50Z",
+            "completed_at": "2026-11-22T00:42:47Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44967875549/job/137040888723"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 284.0,
+          "Build artifacts + imports check": 87.0,
+          "Pre-commit checks": 59.0
+        },
+        "files": 8
+      },
+      {
+        "sha": "f93eb5e150015f74381195f2cb642caff45d9121",
+        "pr": 18844,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44982005411",
+        "start": "2026-11-22T03:44:43Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T03:44:45Z",
+            "completed_at": "2026-11-22T03:54:22Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44982005411/job/137084333082"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T03:44:45Z",
+            "completed_at": "2026-11-22T03:45:49Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44982005358/job/137084333008"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T03:44:45Z",
+            "completed_at": "2026-11-22T03:46:08Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44982005340/job/137084332589"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 579.0,
+          "Build artifacts + imports check": 85.0,
+          "Pre-commit checks": 66.0
+        },
+        "files": 5
+      },
+      {
+        "sha": "b723e7ebf00b924898a3a358747c39afdf60c1e8",
+        "pr": 18993,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44999351216",
+        "start": "2026-11-22T07:41:12Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Agentplane tests",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:41:15Z",
+            "completed_at": "2026-11-22T07:51:28Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44999351216/job/137137241615"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:41:14Z",
+            "completed_at": "2026-11-22T07:42:17Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44999350973/job/137137240940"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:41:14Z",
+            "completed_at": "2026-11-22T07:42:43Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44999350979/job/137137240890"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 616.0,
+          "Build artifacts + imports check": 91.0,
+          "Pre-commit checks": 65.0
+        },
+        "files": 4
+      },
+      {
+        "sha": "ae12b76f96bd6d5b07a696421c554cdf27d03623",
+        "pr": 18976,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44997733949",
+        "start": "2026-11-22T07:19:55Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Other code or tooling",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T07:19:57Z",
+            "completed_at": "2026-11-22T07:21:35Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997733949/job/137132306490"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T07:19:57Z",
+            "completed_at": "2026-11-22T07:21:06Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997733942/job/137132306388"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T07:19:57Z",
+            "completed_at": "2026-11-22T07:21:27Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44997733869/job/137132306351"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 100.0,
+          "Build artifacts + imports check": 92.0,
+          "Pre-commit checks": 71.0
+        },
+        "files": 2
+      },
+      {
+        "sha": "c0263b0defb1d2cbc39cf031e72563b61b2cef25",
+        "pr": 18913,
+        "workflow": "https://github.com/agentydragon/ducktape/actions/runs/44995225660",
+        "start": "2026-11-22T06:46:16Z",
+        "day": "2026-11-22",
+        "outcome": "green",
+        "group": "Unclassified",
+        "checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "started_at": "2026-11-22T06:46:18Z",
+            "completed_at": "2026-11-22T06:52:48Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44995225660/job/137124701051"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "started_at": "2026-11-22T06:46:18Z",
+            "completed_at": "2026-11-22T06:47:40Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44995225600/job/137124700456"
+          },
+          {
+            "name": "Pre-commit checks",
+            "started_at": "2026-11-22T06:46:18Z",
+            "completed_at": "2026-11-22T06:47:09Z",
+            "conclusion": "success",
+            "html_url": "https://github.com/agentydragon/ducktape/actions/runs/44995225589/job/137124700299"
+          }
+        ],
+        "offsets": {
+          "bazel-ci / Test & Build": 392.0,
+          "Build artifacts + imports check": 84.0,
+          "Pre-commit checks": 53.0
+        },
+        "files": null
+      }
+    ],
+    "examples": [
+      {
+        "pr": 18824,
+        "head": "be18e96fdde2a2ccbda71f0497c58e655f7ada55",
+        "tested_commit": "67d04b74566081c32c680932a4561b6199f781a6",
+        "invocation": "af75fdb3-47c7-5437-9bfc-e4f1d68b197f",
+        "target_summaries": [
+          {
+            "label": "//agentplane/app/frontend/actions:call_tool_result_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:42.908Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/push:push_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:44.358Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/mcp:mcp_servers_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:47.504Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/rendering:ssh_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:51.928Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/connections:consent_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:50.261Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:thread_cards_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:53.709Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/connections:management_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:04.119Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:page_test",
+            "cached": 1,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:09.498Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/rendering:index_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:45.480Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/rendering:pods_exec_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:46.452Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/rendering:github_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:47.601Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions/rendering:google_calendar_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:50.419Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions:detail_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:54.141Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions:requests_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:55.904Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions:sidebar_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:58.431Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/shell:sidebar_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:59.455Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:home_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:59.327Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/actions:history_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:19:59.767Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:sandbox_page_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:11.461Z"
+          },
+          {
+            "label": "//agentplane/app/testing:test_http2_proxy",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:19.054Z"
+          },
+          {
+            "label": "//agentplane/app/testing:test_thread_browser_diagnostics",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:23.580Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/serving:test_static_image",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:25.437Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_operation_presentation",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:25.621Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:eslint_typed_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:30.244Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_environment_identity",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:20:36.260Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_history_layout",
+            "cached": 0,
+            "runs": 2,
+            "last_stop": "2026-11-22T03:20:43.666Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_identities",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:21:05.448Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_notifications",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:21:13.229Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_browser",
+            "cached": 0,
+            "runs": 16,
+            "last_stop": "2026-11-22T03:21:36.484Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_navigation",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:21:38.091Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_disclosures",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:21:39.912Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_window_browser",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T03:21:49.040Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_history",
+            "cached": 0,
+            "runs": 4,
+            "last_stop": "2026-11-22T03:21:50.081Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_scenes",
+            "cached": 0,
+            "runs": 2,
+            "last_stop": "2026-11-22T03:22:17.440Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_actions",
+            "cached": 0,
+            "runs": 16,
+            "last_stop": "2026-11-22T03:22:48.719Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_policies",
+            "cached": 0,
+            "runs": 4,
+            "last_stop": "2026-11-22T03:22:52.779Z"
+          }
+        ],
+        "partially_or_fully_fresh": 28,
+        "last_fresh": "//agentplane/app/frontend:visual_policies",
+        "seconds_last_test_to_gate": 9.221
+      },
+      {
+        "pr": 18943,
+        "head": "39667566e01d4efe2ad510d7b93f1d107bffb2c7",
+        "tested_commit": "8f10817a036b0f2f72ca44c6c5d1c2d4c2d7daab",
+        "invocation": "549e0b3d-2958-5eea-bca2-99b97d52c58e",
+        "target_summaries": [
+          {
+            "label": "//agentplane/proto/runtime_import_smoke:external_proto_import_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:38.220Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_session",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:46.944Z"
+          },
+          {
+            "label": "//agentplane/app/testing:test_client",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:47.702Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_central_sampler",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:48.598Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_agent",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:48.651Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_native_sandbox",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:48.889Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_native_pod_pool",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:49.167Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_pod_worker",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:51.079Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_app_sandbox",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:51.847Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/observability:trace_search_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:53.302Z"
+          },
+          {
+            "label": "//agentplane/system_tests/scenarios:test_central_sampler",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:54.492Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/identities:references_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:53.854Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_scenario",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:55.543Z"
+          },
+          {
+            "label": "//agentplane/system_tests/driver:test_harness_pair",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:58.219Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:session_client_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:20:59.309Z"
+          },
+          {
+            "label": "//agentplane/system_tests/scenarios:test_suspend_resume",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:01.052Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/transport:session_dispatcher_client_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:01.208Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/observability:langfuse_search_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:01.408Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/app_config:client_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:07.487Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:client_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:11.040Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:live_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:12.517Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher:test_testing_client",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:13.410Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/system:system_status_client_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:14.126Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:client_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:14.465Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/placement:placement_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:15.910Z"
+          },
+          {
+            "label": "//agentplane/cli:cli_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:18.799Z"
+          },
+          {
+            "label": "//agentplane/app/internal/sessionclient:unit_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:19.866Z"
+          },
+          {
+            "label": "//agentplane/grpc/facade:facade_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:20.999Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher/api/session/dispatchstate:dispatchstate_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:21.379Z"
+          },
+          {
+            "label": "//agentplane/action_service/internal/sessionclient:sessionclient_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:22.432Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:thread_groups_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:22.055Z"
+          },
+          {
+            "label": "//agentplane/cli/internal/session_dispatcher:session_dispatcher_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:23.336Z"
+          },
+          {
+            "label": "//agentplane/notification_service/internal/worker:settings_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:23.737Z"
+          },
+          {
+            "label": "//agentplane/app/internal/httpapi/threads:handler_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:24.108Z"
+          },
+          {
+            "label": "//agentplane/app/internal/httpapi/sessions:handler_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:25.577Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:identity_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:25.305Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:local_commands_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:25.893Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher:test_settings",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:27.101Z"
+          },
+          {
+            "label": "//agentplane/env/images:test_disk",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:27.344Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher:test_gateway_continuity",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:27.955Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher:methods_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:28.633Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/system:system_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:28.160Z"
+          },
+          {
+            "label": "//agentplane/action_service/session_delegation:session_delegation_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:28.966Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:command_delivery_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:28.483Z"
+          },
+          {
+            "label": "//agentplane/app/internal/httpapi/streams:routes_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:29.519Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:electric_sync_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:28.696Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/identities:list_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:29.187Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/store:snapshots_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:30.066Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:dispatch_watch_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:29.607Z"
+          },
+          {
+            "label": "//agentplane/notification_service/internal/rpc:unit_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:31.441Z"
+          },
+          {
+            "label": "//agentplane/notification_service/internal/worker:integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:32.959Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/store:wake_caller_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:32.767Z"
+          },
+          {
+            "label": "//agentplane/notification_service/cmd:unit_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:34.425Z"
+          },
+          {
+            "label": "//agentplane/sampler:test_gateway_integration",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:34.546Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:thread_title_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:34.437Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher:watch_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:35.612Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/app:config_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:35.564Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher:central_runner_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:36.505Z"
+          },
+          {
+            "label": "//agentplane/x/native_contracts:test_session_driver",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:37.167Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/identities:identity_page_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:37.870Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:sandbox_status_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:38.642Z"
+          },
+          {
+            "label": "//agentplane/x/native_contracts:test_quiesce_cutoff",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:41.057Z"
+          },
+          {
+            "label": "//agentplane/action_service/cmd:config_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:42.445Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:statusapi_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:43.836Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher:test_client",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:44.120Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_debug",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:44.507Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:lifecycle_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:43.744Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:thread_status_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:43.594Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:policyapi_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:45.155Z"
+          },
+          {
+            "label": "//agentplane/action_service/cmd:executors_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:45.207Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:threadreadapi_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:47.725Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/migrations:test_migrations",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:48.023Z"
+          },
+          {
+            "label": "//agentplane/x/native_contracts:test_admission_reply_loss",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:48.048Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:action_facade_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:48.744Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/sandboxinventory:sandboxinventory_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:48.628Z"
+          },
+          {
+            "label": "//agentplane/action_service/orchestration_v1:orchestration_v1_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:49.165Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:streamapi_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:49.904Z"
+          },
+          {
+            "label": "//agentplane/x/native_contracts:test_recovery",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:49.717Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:server_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:50.143Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_routes",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:51.830Z"
+          },
+          {
+            "label": "//agentplane/app:test_live",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:52.528Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher:svid_auth_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:53.329Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:appconfigapi_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:53.155Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:sessionapi_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:53.322Z"
+          },
+          {
+            "label": "//agentplane/app:test_native_facades",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:54.204Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:live_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:53.464Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:trace_relay_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:55.140Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/store:store_integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:56.639Z"
+          },
+          {
+            "label": "//agentplane/app/internal/server:policy_facade_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:58.490Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:thread_evidence_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:21:58.587Z"
+          },
+          {
+            "label": "//agentplane/app:test_api",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:00.923Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_sync",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:02.051Z"
+          },
+          {
+            "label": "//agentplane/app:test_electric_chunk_compaction",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:02.234Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:list_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:01.405Z"
+          },
+          {
+            "label": "//agentplane/app:test_action_api",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:05.410Z"
+          },
+          {
+            "label": "//agentplane/app:test_electric_subset_window",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:13.025Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/internal/sandboxinventory:delivery_integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:13.481Z"
+          },
+          {
+            "label": "//agentplane/app:test_electric_wal_recovery",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:13.244Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:thread_cards_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:13.480Z"
+          },
+          {
+            "label": "//agentplane/action_service/session_delegation:dispatcher_integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:14.447Z"
+          },
+          {
+            "label": "//agentplane/environments/runtimeproxy:queue_runtime_integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:17.828Z"
+          },
+          {
+            "label": "//agentplane/notification_service/cmd:integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:18.889Z"
+          },
+          {
+            "label": "//agentplane/notification_service/testing/process_fixture:process_contract_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:19.098Z"
+          },
+          {
+            "label": "//agentplane/app:test_history_gateway",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:19.897Z"
+          },
+          {
+            "label": "//agentplane/notification_service/testing/process_fixture:test_process",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:21.715Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/shell:sidebar_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:21.901Z"
+          },
+          {
+            "label": "//agentplane/app:test_notifications_stream",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:30.756Z"
+          },
+          {
+            "label": "//agentplane/notification_service/internal/rpc:integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:31.335Z"
+          },
+          {
+            "label": "//agentplane/action_service/cmd:integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:32.404Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:home_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:31.797Z"
+          },
+          {
+            "label": "//agentplane/app:test_bridge",
+            "cached": 0,
+            "runs": 4,
+            "last_stop": "2026-11-22T06:22:33.778Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher:test_grpc_native",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:22:36.505Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:16.682Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_delegation",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:26.020Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_services_mcp",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:38.407Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_services",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:40.335Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:46.319Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sessions:page_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:48.832Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/sandboxes:sandbox_page_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:50.670Z"
+          },
+          {
+            "label": "//agentplane/app/testing:test_http2_proxy",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:54.466Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_session_deletion",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:23:57.688Z"
+          },
+          {
+            "label": "//agentplane/app/testing:test_thread_browser_diagnostics",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:01.268Z"
+          },
+          {
+            "label": "//agentplane/app/frontend/serving:test_static_image",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:03.570Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_operation_presentation",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:11.934Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:11.494Z"
+          },
+          {
+            "label": "//agentplane/session_dispatcher/dispatcher:store_integration_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:15.215Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:eslint_typed_test",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:19.789Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_environment_identity",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:21.641Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_pod_platform",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:23.344Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_history_layout",
+            "cached": 0,
+            "runs": 2,
+            "last_stop": "2026-11-22T06:24:27.775Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:28.743Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_notifications",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:53.458Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_identities",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:24:54.448Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_actions",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:25:11.860Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_services_central",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:25:18.894Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_window_browser",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:25:23.023Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_history",
+            "cached": 0,
+            "runs": 4,
+            "last_stop": "2026-11-22T06:25:24.354Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_disclosures",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:25:24.547Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_navigation",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:25:25.736Z"
+          },
+          {
+            "label": "//agentplane/app:test_thread_browser",
+            "cached": 0,
+            "runs": 16,
+            "last_stop": "2026-11-22T06:25:35.213Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_dispatcher",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:25:43.204Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_pod",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:26:09.771Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:26:20.902Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:26:43.063Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_actions",
+            "cached": 0,
+            "runs": 16,
+            "last_stop": "2026-11-22T06:26:45.416Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_scenes",
+            "cached": 0,
+            "runs": 2,
+            "last_stop": "2026-11-22T06:26:45.621Z"
+          },
+          {
+            "label": "//agentplane/app/frontend:visual_policies",
+            "cached": 0,
+            "runs": 4,
+            "last_stop": "2026-11-22T06:26:45.698Z"
+          },
+          {
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "cached": 0,
+            "runs": 1,
+            "last_stop": "2026-11-22T06:29:40.846Z"
+          }
+        ],
+        "partially_or_fully_fresh": 148,
+        "last_fresh": "//agentplane/system_tests/suites:test_firecracker",
+        "seconds_last_test_to_gate": 21.154
+      }
+    ],
+    "pilot_decision_record": "https://github.com/agentydragon/ducktape/blob/e00c429eff17e7a6c049947bb381768e02a7a15a/devinfra/ci/debug/system_test_feedback/kvm_pilots_2026_11_22.md"
   }
 }
