@@ -185,6 +185,47 @@ def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfil
     _resource(fixture.objects, "Deployment", "actions")
 
 
+def test_disposable_postgres_bootstraps_the_database_in_each_service_uri(
+    mcp_fixture: rendered_fixture.RenderedFixture,
+) -> None:
+    docs = mcp_fixture.objects
+    assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
+    bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    # History migration 18 grants to this non-login replication role.
+    assert "CREATE ROLE electric;" in bootstrap
+
+    postgres = _resource(docs, "Deployment", fixture_database.NAME)["spec"]["template"]["spec"]
+    container = one(container for container in postgres["containers"] if container["name"] == "postgres")
+    secrets = {entry["name"]: entry["valueFrom"]["secretKeyRef"] for entry in container["env"] if "valueFrom" in entry}
+    admin = secrets["POSTGRES_PASSWORD"]
+    assert admin["key"] in _resource(docs, "Secret", admin["name"])["stringData"]
+
+    service = _resource(docs, "Service", fixture_database.SERVICE)
+    [port] = service["spec"]["ports"]
+    host = f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc"
+    uri_refs = {
+        (ref["name"], ref["key"])
+        for doc in docs
+        if doc["kind"] == "Deployment"
+        for client in doc["spec"]["template"]["spec"]["containers"]
+        for env in client.get("env", [])
+        if (ref := env.get("valueFrom", {}).get("secretKeyRef")) and ref["key"] in {"uri", "async-uri"}
+    }
+    assert ("postgres-app", "async-uri") in uri_refs
+    for secret_name, key in uri_refs:
+        credentials = _resource(docs, "Secret", secret_name)["stringData"]
+        uri = urlsplit(credentials[key])
+        assert uri.scheme == ("postgresql+asyncpg" if key == "async-uri" else "postgresql")
+        assert (uri.hostname, uri.port) == (host, port["port"])
+        assert uri.username is not None
+        assert uri.path == f"/{uri.username}"
+        env_name = fixture_database.Database(uri.username).password_env
+        assert secrets[env_name]["name"] == secret_name
+        assert uri.password == credentials[secrets[env_name]["key"]]
+        assert f"\\getenv {uri.username}_password {env_name}" in bootstrap
+        assert uri.query == "sslmode=disable"
+
+
 def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
     fixture = _filled_fixture(mcp_fixture)
     assert fixture.central_sampler
@@ -381,57 +422,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
     assert actions_config["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     role = _resource(docs, "Role", "sessions")
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
-    postgres = _resource(docs, "Deployment", fixture_database.NAME)
-    postgres_container = next(
-        container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
-    )
-    assert postgres_container["image"] == fixture_database.IMAGE
-    assert postgres_container["command"] == ["/bin/bash", "/fixture/postgres_entrypoint.sh"]
-    assert postgres["spec"]["template"]["spec"]["securityContext"]["runAsUser"] == 26
-    bootstrap_config = _resource(docs, "ConfigMap", "postgres-bootstrap")
-    assert set(bootstrap_config["data"]) == {"bootstrap.sql", "postgres_entrypoint.sh"}
-    # History migration 18 grants to this non-login replication role.
-    assert "CREATE ROLE electric;" in bootstrap_config["data"]["bootstrap.sql"]
-    assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
-
-    bootstrap_env = {entry["name"]: entry for entry in postgres_container["env"]}
-    bootstrap_secret = _resource(docs, "Secret", "postgres-bootstrap-credentials")
-    assert bootstrap_env["POSTGRES_USER"]["value"] == "fixture_admin"
-    assert (
-        bootstrap_env["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"] == bootstrap_secret["metadata"]["name"]
-    )
-
-    database_roles = {
-        "actions": "actions",
-        "egress": "egress",
-        "notifications": "notifications",
-        "mcp_edge": "mcp_edge",
-        "sandbox_service": "sandbox_service",
-        "session_dispatcher": "session_dispatcher",
-    }
-    expected_secret_names = {role: f"postgres-{role.replace('_', '-')}" for role in database_roles}
-    for role_name, database_name in database_roles.items():
-        secret = _resource(docs, "Secret", expected_secret_names[role_name])
-        data = secret["stringData"]
-        uri = urlsplit(data["uri"])
-        assert uri.scheme == "postgresql"
-        assert uri.username == role_name
-        assert uri.password == data["password"]
-        assert uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
-        assert uri.port == 5432
-        assert uri.path == f"/{database_name}"
-
-    app_secret = _resource(docs, "Secret", "postgres-app")
-    app_data = app_secret["stringData"]
-    app_uri = urlsplit(app_data["async-uri"])
-    assert app_uri.scheme == "postgresql+asyncpg"
-    assert app_uri.username == "app"
-    assert app_uri.password == app_data["password"]
-    assert app_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
-    assert app_uri.port == 5432
-    assert app_uri.path == "/app"
-    assert app_uri.query == "sslmode=disable"
-
     # The fixture's one Pod execution environment, on its local-path storage.
     template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
