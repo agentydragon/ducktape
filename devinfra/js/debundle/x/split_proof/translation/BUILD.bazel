@@ -191,6 +191,17 @@ js_test(
 )
 
 js_test(
+    name = "wrapper_commutation_test",
+    size = "medium",
+    data = [
+        ":node_modules/astring",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "wrapper_commutation_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
     name = "unary_literal_safety_test",
     size = "medium",
     data = _LOWER_CALLBACK_FUZZ_DATA,

@@ -49,6 +49,31 @@ def children : Json → Array Json
   | .arr a => a
   | _ => #[]
 
+/-- Why a statement is outside what the model covers, if it is.
+
+- A top-level `await` (an `await`, a `for await` or an `await using` outside every function): module evaluation is no
+  longer one sequence, since a module that is imported later can run before the awaiting one finishes. `Plan.visit`
+  does not model that.
+- A top-level `using`: its disposal runs when the module ends, which no statement stands for.
+- A direct `eval`, anywhere: the code it runs reaches the bindings around it by their spelling, so a split can part it
+  from a name that no statement mentions. An `eval` that is shadowed or optional is refused with it. -/
+partial def outsideModel (inFn : Bool) (j : Json) : Option String :=
+  let below (inFn : Bool) := (children j).findSome? (outsideModel inFn)
+  match typ j with
+  | "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression" => below true
+  | "AwaitExpression" => if inFn then below inFn else some "a top-level `await`"
+  | "ForOfStatement" => if flag j "await" && !inFn then some "a top-level `await`" else below inFn
+  | "VariableDeclaration" =>
+    let kind := str (fld j "kind")
+    if kind == "await using" && !inFn then some "a top-level `await`"
+    else if kind == "using" && !inFn then some "a top-level `using`"
+    else below inFn
+  | "CallExpression" =>
+    let callee := fld j "callee"
+    if typ callee == "Identifier" && str (fld callee "name") == "eval" then some "a direct `eval`"
+    else below inFn
+  | _ => below inFn
+
 /-- Names a pattern binds. -/
 partial def binders (j : Json) : List String :=
   match typ j with
