@@ -128,7 +128,7 @@ class Console(Construct):
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.
         diagnostics = "agent-haku-console-metadata-reader"
-        Role(
+        role = Role(
             self,
             "diagnostics-role",
             metadata=ApiObjectMetadata(
@@ -152,7 +152,7 @@ class Console(Construct):
                 namespace=NAMESPACE,
                 annotations={"description": "Binds Haku and public-coder to narrow Console metadata diagnostics."},
             ),
-            role=Role.from_role_name(self, "diagnostics-role-ref", diagnostics),
+            role=role,
         ).add_subjects(
             *[
                 subject.imported(self, f"diagnostics-subject-{index}")

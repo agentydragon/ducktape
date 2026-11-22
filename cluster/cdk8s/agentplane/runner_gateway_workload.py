@@ -332,7 +332,7 @@ class RunnerGateway(Construct):
 
 
 def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, *, role_name: str) -> None:
-    Role(
+    role = Role(
         scope,
         "role",
         metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
@@ -357,10 +357,7 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
         ],
     )
     RoleBinding(
-        scope,
-        "rolebinding",
-        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-        role=Role.from_role_name(scope, "role-ref", role_name),
+        scope, "rolebinding", metadata=ApiObjectMetadata(name=role_name, namespace=namespace), role=role
     ).add_subjects(service_account)
 
 

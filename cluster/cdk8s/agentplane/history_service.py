@@ -91,7 +91,7 @@ class HistoryService(Construct):
         self.env = env
         self.callers = callers
         endpoint = service(env.namespace)
-        Role(
+        role = Role(
             self,
             "service-account-reader-role",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
@@ -108,7 +108,7 @@ class HistoryService(Construct):
             self,
             "service-account-reader-rolebinding",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
-            role=Role.from_role_name(self, "service-account-reader-role-ref", f"{NAME}-service-accounts"),
+            role=role,
         ).add_subjects(
             ServiceAccount.from_service_account_name(
                 self, "history-service-account", NAME, namespace_name=env.namespace

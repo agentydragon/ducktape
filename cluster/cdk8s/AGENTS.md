@@ -51,7 +51,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   afterwards are still checked (fleet rules run at App synth). `haku/charts.py`'s
   `*_chart(app)` is the same shape. The entry point holds no environment data.
 - **References, not names**: `Service(selector=deployment)`,
-  `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; network rules target a
+  `Volume.from_config_map(config_map)`, `RoleBinding(..., role=role)`; network rules target a
   workload via the owning module's exported constant
   (`cilium.endpoint_labels(namespace, egress.NAME)`). Helpers return the object they build.
 - **A name carries only what its namespace does not**: in namespace `atuin`, `server`,
