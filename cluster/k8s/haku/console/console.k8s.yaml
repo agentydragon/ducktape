@@ -380,7 +380,6 @@ spec:
                 secretKeyRef:
                   key: token
                   name: haku-routine-launch-token
-                  optional: false
             - name: HAKU_CONSOLE__HAKU_UI_URL
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE__AUTH_ORIGIN
@@ -401,19 +400,16 @@ spec:
                 secretKeyRef:
                   key: operator_client_id
                   name: haku-console-oidc
-                  optional: false
             - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   key: operator_client_secret
                   name: haku-console-oidc
-                  optional: false
             - name: HAKU_CONSOLE__OPERATOR_OIDC__SESSION_SECRET
               valueFrom:
                 secretKeyRef:
                   key: operator_session_secret
                   name: haku-console-oidc
-                  optional: false
             - name: HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN
               value: auth.allegedly.works/authentik-user-id/v1
             - name: HAKU_CONSOLE_CONFIG_FILE
