@@ -13,7 +13,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
+from cdk8s import App
 
 from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
 from cluster.cdk8s.agent_rbac_test_support import BoundRole, Permission, Rbac, uncovered
@@ -52,20 +52,23 @@ class Rendering:
 @pytest.fixture(scope="module")
 def static_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     """Roles and bindings owned outside Agentplane are shared by both policy catalogs."""
-    app = scratch_app_factory()
-    charts = [
-        agent_rbac_base.chart(app),
-        agent_shared_rbac.chart(app),
-        haku_rbac.chart(app),
-        ducktape_flux.chart(app),
-        plaid_db.chart(app),
-        plaid_spend.chart(app),
-        public_coder_app.rbac_chart(app),
-        clickhouse_installation.agent_diagnostics_rbac_chart(app),
-        console_chart(app),
-    ]
-    charts.extend(agent_namespace_rbac.chart(app, namespace) for namespace in NAMESPACE_DIAGNOSTICS)
-    return [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
+    # chart.to_json() validates the whole owning App. These charts are independent.
+    resources: list[dict[str, Any]] = []
+    for build in (
+        agent_rbac_base.chart,
+        agent_shared_rbac.chart,
+        haku_rbac.chart,
+        ducktape_flux.chart,
+        plaid_db.chart,
+        plaid_spend.chart,
+        public_coder_app.rbac_chart,
+        clickhouse_installation.agent_diagnostics_rbac_chart,
+        console_chart,
+    ):
+        resources.extend(build(scratch_app_factory()).to_json())
+    for namespace in NAMESPACE_DIAGNOSTICS:
+        resources.extend(agent_namespace_rbac.chart(scratch_app_factory(), namespace).to_json())
+    return resources
 
 
 def _rendering(docs: list[dict[str, Any]]) -> Rendering:
