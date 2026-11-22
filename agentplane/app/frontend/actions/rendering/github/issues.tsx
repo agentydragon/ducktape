@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { TextBlock } from "../../../ui/text_block";
 import type { ActionPresentation } from "../presentation";
+import { definePreview } from "../entry";
 import { defineResultPreview, type ResultPreviewProps } from "../result_entry";
 import {
   account,
@@ -218,6 +219,13 @@ const write = repoInput.extend({
     )
     .optional(),
 });
+// GitHub replaces the complete label set, including when the array is empty.
+// Strict parsing prevents compact approval when any other issue field is changed.
+const labelWrite = repoInput.extend({
+  method: z.literal("update"),
+  issue_number: number,
+  labels: z.array(z.string().min(1)),
+});
 const issueWriteResult = z.union([
   issueComment,
   z.object({ method: z.enum(["create", "update"]), issue: issueComment }),
@@ -277,6 +285,62 @@ function MetaTarget({ args }: { args: z.infer<typeof metaTarget> }): JSX.Element
     <RepoTarget repo={{ ...args, repo: args.repo }} />
   ) : (
     <Field name="Organization" value={args.owner} />
+  );
+}
+
+function IssueWriteArguments({ args }: { args: z.infer<typeof write> }): JSX.Element {
+  return (
+    <Stack gap={4}>
+      {args.issue_number ? (
+        <IssueTarget args={{ ...args, issue_number: args.issue_number }} />
+      ) : (
+        <RepoTarget repo={args} path="/issues" />
+      )}
+      <Field name={args.method === "create" ? "Create issue" : "Update issue"} value={args.title} />
+      <Field name="State" value={displayState(args.state)} />
+      <Field name="Reason" value={displayState(args.state_reason)} />
+      <Field name="Assignees" value={args.assignees?.length === 0 ? "Clear assignees" : args.assignees?.join(", ")} />
+      <Field name="Labels" value={args.labels?.length === 0 ? "Clear labels" : args.labels?.join(", ")} />
+      <Field name="Milestone" value={args.milestone === 0 ? "Clear milestone" : args.milestone} />
+      <Field name="Issue type" value={args.type === null || args.type === "" ? "Clear type" : args.type} />
+      {args.parent_issue_number && (
+        <Field
+          name="Parent"
+          value={
+            <GitHubLink
+              href={issueHref(
+                { owner: args.parent_owner ?? args.owner, repo: args.parent_repo ?? args.repo },
+                args.parent_issue_number
+              )}
+            >
+              {args.parent_owner ?? args.owner}/{args.parent_repo ?? args.repo}#{args.parent_issue_number}
+            </GitHubLink>
+          }
+        />
+      )}
+      {args.duplicate_of && (
+        <Field
+          name="Duplicate of"
+          value={<GitHubLink href={issueHref(args, args.duplicate_of)}>Issue #{args.duplicate_of}</GitHubLink>}
+        />
+      )}
+      {args.issue_fields?.map((field, index) => (
+        <Field
+          key={index}
+          name={field.field_name}
+          value={
+            field.delete
+              ? "Clear value"
+              : (field.field_option_name ?? (field.value == null ? undefined : String(field.value)))
+          }
+        />
+      ))}
+      {args.body === "" ? (
+        <Text size="sm">Clear the description.</Text>
+      ) : (
+        args.body && <TextBlock text={args.body} heading="Description" format="prose" />
+      )}
+    </Stack>
   );
 }
 
@@ -368,69 +432,34 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ],
   [
     "issue_write",
-    githubPresentation({
-      label: "Change GitHub issue",
-      schema: write,
-      outcome: awaitingGitHubSubmission,
-      compact: ({ args }) => <Text size="sm">{args.method === "create" ? "Create issue" : "Update issue"}</Text>,
-      request: ({ args }) => (
-        <Stack gap={4}>
-          {args.issue_number ? (
-            <IssueTarget args={{ ...args, issue_number: args.issue_number }} />
-          ) : (
-            <RepoTarget repo={args} path="/issues" />
-          )}
-          <Field name={args.method === "create" ? "Create issue" : "Update issue"} value={args.title} />
-          <Field name="State" value={displayState(args.state)} />
-          <Field name="Reason" value={displayState(args.state_reason)} />
-          <Field
-            name="Assignees"
-            value={args.assignees?.length === 0 ? "Clear assignees" : args.assignees?.join(", ")}
-          />
-          <Field name="Labels" value={args.labels?.length === 0 ? "Clear labels" : args.labels?.join(", ")} />
-          <Field name="Milestone" value={args.milestone === 0 ? "Clear milestone" : args.milestone} />
-          <Field name="Issue type" value={args.type === null || args.type === "" ? "Clear type" : args.type} />
-          {args.parent_issue_number && (
-            <Field
-              name="Parent"
-              value={
-                <GitHubLink
-                  href={issueHref(
-                    { owner: args.parent_owner ?? args.owner, repo: args.parent_repo ?? args.repo },
-                    args.parent_issue_number
-                  )}
-                >
-                  {args.parent_owner ?? args.owner}/{args.parent_repo ?? args.repo}#{args.parent_issue_number}
-                </GitHubLink>
-              }
-            />
-          )}
-          {args.duplicate_of && (
-            <Field
-              name="Duplicate of"
-              value={<GitHubLink href={issueHref(args, args.duplicate_of)}>Issue #{args.duplicate_of}</GitHubLink>}
-            />
-          )}
-          {args.issue_fields?.map((field, index) => (
-            <Field
-              key={index}
-              name={field.field_name}
-              value={
-                field.delete
-                  ? "Clear value"
-                  : (field.field_option_name ?? (field.value == null ? undefined : String(field.value)))
-              }
-            />
-          ))}
-          {args.body === "" ? (
-            <Text size="sm">Clear the description.</Text>
-          ) : (
-            args.body && <TextBlock text={args.body} heading="Description" format="prose" />
-          )}
-        </Stack>
-      ),
-      result: defineResultPreview(issueWriteResult, IssueWriteReceipt),
-    }),
+    {
+      ...githubPresentation({
+        label: "Change GitHub issue",
+        schema: write,
+        outcome: awaitingGitHubSubmission,
+        compact: ({ args }) => <Text size="sm">{args.method === "create" ? "Create issue" : "Update issue"}</Text>,
+        request: ({ args }) => <IssueWriteArguments args={args} />,
+        result: defineResultPreview(issueWriteResult, IssueWriteReceipt),
+      }),
+      label: definePreview(write, ({ args }) => {
+        const labels = labelWrite.safeParse(args);
+        if (!labels.success) return "Change GitHub issue";
+        const target = `${labels.data.owner}/${labels.data.repo}#${labels.data.issue_number}`;
+        return labels.data.labels.length === 0
+          ? `Clear labels on ${target}`
+          : `Set labels on ${target}: ${labels.data.labels.map((label) => JSON.stringify(label)).join(", ")}`;
+      }),
+      pane: {
+        collapsed: definePreview(write, ({ args }) =>
+          labelWrite.safeParse(args).success ? null : (
+            <Text size="sm">{args.method === "create" ? "Create issue" : "Update issue"}</Text>
+          )
+        ),
+        opened: definePreview(write, ({ args }) => <IssueWriteArguments args={args} />),
+      },
+      offersCardDecisionButtons: (args) => labelWrite.safeParse(args).success,
+      compactCardExpands: (args) => !labelWrite.safeParse(args).success,
+    },
   ],
   [
     "sub_issue_write",
