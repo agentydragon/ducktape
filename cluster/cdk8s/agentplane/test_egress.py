@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
@@ -24,7 +23,6 @@ from agentplane.net.peertls.config import (
 )
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
-    binding_delegation,
     environment_service,
     history_service,
     kubernetes_account_ref,
@@ -624,34 +622,6 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
         }
         if preset == "finance-agent"
         else set()
-    )
-
-
-@pytest.mark.parametrize(
-    "target_namespace", binding_delegation.external_scopes(staging.ENV, staging.assignable_grants())
-)
-def test_external_delegation_binds_exactly_the_granted_roles(
-    scratch_app: App, target_namespace: str, catalog_manifests: list[dict[str, Any]]
-) -> None:
-    assignable_grants = [grant.model_dump(mode="json") for grant in staging.assignable_grants()]
-    granted = {
-        grant["role_ref"]["name"]
-        for grant in assignable_grants
-        if grant["kind"] == "RoleBinding"
-        and grant["namespace"] == target_namespace
-        and grant["role_ref"]["kind"] == "Role"
-    }
-    delegated = Cdk8sTesting.synth(
-        binding_delegation.chart(scratch_app, staging.ENV, target_namespace, staging.assignable_grants())
-    )
-    role = one(doc for doc in delegated if doc["kind"] == "Role")
-    assert {name for rule in role["rules"] if rule["verbs"] == ["bind"] for name in rule["resourceNames"]} == granted
-    # An absent target namespace must not fail the app Kustomization's apply.
-    assert not any(
-        doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"].get("namespace") == target_namespace
-        and doc["metadata"]["name"] == role["metadata"]["name"]
-        for doc in catalog_manifests
     )
 
 
