@@ -175,6 +175,22 @@ EXAMPLE_SESSION = "81000000-0000-4000-8000-000000000001"
 EXAMPLE_COMMAND = "81000000-0000-4000-8000-000000000002"
 ORCHESTRATION_SANDBOX = {"name": "review-box", "uid": "81000000-0000-4000-8000-000000000003"}
 ORCHESTRATION_SESSION: dict[str, object] = {"sandbox": ORCHESTRATION_SANDBOX, "session_id": EXAMPLE_SESSION}
+COMPACT_SCOPED_READS = {
+    "tana.read_node": ("Plan review", "Include descendants"),
+    "tana.get_children": ("Direct children of Plan review",),
+    "tana.list_workspaces": ("List loaded Tana workspaces",),
+    "tana.list_tags": ("Product workspace and linked workspaces",),
+    "sessions.get": (EXAMPLE_SESSION,),
+    "sessions.read_turns": (EXAMPLE_SESSION, "Up to 5 turns from History · next page"),
+    "orchestration_v1.get_session": ("Sandbox review-box", EXAMPLE_SESSION),
+    "orchestration_v1.list_sessions": ("Sandbox review-box",),
+    "orchestration_v1.read_turns": ("Sandbox review-box", EXAMPLE_SESSION, "Up to 5 recent turns"),
+}
+TANA_READ_LIMITS = {
+    "tana.read_node": "Up to 2 levels of descendants",
+    "tana.get_children": "Up to 1 direct child, after the first 1",
+    "tana.list_tags": "Up to 25 tags",
+}
 ORCHESTRATION_COMMAND = {**ORCHESTRATION_SESSION, "command_id": EXAMPLE_COMMAND}
 QUEUED = {"session_id": EXAMPLE_SESSION, "state": "DELIVERY_STATE_QUEUED_IN_DISPATCHER"}
 ORCHESTRATION_SPEC = {"harness": "HARNESS_CODEX", "model": "gpt-5.4", "cwd": "/workspace"}
@@ -1331,6 +1347,7 @@ EXAMPLES = (
             "dispatches": [],
         },
         "Turn active",
+        compact_card_expands=False,
     ),
     ActionExample(
         "orchestration_v1",
@@ -1346,6 +1363,7 @@ EXAMPLES = (
             ]
         },
         "Last turn · Succeeded",
+        compact_card_expands=False,
     ),
     ActionExample(
         "orchestration_v1",
@@ -1391,6 +1409,7 @@ EXAMPLES = (
             "resume_token": "recorded-token",
         },
         "Checked the deployment notes.",
+        compact_card_expands=False,
     ),
     ActionExample(
         "orchestration_v1",
@@ -1431,6 +1450,7 @@ EXAMPLES = (
             "history": {"source": "history", "kind": "unavailable", "error": {"message": "History unavailable"}},
         },
         "History unavailable",
+        compact_card_expands=False,
     ),
     ActionExample(
         "sessions",
@@ -1477,7 +1497,7 @@ EXAMPLES = (
     ActionExample(
         "sessions",
         "read_turns",
-        {"session_id": EXAMPLE_SESSION, "count": 5},
+        {"session_id": EXAMPLE_SESSION, "count": 5, "page_cursor": "recorded-next-page"},
         {
             "session_id": EXAMPLE_SESSION,
             "source": "history",
@@ -1493,6 +1513,7 @@ EXAMPLES = (
             ],
         },
         "Some history is missing.",
+        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -3249,10 +3270,12 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("Draft notes")
         await expect(sidebar).to_contain_text("Website project")
     elif example.key == "tana.get_tag_schema":
-        await expect(sidebar.get_by_text("Task", exact=True)).to_be_visible()
+        tag = sidebar.get_by_role("link", name="Task", exact=True)
+        await expect(tag).to_have_attribute("href", "https://app.tana.inc?nodeid=tag-1")
         await expect(sidebar).not_to_contain_text("Include inherited fields")
         await expect(sidebar).not_to_contain_text("Include edit instructions")
-        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
     elif example.key == "kubernetes_admin.pods_run":
         await expect(sidebar).to_contain_text("Expose TCP port 8080 through a ClusterIP Service.")
         await expect(sidebar).not_to_contain_text("OpenShift Route")
@@ -3288,6 +3311,18 @@ async def test_action_presentations(
         "tana.uncheck_node",
     }:
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+    if example.key in COMPACT_SCOPED_READS:
+        for field in COMPACT_SCOPED_READS[example.key]:
+            await expect(sidebar).to_contain_text(field)
+        await _expect_live_preview(sidebar, example)
+        if example.arguments.get("session_id") == EXAMPLE_SESSION:
+            session = sidebar.get_by_role("link", name=EXAMPLE_SESSION, exact=True)
+            await expect(session).to_have_attribute("href", f"/threads/{EXAMPLE_SESSION}")
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
+    read_limit = TANA_READ_LIMITS.get(example.key)
+    if read_limit is not None:
+        await expect(sidebar).not_to_contain_text(read_limit)
     await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
@@ -3333,13 +3368,16 @@ async def test_action_presentations(
             await expect(sidebar).to_contain_text("Remove all attendees")
         if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
             await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        elif read_limit is not None:
+            await expect(sidebar).to_contain_text(read_limit)
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         elif example.key == "google_calendar.list_events":
             await expect(sidebar).to_contain_text("Ending after")
             await expect(sidebar).to_contain_text("Starting before")
         elif example.key == "tana.get_tag_schema":
             await expect(sidebar).to_contain_text("Include inherited fields")
             await expect(sidebar).to_contain_text("Include edit instructions")
-            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
+            await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
         elif example.key == "github.issue_write":
             await expect(sidebar).to_contain_text("Priority P1")
             await expect(sidebar).to_contain_text("Decisions require full review.")

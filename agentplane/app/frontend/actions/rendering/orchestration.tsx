@@ -7,7 +7,14 @@ import { TextBlock } from "../../ui/text_block";
 import { definePreview, type ArgumentsPreview } from "./entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
-import { DispatchDetails, SessionLink, TurnDetails, sentence, sessionTurn } from "./session_delegation";
+import {
+  compactNativeRead,
+  DispatchDetails,
+  SessionLink,
+  TurnDetails,
+  sentence,
+  sessionTurn,
+} from "./session_delegation";
 
 const name = z.string().min(1);
 const sandbox = z.strictObject({ name, uid: name });
@@ -34,6 +41,17 @@ function SessionTarget({ sandboxName, sessionId }: { sandboxName: string; sessio
       <Text size="sm">Sandbox {sandboxName}</Text>
       <SessionLink id={sessionId} />
     </Group>
+  );
+}
+
+function SandboxReadScope({ args }: { args: z.infer<typeof sandboxArgs> & { session_id?: string } }): ReactNode {
+  return (
+    <Stack gap={4}>
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        Sandbox {args.sandbox.name}
+      </Text>
+      {args.session_id !== undefined && <SessionLink id={args.session_id} label={args.session_id} />}
+    </Stack>
   );
 }
 
@@ -280,22 +298,9 @@ export const orchestrationRenderers: ReadonlyMap<string, ActionPresentation> = n
   ["create_session", details("Create Session in Sandbox", createSession, created)],
   [
     "get_session",
-    details(
-      "Inspect Sandbox Session",
-      definePreview(sessionArgs, ({ args }) => (
-        <SessionTarget sandboxName={args.sandbox.name} sessionId={args.session_id} />
-      )),
-      sessionView
-    ),
+    compactNativeRead("Inspect Sandbox Session", definePreview(sessionArgs, SandboxReadScope), sessionView),
   ],
-  [
-    "list_sessions",
-    details(
-      "List Sandbox Sessions",
-      definePreview(sandboxArgs, ({ args }) => <Text size="sm">Sandbox {args.sandbox.name}</Text>),
-      sessions
-    ),
-  ],
+  ["list_sessions", compactNativeRead("List Sandbox Sessions", definePreview(sandboxArgs, SandboxReadScope), sessions)],
   [
     "change_model",
     details(
@@ -350,11 +355,11 @@ export const orchestrationRenderers: ReadonlyMap<string, ActionPresentation> = n
   ],
   [
     "read_turns",
-    details(
+    compactNativeRead(
       "Read Sandbox Session turns",
-      definePreview(sessionArgs.extend({ count: z.number() }), ({ args }) => (
+      definePreview(sessionArgs.extend({ count: z.int().min(1).max(100) }), ({ args }) => (
         <Stack gap={4}>
-          <SessionTarget sandboxName={args.sandbox.name} sessionId={args.session_id} />
+          <SandboxReadScope args={args} />
           <Text size="sm">Up to {args.count} recent turns</Text>
         </Stack>
       )),
