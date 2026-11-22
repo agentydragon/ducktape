@@ -13,7 +13,11 @@ post-build variable sources.
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from pathlib import Path
+
+import yaml
+from yaml.tokens import FlowMappingEndToken, FlowMappingStartToken
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
@@ -27,14 +31,6 @@ _IMAGE_POLICY_MARKER = re.compile(r'"\$imagepolicy":\s*"([^"]+)"')
 # Receiver here may still reference one (cluster/generated/haku/ui-image-webhook), so exempt these
 # from the "Receiver references an undefined ImageRepository" check.
 _HAKU_STATE_IMAGE_REPOS = {"haku-sandbox/haku-anki", "haku-sandbox/haku-ui"}
-
-# A non-empty YAML flow mapping in *structural* position — `- {name: cfg}` or `key: {a: 1}`.
-#
-# Two things it deliberately does not match. `{}` survives a re-serialisation unchanged and is
-# the idiomatic spelling of `emptyDir`. And a brace that opens a line belongs to a JSON blob
-# inside a block scalar (`goldilocks.fairwinds.com/vpa-resource-policy: >`), which is a string
-# value: an emitter rewrites the scalar's quoting, never the JSON inside it.
-_FLOW_MAPPING = re.compile(r"^\s*(?:-\s+\{|[\w./-]+:\s*\{)\s*[^}\s]")
 
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
@@ -113,12 +109,11 @@ def check_no_flow_mappings_where_flux_writes(k8s_dir: Path) -> list[str]:
     `check_image_policy_markers`: the marker is a comment, so only the file can be asked.
     """
     return [
-        f"{path.relative_to(k8s_dir)}:{number} has a YAML flow mapping and an $imagepolicy "
+        f"{path.relative_to(k8s_dir)}:{opening.start_mark.line + 1} has a YAML flow mapping and an $imagepolicy "
         "marker. Flux re-serialises the whole file when it updates the tag and will write it "
         "without prettier's inner spaces, failing pre-commit on every open PR. Use block style."
         for path in sorted(k8s_dir.rglob("*.yaml"))
         if _IMAGE_POLICY_MARKER.search(text := path.read_text())
-        for number, line in enumerate(text.splitlines(), start=1)
-        # The marker is itself a comment containing braces; it is not what Flux reformats.
-        if _FLOW_MAPPING.search(_IMAGE_POLICY_MARKER.sub("", line))
+        for opening, following in pairwise(yaml.scan(text, Loader=yaml.CSafeLoader))
+        if isinstance(opening, FlowMappingStartToken) and not isinstance(following, FlowMappingEndToken)
     ]

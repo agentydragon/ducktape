@@ -132,6 +132,7 @@ py_library(
     deps = [
         ":cluster",
         ":k8s",
+        "@pypi//pyyaml",
     ],
 )
 

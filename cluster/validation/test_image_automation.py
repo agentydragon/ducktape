@@ -1,11 +1,12 @@
 """Flux registry webhook target resolution."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.image_automation import check_image_automation_webhook
+from cluster.validation.image_automation import check_image_automation_webhook, check_no_flow_mappings_where_flux_writes
 from cluster.validation.k8s import parse_k8s_resources
 
 
@@ -41,6 +42,18 @@ def test_wrong_namespace_reports_both_the_unwatched_repo_and_the_dangling_ref() 
     missing, stale = check_image_automation_webhook(cluster)
     assert "flux-system/image" in missing
     assert "forgejo-images/image" in stale
+
+
+def test_flow_mapping_check_ignores_embedded_configuration(tmp_path: Path) -> None:
+    manifest = tmp_path / "deployment.yaml"
+    manifest.write_text(
+        'image: app:latest # {"$imagepolicy": "flux-system:app"}\n'
+        "config: |\n  settings: {key: value}\n"
+        "emptyDir: {}\n"
+        "env: [{name: MODE, value: test}]\n"
+    )
+    [error] = check_no_flow_mappings_where_flux_writes(tmp_path)
+    assert "deployment.yaml:5" in error
 
 
 if __name__ == "__main__":
