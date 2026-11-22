@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
@@ -820,5 +821,69 @@ func TestItemRetainsImageAndAudioContent(t *testing.T) {
 		if !strings.Contains(string(encoded), expected) {
 			t.Fatalf("Responses item lost %s: %s", expected, encoded)
 		}
+	}
+}
+
+func TestToolInputStreamingUsesCallIdentity(t *testing.T) {
+	for _, kind := range []ItemType{ItemCustomToolCall, ItemFunctionCall} {
+		t.Run(string(kind), func(t *testing.T) {
+			var projector observationProjector
+			added, err := projector.observations(Event{Type: EventOutputItemAdded, Item: &Item{Type: kind, ID: "provider-item", CallID: "call-id", Name: "exec"}})
+			if err != nil || len(added) != 1 || added[0].GetItemStarted().GetItemId() != "call-id" {
+				t.Fatalf("start: %v %v", added, err)
+			}
+			deltaType := EventCustomToolCallInputDelta
+			if kind == ItemFunctionCall {
+				deltaType = EventFunctionCallArgumentsDelta
+			}
+			text := "hello\nworld"
+			delta, err := projector.observations(Event{Type: deltaType, ItemID: "provider-item", Delta: &text})
+			if err != nil || len(delta) != 1 || delta[0].GetToolArgumentsDelta().GetItemId() != "call-id" || delta[0].GetToolArgumentsDelta().GetPartialJson() != text {
+				t.Fatalf("delta: %v %v", delta, err)
+			}
+			item := &Item{Type: kind, ID: "provider-item", CallID: "call-id", Name: "exec", Input: text, Arguments: `{"x":1}`}
+			done, err := projector.observations(Event{Type: EventOutputItemDone, Item: item})
+			if err != nil || len(done) != 1 || done[0].GetToolArguments().GetItemId() != "call-id" {
+				t.Fatalf("done: %v %v", done, err)
+			}
+		})
+	}
+}
+
+type streamObservations struct{ events []*eventpb.Event }
+
+func (s *streamObservations) Record(_ context.Context, _ protocol.ProviderEvidence, events ...*eventpb.Event) error {
+	s.events = append(s.events, events...)
+	return nil
+}
+
+func TestReadStreamPublishesToolInputBeforeCompletion(t *testing.T) {
+	stream := `data: {"type":"response.output_item.added","item":{"type":"custom_tool_call","id":"item-1","call_id":"call-1","name":"exec","input":""}}
+
+data: {"type":"response.custom_tool_call_input.delta","item_id":"item-1","delta":"first "}
+
+data: {"type":"response.custom_tool_call_input.delta","item_id":"item-1","delta":"second"}
+
+data: {"type":"response.output_item.done","item":{"type":"custom_tool_call","id":"item-1","call_id":"call-1","name":"exec","input":"first second"}}
+
+data: {"type":"response.completed","response":{"status":"completed","output":[]}}
+
+`
+	recorder := &streamObservations{}
+	_, err := readStream(context.Background(), strings.NewReader(stream), recorder, protocol.ProviderHooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.events) != 4 {
+		t.Fatalf("events: %v", recorder.events)
+	}
+	for i, want := range []string{"first ", "second"} {
+		delta := recorder.events[i+1].GetToolArgumentsDelta()
+		if delta.GetItemId() != "call-1" || delta.GetPartialJson() != want {
+			t.Fatalf("delta: %v", delta)
+		}
+	}
+	if got := recorder.events[3].GetToolArguments().GetArgumentsJson(); got != `{"source":"first second"}` {
+		t.Fatalf("final arguments: %s", got)
 	}
 }
