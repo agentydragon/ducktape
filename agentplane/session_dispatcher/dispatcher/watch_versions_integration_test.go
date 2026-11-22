@@ -71,6 +71,118 @@ func testSessionDispatchFilter(session string, ids ...string) *dispatcherpb.Disp
 	return &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: session}, CommandIds: ids}
 }
 
+func TestRecentDispatchIssuesReplacesBoundedSnapshot(t *testing.T) {
+	ctx := admitted(t)
+	queueStore, databaseURL := testStoreWithURL(t, 5)
+	filter := testSessionDispatchFilter("test-recent-issues")
+	filter.RecentIssueLimit = 2
+	for _, id := range []string{"earlier-input", "first-failure", "second-failure", "third-failure"} {
+		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-issue-sandbox", sandboxUID, input(id, "private test input"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	change := func(id, state, reason string) {
+		t.Helper()
+		if _, err := queueStore.DB.ExecContext(ctx, `WITH changed AS (
+			UPDATE dispatch SET state=$2,reason=$3 WHERE command_id=$1 RETURNING session_id
+		) SELECT pg_notify($4, session_id) FROM changed`, id, state, reason, store.NotifyChannel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"first-failure", "second-failure", "third-failure"} {
+		change(id, store.FailedState, "test refusal")
+	}
+	const listenerName = "test-recent-dispatch-issues"
+	listenerURL := postgres.URLWithApplicationName(t, databaseURL, listenerName)
+	hub, err := wakeups.Listen(t.Context(), listenerURL.String(), store.NotifyChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = hub.Close() })
+	watch := startVersionWatch(t, ctx, queueStore, hub, filter, "")
+	assertIssues := func(frame *dispatcherpb.WatchDispatchesResponse, clipped bool, want ...string) {
+		t.Helper()
+		snapshot := frame.GetRecentIssues()
+		var ids []string
+		for _, row := range snapshot.GetReceipts() {
+			ids = append(ids, row.GetCommandId())
+		}
+		if snapshot == nil || snapshot.GetMoreAvailable() != clipped || !slices.Equal(ids, want) {
+			t.Fatalf("snapshot=%v, want clipped=%v receipts=%v", snapshot, clipped, want)
+		}
+	}
+	initial := watch.next(t)
+	assertIssues(initial, true, "third-failure", "second-failure")
+	watch.stop(t)
+
+	// A command that predated the snapshot becomes uncertain after the browser disconnects.
+	change("earlier-input", store.UnknownState, "test call outcome lost")
+	resumed := startVersionWatch(t, ctx, queueStore, hub, filter, initial.GetResumeToken())
+	current := resumed.next(t)
+	assertIssues(current, true, "earlier-input", "third-failure")
+	issue := current.GetRecentIssues().GetReceipts()[0]
+	if issue.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || issue.GetReason() != "test call outcome lost" {
+		t.Fatalf("uncertain receipt = %v", issue)
+	}
+
+	// Simulate a state correction and verify that a replacement removes the old problem.
+	change("third-failure", store.CancelledState, "test removed issue")
+	assertIssues(resumed.next(t), true, "earlier-input", "second-failure")
+	change("second-failure", store.CancelledState, "test removed issue")
+	assertIssues(resumed.next(t), false, "earlier-input", "first-failure")
+	change("first-failure", store.CancelledState, "test removed issue")
+	assertIssues(resumed.next(t), false, "earlier-input")
+
+	resumed.stop(t)
+	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	fresh := startVersionWatch(t, ctx, queueStore, hub, filter, "")
+	deleted := fresh.next(t)
+	assertIssues(deleted, false, "earlier-input")
+	if row := deleted.GetRecentIssues().GetReceipts()[0]; row.GetState() != issue.GetState() || row.GetReason() != issue.GetReason() {
+		t.Fatalf("tombstone lost its outcome: %v", row)
+	}
+	generation := hub.Generation()
+	var terminated bool
+	if err := queueStore.DB.QueryRowContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+		WHERE application_name=$1 AND datname=current_database()`, listenerName).Scan(&terminated); err != nil || !terminated {
+		t.Fatalf("terminate issue listener: %t %v", terminated, err)
+	}
+	select {
+	case err := <-fresh.done:
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("disconnect = %v, want Unavailable", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("issue stream stayed current across a listener disconnect")
+	}
+	reconnected, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for hub.Generation() <= generation || !hub.Connected() {
+		if reconnected.Err() != nil {
+			t.Fatal("issue listener did not reconnect")
+		}
+		runtime.Gosched()
+	}
+	afterDisconnect := startVersionWatch(t, ctx, queueStore, hub, filter, deleted.GetResumeToken())
+	assertIssues(afterDisconnect.next(t), false, "earlier-input")
+
+	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'
+		WHERE command_id='earlier-input'`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := queueStore.PruneDispatchTombstones(ctx); err != nil || n != 1 {
+		t.Fatalf("prune: %d %v", n, err)
+	}
+	assertIssues(afterDisconnect.next(t), false)
+	service := &Service{Store: queueStore, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
+	err = service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: filter, ResumeToken: current.GetResumeToken()}, &collectedWatch{ctx: ctx})
+	if status.Code(err) != codes.OutOfRange {
+		t.Fatalf("expired issue resume = %v, want OutOfRange", err)
+	}
+}
+
 func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	ctx := admitted(t)
 	queueStore := testStore(t, 5)

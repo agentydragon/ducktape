@@ -1,11 +1,48 @@
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { dispatchFromJson } from "./client";
 import { HttpError } from "../transport/client";
 import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import { WatchStreamError } from "../transport/watch_stream";
 import { canonicalDispatchCommandIds, type LocalCommands } from "./local_commands";
+import {
+  DeliveryState,
+  RecentDispatchIssuesSchema,
+  type DispatchIssue,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 /** `DispatchFilter.command_ids`' bound; the commands past it go unwatched. */
 const MAX_WATCHED_COMMANDS = 1000;
+const RECENT_ISSUE_LIMIT = 20;
+
+export type RecentDispatchIssues = {
+  receipts: readonly DispatchIssue[];
+  moreAvailable: boolean;
+  connection: "connecting" | "current" | "stale";
+  coverageLost: boolean;
+};
+
+export const EMPTY_DISPATCH_ISSUES: RecentDispatchIssues = {
+  receipts: [],
+  moreAvailable: false,
+  connection: "connecting",
+  coverageLost: false,
+};
+
+function readFrame(result: JsonValue): {
+  dispatch?: JsonValue;
+  caughtUp?: JsonValue;
+  recentIssues?: JsonValue;
+  resumeToken: string;
+} {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    throw new Error("Dispatcher returned an invalid watch frame");
+  }
+  const frame = result;
+  if (typeof frame.resumeToken !== "string" || frame.resumeToken === "") {
+    throw new Error("Dispatcher watch frame omitted its resume token");
+  }
+  return { ...frame, resumeToken: frame.resumeToken };
+}
 
 /** Clean EOF also ends a normal watch lease. Give the first retry time to catch up. */
 const CLEAN_CLOSE_GRACE_MS = 3_000;
@@ -51,13 +88,7 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
     },
     onFrame: (result) => {
       try {
-        if (typeof result !== "object" || result === null || Array.isArray(result)) {
-          throw new Error("Dispatcher returned an invalid watch frame");
-        }
-        const frame = result as { dispatch?: unknown; caughtUp?: unknown; resumeToken?: unknown };
-        if (typeof frame.resumeToken !== "string" || frame.resumeToken === "") {
-          throw new Error("Dispatcher watch frame omitted its resume token");
-        }
+        const frame = readFrame(result);
         if (frame.dispatch !== undefined) {
           const receipt = dispatchFromJson(frame.dispatch);
           if (snapshotPending) held.add(receipt.commandId);
@@ -124,4 +155,63 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
     stopWatch();
     clearCleanCloseTimer();
   };
+}
+
+/** Discover Dispatcher issues for this Session, without writing browser submissions or History. */
+export function watchRecentDispatchIssues(
+  sessionId: string,
+  publish: (state: RecentDispatchIssues) => void
+): () => void {
+  let resumeToken: string | null = null;
+  let state = EMPTY_DISPATCH_ISSUES;
+  const query = () => {
+    const params = new URLSearchParams({
+      "filter.sessionId": sessionId,
+      "filter.recentIssueLimit": String(RECENT_ISSUE_LIMIT),
+    });
+    if (resumeToken !== null) params.set("resumeToken", resumeToken);
+    return params;
+  };
+  return sessionDispatcherClient.watchDispatches(query, {
+    onOpen: () => undefined,
+    onFrame: (result) => {
+      const frame = readFrame(result);
+      if (frame.recentIssues === undefined) {
+        throw new Error("Dispatcher omitted the recent delivery issues snapshot");
+      }
+      const snapshot = fromJson(RecentDispatchIssuesSchema, frame.recentIssues);
+      if (
+        snapshot.receipts.length > RECENT_ISSUE_LIMIT ||
+        snapshot.receipts.some(
+          (row) =>
+            !row.commandId ||
+            row.sessionId !== sessionId ||
+            (row.state !== DeliveryState.FAILED && row.state !== DeliveryState.UNKNOWN)
+        )
+      ) {
+        throw new Error("Dispatcher returned invalid recent delivery issues");
+      }
+      const received = new Set<string>();
+      const receipts = snapshot.receipts.filter((row) => {
+        if (received.has(row.commandId)) return false;
+        received.add(row.commandId);
+        return true;
+      });
+      state = { ...state, receipts, moreAvailable: snapshot.moreAvailable, connection: "current" };
+      resumeToken = frame.resumeToken;
+      publish(state);
+    },
+    onConnection: ({ phase }) => {
+      if (phase === "reconnecting") {
+        state = { ...state, connection: "stale" };
+        publish(state);
+      }
+    },
+    onError: (reason) => {
+      if (outOfRange(reason)) {
+        resumeToken = null;
+        state = { ...state, coverageLost: true };
+      }
+    },
+  });
 }

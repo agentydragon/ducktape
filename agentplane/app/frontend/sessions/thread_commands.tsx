@@ -2,7 +2,8 @@ import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect } from "react";
 
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
-import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
+import { CommandProgress, dispatchReasonLabel, type CommandStage, type CommandSubject } from "./command_progress";
+import type { RecentDispatchIssues } from "./dispatch_watch";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { type CommandIssue } from "./command_delivery";
 import type { LocalCommands, LocalCommand, PendingCommand } from "./local_commands";
@@ -14,7 +15,10 @@ import {
   type ThreadEntity,
 } from "../../../history_service/api/history/history_service_pb";
 import { Operation } from "../../../proto/command_pb";
-import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import {
+  DeliveryState,
+  type DispatchIssue,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCommand } };
 
@@ -40,7 +44,7 @@ function commandIssue(value: LocalCommand, errors: ReadonlyMap<string, CommandIs
 function progressStage(
   outcome: ThreadCommandOutcome | null,
   admitted: boolean,
-  receipt?: LocalCommand["dispatch"] | LocalCommand["interruptResult"],
+  receipt?: { state: DeliveryState } | null,
   issue?: CommandIssue
 ): CommandStage {
   if (outcome === ThreadCommandOutcome.EFFECTED) return "effected";
@@ -97,12 +101,14 @@ export function LocalControlCommands({
   store,
   errors,
   deliver,
+  issues,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
+  issues: ReadonlyMap<string, DispatchIssue>;
 }): JSX.Element | null {
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
   const rows = useThreadSync().useCommandRows(controls.map((value) => value.command.commandId));
@@ -115,6 +121,7 @@ export function LocalControlCommands({
       store={store}
       errors={errors}
       deliver={deliver}
+      issues={issues}
     />
   );
 }
@@ -128,6 +135,7 @@ export function PendingInputMessages({
   errors,
   store,
   deliver,
+  issues,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
@@ -136,6 +144,7 @@ export function PendingInputMessages({
   errors: ReadonlyMap<string, CommandIssue>;
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
+  issues: ReadonlyMap<string, DispatchIssue>;
 }): JSX.Element | null {
   const inputCommands = commands.filter((value) => value.command.operation.case === "submitInput");
   const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
@@ -180,8 +189,9 @@ export function PendingInputMessages({
         const dispatchAdmitted =
           dispatchState !== undefined && normalizeDeliveryState(dispatchState) === DeliveryState.RUNNER_ADMITTED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
-        const canAct = value.destination.kind === "session" && !admitted && value.dispatch === null;
-        const stage = progressStage(outcome, admitted, value.dispatch, issue);
+        const receipt = value.attempted && !admitted ? (issues.get(id) ?? value.dispatch) : value.dispatch;
+        const canAct = value.destination.kind === "session" && !admitted && receipt === null;
+        const stage = progressStage(outcome, admitted, receipt, issue);
         const failed =
           outcome === ThreadCommandOutcome.FAILED ||
           stage === "dispatch_failed" ||
@@ -202,7 +212,7 @@ export function PendingInputMessages({
                 <CommandOutcome
                   stage={stage}
                   subject="input"
-                  reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
+                  reason={outcomeReason ?? receipt?.reason ?? issue?.message}
                   local
                   unsent={!value.attempted}
                 />
@@ -253,6 +263,7 @@ function LocalControlRows({
   store,
   errors,
   deliver,
+  issues,
 }: {
   rows: ThreadEntity[];
   entities: ThreadEntity[];
@@ -260,6 +271,7 @@ function LocalControlRows({
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
+  issues: ReadonlyMap<string, DispatchIssue>;
 }): JSX.Element {
   useEffect(() => {
     store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
@@ -273,6 +285,10 @@ function LocalControlRows({
           const operation = value.command.operation;
           const admitted = value.admission !== null;
           const issue = commandIssue(value, errors);
+          const receipt =
+            (value.attempted && !admitted ? issues.get(value.command.commandId) : undefined) ??
+            value.dispatch ??
+            value.interruptResult;
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
               <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
@@ -286,33 +302,123 @@ function LocalControlRows({
                         : "Thread action"}
                 </Text>
                 <CommandOutcome
-                  stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
+                  stage={progressStage(null, admitted, receipt, issue)}
                   subject={subject(operation.case)}
-                  reason={
-                    admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
-                  }
+                  reason={admitted ? undefined : (receipt?.reason ?? issue?.message)}
                   local
                   unsent={!value.attempted}
                 />
-                {value.destination.kind === "session" &&
-                  !admitted &&
-                  value.dispatch === null &&
-                  !value.interruptResult && (
-                    <Button
-                      size="xs"
-                      variant="subtle"
-                      onClick={() =>
-                        value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
-                      }
-                    >
-                      {value.attempted ? "Retry" : "Cancel"}
-                    </Button>
-                  )}
+                {value.destination.kind === "session" && !admitted && !receipt && (
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    onClick={() =>
+                      value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
+                    }
+                  >
+                    {value.attempted ? "Retry" : "Cancel"}
+                  </Button>
+                )}
               </Group>
             </ControlCommandFrame>
           );
         })}
     </Stack>
+  );
+}
+
+function operationLabel(operation: Operation): string {
+  switch (operation) {
+    case Operation.SUBMIT_INPUT:
+      return "Send message";
+    case Operation.CHANGE_MODEL:
+      return "Model change";
+    case Operation.CHANGE_REASONING_EFFORT:
+      return "Reasoning effort change";
+    case Operation.INTERRUPT_TURN:
+      return "Turn interrupt";
+    default:
+      return "Command delivery";
+  }
+}
+
+export function RecentDeliveryIssues({
+  issues,
+  commands,
+  entities,
+}: {
+  issues: RecentDispatchIssues;
+  commands: readonly LocalCommand[];
+  entities: readonly ThreadEntity[];
+}): JSX.Element | null {
+  const visibleLocally = new Set(
+    commands
+      .filter((row) => row.attempted && row.admission === null && row.dispatch?.state !== DeliveryState.RUNNER_ADMITTED)
+      .map((row) => row.command.commandId)
+  );
+  const settledInHistory = new Set<string>();
+  for (const row of entities) {
+    if (row.entity.case === "confirmedInput") {
+      for (const id of row.entity.value.originCommandIds) settledInHistory.add(id);
+    } else if (
+      row.entity.case === "command" &&
+      row.entity.value.outcome !== ThreadCommandOutcome.PENDING &&
+      row.entity.value.outcome !== ThreadCommandOutcome.UNSPECIFIED
+    ) {
+      settledInHistory.add(row.entityId);
+    } else if (row.entity.case === "command") {
+      // An admitted but unsettled History row cannot settle an uncertain delivery.
+      visibleLocally.delete(row.entityId);
+    }
+  }
+  const visible = issues.receipts.filter(
+    (row) => !settledInHistory.has(row.commandId) && !visibleLocally.has(row.commandId)
+  );
+  const stale = issues.connection === "stale";
+  if (!visible.length && !stale && !issues.moreAvailable && !issues.coverageLost) return null;
+  return (
+    <Paper component="section" aria-label="Recent delivery issues" p="xs" withBorder>
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>
+          Recent delivery issues
+        </Text>
+        {stale && (
+          <Text size="xs" c="dimmed" role="status">
+            {issues.receipts.length
+              ? "Showing the last update while reconnecting."
+              : "Delivery issues are unavailable while reconnecting."}
+          </Text>
+        )}
+        {issues.coverageLost && (
+          <Text size="xs" c="dimmed" role="status">
+            Some earlier delivery receipts may have expired.
+          </Text>
+        )}
+        {issues.moreAvailable && (
+          <Text size="xs" c="dimmed">
+            Older delivery issues are outside this view.
+          </Text>
+        )}
+        {visible.map((row) => (
+          <Stack key={row.commandId} gap={0} data-command-id={row.commandId} style={{ overflowWrap: "anywhere" }}>
+            <Group justify="space-between" align="baseline" gap={4}>
+              <Text size="sm">
+                {operationLabel(row.operation)} ·{" "}
+                {row.state === DeliveryState.FAILED ? "Delivery failed" : "Outcome unknown"}
+              </Text>
+              <Text size="xs" c="dimmed" ff="monospace" title={row.commandId} aria-label={`Command ${row.commandId}`}>
+                {row.commandId.slice(0, 8)}
+              </Text>
+            </Group>
+            {row.reason && (
+              <Text size="xs" c="dimmed">
+                {row.reason === "sandbox_deleted" ? "Sandbox was deleted" : dispatchReasonLabel(row.reason)}
+              </Text>
+            )}
+          </Stack>
+        ))}
+      </Stack>
+    </Paper>
   );
 }
 

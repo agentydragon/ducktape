@@ -2568,6 +2568,26 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
 // What the mock Dispatcher's stream reports for a queued command, where a scene gives it a reason of
 // its own.
 const queuedReasons = new Map<string, string>();
+const recentDispatchIssues = new Map<string, readonly Record<string, string>[]>();
+
+function showRecentDispatchIssues(): void {
+  recentDispatchIssues.set(RUNNING_THREAD, [
+    {
+      commandId: "5034baaf-0000-4000-8000-000000000001",
+      sessionId: RUNNING_THREAD,
+      operation: "OPERATION_CHANGE_MODEL",
+      state: "DELIVERY_STATE_UNKNOWN",
+      reason: "The current sampler policy does not allow this model switch.",
+    },
+    {
+      commandId: "7988d401-0000-4000-8000-000000000002",
+      sessionId: RUNNING_THREAD,
+      operation: "OPERATION_SUBMIT_INPUT",
+      state: "DELIVERY_STATE_FAILED",
+      reason: "sandbox_deleted",
+    },
+  ]);
+}
 
 // Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
 // its indicator sits near the right edge of the page.
@@ -3359,6 +3379,17 @@ routes.push(
     "GET",
     /^\/upstream\/dispatcher\/v1\/dispatches:watch$/,
     (_match, query, signal) => {
+      if (query.has("filter.recentIssueLimit")) {
+        return ndjsonWatch(
+          [
+            {
+              recentIssues: { receipts: recentDispatchIssues.get(query.get("filter.sessionId") ?? "") ?? [] },
+              resumeToken: "visual-dispatch-issue-checkpoint",
+            },
+          ],
+          signal
+        );
+      }
       if (flags.has("dispatchWatchUnavailable")) {
         return Response.json({ error: { code: 14, message: "Dispatcher temporarily unavailable" } }, { status: 503 });
       }
@@ -4424,6 +4455,7 @@ const visualHarness = {
   rememberDispatch,
   rememberShortRefusedWake,
   rememberFailedAndUnknownDispatches,
+  showRecentDispatchIssues,
   completedRollout(): void {
     serveRollout("Completed diagnostic run", rollout);
   },

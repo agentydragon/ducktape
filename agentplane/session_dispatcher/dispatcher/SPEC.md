@@ -315,6 +315,13 @@ require a fresh snapshot even when the filtered scope had no deleted rows in the
 than once. Its token carries the read frontier even when changes at that frontier did not match the filter.
 This lets unrelated writes advance a watch without causing repeated reads of the same range.
 
+With `recent_issue_limit` from 1 to 100, a whole-Session watch sends a replacement `recent_issues`
+snapshot on the first read and when the snapshot changes after a Session-scoped wakeup. It contains the most
+recent failed and unknown receipts by Dispatcher version, including retained tombstones. It carries
+only delivery metadata and marks whether additional issues exist. A change to any state can update
+the snapshot. The token is bound to the limit and scope. The ordinary watch retains its complete row
+and checkpoint contract.
+
 The App retains the cursor with its locally applied command receipts and effective filter. Reconnects
 resume from that cursor; recurring or resumed `CaughtUp` frames do not imply any unchanged command is
 missing. Only a fresh snapshot reconciles missing receipts. `OUT_OF_RANGE` clears the cursor and starts
