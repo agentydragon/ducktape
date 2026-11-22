@@ -1189,6 +1189,7 @@ py_test(
     deps = [
         ":egress_credentials",
         "//:conftest",
+        "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",

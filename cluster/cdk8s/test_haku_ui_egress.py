@@ -9,6 +9,8 @@ import pytest
 import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 
+from agentplane.crd_group import GROUP
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY
 from cluster.cdk8s.haku import rbac as haku_rbac, ui_egress
@@ -109,25 +111,6 @@ def _standing_records(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [d for d in resources if d["kind"] == "WorkloadCredential" and d["metadata"]["namespace"] == NAMESPACE]
 
 
-def _granted(resources: list[dict[str, Any]], namespace: str, account: tuple[str, str]) -> set[tuple[str, str]]:
-    """The (resource, verb) pairs Roles bound to `account` grant in `namespace`."""
-    roles = {
-        binding["roleRef"]["name"]
-        for binding in resources
-        if binding["kind"] == "RoleBinding"
-        and binding["metadata"]["namespace"] == namespace
-        and any((s.get("namespace"), s["name"]) == account for s in binding["subjects"])
-    }
-    return {
-        (resource, verb)
-        for role in resources
-        if role["kind"] == "Role" and role["metadata"]["namespace"] == namespace and role["metadata"]["name"] in roles
-        for rule in role["rules"]
-        for resource in rule["resources"]
-        for verb in rule["verbs"]
-    }
-
-
 def test_each_haku_workload_has_a_standing_record_as_the_haku_ui_identity(resources: list[dict[str, Any]]) -> None:
     """No owner and no binding make a record standing: its ID never rotates and its Secret is `svid-<name>`.
     Its subject names the Identity by name alone, since git cannot know the UID; a changed subject
@@ -143,14 +126,17 @@ def test_each_haku_workload_has_a_standing_record_as_the_haku_ui_identity(resour
 
 def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict[str, Any]]) -> None:
     served = set(config_map_yaml(resources, "policy-controller-settings", "config.yaml")["workload_namespaces"])
-    for namespace in {record["metadata"]["namespace"] for record in _standing_records(resources)}:
-        assert namespace in served
-        granted = _granted(resources, namespace, ("agentplane-staging", "policy-controller"))
-        assert {
-            ("workloadcredentials", "watch"),
-            ("workloadcredentials/status", "update"),
-            ("certificates", "create"),
-        } <= granted
+    assert NAMESPACE in served
+    permissions = Rbac(resources).identity("ServiceAccount", "policy-controller", staging.ENV.namespace)
+    required = {
+        Permission(NAMESPACE, GROUP, "workloadcredentials", "watch"),
+        Permission(NAMESPACE, "cert-manager.io", "certificates", "create"),
+        *(
+            Permission(NAMESPACE, GROUP, "workloadcredentials/status", "update", record["metadata"]["name"])
+            for record in _standing_records(resources)
+        ),
+    }
+    assert not uncovered(required, permissions)
 
 
 def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str, Any]]) -> None:
@@ -160,12 +146,18 @@ def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str
     allowed = set(settings["allowed_service_account_namespaces"])
     policy_namespace = settings["rules_namespace"]
     identities = {(d["metadata"]["namespace"], d["metadata"]["name"]) for d in resources if d["kind"] == "Identity"}
-    assert ("identities", "get") in _granted(resources, policy_namespace, ("agentplane-staging", "egress"))
+    assert NAMESPACE in allowed
+    permissions = Rbac(resources).identity("ServiceAccount", "egress", staging.ENV.namespace)
     for record in _standing_records(resources):
-        namespace = record["metadata"]["namespace"]
-        assert namespace in allowed
-        assert ("workloadcredentials", "get") in _granted(resources, namespace, ("agentplane-staging", "egress"))
-        assert (policy_namespace, record["spec"]["subject"]["identity"]["name"]) in identities
+        identity = record["spec"]["subject"]["identity"]["name"]
+        assert (policy_namespace, identity) in identities
+        assert not uncovered(
+            [
+                Permission(NAMESPACE, GROUP, "workloadcredentials", "get", record["metadata"]["name"]),
+                Permission(policy_namespace, GROUP, "identities", "get", identity),
+            ],
+            permissions,
+        )
 
 
 if __name__ == "__main__":

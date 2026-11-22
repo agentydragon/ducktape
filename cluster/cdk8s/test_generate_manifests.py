@@ -22,6 +22,7 @@ import yaml
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
+from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 from cluster.cdk8s.testing.manifests import find_resource
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -764,6 +765,21 @@ def test_no_image_automation_markers(generated: Path) -> None:
     # file (cluster/docs/cdk8s.md).
     marked = sorted(relative for relative in _files(generated) if "$imagepolicy" in (generated / relative).read_text())
     assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
+
+
+def test_namespace_readers_can_reconcile_before_the_application(parsed_yaml_documents: YamlDocuments) -> None:
+    # Diagnostics must come up even when the application in the target namespace is unhealthy.
+    graph = parsed_yaml_documents[Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")]
+    roles = find_resource(graph, "Kustomization", "claude-rbac")["metadata"]
+    root = Path(GENERATED_ROOT, "agents/namespace-rbac")
+    readers = [
+        doc["spec"]
+        for doc in graph
+        if doc["kind"] == "Kustomization" and Path(doc["spec"].get("path", "")).parent == root
+    ]
+    assert {Path(spec["path"]) for spec in readers} == {root / namespace for namespace in NAMESPACE_DIAGNOSTICS}
+    for spec in readers:
+        assert spec["dependsOn"] == [{"name": roles["name"], "namespace": roles["namespace"]}], spec["path"]
 
 
 def test_flux_kustomizations_under_parked_path_are_annotated(parsed_yaml_documents: YamlDocuments) -> None:
