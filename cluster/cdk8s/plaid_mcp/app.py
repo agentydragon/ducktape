@@ -18,6 +18,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
 from cluster.cdk8s.plaid_mcp.secret_copy import copy_secret
+from cluster.cdk8s.pod_policy import harden
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -62,16 +63,6 @@ def _env() -> list[k8s.EnvVar]:
     ]
 
 
-def _container_security_context() -> k8s.SecurityContext:
-    return k8s.SecurityContext(
-        allow_privilege_escalation=False,
-        capabilities=k8s.Capabilities(drop=["ALL"]),
-        run_as_group=1000,
-        run_as_non_root=True,
-        run_as_user=1000,
-    )
-
-
 def _resources() -> k8s.ResourceRequirements:
     return container_resources(cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi")
 
@@ -104,7 +95,7 @@ def _rbac(chart: Chart) -> None:
 
 def _deployment(chart: Chart) -> None:
     health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -133,13 +124,14 @@ def _deployment(chart: Chart) -> None:
                     # K8sSecretStore.from_incluster (finance/plaid/db/secret_store.py) writes the
                     # access-token Secrets with this token.
                     automount_service_account_token=True,
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
                             name="plaid-web",
                             image="git.allegedly.works/ducktape-ci/plaid-mcp-server:unset",
                             image_pull_policy="Always",
-                            security_context=_container_security_context(),
+                            security_context=k8s.SecurityContext(
+                                run_as_user=1000, run_as_group=1000, run_as_non_root=True
+                            ),
                             ports=[_WEB.k8s_container_port()],
                             env=[
                                 *_env(),
@@ -157,10 +149,11 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    harden(deployment)
 
 
 def _sync_cronjob(chart: Chart) -> None:
-    k8s.KubeCronJob(
+    cronjob = k8s.KubeCronJob(
         chart,
         "sync",
         metadata=k8s.ObjectMeta(
@@ -188,15 +181,14 @@ def _sync_cronjob(chart: Chart) -> None:
                             # The sync reads the access-token Secrets through K8sSecretStore.
                             automount_service_account_token=True,
                             restart_policy="Never",
-                            security_context=k8s.PodSecurityContext(
-                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
-                            ),
                             containers=[
                                 k8s.Container(
                                     name="sync",
                                     image="git.allegedly.works/ducktape-ci/plaid-mcp-sync:unset",
                                     image_pull_policy="Always",
-                                    security_context=_container_security_context(),
+                                    security_context=k8s.SecurityContext(
+                                        run_as_user=1000, run_as_group=1000, run_as_non_root=True
+                                    ),
                                     env=_env(),
                                     resources=_resources(),
                                 )
@@ -207,6 +199,7 @@ def _sync_cronjob(chart: Chart) -> None:
             ),
         ),
     )
+    harden(cronjob)
 
 
 def chart(app: App) -> Chart:
