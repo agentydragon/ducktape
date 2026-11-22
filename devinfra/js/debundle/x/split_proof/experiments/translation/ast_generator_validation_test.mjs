@@ -16,6 +16,8 @@ let blocks = 0;
 let shadows = 0;
 let maxDepth = 0;
 
+const unaryOperands = new Map();
+const eagerUnary = new Set();
 function walk(value, depth = 0) {
   if (value === null || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -24,6 +26,10 @@ function walk(value, depth = 0) {
   }
   if (typeof value.type === "string") {
     kinds.add(value.type);
+    if (value.type === "UnaryExpression") {
+      if (!unaryOperands.has(value.operator)) unaryOperands.set(value.operator, new Set());
+      unaryOperands.get(value.operator).add(value.argument.type);
+    }
     maxDepth = Math.max(maxDepth, depth);
     depth++;
   }
@@ -79,6 +85,9 @@ for (const seed of [1, 2026, 2027, 1337]) {
     });
     assert.ifError(result.error);
     assert.equal(result.status, 0, `seed ${seed} round ${round} did not complete: ${result.stderr}`);
+    // A direct top-level initializer runs whenever the module completes.
+    for (const st of ast.body)
+      for (const { init } of st.declarations ?? []) if (init?.type === "UnaryExpression") eagerUnary.add(init.operator);
     const classes = ast.body
       .flatMap((st) => st.declarations ?? [])
       .map((d) => d.init)
@@ -116,6 +125,12 @@ for (const type of [
   "CallExpression",
 ])
   assert(kinds.has(type), `sample did not exercise ${type}`);
+assert.deepEqual([...eagerUnary].sort(), ["!", "-"]);
+for (const op of ["!", "-"]) {
+  const operands = unaryOperands.get(op);
+  for (const kind of ["Literal", "Identifier", "BinaryExpression"])
+    assert(operands?.has(kind), `missing generated ${op} on ${kind}`);
+}
 assert.equal(classPrograms, 32, "each seed must execute a class program in one quarter of rounds");
 assert.deepEqual([...chainDepths].sort(), [2, 3, 4]);
 assert(heritageShapes.size >= 24, "class programs must vary in structure across seeds and rounds");

@@ -1,3 +1,4 @@
+import { BINARY, LOGICAL, UNARY } from "./to_core.mjs";
 import { rng } from "../translation/gen/core.mjs";
 
 // Bounded CoreJS programs. Every selected family executes; no unit filtering or unknown-code retry.
@@ -21,6 +22,8 @@ export function generatedCases(seed) {
       `(${left} && ${right})`,
       `(${left} ?? ${right})`,
       `(~${left})`,
+      `(!${left})`,
+      `(-${left})`,
     ]);
   };
   const n = num();
@@ -28,6 +31,18 @@ export function generatedCases(seed) {
   const families = {
     expressions: `
       let value = ${expression(3)};
+      {
+        const right = ${expression(2)};
+        ${Object.keys(UNARY)
+          .map((op) => `console.log("unary ${op}", ${op} value);`)
+          .join("\n")}
+        ${Object.keys(BINARY)
+          .map((op) => `console.log("binary ${op}", value ${op} right);`)
+          .join("\n")}
+        ${Object.keys(LOGICAL)
+          .map((op) => `console.log("logical ${op}", value ${op} right);`)
+          .join("\n")}
+      }
       value += ${num()}; value ^= ${num()};
       console.log(value++, --value, !value, typeof value, String(value), null == undefined);
     `,

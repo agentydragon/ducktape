@@ -40,8 +40,8 @@ const refuse = (node, why) => {
   throw new Refused(node, why);
 };
 
-const UNARY = { "-": "neg", "+": "pos", "!": "not", "~": "bitNot", typeof: "typeof", void: "void" };
-const BINARY = {
+export const UNARY = { "-": "neg", "+": "pos", "!": "not", "~": "bitNot", typeof: "typeof", void: "void" };
+export const BINARY = {
   "+": "add",
   "-": "sub",
   "*": "mul",
@@ -62,7 +62,7 @@ const BINARY = {
   ">": "gt",
   ">=": "ge",
 };
-const LOGICAL = { "&&": "and", "||": "or", "??": "nullish" };
+export const LOGICAL = { "&&": "and", "||": "or", "??": "nullish" };
 const PRIMS = {
   console: { log: "log" },
   Object: {

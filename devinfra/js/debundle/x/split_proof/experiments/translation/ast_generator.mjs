@@ -78,6 +78,8 @@ export function printAst(node, marked = false) {
       return `${p(node.key)}: ${p(node.value)}`;
     case "ReturnStatement":
       return `return ${p(node.argument)};`;
+    case "UnaryExpression":
+      return `(${node.operator}${p(node.argument)})`;
     case "BinaryExpression":
       return `(${p(node.left)} ${node.operator} ${p(node.right)})`;
     case "ConditionalExpression":
@@ -112,6 +114,7 @@ function walk(node, visit, depth = 0) {
  * have lexical environments, and recursive calls to a function being built are excluded. */
 export function generateAstBundle(seed, round) {
   const pick = random((seed * 100003 + round) >>> 0);
+  const unaryPick = random((seed * 100043 + round) >>> 0);
   const callbackPick = random((seed * 100019 + round + 17) >>> 0);
   let next = 0;
   const fresh = () => `v${next++}`;
@@ -156,6 +159,13 @@ export function generateAstBundle(seed, round) {
     return depends;
   };
   function expression(scope, depth) {
+    const operand = operandExpression(scope, depth);
+    // Sample operators separately so adding a value transformation preserves the seed's
+    // statement layout, including the write/read and callback mutation witnesses.
+    if (unaryPick(8) !== 0) return operand;
+    return { type: "UnaryExpression", operator: unaryPick(2) ? "!" : "-", prefix: true, argument: operand };
+  }
+  function operandExpression(scope, depth) {
     const available = [...scope.values, ...scope.locals];
     const callable = callableNow(scope);
     const mayCapture = scope.deferred && !pendingReady;
