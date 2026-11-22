@@ -536,6 +536,7 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
                 "window": "7d",
             }
             assert "$12,345 available" in string_reply(session.call("GetMenuText"))
+            assert "7d $22/day (110%) · 30d $28/day (140%)" in string_reply(session.call("GetMenuText"))
             assert "Customize panel" in string_reply(session.call("GetMenuText"))
             assert "Use 30-day pace" not in string_reply(session.call("GetMenuText"))
             assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))
