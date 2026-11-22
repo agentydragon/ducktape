@@ -114,8 +114,21 @@ func (s *Store) BatchGetDispatches(ctx context.Context, sessionID string, caller
 			return status.Error(codes.FailedPrecondition, "retained Dispatch reads are unavailable")
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,
-            operation,state,reason,admission,delivery_blocker,wake_assessment,created_at,updated_at,command
-            FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3 AND command_id=ANY($4)`, sessionID, name, uid, pq.Array(ids))
+            operation,state,reason,admission,delivery_blocker,wake_assessment,created_at,updated_at,command,false
+            FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3 AND command_id=ANY($4)
+            UNION ALL
+            SELECT t.version,t.command_id,t.session_id,''::varchar,''::text,t.operation,t.state,t.reason,t.admission,
+                t.delivery_blocker,t.wake_assessment,t.created_at,t.updated_at,NULL::bytea,true
+            FROM unnest($4::varchar[]) AS requested(command_id)
+            CROSS JOIN LATERAL (
+                SELECT version,command_id,session_id,operation,state,reason,admission,delivery_blocker,
+                    wake_assessment,created_at,updated_at
+                FROM dispatch_tombstone
+                WHERE command_id=requested.command_id AND session_id=$1
+                ORDER BY version DESC LIMIT 1
+            ) AS t
+            WHERE NOT EXISTS (SELECT FROM dispatch d WHERE d.command_id=requested.command_id AND d.session_id=$1
+                AND d.sandbox_name=$2 AND d.sandbox_uid=$3)`, sessionID, name, uid, pq.Array(ids))
 		if err != nil {
 			return err
 		}
@@ -131,11 +144,17 @@ func (s *Store) BatchGetDispatches(ctx context.Context, sessionID string, caller
 			if err != nil {
 				return err
 			}
-			if change.Dispatch.Command == nil || change.Dispatch.Command.GetCommandId() != change.Dispatch.CommandId {
-				return status.Error(codes.DataLoss, "stored Dispatch has no matching original command")
+			row := change.Dispatch
+			row.ReceiptVersion = &change.Version
+			result := byID[row.CommandId]
+			if change.Deleted {
+				result.Result = &dispatcherpb.BatchGetDispatchesResponse_Result_LegacyDeletionReceipt{LegacyDeletionReceipt: row}
+			} else {
+				if row.Command == nil || row.Command.GetCommandId() != row.CommandId {
+					return status.Error(codes.DataLoss, "stored Dispatch has no matching original command")
+				}
+				result.Result = &dispatcherpb.BatchGetDispatchesResponse_Result_Dispatch{Dispatch: row}
 			}
-			change.Dispatch.ReceiptVersion = &change.Version
-			byID[change.Dispatch.CommandId].Result = &dispatcherpb.BatchGetDispatchesResponse_Result_Dispatch{Dispatch: change.Dispatch}
 			// Stop materializing originals when the response reaches the gRPC receiver limit.
 			if proto.Size(response) > 4<<20 {
 				return status.Error(codes.ResourceExhausted, "Dispatch batch exceeds 4 MiB")

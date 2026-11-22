@@ -159,12 +159,8 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if got := list(ownerIdentity); len(got) != 1 || got[0].GetCommand() != nil {
 		t.Fatalf("summary list: %v", got)
 	}
-	filter.IncludeCommand = true
-	if got := list(ownerIdentity); len(got) != 1 || !proto.Equal(got[0].GetCommand(), wantCommand) {
-		t.Fatalf("owner command list: %v", got)
-	}
 	if got := list(otherIdentity); len(got) != 0 {
-		t.Fatalf("foreign command list: %v", got)
+		t.Fatalf("foreign summaries: %v", got)
 	}
 	listed, err := client.ListSessions(actingFor(ownerIdentity), &dispatcherpb.ListSessionsRequest{})
 	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != owned {

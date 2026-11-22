@@ -737,3 +737,81 @@ func TestBatchGetDispatchesRetainsOriginalsAcrossEnvironmentDeletionAndLimitsRes
 		t.Fatal("did not recover the original and final delivery outcome")
 	}
 }
+
+func TestBatchGetDispatchesChoosesLiveThenLatestDeletionInSession(t *testing.T) {
+	ctx := t.Context()
+	queue := testStore(t, 5)
+	sessionID, anotherSession := uuid.NewString(), uuid.NewString()
+	uid := uuid.NewString()
+	const commandID = "same-id"
+	const sourceID = "another-source"
+	for _, fixture := range []struct{ session, id string }{{sessionID, commandID}, {anotherSession, sourceID}} {
+		if _, err := enqueueWithSession(t, queue, ctx, fixture.session, "test-env", uid, input(fixture.id, "original"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Historical deletions can share an ID across retained Sessions. The latest
+	// global deletion is deliberately in a different Session.
+	deleted := func(source, reason string) int64 {
+		t.Helper()
+		var version int64
+		err := queue.DB.QueryRowContext(ctx, `INSERT INTO dispatch_tombstone(command_id,version,session_id,operation,state,reason,
+			admission,delivery_blocker,wake_assessment,created_at,updated_at)
+			SELECT $1,nextval('dispatch_version_seq'),session_id,operation,'UNKNOWN',$2,admission,delivery_blocker,
+				wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$3 RETURNING version`, commandID, reason, source).Scan(&version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return version
+	}
+	deleted(commandID, "older deletion")
+	deleted(sourceID, "another Session")
+	peers := authorityClients(t, queue, &authorityInventory{sandboxErr: errors.New("inventory unavailable")}, nil)
+	read := func(session string) *dispatcherpb.BatchGetDispatchesResponse_Result {
+		t.Helper()
+		r, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: session, CommandIds: []string{"missing", commandID}})
+		if err != nil || len(r.GetResults()) != 2 || r.Results[0].CommandId != "missing" || r.Results[0].GetNotFound() == nil || r.Results[1].CommandId != commandID {
+			t.Fatalf("ordered batch: %v, %v", r, err)
+		}
+		return r.Results[1]
+	}
+	live := read(sessionID).GetDispatch()
+	if live.GetCommand().GetSubmitInput().GetText() != "original" || live.GetReceiptVersion() <= 0 || live.SandboxUid != uid {
+		t.Fatalf("live precedence: %v", live)
+	}
+	const reason = "runner effect unconfirmed"
+	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch SET state='UNKNOWN',reason=$1 WHERE command_id=$2", reason, commandID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {
+		t.Fatal(err)
+	}
+	expectedVersion := int64(0)
+	if err := queue.DB.QueryRowContext(ctx, "SELECT max(version) FROM dispatch_tombstone WHERE session_id=$1 AND command_id=$2", sessionID, commandID).Scan(&expectedVersion); err != nil {
+		t.Fatal(err)
+	}
+	foreignVersion := deleted(sourceID, "unrelated newer deletion")
+	legacy := read(sessionID).GetLegacyDeletionReceipt()
+	if legacy.GetReceiptVersion() != expectedVersion || legacy.GetReceiptVersion() <= live.GetReceiptVersion() || legacy.GetSessionId() != sessionID ||
+		legacy.GetReason() != reason || legacy.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || legacy.Command != nil || legacy.Sandbox != "" || legacy.SandboxUid != "" || legacy.UpdatedAt == nil {
+		t.Fatalf("scoped legacy evidence: %v", legacy)
+	}
+	if other := read(anotherSession).GetLegacyDeletionReceipt(); other.GetReceiptVersion() != foreignVersion || other.GetReason() != "unrelated newer deletion" {
+		t.Fatalf("other Session: %v", other)
+	}
+	if _, err := peers.otherIdentity.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: sessionID, CommandIds: []string{commandID}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("inaccessible Session: %v", err)
+	}
+	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET reason=repeat('x',4200000) WHERE version=$1", expectedVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: sessionID, CommandIds: []string{commandID}}); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("oversized legacy evidence: %v", err)
+	}
+	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch_tombstone WHERE session_id=$1", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if miss := read(sessionID); miss.GetNotFound() == nil {
+		t.Fatalf("expired scoped evidence: %v", miss)
+	}
+}

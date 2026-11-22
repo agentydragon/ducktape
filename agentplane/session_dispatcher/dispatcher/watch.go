@@ -47,9 +47,6 @@ func dispatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.Dispatch
 	canonical := proto.Clone(filter).(*dispatcherpb.DispatchFilter)
 	slices.Sort(canonical.CommandIds)
 	canonical.CommandIds = slices.Compact(canonical.CommandIds)
-	if canonical.GetIncludeCommand() && (len(canonical.CommandIds) == 0 || len(canonical.CommandIds) > 16) {
-		return nil, status.Error(codes.InvalidArgument, "include_command requires 1 to 16 command IDs")
-	}
 	return canonical, nil
 }
 

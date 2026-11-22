@@ -58,7 +58,7 @@ service SessionDispatcher {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
   }
   // Ordered full receipts for 1-16 command IDs in one authorized retained Session.
-  // A returned Dispatch remains readable across Environment deletion while its Session is retained.
+  // Live rows take precedence. A legacy deletion receipt has no original command; missing evidence may have expired.
   rpc BatchGetDispatches(BatchGetDispatchesRequest) returns (BatchGetDispatchesResponse) {
     option (google.api.http) = {get: "/v1/sessions/{session_id}/dispatches:batchGet"};
   }
@@ -116,7 +116,7 @@ message Dispatch {
   // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the command.
   agentplane.proto.WakeAssessment wake_assessment = 12;
   // The command stored by Dispatcher. Present on GetDispatch. Mutation receipts omit it for ProtoJSON clients.
-  // List and watch require include_command; legacy deletion receipts lack the stored command.
+  // Exact live reads include the original. Collection/watch summaries and legacy deletion receipts omit it.
   optional agentplane.proto.Command command = 13;
   // Positive database version of this exact receipt revision. Set on reads that explicitly expose it.
   optional int64 receipt_version = 14;
@@ -190,8 +190,8 @@ message DispatchFilter {
   }
   // When not empty, only these commands within the scope; at most 1000.
   repeated string command_ids = 3;
-  // Include the stored command on each matching receipt. Requires 1 to 16 command IDs.
-  bool include_command = 5;
+  reserved 5, 6;
+  reserved "include_command", "include_receipt_version";
 }
 
 message WatchDispatchesRequest {
@@ -271,11 +271,14 @@ message BatchGetDispatchesResponse {
     string command_id = 1;
     oneof result {
       Dispatch dispatch = 2;
-      // No current row in this Session. Older delivery evidence may have expired.
+      // No retained evidence in this Session. Older delivery evidence may have expired.
       google.protobuf.Empty not_found = 3;
+      // Latest retained deletion evidence. Includes its exact revision and available admission,
+      // but the original command and Sandbox address were not stored.
+      Dispatch legacy_deletion_receipt = 4;
     }
   }
-  // One result per requested ID in the request's order. Includes original commands on hits.
+  // One result per requested ID in the request's order. Only a live dispatch has its original command.
   repeated Result results = 1;
 }
 
