@@ -40,6 +40,18 @@ js_binary(
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
 
+js_test(
+    name = "linked_input_test",
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
+    ],
+    entry_point = "linked_input_test.mjs",
+    env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
+)
+
 # Include first-party runfile helpers as lint sources.
 js_library(
     name = "lint_sources",

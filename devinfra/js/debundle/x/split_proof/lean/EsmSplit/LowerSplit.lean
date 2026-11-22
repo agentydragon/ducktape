@@ -7,6 +7,7 @@ import EsmSplit.CoreJS.DeclarationArtifacts
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.Move
+import EsmSplit.CoreJS.ModuleInput
 import EsmSplit.CoreJS.WrapperInput
 import EsmSplit.CoreJS.HeritageCertificate
 import Std.Data.HashMap
@@ -528,7 +529,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   let S ← loadSpec specPath
   if required.isSome then
     for name in S.entry :: S.modules.map Prod.fst do
-      unless CoreJS.DeclarationArtifacts.supportedFilename name && name.endsWith ".mjs" do
+      unless CoreJS.ModuleInput.supportedFilename name && name.endsWith ".mjs" do
         throw (IO.userError s!"certified output requires a safe relative .mjs path, got {name}")
   let t3 ← lap "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"

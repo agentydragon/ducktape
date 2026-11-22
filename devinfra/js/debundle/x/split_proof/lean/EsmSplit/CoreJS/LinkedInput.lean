@@ -1,4 +1,6 @@
-import EsmSplit.CoreJS.DeclarationArtifacts
+import EsmSplit.CoreJS.Eval
+import EsmSplit.CoreJS.ModuleInput
+import EsmSplit.Plan
 import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
 
@@ -13,10 +15,6 @@ open Lean (Json)
 
 private def field (j : Json) (key : String) := j.getObjValAs? String key
 private def typ (j : Json) := field j "type"
-
-private def noAttributes (j : Json) : Except String Unit := do
-  if let .ok attrs := j.getObjVal? "attributes" then
-    unless (← attrs.getArr?).isEmpty do throw "unsupported module attributes"
 
 /-- Offsets, literal spellings, and scope annotations can change during emission.
 Syntax comparison is followed by checking the linked cells of all free names. -/
@@ -36,7 +34,7 @@ private def parse (path : String) (nodes : Array Json) : Except String Parsed :=
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
-      imports := imports.push (← DeclarationArtifacts.importDecl path j)
+      imports := imports.push (← ModuleInput.importDecl path j)
   let names := imports.toList.flatMap fun i => i.names.map Prod.snd
   let mut units := #[]
   let mut exports := #[]
@@ -44,7 +42,7 @@ private def parse (path : String) (nodes : Array Json) : Except String Parsed :=
     match ← typ j with
     | "ImportDeclaration" => pure ()
     | "ExportNamedDeclaration" =>
-      noAttributes j
+      ModuleInput.noAttributes j
       unless (← j.getObjVal? "source") == .null do throw "unsupported re-export from another module"
       let declaration ← j.getObjVal? "declaration"
       let specs ← j.getObjValAs? (Array Json) "specifiers"
