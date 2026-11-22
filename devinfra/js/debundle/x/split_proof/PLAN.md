@@ -95,13 +95,12 @@ Defer modeling or rewriting `import.meta.url`. Start with the editor prefix spli
 Run the structural checks and the CoreJS checker on each complete candidate split. Record how many units move, which splits pass the structural checks, and which receive a CoreJS equivalence certificate under the stated premises. If the retained factory still blocks a whole-split certificate, record that verdict and try other placements or chunks whose certification does not depend on module URLs. Report the first blocker for each unsuccessful probe.
 
 The one-arrow scroll placement moves unit 1337 (`Jb`) and preserves all 611 public editor names.
-Of its 259 structural conflicts, 14 match the linked wrapper creation theorem under its
-runtime premises. These are units 5–18 calling `Ve(callback)`. The linked two-module
-reproduction proves normal-completion equivalence from the actual CoreJS linker for every
-world and fuel bound. In the full editor, establishing the linked factory and its region
-at each crossing remains open. The first of the other 245 pairs is unit 19,
-`Ml = ra(yo())`, crossing `Jb`. This evaluates a loader before calling a second provider
-export. Isolate that loader's initialization effects before extending the checker.
+An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as calls to
+`Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require
+establishing its runtime premises at each crossing. The first of the other 245 pairs
+was unit 19, `Ml = ra(yo())`, crossing `Jb`. The acceptance case runs the ordinary
+splitter on the whole editor and its providers. The linked decoder reaches statement 5
+and rejects a declaration with multiple declarators.
 [Scroll replay and proof scope](translation/debug/excalidraw_certificates/README.md#strict-certification-of-the-scroll-module)
 
 Seven of the editor's eight flat destructuring declarations read keys present in

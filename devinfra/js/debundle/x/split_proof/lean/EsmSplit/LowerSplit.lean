@@ -1,4 +1,4 @@
-import EsmSplit.ESTreeEmit
+import EsmSplit.SplitFiles
 import EsmSplit.ESTreeUnits
 import EsmSplit.Cli
 import EsmSplit.Effects
@@ -7,8 +7,8 @@ import EsmSplit.CoreJS.DeclarationArtifacts
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.Move
-import EsmSplit.CoreJS.ModuleInput
-import EsmSplit.CoreJS.WrapperInput
+import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.HeritageCertificate
 import Std.Data.HashMap
 import Std.Data.HashSet
@@ -16,9 +16,12 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
+    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> --require <all-outcomes|normal-completion> [--check-output]
+    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
-`bundle.json` is acorn's ESTree with trusted scope/literal metadata (`lowering/dump.mjs`). Lean computes the footprints
+JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
+Certified mode reparses the staged output and checks the requested CoreJS guarantee before publication.
+Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
 Lean file whose `by decide +kernel` makes the kernel certify the same facts.
 The bundle may import from outside modules; those are loaded first, in their order, as in the bundle.
@@ -26,8 +29,6 @@ The bundle may import from outside modules; those are loaded first, in their ord
 `--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
 With `--all-conflicts`, the plan includes every inverted structural conflict as an [earlier, later] pair.
-`lowersplit --check-wrapper-swaps consumer.js provider.js pairs.json` reparses both modules and
-reports conditional normal-completion evidence for individual pairs and the remaining premises.
 Lean lowers supported annotated ASTs directly to CoreJS. For bundles outside that subset,
 `--corejs` supplies the external lowering. The verdict reports which input it used.
 `--move-report` writes diagnostic statement categories and up to 64 failing inverted pairs in original unit IDs.
@@ -35,7 +36,7 @@ It does not certify a split: the verdict still requires all frontend and plan pr
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
 -/
 
-open Lean EsmSplit
+open Lean EsmSplit EsmSplit.SplitFiles
 
 /-- What a top-level `export` statement publishes: each public name, with the local binding it stands for, if any. -/
 def published (s : Json) : List (String × Option String) :=
@@ -390,72 +391,29 @@ def sliceVerdict (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P
   | .error why => { lines := [if why.startsWith "the plan to keep the order" then s!"  proved slice: none. {kept} needs {why}"
       else s!"  proved slice: none. {kept} and {moves} need {why}"] }
 
-/-- Run the shared Acorn frontend and ESTree printer. Bazel supplies the runfile and
-the native Lake binary locates the same entry point beside the project. -/
-private def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit := do
-  let cwd ← IO.currentDir
-  let args := flags ++ paths.map fun p => (if p.isAbsolute then p else cwd / p).toString
-  let frontend ← IO.getEnv "SPLIT_PROOF_MODULE_IO"
-  let proc ← match frontend with
-    | some exe => IO.Process.output { cmd := exe, args }
-    | none => do
-      let mut root ← IO.appPath
-      for _ in [:5] do root := root.parent.getD "."
-      IO.Process.output { cmd := "node", args := #[toString (root / "translation" / "module_io.mjs")] ++ args }
-  unless proc.exitCode == 0 do throw (IO.userError s!"JavaScript frontend failed: {proc.stderr.trimAscii}")
+/-- Elaborate the concrete execution proof with the same toolchain and compiled model
+as the splitter. Publication waits for the kernel to accept it. -/
+private def verifyExecution (work : System.FilePath) (original candidate : CoreJS.Program) : IO Unit := do
+  let file := work / "LinkedExecution.lean"
+  IO.FS.writeFile file (← IO.ofExcept (CoreJS.LinkedBehavior.certificate original candidate))
+  let exe ← IO.appPath
+  let args := #["-DwarningAsError=true", s!"--root={work}", file.toString]
+  let proc ← if exe.fileName == some "lean" then
+      IO.Process.output { cmd := exe.toString, args }
+    else do
+      -- The native Lake executable is <project>/.lake/build/bin/lowersplit.
+      let mut project := exe
+      for _ in [:4] do project := project.parent.getD "."
+      IO.Process.output { cmd := "lake", args := #["env", "lean"] ++ args, cwd := some project }
+  unless proc.exitCode == 0 do
+    let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
+    throw (IO.userError s!"could not prove equivalent linked executions: {detail}")
 
-private def readJson (path : System.FilePath) : IO Json := do
-  IO.ofExcept (Json.parse (← IO.FS.readFile path))
-
-private def loadProgram (path work : System.FilePath) : IO Json := do
-  if path.extension == some "js" || path.extension == some "mjs" then
-    let parsed := work / "source.json"
-    javascript #["--parse"] #[path, parsed]
-    return ← readJson parsed
-  let program ← readJson path
-  match program.getObjVal? "annotationVersion" with
-  | .ok v =>
-    unless v == toJson 2 do throw (IO.userError s!"unsupported annotationVersion: {v}")
-    return program
-  | .error _ =>
-    let upgraded := work / "upgraded.json"
-    javascript #["--upgrade"] #[path, upgraded]
-    readJson upgraded
-
-private def printModules (programs : Json) (dir work source : System.FilePath) : IO Unit := do
-  let manifest := work / "output-programs.json"
-  IO.FS.writeFile manifest programs.compress
-  javascript #["--print"] #[manifest, dir, source]
-
-private def certifyFiles (program : Json) (ss : List CoreJS.Stmt) (B : Bundle) (P : Plan)
-    (out work input : System.FilePath) (checkOnly : Bool) (asts : Array Json) (source : String) : IO Unit := do
-  let verify (dir : System.FilePath) : IO Unit := do
-    let reply := work / "reparsed.json"
-    javascript #[] #[dir, input, reply]
-    let parsed ← readJson reply
-    unless (← IO.ofExcept (parsed.getObjVal? "source")) == program do
-      throw (IO.userError "input annotations differ from a fresh parse of sourceText")
-    let files ← IO.ofExcept (parsed.getObjVal? "files")
-    IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
-  if checkOnly then verify out else
-    let parent := out.parent.getD "."
-    IO.FS.createDirAll parent
-    -- A sibling directory makes publication a single same-filesystem rename.
-    let stage := parent / (".split-proof-" ++ work.fileName.get!)
-    IO.FS.createDir stage
-    try
-      let programs ← IO.ofExcept (ESTreeEmit.programs asts B P source)
-      printModules programs stage work input
-      verify stage
-      IO.FS.rename stage out
-    finally
-      if ← stage.pathExists then IO.FS.removeDirAll stage
-
-private def emitVerdict (requested : String) (outcome : Except String Guarantee) : IO UInt32 := do
+private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope := "closed-declarations") : IO UInt32 := do
   let fields := match outcome with
     | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
     | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
-  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson "closed-declarations")] ++ fields)).compress
+  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields)).compress
   return if outcome.isOk then 0 else 1
 
 private def runInDir (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
@@ -475,7 +433,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   let (bundlePath, specPath, out, leanOut?) ← match args with
     | [b, s, o] => pure (b, s, o, none)
     | [b, s, o, "--lean", l] => pure (b, s, o, some l)
-    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
+    | _ => do IO.eprintln "usage: lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
   let tStart ← IO.monoMsNow
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
@@ -484,19 +442,20 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let input := work / "source.mjs"
   IO.FS.writeFile input source
-  if required.isSome then
-    -- Report the first original AST statement outside this theorem, before planning.
-    let _ ← IO.ofExcept (CoreJS.DeclarationInput.decode program)
   let t1 ← lap "read + parse JSON" tStart
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
+  let unsupported (reason : String) : IO UInt32 := do
+    if required.isSome then throw (IO.userError reason)
+    IO.eprintln reason
+    return 3
   for s in asts do
     -- `export * from` publishes names that only the other module knows: a glue export could shadow one
     if Lower.typ s == "ExportAllDeclaration" then
-      IO.eprintln "unsupported top-level statement: ExportAllDeclaration"; return 3
+      return ← unsupported "unsupported top-level statement: ExportAllDeclaration"
     if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
-      IO.eprintln "unsupported top-level statement: an ImportDeclaration whose source has no `lit` (not a dump of `dump.mjs`)"; return 3
+      return ← unsupported "unsupported top-level statement: an ImportDeclaration whose source has no literal annotation"
     if let some what := Lower.outsideModel false s then
-      IO.eprintln s!"unsupported: {what}"; return 3
+      return ← unsupported s!"unsupported: {what}"
   let units := Effects.footprintUnits asts
   let exported := units.toList.flatMap Lower.exportedBindings
   let fps ← match fpPath? with
@@ -546,7 +505,8 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   let P ← IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
   let t4 ← lap "mkPlan" t3
-  let ok ← report B S P
+  let checks ← report B S P
+  let ok := checks.ok
   let t5 ← lap "all checks" t4
   let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then
@@ -557,12 +517,23 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   let slice := sliceVerdict program asts B S P (ok && !bad) replicate?.isSome model
   for line in slice.lines do IO.println line
   if let some request := required then
-    let some level := slice.declarationGuarantee | throw (IO.userError (slice.lines.headD "declaration proof unavailable"))
-    if request == .allOutcomes && level != .allOutcomes then
-      throw (IO.userError "the checked reorder proves only normal-completion")
-    let body ← IO.ofExcept model
-    certifyFiles program body.stmts B P out work input checkOnly outputAsts source
-    return ← emitVerdict request.label (.ok level)
+    if let some level := slice.declarationGuarantee then
+      if request == .allOutcomes && level != .allOutcomes then
+        throw (IO.userError "the checked reorder proves only normal-completion")
+      let body ← IO.ofExcept model
+      certifyFiles program (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
+        IO.ofExcept (CoreJS.DeclarationArtifacts.check program files body.stmts B P)
+      return ← emitVerdict request.label (.ok level)
+    try
+      unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
+      let providers ← loadProviders program bundlePath work
+      certifyFiles program providers B P out work input checkOnly outputAsts source fun files => do
+        let (original, candidate) ← IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P)
+        unless request == .normalCompletion do
+          throw (IO.userError "linked execution proves only normal-completion")
+        verifyExecution work original candidate
+      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
+    catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
   if let some l := leanOut? then
     if bad then
       IO.println "  no kernel certificate: the front-end rule above failed, and Lean does not check it"
@@ -592,39 +563,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
 private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
   IO.FS.withTempDir fun work => runInDir work required checkOnly args
 
-/-- Check selected source-order inversions against the linked wrapper rule. Each entry
-reports the scope of the pair theorem independently of the ordinary split verdict. -/
-private def checkWrapperSwaps (consumer provider pairs : System.FilePath) : IO UInt32 :=
-  IO.FS.withTempDir fun work => do
-    let input := work / "linked.json"
-    javascript #["--linked-input"] #[consumer, provider, input]
-    let modules ← readJson input
-    let importer ← IO.ofExcept (modules.getObjVal? "consumer")
-    let exporter ← IO.ofExcept (modules.getObjVal? "provider")
-    let specifier ← IO.ofExcept (modules.getObjValAs? String "specifier")
-    let indices : Array (Array Nat) ← IO.ofExcept (fromJson? (← readJson pairs))
-    let rule := EsmSplit.prepareWrapperSwaps importer exporter specifier
-    let mut checked := #[]
-    for pair in indices do
-      let #[earlier, later] := pair | throw (IO.userError "expected [earlier,later] unit indices")
-      let result := rule >>= fun check => check earlier later
-      let fields := match result with
-        | .ok shape => [("status", toJson "conditional-normal"), ("import", toJson shape.importAlias),
-          ("export", toJson shape.providerExport), ("providerBinding", toJson shape.providerBinding),
-          ("resultBinding", toJson shape.resultBinding), ("movedBinding", toJson shape.movedBinding)]
-        | .error why => [("status", toJson "unsupported"), ("reason", toJson why)]
-      checked := checked.push (Json.mkObj ([("earlier", toJson earlier), ("later", toJson later)] ++ fields))
-    IO.println (Json.mkObj [("checked", Json.arr checked), ("scope", toJson "source-pairs"),
-      ("provider", toJson specifier), ("premises", toJson [
-        "The named import resolves to the initialized provider cell and factory closure at this crossing.",
-        "Each declaration writes its own unit region, separate from the provider cell and object.",
-        "Both orders use the same binding environment and deferred code."
-      ])]).compress
-    return 0
-
 def main (args : List String) : IO UInt32 := do
-  if let ["--check-wrapper-swaps", consumer, provider, pairs] := args then
-    return ← checkWrapperSwaps consumer provider pairs
   if !args.contains "--require" then
     return ← runSplitter none false args
   let (level?, args) := Effects.takeFlag "--require" args
@@ -637,8 +576,6 @@ def main (args : List String) : IO UInt32 := do
     let checkOnly := args.contains "--check-output"
     let args := args.filter (· != "--check-output")
     unless args.length == 3 && !args.any (·.startsWith "--") do
-      throw (IO.userError "usage: lowersplit bundle.json spec.json outdir --require LEVEL [--check-output]")
-    let status ← runSplitter (some level) checkOnly args
-    if status != 0 then return ← emitVerdict label (.error "source outside the supported module model")
-    return status
+      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir --require LEVEL [--check-output]")
+    runSplitter (some level) checkOnly args
   catch e => emitVerdict label (.error e.toString)

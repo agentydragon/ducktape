@@ -203,13 +203,13 @@ js_test(
 )
 
 js_test(
-    name = "wrapper_commutation_test",
+    name = "linked_programs_test",
     size = "medium",
     data = [
         ":node_modules/astring",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
-    entry_point = "wrapper_commutation_test.mjs",
+    entry_point = "linked_programs_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
 
@@ -940,6 +940,7 @@ js_test(
         ":" + _EXCALIDRAW_EDITOR_SPEC,
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/excalidraw:bundle",
         "//devinfra/js/debundle/excalidraw:inputs",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -948,6 +949,7 @@ js_test(
     env = {
         "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
         "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
+        "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
 )

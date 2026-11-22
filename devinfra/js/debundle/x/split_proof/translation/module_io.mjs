@@ -1,7 +1,6 @@
 // ESTree transport for LowerSplit's printer, input migration and declaration checker.
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
@@ -63,16 +62,20 @@ try {
       printProgram({ type: "Program", sourceType: "module", body: [unit] }, source).trimEnd()
     );
     writeJson(output, units);
-  } else if (mode === "--linked-input") {
-    const [consumer, provider, output] = args;
-    const relative = path.relative(path.dirname(consumer), provider);
-    const specifier = relative.startsWith("../") ? relative : `./${relative}`;
-    if (new URL(specifier, pathToFileURL(consumer)).href !== pathToFileURL(provider).href)
-      throw new Error(`unsupported relative module specifier: ${specifier}`);
-    writeJson(output, { consumer: program(consumer), provider: program(provider), specifier });
   } else if (mode === "--parse") {
     const [input, output] = args;
     writeJson(output, program(input));
+  } else if (mode === "--read-modules") {
+    const [entry, names, output] = args;
+    const source = fs.realpathSync(entry);
+    const root = path.dirname(source);
+    const modules = readJson(names).map((name) => {
+      const file = outputPath(root, name);
+      if (fs.realpathSync(file) !== file || file === source)
+        throw new Error(`unsupported module alias or request back to the source entry: ${name}`);
+      return [name, program(file)];
+    });
+    writeJson(output, Object.fromEntries(modules));
   } else if (mode === "--upgrade") {
     const [input, output] = args;
     writeJson(output, upgradeLowerDump(readJson(input), acorn, eslintScope));

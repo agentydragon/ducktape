@@ -14,6 +14,6 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "usage: proof_fixture_render <dir> [--bad [--force]]"
       return 2
   let plan := mkPlan Example.bundle spec
-  let ok ← report Example.bundle spec plan
+  let ok := (← report Example.bundle spec plan).ok
   if ok || force then FixtureRender.writeModules Example.bundle plan dir
   return if ok then 0 else 1

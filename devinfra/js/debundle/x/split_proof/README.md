@@ -70,6 +70,17 @@ names, declaration initializers and the public exports of the entry. Use the sam
 Acorn’s parsing and scope annotations, and CoreJS’s interpretation of the supported JavaScript
 subset, remain assumptions. [Artifact correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
 
+For a module that calls functions or imports named bindings from relative JavaScript files,
+request `--require normal-completion` with the original source path. The splitter parses
+reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
+Lean decodes the source graph and the reparsed output graph independently. It checks statement
+placement, live binding addresses and the entry’s exports, then asks the kernel to prove
+that both CoreJS programs initialize normally in the same final state for every modeled world.
+The state includes the heap and captured bindings of exported closures. The proof uses
+a fixed interpreter fuel witness. Insufficient fuel, unsupported syntax or a proof that fails
+to reduce yields a rejection. A successful comparison reports `"scope":"linked-programs"`.
+[Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
+
 ## The example
 
 Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:
