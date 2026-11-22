@@ -28,6 +28,7 @@ import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
 import { DispatchWorksetPanel } from "./dispatch_workset_panel";
+import type { WorksetView } from "./dispatch_workset";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
@@ -197,6 +198,7 @@ interface ConversationBodyProps {
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
+  dispatchWorkset: WorksetView;
 }
 
 function ConversationBody({
@@ -212,6 +214,7 @@ function ConversationBody({
   traceSearch,
   langfuseSearch,
   sandbox,
+  dispatchWorkset,
 }: ConversationBodyProps): JSX.Element {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
@@ -331,7 +334,12 @@ function ConversationBody({
           deliver={commands.deliver}
         />
       )}
-      <DispatchWorksetPanel key={threadId} sessionId={threadId} localCommands={localCommands} entities={entities} />
+      <DispatchWorksetPanel
+        sessionId={threadId}
+        view={dispatchWorkset}
+        localCommands={localCommands}
+        entities={entities}
+      />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
         <ModelActivityHint
@@ -520,6 +528,7 @@ export interface ThreadConversationProps {
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
+  dispatchWorkset: WorksetView;
 }
 
 export function ThreadConversation({
@@ -533,13 +542,18 @@ export function ThreadConversation({
   traceSearch,
   langfuseSearch,
   sandbox,
+  dispatchWorkset,
 }: ThreadConversationProps): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
   useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
-    if (error) return <p role="alert">Thread sync failed: {error}</p>;
-    return <p role="status">Loading thread…</p>;
+    return (
+      <>
+        {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
+        <DispatchWorksetPanel sessionId={threadId} view={dispatchWorkset} />
+      </>
+    );
   }
   return (
     <>
@@ -568,6 +582,7 @@ export function ThreadConversation({
         traceSearch={traceSearch}
         langfuseSearch={langfuseSearch}
         sandbox={sandbox}
+        dispatchWorkset={dispatchWorkset}
       />
     </>
   );

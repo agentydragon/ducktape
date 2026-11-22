@@ -8,7 +8,13 @@ import {
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { waitingReasonLabel } from "./command_progress";
-import { EMPTY_WORKSET, readFullDispatchReason, watchDispatchWorkset, type ReasonLookup } from "./dispatch_workset";
+import {
+  EMPTY_WORKSET,
+  readFullDispatchReason,
+  watchDispatchWorkset,
+  type ReasonLookup,
+  type WorksetView,
+} from "./dispatch_workset";
 import type { LocalCommand } from "./local_commands";
 
 function operationLabel(operation: Operation): string {
@@ -93,15 +99,15 @@ function WorksetRow({ sessionId, item }: { sessionId: string; item: DispatchWork
 
 export function DispatchWorksetPanel({
   sessionId,
-  localCommands,
-  entities,
+  view,
+  localCommands = [],
+  entities = [],
 }: {
   sessionId: string;
-  localCommands: readonly LocalCommand[];
-  entities: readonly ThreadEntity[];
+  view: WorksetView;
+  localCommands?: readonly LocalCommand[];
+  entities?: readonly ThreadEntity[];
 }): JSX.Element | null {
-  const [view, setView] = useState(EMPTY_WORKSET);
-  useEffect(() => watchDispatchWorkset(sessionId, setView), [sessionId]);
   const { snapshot, stale, coverageLost } = view;
   const rows = snapshot ? [...snapshot.active, ...snapshot.recentIssues, ...snapshot.recentAdmittedOrCancelled] : [];
   const hidden = new Set(localCommands.map((command) => command.command.commandId));
@@ -170,4 +176,12 @@ export function DispatchWorksetPanel({
       </Stack>
     </Paper>
   );
+}
+
+export function useDispatchWorkset(sessionId: string | null): WorksetView {
+  const [state, setState] = useState<{ sessionId: string; view: WorksetView } | null>(null);
+  useEffect(() => {
+    if (sessionId !== null) return watchDispatchWorkset(sessionId, (view) => setState({ sessionId, view }));
+  }, [sessionId]);
+  return state?.sessionId === sessionId ? state.view : EMPTY_WORKSET;
 }

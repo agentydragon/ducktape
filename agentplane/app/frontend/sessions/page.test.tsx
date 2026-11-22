@@ -1551,6 +1551,31 @@ function selectedWorksetWatch(previous?: ServedWatch): Promise<ServedWatch> {
   });
 }
 
+it("shows Dispatcher delivery before History materializes and keeps one watch when History arrives", async () => {
+  const container = await render({ window: null, error: null });
+  const watch = await selectedWorksetWatch();
+  await act(async () =>
+    watch.send({
+      workset: {
+        sessionId: THREAD.metadata.threadId,
+        active: [
+          {
+            commandId: "pre-history",
+            operation: "OPERATION_SUBMIT_INPUT",
+            state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          },
+        ],
+      },
+      resumeToken: "pre-history",
+    })
+  );
+  expect(container.textContent).toContain("Loading thread…");
+  expect(container.textContent).toContain("Send message · Queued in Dispatcher");
+  await rerender(container, threadState());
+  expect(container.textContent).toContain("Send message · Queued in Dispatcher");
+  expect(dispatchWatches.filter(({ url }) => url.searchParams.has("worksetSessionId"))).toEqual([watch]);
+});
+
 it("shows server delivery for a fresh browser and defers to settled History", async () => {
   const settled = entity({
     case: "command",

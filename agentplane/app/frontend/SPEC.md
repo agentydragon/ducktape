@@ -70,7 +70,8 @@ is reported as unknown; only an identified Environment absent from a fresh inven
 
 The open Thread watches the Dispatcher's bounded Session workset for active commands, recent
 delivery issues, and recent admissions or cancellations. A fresh browser can see these receipts
-without local state. Local command rows and loaded settled History take precedence over duplicate receipts.
+while History is still unavailable. Local command rows and loaded settled History take precedence
+over duplicate receipts.
 An unresolved delivery issue can remain alongside a pending History command. The browser retains
 the last workset while disconnected and reports clipped groups and expired receipt coverage.
 When a reason is abbreviated, the user can read the retained original through the command-ID watch.
