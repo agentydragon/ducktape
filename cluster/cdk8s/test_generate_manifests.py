@@ -588,7 +588,16 @@ def test_claude_session_sync_vpa_opt_in_is_limited_to_deployments(documents: lis
         (doc["kind"], doc["metadata"]["name"], annotations[mode_key])
         for doc in resources
         if mode_key in (annotations := doc["metadata"].get("annotations", {}))
-    } == {("Deployment", "claude-session-sync", "initial"), ("Deployment", "control", "initial")}
+    } == {("Deployment", "claude-session-sync", "auto"), ("Deployment", "control", "initial")}
+
+    web = find_resource(resources, "Deployment", namespace, namespace=namespace)
+    budget = find_resource(resources, "PodDisruptionBudget", namespace, namespace=namespace)["spec"]
+    assert web["spec"]["replicas"] == 2
+    assert budget["maxUnavailable"] == 1
+    [spread] = web["spec"]["template"]["spec"]["topologySpreadConstraints"]
+    assert spread["topologyKey"] == "kubernetes.io/hostname"
+    assert spread["whenUnsatisfiable"] == "DoNotSchedule"
+    assert spread["labelSelector"] == budget["selector"]
 
 
 @pytest.fixture(scope="module")

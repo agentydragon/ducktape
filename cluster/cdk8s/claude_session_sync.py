@@ -23,12 +23,17 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, VpaProfile
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
-from cluster.cdk8s.vpa_policy import ContainerPolicy
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 from devinfra.claude.session_export.settings import ControlSettings, WebSettings
 from util.settings_contract import env_name
 
@@ -120,6 +125,8 @@ def _deployment(
     replicas: int,
     strategy: str,
     description: str,
+    vpa_mode: Vpa,
+    topology_spread_constraints: list[k8s.TopologySpreadConstraint] | None = None,
     volumes: list[k8s.Volume] | None = None,
     volume_mounts: list[k8s.VolumeMount] | None = None,
     tolerate_control_plane: bool = False,
@@ -134,7 +141,11 @@ def _deployment(
             labels=labels,
             annotations={
                 "description": description,
-                **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only(container)),
+                VPA_UPDATE_MODE_LABEL: vpa_mode,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy.cpu_and_memory_requests_only(container),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -167,6 +178,7 @@ def _deployment(
                         )
                     ],
                     volumes=volumes,
+                    topology_spread_constraints=topology_spread_constraints,
                 ),
             ),
         ),
@@ -187,6 +199,9 @@ def _web_deployment(chart: Chart) -> None:
         service=WEB_SERVICE,
         replicas=2,
         strategy="RollingUpdate",
+        # EventSource reconnects can replay the durable journal on either replica.
+        vpa_mode=Vpa.AUTO,
+        topology_spread_constraints=[node_scheduling.hostname_spread(WEB_SERVICE.pods.selector)],
         description="Serves the owner-authenticated Claude session page and proxies controls to the credential owner.",
         env=[
             DATABASE.app_secret.key("uri").env_var(env_name(WebSettings, "database_url")),
@@ -211,6 +226,7 @@ def _control_deployment(chart: Chart) -> None:
         service=CONTROL_SERVICE,
         replicas=1,
         strategy="Recreate",
+        vpa_mode=Vpa.INITIAL,
         description="Owns the rotating Claude OAuth credential, pairing flow, polling cycle, and live API streams.",
         env=[
             DATABASE.app_secret.key("uri").env_var(env_name(ControlSettings, "database_url")),
