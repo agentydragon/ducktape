@@ -50,7 +50,7 @@ def _memory_quantity(memory_bytes: int) -> str:
     return f"{memory_bytes // mebibyte}Mi" if memory_bytes % mebibyte == 0 else str(memory_bytes)
 
 
-class EnvironmentVmTemplate(Construct):
+class EnvironmentVmTemplate(ApiObject):
     """Build one VM SandboxTemplate from an explicitly composed guest ConfigMap."""
 
     def __init__(
@@ -68,8 +68,13 @@ class EnvironmentVmTemplate(Construct):
         firmware: VirtualMachineSpecTemplateSpecDomainFirmware | None = None,
         root_disk_serial: str | None = None,
     ) -> None:
-        super().__init__(scope, id)
-        namespace = env.namespace
+        super().__init__(
+            scope,
+            id,
+            api_version=f"{GROUP}/v1alpha1",
+            kind="SandboxTemplate",
+            metadata=ApiObjectMetadata(name=template_name, namespace=env.namespace),
+        )
         resources = env.vm_resources
         if resources is None:
             raise ValueError("VM Sandboxes require vm_resources")
@@ -115,12 +120,6 @@ class EnvironmentVmTemplate(Construct):
         vm = VirtualMachine.manifest(
             metadata=ApiObjectMetadata(name=template_name), spec=VirtualMachineSpec(template=template)
         )["spec"]
-        ApiObject(
-            self,
-            "sandboxtemplate",
-            api_version=f"{GROUP}/v1alpha1",
-            kind="SandboxTemplate",
-            metadata=ApiObjectMetadata(name=template_name, namespace=namespace),
-        ).add_json_patch(
+        self.add_json_patch(
             JsonPatch.add("/spec", {"vm": vm, "stateVolume": state_volume, "workspaceVolume": workspace_volume})
         )

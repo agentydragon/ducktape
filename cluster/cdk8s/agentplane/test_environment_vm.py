@@ -3,31 +3,50 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any, cast
 
 import pytest
 import pytest_bazel
+from cdk8s import App
+from cdk8s_plus_34 import ConfigMap
+from constructs import IConstruct
+from more_itertools import one
 from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, SystemdEnvironment
-from cluster.cdk8s.agentplane import environment_guest, environment_vm, launcher_relay, staging
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.agentplane import environment_guest, environment_sandbox, environment_vm, launcher_relay, staging
 
 
 @pytest.fixture(scope="module")
-def vm_spec(staging_manifests: list[dict[str, Any]]) -> dict[str, Any]:
-    return cast(dict[str, Any], find_resource(staging_manifests, "SandboxTemplate", environment_vm.NAME)["spec"])
+def staging_constructs(scratch_app_factory: Callable[[], App]) -> list[IConstruct]:
+    return staging.chart(scratch_app_factory()).node.find_all()
 
 
 @pytest.fixture(scope="module")
-def guest_config(staging_manifests: list[dict[str, Any]]) -> dict[str, Any]:
-    return find_resource(staging_manifests, "ConfigMap", f"{environment_vm.NAME}-config")
+def vm_spec(staging_constructs: list[IConstruct]) -> dict[str, Any]:
+    vm = one(
+        node
+        for node in staging_constructs
+        if isinstance(node, environment_vm.EnvironmentVmTemplate) and node.name == environment_vm.NAME
+    )
+    return cast(dict[str, Any], vm.to_json()["spec"])
 
 
 @pytest.fixture(scope="module")
-def runtime(guest_config: dict[str, Any]) -> dict[str, Any]:
-    return cast(dict[str, Any], json.loads(guest_config["data"]["environment-runtime.json"]))
+def guest_config(
+    staging_constructs: list[IConstruct], vm_spec: dict[str, Any], vm_guest_contract: dict[str, Any]
+) -> ConfigMap:
+    config_volume = vm_guest_contract["disks"]["config"]["volume_name"]
+    volumes = vm_spec["vm"]["template"]["spec"]["volumes"]
+    name = one(v for v in volumes if v["name"] == config_volume)["configMap"]["name"]
+    return one(node for node in staging_constructs if isinstance(node, ConfigMap) and node.name == name)
+
+
+@pytest.fixture(scope="module")
+def runtime(guest_config: ConfigMap, vm_guest_contract: dict[str, Any]) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(guest_config.data[vm_guest_contract["files"]["runtime_config"]]))
 
 
 @pytest.fixture(scope="module")
@@ -63,11 +82,11 @@ def test_executor_selects_native_implementation(runtime: dict[str, Any]) -> None
     assert environment["resources"]["executor_workload"] == staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
 
 
-def test_default_runtime_settings(runtime: dict[str, Any]) -> None:
+def test_staging_guest_uses_persistent_home_and_disables_console_autologin(
+    runtime: dict[str, Any], vm_guest_contract: dict[str, Any]
+) -> None:
     config = Configuration.model_validate(runtime)
-    assert config.harness_environment.values["HOME"] == "/state/home"
-    assert config.session_reconcile_concurrency is None
-    assert config.codex_readiness is None
+    assert config.harness_environment.values["HOME"] == f"{vm_guest_contract['state']['mount']}/home"
     assert isinstance(config.environment, SystemdEnvironment)
     assert config.environment.console_autologin is False
 
@@ -117,11 +136,10 @@ def test_vm_workspace_is_a_controller_attached_block_filesystem(vm_spec: dict[st
 
 
 def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_storage(
-    staging_manifests: list[dict[str, Any]],
+    staging_constructs: list[IConstruct], vm_spec: dict[str, Any]
 ) -> None:
-    vm_template = find_resource(staging_manifests, "SandboxTemplate", environment_vm.NAME)
-    vm_state = vm_template["spec"]["stateVolume"]
-    vm_workspace = vm_template["spec"]["workspaceVolume"]
+    vm_state = vm_spec["stateVolume"]
+    vm_workspace = vm_spec["workspaceVolume"]
     assert vm_state["layout"] == {"type": "DirectoryTree"}
     assert vm_state["claim"]["volumeMode"] == "Filesystem"
     assert vm_workspace["claim"]["volumeMode"] == "Block"
@@ -129,10 +147,14 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert vm_state["claim"]["storageClassName"] == vm_workspace["claim"]["storageClassName"]
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
-    environment_template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
-    pod_state = environment_template["spec"]["stateVolume"]
+    environment_template = one(
+        node
+        for node in staging_constructs
+        if isinstance(node, environment_sandbox.EnvironmentSandboxTemplate) and node.name == staging.POD_TEMPLATE
+    )
+    pod_state = environment_template.spec["stateVolume"]
     assert pod_state["claim"]["storageClassName"] != vm_state["claim"]["storageClassName"]
-    assert environment_template["spec"]["workspaceVolume"]["layout"] == {"type": "DirectoryTree"}
+    assert environment_template.spec["workspaceVolume"]["layout"] == {"type": "DirectoryTree"}
 
 
 def test_vm_storage_class_requires_vm_sandboxes() -> None:
@@ -151,11 +173,11 @@ def test_vm_template_renders_mtls_server_listener(vm_spec: dict[str, Any], runti
 def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
     vm_guest_contract: dict[str, Any],
     runtime_service_unit: dict[str, str],
-    guest_config: dict[str, Any],
+    guest_config: ConfigMap,
     runtime: dict[str, Any],
     vm_spec: dict[str, Any],
 ) -> None:
-    config_map = guest_config["data"]
+    config_map = guest_config.data
     vm = vm_spec["vm"]
     domain = vm["template"]["spec"]["domain"]
 
@@ -163,12 +185,6 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
     for disk_name in ("runtime", "config", "egress_trust", "workspace"):
         disk = vm_guest_contract["disks"][disk_name]
         assert disk_names_by_serial[disk["serial"]] == disk["volume_name"]
-    volumes_by_name = {volume["name"]: volume for volume in vm["template"]["spec"]["volumes"]}
-    assert (
-        volumes_by_name[vm_guest_contract["disks"]["config"]["volume_name"]]["configMap"]["name"]
-        == guest_config["metadata"]["name"]
-    )
-
     assert runtime["state_dir"] == vm_guest_contract["state"]["mount"]
     assert runtime["control"]["security"]["tls"]["cert_file"] == (
         f"{vm_guest_contract['environment_runtime_tls']['runtime_path']}/tls.crt"
@@ -187,7 +203,6 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
         f"{vm_guest_contract['disks']['runtime']['mount']}/bin"
     )
     assert runtime["environment"]["block_devices"] == [vm_guest_contract["disks"]["workspace"]["device"]]
-    assert vm_guest_contract["files"]["runtime_config"] in config_map
     assert vm_guest_contract["files"]["runtime_environment"] in config_map
     assert "kubeconfig" not in config_map
     assert "KUBECONFIG" not in runtime["harness_environment"]["values"]

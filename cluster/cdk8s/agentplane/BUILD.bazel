@@ -1239,7 +1239,6 @@ py_test(
 
 py_test(
     name = "test_environment_vm",
-    # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
     srcs = ["test_environment_vm.py"],
     data = [
@@ -1251,13 +1250,17 @@ py_test(
     deps = [
         ":conftest",
         ":environment_guest",
+        ":environment_sandbox",
         ":environment_vm",
         ":launcher_relay",
         ":staging",
         "//:conftest",
         "//agentplane/env:config",
         "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s/testing:manifests",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
