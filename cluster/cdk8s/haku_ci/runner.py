@@ -134,14 +134,15 @@ _SHUTDOWN_TIMEOUT_SECONDS = 1800
 #
 # TODO: see whether Flux image automation can bump this digest (ImageRepository + ImagePolicy
 # on the tag, a Setters marker here), including the oci-cache pre-warm above.
-_JOB_LABEL = (
-    "haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
+_JOB_LABEL = "haku-ci"
+_RUNNER_LABEL = (
+    f"{_JOB_LABEL}:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
 )
 
 
 def _config() -> runner_config.Config:
     """forgejo-runner's config, shared by `register` and `one-job`. Jobs run in the act image
-    (`_JOB_LABEL`), talking to the rootless dind sidecar via DOCKER_HOST."""
+    (`_RUNNER_LABEL`), talking to the rootless dind sidecar via DOCKER_HOST."""
     return runner_config.Config(
         log=runner_config.Log(level="info"),
         runner=runner_config.Runner(
@@ -151,7 +152,7 @@ def _config() -> runner_config.Config:
             capacity=1,
             timeout=_JOB_TIMEOUT_SECONDS,
             shutdown_timeout=_SHUTDOWN_TIMEOUT_SECONDS,
-            labels=[_JOB_LABEL],
+            labels=[_RUNNER_LABEL],
         ),
         container=runner_config.Container(
             # How the RUNNER reaches dind: it shares the pod network namespace with the sidecar.
@@ -331,7 +332,7 @@ def _register() -> InitContainer:
             "--name",
             "$(RUNNER_NAME)",
             "--labels",
-            _JOB_LABEL,
+            _RUNNER_LABEL,
             "--config",
             _CONFIG_PATH,
         ],
@@ -521,7 +522,7 @@ def _add_runner(chart: Chart) -> None:
                     # No `name:` -- the docs list it as required, but the scaler filters on labels
                     # and the current deployment has worked without it. A fixed name could not
                     # match anyway: every pod registers under its own pod name.
-                    metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
+                    metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": _JOB_LABEL},
                     authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=trigger_auth.name),
                 )
             ],
