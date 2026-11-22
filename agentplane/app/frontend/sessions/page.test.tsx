@@ -1374,10 +1374,10 @@ it.each<[{ reconnectingFor: number; windowError?: string }, string[]]>([
   expect(shown).toEqual(alerts.map(matching));
 });
 
-function message(commandId: string): Command {
+function message(commandId: string, text = "Test input " + commandId): Command {
   return create(CommandSchema, {
     commandId,
-    operation: { case: "submitInput", value: { text: `Test input ${commandId}` } },
+    operation: { case: "submitInput", value: { text } },
   });
 }
 
@@ -1836,10 +1836,9 @@ it("acknowledges only the exact revision, including a matching local notice, and
 });
 
 it("reconciles an old synthetic missing receipt by exact ID and original content", async () => {
-  const local = message("old-deletion");
-  const unrelated = message("other-old-deletion");
+  const local = message("old-deletion", ".");
+  const unrelated = message("other-old-deletion", ".");
   for (const command of [local, unrelated]) {
-    command.operation = { case: "submitInput", value: { text: "." } };
     const store = new LocalCommands(THREAD.metadata.threadId);
     store.remember(command);
     store.updateDispatch(
