@@ -287,9 +287,7 @@ describe("QuotaBoard", () => {
   it("updates only reset countdown and pending state as time advances without a new payload", () => {
     const quotas = sampleQuotas();
     render(quotas, Date.parse("2026-01-15T12:00:00Z"));
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain(
-      "Resets in 2h 30m"
-    );
+    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("↻ in 2h 30m");
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("On pace");
 
     render(quotas, Date.parse("2026-01-15T14:31:00Z"));

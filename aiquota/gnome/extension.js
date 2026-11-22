@@ -1230,7 +1230,7 @@ const QuotaIndicator = GObject.registerClass(
       const liveState = withLiveReset(state, staleAgeSeconds != null);
       const parts = [
         `${liveState.used}%`,
-        liveState.reset === "awaiting update" ? liveState.reset : `resets in ${liveState.reset}`,
+        liveState.reset === "awaiting update" ? liveState.reset : `↻ in ${liveState.reset}`,
       ];
       if (staleAgeSeconds == null && liveState.forecast) parts.push(liveState.forecast);
       item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);
