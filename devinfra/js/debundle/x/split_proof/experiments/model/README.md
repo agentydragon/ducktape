@@ -9,9 +9,9 @@ bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_dif
   //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_inheritance_differential_test
 ```
 
-The fixed sample uses seeds 1–12. The broad suite partitions those seeds across
-two Bazel shards; each shard also runs the handwritten cases and retains the
-configured random-plan budget. Appended `--test_arg=--count --test_arg=N`,
+The broad and binding suites use seeds 1–12. The broad suite partitions those
+seeds across two Bazel shards, each with the handwritten cases and configured
+random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 `--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override its arguments.
 
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
@@ -88,11 +88,9 @@ modeled eager keys/static initializers remain explicit. New body fallback does
 not handle `super`, `new.target`, async/generator functions, direct eval, or relocation-sensitive
 imports. A refused body cannot silently erase those restrictions.
 
-The allocation proof admits only fixed-string method/accessor keys and no fields.
+The plain-class allocation proof admits only fixed-string method/accessor keys and no fields.
 It captures method bodies without executing them, writes only fresh objects and
 the class's own binding, and composes with the existing allocation move theorem.
-Inheritance and broader class shapes gain no new proof permission. This is the
-syntax-based `moves` slice, not the binding-certificate slice.
 
 Handwritten cases cover deferred execution, receivers/arguments, class self names,
 nested lexical captures, constructor returns/throws, invocation restrictions,
@@ -120,13 +118,28 @@ Handwritten cases cover chains, both prototype links, constructor-prototype muta
 invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
 invocation restrictions, and opaque base bodies. The separate `corejs_inheritance_differential_test` (`--inheritance-only`) runs
 these cases and the generated `inheritance` family, executing a default-constructor
-chain for each of the same 12 seeds. Its required reordered split
-moves independent prefix allocations; it does not move the derived declaration.
+chain for each of 24 seeds across two shards. The chain cases reorder independent
+prefix allocations.
 
-Derived creation has **no commutation permission yet**. The existing allocation
-rule's replay premise permits own-region object reads and selected lexical-cell
-reads. Reading an existing superclass/prototype requires an additional heap-read
-stability proof; adding only the superclass binding to `readsNow` is insufficient.
+The guarded heritage cases move an anonymous subclass declaration across local
+allocations. Each seed composes an anonymous base and subclass from methods,
+getters, setters and subclass statics. It varies lexical blocks, the intervening
+prefix of inert, allocating or derived declarations, and the number and kinds of
+crossed allocations. The observations exercise the selected class members,
+prefix statements and crossed initializers. They check constructor values with
+positive and negative inputs and both prototype links. At the default seed
+count, each shard checks that successful runs cover multiple shapes in every
+dimension.
+
+The handwritten plan and every generated positive must reach
+`moves (certified class heritage)` with a normal-equivalence verdict, agree in
+the four Node and CoreJS executions, and match the final model-state hash. A
+seeded mutation of each positive adds a base static, aliases or writes the
+superclass, names the pivot, or inserts a crossed assignment. These controls
+reach the heritage guard with valid structural plans and checked footprints.
+They must get a negative guard result while continuing to match runtime
+observations and the final model-state hash. A handwritten control checks the
+structural rejection of a crossed read of the moving subclass.
 
 The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
 case labels, CoreJS batch boundaries, and module-order/split subprocess boundaries for timeout diagnosis. The inheritance

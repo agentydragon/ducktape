@@ -143,3 +143,17 @@ with the same endpoints listed above. The other plans retain their verdicts.
 The model covers this subclass's implicit constructor and opaque method body.
 Closing the seven proof gaps requires stable reads of the existing superclass and
 its prototype; the plain-class locality theorem does not permit those heap reads.
+
+## Certified roughjs alternating split
+
+The checker now certifies the alternating placement of the 73 roughjs units.
+All 630 inverted pairs are covered. The JSON move report records the seven
+pairs listed above under `pairwiseFailedPairExamples`, sets
+`certifiedClassHeritage` to true, and reports zero remaining failures.
+
+Unit 6 binds the plain base class `T`. Unit 8 creates another subclass of
+`T` and preserves its constructor and prototype. With those facts established,
+unit 9 can move past the seven active declarations in the alternating plan.
+For every CoreJS world, the split ends normally in a given state exactly when
+the bundle does. The other eleven probe verdicts match the default-derived
+census. [Census and inheritance differential suite](https://app.buildbuddy.io/invocation/6d319638-a866-4e58-a82c-144fbcff326f)

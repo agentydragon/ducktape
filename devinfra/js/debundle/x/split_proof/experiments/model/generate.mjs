@@ -1,3 +1,5 @@
+import { rng } from "../translation/gen/core.mjs";
+
 // Bounded CoreJS programs. Every selected family executes; no unit filtering or unknown-code retry.
 // Prefix units 0 and 1 are independent allocations. Swapping them is a required real-emitter move control.
 export function generatedCases(seed) {
@@ -281,4 +283,133 @@ export function generatedInheritanceCases(seed) {
     `,
     },
   ];
+}
+
+export function generatedHeritageSplit(seed) {
+  const random = rng(seed);
+  const n = 1 + random.int(9);
+  const choose = (options, index, count) => {
+    const remaining = [...options];
+    const first = remaining.splice(index % options.length, 1)[0];
+    return [first, ...Array.from({ length: count - 1 }, () => remaining.splice(random.int(remaining.length), 1)[0])];
+  };
+  const block = (seed >>> 0) % 2 === 0;
+  const constructor = block
+    ? "constructor(value) { if (value > 0) { const offset = calibration; this.value = value + offset; } else { this.value = value; } }"
+    : "constructor(value) { this.value = value; }";
+  const base = choose(
+    [
+      ["method", `baseRead() { return this.value + ${n}; }`, "sample.baseRead()"],
+      ["getter", "get baseValue() { return this.value + calibration; }", "sample.baseValue"],
+      ["accessor", `get value() { return this.saved; } set value(v) { this.saved = v + ${n}; }`, "sample.saved"],
+    ],
+    seed >>> 0,
+    1 + random.int(3)
+  );
+  const members = choose(
+    [
+      ["method", "read() { const old = this.value; return old + calibration; }", "sample.read()"],
+      ["getter", `get adjusted() { return this.value * ${n}; }`, "sample.adjusted"],
+      [
+        "accessor",
+        "get savedValue() { return this.savedExtra; } set savedValue(v) { this.savedExtra = v * 2; }",
+        "sample.savedValue",
+      ],
+      ["static", `static label() { return ${JSON.stringify(`label-${n}`)}; }`, "Pivot.label()"],
+    ],
+    seed >>> 1,
+    1 + random.int(4)
+  );
+  // Each distinct prefix item contributes an observation after the move.
+  const between = choose(
+    [
+      ["inert", "function readCalibration() { return calibration; }", "readCalibration()"],
+      ["allocation", "var savedBase = { ctor: Base };", "savedBase.ctor === Base"],
+      [
+        "subclass",
+        `var Earlier = class extends Base { note() { return this.value - ${n}; } };`,
+        `new Earlier(${n + 1}).note()`,
+      ],
+      [
+        "subclass",
+        "var Sibling = class extends Base {};",
+        "Object.getPrototypeOf(Sibling.prototype) === Base.prototype",
+      ],
+    ],
+    seed >>> 0,
+    1 + random.int(4)
+  );
+  const allocationKinds = ["object", "array", "closure", "class", "reference"];
+  const allocations = choose(allocationKinds, seed >>> 0, 1 + ((seed >>> 0) % 4)).map((kind, i) => {
+    const name = `local${i}`;
+    const value = n + i;
+    const [initializer, observation] = {
+      object: [`{ inner: { value: ${value} } }`, `${name}.inner.value`],
+      array: [`[${value}, { value: ${value + 1} }]`, `${name}[1].value`],
+      closure: [`() => calibration + ${value}`, `${name}()`],
+      class: [`class { read() { return ${value}; } }`, `new ${name}().read()`],
+      reference: ["Base", `${name} === Base`],
+    }[kind];
+    const declaration = (seed + i) % 2 === 0 ? "let" : "var";
+    return [kind, `${declaration} ${name} = ${initializer};`, observation];
+  });
+  const coverage = {
+    baseMembers: base.map(([kind]) => kind),
+    pivotMembers: members.map(([kind]) => kind),
+    prefix: between.map(([kind]) => kind),
+    crossed: allocations.map(([kind]) => kind),
+    block: [block ? "block" : "straight"],
+    width: [allocations.length],
+  };
+  const calibration = n + (block ? 2 : 0);
+  const setterOffset = base.some(([kind]) => kind === "accessor") ? n : 0;
+  const constructedValue = n + 3 + (block ? calibration : 0) + setterOffset;
+  const observedPrefix = [calibration, constructedValue, -n + setterOffset, true, true].join(" ");
+  const mutations = ["static base", "superclass alias", "named pivot", "superclass write", "crossed assignment"];
+  const render = (mutation) => {
+    const setup = [`var calibration = ${n};`];
+    if (block) setup.push("{ const offset = 2; calibration += offset; }");
+    const baseSyntax = base.map(([, syntax]) => syntax);
+    if (mutation === "static base") baseSyntax.push("static extra() { return 0; }");
+    setup.push(`var Base = class { ${constructor} ${baseSyntax.join(" ")} };`);
+    if (mutation === "superclass write") setup.push("Base = Base;");
+    setup.push(...between.map(([, source]) => source));
+    if (mutation === "superclass alias") setup.push("var Alias = Base;");
+    const pivot = setup.length;
+    const self = mutation === "named pivot" ? " NamedPivot" : "";
+    const parent = mutation === "superclass alias" ? "Alias" : "Base";
+    const subclass = `var Pivot = class${self} extends ${parent} { ${members.map(([, syntax]) => syntax).join(" ")} };`;
+    const crossed = allocations.map(([, source]) => source);
+    if (mutation === "crossed assignment") crossed.push("var assigned;", `assigned = ${n};`);
+    const observations = [
+      "calibration",
+      "sample.value",
+      `new Pivot(${-n}).value`,
+      "Object.getPrototypeOf(Pivot) === Base",
+      "Object.getPrototypeOf(Pivot.prototype) === Base.prototype",
+      ...[...base, ...members, ...between, ...allocations].map(([, , observation]) => observation),
+    ];
+    if (mutation === "crossed assignment") observations.push("assigned");
+    const suffix = [`var sample = new Pivot(${n + 3});`];
+    if (members.some(([kind]) => kind === "accessor")) suffix.push(`sample.savedValue = ${n + 4};`);
+    suffix.push(`console.log(${observations.join(", ")});`);
+    const crossedIds = crossed.map((_, i) => pivot + i + 1);
+    return {
+      name: `heritage seed ${seed}${mutation ? ` with ${mutation}` : ""}`,
+      source: [...setup, subclass, ...crossed, ...suffix].join("\n"),
+      heritageObservedPrefix: observedPrefix,
+      spec: {
+        entry: "entry.mjs",
+        modules: {
+          "prefix.mjs": [...setup.map((_, i) => i), ...crossedIds].map((id) => `#${id}`),
+          "entry.mjs": [pivot, ...suffix.map((_, i) => pivot + crossed.length + i + 1)].map((id) => `#${id}`),
+        },
+      },
+      ...(mutation
+        ? { uncertifiedHeritage: true, heritageMutation: mutation }
+        : { certifiedHeritage: { pivot, crossed: crossedIds }, heritageCoverage: coverage }),
+    };
+  };
+  const mutationIndex = ((seed % mutations.length) + mutations.length) % mutations.length;
+  return [render(null), render(mutations[mutationIndex])];
 }

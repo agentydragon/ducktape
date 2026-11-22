@@ -3,7 +3,7 @@ import Experiments.Effects
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Split
 import Experiments.CoreJS.Move
-import Experiments.CoreJS.BindingMoves
+import Experiments.CoreJS.HeritageCertificate
 import Std.Data.HashMap
 import Std.Data.HashSet
 
@@ -315,16 +315,19 @@ def moveReport (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan)
     ("inert", toJson s.inert), ("allocatesOnly", toJson s.allocs.isSome),
     ("bindingSummary", toJson s.bindingSummary.isSome),
     ("bindingCertificate", toJson (certs.getD i false))]
+  let heritage := failed > 0 && CoreJS.heritageMovesOk ss w.B w.P.execOrder
   return Json.mkObj [("footprintsOfSyntax", toJson (footprintsOk ss w.B)),
     ("statements", toJson rows), ("invertedPairs", toJson inverted),
-    ("failedPairs", toJson failed), ("failedPairExamples", toJson examples)]
+    ("pairwiseFailedPairs", toJson failed), ("pairwiseFailedPairExamples", toJson examples),
+    ("certifiedClassHeritage", toJson heritage), ("failedPairs", toJson (if heritage then 0 else failed)),
+    ("failedPairExamples", toJson (if heritage then #[] else examples))]
 
 /-- How many statements are opaque, inert, and only allocate without being inert. -/
 @[noinline] def modelCounts (ss : List CoreJS.Stmt) : Nat × Nat × Nat :=
   (ss.countP fun | .opaque .. => true | _ => false, ss.countP (·.inert), ss.countP fun s => !s.inert && s.allocs.isSome)
 
-/-- **Which proved slice of the end-to-end theorem covers the split**, and what it rests on; or what it lacks. Three
-slices are proved, and each is decided here as their theorems state them, of the bundle without its outside `import`s
+/-- **Which proved slice of the end-to-end theorem covers the split**, and what it rests on; or what it lacks. The
+checker decides each slice as its theorem states it, of the bundle without its outside `import`s
 (`WithoutImports`), after `Valid` and `FootprintsOfSyntax`:
 
 - `CoreJS.valid_order_kept_preserves`, for a plan that keeps the bundle's order (`OrderKept`): every way the bundle
@@ -332,7 +335,9 @@ slices are proved, and each is decided here as their theorems state them, of the
 - `CoreJS.moves_preserve`, for a plan whose every pair out of the bundle's order passes `MayMove` (`movesOk`, which
   `movesOk_iff` proves equal to that hypothesis): the bundle ends normally in a state exactly when the split does.
 - `CoreJS.moves_preserve_of_certifiedMovesOk` adds supported binding statements whose actual summaries pass a
-  total coverage check and do not conflict; its conclusion is the same successful-execution equivalence. -/
+  total coverage check and do not conflict.
+- `CoreJS.moves_preserve_of_heritageMovesOk` moves a derived class across a block after checking an earlier
+  class declaration establishes its superclass and intervening steps preserve it. -/
 def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
     (model? : Option (String × Except String CoreJS.Program)) : List String :=
   let kept := "order kept (`CoreJS.valid_order_kept_preserves`)"
@@ -364,7 +369,8 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
     let arr := ss.toArray
     let syntaxMoves := if orderKept then false else CoreJS.movesOk arr w.P.execOrder
     let certifiedMoves := if orderKept || syntaxMoves then false else CoreJS.certifiedMovesOk ss w.B w.P.execOrder
-    unless orderKept || syntaxMoves || certifiedMoves do
+    let heritage := !orderKept && !syntaxMoves && !certifiedMoves && CoreJS.heritageMovesOk ss w.B w.P.execOrder
+    unless orderKept || syntaxMoves || certifiedMoves || heritage do
       let firstOut := (w.P.execOrder.zip (List.range w.B.length)).find? fun (a, b) => a != b
       let allows := CoreJS.certifiedMayMoveAt arr w.B.toArray w.B.readsTab (CoreJS.bindingCertificateTab ss w.B)
       let (inverted, failed, first) := movesFailures allows w.P.execOrder.toArray
@@ -373,6 +379,7 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
         | some (a, b) => s!": statement {orig a} runs where statement {orig b} does" | none => ""}; {moves} or certified bindings need every inverted pair to pass MayMove or checked nonconflicting binding summaries, and {failed} of the {inverted} do not{match first with
         | some (a, b) => s!", the first statement {orig a} before statement {orig b}" | none => ""}"
     let name := if orderKept then kept else if syntaxMoves then moves
+      else if heritage then "moves (certified class heritage) (`CoreJS.moves_preserve_of_heritageMovesOk`)"
       else "moves (certified bindings) (`CoreJS.moves_preserve_of_certifiedMovesOk`)"
     let (inverted, _, _) := if orderKept then (0, 0, none) else movesFailures (CoreJS.MayMoveAt arr) w.P.execOrder.toArray
     pure ([if orderKept then s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"
@@ -381,13 +388,15 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
         [s!"    of the bundle without its `import`s of outside modules ({imports}), which bind before any statement runs; the split without them is the same otherwise"])
       ++ [s!"    Valid: the nine checks{if imports == 0 then " above" else ", again"}"]
       ++ (if orderKept then [s!"    OrderKept: the modules run the {ss.length} statements in the bundle's order"]
+        else if heritage then
+          ["    Class heritage: the base declaration establishes the constructor and its own prototype. Intervening units preserve both."]
         else if certifiedMoves then
           [s!"    Certified moves: all {inverted} inverted pairs pass MayMove or have checked binding summaries with no footprint conflict"]
         else [s!"    MayMove: the modules run {inverted} pairs of the {ss.length} statements out of the bundle's order, and each passes ({inertN} statements are inert, {allocN} more only allocate)"])
       ++ [s!"    FootprintsOfSyntax: against {path}: {ss.length - nOpaque - nothing} statements in the model's syntax, {nOpaque} opaque, {nothing} that do nothing (an `export` list, `;`, `debugger`)",
       s!"    trusted: the model; the front end's reading of the scope; outside modules are part of the world{if dynamicImport then "; `import()` is opaque, faithful since every module is in one directory" else ""}{if metaUrl then "; `new URL(\"/absolute\", import.meta.url)` resolves against the origin" else ""}"]
       ++ (if orderKept then [] else ["    not covered: a run that throws, runs out of fuel or does not end (premise P4); the split may end otherwise then"])
-      ++ [if certifiedMoves then
+      ++ [if certifiedMoves || heritage then
         "    Footprint certificates: the actual supplied reads and writes cover the supported CoreJS statements; producer correctness is not assumed"
         else "    not among its hypotheses: the footprint analysis and its premises"])
   match covered with

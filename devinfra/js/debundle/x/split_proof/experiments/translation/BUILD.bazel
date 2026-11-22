@@ -635,7 +635,7 @@ js_test(
     args = [
         "--inheritance-only",
         "--count",
-        "12",
+        "24",
         "--seed",
         "1",
         "--splits",
@@ -644,6 +644,7 @@ js_test(
     data = _COREJS_DIFFERENTIAL_DATA,
     entry_point = _MODEL + ":differential",
     env = _COREJS_DIFFERENTIAL_ENV,
+    shard_count = 2,
 )
 
 js_test(

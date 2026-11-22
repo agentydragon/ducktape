@@ -56,9 +56,10 @@ import { format } from "node:util";
 import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
-import { cases, inheritanceCases, splitCases, bindingSplitCases } from "./cases.mjs";
+import { cases, inheritanceCases, inheritanceSplitCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {
   generatedCases,
+  generatedHeritageSplit,
   generatedInheritanceCases,
   generatedModuleCases,
   generatedOpaqueCase,
@@ -337,14 +338,22 @@ for (const c of selectedCases) {
 const bindingCases = bindingOnly
   ? Array.from({ length: count }, (_, i) => generatedBindingCases(firstSeed + i)).flat()
   : [];
-for (const c of bindingOnly ? [...bindingSplitCases, ...bindingCases] : inheritanceOnly ? [] : splitCases) {
+const heritageCases = inheritanceOnly
+  ? Array.from({ length: count }, (_, i) => generatedHeritageSplit(firstSeed + i)).flat()
+  : [];
+const namedSplits = bindingOnly
+  ? [...bindingSplitCases, ...bindingCases]
+  : inheritanceOnly
+    ? [...inheritanceSplitCases, ...heritageCases]
+    : splitCases;
+for (const c of namedSplits) {
   const translated = accepted(c.source);
   assert(translated !== null, `split case ${c.name}: the front end refuses the bundle`);
   jobs.push({
     label: `split case ${c.name}`,
     source: c.source,
     program: single(translated),
-    expectEnd: null,
+    expectEnd: inheritanceOnly ? "normal" : null,
     set: null,
     splitCase: c,
   });
@@ -635,6 +644,8 @@ function split(job, bundle, dump, kind, spec, named) {
   });
   const out = path.join(dir, "out");
   const plan = path.join(dir, "plan.json");
+  const heritageReport = path.join(dir, "heritage-report.json");
+  const hasHeritageExpectation = named?.certifiedHeritage || named?.uncertifiedHeritage;
   const run = spawnSync(
     lowersplit,
     [
@@ -645,6 +656,7 @@ function split(job, bundle, dump, kind, spec, named) {
       plan,
       "--corejs",
       path.join(dir, "program.json"),
+      ...(hasHeritageExpectation ? ["--move-report", heritageReport] : []),
     ],
     { encoding: "utf8" }
   );
@@ -675,9 +687,34 @@ function split(job, bundle, dump, kind, spec, named) {
     assert(!orderKept, `${label}: the binding certificate regression must reorder statements`);
     assert(slice?.startsWith("moves (certified bindings)"), `${label}: missing certified binding slice: ${slice}`);
   }
+  if (named?.certifiedHeritage) {
+    const { pivot, crossed } = named.certifiedHeritage;
+    assert.deepEqual(
+      statements.filter((id) => id === pivot || crossed.includes(id)),
+      [...crossed, pivot],
+      `${label}: local declarations must run before the subclass`
+    );
+    assert.match(
+      slice ?? "",
+      /^moves \(certified class heritage\).*: in the model, the split ends normally in a state exactly when the bundle does, for every world$/,
+      `${label}: missing class heritage certification and normal equivalence`
+    );
+  }
   if (named?.uncertified) {
     assert(!orderKept, `${label}: the uncertified control must reorder statements`);
     assert.match(slice, /^none\./, `${label}: unsupported syntax must gain no permission`);
+  }
+  if (named?.uncertifiedHeritage) {
+    assert(!orderKept, `${label}: the uncertified heritage control must reorder statements`);
+    assert.match(slice ?? "", /^none\..*\(OrderKept\)/, `${label}: the heritage guard must reject the proposed moves`);
+  }
+  if (hasHeritageExpectation) {
+    const report = JSON.parse(readFileSync(heritageReport, "utf8"));
+    const certified = Boolean(named.certifiedHeritage);
+    assert.equal(report.footprintsOfSyntax, true, `${label}: must reach the heritage guard with validated footprints`);
+    assert(report.pairwiseFailedPairs > 0, `${label}: the existing pairwise rules must leave a move unproved`);
+    assert.equal(report.certifiedClassHeritage, certified, `${label}: unexpected heritage guard result`);
+    assert.equal(report.failedPairs, certified ? 0 : report.pairwiseFailedPairs, `${label}: inconsistent move report`);
   }
   if (named?.poisonWrite !== undefined) {
     const analysis = spawnSync(lower, [path.join(dir, "ast.json")], { encoding: "utf8" });
@@ -796,11 +833,8 @@ runModel(splitJobs);
 // `order_kept_preserves` of `Split.lean` is about one world: a split that keeps the order also runs in the world its
 // bundle recorded, and must end there in the bundle's state.
 for (const job of splitJobs) job.inBundleWorld = { label: job.label, node: job.of.node, program: job.program };
-runModel(
-  splitJobs
-    .filter((job) => job.orderKept || (job.moves && job.of.node.end === "normal"))
-    .map((job) => job.inBundleWorld)
-);
+const comparesNormalState = (job) => (job.moves || job.named?.heritageMutation) && job.of.node.end === "normal";
+runModel(splitJobs.filter((job) => job.orderKept || comparesNormalState(job)).map((job) => job.inBundleWorld));
 for (const job of splitJobs) {
   const files = () =>
     job.program.modules.map((m) => `// ${m.name}\n${readFileSync(path.join(path.dirname(job.entry), m.name), "utf8")}`);
@@ -844,11 +878,11 @@ for (const job of splitJobs) {
     if (there.state === bundle.state && sameRun(there, bundle)) tally.sameState++;
     else failures.push(`${job.label}: the split keeps the order and ends in another state than its bundle`);
   }
-  if (job.moves && job.of.node.end === "normal") {
+  if (comparesNormalState(job)) {
     const there = job.inBundleWorld.result;
     const bundle = job.of.numbered.result;
     if (there.state !== bundle.state || !sameRun(there, bundle))
-      failures.push(`${job.label}: the proved move ends in another state in the bundle's world`);
+      failures.push(`${job.label}: the move ends in another state in the bundle's world`);
   }
   if (!same(job.result.order, job.order))
     failures.push(`${job.label}: the model runs the modules as ${job.result.order}, the plan as ${job.order}`);
@@ -910,6 +944,53 @@ if (bindingOnly) {
     "every generated binding case must execute equivalently through the certified moves slice"
   );
   console.log(`certified binding moves: ${certifiedGenerated.length}, four runs and final state compared`);
+}
+if (inheritanceOnly) {
+  const certified = splitJobs.filter((j) => j.named?.certifiedHeritage);
+  assert.equal(certified.length, count + 1, "the handwritten and every generated heritage split must execute");
+  const compositions = certified.flatMap((j) => (j.named.heritageCoverage ? [j.named.heritageCoverage] : []));
+  assert.equal(compositions.length, count, "every seed must execute its composed heritage split");
+  const rejected = splitJobs.filter((j) => j.named?.heritageMutation);
+  assert.equal(rejected.length, count, "every seeded mutation must reach the guard");
+  assert(
+    [...certified, ...rejected].every(
+      (j) => j.result.end === "normal" && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)
+    ),
+    "composed heritage plans and their mutations must preserve normal execution in the model and in Node"
+  );
+  for (const job of [...certified, ...rejected]) {
+    const observed = job.named.heritageObservedPrefix;
+    if (observed)
+      assert(
+        job.node.out[0]?.startsWith(`${observed} `),
+        `${job.label}: expected constructor and prototype observations ${observed}`
+      );
+  }
+  const mutations = new Set(rejected.map((j) => j.named.heritageMutation));
+  assert.equal(
+    mutations.size,
+    Math.min(count, 5),
+    "the seeded mutations must exercise the different guard restrictions"
+  );
+  if (count >= 12) {
+    for (const [axis, minimum] of Object.entries({
+      baseMembers: 3,
+      pivotMembers: 4,
+      prefix: 3,
+      crossed: 5,
+      block: 2,
+      width: 4,
+    })) {
+      const shapes = new Set(compositions.flatMap((c) => c[axis]));
+      assert(shapes.size >= minimum, `heritage compositions must exercise ${minimum} ${axis} shapes: ${[...shapes]}`);
+    }
+    assert(
+      new Set(compositions.map((shape) => JSON.stringify(shape))).size >= 8,
+      "heritage builds must vary in shape across seeds"
+    );
+  }
+  console.log(`certified class heritage moves: ${certified.length}, four runs and final state compared`);
+  console.log(`guard-rejected heritage mutations: ${rejected.length}, covering ${[...mutations].sort().join(", ")}`);
 }
 console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);
