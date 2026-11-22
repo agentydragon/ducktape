@@ -53,6 +53,13 @@ function commandIssue(value: LocalCommand, errors: ReadonlyMap<string, CommandIs
   return undefined;
 }
 
+function localReceiptReason(receipt: LocalCommand["dispatch"]): string | undefined {
+  if (receipt?.reason === "sandbox_deleted" && !receipt.updatedAt && receipt.operation === Operation.UNSPECIFIED) {
+    return "Dispatcher did not return a receipt for this command";
+  }
+  return receipt?.reason;
+}
+
 function progressStage(
   outcome: ThreadCommandOutcome | null,
   admitted: boolean,
@@ -214,6 +221,7 @@ export function PendingInputMessages({
         const canAct =
           (value.attempted || value.destination.kind === "session") &&
           !admitted &&
+          !notice?.hasDispatcherReceipt &&
           value.dispatch === null &&
           !value.interruptResult;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
@@ -240,7 +248,7 @@ export function PendingInputMessages({
                     <CommandOutcome
                       stage={stage}
                       subject="input"
-                      reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
+                      reason={outcomeReason ?? localReceiptReason(value.dispatch) ?? issue?.message}
                       local
                       unsent={!value.attempted}
                     />
@@ -331,7 +339,9 @@ function LocalControlRows({
                     stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
                     subject={subject(operation.case)}
                     reason={
-                      admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
+                      admitted
+                        ? undefined
+                        : (localReceiptReason(value.dispatch) ?? value.interruptResult?.reason ?? issue?.message)
                     }
                     local
                     unsent={!value.attempted}
@@ -339,6 +349,7 @@ function LocalControlRows({
                 )}
                 {(value.attempted || value.destination.kind === "session") &&
                   !admitted &&
+                  !notice?.hasDispatcherReceipt &&
                   value.dispatch === null &&
                   !value.interruptResult && (
                     <Button

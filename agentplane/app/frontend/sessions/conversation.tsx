@@ -35,6 +35,8 @@ import {
   type LocalNotice,
 } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
+import { sameCommand } from "./local_commands";
+import { useDispatchOriginals } from "./delivery_notice";
 import { isDeliveryIssue, matchingLocalIssue } from "./command_notice_attention";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
@@ -329,19 +331,36 @@ function ConversationBody({
   useThreadSync().useCommandRows(inline.map((item) => item.commandId));
   const historyIds = selectedHistoryCommands(entities);
   const localIds = new Set(localCommands.map(({ command }) => command.commandId));
-  const byCommand = new Map(inline.map((item) => [item.commandId, item]));
+  const byCommand = new Map([...inline, ...deliveryAttention.issues].map((item) => [item.commandId, item]));
+  const uncertainLocalIds = localCommands.flatMap((command) => {
+    const id = command.command.commandId;
+    const issue = byCommand.get(id);
+    return command.attempted && issue && isDeliveryIssue(issue.state) && !matchingLocalIssue(command, threadId, [issue])
+      ? [id]
+      : [];
+  });
+  const localOriginals = useDispatchOriginals(delivery.readReceipts, uncertainLocalIds);
   const localNotice: LocalNotice = (command) => {
+    const id = command.command.commandId;
     const exact = matchingLocalIssue(command, threadId, deliveryAttention.issues);
-    if (exact && deliveryAttention.acknowledged(exact)) return { acknowledged: true };
-    if (!command.attempted) return;
-    const item = exact ?? (delivery.workset.stale ? undefined : byCommand.get(command.command.commandId));
-    if (item && !deliveryAttention.acknowledged(item)) {
-      return {
-        acknowledged: false,
-        failed: isDeliveryIssue(item.state),
-        progress: receiptProgress(delivery, item),
-      };
+    const item = exact ?? (delivery.workset.stale || !command.attempted ? undefined : byCommand.get(id));
+    if (!item) return;
+    const original = localOriginals.commands?.get(id);
+    const verified =
+      exact !== undefined ||
+      (original?.command !== undefined &&
+        original.receiptVersion === item.receiptVersion &&
+        original.operation === item.operation &&
+        sameCommand(command.command, original.command));
+    if (deliveryAttention.acknowledged(item)) {
+      return { acknowledged: verified, hasDispatcherReceipt: true };
     }
+    return {
+      acknowledged: false,
+      hasDispatcherReceipt: true,
+      failed: isDeliveryIssue(item.state),
+      progress: receiptProgress(delivery, item),
+    };
   };
   const projectedProgress = new Map(
     inline

@@ -26,8 +26,7 @@ export function matchingLocalIssue(
   issues: readonly DispatchWorksetItem[]
 ): DispatchWorksetItem | undefined {
   const receipt = command.dispatch;
-  if (command.admission || receipt === null || receipt.updatedAt === undefined || receipt.sessionId !== sessionId)
-    return;
+  if (command.admission || receipt === null || receipt.sessionId !== sessionId) return;
   // Compare the local display to the latest visible server notice. A different update, outcome,
   // or diagnostic keeps the local row visible. The revision sent to App always comes from Dispatcher.
   return issues.find(
@@ -35,8 +34,11 @@ export function matchingLocalIssue(
       issue.commandId === receipt.commandId &&
       issue.state === receipt.state &&
       issue.operation === receipt.operation &&
-      issue.updatedAt?.seconds === receipt.updatedAt?.seconds &&
-      issue.updatedAt?.nanos === receipt.updatedAt?.nanos &&
+      (receipt.receiptVersion !== undefined && receipt.receiptVersion > 0n
+        ? receipt.receiptVersion === issue.receiptVersion
+        : receipt.updatedAt !== undefined &&
+          issue.updatedAt?.seconds === receipt.updatedAt.seconds &&
+          issue.updatedAt?.nanos === receipt.updatedAt.nanos) &&
       (issue.reasonTruncated
         ? issue.reason !== undefined && receipt.reason?.startsWith(issue.reason)
         : receipt.reason === issue.reason)

@@ -1716,6 +1716,7 @@ it("shows server delivery for a fresh browser and defers to settled History", as
 });
 
 it("keeps one History bubble for an unresolved receipt across dismissal and a newer revision", async () => {
+  deliveryRequest = (url) => Response.json(url.pathname.endsWith(":batchGet") ? { acknowledgements: [] } : {});
   const input = entity({
     case: "command",
     value: { operation: Operation.SUBMIT_INPUT, outcome: ThreadCommandOutcome.PENDING },
@@ -1832,6 +1833,50 @@ it("acknowledges only the exact revision, including a matching local notice, and
   selectedReceipts = [newer];
   await showIssues(watch, newer);
   expect(container.textContent).toContain("Dispatcher found a new problem");
+});
+
+it("reconciles an old synthetic missing receipt by exact ID and original content", async () => {
+  const local = message("old-deletion");
+  const unrelated = message("other-old-deletion");
+  for (const command of [local, unrelated]) {
+    command.operation = { case: "submitInput", value: { text: "." } };
+    const store = new LocalCommands(THREAD.metadata.threadId);
+    store.remember(command);
+    store.updateDispatch(
+      command.commandId,
+      dispatchFromJson({
+        commandId: command.commandId,
+        sessionId: THREAD.metadata.threadId,
+        state: "DELIVERY_STATE_UNKNOWN",
+        reason: "sandbox_deleted",
+      })
+    );
+  }
+  const exact = {
+    ...issueReceipt(local.commandId, "91", "Runner could not apply this operation"),
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_UNKNOWN",
+  };
+  selectedReceipts = [{ ...exact, command: toJson(CommandSchema, local) }];
+  const writes: unknown[] = [];
+  deliveryRequest = (url, init) => {
+    if (url.pathname.endsWith(":batchGet")) return Response.json({ acknowledgements: [] });
+    writes.push(JSON.parse(String(init?.body)));
+    return Response.json({});
+  };
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, exact);
+  expect(container.querySelectorAll(`[data-command-id="${local.commandId}"]`)).toHaveLength(1);
+  const bubble = pendingRow(container, local.commandId);
+  expect(bubble.textContent).toContain(exact.reason);
+  await act(async () => buttonIn(bubble, "Dismiss")!.click());
+  expect(writes).toEqual([{ notice: { commandId: local.commandId, receiptVersion: "91" } }]);
+  expect(container.querySelector(`[data-command-id="${local.commandId}"]`)).toBeNull();
+  const unmatched = pendingRow(container, unrelated.commandId);
+  expect(unmatched.textContent).toContain("Dispatcher did not return a receipt for this command");
+  expect(buttonIn(unmatched, "Dismiss")).toBeUndefined();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(2);
 });
 
 it("keeps a saved local failure with no authoritative receipt for acknowledgement", async () => {
@@ -2181,7 +2226,9 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
 
   const row = pendingRow(container, waiting.commandId);
   await vi.waitFor(() =>
-    expect(row.querySelector('[role="status"]')?.textContent).toBe("Outcome unknown: sandbox_deleted")
+    expect(row.querySelector('[role="status"]')?.textContent).toBe(
+      "Outcome unknown: Dispatcher did not return a receipt for this command"
+    )
   );
   expect(row.querySelector('[role="alert"]')).toBeNull();
 });

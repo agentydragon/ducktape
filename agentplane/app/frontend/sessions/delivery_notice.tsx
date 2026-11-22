@@ -161,7 +161,7 @@ export function useDispatchOriginals(
       for (const batch of results) {
         if (batch.status !== "fulfilled") continue;
         for (const { result } of batch.value) {
-          if (result.case === "dispatch" && result.value.command) {
+          if (result.case === "dispatch" && result.value.command?.commandId === result.value.commandId) {
             commands.set(result.value.commandId, result.value);
           }
         }
