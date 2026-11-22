@@ -494,6 +494,7 @@ py_test(
         ":namespaces",
         ":vpa_policy",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -645,8 +646,6 @@ py_test(
     deps = [
         ":conftest",
         ":container_resources",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
