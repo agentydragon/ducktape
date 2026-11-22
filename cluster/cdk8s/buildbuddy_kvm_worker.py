@@ -114,9 +114,8 @@ _DEMAND_QUERY = (
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
 _NESTED_VIRT_FEATURES = ("svm", "vmx")
-# Qualified at fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; future guest images
-# require fresh-boot and workload qualification before changing this manual pin.
-_IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268"
+# Fresh-boot and workload evidence for this manual pin: devinfra/buildbuddy/kvm/x/nixos_worker_qualification/results.md.
+_IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:21df8d193ec6d68d5b1a596b49ef18318cc26019560694ed16462aa6e64a87ff"
 _HTTPS_HOSTS = ("remote.buildbuddy.io",)
 
 

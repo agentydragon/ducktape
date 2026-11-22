@@ -212,7 +212,7 @@ spec:
               operator: Exists
           volumes:
             - containerDisk:
-                image: git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268
+                image: git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:21df8d193ec6d68d5b1a596b49ef18318cc26019560694ed16462aa6e64a87ff
                 imagePullPolicy: IfNotPresent
                 imagePullSecret: forgejo-images-creds
               name: rootdisk
