@@ -12,6 +12,7 @@ import { fetchJson } from "../transport/client";
 import { facadeBody } from "./facade_body";
 
 const PAGE_SIZE = 25;
+const MAX_BATCH = 100;
 
 function path(threadId: string): string {
   return `/upstream/app/v1/threads/${encodeURIComponent(threadId)}/notice-acknowledgements`;
@@ -31,12 +32,23 @@ export async function getCommandNoticeAcknowledgements(
   notices: CommandNoticeRevision[],
   signal: AbortSignal
 ): Promise<CommandNoticeAcknowledgement[]> {
-  const request = create(BatchGetCommandNoticeAcknowledgementsRequestSchema, { threadId, notices });
-  const payload = await fetchJson(
-    `${path(threadId)}:batchGet`,
-    post(facadeBody(toJson(BatchGetCommandNoticeAcknowledgementsRequestSchema, request), "threadId"), signal)
-  );
-  return fromJson(CommandNoticeAcknowledgementsSchema, payload, { ignoreUnknownFields: true }).acknowledgements;
+  const batches = [];
+  for (let from = 0; from < notices.length; from += MAX_BATCH) {
+    const request = create(BatchGetCommandNoticeAcknowledgementsRequestSchema, {
+      threadId,
+      notices: notices.slice(from, from + MAX_BATCH),
+    });
+    batches.push(
+      fetchJson(
+        `${path(threadId)}:batchGet`,
+        post(facadeBody(toJson(BatchGetCommandNoticeAcknowledgementsRequestSchema, request), "threadId"), signal)
+      ).then(
+        (payload) =>
+          fromJson(CommandNoticeAcknowledgementsSchema, payload, { ignoreUnknownFields: true }).acknowledgements
+      )
+    );
+  }
+  return (await Promise.all(batches)).flat();
 }
 
 export async function listCommandNoticeAcknowledgements(

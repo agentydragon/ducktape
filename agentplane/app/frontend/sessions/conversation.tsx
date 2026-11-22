@@ -25,9 +25,10 @@ import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/li
 import { useOptionalStreamStatus } from "../transport/stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
-import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
+import { PendingInputMessages, LocalControlCommands, type LocalNotice } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
-import { DispatchWorksetPanel } from "./dispatch_workset_panel";
+import { AcknowledgeDeliveryIssue, DispatchWorksetPanel } from "./dispatch_workset_panel";
+import { matchingLocalIssue } from "./command_notice_attention";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -311,6 +312,15 @@ function ConversationBody({
       .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
+  const deliveryAttention = delivery.attention;
+  const localNotice: LocalNotice = (command) => {
+    const item = matchingLocalIssue(command, threadId, deliveryAttention.issues);
+    if (!item) return;
+    return {
+      acknowledged: deliveryAttention.acknowledged(item),
+      action: <AcknowledgeDeliveryIssue item={item} attention={deliveryAttention} />,
+    };
+  };
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
   for (const local of localCommands) {
     if (local.command.operation.case === "submitInput") {
@@ -327,6 +337,7 @@ function ConversationBody({
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
+        localNotice={localNotice}
       />
       {localCommands.length > 0 && (
         <LocalControlCommands
@@ -335,6 +346,7 @@ function ConversationBody({
           store={commands.store}
           errors={commands.errors}
           deliver={commands.deliver}
+          localNotice={localNotice}
         />
       )}
       <DispatchWorksetPanel

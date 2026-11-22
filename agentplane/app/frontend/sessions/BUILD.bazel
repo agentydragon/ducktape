@@ -144,10 +144,27 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":command_notice_client",
+        ":local_commands",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
+    name = "local_delivery_receipts",
+    srcs = ["local_delivery_receipts.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":command_notice_attention",
+        ":dispatch_workset",
+        ":local_commands",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
@@ -229,6 +246,7 @@ ts_library(
         ":command_notice_attention",
         ":dispatch_workset",
         ":local_commands",
+        ":local_delivery_receipts",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
@@ -347,6 +365,7 @@ ts_library(
         ":client",
         ":command_delivery",
         ":command_delivery_history",
+        ":command_notice_attention",
         ":composer",
         ":dispatch_workset_panel",
         ":harness_behavior",

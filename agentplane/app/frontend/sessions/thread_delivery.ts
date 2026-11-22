@@ -9,6 +9,7 @@ import {
   type WorksetView,
 } from "./dispatch_workset";
 import { LocalCommands, type LocalCommandSnapshot } from "./local_commands";
+import { useLocalIssueReceipts } from "./local_delivery_receipts";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = {
   commands: [],
@@ -60,11 +61,13 @@ export function useThreadDelivery(sessionId: string, worksetEnabled: boolean): T
     setArchiveIssues(issues);
     return () => setArchiveIssues((current) => (current === issues ? NO_ISSUES : current));
   }, []);
+  const savedIssues = useLocalIssueReceipts(local.commands, workset, readReceipts);
   const attention = useCommandNoticeAttention(
     sessionId,
-    workset.snapshot?.recentIssues ?? NO_ISSUES,
+    [...(workset.snapshot?.recentIssues ?? NO_ISSUES), ...savedIssues.issues],
     workset.stale,
-    archiveIssues
+    archiveIssues,
+    savedIssues.error
   );
   return { sessionId, workset, local, store, attention, readReceipts, registerArchiveIssues };
 }

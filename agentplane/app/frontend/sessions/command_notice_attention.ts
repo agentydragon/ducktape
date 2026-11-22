@@ -8,6 +8,7 @@ import {
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError } from "../transport/client";
 import { acknowledgeCommandNotice, getCommandNoticeAcknowledgements } from "./command_notice_client";
+import type { LocalCommand } from "./local_commands";
 
 type Receipt = { commandId: string; receiptVersion?: bigint };
 
@@ -17,6 +18,29 @@ export function noticeKey(receipt: Receipt): string {
 
 export function isDeliveryIssue(state: DeliveryState): boolean {
   return state === DeliveryState.FAILED || state === DeliveryState.UNKNOWN;
+}
+
+export function matchingLocalIssue(
+  command: LocalCommand,
+  sessionId: string,
+  issues: readonly DispatchWorksetItem[]
+): DispatchWorksetItem | undefined {
+  const receipt = command.dispatch;
+  if (command.admission || receipt === null || receipt.updatedAt === undefined || receipt.sessionId !== sessionId)
+    return;
+  // Compare the local display to the latest visible server notice. A different update, outcome,
+  // or diagnostic keeps the local row visible. The revision sent to App always comes from Dispatcher.
+  return issues.find(
+    (issue) =>
+      issue.commandId === receipt.commandId &&
+      issue.state === receipt.state &&
+      issue.operation === receipt.operation &&
+      issue.updatedAt?.seconds === receipt.updatedAt?.seconds &&
+      issue.updatedAt?.nanos === receipt.updatedAt?.nanos &&
+      (issue.reasonTruncated
+        ? issue.reason !== undefined && receipt.reason?.startsWith(issue.reason)
+        : receipt.reason === issue.reason)
+  );
 }
 
 export interface NoticeAttention {
@@ -35,7 +59,8 @@ export function useCommandNoticeAttention(
   sessionId: string,
   issues: readonly DispatchWorksetItem[],
   stale: boolean,
-  archiveIssues: readonly DispatchWorksetItem[]
+  archiveIssues: readonly DispatchWorksetItem[],
+  selectedError: string | null
 ): NoticeAttention {
   const eligible = new Set(
     [...(stale ? NO_ISSUES : issues), ...archiveIssues]
@@ -102,7 +127,7 @@ export function useCommandNoticeAttention(
     canAcknowledge: (item) => isDeliveryIssue(item.state) && eligible.has(noticeKey(item)),
     historyRevision,
     pending,
-    error: writeError ?? lookupError,
+    error: writeError ?? lookupError ?? selectedError,
     acknowledge: (item) => {
       const receiptVersion = item.receiptVersion;
       const key = noticeKey(item);

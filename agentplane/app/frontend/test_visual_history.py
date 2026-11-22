@@ -669,6 +669,30 @@ async def test_dispatcher_notice_acknowledgement(view: VisualPage, app: Agentpla
     await view.capture(name="delivery_issue_history", target=history)
 
 
+@DESKTOP_AND_MOBILE
+async def test_acknowledge_saved_issue_outside_workset(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.SAVED_DELIVERY_ISSUE_OUTSIDE_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    local = view.page.locator('[data-command-id="73343335-0000-4000-8000-000000000001"]')
+    await expect(local).to_contain_text("Please keep the original text.")
+    acknowledge = local.get_by_role("button", name="Acknowledge delivery issue", exact=False)
+    await expect(acknowledge).to_be_visible()
+    await local.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="saved_delivery_issue", target=local)
+    await acknowledge.click()
+    await expect(local).to_have_count(0)
+
+    await view.page.get_by_role("button", name="More").click()
+    await view.page.get_by_role("menuitem", name="Delivery history", exact=True).click()
+    history = view.page.get_by_role("dialog", name="Delivery history")
+    await history.get_by_role("tab", name="Acknowledged").click()
+    await history.get_by_role("button", name="Inspect original receipt").click()
+    await expect(history).to_contain_text("Dispatcher could not deliver the saved input.")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="acknowledged_saved_issue", target=history)
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
 async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.PENDING_COMMANDS)
