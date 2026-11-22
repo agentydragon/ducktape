@@ -17,13 +17,15 @@ js_library(
 )
 
 js_binary(
-    name = "reparse",
+    name = "module_io",
     data = [
+        "print.mjs",
         ":node_modules/acorn",
+        ":node_modules/astring",
         ":node_modules/eslint-scope",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     ],
-    entry_point = "reparse.mjs",
+    entry_point = "module_io.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
 
@@ -176,6 +178,14 @@ js_test(
     size = "medium",
     data = _LOWER_CALLBACK_FUZZ_DATA,
     entry_point = "lower_chunk_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "estree_printer_test",
+    size = "small",
+    data = _LOWER_CALLBACK_FUZZ_DATA,
+    entry_point = "estree_printer_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
 

@@ -35,6 +35,12 @@ const candidates = {
   swapArguments: [],
 };
 const topNamesOf = output.modules.map(() => new Set());
+const comparisonJson = (value) =>
+  JSON.stringify(value, function (key, field) {
+    if (["start", "end"].includes(key)) return undefined;
+    if (this?.type === "Literal" && ["value", "raw", "regex", "bigint"].includes(key)) return undefined;
+    return field;
+  });
 output.modules.forEach((module, m) => {
   for (const unit of bodyUnits(module.program)) {
     const binders = new Set();
@@ -52,7 +58,7 @@ output.modules.forEach((module, m) => {
       else if (
         node.type === "CallExpression" &&
         node.arguments.length >= 2 &&
-        JSON.stringify(node.arguments[0]) !== JSON.stringify(node.arguments[1])
+        comparisonJson(node.arguments[0]) !== comparisonJson(node.arguments[1])
       )
         candidates.swapArguments.push({ node });
       if (node.type === "Identifier" && node.k === "T") {

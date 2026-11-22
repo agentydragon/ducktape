@@ -34,14 +34,14 @@ def report (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
              ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)]
   return rs.all id
 
-def writeModules (B : Bundle) (P : Plan) (dir : System.FilePath) (render : Module → String := (·.render B P)) : IO Unit := do
+def writeModules (B : Bundle) (P : Plan) (dir : System.FilePath) : IO Unit := do
   IO.ofExcept (validateModulePaths (P.mods.map (·.name)))
   IO.FS.createDirAll dir
   for m in P.mods do
     let output := dir / m.name
     let parent := "/".intercalate ((m.name.splitOn "/").dropLast)
     if !parent.isEmpty then IO.FS.createDirAll (dir / parent)
-    IO.FS.writeFile output (render m)
+    IO.FS.writeFile output (m.render B P)
   IO.println s!"  wrote {P.mods.length} modules to {dir}"
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.

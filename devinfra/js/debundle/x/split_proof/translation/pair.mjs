@@ -65,6 +65,10 @@ function shapeKey(unit) {
       else parts.push(`${node.k}${node.k === "G" ? `:${node.name}` : ""}${node.d ? "!" : ""}`);
       return;
     }
+    if (node.type === "Literal") {
+      parts.push(`Literal:${JSON.stringify(node.lit)}`);
+      return;
+    }
     if (node.type === "TemplateElement") {
       parts.push(`TemplateElement:${JSON.stringify([node.value.cooked, node.value.raw, node.tail])}`);
       return;

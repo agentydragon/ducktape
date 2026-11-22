@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "acorn": "8.19.0",
+    "astring": "1.9.0",
     "eslint-scope": "9.1.2",
     "globals": "17.14.0",
     "shift-codegen": "8.1.0",

@@ -71,16 +71,44 @@ export function literalKey(node) {
 }
 
 const POSITION_FIELDS = new Set(["start", "end", "loc", "range"]);
-const LITERAL_DROP = new Set(["value", "raw", "regex", "bigint"]);
+const PRINTED_FROM_SOURCE = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ClassDeclaration",
+  "ClassExpression",
+  "MethodDefinition",
+]);
 
-function annotate(node, meaning, ranged, binders) {
-  if (Array.isArray(node)) return node.map((child) => annotate(child, meaning, ranged, binders));
+const needsPrintRange = (node) =>
+  PRINTED_FROM_SOURCE.has(node.type) ||
+  (node.type === "Property" && (node.method || node.kind === "get" || node.kind === "set"));
+
+function literalValue(node) {
+  if (node.regex) return null;
+  if (typeof node.value === "bigint" || (typeof node.value === "number" && !Number.isFinite(node.value)))
+    return String(node.value);
+  return node.value;
+}
+
+function annotate(node, meaning, unitRanges, binders, legacy) {
+  if (Array.isArray(node)) return node.map((child) => annotate(child, meaning, unitRanges, binders, legacy));
   if (node === null || typeof node !== "object") return node;
-  const keepRange = ranged.has(node);
+  const keepRange = unitRanges.has(node) || (!legacy && needsPrintRange(node));
   const out = keepRange ? { start: node.start, end: node.end } : {};
+  if (node.type === "Literal") {
+    out.type = node.type;
+    out.lit = literalKey(node);
+    if (!legacy) {
+      out.raw = node.raw;
+      out.value = literalValue(node);
+      if (node.regex) out.regex = { ...node.regex };
+      if (node.bigint !== undefined) out.bigint = node.bigint;
+    }
+    return out;
+  }
   for (const [key, value] of Object.entries(node)) {
-    if (!POSITION_FIELDS.has(key) && !(node.type === "Literal" && LITERAL_DROP.has(key)))
-      out[key] = annotate(value, meaning, ranged, binders);
+    if (!POSITION_FIELDS.has(key)) out[key] = annotate(value, meaning, unitRanges, binders, legacy);
   }
   if (node.type === "Identifier") {
     const m = meaning.get(node);
@@ -93,19 +121,20 @@ function annotate(node, meaning, ranged, binders) {
       if (m.declares) out.d = 1;
     }
   }
-  if (node.type === "Literal") out.lit = literalKey(node);
   return out;
 }
 
-/** Preserve the Program structure with scope/literal annotations. Acorn's UTF-16 ranges
- * and the original source let Lean recover text for each statement or declarator. */
-export function annotateProgram({ code, ast }, meaning) {
-  const ranged = new Set(ast.body);
+/** Preserve the Program's syntax with scope annotations and JSON-safe literals. Retain Acorn's
+ * UTF-16 offsets for the units and for functions, methods and classes whose source is observable. */
+export function annotateProgram({ code, ast }, meaning, { legacy = false } = {}) {
+  const unitRanges = new Set(ast.body);
   for (const statement of ast.body) {
     const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
     if (declaration?.type === "VariableDeclaration") {
-      for (const declarator of declaration.declarations) ranged.add(declarator);
+      for (const declarator of declaration.declarations) unitRanges.add(declarator);
     }
   }
-  return { ...annotate(ast, meaning, ranged, new Map()), sourceText: code };
+  const program = { ...annotate(ast, meaning, unitRanges, new Map(), legacy), sourceText: code };
+  if (!legacy) program.annotationVersion = 2;
+  return program;
 }
