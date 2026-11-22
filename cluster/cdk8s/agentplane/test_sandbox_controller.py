@@ -52,21 +52,20 @@ def _environments_grpc_target(staging_manifests: list[dict[str, Any]]) -> str:
     return f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
 
 
-def test_environments_selects_controller_endpoints_for_the_single_metrics_scrape(
-    staging_manifests: list[dict[str, Any]],
+def test_environments_monitor_scrapes_the_controllers_metrics_listener(
+    staging_manifests: list[dict[str, Any]], controller_settings: Settings
 ) -> None:
-    service = find_resource(staging_manifests, "Service", sandbox_controller.NAME)
-    deployment = find_resource(staging_manifests, "Deployment", sandbox_controller.NAME)
-    assert service["spec"]["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
-    assert {port["name"]: port["port"] for port in service["spec"]["ports"]} == {"metrics": 8080, "grpc": 8082}
     monitor = find_resource(staging_manifests, "ServiceMonitor", "sandbox-controller")
-    assert one(monitor["spec"]["endpoints"])["port"] == "metrics"
     selector = monitor["spec"]["selector"]["matchLabels"]
-    assert [
-        doc["metadata"]["name"]
+    service = one(
+        doc
         for doc in staging_manifests
         if doc["kind"] == "Service" and selector.items() <= doc["metadata"].get("labels", {}).items()
-    ] == [sandbox_controller.NAME]
+    )
+    assert service["metadata"]["name"] == sandbox_controller.NAME
+    endpoint = one(monitor["spec"]["endpoints"])
+    port = one(port for port in service["spec"]["ports"] if port["name"] == endpoint["port"])
+    assert port["targetPort"] == int(controller_settings.metrics_bind_address.rsplit(":", 1)[1])
 
 
 def test_controller_uses_its_mounted_service_certificate(

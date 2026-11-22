@@ -17,7 +17,6 @@ from cdk8s_plus_34 import (
     RoleBinding,
     RolePolicyRule,
     ServiceAccount,
-    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
@@ -161,7 +160,7 @@ def _add_controller_workload(
     workload = add_service_workload(
         scope,
         env,
-        serves=[endpoint, environment_endpoint],
+        serves=[environment_endpoint, endpoint],
         container=endpoint.name,
         image=image,
         extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
@@ -175,10 +174,7 @@ def _add_controller_workload(
         telemetry_enabled=True,
         registry_secret_name=registry_secret_name,
         service_account=service_account,
-        create_service=False,
     )
-    for key, value in environment_service.ENVIRONMENTS_ROUTING_LABELS.items():
-        workload.deployment.pod_metadata.add_label(key, value)
 
     # Preserve the OpenTelemetry service identity across the deployment rename.
     workload.container.env.add_variable("OTEL_SERVICE_NAME", EnvValue.from_value("sandbox-controller"))
@@ -208,17 +204,6 @@ class SandboxController(Construct):
         self.authority = authority
         namespace = env.namespace
         environments = environment_service.environments_service(namespace)
-        k8s.KubeService(
-            self,
-            "environments-service",
-            metadata=k8s.ObjectMeta(name=environments.name, namespace=namespace, labels=environments.labels),
-            spec=k8s.ServiceSpec(
-                type="ClusterIP",
-                external_i_ps=[],
-                selector=environment_service.ENVIRONMENTS_ROUTING_LABELS,
-                ports=[environments.k8s_service_port(), _METRICS_PORT.k8s_service_port()],
-            ),
-        )
         prerequisites = Construct(self, "environments-prerequisites")
         account = ServiceAccount(
             prerequisites,
