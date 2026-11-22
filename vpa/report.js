@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611222322`);
+      const response = await fetch(`${path}?v=202611222356`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -335,7 +335,10 @@ function Report() {
 
   const { inventory, review } = snapshot;
   const { counts, workloads } = inventory;
-  const piraeus = review.piraeus_management_rollout.namespace_recount;
+  const nodeRollout = review.piraeus_csi_node_rollout;
+  const piraeus = nodeRollout.namespace_recount;
+  const io = nodeRollout.wyrm2.continuous_probe;
+  const fresh = nodeRollout.wyrm2.fresh_probe;
   const gitlab = review.gitlab_capacity;
   const railsSurge = gitlab.scenarios.find(
     (scenario) => scenario.name === "Rails surge",
@@ -403,9 +406,9 @@ function Report() {
     <${Anchor} href="../">← All reports<//>
     <${Title} order=${1} mt="md">Cluster VPA rollout<//>
     <${Text} size="lg" mt="sm"
-      >Both Piraeus management Pods now have CPU and memory requests. The next
-      storage sizing review covers the CSI controller. KubeVirt client recovery
-      and GitLab worker capacity remain open.<//
+      >All nine Piraeus CSI node plugins registered after receiving static
+      requests. A mounted volume on wyrm2 passed every sampled readback through
+      replacement. The next storage sizing review covers nine HA controllers.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -476,6 +479,36 @@ function Report() {
 
     <section id="rollout-status">
       <${Title} order=${2} mt="xl">Recent rollouts<//>
+      <${Text} mt="sm" id="piraeus-csi">
+        <strong>All nine CSI node plugins registered with kubelet.</strong>
+        ${" "}Each node now reserves 105m CPU and 192 MiB for the driver,
+        registrar and liveness sidecar. All 27 containers were Ready with zero
+        restarts. On wyrm2, the original consumer completed
+        ${" "}${io.consecutive_verified_64_kib_blocks} consecutive 64 KiB
+        writes, fsyncs and verified reads across plugin replacement.
+        ${` The longest interval between successful checks was ${io.max_interval_seconds.toFixed(2)} seconds over the full probe and ${io.max_interval_during_handoff_seconds.toFixed(2)} seconds during the observed handoff. `}
+        After kubelet acknowledged the new driver, a second consumer mounted a
+        fresh local SSD claim and verified four 1 MiB blocks.
+        ${` Its first verified read came ${fresh.seconds_to_first_io.toFixed(1)} seconds after Pod creation. `}
+        Both disposable volumes were reclaimed. The application probes covered
+        one node. ${" "}<${Anchor} href=${github + "pull/19212"}
+          >Node plugin requests and sizing<//
+        >.
+      <//>
+      <${Text} mt="sm">
+        <strong
+          >The six central CSI controller containers recovered their four
+          leases.</strong
+        >
+        ${" "}They were Ready with zero restarts. A disposable local SSD on
+        wyrm2 bound in two seconds, attached in three and passed its first fsync
+        and SHA-256 readback in 17.3 seconds from eligible consumer creation.
+        This test ran after the central controller handoff. The initial consumer
+        selected OVH workers with no local SSD capacity. ${" "}<${Anchor}
+          href=${github + "pull/19205"}
+          >Central controller requests<//
+        >.
+      <//>
       <${Text} mt="sm" id="piraeus-management">
         <strong
           >Both Piraeus management Pods received static requests on 22
@@ -590,15 +623,16 @@ function Report() {
           new-instance check for the observed handoff.
         <//>
         <${Text} id="piraeus-next">
-          <strong>3. Size the six CSI controller containers next.</strong>
-          ${` At ${clock(piraeus.observed_utc)} UTC, ${piraeus.missing_either_request} of ${piraeus.regular_containers} Piraeus containers lacked CPU or memory requests. `}
-          Since the 11:09 inventory, the node fleet grew from eight to nine,
-          adding six gaps, and the management rollout closed two. Measure each
-          CSI container’s startup and peak usage and check volume provisioning
-          and attachment through replacement. Review the single LINSTOR API
-          container separately because its Deployment uses Recreate. The other
-          54 gaps span 27 CSI node, 18 satellite, and nine HA containers. Check
-          per-node headroom and recovery before changing those templates.
+          <strong>3. Size the nine Piraeus HA controllers next.</strong>
+          ${` At ${clock(piraeus.observed_utc)} UTC on ${piraeus.observed_utc.slice(0, 10)}, ${piraeus.missing_either_request} of ${piraeus.regular_containers} regular containers in piraeus-datastore lacked a CPU or memory request. `}
+          The count fell from 61 to 55 after the central CSI rollout, then by 27
+          after the node plugin rollout. These containers belong to storage
+          infrastructure Pods. Application Pods mount their volumes through the
+          node plugin. Measure the HA controller’s request needs and verify its
+          failover responsibilities during a one-node replacement. The other 19
+          gaps are nine LINSTOR satellites, nine drbd-reactor containers and the
+          singleton LINSTOR API container. Its Recreate strategy warrants a
+          separate API interruption check.
         <//>
         <${Text}>
           <strong>4. Observe the first Notifications updater eviction.</strong>

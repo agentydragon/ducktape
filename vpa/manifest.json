@@ -1,6 +1,6 @@
 {
-  "source_devel_commit": "34af0f324892b6b34f6ec16379c91eec52bedf3d",
-  "audited_at_utc": "2026-11-22T11:09:41Z",
+  "source_devel_commit": "50d81d95a122bf10fc9bdfe608dfcf70ec8d7661",
+  "audited_at_utc": "2026-11-22T23:57:00Z",
   "snapshot_utc": "2026-11-22T11:09:41Z",
   "scope": "Live VPA policies, admitted CPU and memory requests and latest workload rollout checks. Pods, hosts and dynamic owners use snapshot-local aliases.",
   "current_inventory_collection_started_utc": "2026-11-22T11:09:26Z",
@@ -12,14 +12,17 @@
   "previous_report_commit": "62929b186a",
   "archived_evidence_snapshot_utc": "2026-11-20T02:58:40Z",
   "archived_evidence_source_devel_commit": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
-  "report_html_sha256": "90a26c7b5f5b53b4286551cb7f24c29468c24648efd53eba0f05b73dc0f26f36",
-  "report_script_sha256": "2ba94d5650a84f3aa0618a4be5aef867a0a80791207176e45814baf1057f3ff9",
+  "report_html_sha256": "65d4b0bc34146ff5081ff461a43b7eb26ed8bb8a11188f7444d56e1407e51b49",
+  "report_script_sha256": "3f1b325735ff644c922b529f6dc9683df18382f713d337cbe10f5a6017d95449",
   "inventory_sha256": "1de1f6002444dc12d936367596df267862312cff90492f479192b5faeaeae145",
   "inventory_collector_sha256": "08b284c5eed215a4953af66991548b7040c622124f0d0aa006b93b00236836fd",
-  "rollout_evidence_sha256": "5fd7204841c2f8501c83b71c014571c3207bdc96c8c1db7ee781c2c5b169d3b9",
+  "rollout_evidence_sha256": "4423b0f6c46047327a1f0abab7da26ea74ac71a24e3b787813a88b9dbfe7dc53",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "cnpg_switchover_observed_utc": "2026-11-22T11:24:45Z",
   "piraeus_management_lease_acquired_utc": "2026-11-22T23:14:21.174600Z",
-  "piraeus_namespace_recount_utc": "2026-11-22T23:22:28Z",
-  "piraeus_management_source_devel_commit": "a8c764fd771cefd47ca5310ea8e183038482954e"
+  "piraeus_namespace_recount_utc": "2026-11-22T23:56:39Z",
+  "piraeus_management_source_devel_commit": "a8c764fd771cefd47ca5310ea8e183038482954e",
+  "piraeus_csi_node_source_devel_commit": "50d81d95a122bf10fc9bdfe608dfcf70ec8d7661",
+  "piraeus_csi_controller_source_devel_commit": "bc8ef8e61f40c334e46836c5e473fe2ed1492135",
+  "piraeus_csi_probe_cleanup_verified_utc": "2026-11-22T23:57:00Z"
 }
