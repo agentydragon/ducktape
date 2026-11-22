@@ -10,12 +10,12 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Iterator, Set
 from itertools import combinations
-from typing import Any, cast
+from typing import Any
 
 import jsii
-from cdk8s import ApiObject
 from constructs import Construct, IValidation
 
+from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
 from cluster.cdk8s.pod_policy import embeds_pod, pod_spec
@@ -314,9 +314,7 @@ class FleetRules:
         self._unpinned_https_egress = set(unpinned_https_egress)
 
     def validate(self) -> list[str]:
-        objects = [
-            cast(ApiObject, node).to_json() for node in self._scope.node.find_all() if ApiObject.is_api_object(node)
-        ]
+        objects = [obj.to_json() for obj in api_objects_in(self._scope)]
         return [
             *pod_hardening(objects, unhardened=self._unhardened_pods),
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),

@@ -19,10 +19,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Annotated, cast
+from typing import Annotated
 
 import jsii
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
@@ -45,6 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
@@ -122,9 +123,7 @@ class _WaitExcludesHealthChecks:
         self._chart = chart
 
     def validate(self) -> list[str]:
-        rendered = (
-            cast(ApiObject, node).to_json() for node in self._chart.node.find_all() if ApiObject.is_api_object(node)
-        )
+        rendered = (obj.to_json() for obj in api_objects_in(self._chart))
         return [
             f"Kustomization/{obj['metadata']['name']}: wait: true ignores healthChecks; drop the list or set wait off"
             for obj in rendered
@@ -146,13 +145,12 @@ def kustomizations_chart(app: App) -> Chart:
 def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecHealthChecks]:
     """One `healthChecks` entry per object of the listed kinds in `chart`, ordered by `kinds`:
     each entry is the object's own apiVersion/kind/name/namespace, never retyped."""
-    # `Chart.api_objects` is direct children only; objects usually sit inside a Construct.
-    api_objects = [cast(ApiObject, node) for node in chart.node.find_all() if ApiObject.is_api_object(node)]
+    selected = (obj for obj in api_objects_in(chart) if obj.kind in kinds)
     return [
         KustomizationSpecHealthChecks(
             api_version=obj.api_version, kind=obj.kind, name=obj.name, namespace=obj.metadata.namespace
         )
-        for obj in sorted((obj for obj in api_objects if obj.kind in kinds), key=lambda obj: kinds.index(obj.kind))
+        for obj in sorted(selected, key=lambda obj: kinds.index(obj.kind))
     ]
 
 

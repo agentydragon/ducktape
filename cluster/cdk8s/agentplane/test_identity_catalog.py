@@ -4,11 +4,11 @@ and the Policy Controller may bind every role a role set names."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObject, App
+from cdk8s import App
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
@@ -16,6 +16,7 @@ from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import binding_delegation, egress, kubernetes_account_ref, policy_controller, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import COMMON_GITHUB_READ_SET
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY, KUBERNETES_HOST
+from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.testing.manifests import config_map_yaml
 
@@ -212,11 +213,7 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
 def external_delegation(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     app = scratch_app_factory()
     charts = binding_delegation.external_charts(staging.ENV, staging.assignable_grants())
-    objects: list[dict[str, Any]] = []
-    for build in charts.values():
-        chart = build(app)
-        objects.extend(cast(ApiObject, obj).to_json() for obj in chart.node.find_all() if ApiObject.is_api_object(obj))
-    return objects
+    return [obj.to_json() for build in charts.values() for obj in api_objects_in(build(app))]
 
 
 def test_external_delegation_is_separate_from_the_app(
