@@ -263,6 +263,18 @@ genrule(
 )
 
 py_library(
+    name = "image_seed",
+    srcs = ["image_seed.py"],
+)
+
+py_binary(
+    name = "image_seed_bin",
+    main_module = "agentplane.system_tests.k3s.image_seed",
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [":image_seed"],
+)
+
+py_library(
     name = "build_data_disk",
     srcs = ["build_data_disk.py"],
 )

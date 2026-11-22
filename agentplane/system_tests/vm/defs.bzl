@@ -9,8 +9,15 @@ def vm_test(
         recycle = False,
         tags = [],
         suite = "//agentplane/system_tests/suites:test_vm.py",
-        extra_deps = []):
+        extra_deps = [],
+        cold_k3s = False,
+        infrastructure_image_seed = None):
     """Use a hosted pool for hardware acceleration, or pool=None for the managed TCG control."""
+    if cold_k3s and (recycle or not pool):
+        fail("cold_k3s requires a disposable KVM runner")
+    if infrastructure_image_seed and not cold_k3s:
+        fail("infrastructure_image_seed requires cold_k3s")
+
     recycling_properties = {}
     recycling_environment = {}
     if recycle:
@@ -46,6 +53,12 @@ def vm_test(
             "test.runner-recycling-key": k3s_recycling_key(vm = True),
         }
 
+    comparison_environment = {"AGENTPLANE_K3S_COLD": "1"} if cold_k3s else {}
+    extra_data = ["//agentplane/system_tests/k3s:recycling_data_disk"] if recycle else []
+    if infrastructure_image_seed:
+        comparison_environment["K3S_INFRASTRUCTURE_IMAGE_SEED_RLOCATION"] = "$(rlocationpath %s)" % infrastructure_image_seed
+        extra_data.append(infrastructure_image_seed)
+
     py_test(
         name = name,
         size = "enormous",
@@ -64,7 +77,7 @@ def vm_test(
             "@cert_manager_v1_21_2_release//file",
             "@kubevirt_operator_bundle//file",
             "@kyverno_install//file",
-        ] + (["//agentplane/system_tests/k3s:recycling_data_disk"] if recycle else []),
+        ] + extra_data,
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
@@ -77,7 +90,7 @@ def vm_test(
             "AGENTPLANE_VM_BOOT_EVIDENCE": "0",
             "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "0",
             "K3S_PROFILE_GUEST_ROOT": "0",
-        } | recycling_environment,
+        } | recycling_environment | comparison_environment,
         exec_properties = properties,
         main = suite,
         tags = K3S_TAGS + tags,

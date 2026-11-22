@@ -44,6 +44,7 @@ async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstre
 def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
     runfiles_root = runfiles.root()
     images = json.loads((runfiles_root / os.environ["K3S_IMAGE_MANIFEST_RLOCATION"]).read_text())
+    seed = os.environ.get("K3S_INFRASTRUCTURE_IMAGE_SEED_RLOCATION")
     return StackInputs(
         fixture=rendered_fixture.read(runfiles_root / os.environ["K3S_FIXTURE_RLOCATION"]),
         binary=k3s_binary,
@@ -51,6 +52,8 @@ def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
         pki_image_layouts=_image_layouts(runfiles, images["pki"]),
         vm_image_layouts=_image_layouts(runfiles, images["vm"]),
         guest_image_layouts=_image_layouts(runfiles, images["guest"]),
+        cold_k3s=os.environ.get("AGENTPLANE_K3S_COLD") == "1",
+        infrastructure_image_seed=runfiles_root / seed if seed else None,
     )
 
 

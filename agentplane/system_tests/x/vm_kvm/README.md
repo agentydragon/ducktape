@@ -17,6 +17,24 @@ The earlier wyrm2 trial stayed red and took over ten minutes
 bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 ```
 
+## Cold K3s image seed pilot
+
+Both manual targets run the Claude and Codex cases on disposable KVM actions. Each creates a fresh
+K3s data directory on the worker's ext4 mount. The seeded target reads one Bazel-built OCI archive
+with the pinned KubeVirt and Kyverno blobs deduplicated by digest. Containerd still unpacks the
+layers. The fixture checks the current layout's digests, available snapshots and CRI pins before
+installing the controllers. It reads the current PKI, service and guest layouts at runtime.
+
+```bash
+bbr test //agentplane/system_tests/x/vm_kvm:{test_vm_cold,test_vm_cold_seed} \
+  --nocache_test_results --runs_per_test=2 --flaky_test_attempts=1
+```
+
+Compare the infrastructure import spans, stack setup and TestRunner process time, along with worker
+preparation and input fetch latency. The `PackK3sImageSeed` build action runs on a seed cache miss.
+The seeded TestRunner receives the archive plus the original OCI runfiles used for verification, so
+its input transfer can outweigh faster import.
+
 ## Docker recycling experiment
 
 The [17 November qualification](../../debug/kvm_docker_recycling.md) initially rejected retention

@@ -124,6 +124,8 @@ class StackInputs:
     pki_image_layouts: dict[str, Path]
     vm_image_layouts: dict[str, Path]
     guest_image_layouts: dict[str, Path]
+    cold_k3s: bool = False
+    infrastructure_image_seed: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -387,6 +389,10 @@ def running_stack(
         "AGENTPLANE_K3S_REQUIRE_KVM"
     ) != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
+    if inputs.cold_k3s and (persist_infrastructure or fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT):
+        raise ValueError("the cold image experiment requires a disposable KubeVirt stack")
+    if inputs.infrastructure_image_seed is not None and not inputs.cold_k3s:
+        raise ValueError("the infrastructure image seed requires a fresh K3s image store")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
     if uses_guest_runtime != (runtime_factory is not None):
@@ -459,9 +465,16 @@ def running_stack(
                 # An executor can restore a retained snapshot even when this action opts out.
                 # Stop its exact owned server before resetting the ordinary stack's state.
                 baseline.stop_previous()
+                if inputs.cold_k3s:
+                    # The Docker worker mounts this parent on ext4 for containerd's overlay snapshotter.
+                    k3s.data_dir.mkdir(parents=True, exist_ok=True)
+                    k3s.data_dir = Path(
+                        cleanup.enter_context(tempfile.TemporaryDirectory(prefix="cold-", dir=k3s.data_dir))
+                    )
+                    setup.set_attribute("k3s.data_dir", str(k3s.data_dir))
                 process = k3s.start(
                     layers_in_memory=not uses_guest_runtime,
-                    preserve_image_store=k3s.image_store_is_retainable(),
+                    preserve_image_store=not inputs.cold_k3s and k3s.image_store_is_retainable(),
                     database_in_memory=(fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER),
                 )
                 cleanup.callback(k3s.stop, process)
@@ -541,7 +554,9 @@ def running_stack(
             setup.add_event(image_import_start_event)
             for profile in import_profiles:
                 profile.record_phase_start(image_import_start_unix_ns, image_import_start_event)
-            if install_baseline:
+            if inputs.infrastructure_image_seed is not None:
+                k3s.import_image_seed(infrastructure_images, inputs.infrastructure_image_seed)
+            elif install_baseline:
                 k3s.import_images(infrastructure_images)
             elif guest_setup_image_references:
                 k3s.import_images({image: infrastructure_images[image] for image in guest_setup_image_references})

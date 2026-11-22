@@ -945,26 +945,39 @@ class K3s:
         )
         return {"blobs/" + digest.replace(":", "/", 1) for digest in digests.split()}
 
+    def _import_command(self, archive: str) -> list[str]:
+        return [
+            str(self.binary),
+            "ctr",
+            "--address",
+            CONTAINERD_SOCKET,
+            "-n",
+            "k8s.io",
+            "images",
+            "import",
+            # Sandboxes are created after stack setup, and the fixture's local tags have no
+            # registry fallback. Keep kubelet image GC from deleting an unused future image.
+            "--label=io.cri-containerd.pinned=pinned",
+            archive,
+        ]
+
+    @tracer.start_as_current_span("system_test.images.import_seed")
+    def import_image_seed(self, images: dict[str, Path], archive: Path) -> None:
+        print(run(*self._import_command(str(archive))))
+        # CRI reports the tags and pins after containerd publishes their image records.
+        for attempt in Retrying(
+            retry=retry_if_exception_type(RuntimeError), stop=stop_after_delay(10), wait=wait_fixed(0.2), reraise=True
+        ):
+            with attempt:
+                if missing := images.keys() - self._usable_images(images):
+                    raise RuntimeError(
+                        f"image seed did not provide current, unpacked CRI-pinned images: {sorted(missing)}"
+                    )
+
     def _import_layout(self, manifests: list[dict[str, Any]], blobs: dict[str, Path]) -> None:
         with tempfile.TemporaryFile() as output:
             with subprocess.Popen(
-                [
-                    str(self.binary),
-                    "ctr",
-                    "--address",
-                    CONTAINERD_SOCKET,
-                    "-n",
-                    "k8s.io",
-                    "images",
-                    "import",
-                    # Sandboxes are created after stack setup, and the fixture's local tags have no
-                    # registry fallback. Keep kubelet image GC from deleting an unused future image.
-                    "--label=io.cri-containerd.pinned=pinned",
-                    "-",
-                ],
-                stdin=subprocess.PIPE,
-                stdout=output,
-                stderr=subprocess.STDOUT,
+                self._import_command("-"), stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT
             ) as loader:
                 assert loader.stdin is not None
                 try:

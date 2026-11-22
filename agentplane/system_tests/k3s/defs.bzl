@@ -184,3 +184,37 @@ def k3s_tcg_vm_image_manifest(name):
 def k3s_pki_image_manifest(name):
     """Declare the retained PKI controllers without application or guest images."""
     image_manifest(name = name, testonly = True, pki = PKI_IMAGES)
+
+def _image_seed_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".tar")
+    inputs = []
+    args = ctx.actions.args()
+    args.add(out)
+    for target, reference in ctx.attr.images.items():
+        layouts = target[DefaultInfo].files.to_list()
+        if len(layouts) != 1:
+            fail("expected one OCI layout from %s, got %s" % (target.label, layouts))
+        layout = layouts[0]
+        inputs.append(layout)
+        args.add(reference)
+        args.add(layout.path)
+    ctx.actions.run(
+        inputs = inputs,
+        outputs = [out],
+        executable = ctx.attr._tool[DefaultInfo].files_to_run,
+        arguments = [args],
+        mnemonic = "PackK3sImageSeed",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+image_seed = rule(
+    implementation = _image_seed_impl,
+    attrs = {
+        "images": attr.label_keyed_string_dict(mandatory = True),
+        "_tool": attr.label(
+            default = "//agentplane/system_tests/k3s:image_seed_bin",
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)

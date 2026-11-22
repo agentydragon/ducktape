@@ -1,5 +1,6 @@
 # gazelle:ignore
 
+load("//agentplane/system_tests/k3s:defs.bzl", "VM_IMAGES", "image_seed")
 load("//agentplane/system_tests/vm:defs.bzl", "vm_test")
 
 package(
@@ -10,6 +11,31 @@ package(
 vm_test(
     name = "test_vm_kvm",
     tags = ["manual"],
+)
+
+image_seed(
+    name = "infrastructure_image_seed",
+    images = VM_IMAGES,
+    tags = ["manual"],
+)
+
+vm_test(
+    name = "test_vm_cold",
+    cold_k3s = True,
+    tags = [
+        "bench",
+        "manual",
+    ],
+)
+
+vm_test(
+    name = "test_vm_cold_seed",
+    cold_k3s = True,
+    infrastructure_image_seed = ":infrastructure_image_seed",
+    tags = [
+        "bench",
+        "manual",
+    ],
 )
 
 vm_test(
