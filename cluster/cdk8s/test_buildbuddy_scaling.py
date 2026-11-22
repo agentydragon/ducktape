@@ -16,7 +16,7 @@ _SHADOW_TARGET = "buildbuddy_kvm:shadow_target_workers"
 _HEALTH_CHECKS = ("registered_to_scheduler", "grpc_app_connection", "grpc_cache_connection", "executor_disk_usage")
 _NAMESPACE = 'namespace="buildbuddy-executor"'
 _POOL = "buildbuddy-kvm-worker"
-_WORK_DISK_THRESHOLD = 50 * 1024**3
+_WORK_DISK_THRESHOLD = 30 * 1024**3
 
 
 def _worker_rules(runfiles: Runfiles) -> dict[str, Any]:
