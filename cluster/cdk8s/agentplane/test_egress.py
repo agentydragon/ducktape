@@ -56,8 +56,7 @@ from model_catalog.catalog import TABBYAPI_QWEN_STOCK, Provider
 
 def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str]]:
     """The explicitly configured PolicySets for each Sandbox launch preset."""
-    config = find_resource(docs, "ConfigMap", "app-config")
-    presets = yaml.safe_load(config["data"]["config.yaml"])["sandbox_presets"]
+    presets = config_map_yaml(docs, "app-config", "config.yaml")["sandbox_presets"]
     return {name: set(spec["policy_sets"]) for name, spec in presets.items()}
 
 
@@ -292,31 +291,29 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
         f"{environments.fqdn}:{environments.pod_port}",
     } <= set(proxy_settings["tls_passthrough_targets"])
 
-    configured: list[dict[str, Any]] = []
-    for item in staging_manifests:
-        if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
-            continue
-        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
-        assert legacy_authority not in routes
-        if sessions_authority in routes:
-            configured.append(routes[sessions_authority])
-    assert configured
-    for route in configured:
-        assert route["upstream"] == sessions_authority
-        assert route["server_uri"] == SESSION_DISPATCHER_URI
-
+    session_routes: list[dict[str, Any]] = []
     history_configured: list[dict[str, Any]] = []
     environments_configured: list[dict[str, Any]] = []
     for item in staging_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
-        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
+        settings = yaml.safe_load(item["data"]["settings.yaml"])
+        routes = settings.get("workload_routes", {})
+        assert legacy_authority not in routes
         assert history_origin not in routes, "Runtime's History ingress already sends opaque TLS"
-        platform = yaml.safe_load(item["data"]["settings.yaml"]).get("platform_routes", {}).get("routes", {})
+        if sessions_authority in routes:
+            session_routes.append(routes[sessions_authority])
+        platform = settings.get("platform_routes", {}).get("routes", {})
         if "environments" in platform:
             environments_configured.append(platform["environments"])
         if "history" in platform:
             history_configured.append(platform["history"])
+
+    assert session_routes
+    for route in session_routes:
+        assert route["upstream"] == sessions_authority
+        assert route["server_uri"] == SESSION_DISPATCHER_URI
+
     assert history_configured
     for route in history_configured:
         assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]

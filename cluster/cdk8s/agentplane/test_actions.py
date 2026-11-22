@@ -6,7 +6,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest_bazel
-import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
 from more_itertools import one
@@ -34,7 +33,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.public_coder import egress as public_coder_egress
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -194,8 +193,7 @@ def test_gaffer_pr_policy_approves_only_create_pull_request(staging_manifests: l
 def test_staging_sampler_delegation_and_credential_files(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = find_resource(staging_manifests, "Deployment", "actions")
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
-    config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
@@ -218,8 +216,7 @@ def test_action_service_allows_only_configured_service_callers(staging_manifests
     deployment = find_resource(staging_manifests, "Deployment", "actions")
     pod = deployment["spec"]["template"]["spec"]
     container = one(item for item in pod["containers"] if item["name"] == "actions")
-    config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
 
     assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["operator_services"] == [APP_URI]
@@ -235,8 +232,7 @@ def test_action_service_allows_only_configured_service_callers(staging_manifests
 
 
 def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifests: list[dict[str, Any]]) -> None:
-    settings_config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
-    settings = yaml.safe_load(settings_config["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
     assert public_coder_egress.NAMESPACE not in settings["caller_service_account_namespaces"]
     assert not any(
         doc["kind"] == "WorkloadCredential" and doc["metadata"]["namespace"] == public_coder_egress.NAMESPACE
@@ -294,8 +290,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         environment_service_endpoint=environment_service.environments_service(env.namespace),
     )
     documents = Cdk8sTesting.synth(chart)
-    config = find_resource(documents, "ConfigMap", f"{actions.NAME}-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(documents, f"{actions.NAME}-settings", "settings.yaml")
     groups = settings["action_groups"]
     assert groups["environments"]["executor"]["kind"] == "session_delegation"
     assert set(groups["environments"]["direct_tools"]) == {"get", "list", "resume"}
@@ -358,8 +353,7 @@ def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -
     )
     action_component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)
-    config = find_resource(documents, "ConfigMap", "actions-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(documents, "actions-settings", "settings.yaml")
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = find_resource(documents, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(env.namespace).pods.cilium

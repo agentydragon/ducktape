@@ -703,7 +703,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -952,8 +951,6 @@ py_test(
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -1049,7 +1046,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -1512,7 +1508,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -1821,10 +1816,10 @@ py_test(
         "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/public_coder:egress",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

@@ -4,7 +4,6 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
 
 from cluster.cdk8s.agentplane import kubernetes_account_ref, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -13,7 +12,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
 )
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY
 from cluster.cdk8s.agentplane.staging_config import HAKU_ACTION_POLICY_SETS
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
@@ -33,8 +32,7 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     write. The binding is the reviewed bundle; a launch's Identity has its own binding, so the
     preset spells out what that Sandbox receives."""
     binding = find_resource(staging_manifests, "PolicyBinding", "haku-agent")
-    app_config = find_resource(staging_manifests, "ConfigMap", "app-config")
-    preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["policy_sets"]
+    preset = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]["haku"]["policy_sets"]
     assert len(preset) == len(set(preset))
     action_sets = {
         doc["metadata"]["name"]
@@ -61,8 +59,7 @@ def test_read_policy_grants(staging_manifests: list[dict[str, Any]], policy_set:
     for name in ("haku-agent", "claude-ai"):
         binding = find_resource(staging_manifests, "PolicyBinding", name)
         assert policy_set in binding["spec"]["policySets"]
-    app_config = find_resource(staging_manifests, "ConfigMap", "app-config")
-    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    presets = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]
     assert policy_set in presets["haku"]["policy_sets"]
     assert all(policy_set not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
 
