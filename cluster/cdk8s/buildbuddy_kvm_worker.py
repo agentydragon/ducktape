@@ -328,7 +328,6 @@ def chart(app: App) -> Chart:
     registry_credentials = pull_credentials.forgejo_images_creds_external_secret(
         chart, "registry-credentials", namespace=NAMESPACE
     )
-    # Each worker registers its own executor in pool `kvm-vm` and runs one action at a time.
     VirtualMachinePool(
         chart,
         "pool",

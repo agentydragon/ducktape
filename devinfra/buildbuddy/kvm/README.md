@@ -58,8 +58,8 @@ creates a temporary VM and vCPU.
 
 The KVM suite starts and removes its K3s stack inside each action. It does not
 opt into BuildBuddy's retained-baseline or remote-snapshot settings. The worker
-VM can persist between actions, with its executor limited to one concurrent
-task. This is a trusted-code lane: the privileged action can access `/dev/kvm`,
+VM can persist between actions. The executor can run two actions whose combined
+reservations fit the guest. This is a trusted-code lane: the privileged action can access `/dev/kvm`,
 and root in the test can control its guest. It does not provide isolation
 between mutually hostile jobs.
 
