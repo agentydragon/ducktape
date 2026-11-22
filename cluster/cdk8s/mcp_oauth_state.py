@@ -28,14 +28,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
@@ -44,7 +42,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -256,11 +254,7 @@ def mcp_oauth_state_db(
         artifact,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         depends_on=flux_kustomization_depends_on_many(
             cnpg_operator, external_secrets_operator, monitoring_crds, kyverno, seaweedfs_operator
         ),

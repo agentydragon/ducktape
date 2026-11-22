@@ -913,6 +913,7 @@ py_library(
         "//cluster/cdk8s:tana_mcp",
         "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/cnpg:health",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",

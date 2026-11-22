@@ -19,13 +19,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -33,7 +31,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, manifest_file, write_charts, write_yaml
+from cluster.cdk8s.generation import manifest_file, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -115,11 +113,7 @@ def tofu_state_db(
         artifact,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
     )

@@ -7,17 +7,14 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.namespaces import Vpa
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/database"
@@ -80,15 +77,6 @@ def cdviz_database(
         "cdviz-database",
         directory,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1",
-                kind="Database",
-                current=(
-                    f"{CNPG_DATABASE_READY} && has(status.extensions) && "
-                    f"status.extensions.exists(e, e.name == '{timescale.EXTENSION}' && e.applied)"
-                ),
-            )
-        ],
+        health_check_exprs=[database_health(extension=timescale.EXTENSION)],
         depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets, seaweedfs),
     )

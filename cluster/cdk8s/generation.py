@@ -28,10 +28,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
-CNPG_DATABASE_READY = (
-    "has(status.applied) && status.applied && "
-    "has(status.observedGeneration) && status.observedGeneration == metadata.generation"
-)
 _PATCH_FILE = "patches.k8s.yaml"
 
 
