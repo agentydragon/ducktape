@@ -416,7 +416,9 @@ applications").
   deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
-  post-relocation (not unblocked by atlas/wyrm2 returning).
+  post-relocation (not unblocked by atlas/wyrm2 returning). Keep the RTL-TCP image
+  publishing job and Flux image tracking available for revival.
+  [Owner decision on SDR](https://github.com/agentydragon/ducktape/pull/18583#issuecomment-7059852738).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
   MCP server (`bmorphism/manifold-mcp-server`). Its OCI build wrapper
   (`third_party/manifold_mcp_server/`, a nested Bazel module) was deleted; a revival
