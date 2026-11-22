@@ -66,6 +66,11 @@ service SessionDispatcher {
   rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse) {
     option (google.api.http) = {get: "/v1/dispatches"};
   }
+  // Discover retained command rows, newest submission first. Read each page with current
+  // Session authority. A physical deletion during traversal can require a fresh first page.
+  rpc ListSessionDispatches(ListSessionDispatchesRequest) returns (ListSessionDispatchesResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/dispatches"};
+  }
   // Only before possible forwarding. QUEUED alone is insufficient: a lost reply or recovery
   // can requeue an attempted command. Such cancellation fails FAILED_PRECONDITION.
   rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse) {
@@ -246,6 +251,27 @@ message ListDispatchesRequest {
 
 message ListDispatchesResponse {
   repeated Dispatch dispatches = 1;  // oldest first
+}
+
+message ListSessionDispatchesRequest {
+  string session_id = 1;
+  // 1-100 rows. Zero selects 25.
+  uint32 limit = 2;
+  string page_token = 3;
+}
+
+message ListSessionDispatchesResponse {
+  // Metadata only: identity, placement, operation, delivery state, full reason and timestamps.
+  // Use GetDispatch to inspect admission and other evidence on an individual receipt.
+  repeated Dispatch dispatches = 1;
+  // Empty when all retained rows through the first page have been covered.
+  string next_page_token = 2;
+  enum Coverage {
+    COVERAGE_UNSPECIFIED = 0;
+    // Excludes legacy watch-only tombstones and any previously pruned evidence.
+    RETAINED_DISPATCH_ROWS = 1;
+  }
+  Coverage coverage = 3;
 }
 
 message CancelDispatchRequest {

@@ -295,6 +295,22 @@ marker without a send remains conservatively uncertain.
 The migration adds the column without altering authored data or History. A rollback to old writers
 loses the forwarding-evidence guarantee even if the column remains present.
 
+## Paged command discovery
+
+`ListSessionDispatches` pages one retained Session's current Dispatch rows in descending submission
+position. Each page checks the Session's recorded owner and exact placement. Its metadata includes
+the full delivery reason. Use `GetDispatch` for individual admission evidence. The default page
+contains up to 25 rows and the maximum is 100.
+
+The first page fixes membership for later admissions. Receipt updates read at each page's snapshot
+do not change the order. The continuation token binds the position and deletion frontier to the
+Session and read scope. A physical Dispatch deletion anywhere after that frontier, including one
+whose tombstone was subsequently pruned, can return `OUT_OF_RANGE`. Discard the traversal and
+restart on that status. An empty `next_page_token` completes the retained-row enumeration.
+`coverage=RETAINED_DISPATCH_ROWS` excludes legacy tombstones, which are available only through
+`WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
+Older servers return `UNIMPLEMENTED` for the RPC.
+
 ## Versioned dispatch watches
 
 Migration `00024` backfills each Dispatch with a sequence-backed version and installs database triggers

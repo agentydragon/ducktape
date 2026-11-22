@@ -35,6 +35,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     def __init__(self) -> None:
         self.authorization: list[str] = []
         self.requests: list[session_dispatcher_pb2.ListDispatchesRequest] = []
+        self.receipt_pages: list[session_dispatcher_pb2.ListSessionDispatchesRequest] = []
         self.watches: list[session_dispatcher_pb2.WatchDispatchesRequest] = []
         self.cancelled = asyncio.Event()
         self.reject_watch: grpc.StatusCode | None = None
@@ -74,6 +75,13 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                 yield session_dispatcher_pb2.WatchSessionsResponse(session=updated, resume_token="test-update-token")
         finally:
             self.inventory_cancelled.set()
+
+    @override
+    async def ListSessionDispatches(self, request, context):
+        self.receipt_pages.append(request)
+        return session_dispatcher_pb2.ListSessionDispatchesResponse(
+            coverage=session_dispatcher_pb2.ListSessionDispatchesResponse.RETAINED_DISPATCH_ROWS
+        )
 
     @override
     async def ListDispatches(self, request, context):
@@ -156,6 +164,17 @@ async def test_dispatcher_preserves_filters_reads_rotating_token_and_filters_hea
     assert peer.service.authorization == ["Bearer test-dispatcher-token", "Bearer rotated-dispatcher-token"]
     assert peer.service.watches[0].filter == peer.service.requests[0].filter
     assert peer.service.watches[0].resume_token == "test-request-cursor"
+
+
+async def test_session_receipt_page_preserves_scope_and_cursor(http: httpx.AsyncClient, peer: Peer) -> None:
+    response = await http.get(
+        "/upstream/dispatcher/v1/sessions/test-session/dispatches", params={"limit": 4, "pageToken": "test-page"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["coverage"] == "RETAINED_DISPATCH_ROWS"
+    assert peer.service.receipt_pages == [
+        session_dispatcher_pb2.ListSessionDispatchesRequest(session_id="test-session", limit=4, page_token="test-page")
+    ]
 
 
 @pytest.mark.parametrize("ending", ["logout", "expiry", "disconnect", "sigterm"])
