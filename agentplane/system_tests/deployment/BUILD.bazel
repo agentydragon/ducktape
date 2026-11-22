@@ -293,6 +293,7 @@ py_library(
         "//cluster/cdk8s/agentplane:runner_gateway_workload",
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",
+        "//cluster/cdk8s/agentplane:service_database",
         "//cluster/cdk8s/agentplane:workload_certificate_admission",
         "//cluster/cdk8s/agentplane:workload_tls",
         "//cluster/cdk8s/cert_manager:cluster_ca",
@@ -382,6 +383,7 @@ py_library(
     data = ["postgres_entrypoint.sh"],
     deps = [
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/agentplane:service_database",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -615,6 +617,7 @@ py_library(
         ":rendered_fixture",
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:environment_sandbox",
+        "//cluster/cdk8s/agentplane:service_database",
         "@pypi//cdk8s",
     ],
 )

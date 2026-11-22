@@ -43,12 +43,12 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 
 RUNNER_TRUST_BUNDLE = cluster_ca.BUNDLE
 RUNNER_TRUST_BUNDLE_KEY = cluster_ca.BUNDLE_KEY
@@ -95,28 +95,7 @@ def environment_chart(
     database.Db(chart, "db", env, db)
     app_credentials = database.postgres(env).app_secret
     app_database_url = app_credentials.key("uri").env_value(chart, "postgres-app-database-url")
-    actions_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
-    )
-    edge_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-mcp-edge")
-        .key("uri")
-        .env_value(chart, "mcp-edge-database-url")
-    )
-    egress_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-egress").key("uri").env_value(chart, "egress-database-url")
-    )
     app_account = ServiceAccountRef(namespace=env.namespace, name=app_component.NAME)
-    history_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-sandbox-service")
-        .key("uri")
-        .env_value(chart, "history-database-url")
-    )
-    notifications_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-notifications")
-        .key("uri")
-        .env_value(chart, "notifications-database-url")
-    )
     electric.Electric(chart, "electric", env, placement=node_scheduling.HIL_OVH).add_platform_resources()
     llm_ingress.LlmIngress(
         chart, "llm-ingress", env, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
@@ -125,7 +104,7 @@ def environment_chart(
         chart,
         "egress",
         env,
-        database_url=egress_database_url,
+        database_url=Database.EGRESS.url(chart, namespace=env.namespace),
         runners=environment_sandbox.pods(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
@@ -149,7 +128,7 @@ def environment_chart(
         chart,
         "history-service",
         env,
-        database_url=history_database_url,
+        database_url=Database.HISTORY.url(chart, namespace=env.namespace),
         # The app reads Threads; the Notification Service reads command receipts; orchestration_v1
         # and session_delegation use the explicitly configured Action delegation actor.
         callers=app_caller
@@ -161,16 +140,11 @@ def environment_chart(
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
     if env.central_sampler is not None:
-        sampler_database_url = (
-            SecretRef(namespace=env.namespace, name="postgres-central-sampler")
-            .key("uri")
-            .env_value(chart, "central-sampler-database-url")
-        )
         central_sampler_workload.CentralSampler(
             chart,
             "central-sampler",
             env,
-            database_url=sampler_database_url,
+            database_url=Database.CENTRAL_SAMPLER.url(chart, namespace=env.namespace),
             placement=node_scheduling.HIL_OVH,
             registry_secret_name=REGISTRY_SECRET_NAME,
         ).add_platform_resources()
@@ -262,7 +236,7 @@ def environment_chart(
         chart,
         "actions",
         env,
-        database_url=actions_database_url,
+        database_url=Database.ACTIONS.url(chart, namespace=env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
         environment_service_endpoint=(
@@ -273,12 +247,14 @@ def environment_chart(
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
-    mcp_edge.McpEdge(chart, "mcp-edge", env, database_url=edge_database_url).add_platform_resources()
+    mcp_edge.McpEdge(
+        chart, "mcp-edge", env, database_url=Database.MCP_EDGE.url(chart, namespace=env.namespace)
+    ).add_platform_resources()
     notifications.Notifications(
         chart,
         "notifications",
         env,
-        database_url=notifications_database_url,
+        database_url=Database.NOTIFICATIONS.url(chart, namespace=env.namespace),
         actions=actions.service(env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),

@@ -58,12 +58,12 @@ from cluster.cdk8s.agentplane import (
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -374,16 +374,11 @@ def serving_chart(
     }
     orchestration = actions.orchestration_callers(env)
     session_delegation = actions.session_delegation_callers(env)
-    dispatcher_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
-        .key("uri")
-        .env_value(chart, "dispatcher-database-url")
-    )
     RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        database_url=dispatcher_database_url,
+        database_url=Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace),
         sessions_image=_SESSIONS_IMAGE,
         dispatcher_callers=callers | orchestration | session_delegation,
         orchestration_callers=orchestration,

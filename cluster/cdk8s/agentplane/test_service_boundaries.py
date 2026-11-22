@@ -2,6 +2,7 @@
 Controller owns environment management, and Notifications never calls the app."""
 
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest_bazel
 from more_itertools import one
@@ -11,18 +12,23 @@ from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_history_service_uses_sandbox_database(staging_manifests: list[dict[str, Any]]) -> None:
-    history = find_resource(staging_manifests, "Deployment", history_service.NAME)["spec"]["template"]["spec"]
-    history_database = {"name": "postgres-sandbox-service", "key": "uri"}
-    history_external_secret = find_resource(staging_manifests, "ExternalSecret", "postgres-sandbox-service")
-    assert history_external_secret["spec"]["target"]["name"] == "postgres-sandbox-service"
-    history_database_resource = find_resource(staging_manifests, "Database", "sandbox-service")
-    assert history_database_resource["spec"]["name"] == "sandbox_service"
-    assert history_database_resource["spec"]["owner"] == "sandbox_service"
-    assert any(
-        value.get("secretKeyRef") == history_database
-        for container in history["containers"]
-        for value in (item.get("valueFrom", {}) for item in container["env"])
+    deployment = find_resource(staging_manifests, "Deployment", history_service.NAME)
+    namespace = deployment["metadata"]["namespace"]
+    pod = deployment["spec"]["template"]["spec"]
+    service = one(container for container in pod["containers"] if container["name"] == history_service.NAME)
+    url = one(var for var in service["env"] if var["name"] == "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL")
+    ref = url["valueFrom"]["secretKeyRef"]
+    credentials = one(
+        obj["spec"]["target"]["template"]["data"]
+        for obj in staging_manifests
+        if obj["kind"] == "ExternalSecret"
+        and obj["spec"].get("target", {}).get("name", obj["metadata"]["name"]) == ref["name"]
+        and obj["metadata"]["namespace"] == namespace
     )
+    database = find_resource(staging_manifests, "Database", "sandbox-service", namespace=namespace)
+    uri = urlsplit(credentials[ref["key"]])
+    assert uri.path == f"/{database['spec']['name']}" == "/sandbox_service"
+    assert uri.username == database["spec"]["owner"]
 
 
 def test_environment_management_and_dispatcher_wake_have_separate_authority(

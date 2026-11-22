@@ -13,6 +13,7 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     RenderedFixture,
     SandboxRuntime,
 )
+from cluster.cdk8s.agentplane.service_database import Database
 
 
 def render_mcp_fixture(
@@ -46,9 +47,9 @@ def render_mcp_fixture(
         namespace=env.namespace,
         databases=(
             *fixture_chart.BACKEND_DATABASES,
-            fixture_database.Database.APP,
-            fixture_database.Database.MCP_EDGE,
-            *((fixture_database.Database.CENTRAL_SAMPLER,) if central_sampler is not None else ()),
+            Database.APP,
+            Database.MCP_EDGE,
+            *((Database.CENTRAL_SAMPLER,) if central_sampler is not None else ()),
         ),
     )
     fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))

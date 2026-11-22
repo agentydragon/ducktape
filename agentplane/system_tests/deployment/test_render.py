@@ -219,7 +219,7 @@ def test_disposable_postgres_bootstraps_the_database_in_each_service_uri(
         assert (uri.hostname, uri.port) == (host, port["port"])
         assert uri.username is not None
         assert uri.path == f"/{uri.username}"
-        env_name = fixture_database.Database(uri.username).password_env
+        env_name = fixture_database.password_env(uri.username)
         assert secrets[env_name]["name"] == secret_name
         assert uri.password == credentials[secrets[env_name]["key"]]
         assert f"\\getenv {uri.username}_password {env_name}" in bootstrap
