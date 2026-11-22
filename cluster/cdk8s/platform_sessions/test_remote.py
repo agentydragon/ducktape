@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart
+from cdk8s import App
 
 from cluster.cdk8s.platform_sessions import app, config, remote
 from cluster.cdk8s.testing.manifests import find_resource
@@ -114,15 +114,16 @@ def test_scheduler_has_one_owner_of_state(direct_workloads: list[dict[str, Any]]
     assert integration["state_dir"] == "/data/session/quest-scheduler"
 
 
-def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(scratch_app: App) -> None:
-    for instance, provider_type in (("myquest-canary", "myquest"), ("other-canary", "openai")):
-        chart = Chart(scratch_app, instance)
-        remote._provider_workload(chart, instance, provider_type=provider_type, record_upstream_traffic=False)
-        deployment = next(item for item in chart.to_json() if item["kind"] == "Deployment")
-        provider = deployment["spec"]["template"]["spec"]["containers"][0]
-        health = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}}
+def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(
+    direct_workloads: list[dict[str, Any]],
+) -> None:
+    health = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}}
+    for integration in config.INTEGRATIONS["integrations"]:
+        deployment = find_resource(direct_workloads, "Deployment", str(integration["id"]))
+        containers = deployment["spec"]["template"]["spec"]["containers"]
+        provider = next(container for container in containers if container["name"] == "provider")
         assert provider["readinessProbe"] == provider["livenessProbe"] == health
-        if provider_type == "myquest":
+        if integration["type"] == "myquest":
             startup = provider["startupProbe"]
             assert startup["httpGet"] == health["httpGet"]
             assert 32 <= startup["periodSeconds"] * startup["failureThreshold"] <= 60
