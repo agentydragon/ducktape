@@ -177,6 +177,17 @@ class RoleResource(K8sResource):
     rules: list[RbacRule] = Field(default_factory=list)
 
 
+class AgentplanePolicyRule(BaseModel):
+    type: str
+    namespaces: list[str] = Field(default_factory=list)
+
+
+class AgentplanePolicySetResource(K8sResource):
+    """Delegation checks read namespaced role bindings from both Agentplane policy resource kinds."""
+
+    rules: list[AgentplanePolicyRule] = Field(validation_alias=AliasPath("spec", "rules"))
+
+
 class RbacRoleRef(CamelCaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -315,6 +326,8 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
 _GROUP_KIND_MODELS: dict[tuple[str, str], type[K8sResource]] = {
     ("helm.toolkit.fluxcd.io", "HelmRelease"): FluxControllerResource,
     ("infra.contrib.fluxcd.io", "Terraform"): FluxControllerResource,
+    ("agentplane.allegedly.works", "PolicySet"): AgentplanePolicySetResource,
+    ("agentplane.allegedly.works", "KubernetesRoleSet"): AgentplanePolicySetResource,
     ("agentplane.allegedly.works", "SandboxTemplate"): AgentplaneSandboxTemplateResource,
     ("extensions.agents.x-k8s.io", "SandboxTemplate"): SandboxTemplateResource,
 }

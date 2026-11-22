@@ -36,7 +36,12 @@ from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import check_image_automation_webhook, check_image_policy_markers
-from cluster.validation.k8s import AgentplaneSandboxTemplateResource, K8sResource, load_k8s_resources
+from cluster.validation.k8s import (
+    AgentplanePolicySetResource,
+    AgentplaneSandboxTemplateResource,
+    K8sResource,
+    load_k8s_resources,
+)
 from cluster.validation.kustomize import run_kustomize_build, stage_artifact_copies
 
 
@@ -324,7 +329,7 @@ def test_files_flux_rewrites_have_valid_markers_and_block_style(cluster: ParsedC
     assert not errors, "\n".join(errors)
 
 
-def test_agent_binding_delegation_dependencies_follow_namespace_owners(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_agent_binding_delegation_dependencies_follow_namespace_owners(cluster: ParsedCluster) -> None:
     """Delegated binding applies follow the namespace owner that creates their targets."""
     retained_resources = cluster.flux_kust_resources(include_suspended=True)
     namespace_owners: dict[str, set[str]] = {}
@@ -334,18 +339,16 @@ def test_agent_binding_delegation_dependencies_follow_namespace_owners(cluster: 
                 continue
             namespace_owners.setdefault(resource.name, set()).add(owner)
 
-    staging = k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml"
-    policy_set_namespaces = {
+    binding_namespaces = {
         namespace
-        for doc in yaml.safe_load_all(staging.read_text())
-        if doc["kind"] == "PolicySet"
-        for rule in doc["spec"]["rules"]
-        if rule["type"] == "kubernetes_role_binding"
-        for namespace in rule["namespaces"]
+        for resource in retained_resources["agentplane-staging"]
+        if isinstance(resource, AgentplanePolicySetResource)
+        for rule in resource.rules
+        if rule.type in {"kubernetes_role_binding", "role_binding"}
+        for namespace in rule.namespaces
     }
-    # Delegated: every PolicySet RoleBinding scope, the retained cleanup scopes, and the legacy
-    # static-only litellm role, whose binding remains outside PolicySets.
-    expected_external_scopes = (policy_set_namespaces - {"agentplane-staging"}) | {
+    # Include retained cleanup scopes and the static litellm grant alongside catalog grants.
+    expected_external_scopes = (binding_namespaces - {"agentplane-staging"}) | {
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
