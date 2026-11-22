@@ -1,9 +1,6 @@
 import EsmSplit.Plan
-import Lean.Data.Json
 
 namespace EsmSplit
-
-open Lean
 
 /-- Output module names are URL paths inside the output tree. Restrict their spelling so the same names are
 interpreted as the same relative paths by the filesystem and by the module loader. -/
@@ -42,10 +39,16 @@ private def commonPrefixLength (left right : List String) : Nat := Id.run do
     n := n + 1
   return n
 
+/-- Split the validated URL path using lists so concrete renderings reduce in the kernel. -/
+private def pathSegments (path : String) : List String :=
+  let parts := path.toList.foldr (fun c (acc : List (List Char)) =>
+    if c == '/' then [] :: acc else (c :: acc.headD []) :: acc.drop 1) [[]]
+  parts.map String.ofList
+
 /-- A URL-relative specifier from one generated module file to another. -/
 def relativeUrlSpecifier (fromFile targetFile : String) : String := Id.run do
-  let fromDirs := (fromFile.splitOn "/").dropLast
-  let target := targetFile.splitOn "/"
+  let fromDirs := (pathSegments fromFile).dropLast
+  let target := pathSegments targetFile
   let outside := target.takeWhile (· == "..")
   let targetTail := target.drop outside.length
   let parts := if outside.isEmpty then
@@ -53,7 +56,7 @@ def relativeUrlSpecifier (fromFile targetFile : String) : String := Id.run do
       List.replicate (fromDirs.length - common) ".." ++ targetTail.drop common
     else List.replicate (fromDirs.length + outside.length) ".." ++ targetTail
   let relative := "/".intercalate parts
-  return if relative == ".." || relative.startsWith "../" then relative else "./" ++ relative
+  return if parts.head? == some ".." then relative else "./" ++ relative
 
 private def safeRelativeRequest (source : String) : Bool := Id.run do
   if !(source.startsWith "./" || source.startsWith "../") then return false
@@ -80,8 +83,6 @@ def rebaseRelativeRequest (modulePath source : String) : Except String String :=
     throw s!"relative request `{source}` does not name a file from nested output module `{modulePath}`"
   return relativeUrlSpecifier modulePath target
 
-private def sourceSpecifier (source : String) : String := (Json.str source).compress
-
 /-- Blocks of lines with an empty line between them; an empty block is left out. -/
 def renderBlocks (blocks : List (List String)) : String :=
   "\n\n".intercalate ((blocks.filter (!·.isEmpty)).map ("\n".intercalate ·)) ++ "\n"
@@ -89,7 +90,8 @@ def renderBlocks (blocks : List (List String)) : String :=
 /-- The glue `import`s of a module. A binding its source exports under another name is renamed back. -/
 def Module.importLines (P : Plan) (m : Module) : List String :=
   m.imports.map fun (src, ns) =>
-    let specifier := sourceSpecifier (relativeUrlSpecifier m.name src)
+    -- Module destinations contain only URL-safe path segments, so no JS escapes are needed.
+    let specifier := "\"" ++ relativeUrlSpecifier m.name src ++ "\""
     if ns.isEmpty then s!"import {specifier};"
     else
       let source := P.find src
