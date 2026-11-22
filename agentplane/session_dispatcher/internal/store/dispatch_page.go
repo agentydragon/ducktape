@@ -6,6 +6,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc/codes"
@@ -19,8 +21,8 @@ type DispatchPageCursor struct {
 	Before, Frontier int64
 }
 
-func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller Caller, limit int, cursor DispatchPageCursor) ([]*dispatcherpb.Dispatch, DispatchPageCursor, error) {
-	if cursor.Before == 0 {
+func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller Caller, limit int, cursor DispatchPageCursor, verifyIDs []string) (*dispatcherpb.ListSessionDispatchesResponse, DispatchPageCursor, error) {
+	if cursor.Before == 0 && len(verifyIDs) == 0 {
 		// Drain writers that may already have allocated an earlier deletion version.
 		// Subsequent physical deletions must advance the tombstone maximum or prune floor.
 		var err error
@@ -29,7 +31,7 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 			return nil, DispatchPageCursor{}, err
 		}
 	}
-	var result []*dispatcherpb.Dispatch
+	result := &dispatcherpb.ListSessionDispatchesResponse{Coverage: dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS}
 	var next DispatchPageCursor
 	err := postgres.ReadTransaction(ctx, s.DB, sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
 		scope, args := OwnerScope(caller, "", 2)
@@ -42,24 +44,42 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 		if err != nil {
 			return err
 		}
-		var deleted bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM dispatch_tombstone WHERE version>$1)
-			OR (SELECT pruned_through>$1 FROM dispatch_watch_retention WHERE singleton)`, cursor.Frontier).Scan(&deleted); err != nil {
-			return err
-		}
-		if deleted {
-			return status.Error(codes.OutOfRange, "dispatch rows were deleted; restart without a page token")
-		}
-		rows, err := tx.QueryContext(ctx, `SELECT position,command_id,operation,state,reason,created_at,updated_at,version
+		query := `SELECT position,command_id,operation,state,reason,created_at,updated_at,version
 			FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
-			AND ($4::bigint=0 OR position<$4) ORDER BY position DESC LIMIT $5`, sessionID, name, uid, cursor.Before, limit+1)
+			AND ($4::bigint=0 OR position<$4)`
+		params := []any{sessionID, name, uid, cursor.Before, limit + 1}
+		if len(verifyIDs) > 0 {
+			// A mixed-version replica can still issue its old DELETE. The database trigger from
+			// migration 29 must protect the exact rows this transaction can enumerate.
+			var protected bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+				SELECT FROM pg_trigger WHERE tgrelid='dispatch'::regclass
+				AND tgname='keep_session_command_on_environment_deletion'
+				AND tgfoid=to_regprocedure('keep_session_command_on_environment_deletion()')
+				AND tgenabled IN ('O','A'))`).Scan(&protected); err != nil {
+				return err
+			}
+			result.RetainsCommandsAfterEnvironmentDeletion = &protected
+			query += " AND command_id=ANY($6)"
+			params = append(params, pq.Array(verifyIDs))
+		} else {
+			var deleted bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM dispatch_tombstone WHERE version>$1)
+				OR (SELECT pruned_through>$1 FROM dispatch_watch_retention WHERE singleton)`, cursor.Frontier).Scan(&deleted); err != nil {
+				return err
+			}
+			if deleted {
+				return status.Error(codes.OutOfRange, "dispatch rows were deleted; restart without a page token")
+			}
+		}
+		rows, err := tx.QueryContext(ctx, query+" ORDER BY position DESC LIMIT $5", params...)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		var last int64
 		for rows.Next() {
-			if len(result) == limit {
+			if len(result.Dispatches) == limit {
 				next = DispatchPageCursor{Before: last, Frontier: cursor.Frontier}
 				break
 			}
@@ -75,7 +95,7 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 			}
 			summary.State = dispatchState(state)
 			summary.CreatedAt, summary.UpdatedAt = timestamppb.New(created), timestamppb.New(updated)
-			result = append(result, summary)
+			result.Dispatches = append(result.Dispatches, summary)
 		}
 		return rows.Err()
 	})

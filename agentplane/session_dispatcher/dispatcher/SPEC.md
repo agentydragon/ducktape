@@ -312,6 +312,13 @@ restart on that status. An empty `next_page_token` completes the retained-row en
 `WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
 Older servers return `UNIMPLEMENTED` for the RPC.
 
+To verify durable membership for known commands, pass up to 16 distinct
+`verify_retained_command_ids` without pagination options. This reads the same exact Session
+rows as paged discovery and checks migration 29's enabled deletion-protection trigger in
+the same database snapshot. Only a returned row with `retains_commands_after_environment_deletion=true`
+establishes this coverage for that command. Older responses omit the capability. Callers can compare
+the separately fetched stored command with their authored bytes before releasing local storage.
+
 ## Versioned dispatch watches
 
 Migration `00024` backfills each Dispatch with a sequence-backed version and installs database triggers
