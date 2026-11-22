@@ -706,3 +706,115 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 		t.Fatalf("fresh retained-row enumeration: %v", fresh)
 	}
 }
+
+func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
+	ctx := t.Context()
+	queue := testStore(t, 5)
+	sessionID, uid := uuid.NewString(), uuid.NewString()
+	const cmd = "test-notice-command"
+	if _, err := enqueueWithSession(t, queue, ctx, sessionID, "test-notice-env", uid, input(cmd, "preserve this authored input"), nil); err != nil {
+		t.Fatal(err)
+	}
+	peers := authorityClients(t, queue, &authorityInventory{sandboxErr: errors.New("unavailable inventory")}, nil)
+	caller := authoritySVIDContext(t)
+	current := func() *dispatcherpb.Dispatch {
+		t.Helper()
+		r, err := peers.component.ListSessionDispatches(caller, &dispatcherpb.ListSessionDispatchesRequest{SessionId: sessionID})
+		if err != nil || len(r.GetDispatches()) != 1 {
+			t.Fatalf("live receipt: %v %v", r, err)
+		}
+		return r.Dispatches[0]
+	}
+	key := func(v int64) *dispatcherpb.CommandNoticeRevision {
+		return &dispatcherpb.CommandNoticeRevision{CommandId: cmd, ReceiptVersion: v}
+	}
+	ack := func(client dispatcherpb.SessionDispatcherClient, n *dispatcherpb.CommandNoticeRevision, want codes.Code) {
+		t.Helper()
+		_, err := client.AcknowledgeCommandNotice(caller, &dispatcherpb.AcknowledgeCommandNoticeRequest{SessionId: sessionID, Notice: n})
+		if status.Code(err) != want {
+			t.Fatalf("ack %v: %v, want %v", n, err, want)
+		}
+	}
+	lookup := func(notices ...*dispatcherpb.CommandNoticeRevision) []*dispatcherpb.CommandNoticeAcknowledgement {
+		t.Helper()
+		r, err := peers.component.BatchGetCommandNoticeAcknowledgements(caller, &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: notices})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Acknowledgements
+	}
+	history := func(token string) *dispatcherpb.CommandNoticeAcknowledgements {
+		t.Helper()
+		r, err := peers.component.ListCommandNoticeAcknowledgements(caller, &dispatcherpb.ListCommandNoticeAcknowledgementsRequest{SessionId: sessionID, PageSize: 1, PageToken: token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	ack(peers.component, key(current().GetReceiptVersion()), codes.FailedPrecondition)
+	if _, err := queue.Settle(ctx, cmd, claimSessionOwner(t, queue, sessionID), []string{store.QueueState}, store.UnknownState, "runner evidence missing", nil); err != nil {
+		t.Fatal(err)
+	}
+	unknown := current()
+	first := key(unknown.GetReceiptVersion())
+	ack(peers.otherIdentity, first, codes.PermissionDenied)
+	ack(peers.component, &dispatcherpb.CommandNoticeRevision{CommandId: "other-id", ReceiptVersion: first.ReceiptVersion}, codes.FailedPrecondition)
+	ack(peers.component, first, codes.OK)
+	if got := current(); !proto.Equal(got, unknown) || got.State != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
+		t.Fatalf("ack changed delivery: %v -> %v", unknown, got)
+	}
+	recorded := lookup(first)
+	if len(recorded) != 1 || !proto.Equal(recorded[0].Notice, first) || recorded[0].AcknowledgedAt == nil {
+		t.Fatalf("first ack: %v", recorded)
+	}
+	if _, err := peers.otherIdentity.ListCommandNoticeAcknowledgements(caller, &dispatcherpb.ListCommandNoticeAcknowledgementsRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign history: %v", err)
+	}
+	if _, err := peers.otherIdentity.BatchGetCommandNoticeAcknowledgements(caller, &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: []*dispatcherpb.CommandNoticeRevision{first}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign lookup: %v", err)
+	}
+	// Identical timestamp and state with changed delivery detail still needs fresh attention.
+	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch SET reason='new uncertain evidence' WHERE command_id=$1", cmd); err != nil {
+		t.Fatal(err)
+	}
+	second := key(current().GetReceiptVersion())
+	if second.ReceiptVersion <= first.ReceiptVersion {
+		t.Fatal("receipt version did not advance")
+	}
+	ack(peers.component, first, codes.OK)
+	if got := lookup(first, second); len(got) != 1 || !proto.Equal(got[0], recorded[0]) {
+		t.Fatalf("new revision hidden or previous acknowledgement changed: %v", got)
+	}
+	// Deletion creates a legacy receipt with its own revision. A superseded live
+	// revision that was never acknowledged cannot be marked seen retrospectively.
+	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", cmd); err != nil {
+		t.Fatal(err)
+	}
+	var tombVersion int64
+	if err := queue.DB.QueryRowContext(ctx, "SELECT version FROM dispatch_tombstone WHERE command_id=$1", cmd).Scan(&tombVersion); err != nil {
+		t.Fatal(err)
+	}
+	ack(peers.component, second, codes.FailedPrecondition)
+	tomb := key(tombVersion)
+	ack(peers.component, tomb, codes.OK)
+	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch_tombstone WHERE command_id=$1", cmd); err != nil {
+		t.Fatal(err)
+	}
+	ack(peers.component, tomb, codes.OK)
+	page := history("")
+	if len(page.Acknowledgements) != 1 || !proto.Equal(page.Acknowledgements[0].Notice, tomb) || page.GetNextPageToken() == "" {
+		t.Fatalf("history: %v", page)
+	}
+	last := history(page.GetNextPageToken())
+	if len(last.Acknowledgements) != 1 || !proto.Equal(last.Acknowledgements[0], recorded[0]) || last.GetNextPageToken() != "" {
+		t.Fatalf("last: %v", last)
+	}
+	for _, r := range []*dispatcherpb.ListCommandNoticeAcknowledgementsRequest{{SessionId: sessionID, PageSize: 101}, {SessionId: "other-session", PageToken: page.GetNextPageToken()}} {
+		if _, err := peers.component.ListCommandNoticeAcknowledgements(caller, r); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("bad history scope/size: %v", err)
+		}
+	}
+	if _, err := peers.component.BatchGetCommandNoticeAcknowledgements(caller, &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: make([]*dispatcherpb.CommandNoticeRevision, 101)}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("oversized batch: %v", err)
+	}
+}

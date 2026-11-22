@@ -8,6 +8,7 @@ go_library(
         "activity_observer.go",
         "api.go",
         "central_delivery.go",
+        "command_notices.go",
         "delivery.go",
         "delivery_wake.go",
         "dispatch_page.go",

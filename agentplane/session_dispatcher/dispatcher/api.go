@@ -126,19 +126,22 @@ func sendWatchDispatch(
 // serve an IdentityAdmission as an IdentityCaller, so the rule may admit Identity callers.
 func Methods(rule auth.Rule) auth.Methods {
 	return auth.Methods{
-		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName:           rule,
-		dispatcherpb.SessionDispatcher_ChangeModel_FullMethodName:           rule,
-		dispatcherpb.SessionDispatcher_ChangeReasoningEffort_FullMethodName: rule,
-		dispatcherpb.SessionDispatcher_InterruptTurn_FullMethodName:         rule,
-		dispatcherpb.SessionDispatcher_CreateSession_FullMethodName:         rule,
-		dispatcherpb.SessionDispatcher_GetSession_FullMethodName:            rule,
-		dispatcherpb.SessionDispatcher_ListSessions_FullMethodName:          rule,
-		dispatcherpb.SessionDispatcher_WatchSessions_FullMethodName:         rule,
-		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
-		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
-		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
-		dispatcherpb.SessionDispatcher_ListSessionDispatches_FullMethodName: rule,
-		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:        rule,
+		dispatcherpb.SessionDispatcher_AcknowledgeCommandNotice_FullMethodName:              rule,
+		dispatcherpb.SessionDispatcher_BatchGetCommandNoticeAcknowledgements_FullMethodName: rule,
+		dispatcherpb.SessionDispatcher_ListCommandNoticeAcknowledgements_FullMethodName:     rule,
+		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName:                           rule,
+		dispatcherpb.SessionDispatcher_ChangeModel_FullMethodName:                           rule,
+		dispatcherpb.SessionDispatcher_ChangeReasoningEffort_FullMethodName:                 rule,
+		dispatcherpb.SessionDispatcher_InterruptTurn_FullMethodName:                         rule,
+		dispatcherpb.SessionDispatcher_CreateSession_FullMethodName:                         rule,
+		dispatcherpb.SessionDispatcher_GetSession_FullMethodName:                            rule,
+		dispatcherpb.SessionDispatcher_ListSessions_FullMethodName:                          rule,
+		dispatcherpb.SessionDispatcher_WatchSessions_FullMethodName:                         rule,
+		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:                           rule,
+		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:                       rule,
+		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:                        rule,
+		dispatcherpb.SessionDispatcher_ListSessionDispatches_FullMethodName:                 rule,
+		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:                        rule,
 	}
 }
 

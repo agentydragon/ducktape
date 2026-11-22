@@ -20,6 +20,18 @@ import "google/protobuf/empty.proto";
 // idempotency key across all of them: a retry of the same operation and payload answers with the same
 // `Dispatch`, and the same ID under another operation or payload fails `ALREADY_EXISTS`.
 service SessionDispatcher {
+  // Shared operator attention for an exact Dispatcher receipt revision.
+  rpc AcknowledgeCommandNotice(AcknowledgeCommandNoticeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/notice-acknowledgements" body: "*"};
+  }
+  // Returns only acknowledgements of the supplied command/revision pairs (1 to 100).
+  rpc BatchGetCommandNoticeAcknowledgements(BatchGetCommandNoticeAcknowledgementsRequest) returns (CommandNoticeAcknowledgements) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/notice-acknowledgements:batchGet" body: "*"};
+  }
+  rpc ListCommandNoticeAcknowledgements(ListCommandNoticeAcknowledgementsRequest) returns (CommandNoticeAcknowledgements) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/notice-acknowledgements"};
+  }
+
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:submitInput" body: "*"};
   }
@@ -115,6 +127,39 @@ message Dispatch {
   optional agentplane.proto.Command command = 13;
   // Positive database version of this exact receipt revision. Set on reads that explicitly expose it.
   optional int64 receipt_version = 14;
+}
+
+// Receipt versions are assigned by Dispatcher to live updates and deletion receipts.
+message CommandNoticeRevision {
+  string command_id = 1;
+  int64 receipt_version = 2;
+}
+
+message CommandNoticeAcknowledgement {
+  CommandNoticeRevision notice = 1;
+  google.protobuf.Timestamp acknowledged_at = 2;
+}
+
+message AcknowledgeCommandNoticeRequest {
+  string session_id = 1;
+  CommandNoticeRevision notice = 2;
+}
+
+message BatchGetCommandNoticeAcknowledgementsRequest {
+  string session_id = 1;
+  repeated CommandNoticeRevision notices = 2;
+}
+
+message ListCommandNoticeAcknowledgementsRequest {
+  string session_id = 1;
+  // Defaults to 25, maximum 100.
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message CommandNoticeAcknowledgements {
+  repeated CommandNoticeAcknowledgement acknowledgements = 1;
+  optional string next_page_token = 2;
 }
 
 message SubmitInputRequest {

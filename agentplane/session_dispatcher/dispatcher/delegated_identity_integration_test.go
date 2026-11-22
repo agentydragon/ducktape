@@ -141,6 +141,13 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if got, err := client.GetSession(actingFor(ownerIdentity), &dispatcherpb.GetSessionRequest{SessionId: owned}); err != nil || got.GetSession().GetSessionId() != owned {
 		t.Fatalf("delegated Identity GetSession: %v, %v", got, err)
 	}
+	ownedNotice := &dispatcherpb.CommandNoticeRevision{CommandId: command, ReceiptVersion: 1}
+	if _, err := client.AcknowledgeCommandNotice(actingFor(ownerIdentity), &dispatcherpb.AcknowledgeCommandNoticeRequest{SessionId: owned, Notice: ownedNotice}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("owning Identity changed operator attention: %v", err)
+	}
+	if got, err := client.BatchGetCommandNoticeAcknowledgements(actingFor(ownerIdentity), &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: owned, Notices: []*dispatcherpb.CommandNoticeRevision{ownedNotice}}); err != nil || len(got.Acknowledgements) != 0 {
+		t.Fatalf("owning Identity lookup: %v, %v", got, err)
+	}
 	if got, err := client.GetDispatch(actingFor(ownerIdentity), &dispatcherpb.GetDispatchRequest{CommandId: command}); err != nil || !proto.Equal(got.GetDispatch().GetCommand(), wantCommand) {
 		t.Fatalf("delegated Identity GetDispatch: %v, %v", got, err)
 	}

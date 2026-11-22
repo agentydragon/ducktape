@@ -559,3 +559,27 @@ Sessions never read EnvironmentDown, including when their executor is suspended 
 stream, incompatible wire shape, expired lease or stale epoch reads Unknown/STREAM_LOST. NULL remains
 Unknown/NOT_YET_OBSERVED. Get, List and Watch publish the host's Session verbatim, preserving fields
 from newer writers.
+
+### Operator acknowledgement of delivery notices
+
+Dispatcher records shared operator attention in a separate table. Its identity is the exact Session,
+command ID and positive receipt version. The App's authenticated operator proxy calls
+`AcknowledgeCommandNotice` with its service identity. Owning a Session allows reading its
+acknowledgements, but only the App service can mark a notice seen. Every lookup and history page
+rechecks the retained Session's read authority. Closing or deleting the Environment leaves these
+operations available to the operator.
+
+A first acknowledgement must match a current FAILED or UNKNOWN receipt, including the latest
+visible legacy deletion receipt. Dispatcher checks the original row and stores the reference and
+acknowledgement time. A duplicate preserves that time even after its receipt changes or expires.
+A newer revision can require attention independently. Acknowledgement changes neither receipt
+version nor outcome and supplies no execution evidence. Receipt storage and recovery remain
+independent of operator attention.
+
+Through the existing Dispatcher proxy, POST to `/v1/sessions/{session_id}/notice-acknowledgements`
+records attention, POST to its `:batchGet` method checks 1–100 exact revisions, and GET pages the
+acknowledged references newest first (default 25, maximum 100). The history includes superseded
+or expired references. Only Dispatcher receipt reads can supply original details when retained.
+Receipt enumeration covers live rows; the recent workset has bounded legacy coverage, and a known
+legacy ID can be checked through WatchDispatches while its tombstone remains retained. Older
+replicas return UNIMPLEMENTED for the new methods; callers keep unconfirmed notices visible.
