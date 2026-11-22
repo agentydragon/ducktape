@@ -305,6 +305,7 @@ js_test(
     size = "medium",
     args = [
         "--leaks",
+        "--require-name-leak",
         "--count",
         "40",
         "--seed",
@@ -338,6 +339,15 @@ js_test(
     name = "effects_cases_test",
     size = "medium",
     data = _EFFECTS_CASES_DATA,
+    entry_point = _EFFECTS + ":run",
+    env = _EFFECTS_CASES_ENV,
+)
+
+js_test(
+    name = "effects_known_gaps_test",
+    size = "medium",
+    args = ["--known-gaps"],
+    data = _EFFECTS_CASES_DATA + ["debug/generator_findings/cases.mjs"],
     entry_point = _EFFECTS + ":run",
     env = _EFFECTS_CASES_ENV,
 )

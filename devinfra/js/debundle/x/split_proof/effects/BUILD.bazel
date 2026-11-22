@@ -14,6 +14,8 @@ js_library(
     srcs = [
         "cases.mjs",
         "cases_general.mjs",
+        "debug/general_known_gaps/cases.mjs",
+        "debug/p1_known_gaps/cases.mjs",
         "targeted.mjs",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],

@@ -81,7 +81,7 @@ Node runs the bundle and each tree. A tree that the checker accepts must print t
 
 On the final checker, ten seeds of 150 bundles (8,958 trees): 1,737 accepted, all matching Node; 4,074 with obligations (266 match Node); 3,147 rejected (206 match Node); **0 wrong accepts**. About 900 trees take 20 seconds.
 
-`--leaks` adds four templates for what a move or a rename changes behind the checker's back: `import.meta.url`, direct `eval`, top-level `await` (the checker must refuse these) and `fn.name` (assumed: see Trusted). With it, there are still 0 wrong accepts apart from bundles that read `fn.name`, which are counted separately (21 trees in three seeds).
+`--leaks` adds templates for `import.meta.url`, direct `eval`, top-level `await` and `fn.name` (see Trusted). The checker must refuse a split that changes the first three. For function-name probes, the fuzzer counts a separate discrepancy only when the plan renames declarations without introducing capture, both executions complete, and every output difference is in a tagged `fn.name` value. `fuzz_leaks_test` requires the fixed seed to produce at least one such discrepancy.
 
 What it found:
 
