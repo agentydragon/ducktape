@@ -11,15 +11,9 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from cluster.rotators import sops
 from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
-from cluster.rotators.authentik_jwt_rotation.rotate import (
-    build_secret_manifest,
-    mint_jwt,
-    probe_rejects_token,
-    token_audiences,
-)
+from cluster.rotators.authentik_jwt_rotation.rotate import mint_jwt, probe_rejects_token, token_audiences
 
 
 def _make_jwt(claims: dict) -> str:
@@ -47,15 +41,6 @@ def test_token_audiences_normalizes_string_list_and_missing():
     assert token_audiences({"aud": "one"}) == ["one"]
     assert token_audiences({"aud": ["one", "two"]}) == ["one", "two"]
     assert token_audiences({}) == []
-
-
-def test_build_secret_manifest_carries_token_exp_under_configured_keys():
-    out = K8sSecretOutput(
-        path=Path("cluster/k8s/x.sops.yaml"), name="haku-cloud-grocy-sf-token", namespace="flux-system"
-    )
-    manifest = build_secret_manifest(out, token="the-jwt", exp_epoch=1750000000)
-    assert manifest["stringData"] == {"jwt": "the-jwt", "token-exp": "1750000000"}
-    assert list(manifest["metadata"]["annotations"]) == ["description"]
 
 
 def test_mint_jwt_default_mode_uses_provider_client_secret(tmp_path: Path):
@@ -156,28 +141,18 @@ def test_probe_rejects_token_only_on_auth_statuses():
     assert probe_rejects_token(_mock_client(_down), probe, "tok") is False
 
 
-def test_probe_rejects_token_sends_bearer_with_configured_method():
-    seen: list[httpx.Request] = []
-    client = _recording_client(200, seen)
-    probe_rejects_token(client, Probe(url="https://example.test/v1/metrics", method="POST"), "tok")
-    [request] = seen
-    assert (request.method, str(request.url)) == ("POST", "https://example.test/v1/metrics")
-    assert request.headers["Authorization"] == "Bearer tok"
-
-
-def _probed_rotation(tmp_path: Path) -> Rotation:
+@pytest.fixture
+def probed_rotation(tmp_path: Path) -> Rotation:
     """A rotation whose SOPS file is stamped fresh and that carries a probe."""
     sops_file = tmp_path / "secrets" / "alloy-otlp-bearer-token.yaml"
     sops_file.parent.mkdir()
     expires = datetime.now(UTC) + timedelta(days=30)
     sops_file.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\ntoken: enc\n')
-    credentials_dir = tmp_path / "creds"
-    credentials_dir.mkdir()
     return Rotation(
         name="alloy-otlp",
         provider_slug="alloy-otlp-client-credentials",
         scopes="openid profile email",
-        credentials_dir=credentials_dir,
+        credentials_dir=tmp_path / "creds",
         sops_file=sops_file,
         token_field="token",
         k8s_secret=K8sSecretOutput(
@@ -195,78 +170,80 @@ def _stub_mint(monkeypatch):
         {"iss": "https://auth.allegedly.works/application/o/alloy-otlp-client-credentials/", "exp": 1_800_000_000}
     )
     monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
-    monkeypatch.setattr(sops.subprocess, "run", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _path: None)
+    monkeypatch.setattr(rotate, "write_sops_yaml", lambda **_kwargs: None)
 
 
-def test_rotate_one_probe_rejection_forces_remint(monkeypatch, tmp_path: Path):
-    rotation = _probed_rotation(tmp_path)
+def test_rotate_one_probe_rejection_forces_remint(monkeypatch, probed_rotation: Rotation):
     _stub_mint(monkeypatch)
     monkeypatch.setattr(
         rotate, "published_secret_data", lambda _out: {"token": base64.b64encode(b"live-token").decode()}
     )
     seen: list[httpx.Request] = []
-    assert rotate.rotate_one(_recording_client(401, seen), rotation, Config(rotations=[])) is True
+    assert rotate.rotate_one(_recording_client(401, seen), probed_rotation, Config(rotations=[])) is True
     [request] = seen
     assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.example.test/v1/metrics")
     assert request.headers["Authorization"] == "Bearer live-token"
 
 
-def test_rotate_one_probe_acceptance_keeps_fresh_token(monkeypatch, tmp_path: Path):
-    rotation = _probed_rotation(tmp_path)
+def test_rotate_one_probe_acceptance_keeps_fresh_token(monkeypatch, probed_rotation: Rotation):
     monkeypatch.setattr(
         rotate, "published_secret_data", lambda _out: {"token": base64.b64encode(b"live-token").decode()}
     )
-    assert rotate.rotate_one(_status_client(200), rotation, Config(rotations=[])) is False
+    assert rotate.rotate_one(_status_client(200), probed_rotation, Config(rotations=[])) is False
 
 
-def test_rotate_one_probe_skipped_when_secret_unreadable(monkeypatch, tmp_path: Path):
+def test_rotate_one_probe_skipped_when_secret_unreadable(monkeypatch, probed_rotation: Rotation):
     # None = "no verdict" (API down, Flux lag): keep the fresh token rather
     # than mint-churning hourly while the publish pipeline is mid-flight.
-    rotation = _probed_rotation(tmp_path)
     monkeypatch.setattr(rotate, "published_secret_data", lambda _out: None)
     seen: list[httpx.Request] = []
-    assert rotate.rotate_one(_recording_client(200, seen), rotation, Config(rotations=[])) is False
+    assert rotate.rotate_one(_recording_client(200, seen), probed_rotation, Config(rotations=[])) is False
     assert seen == []
 
 
-def test_rotate_one_missing_token_key_forces_remint(monkeypatch, tmp_path: Path):
+def test_rotate_one_missing_token_key_forces_remint(monkeypatch, probed_rotation: Rotation):
     # The published Secret exists but lacks the configured stringData key —
     # the class of bug a wrong token_key produces; re-mint rewrites the manifest.
-    rotation = _probed_rotation(tmp_path)
     _stub_mint(monkeypatch)
     monkeypatch.setattr(rotate, "published_secret_data", lambda _out: {"jwt": base64.b64encode(b"x").decode()})
     seen: list[httpx.Request] = []
-    assert rotate.rotate_one(_recording_client(200, seen), rotation, Config(rotations=[])) is True
+    assert rotate.rotate_one(_recording_client(200, seen), probed_rotation, Config(rotations=[])) is True
     assert seen == []
 
 
-@pytest.mark.parametrize("stamp_present", [False, True])
-@pytest.mark.parametrize("covered", ["audience", "claim"])
-def test_rotation_uses_expected_claim_stamps(monkeypatch, tmp_path: Path, stamp_present: bool, covered: str):
-    rotation = _probed_rotation(tmp_path)
-    rotation.probe = None
-    audience = "test-audience"
-    email = "test-user@example.test"
+@pytest.mark.parametrize("expected", ["audience", "claim"])
+def test_rotated_outputs_satisfy_the_next_freshness_check(monkeypatch, probed_rotation: Rotation, expected: str):
+    probed_rotation.probe = None
+    assert probed_rotation.k8s_secret is not None
+    expiry = int((datetime.now(UTC) + timedelta(days=30)).timestamp())
     claims = {
-        "iss": rotation.expected_issuer,
-        "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp()),
-        "aud": audience,
-        "email": email,
+        "iss": probed_rotation.expected_issuer,
+        "exp": expiry,
+        "aud": "test-audience",
+        "email": "test-user@example.test",
     }
-    stamps = yaml.safe_load(rotation.sops_file.read_text())
-    if covered == "audience":
-        rotation.expected_audiences = [audience]
-        if stamp_present:
-            stamps["audiences_unencrypted"] = [audience]
+    if expected == "audience":
+        probed_rotation.expected_audiences = ["test-audience"]
     else:
-        rotation.expected_claims = {"email": email}
-        if stamp_present:
-            stamps["claims_unencrypted"] = {"email": email}
-    rotation.sops_file.write_text(yaml.safe_dump(stamps))
-    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: _make_jwt(claims))
-    monkeypatch.setattr(rotate, "write_sops_yaml", lambda **_kwargs: None)
-    assert rotate.rotate_one(_status_client(200), rotation, Config(rotations=[])) is (not stamp_present)
+        probed_rotation.expected_claims = {"email": "test-user@example.test"}
+
+    token = _make_jwt(claims)
+    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
+
+    def write_yaml(*, path: Path, document: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(document))
+
+    monkeypatch.setattr(rotate, "write_sops_yaml", write_yaml)
+    client = _status_client(200)
+    config = Config(rotations=[])
+    # The existing token is fresh by age, but predates the newly required audience or claim.
+    assert rotate.rotate_one(client, probed_rotation, config)
+    secret = yaml.safe_load(probed_rotation.k8s_secret.path.read_text())
+    assert secret["stringData"] == {"token": token, "token-exp": str(expiry)}
+    assert secret["metadata"]["annotations"]["description"]
+    assert yaml.safe_load(probed_rotation.sops_file.read_text())[probed_rotation.token_field] == token
+    assert not rotate.rotate_one(client, probed_rotation, config)
 
 
 if __name__ == "__main__":
