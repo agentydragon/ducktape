@@ -80,13 +80,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
     k8s.KubeDeployment(
         scope,
         "tabbyapi-deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            namespace=NAMESPACE,
-            labels=_PODS.selector,
-            # The config and template use subPath mounts and need a pod restart.
-            annotations={"configmap.reloader.stakater.com/reload": config.name},
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),

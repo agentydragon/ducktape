@@ -184,10 +184,7 @@ class Aiquota(Construct):
                 name=_API_NAME,
                 namespace=NAMESPACE,
                 labels=SERVICE.pods.selector,
-                annotations={
-                    "description": "AI subscription quotas and OpenAI Platform credits.",
-                    "secret.reloader.stakater.com/reload": _PLATFORM_SESSIONS_READ_TOKEN,
-                },
+                annotations={"description": "AI subscription quotas and OpenAI Platform credits."},
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,

@@ -94,10 +94,7 @@ def _deployment(
         chart,
         service.name,
         metadata=k8s.ObjectMeta(
-            name=service.name,
-            namespace=_NAMESPACE,
-            labels=labels,
-            annotations={"description": description, "secret.reloader.stakater.com/reload": _token_secret(account)},
+            name=service.name, namespace=_NAMESPACE, labels=labels, annotations={"description": description}
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,

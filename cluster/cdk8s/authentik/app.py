@@ -120,12 +120,6 @@ _WORKER_RESOURCES = {"requests": {"cpu": "300m", "memory": "512Mi"}, "limits": {
 
 def _values() -> dict[str, object]:
     return {
-        "global": {
-            "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": f"{db.POSTGRES.app_secret.name},authentik-user-password",
-                "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
-            }
-        },
         # The worker processes the blueprints natively from this ConfigMap.
         "blueprints": {"configMaps": [_BLUEPRINTS_CONFIG_MAP]},
         "authentik": {
