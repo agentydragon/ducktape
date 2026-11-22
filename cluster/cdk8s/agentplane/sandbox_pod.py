@@ -138,9 +138,7 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
 
 
 def tool_config_grant(namespace: str) -> RoleBindingGrant:
-    return RoleBindingGrant(
-        kind="RoleBinding", namespace=namespace, role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME)
-    )
+    return RoleBindingGrant(namespace=namespace, role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME))
 
 
 def workload_security_context() -> k8s.SecurityContext:

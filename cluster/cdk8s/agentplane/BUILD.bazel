@@ -757,17 +757,6 @@ py_library(
 )
 
 py_library(
-    name = "staging_grants",
-    srcs = ["staging_grants.py"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":kubernetes_grants",
-        ":sandbox_pod",
-        "//cluster/cdk8s:agent_access_profiles",
-    ],
-)
-
-py_library(
     name = "environment",
     srcs = ["environment.py"],
     visibility = [
@@ -884,7 +873,6 @@ py_library(
         ":sandbox_controller",
         ":sandbox_pod",
         ":staging_config",
-        ":staging_grants",
         ":workload_certificate_admission",
         ":workload_tls",
         "//agentplane:subjects",

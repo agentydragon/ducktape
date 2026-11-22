@@ -14,7 +14,7 @@ from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
+from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 
 
 def directory(namespace: str) -> str:
@@ -24,7 +24,7 @@ def directory(namespace: str) -> str:
 def chart(app: App, namespace: str) -> Chart:
     classification = NAMESPACE_DIAGNOSTICS[namespace]
     scope = Chart(app, f"agent-namespace-rbac-{namespace}", disable_resource_name_hashes=True)
-    for level in ("metadata", "logs") if classification is AgentReadable.LOGS else ("metadata",):
+    for level in classification.levels:
         k8s.KubeRoleBinding(
             scope,
             level,
