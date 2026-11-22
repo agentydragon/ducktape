@@ -1,4 +1,4 @@
-import { Badge, Code, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Code, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
@@ -133,17 +133,21 @@ const moveNodePresentation: ActionPresentation = {
 const id = z.string().min(1);
 const noArguments = z.strictObject({});
 const nodeArguments = z.strictObject({ nodeId: id });
-const readArguments = nodeArguments.extend({ maxDepth: z.number().min(0).max(10).default(1) });
+const readArguments = nodeArguments.extend({ maxDepth: z.int().min(0).max(10).default(1) });
 const childrenArguments = nodeArguments.extend({
-  limit: z.number().min(1).max(200).default(100),
-  offset: z.number().min(0).default(0),
+  limit: z.int().min(1).max(200).default(100),
+  offset: z.int().min(0).default(0),
 });
 const openArguments = nodeArguments.extend({ openType: z.enum(["current", "panel", "tab"]).default("current") });
-const tagsArguments = z.strictObject({ workspaceId: id, limit: z.number().min(1).max(200).default(200) });
+const tagsArguments = z.strictObject({ workspaceId: id, limit: z.int().min(1).max(200).default(200) });
 const tagSchemaArguments = z.strictObject({
   tagId: id,
   includeEditInstructions: z.boolean().optional(),
   includeInheritedFields: z.boolean().optional(),
+});
+const basicTagSchemaArguments = tagSchemaArguments.extend({
+  includeEditInstructions: z.literal(false).optional(),
+  includeInheritedFields: z.literal(false).optional(),
 });
 const edit = z.strictObject({ old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() });
 const editArguments = nodeArguments
@@ -219,6 +223,30 @@ function requestView<S extends z.ZodType>(
     pane: { collapsed, opened: preview },
     details: { arguments: preview, result },
   };
+}
+
+function readView<S extends z.ZodType>(
+  name: string,
+  schema: S,
+  view: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode,
+  result: ResultPreview
+): ActionPresentation {
+  const presentation = requestView(name, schema, view, result);
+  return {
+    ...presentation,
+    pane: { collapsed: presentation.pane?.collapsed },
+    compactCardExpands: expandsForRejectedArguments(schema),
+    offersCardDecisionButtons: (args) => schema.safeParse(args).success,
+  };
+}
+
+function readNodeLink(nodeId: string, names: ReadonlyMap<string, string> | undefined): JSX.Element {
+  const href = `https://app.tana.inc?nodeid=${encodeURIComponent(nodeId)}`;
+  return (
+    <Anchor href={href} target="_blank" rel="noreferrer" inherit>
+      {names?.get(nodeId) || <Code>{nodeId}</Code>}
+    </Anchor>
+  );
 }
 
 function nodeLink(nodeId: string, names: ReadonlyMap<string, string> | undefined): JSX.Element {
@@ -647,12 +675,12 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["move_node", moveNodePresentation],
   [
     "read_node",
-    requestView(
+    readView(
       "read_node",
       readArguments,
       (args, names) => (
         <Line>
-          {nodeLink(args.nodeId, names)} ·{" "}
+          {readNodeLink(args.nodeId, names)} ·{" "}
           {args.maxDepth === 0
             ? "Only this node"
             : `Up to ${args.maxDepth} ${args.maxDepth === 1 ? "level" : "levels"} of descendants`}
@@ -668,12 +696,12 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ],
   [
     "get_children",
-    requestView(
+    readView(
       "get_children",
       childrenArguments,
       (args, names) => (
         <Line>
-          {nodeLink(args.nodeId, names)} · Up to {args.limit} direct children
+          {readNodeLink(args.nodeId, names)} · Up to {args.limit} direct {args.limit === 1 ? "child" : "children"}
           {args.offset > 0 && `, after the first ${args.offset}`}
         </Line>
       ),
@@ -697,15 +725,15 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
     "list_workspaces",
     {
-      fallbackLabel: tanaTitles.get("list_workspaces"),
-      pane: { opened: definePreview(noArguments, () => null) },
+      fallbackLabel: "List loaded Tana workspaces",
       details: { arguments: definePreview(noArguments, () => null), result: workspacesReceipt },
       compactCardExpands: expandsForRejectedArguments(noArguments),
+      offersCardDecisionButtons: (args) => noArguments.safeParse(args).success,
     },
   ],
   [
     "list_tags",
-    requestView(
+    readView(
       "list_tags",
       tagsArguments,
       (args, names) => (
@@ -719,19 +747,23 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ],
   [
     "get_tag_schema",
-    requestView(
-      "get_tag_schema",
-      tagSchemaArguments,
-      (args, names) => (
-        <Stack gap={4}>
-          <Line>{nodeLink(args.tagId, names)}</Line>
-          {args.includeInheritedFields && <Line>Include inherited fields</Line>}
-          {args.includeEditInstructions && <Line>Include edit instructions</Line>}
-        </Stack>
+    {
+      ...requestView(
+        "get_tag_schema",
+        tagSchemaArguments,
+        (args, names) => (
+          <Stack gap={4}>
+            <Line>{readNodeLink(args.tagId, names)}</Line>
+            {args.includeInheritedFields && <Line>Include inherited fields</Line>}
+            {args.includeEditInstructions && <Line>Include edit instructions</Line>}
+          </Stack>
+        ),
+        tagSchemaReceipt,
+        (args, names) => <Line>{readNodeLink(args.tagId, names)}</Line>
       ),
-      tagSchemaReceipt,
-      (args, names) => <Line>{nodeLink(args.tagId, names)}</Line>
-    ),
+      compactCardExpands: expandsForRejectedArguments(basicTagSchemaArguments),
+      offersCardDecisionButtons: (args) => basicTagSchemaArguments.safeParse(args).success,
+    },
   ],
   [
     "edit_node",

@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { z } from "zod";
 
 import { definePreview, type ArgumentsPreview } from "./entry";
-import type { ActionPresentation } from "./presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 import { ShellCommandView } from "../../ui/shell_command_view";
 import { TextBlock } from "../../ui/text_block";
@@ -20,10 +20,10 @@ export function sentence(value: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function SessionLink({ id }: { id: string }): ReactNode {
+export function SessionLink({ id, label = "Open Session" }: { id: string; label?: string }): ReactNode {
   return (
-    <Anchor component={Link} to={`/threads/${encodeURIComponent(id)}`} size="sm">
-      Open Session
+    <Anchor component={Link} to={`/threads/${encodeURIComponent(id)}`} size="sm" style={{ overflowWrap: "anywhere" }}>
+      {label}
     </Anchor>
   );
 }
@@ -41,6 +41,16 @@ function EnvironmentName({ value }: { value: z.infer<typeof target> }): ReactNod
 
 function presentation(label: string, args: ArgumentsPreview, result: ResultPreview): ActionPresentation {
   return { fallbackLabel: label, pane: { opened: args }, details: { arguments: args, nativeResult: result } };
+}
+
+export function compactNativeRead(label: string, args: ArgumentsPreview, result: ResultPreview): ActionPresentation {
+  return {
+    fallbackLabel: label,
+    pane: { collapsed: args },
+    details: { arguments: args, nativeResult: result },
+    compactCardExpands: expandsForRejectedArguments(args.schema),
+    offersCardDecisionButtons: (input) => args.schema.safeParse(input).success,
+  };
 }
 
 const environment = z.object({
@@ -344,9 +354,9 @@ export const sessionRenderers: ReadonlyMap<string, ActionPresentation> = new Map
   ["create", presentation("Create Session", createSession, createdSession)],
   [
     "get",
-    presentation(
+    compactNativeRead(
       "Inspect Session",
-      definePreview(sessionId.strict(), ({ args }) => <SessionLink id={args.session_id} />),
+      definePreview(sessionId.strict(), ({ args }) => <SessionLink id={args.session_id} label={args.session_id} />),
       sessionSnapshot
     ),
   ],
@@ -411,16 +421,19 @@ export const sessionRenderers: ReadonlyMap<string, ActionPresentation> = new Map
   ],
   [
     "read_turns",
-    presentation(
+    compactNativeRead(
       "Read Session turns",
-      definePreview(sessionId.strict().extend({ count: z.number(), page_cursor: name.optional() }), ({ args }) => (
-        <Stack gap={4}>
-          <SessionLink id={args.session_id} />
-          <Text size="sm">
-            Up to {args.count} turns{args.page_cursor ? " · next page" : ""}
-          </Text>
-        </Stack>
-      )),
+      definePreview(
+        sessionId.strict().extend({ count: z.int().min(1).max(100), page_cursor: name.optional() }),
+        ({ args }) => (
+          <Stack gap={4}>
+            <SessionLink id={args.session_id} label={args.session_id} />
+            <Text size="sm">
+              Up to {args.count} turns from History{args.page_cursor ? " · next page" : ""}
+            </Text>
+          </Stack>
+        )
+      ),
       turns
     ),
   ],

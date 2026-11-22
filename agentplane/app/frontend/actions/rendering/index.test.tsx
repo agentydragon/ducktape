@@ -1318,6 +1318,31 @@ const cardDecisionButtonCases: Array<{
   { group: "sandbox", name: "list", args: {}, visible: ["List sandboxes"] },
   { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["List Grocy products"] },
   { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["List quantity units"] },
+  { group: "tana", name: "list_workspaces", args: {}, visible: ["List loaded Tana workspaces"] },
+  {
+    group: "tana",
+    name: "read_node",
+    args: { nodeId: "node-1" },
+    visible: ["node-1", "Up to 1 level of descendants"],
+  },
+  {
+    group: "tana",
+    name: "get_children",
+    args: { nodeId: "node-1", limit: 5, offset: 2 },
+    visible: ["node-1", "Up to 5 direct children, after the first 2"],
+  },
+  {
+    group: "tana",
+    name: "list_tags",
+    args: { workspaceId: "workspace-1" },
+    visible: ["Up to 200 tags in workspace-1 and linked workspaces"],
+  },
+  {
+    group: "tana",
+    name: "get_tag_schema",
+    args: { tagId: "tag-1", includeEditInstructions: false, includeInheritedFields: false },
+    visible: ["tag-1"],
+  },
   {
     group: "gmail",
     name: "threads_list",
@@ -1489,6 +1514,38 @@ describe("card decision buttons capability", () => {
       expect(actionOffersCardDecisionButtons(identity(group, name), { ...args, invisible: "must review" })).toBe(false);
     }
   );
+
+  it("requires full review when a Tana tag read adds inherited fields or edit instructions", () => {
+    const action = identity("tana", "get_tag_schema");
+    for (const flags of [{ includeInheritedFields: true }, { includeEditInstructions: true }]) {
+      const args = { tagId: "tag-1", ...flags };
+      expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+      expect(actionCompactCardExpands(action, args)).toBe(true);
+    }
+  });
+
+  it.each([
+    ["sessions", "get", { session_id: "session-1" }],
+    ["sessions", "read_turns", { session_id: "session-1", count: 5, page_cursor: "next" }],
+    ["orchestration_v1", "get_session", { sandbox: { name: "review-box", uid: "uid-1" }, session_id: "session-1" }],
+    ["orchestration_v1", "list_sessions", { sandbox: { name: "review-box", uid: "uid-1" } }],
+    [
+      "orchestration_v1",
+      "read_turns",
+      { sandbox: { name: "review-box", uid: "uid-1" }, session_id: "session-1", count: 5 },
+    ],
+  ] as const)("allows a scoped %s/%s and rejects unknown options", (group, name, args) => {
+    const action = identity(group, name);
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionCompactCardExpands(action, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons(action, { ...args, all_sessions: true })).toBe(false);
+    expect(actionCompactCardExpands(action, { ...args, all_sessions: true })).toBe(true);
+    if ("sandbox" in args) {
+      const unknown = { ...args, sandbox: { ...args.sandbox, namespace: "another-namespace" } };
+      expect(actionOffersCardDecisionButtons(action, unknown)).toBe(false);
+      expect(actionCompactCardExpands(action, unknown)).toBe(true);
+    }
+  });
 
   it("keeps compact Gmail search approvals for visible scope and sends custom labels to review", () => {
     const search = identity("gmail", "threads_list");
