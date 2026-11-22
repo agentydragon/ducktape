@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
+import yaml
 
 from cluster.rotators.forgejo_token_rotation import rotate
 from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, Config, Rotation, TeaSecretOutput
@@ -17,75 +18,8 @@ from cluster.rotators.forgejo_token_rotation.rotate import (
     build_secret_manifest,
     mint_token,
     should_rotate,
-    tea_config_yaml,
     tokens_to_prune,
 )
-
-
-def _minting_client(seen: list[httpx.Request]) -> httpx.Client:
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        body = json.loads(request.content)
-        return httpx.Response(
-            201,
-            json={
-                "id": 12,
-                "name": body["name"],
-                "sha1": "abcd1234token",
-                "token_last_eight": "34token",
-                "scopes": body["scopes"],
-                "repositories": None,
-            },
-        )
-
-    return httpx.Client(transport=httpx.MockTransport(handler))
-
-
-def test_build_tea_secret_preserves_configured_metadata_annotations(tmp_path: Path):
-    output = TeaSecretOutput(
-        path=tmp_path / "secret.sops.yaml",
-        name="forgejo-token",
-        namespace="target",
-        annotations={"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"},
-    )
-    rotation = Rotation(
-        name="test", credentials_dir=Path("/creds"), sops_file=Path("secrets/test.yaml"), tea_secret=output
-    )
-
-    manifest = build_secret_manifest(
-        output,
-        rotation,
-        ForgejoCredentials(
-            username="test", password="not-a-secret", api_url="http://forgejo", tea_url="https://forgejo"
-        ),
-        {"sha1": "token", "name": "forgejo-token-test", "token_last_eight": "token"},
-    )
-
-    annotations = manifest["metadata"]["annotations"]
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed"] == "true"
-    assert "description" in annotations
-
-
-def test_minted_token_requests_full_non_admin_write_scope_set():
-    """Boundary pin: the scope grant a default rotation actually requests from Forgejo.
-
-    Written as literals so any change to the granted access level fails here and gets
-    reviewed as a permissions change, not absorbed by a constant edit.
-    """
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    seen: list[httpx.Request] = []
-    mint_token(_minting_client(seen), r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
-    assert json.loads(seen[0].content)["scopes"] == [
-        "write:activitypub",
-        "write:issue",
-        "write:misc",
-        "write:notification",
-        "write:organization",
-        "write:package",
-        "write:repository",
-        "write:user",
-    ]
 
 
 @pytest.mark.parametrize(
@@ -116,55 +50,66 @@ def test_should_rotate_due_to_stamps_age_or_token_presence(overrides, token_id: 
     assert rotate_due is due
 
 
-def test_tea_config_yaml_matches_upstream_config_shape():
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    creds = ForgejoCredentials(
-        username="test-user", password="test-secret", api_url="http://forgejo.test:3000", tea_url="https://git.test"
-    )
-    rendered = tea_config_yaml(r, creds, "token-value")
-    assert "logins:" in rendered
-    assert "name: forgejo" in rendered
-    assert "url: https://git.test" in rendered
-    assert "token: token-value" in rendered
-    assert "default: true" in rendered
-    assert "version_check: false" in rendered
-    assert "user: test-user" in rendered
-
-
-def test_secret_manifest_carries_config_and_raw_token():
+def test_published_tea_login_matches_the_raw_credentials():
     out = TeaSecretOutput(
-        path=Path("cluster/k8s/haku/managed-agent/haku-forgejo-tea.sops.yaml"),
-        name="haku-forgejo-tea",
-        namespace="haku-sandbox",
+        path=Path("secrets/tea.sops.yaml"),
+        name="forgejo-token",
+        namespace="target",
+        annotations={"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"},
     )
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"), tea_secret=out)
+    rotation = Rotation(
+        name="test", credentials_dir=Path("/creds"), sops_file=Path("secrets/token.yaml"), tea_secret=out
+    )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    manifest = build_secret_manifest(
-        out,
-        r,
-        creds,
-        {"id": 12, "name": "forgejo-tea-haku-20260701", "sha1": "token-value", "token_last_eight": "en-value"},
-    )
-    assert manifest["metadata"]["name"] == "haku-forgejo-tea"
-    assert manifest["metadata"]["namespace"] == "haku-sandbox"
-    assert manifest["stringData"]["token"] == "token-value"
-    assert manifest["stringData"]["username"] == "test-user"
-    assert "config.yml" in manifest["stringData"]
+    manifest = build_secret_manifest(out, rotation, creds, {"name": "minted", "sha1": "token-value"})
+    metadata = manifest["metadata"]
+    assert (metadata["namespace"], metadata["name"]) == (out.namespace, out.name)
+    assert metadata["annotations"].items() >= out.annotations.items()
+    assert metadata["annotations"]["description"]
+    data = manifest["stringData"]
+    [login] = yaml.safe_load(data["config.yml"])["logins"]
+    assert login["url"] == data["url"] == creds.tea_url
+    assert login["token"] == data["token"] == "token-value"
+    assert login["user"] == data["username"] == creds.username
+    assert login["name"] == "forgejo"
+    assert login["default"] is True
+    assert login["version_check"] is False
 
 
-def test_mint_token_omits_repositories_for_full_account_access():
-    r = Rotation(
+def test_mint_token_requests_full_non_admin_account_access():
+    rotation = Rotation(
         name="haku",
         token_prefix="forgejo-tea-haku",
         credentials_dir=Path("/creds"),
         sops_file=Path("secrets/haku.yaml"),
     )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    seen: list[httpx.Request] = []
-    data = mint_token(_minting_client(seen), r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
-    assert data["name"] == "forgejo-tea-haku-20260701010203456789"
-    assert seen[0].headers["Authorization"] == "Basic " + base64.b64encode(b"test-user:test-secret").decode()
-    assert json.loads(seen[0].content) == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
+    expected_name = "forgejo-tea-haku-20260701010203456789"
+
+    def forgejo(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url == "http://forgejo.test:3000/api/v1/users/test-user/tokens"
+        assert request.headers["Authorization"] == "Basic " + base64.b64encode(b"test-user:test-secret").decode()
+        # Omitting repositories selects the full account. Keep the reviewed scopes independent of production defaults.
+        assert json.loads(request.content) == {
+            "name": expected_name,
+            "scopes": [
+                "write:activitypub",
+                "write:issue",
+                "write:misc",
+                "write:notification",
+                "write:organization",
+                "write:package",
+                "write:repository",
+                "write:user",
+            ],
+        }
+        return httpx.Response(201, json={"id": 12, "name": expected_name, "sha1": "token-value"})
+
+    with httpx.Client(transport=httpx.MockTransport(forgejo)) as client:
+        minted = mint_token(client, rotation, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
+    assert minted["sha1"] == "token-value"
+    assert minted["name"] == expected_name
 
 
 def test_tokens_to_prune_keeps_current_and_newest_previous():
