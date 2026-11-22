@@ -286,11 +286,7 @@ def generate_manifests(root: Path) -> None:
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
-    forgejo_namespace.write_manifests(root)
-    forgejo_db.write_manifests(root)
-    forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
     home_assistant_db.write_manifests(root)
@@ -1429,7 +1425,19 @@ def generate_manifests(root: Path) -> None:
     forgejo_artifact = artifact("forgejo", f"{HAND_WRITTEN_ROOT}/forgejo")
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
-        forgejo_artifact,
+        write_directory(
+            root,
+            forgejo_artifact,
+            forgejo_namespace.chart,
+            forgejo_db.chart,
+            forgejo_cache.chart,
+            forgejo_app.chart,
+            siblings=[
+                "forgejo-db-ssd-creds.sops.yaml",
+                "forgejo-admin-password.sops.yaml",
+                "forgejo-secret-key.sops.yaml",
+            ],
+        ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,

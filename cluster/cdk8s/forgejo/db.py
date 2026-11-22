@@ -3,17 +3,12 @@ Kustomization, beside its hand-written application-user Secret."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.forgejo.namespace import NAMESPACE
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 DATABASE = "forgejo"
 POSTGRES = cluster.PostgresRef(
     name="forgejo-db-ssd",
@@ -23,7 +18,7 @@ POSTGRES = cluster.PostgresRef(
 )
 
 
-def _chart(app: App) -> Chart:
+def chart(app: App) -> Chart:
     chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     cluster.cluster(
         chart,
@@ -50,7 +45,3 @@ def _chart(app: App) -> Chart:
     )
     backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, retention="30d")
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _chart, manifest_name="db.k8s.yaml")
