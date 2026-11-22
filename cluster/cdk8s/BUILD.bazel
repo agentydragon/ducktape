@@ -2147,7 +2147,7 @@ py_test(
         "//:MODULE.bazel",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
-        "//cluster:parked_generated_manifests",
+        "//cluster:haku_openclaw_spike_backup_sources",
         "//cluster:parked_yaml_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/agentplane-staging:manifests",
