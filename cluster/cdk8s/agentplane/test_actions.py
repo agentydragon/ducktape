@@ -8,6 +8,7 @@ from typing import Any
 import pytest_bazel
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
+from jsonschema import Draft202012Validator
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
@@ -34,6 +35,9 @@ from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+
+# types-jsonschema imports referencing in its stubs.
+# gazelle:include_dep @pypi//referencing
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -165,29 +169,34 @@ def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> No
     assert alert["labels"] == {"severity": "warning"}
 
 
-def _gaffer_approval(manifests: list[dict[str, Any]], action: str) -> dict[str, Any]:
-    policy = find_resource(manifests, "PolicySet", "gaffer-private-branch-and-pr-creation")
-    return one(rule["policy"] for rule in policy["spec"]["rules"] if rule["policy"]["actions"] == {"github": [action]})
-
-
-def test_gaffer_branch_policy_approves_only_create_branch(staging_manifests: list[dict[str, Any]]) -> None:
-    approval = _gaffer_approval(staging_manifests, "create_branch")
-    assert approval["type"] == "argument_schema"
-    assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
-    assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
-    assert approval["schema"]["required"] == ["owner", "repo", "branch"]
-    assert approval["schema"]["additionalProperties"] is False
-
-
-def test_gaffer_pr_policy_approves_only_create_pull_request(staging_manifests: list[dict[str, Any]]) -> None:
-    approval = _gaffer_approval(staging_manifests, "create_pull_request")
-    assert approval["type"] == "argument_schema"
-    assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
-    assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
-    assert approval["schema"]["required"] == ["owner", "repo", "title", "head", "base"]
-    assert approval["schema"]["properties"]["maintainer_can_modify"] == {"const": False}
-    assert "reviewers" not in approval["schema"]["properties"]
-    assert approval["schema"]["additionalProperties"] is False
+def test_gaffer_policy_approves_only_scoped_branch_and_pr_requests(staging_manifests: list[dict[str, Any]]) -> None:
+    policy_set = find_resource(staging_manifests, "PolicySet", "gaffer-private-branch-and-pr-creation")
+    required_args = {
+        "create_branch": {"branch": "work"},
+        "create_pull_request": {"title": "Change", "head": "work", "base": "devel"},
+    }
+    actions_seen = set()
+    for rule in policy_set["spec"]["rules"]:
+        assert rule["type"] == "action_auto_approve"
+        policy = rule["policy"]
+        assert policy["type"] == "argument_schema"
+        ((group, targets),) = policy["actions"].items()
+        assert group == "github"
+        action = one(targets)
+        arguments = {"owner": "agentydragon", "repo": "gaffer-private", **required_args[action]}
+        schema = Draft202012Validator(policy["schema"])
+        assert schema.is_valid(arguments)
+        for key in arguments:
+            assert not schema.is_valid({k: v for k, v in arguments.items() if k != key}), key
+        assert not schema.is_valid({**arguments, "owner": "another-owner"})
+        assert not schema.is_valid({**arguments, "repo": "another-repo"})
+        assert not schema.is_valid({**arguments, "unexpected": True})
+        if action == "create_pull_request":
+            assert schema.is_valid({**arguments, "maintainer_can_modify": False})
+            assert not schema.is_valid({**arguments, "maintainer_can_modify": True})
+            assert not schema.is_valid({**arguments, "reviewers": ["reviewer"]})
+        actions_seen.add(action)
+    assert actions_seen == required_args.keys()
 
 
 def test_staging_sampler_delegation_and_credential_files(staging_manifests: list[dict[str, Any]]) -> None:
