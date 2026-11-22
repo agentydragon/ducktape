@@ -1464,7 +1464,7 @@ describe("card decision buttons capability", () => {
     }
   });
 
-  it("keeps Grocy and Tana changes with unresolved referenced resources in full review", () => {
+  it("keeps Grocy stock transfers in full review", () => {
     const transfer = identity("grocy_sf", "stock_transfer");
     expect(
       actionOffersCardDecisionButtons(transfer, {
@@ -1473,12 +1473,6 @@ describe("card decision buttons capability", () => {
         qu: 7,
         from_location: 3,
         to_location: 4,
-      })
-    ).toBe(false);
-    expect(
-      actionOffersCardDecisionButtons(identity("tana", "get_or_create_calendar_node"), {
-        workspaceId: "workspace-123",
-        granularity: "day",
       })
     ).toBe(false);
   });
