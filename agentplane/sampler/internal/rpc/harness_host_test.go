@@ -280,6 +280,32 @@ func (s *hostTransport) SetHeader(header metadata.MD) error {
 func (s *hostTransport) SendHeader(header metadata.MD) error { return s.SetHeader(header) }
 func (s *hostTransport) SetTrailer(metadata.MD) error        { return nil }
 
+func TestModelChangeExplainsRejectedResponsesSession(t *testing.T) {
+	h, _ := newHostFixture(t)
+	ctx := grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.SessionsURI), &hostTransport{})
+	request := hostCreateRequest()
+	if _, err := h.CreateSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	replacement := h.Sampler.Settings.Models["test-model"]
+	replacement.ProviderModel = "another-model"
+	h.Sampler.Settings.Models["replacement"] = replacement
+	change := &harnesshostpb.ChangeModelRequest{SessionId: request.SessionId, CommandId: "change", Model: "replacement"}
+	_, err := h.ChangeModel(ctx, change)
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(status.Convert(err).Message(), "sampler policy") {
+		t.Fatalf("incompatible change: %v", err)
+	}
+	delete(h.Sampler.Settings.Models, "test-model")
+	_, err = h.ChangeModel(ctx, change)
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(status.Convert(err).Message(), "current model configuration is no longer available") {
+		t.Fatalf("missing current model: %v", err)
+	}
+	_, err = h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "input", Text: "continue"})
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(status.Convert(err).Message(), "selected model is no longer configured") {
+		t.Fatalf("input with missing model: %v", err)
+	}
+}
+
 func TestRemovedChatRouteCanSwitchToConfiguredChatRoute(t *testing.T) {
 	h, _ := newHostFixture(t)
 	chat := samplersettings.ModelConfig{Connection: "provider", ProviderModel: "old-provider-model", API: protocol.APIStyleChatCompletions, ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""}}

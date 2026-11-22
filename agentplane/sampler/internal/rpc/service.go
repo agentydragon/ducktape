@@ -66,6 +66,14 @@ func admitted(ctx context.Context, timeoutSeconds int, serviceCallers []string) 
 	}
 }
 
+var (
+	errModelUnavailable       = errors.New("selected model is no longer configured")
+	errModelChangeUnavailable = errors.New("cannot change model because the current model configuration is no longer available")
+	errModelIncompatible      = errors.New("cannot change to this model because its conversation format is incompatible with the current model")
+	errModelChangeUnsettled   = errors.New("cannot change model while the conversation has unfinished work")
+	errTargetModelUnavailable = errors.New("requested model or reasoning effort is not available")
+)
+
 func samplerError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -77,6 +85,16 @@ func samplerError(ctx context.Context, err error) error {
 		return status.Error(codes.AlreadyExists, "identifier already has another payload")
 	case errors.Is(err, protocol.ErrMissing):
 		return status.Error(codes.NotFound, "session or command not found")
+	case errors.Is(err, errModelUnavailable):
+		return status.Error(codes.FailedPrecondition, "selected model is no longer configured; the conversation cannot continue with this model")
+	case errors.Is(err, errModelChangeUnavailable):
+		return status.Error(codes.FailedPrecondition, "cannot change model: the current model configuration is no longer available for compatibility checking")
+	case errors.Is(err, errModelIncompatible):
+		return status.Error(codes.FailedPrecondition, "cannot change model: the current sampler policy does not allow this model switch")
+	case errors.Is(err, errModelChangeUnsettled):
+		return status.Error(codes.FailedPrecondition, "cannot change model while the conversation has unfinished work")
+	case errors.Is(err, errTargetModelUnavailable):
+		return status.Error(codes.InvalidArgument, "requested model or reasoning effort is not available")
 	case errors.Is(err, protocol.ErrPrecondition):
 		return status.Error(codes.FailedPrecondition, "session cannot apply this operation")
 	case errors.Is(err, protocol.ErrInvalid):
@@ -182,30 +200,32 @@ func (s *Sampler) commandUsing(
 		if model := command.GetChangeModel(); model != nil {
 			targetConfig, targetConfigured := s.Settings.Models[model.GetModel()]
 			if !targetConfigured || !slices.Contains(targetConfig.ReasoningEfforts, session.Effort) {
-				return protocol.ErrInvalid
+				return errTargetModelUnavailable
 			}
 			if !currentConfigured {
 				// Chat Completions retains plain messages and JSON tool calls. A deliberate
 				// switch can continue a settled conversation on another Chat route even
 				// when the old route configuration has gone away. Responses and Anthropic
 				// may retain model-bound opaque items, so require their old contract.
-				if conversation.API != protocol.APIStyleChatCompletions || targetConfig.API != conversation.API ||
-					session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil {
-					return protocol.ErrPrecondition
+				if conversation.API != protocol.APIStyleChatCompletions || targetConfig.API != conversation.API {
+					return errModelChangeUnavailable
+				}
+				if session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil {
+					return errModelChangeUnsettled
 				}
 				if err := conversation.Transcript.CheckSettled(); err != nil {
-					return protocol.ErrPrecondition
+					return errModelChangeUnsettled
 				}
 				if err := conversation.Context().CheckSettled(); err != nil {
-					return protocol.ErrPrecondition
+					return errModelChangeUnsettled
 				}
 				return nil
 			}
 			if !currentConfig.Compatible(targetConfig) {
-				return protocol.ErrPrecondition
+				return errModelIncompatible
 			}
 		} else if !currentConfigured {
-			return protocol.ErrPrecondition
+			return errModelUnavailable
 		}
 		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
 			return protocol.ErrInvalid
