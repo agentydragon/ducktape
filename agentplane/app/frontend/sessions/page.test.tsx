@@ -1988,8 +1988,9 @@ it.each(["conversation", "archive"])("shares an exact acknowledgement from the %
   await act(async () => finishLookup(Response.json({ acknowledgements: [] })));
   expect(buttonIn(dialog, "Dismiss")).toBeUndefined();
   await showIssues(watch, issueReceipt(issue.commandId, "42", "A newer delivery failure"));
-  expect(container.textContent).toContain("A newer delivery failure");
-  expect(buttonIn(container, "Dismiss")).toBeDefined();
+  const newerRow = pendingRow(container, issue.commandId);
+  expect(newerRow.textContent).toContain("Delivery failed");
+  expect(buttonIn(newerRow, "Dismiss")).toBeDefined();
   expect(buttonIn(dialog, "Dismiss")).toBeUndefined();
 });
 
@@ -2084,7 +2085,7 @@ it("ignores an obsolete acknowledgement batch after the same Dispatcher issue ad
   await act(async () =>
     finishOld?.(Response.json({ acknowledgements: [{ notice: { commandId: old.commandId, receiptVersion: "123" } }] }))
   );
-  expect(container.textContent).toContain("Current issue");
+  expect((await openDeliveryDetails(pendingRow(container, old.commandId))).textContent).toContain("Current issue");
   expect(batchSizes).toEqual([1, 1]);
 });
 
