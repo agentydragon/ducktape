@@ -642,6 +642,17 @@ async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: Visua
     await view.capture()
 
 
+@DESKTOP_AND_MOBILE
+async def test_recent_delivery_issues(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.RECENT_DELIVERY_ISSUES)
+    await app.mount_thread(RUNNING_THREAD)
+    issues = view.page.get_by_role("region", name="Recent delivery issues")
+    await expect(issues.get_by_text("Model change · Outcome unknown")).to_be_visible()
+    await expect(issues.get_by_text("Send message · Delivery failed")).to_be_visible()
+    await issues.scroll_into_view_if_needed()
+    await view.capture()
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
 async def test_detail_of_a_short_message_stays_on_the_page(
     view: VisualPage, app: AgentplaneFixture, viewport: Viewport

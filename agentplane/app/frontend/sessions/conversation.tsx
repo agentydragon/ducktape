@@ -25,7 +25,7 @@ import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/li
 import { useOptionalStreamStatus } from "../transport/stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
-import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
+import { PendingInputMessages, LocalControlCommands, RecentDeliveryIssues } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -304,6 +304,7 @@ function ConversationBody({
       .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
+  const recentIssues = new Map(commands.issues.receipts.map((receipt) => [receipt.commandId, receipt]));
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
   for (const local of localCommands) {
     if (local.command.operation.case === "submitInput") {
@@ -320,6 +321,7 @@ function ConversationBody({
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
+        issues={recentIssues}
       />
       {localCommands.length > 0 && (
         <LocalControlCommands
@@ -328,8 +330,10 @@ function ConversationBody({
           store={commands.store}
           errors={commands.errors}
           deliver={commands.deliver}
+          issues={recentIssues}
         />
       )}
+      <RecentDeliveryIssues issues={commands.issues} commands={localCommands} entities={entities} />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
         <ModelActivityHint

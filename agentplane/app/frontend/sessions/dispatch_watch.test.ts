@@ -6,7 +6,7 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { DeliveryState, type Dispatch } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { stubWatchFetch } from "../testing/watch";
 import { dispatchFromJson } from "./client";
-import { watchDispatches } from "./dispatch_watch";
+import { watchDispatches, watchRecentDispatchIssues, type RecentDispatchIssues } from "./dispatch_watch";
 import { LocalCommands } from "./local_commands";
 
 const SESSION = "session-1";
@@ -72,6 +72,42 @@ function caughtUp(resumeToken: string) {
 async function settle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
 }
+
+it("replaces a recent issues snapshot after resync and keeps the coverage warning", async () => {
+  let latest: RecentDispatchIssues | undefined;
+  stop = watchRecentDispatchIssues(SESSION, (state) => {
+    latest = state;
+  });
+  await settle();
+  const [first] = fetchMock.served;
+  expect(first.url.searchParams.get("filter.sessionId")).toBe(SESSION);
+  expect(first.url.searchParams.has("filter.recentIssueLimit")).toBe(true);
+  const receipt = {
+    commandId: "deleted-command",
+    sessionId: SESSION,
+    state: "DELIVERY_STATE_UNKNOWN",
+    reason: "sandbox_deleted",
+  };
+  const decoded = { ...receipt, state: DeliveryState.UNKNOWN };
+  first.send({ recentIssues: { receipts: [receipt], moreAvailable: true }, resumeToken: "snapshot" });
+  await settle();
+  expect(latest).toMatchObject({ connection: "current", receipts: [decoded], moreAvailable: true });
+  first.end();
+  await settle();
+  expect(latest).toMatchObject({ connection: "stale", receipts: [decoded] });
+
+  await vi.advanceTimersByTimeAsync(1_000);
+  const [, resumed] = fetchMock.served;
+  expect(resumed.url.searchParams.get("resumeToken")).toBe("snapshot");
+  resumed.write('{"error":{"code":11,"message":"dispatch deletion coverage expired"}}\n');
+  await settle();
+  await vi.advanceTimersByTimeAsync(2_000);
+  const [, , fresh] = fetchMock.served;
+  expect(fresh.url.searchParams.has("resumeToken")).toBe(false);
+  fresh.send({ recentIssues: {}, resumeToken: "replacement" });
+  await settle();
+  expect(latest).toMatchObject({ connection: "current", receipts: [], moreAvailable: false, coverageLost: true });
+});
 
 it("sorts and deduplicates the filter, applies its snapshot, and reuses the cursor after recreation", async () => {
   const store = new LocalCommands(SESSION);

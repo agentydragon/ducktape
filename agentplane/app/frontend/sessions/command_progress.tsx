@@ -20,7 +20,7 @@ export type CommandSubject = "input" | "model" | "effort" | "other";
 type LightState = "done" | "waiting" | "uncertain" | "failed" | "future";
 
 /** Reasons the Dispatcher gives as `<reason>: <detail>`, where the detail names the failure it met. */
-function waitingReasonLabel(reason: string | null | undefined): string | null | undefined {
+export function dispatchReasonLabel(reason: string | null | undefined): string | null | undefined {
   const detailOf = (prefix: string): string | null =>
     reason?.startsWith(`${prefix}:`) ? reason.slice(prefix.length + 1).trim() : null;
   const deadline = detailOf("wake_deadline_expired");
@@ -30,6 +30,8 @@ function waitingReasonLabel(reason: string | null | undefined): string | null | 
   const runner = detailOf("runner_unreachable");
   if (runner !== null) return `Dispatcher could not reach the runner and keeps retrying: ${runner}`;
   switch (reason) {
+    case "sandbox_deleted":
+      return "Sandbox was deleted";
     case "sandbox_resuming":
       return "Sandbox is waking; message is queued";
     case "wake_on_send_disabled":
@@ -82,7 +84,7 @@ export function CommandProgress({
     unknown: "Outcome unknown",
     refused: "Command refused",
   };
-  const reasonLabel = waitingReasonLabel(reason);
+  const reasonLabel = dispatchReasonLabel(reason);
   const label =
     stage === "local" && !local
       ? "Waiting for Dispatcher"

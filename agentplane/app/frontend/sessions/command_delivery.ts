@@ -10,7 +10,12 @@ import {
   type CommandSubmission,
 } from "./client";
 import { displayableError } from "../transport/client";
-import { watchDispatches } from "./dispatch_watch";
+import {
+  EMPTY_DISPATCH_ISSUES,
+  watchDispatches,
+  watchRecentDispatchIssues,
+  type RecentDispatchIssues,
+} from "./dispatch_watch";
 import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import type { ThreadEntity } from "../../../history_service/api/history/history_service_pb";
@@ -35,6 +40,7 @@ export function pruneCommandErrors<T>(errors: Map<string, T>, commandIds: Readon
 
 interface ThreadCommands {
   local: LocalCommandSnapshot;
+  issues: RecentDispatchIssues;
   errors: ReadonlyMap<string, CommandIssue>;
   submissionError: string | null;
   submitInput: (text: string) => boolean;
@@ -51,6 +57,8 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [recent, setRecent] = useState<{ threadId: string; issues: RecentDispatchIssues } | null>(null);
+  useEffect(() => watchRecentDispatchIssues(threadId, (issues) => setRecent({ threadId, issues })), [threadId]);
   const active = useRef(new Set<string>());
   useEffect(() => {
     setErrors((previous) =>
@@ -170,6 +178,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
   }
   return {
     local,
+    issues: recent?.threadId === threadId ? recent.issues : EMPTY_DISPATCH_ISSUES,
     errors,
     submissionError,
     deliver,

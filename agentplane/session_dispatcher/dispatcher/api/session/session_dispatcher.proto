@@ -175,6 +175,9 @@ message DispatchFilter {
   }
   // When not empty, only these commands within the scope; at most 1000.
   repeated string command_ids = 3;
+  // WatchDispatches only. For a whole Session, send replacement snapshots with at most this many
+  // newest FAILED or UNKNOWN receipts (including retained deletions). Zero keeps the ordinary watch.
+  uint32 recent_issue_limit = 4;
 }
 
 message WatchDispatchesRequest {
@@ -187,10 +190,26 @@ message WatchDispatchesRequest {
 // All changes through the response resume_token have been sent. May repeat as the watch advances.
 message CaughtUp {}
 
+message RecentDispatchIssues {
+  // Most recently updated first, in Dispatcher version order.
+  repeated DispatchIssue receipts = 1;
+  bool more_available = 2;
+}
+
+// Delivery metadata only. Command payloads and journal evidence are available through their owners.
+message DispatchIssue {
+  string command_id = 1;
+  string session_id = 2;
+  agentplane.proto.Operation operation = 3;
+  DeliveryState state = 4;
+  optional string reason = 5;
+}
+
 message WatchDispatchesResponse {
   oneof frame {
     Dispatch dispatch = 1;
     CaughtUp caught_up = 2;
+    RecentDispatchIssues recent_issues = 4;
   }
   // Resume after this frame with the same filter. Deleted receipts have no Sandbox address.
   string resume_token = 3;

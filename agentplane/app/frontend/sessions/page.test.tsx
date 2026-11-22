@@ -1518,8 +1518,11 @@ function dispatchRow(commandId: string, state: string, reason: string | undefine
 }
 
 async function openedWatch(): Promise<ServedWatch> {
-  await vi.waitFor(() => expect(dispatchWatches).not.toHaveLength(0));
-  return dispatchWatches[0];
+  return vi.waitFor(() => {
+    const watch = dispatchWatches.find(({ url }) => url.searchParams.has("filter.commandIds"));
+    if (!watch) throw new Error("No command-scoped Dispatcher watch");
+    return watch;
+  });
 }
 
 // What the Dispatcher holds, then the frame that says the watch has it all.
@@ -1530,6 +1533,63 @@ async function sendDispatches(rows: object[]): Promise<void> {
     watch.send({ caughtUp: {}, resumeToken: "page-dispatch-checkpoint" });
   });
 }
+
+it("shows server delivery issues in a fresh browser and defers to settled History", async () => {
+  const container = await render();
+  const watch = await vi.waitFor(() => {
+    const recent = dispatchWatches.find(({ url }) => url.searchParams.has("filter.recentIssueLimit"));
+    if (!recent) throw new Error("No recent issues watch");
+    return recent;
+  });
+  await act(async () => {
+    watch.send({
+      recentIssues: {
+        receipts: [
+          {
+            commandId: "remote-model",
+            sessionId: THREAD.metadata.threadId,
+            state: "DELIVERY_STATE_UNKNOWN",
+            reason: "runner refused the model",
+            operation: "OPERATION_CHANGE_MODEL",
+          },
+          {
+            commandId: "remote-input",
+            sessionId: THREAD.metadata.threadId,
+            state: "DELIVERY_STATE_FAILED",
+            reason: "sandbox_deleted",
+            operation: "OPERATION_SUBMIT_INPUT",
+          },
+        ],
+        moreAvailable: true,
+      },
+      resumeToken: "delivery-issues",
+    });
+  });
+  const section = container.querySelector('[aria-label="Recent delivery issues"]');
+  expect(section?.textContent).toContain("Older delivery issues are outside this view");
+  expect(section?.textContent).toContain("Model change · Outcome unknown");
+  expect(section?.textContent).toContain("runner refused the model");
+  expect(section?.textContent).toContain("Send message · Delivery failed");
+  expect(section?.textContent).toContain("Sandbox was deleted");
+  expect(section?.querySelectorAll("button")).toHaveLength(0);
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
+
+  const settled = entity({
+    case: "command",
+    value: {
+      operation: Operation.CHANGE_MODEL,
+      outcome: ThreadCommandOutcome.EFFECTED,
+      outcomeCursor: 2n,
+      outcomeReason: undefined,
+      requestedValue: "test-model",
+    },
+  });
+  settled.entityId = "remote-model";
+  settled.cursor = 2n;
+  await rerender(container, threadState({ rows: [viewState(), settled] }));
+  expect(container.querySelectorAll('[data-command-id="remote-model"]')).toHaveLength(1);
+  expect(container.querySelector('[aria-label="Recent delivery issues"]')?.textContent).not.toContain("runner refused");
+});
 
 it("replaces a queued Dispatcher receipt with the failure its stream reports", async () => {
   const waiting = message("queued-then-failed");

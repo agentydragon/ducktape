@@ -661,6 +661,9 @@ func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter)
 	if filter == nil {
 		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
 	}
+	if filter.GetRecentIssueLimit() != 0 {
+		return nil, status.Error(codes.InvalidArgument, "recent delivery issues are available through WatchDispatches")
+	}
 	var session, sandbox string
 	switch scope := filter.GetScope().(type) {
 	case *dispatcherpb.DispatchFilter_SessionId:

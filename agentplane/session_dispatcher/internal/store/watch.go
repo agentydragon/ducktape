@@ -20,8 +20,9 @@ type DispatchChange struct {
 }
 
 type DispatchChanges struct {
-	Changes []DispatchChange
-	Through int64
+	Changes      []DispatchChange
+	RecentIssues *dispatcherpb.RecentDispatchIssues
+	Through      int64
 }
 
 // ReadDispatchChanges fences sequence allocation briefly, then reads the bounded batch
@@ -87,38 +88,81 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 		if filter.GetSandbox() != "" {
 			scopeColumn, scopeValue = "o.sandbox_name", filter.GetSandbox()
 		}
-		args := []any{after, through, scopeValue}
-		predicate := scopeColumn + "=$3"
+		args := []any{after, through}
+		versionRange := "version>$1 AND version<=$2"
+		orderAndLimit := " ORDER BY c.version"
+		evidence := "admission,delivery_blocker,wake_assessment"
+		recentLimit := int(filter.GetRecentIssueLimit())
+		if recentLimit != 0 {
+			if resuming {
+				var changed bool
+				if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+					SELECT 1 FROM dispatch WHERE session_id=$1 AND version>$2 AND version<=$3
+					UNION ALL
+					SELECT 1 FROM dispatch_tombstone WHERE session_id=$1 AND version>$2 AND version<=$3
+				)`, scopeValue, after, through).Scan(&changed); err != nil {
+					return err
+				}
+				if !changed {
+					return nil
+				}
+			}
+			// A replacement describes the current MVCC snapshot. A commit above the frontier
+			// may appear early here and will trigger another read when its version is covered.
+			args = nil
+			versionRange = "TRUE"
+			evidence = "NULL::bytea AS admission,NULL::bytea AS delivery_blocker,NULL::bytea AS wake_assessment"
+			batch.RecentIssues = &dispatcherpb.RecentDispatchIssues{}
+		}
+		args = append(args, scopeValue)
+		predicate := fmt.Sprintf("%s=$%d", scopeColumn, len(args))
 		if len(filter.GetCommandIds()) > 0 {
 			args = append(args, pq.Array(filter.GetCommandIds()))
 			predicate += " AND c.command_id=ANY($4)"
 		}
 		owner, ownerArgs := OwnerScope(caller, "o.", len(args)+1)
 		args = append(args, ownerArgs...)
+		if recentLimit != 0 {
+			predicate += fmt.Sprintf(" AND c.state IN ($%d,$%d)", len(args)+1, len(args)+2)
+			args = append(args, FailedState, UnknownState, recentLimit+1)
+			orderAndLimit = fmt.Sprintf(" ORDER BY c.version DESC LIMIT $%d", len(args))
+		}
 		rows, err := tx.QueryContext(ctx, `WITH changes AS (
 			SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,operation,state,reason,
-				admission,delivery_blocker,wake_assessment,created_at,updated_at,false AS deleted
-			FROM dispatch WHERE version>$1 AND version<=$2
+				`+evidence+`,created_at,updated_at,false AS deleted
+			FROM dispatch WHERE `+versionRange+`
 			UNION ALL
 			SELECT version,command_id,session_id,''::varchar,''::text,operation,state,reason,
-				admission,delivery_blocker,wake_assessment,created_at,updated_at,true AS deleted
-			FROM dispatch_tombstone WHERE version>$1 AND version<=$2
+				`+evidence+`,created_at,updated_at,true AS deleted
+			FROM dispatch_tombstone WHERE `+versionRange+`
 		)
 		SELECT c.version,c.command_id,c.session_id,c.sandbox_name,c.sandbox_uid,c.operation,c.state,c.reason,
 			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at
 		FROM changes c JOIN session o ON o.session_id=c.session_id
 			AND (c.deleted OR (o.sandbox_name=c.sandbox_name AND o.sandbox_uid::text=c.sandbox_uid))
-		WHERE `+predicate+" AND "+owner+" ORDER BY c.version", args...)
+		WHERE `+predicate+" AND "+owner+orderAndLimit, args...)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
+			if batch.RecentIssues != nil && len(batch.RecentIssues.Receipts) == recentLimit {
+				batch.RecentIssues.MoreAvailable = true
+				break
+			}
 			change, err := scanDispatchChange(rows)
 			if err != nil {
 				return err
 			}
-			batch.Changes = append(batch.Changes, change)
+			if batch.RecentIssues != nil {
+				row := change.Dispatch
+				batch.RecentIssues.Receipts = append(batch.RecentIssues.Receipts, &dispatcherpb.DispatchIssue{
+					CommandId: row.GetCommandId(), SessionId: row.GetSessionId(), Operation: row.GetOperation(),
+					State: row.GetState(), Reason: row.Reason,
+				})
+			} else {
+				batch.Changes = append(batch.Changes, change)
+			}
 		}
 		return rows.Err()
 	})

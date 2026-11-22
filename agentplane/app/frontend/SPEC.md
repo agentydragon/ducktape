@@ -68,6 +68,15 @@ The App mutation handler reads Dispatcher `GetSession` on each request before wr
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can
 be archived. This check does not prevent new work admitted after the read by another service.
 
+## Recent delivery issues
+
+An open Thread watches up to 20 recent failed or uncertain Dispatcher receipts for its Session,
+including retained deletion receipts. It shows each operation, delivery outcome and available reason.
+The snapshot is separate from History and contains no command payload or journal admission. The
+browser uses settled History or its corresponding locally retained command when available. A pending
+History row and an uncertain receipt can coexist. The older issues and reconnecting notices describe
+the coverage of this view. A resume gap is explicit after deletion records expire.
+
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:

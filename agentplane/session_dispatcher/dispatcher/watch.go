@@ -32,6 +32,11 @@ func dispatchWatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.Dis
 	if filter == nil || len(filter.GetCommandIds()) > maxFilterCommands {
 		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required and must name at most 1000 commands")
 	}
+	if limit := filter.GetRecentIssueLimit(); limit != 0 {
+		if limit > 100 || filter.GetSessionId() == "" || len(filter.GetCommandIds()) != 0 {
+			return nil, status.Error(codes.InvalidArgument, "recent delivery issues require a whole Session and a limit of at most 100")
+		}
+	}
 	switch scope := filter.GetScope().(type) {
 	case *dispatcherpb.DispatchFilter_SessionId:
 		if scope.SessionId == "" {
@@ -105,7 +110,15 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 				return err
 			}
 		}
-		if first || batch.Through > last {
+		if batch.RecentIssues != nil {
+			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+				Frame:       &dispatcherpb.WatchDispatchesResponse_RecentIssues{RecentIssues: batch.RecentIssues},
+				ResumeToken: resumetoken.Encode(batch.Through, digest),
+			})
+			if ended || err != nil {
+				return err
+			}
+		} else if first || batch.Through > last {
 			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
 				Frame:       &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
 				ResumeToken: resumetoken.Encode(batch.Through, digest),
