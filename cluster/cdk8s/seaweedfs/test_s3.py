@@ -1,9 +1,6 @@
 import pytest
 import pytest_bazel
-from cdk8s import (
-    Chart,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import Chart
 
 from cluster.cdk8s.seaweedfs import cluster, namespace, s3
 
@@ -11,28 +8,19 @@ _TENANT = min(cluster.TENANTS)
 _NOT_A_TENANT = "test-not-a-tenant"
 
 
-def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant(scratch_chart: Chart) -> None:
-    s3.identity(scratch_chart, "local", name="test-local")
-    s3.credentials(
-        scratch_chart,
-        "local-credentials",
-        identity="test-local",
-        namespace=namespace.NAME,
-        secret="test",
-        key_fields=None,
+@pytest.mark.parametrize(
+    ("owner", "expected_ref"),
+    [(namespace.NAME, {"name": cluster.NAME}), (_TENANT, {"name": cluster.NAME, "namespace": namespace.NAME})],
+)
+def test_s3_objects_reference_the_seaweed_cluster(
+    scratch_chart: Chart, owner: str, expected_ref: dict[str, str]
+) -> None:
+    identity = s3.identity(scratch_chart, "identity", name="test", namespace=owner)
+    credentials = s3.credentials(
+        scratch_chart, "credentials", identity=identity.name, namespace=owner, secret="test", key_fields=None
     )
-    s3.identity(scratch_chart, "tenant", name="test-tenant", namespace=_TENANT)
-    s3.credentials(
-        scratch_chart, "tenant-credentials", identity="test-tenant", namespace=_TENANT, secret="test", key_fields=None
-    )
-    in_cluster_namespace = {"name": cluster.NAME}
-    from_tenant = {"name": cluster.NAME, "namespace": namespace.NAME}
-    assert [(o["kind"], o["spec"]["seaweedRef"]) for o in Cdk8sTesting.synth(scratch_chart)] == [
-        ("S3Identity", in_cluster_namespace),
-        ("S3Credentials", in_cluster_namespace),
-        ("S3Identity", from_tenant),
-        ("S3Credentials", from_tenant),
-    ]
+    for resource in (identity, credentials):
+        assert resource.to_json()["spec"]["seaweedRef"] == expected_ref
 
 
 def test_s3_objects_refuse_a_namespace_the_tenants_grant_does_not_admit(scratch_chart: Chart) -> None:
