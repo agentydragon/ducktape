@@ -202,6 +202,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	service := &dispatcher.Service{
 		Store: queueStore, DispatcherServices: sets.New(c.DispatcherServiceCallers...),
+		NoticeWriters:    sets.New(c.NoticeAcknowledgementServiceCallers...),
 		Sandboxes:        catalog,
 		EnvironmentRules: dispatchEnvironmentRules, PolicyReady: dispatchPolicyReady,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,

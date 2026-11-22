@@ -29,20 +29,21 @@ const (
 type config struct {
 	Namespace string `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace             string                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL       string                   `mapstructure:"-"`
-	RunnerTokenFile             string                   `mapstructure:"runner_token_file"`
-	Kubeconfig                  string                   `mapstructure:"kubeconfig"`
-	KubernetesClientQPS         float32                  `mapstructure:"kubernetes_client_qps"`
-	RPC                         listener.Config          `mapstructure:"rpc"`
-	GatewayTLS                  *peertls.ClientTLS       `mapstructure:"gateway_tls"`
-	RunnerControlTargetTemplate string                   `mapstructure:"runner_control_target_template"`
-	WakeServiceCallers          []string                 `mapstructure:"wake_service_callers"`
-	DispatcherServiceCallers    []string                 `mapstructure:"dispatcher_service_callers"`
-	DispatcherServiceDelegation *serviceDelegationConfig `mapstructure:"dispatcher_service_delegation"`
-	QueueCap                    int                      `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int                      `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int                      `mapstructure:"runner_request_timeout_seconds"`
+	PolicyNamespace                     string                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL               string                   `mapstructure:"-"`
+	RunnerTokenFile                     string                   `mapstructure:"runner_token_file"`
+	Kubeconfig                          string                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS                 float32                  `mapstructure:"kubernetes_client_qps"`
+	RPC                                 listener.Config          `mapstructure:"rpc"`
+	GatewayTLS                          *peertls.ClientTLS       `mapstructure:"gateway_tls"`
+	RunnerControlTargetTemplate         string                   `mapstructure:"runner_control_target_template"`
+	NoticeAcknowledgementServiceCallers []string                 `mapstructure:"notice_acknowledgement_service_callers"`
+	WakeServiceCallers                  []string                 `mapstructure:"wake_service_callers"`
+	DispatcherServiceCallers            []string                 `mapstructure:"dispatcher_service_callers"`
+	DispatcherServiceDelegation         *serviceDelegationConfig `mapstructure:"dispatcher_service_delegation"`
+	QueueCap                            int                      `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds                   int                      `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds                int                      `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 }
@@ -80,8 +81,9 @@ func loadConfig() (config, error) {
 
 func (c *config) validate() error {
 	serviceCallers := map[string][]string{
-		"dispatcher_service_callers": c.DispatcherServiceCallers,
-		"wake_service_callers":       c.WakeServiceCallers,
+		"dispatcher_service_callers":             c.DispatcherServiceCallers,
+		"wake_service_callers":                   c.WakeServiceCallers,
+		"notice_acknowledgement_service_callers": c.NoticeAcknowledgementServiceCallers,
 	}
 	for name, callers := range serviceCallers {
 		if err := auth.ValidateServiceCallers(callers); err != nil {
@@ -155,6 +157,11 @@ func (c *config) validate() error {
 	} {
 		if positive.value < 1 {
 			return fmt.Errorf("%s must be positive", positive.name)
+		}
+	}
+	for _, service := range c.NoticeAcknowledgementServiceCallers {
+		if !slices.Contains(c.DispatcherServiceCallers, service) {
+			return fmt.Errorf("notice acknowledgement service caller %s is not a Dispatcher service caller", service)
 		}
 	}
 	for _, service := range c.WakeServiceCallers {

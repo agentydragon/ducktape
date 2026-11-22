@@ -70,6 +70,7 @@ type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	Store              *store.Store
 	DispatcherServices sets.Set[string]
+	NoticeWriters      sets.Set[string]
 	Sandboxes          SandboxReader
 	EnvironmentRules   *reader.Index[access.Rule]
 	PolicyReady        func() error

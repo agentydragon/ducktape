@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
@@ -24,8 +23,8 @@ func (s *Service) AcknowledgeCommandNotice(ctx context.Context, request *dispatc
 		return nil, err
 	}
 	component, ok := caller.(store.ServiceCaller)
-	if !ok || component.SPIFFEID != peertls.AppURI {
-		return nil, status.Error(codes.PermissionDenied, "acknowledging operator attention requires the App service")
+	if !ok || !s.NoticeWriters.Has(component.SPIFFEID) {
+		return nil, status.Error(codes.PermissionDenied, "acknowledging operator attention requires an authorized operator service")
 	}
 
 	if err := required(request.GetSessionId()); err != nil {

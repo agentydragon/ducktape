@@ -150,7 +150,12 @@ def test_rpc_auth_requires_a_spiffe_method() -> None:
 
 def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
     source = _settings().model_dump(mode="json")
-    new_optional_fields = {"dispatcher_service_delegation", "dispatcher_service_callers", "wake_service_callers"}
+    new_optional_fields = {
+        "dispatcher_service_delegation",
+        "dispatcher_service_callers",
+        "wake_service_callers",
+        "notice_acknowledgement_service_callers",
+    }
     assert new_optional_fields.isdisjoint(source)
 
 
@@ -214,6 +219,17 @@ def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.Monkey
     settings = _settings()
     assert settings.sandbox_namespace == "test-sandboxes"
     assert settings.rpc.listen_address == ":8080"
+
+
+def test_notice_writers_require_direct_dispatcher_admission() -> None:
+    source = _settings().model_dump(mode="json")
+    source["notice_acknowledgement_service_callers"] = ["spiffe://agentplane/app"]
+    with pytest.raises(ValidationError, match="notice_acknowledgement_service_callers must be a subset"):
+        Settings.model_validate(source)
+    source["dispatcher_service_callers"] = ["spiffe://agentplane/app", "spiffe://agentplane/actions"]
+    assert Settings.model_validate(source).model_dump(mode="json")["notice_acknowledgement_service_callers"] == [
+        "spiffe://agentplane/app"
+    ]
 
 
 if __name__ == "__main__":

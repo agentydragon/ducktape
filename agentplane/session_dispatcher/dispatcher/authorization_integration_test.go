@@ -106,6 +106,7 @@ func (i *authorityInventory) failSandboxRead(err error) {
 }
 
 type authorityPeers struct {
+	dial              func(string) dispatcherpb.SessionDispatcherClient
 	component         dispatcherpb.SessionDispatcherClient
 	sameNamedIdentity dispatcherpb.SessionDispatcherClient
 	otherIdentity     dispatcherpb.SessionDispatcherClient
@@ -115,6 +116,11 @@ type authorityPeers struct {
 // Neither workload Identity inherits the component's authority from its ServiceAccount name.
 func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorityInventory, hub *wakeups.Hub) authorityPeers {
 	t.Helper()
+	return authorityClientsWithNoticePolicy(t, queueStore, inventory, hub, []string{peertls.AppURI}, nil)
+}
+
+func authorityClientsWithNoticePolicy(t *testing.T, queueStore *store.Store, inventory *authorityInventory, hub *wakeups.Hub, services, noticeWriters []string) authorityPeers {
+	t.Helper()
 	api := kubeapiserver.StartForTest(t)
 	sameNamed := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	other := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-stranger")
@@ -122,12 +128,12 @@ func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorit
 	if err != nil {
 		t.Fatal(err)
 	}
-	rule, err := auth.AnySubject(svids).AllowServiceCallers([]string{peertls.AppURI})
+	rule, err := auth.AnySubject(svids).AllowServiceCallers(services)
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := &Service{
-		Store: queueStore, DispatcherServices: sets.New(peertls.AppURI),
+		Store: queueStore, DispatcherServices: sets.New(services...), NoticeWriters: sets.New(noticeWriters...),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 		EnvironmentRules: access.NewIndex(), PolicyReady: func() error { return nil },
 	}
@@ -143,7 +149,7 @@ func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorit
 		t.Helper()
 		return authoritySVIDClient(t, serverAddr, uri, ca, ca.Issue(t, uri))
 	}
-	return authorityPeers{component: dial(peertls.AppURI), sameNamedIdentity: dial(sameNamed.URI), otherIdentity: dial(other.URI)}
+	return authorityPeers{dial: dial, component: dial(peertls.AppURI), sameNamedIdentity: dial(sameNamed.URI), otherIdentity: dial(other.URI)}
 }
 
 func authoritySVIDContext(t *testing.T) context.Context {
@@ -715,11 +721,13 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 	if _, err := enqueueWithSession(t, queue, ctx, sessionID, "test-notice-env", uid, input(cmd, "preserve this authored input"), nil); err != nil {
 		t.Fatal(err)
 	}
-	peers := authorityClients(t, queue, &authorityInventory{sandboxErr: errors.New("unavailable inventory")}, nil)
-	caller := authoritySVIDContext(t)
+	inventory := &authorityInventory{sandboxErr: errors.New("unavailable inventory")}
+	services := []string{peertls.AppURI, peertls.ActionsURI, peertls.NotificationsURI}
+	peers := authorityClientsWithNoticePolicy(t, queue, inventory, nil, services, []string{peertls.AppURI, peertls.ActionsURI})
+
 	current := func() *dispatcherpb.Dispatch {
 		t.Helper()
-		r, err := peers.component.ListSessionDispatches(caller, &dispatcherpb.ListSessionDispatchesRequest{SessionId: sessionID})
+		r, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: sessionID})
 		if err != nil || len(r.GetDispatches()) != 1 {
 			t.Fatalf("live receipt: %v %v", r, err)
 		}
@@ -730,14 +738,14 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 	}
 	ack := func(client dispatcherpb.SessionDispatcherClient, n *dispatcherpb.CommandNoticeRevision, want codes.Code) {
 		t.Helper()
-		_, err := client.AcknowledgeCommandNotice(caller, &dispatcherpb.AcknowledgeCommandNoticeRequest{SessionId: sessionID, Notice: n})
+		_, err := client.AcknowledgeCommandNotice(authoritySVIDContext(t), &dispatcherpb.AcknowledgeCommandNoticeRequest{SessionId: sessionID, Notice: n})
 		if status.Code(err) != want {
 			t.Fatalf("ack %v: %v, want %v", n, err, want)
 		}
 	}
 	lookup := func(notices ...*dispatcherpb.CommandNoticeRevision) []*dispatcherpb.CommandNoticeAcknowledgement {
 		t.Helper()
-		r, err := peers.component.BatchGetCommandNoticeAcknowledgements(caller, &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: notices})
+		r, err := peers.component.BatchGetCommandNoticeAcknowledgements(authoritySVIDContext(t), &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: notices})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -745,7 +753,7 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 	}
 	history := func(token string) *dispatcherpb.CommandNoticeAcknowledgements {
 		t.Helper()
-		r, err := peers.component.ListCommandNoticeAcknowledgements(caller, &dispatcherpb.ListCommandNoticeAcknowledgementsRequest{SessionId: sessionID, PageSize: 1, PageToken: token})
+		r, err := peers.component.ListCommandNoticeAcknowledgements(authoritySVIDContext(t), &dispatcherpb.ListCommandNoticeAcknowledgementsRequest{SessionId: sessionID, PageSize: 1, PageToken: token})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -758,6 +766,9 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 	unknown := current()
 	first := key(unknown.GetReceiptVersion())
 	ack(peers.otherIdentity, first, codes.PermissionDenied)
+	ack(peers.dial(peertls.NotificationsURI), first, codes.PermissionDenied)
+	withoutGrant := authorityClients(t, queue, inventory, nil)
+	ack(withoutGrant.component, first, codes.PermissionDenied)
 	ack(peers.component, &dispatcherpb.CommandNoticeRevision{CommandId: "other-id", ReceiptVersion: first.ReceiptVersion}, codes.FailedPrecondition)
 	ack(peers.component, first, codes.OK)
 	if got := current(); !proto.Equal(got, unknown) || got.State != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
@@ -767,10 +778,10 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 	if len(recorded) != 1 || !proto.Equal(recorded[0].Notice, first) || recorded[0].AcknowledgedAt == nil {
 		t.Fatalf("first ack: %v", recorded)
 	}
-	if _, err := peers.otherIdentity.ListCommandNoticeAcknowledgements(caller, &dispatcherpb.ListCommandNoticeAcknowledgementsRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+	if _, err := peers.otherIdentity.ListCommandNoticeAcknowledgements(authoritySVIDContext(t), &dispatcherpb.ListCommandNoticeAcknowledgementsRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign history: %v", err)
 	}
-	if _, err := peers.otherIdentity.BatchGetCommandNoticeAcknowledgements(caller, &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: []*dispatcherpb.CommandNoticeRevision{first}}); status.Code(err) != codes.NotFound {
+	if _, err := peers.otherIdentity.BatchGetCommandNoticeAcknowledgements(authoritySVIDContext(t), &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: []*dispatcherpb.CommandNoticeRevision{first}}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign lookup: %v", err)
 	}
 	// Identical timestamp and state with changed delivery detail still needs fresh attention.
@@ -796,7 +807,7 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 	}
 	ack(peers.component, second, codes.FailedPrecondition)
 	tomb := key(tombVersion)
-	ack(peers.component, tomb, codes.OK)
+	ack(peers.dial(peertls.ActionsURI), tomb, codes.OK)
 	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch_tombstone WHERE command_id=$1", cmd); err != nil {
 		t.Fatal(err)
 	}
@@ -810,11 +821,11 @@ func TestOperatorAcknowledgesExactNoticeWithoutChangingDelivery(t *testing.T) {
 		t.Fatalf("last: %v", last)
 	}
 	for _, r := range []*dispatcherpb.ListCommandNoticeAcknowledgementsRequest{{SessionId: sessionID, PageSize: 101}, {SessionId: "other-session", PageToken: page.GetNextPageToken()}} {
-		if _, err := peers.component.ListCommandNoticeAcknowledgements(caller, r); status.Code(err) != codes.InvalidArgument {
+		if _, err := peers.component.ListCommandNoticeAcknowledgements(authoritySVIDContext(t), r); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("bad history scope/size: %v", err)
 		}
 	}
-	if _, err := peers.component.BatchGetCommandNoticeAcknowledgements(caller, &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: make([]*dispatcherpb.CommandNoticeRevision, 101)}); status.Code(err) != codes.InvalidArgument {
+	if _, err := peers.component.BatchGetCommandNoticeAcknowledgements(authoritySVIDContext(t), &dispatcherpb.BatchGetCommandNoticeAcknowledgementsRequest{SessionId: sessionID, Notices: make([]*dispatcherpb.CommandNoticeRevision, 101)}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("oversized batch: %v", err)
 	}
 }

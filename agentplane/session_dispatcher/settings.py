@@ -92,6 +92,11 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Exact service SVIDs granted Dispatcher component authority.",
     )
+    notice_acknowledgement_service_callers: Set[ServiceSPIFFEID] = Field(
+        default_factory=frozenset,
+        exclude_if=lambda value: not value,
+        description="Direct Dispatcher service SVIDs explicitly authorized to acknowledge operator notices.",
+    )
     wake_service_callers: Set[ServiceSPIFFEID] = Field(
         default_factory=frozenset,
         exclude_if=lambda value: not value,
@@ -109,6 +114,8 @@ class Settings(BaseModel):
     def validate_service_caller_scopes(self) -> Settings:
         if not self.wake_service_callers <= self.dispatcher_service_callers:
             raise ValueError("wake_service_callers must be a subset of dispatcher_service_callers")
+        if not self.notice_acknowledgement_service_callers <= self.dispatcher_service_callers:
+            raise ValueError("notice_acknowledgement_service_callers must be a subset of dispatcher_service_callers")
         if self.dispatcher_service_delegation is not None:
             dispatcher_methods = {
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
@@ -143,6 +150,6 @@ class Settings(BaseModel):
             raise ValueError("kubernetes_client_qps must be -1 or nonnegative")
         return value
 
-    @field_serializer("wake_service_callers", "dispatcher_service_callers")
+    @field_serializer("wake_service_callers", "dispatcher_service_callers", "notice_acknowledgement_service_callers")
     def sorted_service_callers(self, value: Set[str]) -> list[str]:
         return sorted(value)

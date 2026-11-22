@@ -563,9 +563,11 @@ from newer writers.
 ### Operator acknowledgement of delivery notices
 
 Dispatcher records shared operator attention in a separate table. Its identity is the exact Session,
-command ID and positive receipt version. The App's authenticated operator proxy calls
-`AcknowledgeCommandNotice` with its service identity. Owning a Session allows reading its
-acknowledgements, but only the App service can mark a notice seen. Every lookup and history page
+command ID and positive receipt version. A direct service caller needs an explicit
+`notice_acknowledgement_service_callers` grant for `AcknowledgeCommandNotice` in addition to
+ordinary Dispatcher admission. The grant list defaults to empty. The authenticated App operator
+proxy uses its service identity; explicitly granted native service clients can use the same RPC
+independently. Owning a Session allows reading its acknowledgements. Every lookup and history page
 rechecks the retained Session's read authority. Closing or deleting the Environment leaves these
 operations available to the operator.
 

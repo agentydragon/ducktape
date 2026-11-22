@@ -51,6 +51,7 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 func TestServiceCallerListsKeepAuthenticationAndWakeSeparate(t *testing.T) {
 	path := configtest.WriteSettings(t, requiredFile+`dispatcher_service_callers: [spiffe://agentplane/app, spiffe://agentplane/notifications]
 wake_service_callers: [spiffe://agentplane/notifications]
+notice_acknowledgement_service_callers: [spiffe://agentplane/app]
 dispatcher_service_delegation:
   actors: [{spiffe_id: spiffe://agentplane/actions}]
   methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
@@ -60,7 +61,7 @@ dispatcher_service_delegation:
 		t.Fatal(err)
 	}
 	if !slices.Equal(c.DispatcherServiceCallers, []string{peertls.AppURI, peertls.NotificationsURI}) ||
-		!slices.Equal(c.WakeServiceCallers, []string{peertls.NotificationsURI}) ||
+		!slices.Equal(c.WakeServiceCallers, []string{peertls.NotificationsURI}) || !slices.Equal(c.NoticeAcknowledgementServiceCallers, []string{peertls.AppURI}) ||
 		c.DispatcherServiceDelegation == nil ||
 		!slices.Equal(c.DispatcherServiceDelegation.Actors, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}) ||
 		!slices.Equal(c.DispatcherServiceDelegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
@@ -357,5 +358,12 @@ func TestRuntimeProxyPeerAcceptsEachCutoverReceiver(t *testing.T) {
 				t.Fatalf("Runtime proxy peer %q: %v", uri, err)
 			}
 		})
+	}
+}
+
+func TestNoticeWriterMustBeAdmittedDispatcherService(t *testing.T) {
+	path := configtest.WriteSettings(t, requiredFile+"notice_acknowledgement_service_callers: [spiffe://agentplane/app]\n")
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil || !strings.Contains(err.Error(), "not a Dispatcher service caller") {
+		t.Fatalf("unadmitted service grant: %v", err)
 	}
 }
