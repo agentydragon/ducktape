@@ -28,8 +28,8 @@ from agentplane.system_tests.vm.trace_contract import assert_vm_process_trace_co
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests/vm:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.vm.pytest_plugin",)
 
 # session_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
 # gazelle:include_dep @pypi//protobuf

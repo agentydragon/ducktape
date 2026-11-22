@@ -823,3 +823,16 @@ py_library(
     name = "guest_busybox",
     srcs = ["guest_busybox.py"],
 )
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    deps = [
+        ":guest_logs",
+        ":runtime",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/deployment:virtualization",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)

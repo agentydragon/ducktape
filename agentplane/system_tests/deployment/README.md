@@ -63,10 +63,11 @@ releases/images/configuration. `stack.py` owns fresh workload orchestration and 
 `vm/runtime.py` owns guest configuration and evidence; its runtime composition selects retained
 KubeVirt infrastructure and optional workspace block storage. The fingerprint includes
 `certificates.py` because its cleanup determines whether retained PKI is clean.
-Every k3s entrypoint registers the same `deployment.pytest_plugin` module. Its ordinary session
-`deployment` fixture starts only when requested. The rendered runtime selects the Pod, KubeVirt or
-Firecracker lifecycle; plugin registration does not vary. All suites share the scenario tracing,
-scripted-model and batched-case reporting hooks in the parent conftest.
+The session-scoped `deployment` fixture starts only when requested. Pod suites load
+`deployment.pytest_plugin` directly. Each guest suite loads its runtime's plugin, which registers
+the shared deployment plugin and supplies the lifecycle fixture selected by the rendered manifest.
+All suites share the scenario tracing, scripted-model and batched-case reporting hooks in the
+parent conftest.
 
 A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
 refreshed snapshot is saved, later actions can repeat the rebuild.
