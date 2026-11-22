@@ -107,10 +107,30 @@ export function generatedCases(seed) {
   });
 }
 
-// Linked programs are kept whole too: live updates in a diamond, caught TDZ in a cycle, and an uncaught exit.
+// Linked programs run as complete module graphs, including errors during evaluation.
 export function generatedModuleCases(seed) {
   const n = 1 + ((seed >>> 0) % 7);
+  const defaults = [
+    { declaration: "export default value;", read: "item", after: n },
+    { declaration: "export { value as default };", read: "item", after: n + 1 },
+    { declaration: "export default function () { return value; }", read: "item()", after: n + 1 },
+    { declaration: "export default class { read() { return value; } }", read: "new item().read()", after: n + 1 },
+  ];
+  const choice = defaults[(seed >>> 0) % defaults.length];
+  const write = ["value++", "value += 2", "value = 0"][(seed >>> 0) % 3];
   return [
+    {
+      name: `linked default export and frozen import seed ${seed}`,
+      end: "normal",
+      expectedOutput: [`before ${n}`, `read only ${n}`, `after ${choice.after} ${n + 1}`],
+      files: {
+        "state.mjs": `export let value = ${n}; export function bump() { value++; } ${choice.declaration}`,
+        "main.mjs": `import item, { value, bump } from "./state.mjs";
+          console.log("before", ${choice.read});
+          try { ${write}; } catch (e) { console.log("read only", value); }
+          bump(); console.log("after", ${choice.read}, value);`,
+      },
+    },
     {
       name: `linked live diamond seed ${seed}`,
       files: {
