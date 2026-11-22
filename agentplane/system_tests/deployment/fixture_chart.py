@@ -149,6 +149,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
+from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
@@ -248,11 +249,11 @@ NATIVE_CALLERS = {
     )
 }
 BACKEND_DATABASES = (
-    fixture_database.Database.ACTIONS,
-    fixture_database.Database.EGRESS,
-    fixture_database.Database.NOTIFICATIONS,
-    fixture_database.Database.HISTORY,
-    fixture_database.Database.SESSION_DISPATCHER,
+    Database.ACTIONS,
+    Database.EGRESS,
+    Database.NOTIFICATIONS,
+    Database.HISTORY,
+    Database.SESSION_DISPATCHER,
 )
 
 
@@ -621,11 +622,11 @@ def add_backend_services(
     platform_callers: dict[ServiceAccountRef, Pods],
     notification_callers: Sequence[Pods],
 ) -> Construct:
-    actions_database_url = fixture_database.Database.ACTIONS.url(chart, namespace=env.namespace)
-    egress_database_url = fixture_database.Database.EGRESS.url(chart, namespace=env.namespace)
-    history_database_url = fixture_database.Database.HISTORY.url(chart, namespace=env.namespace)
-    notifications_database_url = fixture_database.Database.NOTIFICATIONS.url(chart, namespace=env.namespace)
-    dispatcher_database_url = fixture_database.Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace)
+    actions_database_url = Database.ACTIONS.url(chart, namespace=env.namespace)
+    egress_database_url = Database.EGRESS.url(chart, namespace=env.namespace)
+    history_database_url = Database.HISTORY.url(chart, namespace=env.namespace)
+    notifications_database_url = Database.NOTIFICATIONS.url(chart, namespace=env.namespace)
+    dispatcher_database_url = Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace)
     # Control-plane `memory_request`s below are the measured peak working set (`memory/peaks.json`
     # in a suite's undeclared outputs) plus about half again, so the node keeps room for Sandboxes.
     llm_ingress.LlmIngress(
@@ -760,7 +761,7 @@ def add_backend_services(
 
 
 def add_central_sampler(chart: Chart, env: Environment) -> Construct:
-    sampler_database_url = fixture_database.Database.CENTRAL_SAMPLER.url(chart, namespace=env.namespace)
+    sampler_database_url = Database.CENTRAL_SAMPLER.url(chart, namespace=env.namespace)
     return central_sampler_workload.CentralSampler(
         chart, "central-sampler", env, database_url=sampler_database_url, placement=None, registry_secret_name=None
     )
@@ -769,7 +770,7 @@ def add_central_sampler(chart: Chart, env: Environment) -> Construct:
 def add_app(chart: Chart, env: Environment) -> AppFixture:
     if env.app is None:
         raise ValueError("the fixture App requires app configuration")
-    app_database_url = fixture_database.Database.APP.url(chart, namespace=env.namespace, key="async-uri")
+    app_database_url = Database.APP.url(chart, namespace=env.namespace, key="async-uri")
     service = app_component.App(
         chart,
         "app",
@@ -841,7 +842,7 @@ def add_mcp_edge(chart: Chart, env: Environment) -> Construct:
         chart,
         "mcp-edge",
         env,
-        database_url=fixture_database.Database.MCP_EDGE.url(chart, namespace=env.namespace),
+        database_url=Database.MCP_EDGE.url(chart, namespace=env.namespace),
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
