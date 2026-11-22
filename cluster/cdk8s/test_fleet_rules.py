@@ -10,7 +10,6 @@ from cluster.cdk8s.fleet_rules import (
     pinned_https_egress,
     pod_hardening,
     reference_kind_mismatches,
-    unused_waivers,
 )
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
@@ -175,11 +174,12 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
         _policy("open", [_https({"toEntities": ["world"]})]),
         _policy("pinned", [_https({"toEntities": ["world"]}, ["a.example.test"])]),
     ]
-    assert unused_waivers(objects, unhardened={"Deployment/bare"}, unpinned={"open"}) == []
-    assert unused_waivers(objects, unhardened={"Deployment/ok", "Deployment/gone"}, unpinned={"pinned"}) == [
+    assert pod_hardening(objects, unhardened={"Deployment/bare", "Deployment/ok", "Deployment/gone"}) == [
         "pod hardening waived for Deployment/gone, which is not in this App or passes",
         "pod hardening waived for Deployment/ok, which is not in this App or passes",
-        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes",
+    ]
+    assert pinned_https_egress(objects, unpinned={"open", "pinned"}) == [
+        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes"
     ]
 
 
