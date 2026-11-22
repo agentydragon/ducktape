@@ -5,7 +5,7 @@ workload Identity and exact service SVID grants are authorized per method.
 
 from collections.abc import Mapping
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -143,7 +143,6 @@ class HistoryService(Construct):
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
-            termination_grace=Duration.seconds(30),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,

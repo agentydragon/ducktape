@@ -1,6 +1,6 @@
 """The static browser shell, routed beside the app API on the same public origin."""
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Volume
 from constructs import Construct
 
@@ -46,7 +46,6 @@ class Frontend(Construct):
                 cpu=CpuResources(request=Cpu.millis(10)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
-            termination_grace=Duration.seconds(30),
             placement=node_scheduling.HIL_OVH,
             registry_secret_name="forgejo-images-creds",
             automount_service_account_token=False,

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -120,7 +120,6 @@ class LlmIngress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
-            termination_grace=Duration.seconds(30),
             tolerate_control_plane=True,
             placement=placement,
             telemetry_enabled=True,
