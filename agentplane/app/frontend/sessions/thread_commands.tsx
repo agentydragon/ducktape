@@ -27,6 +27,7 @@ type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCo
 export type LocalNotice = (command: LocalCommand) =>
   | {
       acknowledged: boolean;
+      hasDispatcherReceipt: boolean;
       progress?: JSX.Element;
       failed?: boolean;
     }

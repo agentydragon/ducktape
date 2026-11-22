@@ -304,6 +304,7 @@ function AcknowledgedReceiptRows({
             ) : (
               <AcknowledgedReceiptEvidence readReceipts={readReceipts} notice={notice} />
             )}
+            {original && <StoredCommandDetails receipt={original} />}
           </Stack>
         );
       })}

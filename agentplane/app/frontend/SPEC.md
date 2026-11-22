@@ -68,13 +68,13 @@ The Thread page uses Dispatcher placement to identify the exact Environment befo
 Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
 is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
-The open Thread watches the Dispatcher's bounded Session workset for active commands, recent
-delivery issues, and recent admissions or cancellations. A fresh browser can see these receipts
-while History is still unavailable. Local command rows and loaded settled History take precedence
-over duplicate receipts.
-An unresolved delivery issue can remain alongside a pending History command. The browser retains
-the last workset while disconnected and reports clipped groups and expired receipt coverage.
-When a reason is abbreviated, the browser reads the full retained reason by command ID.
+The open Thread watches the Dispatcher's bounded Session workset. The conversation shows queued,
+delivering, failed, and unknown commands using ordinary input bubbles and control cards. The browser
+can load originals for visible receipts even before History is available. Loaded History owns
+finished commands. A pending History command shows its unresolved delivery status on the same
+row. Admissions and cancellations outside the conversation are available in Delivery history.
+The browser reports stale delivery updates, clipped active work or issues, and expired receipt
+coverage. When a reason is abbreviated, the browser reads the full retained reason by command ID.
 
 An operator can acknowledge a failed or unknown Dispatcher delivery issue. The App stores the
 preference for the verified OIDC operator, Thread, command ID, and exact receipt revision. Another
@@ -82,7 +82,9 @@ browser signed in as that operator sees it when it opens or returns focus to the
 receipt revision needs separate attention. When the workset clips issues, Older delivery issues
 opens the paginated receipt history, where retained failures can still be acknowledged.
 The selected Thread shares acknowledgement state between the conversation and Delivery history.
-Opening the archive loads one page at a time. Acknowledging a receipt updates both views.
+Opening the archive loads one page at a time, with input excerpts and requested settings from
+retained receipts. Operators can open the full stored command. Dismissing a receipt updates both
+views.
 The browser checks saved local terminal rows against bounded Dispatcher batch reads before
 hiding an equivalent acknowledged notice, including after it leaves the recent workset. Without
 an exact server revision the notice remains visible. History and saved command data are unchanged.
