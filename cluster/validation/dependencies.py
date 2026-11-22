@@ -21,7 +21,10 @@ def validate_operator_dependencies(cluster: ParsedCluster, crd_to_operator: dict
 
     flux_resources = cluster.flux_kust_resources()
     errors = []
-    g = cluster.graph
+    # An edge points from each owner to the prerequisite it waits for.
+    graph: nx.DiGraph = nx.DiGraph(
+        {name: [dep.name for dep in spec.depends_on] for name, spec in cluster.flux_kustomizations.items()}
+    )
     exempt_groups = BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS
     unprovided: set[tuple[str, str]] = set()
 
@@ -46,7 +49,7 @@ def validate_operator_dependencies(cluster: ParsedCluster, crd_to_operator: dict
                     f"{kust_name} installs its operator through Helm and also applies {resource.kind} resources; "
                     f"move those instances to a separate Kustomization that depends on {operator}"
                 )
-            elif operator not in g or not nx.has_path(g, kust_name, operator):
+            elif operator not in graph or not nx.has_path(graph, kust_name, operator):
                 errors.append(
                     f"{kust_name} uses {resource.kind} resources but doesn't transitively depend on {operator}"
                 )
