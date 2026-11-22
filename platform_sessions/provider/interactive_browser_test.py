@@ -121,7 +121,6 @@ def test_explicit_initial_url_navigates_blank_startup_page(tmp_path: Path) -> No
     assert page.navigations == ["https://example.test/login"]
 
 
-@pytest.mark.asyncio
 async def test_viewer_requires_gateway_bearer_and_marks_session_before_accept(tmp_path: Path) -> None:
     events: list[str] = []
 
@@ -149,7 +148,6 @@ async def test_viewer_requires_gateway_bearer_and_marks_session_before_accept(tm
     assert not browser.viewer_connected
 
 
-@pytest.mark.asyncio
 async def test_pending_browser_operation_prevents_viewer_admission(tmp_path: Path) -> None:
     browser = runtime(tmp_path)
     release = threading.Event()
@@ -178,7 +176,6 @@ async def test_pending_browser_operation_prevents_viewer_admission(tmp_path: Pat
     assert await operation == "done"
 
 
-@pytest.mark.asyncio
 async def test_viewer_task_cancellation_finishes_unverified_transition(tmp_path: Path) -> None:
     transition_started = asyncio.Event()
     release_transition = asyncio.Event()
@@ -202,7 +199,6 @@ async def test_viewer_task_cancellation_finishes_unverified_transition(tmp_path:
     assert not browser.viewer_connected
 
 
-@pytest.mark.asyncio
 async def test_disconnect_callback_keeps_data_plane_fenced_until_quiescent(tmp_path: Path) -> None:
     transition_started = asyncio.Event()
     release_transition = asyncio.Event()
@@ -224,7 +220,6 @@ async def test_disconnect_callback_keeps_data_plane_fenced_until_quiescent(tmp_p
     assert not browser.viewer_connected
 
 
-@pytest.mark.asyncio
 async def test_failed_disconnect_callback_stops_browser_before_reopening_admission(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -268,7 +263,6 @@ def test_stalled_worker_is_retained_after_cleanup_failure(tmp_path: Path) -> Non
     assert browser._thread is stalled
 
 
-@pytest.mark.asyncio
 async def test_cancelled_start_waits_for_worker_before_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     browser = InteractiveBrowserRuntime(
         profile_dir=tmp_path / "profile", initial_url="https://example.test/login", owner_token=_TOKEN
@@ -296,7 +290,6 @@ async def test_cancelled_start_waits_for_worker_before_cleanup(tmp_path: Path, m
     assert events == ["startup finished", "cleanup"]
 
 
-@pytest.mark.asyncio
 async def test_worker_exit_during_startup_cannot_make_runtime_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

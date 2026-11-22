@@ -34,7 +34,6 @@ class ExampleIntegration(IntegrationRuntime[Session]):
             raise ValueError("rejected")
 
 
-@pytest.mark.asyncio
 async def test_local_import_validation_failure_does_not_save_candidate(tmp_path):
     config = IntegrationRegistry((IntegrationType("example", Settings, "https://example.test"),)).resolve(
         {"integrations": [{"id": "test", "type": "example", "state_dir": str(tmp_path)}]}
@@ -52,7 +51,6 @@ async def test_local_import_validation_failure_does_not_save_candidate(tmp_path)
     await runtime.refresh()
 
 
-@pytest.mark.asyncio
 async def test_refresh_reports_success_failure_and_recovery_without_provider_requests(tmp_path):
     config = IntegrationRegistry((IntegrationType("example", Settings, "https://example.test"),)).resolve(
         {"integrations": [{"id": "test", "type": "example", "state_dir": str(tmp_path)}]}
