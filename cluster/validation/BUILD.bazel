@@ -78,9 +78,6 @@ py_library(
         ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
-        "@pypi//networkx",
-        "@pypi//numpy",
-        "@pypi//types_networkx",
     ],
 )
 
