@@ -156,6 +156,10 @@ Services = Annotated[AppServices, Depends(_services)]
 PriceClients = Annotated[dict[Platform, PriceClient], Depends(_price_clients)]
 
 
+class CsvResponse(PlainTextResponse):
+    media_type = "text/csv"
+
+
 def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     """The production route graph and error handling, unbound to any deployment.
 
@@ -353,21 +357,21 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
             return error(400, "no budget config for this deployment")
         return await budget_service.list_transactions_in_bucket(bucket_id=request.bucket_id, window=request.window)
 
-    @app.post("/api/budget/snapshot.csv", include_in_schema=False)
+    @app.post("/api/budget/snapshot.csv", response_class=CsvResponse)
     async def budget_snapshot_csv(request: BudgetSummaryCsvRequest, services: Services) -> Response:
         budget_service = services.config.budget_service
         if budget_service is None:
             return error(400, "no budget config for this deployment")
         result = await budget_service.build_snapshot_csv(window=request.window, adjustments=request.adjustments)
-        return Response(content=result, media_type="text/csv; charset=utf-8", headers=no_store)
+        return CsvResponse(content=result, headers=no_store)
 
-    @app.post("/api/budget/transactions.csv", include_in_schema=False)
+    @app.post("/api/budget/transactions.csv", response_class=CsvResponse)
     async def budget_transactions_csv(request: BudgetTransactionsRequest, services: Services) -> Response:
         budget_service = services.config.budget_service
         if budget_service is None:
             return error(400, "no budget config for this deployment")
         result = await budget_service.build_transactions_csv(bucket_id=request.bucket_id, window=request.window)
-        return Response(content=result, media_type="text/csv; charset=utf-8", headers=no_store)
+        return CsvResponse(content=result, headers=no_store)
 
     # The health check is not part of the typed wire contract, so keep it out of the
     # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes

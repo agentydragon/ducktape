@@ -414,10 +414,7 @@ build_test(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":server",
-        "//finance/budget:wire",
-    ],
+    deps = [":server"],
 )
 
 py_binary(

@@ -116,6 +116,7 @@ def test_http_response_money_dates_nulls_and_csv(augur_config: Config, monkeypat
         assert response.headers["cache-control"] == "no-store"
         assert response.json() == {"api": {}, "frontend": {}}
 
+        paths = client.get("/openapi.json").json()["paths"]
         for path, request in (
             ("/api/budget/snapshot.csv", {"window": window}),
             ("/api/budget/transactions.csv", {"window": window, "bucket_id": "food"}),
@@ -123,7 +124,10 @@ def test_http_response_money_dates_nulls_and_csv(augur_config: Config, monkeypat
             response = client.post(path, json=request)
             assert response.status_code == 200
             assert response.headers["cache-control"] == "no-store"
-            assert response.headers["content-type"].startswith("text/csv")
+            operation = paths[path]["post"]
+            assert "application/json" in operation["requestBody"]["content"]
+            assert set(operation["responses"]["200"]["content"]) == {"text/csv"}
+            assert response.headers["content-type"] == "text/csv; charset=utf-8"
             assert "9007199254740993.01" in response.text
 
 
