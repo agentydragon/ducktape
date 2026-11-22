@@ -18,8 +18,8 @@ rotation self-heals on the next hourly run.
 Rotations with a `probe` (requires `k8s_secret`) additionally verify on every
 hourly run that the token _published in-cluster_ actually works: the job reads
 the published Secret back via the Kubernetes API (ServiceAccount scoped by the
-`published-secrets-reader` Role in `flux-system` to exactly the rotator's own
-published Secret names) and sends its token as a Bearer to the probe URL. A
+`published-secrets-reader` Role in `flux-system` to the published
+Secrets with probes) and sends its token as a Bearer to the probe URL. A
 401/403 — or a Secret missing the configured stringData key — bypasses the
 freshness gate and re-mints, which also rewrites the Secret manifest. Endpoint
 sickness (5xx, unreachable) and an unreadable Secret are logged but are not
