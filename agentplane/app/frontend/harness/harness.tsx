@@ -2528,8 +2528,125 @@ function dispatchWorkset(withNoticeVersions = false): void {
     ],
     moreRecentIssuesAvailable: true,
   });
+  dispatchDetails.set("7988d401-0000-4000-8000-000000000002", {
+    sessionId: RUNNING_THREAD,
+    commandId: "7988d401-0000-4000-8000-000000000002",
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    command: {
+      commandId: "7988d401-0000-4000-8000-000000000002",
+      submitInput: { text: "Continue when the Sandbox is ready." },
+    },
+  });
   dispatchDetails.set(issue.commandId, { ...issue, reason, sessionId: RUNNING_THREAD });
   if (withNoticeVersions) dispatchDetails.set(failed.commandId, { ...failed, sessionId: RUNNING_THREAD });
+}
+
+function outstandingCommandConversation(): void {
+  const cannotApply = "runner FailedPrecondition: session cannot apply this operation";
+  const descriptions = [
+    { text: ".", reason: cannotApply },
+    { text: ".", reason: cannotApply },
+    { text: "continue", reason: cannotApply },
+    { text: ".", reason: "sandbox_deleted" },
+    {
+      text: ".",
+      reason:
+        "runner FailedPrecondition: selected model is no longer configured; the conversation cannot continue with this model",
+    },
+    { model: "chatgpt-sub/oai-responses/gpt-6-astra", reason: cannotApply },
+    { model: "chatgpt-sub/oai-responses/gpt-6.2-astra", reason: cannotApply },
+    { model: "chatgpt-sub/oai-responses/gpt-6.2-sol", reason: cannotApply },
+    { model: "chatgpt-sub/oai-responses/gpt-6.2-sol", reason: cannotApply },
+    {
+      model: "chatgpt-sub/oai-responses/gpt-6.2-sol",
+      reason:
+        "runner FailedPrecondition: cannot change model: the current model configuration is no longer available for compatibility checking",
+    },
+  ];
+  const issues = descriptions.map(({ text, model, reason }, index) => {
+    const commandId = `4d396206-d814-4443-8978-${String(index + 1).padStart(12, "0")}`;
+    const row = {
+      commandId,
+      operation: text === undefined ? "OPERATION_CHANGE_MODEL" : "OPERATION_SUBMIT_INPUT",
+      state: "DELIVERY_STATE_UNKNOWN",
+      reason,
+      updatedAt: ago((10 - index) * 1000),
+      receiptVersion: String(index + 1),
+      journalAdmitted: index === 0,
+    };
+    dispatchDetails.set(commandId, {
+      ...row,
+      sessionId: RUNNING_THREAD,
+      command: { commandId, ...(text === undefined ? { changeModel: { model } } : { submitInput: { text } }) },
+    });
+    return row;
+  });
+  const queuedId = "4d396206-d814-4443-8978-000000000011";
+  const projectedId = "4d396206-d814-4443-8978-000000000012";
+  const queued = {
+    commandId: queuedId,
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    reason: "sandbox_resuming",
+    updatedAt: ago(500),
+  };
+  const archiveTestInput =
+    "Review the deployment once the Sandbox is ready. Include build status and the last deployment result in the report.";
+  dispatchDetails.set(queuedId, {
+    ...queued,
+    sessionId: RUNNING_THREAD,
+    command: { commandId: queuedId, submitInput: { text: archiveTestInput } },
+  });
+  const pendingHistoryIssue = {
+    commandId: projectedId,
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_UNKNOWN",
+    reason: "Dispatcher did not receive an outcome before the runner disconnected.",
+    updatedAt: ago(12_000),
+    receiptVersion: "25",
+    journalAdmitted: true,
+  };
+  dispatchDetails.set(projectedId, {
+    ...pendingHistoryIssue,
+    sessionId: RUNNING_THREAD,
+    command: { commandId: projectedId, submitInput: { text: "Save a deployment summary." } },
+  });
+  const admissions = Array.from({ length: 7 }, (_, index) => ({
+    commandId: `ad710000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_RUNNER_ADMITTED",
+    updatedAt: ago(15_000 + index * 1000),
+  }));
+  dispatchWorksets.set(RUNNING_THREAD, {
+    active: [queued],
+    recentIssues: [...issues, pendingHistoryIssue],
+    recentAdmittedOrCancelled: admissions,
+    moreRecentAdmittedOrCancelledAvailable: true,
+  });
+  const original = threadEntityRows;
+  threadEntityRows = (id) =>
+    id === RUNNING_THREAD
+      ? [
+          viewState(45, "turn-visual"),
+          confirmedInput(
+            34,
+            "user-earlier",
+            "user-earlier",
+            admissions.slice(0, 3).map((row) => row.commandId),
+            "Continue the repository review."
+          ),
+          item(
+            35,
+            "last-reply",
+            ItemKind.ASSISTANT_TEXT,
+            "The previous deployment is healthy. I can check the pending changes next."
+          ),
+          command(37, projectedId, Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
+            text: "Save a deployment summary.",
+          }),
+        ]
+      : original(id);
 }
 
 // Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
@@ -3349,7 +3466,21 @@ routes.push(
   [
     "GET",
     /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+)\/dispatches$/,
-    () => ({ coverage: "RETAINED_DISPATCH_ROWS", dispatches: [] }),
+    (match) => ({
+      coverage: "RETAINED_DISPATCH_ROWS",
+      dispatches: [...dispatchDetails.values()]
+        .filter((row) => row.sessionId === match[1] && String(row.commandId).startsWith("4d396206-"))
+        .reverse()
+        .map((row) => {
+          const { command: _original, ...summary } = row;
+          return { ...COMMAND_TARGET, ...summary };
+        }),
+    }),
+  ],
+  [
+    "GET",
+    /^\/upstream\/dispatcher\/v1\/dispatches\/(4d396206-[0-9a-f-]+)$/,
+    (match) => ({ dispatch: { ...COMMAND_TARGET, ...dispatchDetails.get(match[1]) } }),
   ],
   [
     "GET",
@@ -4435,6 +4566,7 @@ const visualHarness = {
     dispatchWorkset(true);
   },
   savedDeliveryIssueOutsideWorkset,
+  outstandingCommandConversation,
   completedRollout(): void {
     serveRollout("Completed diagnostic run", rollout);
   },

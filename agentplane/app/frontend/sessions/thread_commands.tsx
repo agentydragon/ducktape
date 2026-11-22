@@ -8,16 +8,29 @@ import { type CommandIssue } from "./command_delivery";
 import type { LocalCommands, LocalCommand, PendingCommand } from "./local_commands";
 import { useThreadSync } from "./thread_sync";
 import { normalizeDeliveryState } from "./client";
+import { deliveryOperationLabel } from "./delivery_labels";
+import { DispatchReceiptProgress, useDispatchOriginals } from "./delivery_notice";
+import { isDeliveryIssue, noticeKey } from "./command_notice_attention";
+import type { ThreadDeliveryState } from "./thread_delivery";
 import {
   ThreadCommandOutcome,
   type ThreadCommand,
   type ThreadEntity,
 } from "../../../history_service/api/history/history_service_pb";
 import { Operation } from "../../../proto/command_pb";
-import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import {
+  DeliveryState,
+  type DispatchWorksetItem,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCommand } };
-export type LocalNotice = (command: LocalCommand) => { acknowledged: boolean; action?: JSX.Element } | undefined;
+export type LocalNotice = (command: LocalCommand) =>
+  | {
+      acknowledged: boolean;
+      progress?: JSX.Element;
+      failed?: boolean;
+    }
+  | undefined;
 
 function isCommandEntity(entity: ThreadEntity): entity is CommandEntity {
   return entity.entity.case === "command";
@@ -91,7 +104,15 @@ function CommandOutcome({
       </Text>
     );
   }
-  return <CommandProgress stage={stage} subject={commandSubject} reason={reason} local={local} unsent={unsent} />;
+  return (
+    <CommandProgress
+      stage={stage}
+      subject={commandSubject}
+      reason={reason === "sandbox_deleted" ? "Sandbox was deleted" : reason}
+      local={local}
+      unsent={unsent}
+    />
+  );
 }
 
 export function LocalControlCommands({
@@ -197,6 +218,7 @@ export function PendingInputMessages({
           !value.interruptResult;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
+          notice?.failed ||
           outcome === ThreadCommandOutcome.FAILED ||
           stage === "dispatch_failed" ||
           stage === "cancelled" ||
@@ -214,14 +236,15 @@ export function PendingInputMessages({
             progress={
               effected ? undefined : (
                 <>
-                  <CommandOutcome
-                    stage={stage}
-                    subject="input"
-                    reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
-                    local
-                    unsent={!value.attempted}
-                  />
-                  {notice?.action}
+                  {notice?.progress ?? (
+                    <CommandOutcome
+                      stage={stage}
+                      subject="input"
+                      reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
+                      local
+                      unsent={!value.attempted}
+                    />
+                  )}
                 </>
               )
             }
@@ -301,23 +324,19 @@ function LocalControlRows({
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
               <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
                 <Text size="sm" className="agentplane-command-card-description">
-                  {operation.case === "changeModel"
-                    ? `Change model to ${operation.value.model}`
-                    : operation.case === "changeReasoningEffort"
-                      ? `Set reasoning effort to ${operation.value.effort}`
-                      : operation.case === "interruptTurn"
-                        ? `Interrupt turn ${operation.value.turnId}`
-                        : "Thread action"}
+                  {controlDescription(operation)}
                 </Text>
-                <CommandOutcome
-                  stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
-                  subject={subject(operation.case)}
-                  reason={
-                    admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
-                  }
-                  local
-                  unsent={!value.attempted}
-                />
+                {notice?.progress ?? (
+                  <CommandOutcome
+                    stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
+                    subject={subject(operation.case)}
+                    reason={
+                      admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
+                    }
+                    local
+                    unsent={!value.attempted}
+                  />
+                )}
                 {(value.attempted || value.destination.kind === "session") &&
                   !admitted &&
                   value.dispatch === null &&
@@ -337,7 +356,6 @@ function LocalControlRows({
                     </Button>
                   )}
               </Group>
-              {notice?.action}
             </ControlCommandFrame>
           );
         })}
@@ -359,9 +377,11 @@ function ControlCommandFrame({ id, children }: { id: string; children: ReactNode
 export function ProjectedControlCommand({
   threadId,
   row,
+  deliveryProgress,
 }: {
   threadId: string;
   row: ThreadEntity;
+  deliveryProgress?: JSX.Element | null;
 }): JSX.Element | null {
   if (!isCommandEntity(row) || row.entity.value.operation === Operation.SUBMIT_INPUT) return null;
   const command = row.entity.value;
@@ -383,15 +403,141 @@ export function ProjectedControlCommand({
                   ? "Interrupt turn"
                   : "Thread action"}
           </Text>
-          <CommandOutcome
-            stage={progressStage(command.outcome, true)}
-            subject={subject(command.operation)}
-            reason={command.outcomeReason}
-          />
+          {deliveryProgress !== undefined ? (
+            deliveryProgress
+          ) : (
+            <CommandOutcome
+              stage={progressStage(command.outcome, true)}
+              subject={subject(command.operation)}
+              reason={command.outcomeReason}
+            />
+          )}
         </Group>
         {command.inputRef && <Body reference={command.inputRef} format="text" />}
         <EvidencePanel threadId={threadId} entity={row} />
       </Box>
     </ControlCommandFrame>
+  );
+}
+
+function controlDescription(operation: PendingCommand["operation"]): string {
+  switch (operation.case) {
+    case "changeModel":
+      return `Change model to ${operation.value.model}`;
+    case "changeReasoningEffort":
+      return `Set reasoning effort to ${operation.value.effort}`;
+    case "interruptTurn":
+      return `Interrupt turn ${operation.value.turnId}`;
+    default:
+      return "Thread action";
+  }
+}
+
+export function receiptProgress(delivery: ThreadDeliveryState, item: DispatchWorksetItem): JSX.Element {
+  return (
+    <DispatchReceiptProgress key={noticeKey(item)} delivery={delivery} item={item} subject={subject(item.operation)} />
+  );
+}
+
+const MAX_INLINE_ACTIVE = 20;
+
+export function inlineDispatches(delivery: ThreadDeliveryState): DispatchWorksetItem[] {
+  const snapshot = delivery.workset.snapshot;
+  if (!snapshot) return [];
+  return [...snapshot.active.slice(0, MAX_INLINE_ACTIVE), ...snapshot.recentIssues].sort((a, b) => {
+    const secondsA = a.updatedAt?.seconds ?? 0n;
+    const secondsB = b.updatedAt?.seconds ?? 0n;
+    return secondsA === secondsB ? (a.updatedAt?.nanos ?? 0) - (b.updatedAt?.nanos ?? 0) : secondsA < secondsB ? -1 : 1;
+  });
+}
+
+export function selectedHistoryCommands(entities: readonly ThreadEntity[]): Set<string> {
+  return new Set(
+    entities.flatMap((row) => {
+      if (row.entity.case === "confirmedInput") return row.entity.value.originCommandIds;
+      return row.entity.case === "command" && row.entity.value.outcome !== ThreadCommandOutcome.UNSPECIFIED
+        ? [row.entityId]
+        : [];
+    })
+  );
+}
+
+export function OutstandingDispatchCommands({
+  delivery,
+  items,
+  onOpenDeliveryHistory,
+}: {
+  delivery: ThreadDeliveryState;
+  items: readonly DispatchWorksetItem[];
+  onOpenDeliveryHistory: () => void;
+}): JSX.Element {
+  const { attention, workset } = delivery;
+  const visible = items.filter((item) => !isDeliveryIssue(item.state) || !attention.acknowledged(item));
+  const originals = useDispatchOriginals(
+    delivery.readReceipts,
+    visible.map((item) => item.commandId)
+  );
+  const snapshot = workset.snapshot;
+  const olderIssues = snapshot?.moreRecentIssuesAvailable;
+  const moreCommands = snapshot && (snapshot.active.length > MAX_INLINE_ACTIVE || snapshot.moreActiveAvailable);
+  return (
+    <>
+      {visible.map((item) => {
+        const id = item.commandId;
+        const original = originals.commands?.get(id)?.command?.operation;
+        const progress = receiptProgress(delivery, item);
+        if (item.operation === Operation.SUBMIT_INPUT) {
+          const issue = isDeliveryIssue(item.state) || item.state === DeliveryState.CANCELLED_IN_DISPATCHER;
+          return (
+            <UserInputBubble
+              key={id}
+              commandId={id}
+              text={
+                original?.case === "submitInput"
+                  ? original.value.text
+                  : originals.complete
+                    ? "Original input unavailable"
+                    : "Loading original input…"
+              }
+              phase={issue ? "failed" : "pending"}
+              pending={!issue}
+              progress={progress}
+            />
+          );
+        }
+        return (
+          <ControlCommandFrame key={id} id={id}>
+            <Group className="agentplane-command-card-line" gap="xs" align="start">
+              <Text size="sm" className="agentplane-command-card-description">
+                {original ? controlDescription(original) : deliveryOperationLabel(item.operation)}
+              </Text>
+              {progress}
+            </Group>
+          </ControlCommandFrame>
+        );
+      })}
+      {workset.stale && (
+        <Text size="xs" c="dimmed" role="status">
+          {snapshot
+            ? "Showing the last delivery update while reconnecting."
+            : "Delivery updates are unavailable while reconnecting."}
+        </Text>
+      )}
+      {workset.coverageLost && (
+        <Text size="xs" c="dimmed" role="status">
+          Some earlier delivery receipts may have expired.
+        </Text>
+      )}
+      {attention.error && (
+        <Text size="xs" role="alert">
+          {attention.error}
+        </Text>
+      )}
+      {(olderIssues || moreCommands) && (
+        <Button size="compact-xs" variant="subtle" onClick={onOpenDeliveryHistory}>
+          {olderIssues ? "Older delivery issues" : "More commands in Delivery history"}
+        </Button>
+      )}
+    </>
   );
 }

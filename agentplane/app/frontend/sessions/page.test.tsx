@@ -1605,9 +1605,9 @@ it("shows Dispatcher delivery before History materializes and keeps one watch wh
     })
   );
   expect(container.textContent).toContain("Loading thread…");
-  expect(container.textContent).toContain("Send message · Queued in Dispatcher");
+  expect(container.textContent).toContain("Queued in Dispatcher · waiting for runner");
   await rerender(container, threadState());
-  expect(container.textContent).toContain("Send message · Queued in Dispatcher");
+  expect(container.textContent).toContain("Queued in Dispatcher · waiting for runner");
   expect(dispatchWatches.filter(({ url }) => url.searchParams.has("worksetSessionId"))).toEqual([watch]);
 });
 
@@ -1699,23 +1699,63 @@ it("shows server delivery for a fresh browser and defers to settled History", as
       resumeToken: "initial-workset",
     });
   });
-  const panel = container.querySelector('[aria-label="Dispatcher delivery"]');
-  for (const text of [
-    "Send message · Queued in Dispatcher",
-    "Turn interrupt · Sending to runner",
-    "Model change · Outcome unknown",
-    "Runner accepted the command",
-    "Reasoning effort change · Runner accepted",
-    "More active commands are outside this view.",
-    "Older delivery issues",
-    "Older admissions or cancellations are outside this view.",
-  ])
-    expect(panel?.textContent).toContain(text);
-  expect(panel?.textContent).not.toContain("Intermediate delivery receipt");
-  expect(Array.from(panel?.querySelectorAll("button") ?? [], (button) => button.textContent)).toEqual([
-    "Older delivery issues",
-  ]);
+  expect(container.querySelector('[aria-label="Dispatcher delivery"]')).toBeNull();
+  for (const [id, status] of [
+    ["remote-message", "queued"],
+    ["remote-interrupt", "delivering"],
+    ["remote-model", "unknown"],
+  ]) {
+    expect(container.querySelectorAll(`[data-command-id="${id}"]`)).toHaveLength(1);
+    expect(pendingRow(container, id).querySelector(`[data-stage="${status}"]`)).not.toBeNull();
+  }
+  expect(container.textContent).toContain("Runner accepted the command");
+  expect(container.querySelector('[data-command-id="remote-effort"]')).toBeNull();
+  expect(container.textContent).not.toContain("Intermediate delivery receipt");
+  expect(buttonIn(container, "Older delivery issues")).toBeDefined();
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
+});
+
+it("keeps one History bubble for an unresolved receipt across dismissal and a newer revision", async () => {
+  const input = entity({
+    case: "command",
+    value: { operation: Operation.SUBMIT_INPUT, outcome: ThreadCommandOutcome.PENDING },
+  });
+  input.entityId = "projected-unknown";
+  const container = await render({ window: null, error: null });
+  const watch = await selectedWorksetWatch();
+  const issue = {
+    ...issueReceipt(input.entityId, "32", "Runner outcome could not be confirmed"),
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_UNKNOWN",
+    journalAdmitted: true,
+  };
+  await showIssues(watch, issue);
+  expect(pendingRow(container, input.entityId).textContent).toContain(issue.reason);
+  await rerender(container, threadState({ rows: [viewState(), input] }));
+  const rows = () => container.querySelectorAll(`[data-command-id="${input.entityId}"]`);
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).toContain(issue.reason);
+  await act(async () => buttonIn(rows()[0], "Dismiss")!.click());
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).not.toContain(issue.reason);
+  await showIssues(watch, { ...issue, receiptVersion: "33", reason: "A later uncertain outcome" });
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).toContain("A later uncertain outcome");
+});
+
+it("shows the Dispatcher input when an unspecified History command has no rendered bubble", async () => {
+  const command = entity({
+    case: "command",
+    value: { operation: Operation.SUBMIT_INPUT, outcome: ThreadCommandOutcome.UNSPECIFIED },
+  });
+  command.entityId = "unprojected-input";
+  const container = await render(threadState({ rows: [viewState(), command] }));
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, {
+    ...issueReceipt(command.entityId, "12"),
+    operation: "OPERATION_SUBMIT_INPUT",
+  });
+  expect(container.querySelectorAll(`[data-command-id="${command.entityId}"]`)).toHaveLength(1);
 });
 
 it("leaves a locally retained command with its existing browser row", async () => {
@@ -1739,7 +1779,7 @@ it("leaves a locally retained command with its existing browser row", async () =
     });
   });
   expect(pendingRow(container, local.commandId)).not.toBeNull();
-  expect(container.querySelector(`[data-dispatch-command-id="${local.commandId}"]`)).toBeNull();
+  expect(container.querySelectorAll(`[data-command-id="${local.commandId}"]`)).toHaveLength(1);
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
 });
 
@@ -1781,8 +1821,8 @@ it("acknowledges only the exact revision, including a matching local notice, and
   await showIssues(watch, first);
   const localRow = pendingRow(container, local.commandId);
   expect(localRow).not.toBeNull();
-  expect(container.querySelector(`[data-dispatch-command-id="${local.commandId}"]`)).toBeNull();
-  await act(async () => buttonIn(localRow!, "Acknowledge")!.click());
+  expect(container.querySelectorAll(`[data-command-id="${local.commandId}"]`)).toHaveLength(1);
+  await act(async () => buttonIn(localRow!, "Dismiss")!.click());
   expect(writes).toEqual([{ notice: { commandId: local.commandId, receiptVersion: "9007199254740993" } }]);
   expect(container.querySelector(`[data-command-id="${local.commandId}"]`)).toBeNull();
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
@@ -1805,7 +1845,7 @@ it("keeps a saved local failure with no authoritative receipt for acknowledgemen
   const container = await render();
   const row = pendingRow(container, local.commandId);
   expect(row?.textContent).toContain(receipt.reason);
-  expect(buttonIn(row, "Acknowledge")).toBeUndefined();
+  expect(buttonIn(row, "Dismiss")).toBeUndefined();
   expect(request).not.toHaveBeenCalled();
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
 });
@@ -1838,12 +1878,12 @@ it("keeps unseen delivery issues visible when acknowledgement reads or writes fa
   const container = await render();
   const watch = await selectedWorksetWatch();
   await showIssues(watch, issueReceipt("keep-unseen", "41"));
-  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
-  expect(panel.textContent).toContain("Delivery refused");
-  expect(panel.textContent).toContain("Could not load acknowledgements.");
-  await act(async () => buttonIn(panel, "Acknowledge")!.click());
-  expect(panel.textContent).toContain("Delivery refused");
-  expect(panel.textContent).toContain("Could not acknowledge the delivery issue.");
+  const row = pendingRow(container, "keep-unseen");
+  expect(row.textContent).toContain("Delivery refused");
+  expect(container.textContent).toContain("Could not load acknowledgements.");
+  await act(async () => buttonIn(row, "Dismiss")!.click());
+  expect(row.textContent).toContain("Delivery refused");
+  expect(container.textContent).toContain("Could not acknowledge the delivery issue.");
 });
 
 it.each(["conversation", "archive"])("shares an exact acknowledgement from the %s across both views", async (from) => {
@@ -1872,26 +1912,26 @@ it.each(["conversation", "archive"])("shares an exact acknowledgement from the %
   const container = await render({ window: null, error: null });
   const watch = await selectedWorksetWatch();
   await showIssues(watch, issue);
-  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
+  const row = pendingRow(container, issue.commandId);
   expect(listSessionDispatches).not.toHaveBeenCalled();
-  if (from === "conversation") await act(async () => buttonIn(panel, "Acknowledge")!.click());
+  if (from === "conversation") await act(async () => buttonIn(row, "Dismiss")!.click());
   await act(async () => buttonIn(container, "Delivery history")!.click());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(dialog.textContent).toContain(issue.reason);
-  if (from === "archive") await act(async () => buttonIn(dialog, "Acknowledge")!.click());
+  if (from === "archive") await act(async () => buttonIn(dialog, "Dismiss")!.click());
   const exact = { commandId: issue.commandId, receiptVersion: issue.receiptVersion };
   expect(writes.mock.calls).toEqual([[exact]]);
   expect(lookups.mock.calls).toEqual([[[exact]]]);
   expect(dialog.textContent).toContain("Acknowledged");
-  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
-  expect(panel.isConnected).toBe(false);
+  expect(buttonIn(dialog, "Dismiss")).toBeUndefined();
+  expect(row.isConnected).toBe(false);
 
   await act(async () => finishLookup(Response.json({ acknowledgements: [] })));
-  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
+  expect(buttonIn(dialog, "Dismiss")).toBeUndefined();
   await showIssues(watch, issueReceipt(issue.commandId, "42", "A newer delivery failure"));
   expect(container.textContent).toContain("A newer delivery failure");
-  expect(buttonIn(container, "Acknowledge")).toBeDefined();
-  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
+  expect(buttonIn(container, "Dismiss")).toBeDefined();
+  expect(buttonIn(dialog, "Dismiss")).toBeUndefined();
 });
 
 it("keeps older issues actionable after every recent issue is acknowledged", async () => {
@@ -1933,18 +1973,17 @@ it("keeps older issues actionable after every recent issue is acknowledged", asy
       resumeToken: "clipped-workset",
     });
   });
-  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
-  expect(panel.textContent).not.toContain("Already acknowledged");
+  expect(container.textContent).not.toContain("Already acknowledged");
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
-  await act(async () => buttonIn(panel, "Older delivery issues")!.click());
+  await act(async () => buttonIn(container, "Older delivery issues")!.click());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   await act(async () => buttonIn(dialog, "Older")!.click());
   expect(dialog.textContent).toContain(prior.reason);
-  await act(async () => buttonIn(dialog, "Acknowledge")!.click());
+  await act(async () => buttonIn(dialog, "Dismiss")!.click());
   expect(writes).toEqual([{ notice: { commandId: prior.commandId, receiptVersion: prior.receiptVersion } }]);
-  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
+  expect(buttonIn(dialog, "Dismiss")).toBeUndefined();
   expect(dialog.textContent).toContain(prior.reason);
-  expect(buttonIn(panel, "Older delivery issues")).toBeDefined();
+  expect(buttonIn(container, "Older delivery issues")).toBeDefined();
 });
 
 it("keeps a newer receipt visible when its acknowledgement lookup fails", async () => {
@@ -2059,21 +2098,21 @@ it("reads a full legacy reason by command ID and retains the view across expired
       resumeToken: "legacy-workset",
     });
   });
-  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
+  const panel = pendingRow(container, row.commandId);
   await act(async () => buttonIn(panel, "Show full reason")?.click());
-  expect(receiptBatchRequests.map((url) => url.searchParams.getAll("commandIds"))).toEqual([[row.commandId]]);
+  expect(receiptBatchRequests.at(-1)?.searchParams.getAll("commandIds")).toEqual([row.commandId]);
   expect(panel.textContent).toContain(reason);
   await act(async () => watch.write('{"error":{"code":11,"message":"coverage expired"}}\n'));
-  expect(panel.textContent).toContain("Showing the last delivery update while reconnecting.");
-  expect(panel.textContent).toContain("Some earlier delivery receipts may have expired.");
+  expect(container.textContent).toContain("Showing the last delivery update while reconnecting.");
+  expect(container.textContent).toContain("Some earlier delivery receipts may have expired.");
   expect(panel.textContent).toContain(reason);
   await act(async () => window.dispatchEvent(new Event("online")));
   const replacement = await selectedWorksetWatch(watch);
   expect(replacement.url.searchParams.has("resumeToken")).toBe(false);
   await act(async () => replacement.send({ workset: { sessionId: THREAD.metadata.threadId }, resumeToken: "fresh" }));
-  expect(panel.textContent).not.toContain(reason);
-  expect(panel.textContent).not.toContain("while reconnecting");
-  expect(panel.textContent).toContain("Some earlier delivery receipts may have expired.");
+  expect(container.textContent).not.toContain(reason);
+  expect(container.textContent).not.toContain("while reconnecting");
+  expect(container.textContent).toContain("Some earlier delivery receipts may have expired.");
 });
 
 it("replaces a queued Dispatcher receipt with the failure its stream reports", async () => {

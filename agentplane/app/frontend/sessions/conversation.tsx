@@ -25,10 +25,17 @@ import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/li
 import { useOptionalStreamStatus } from "../transport/stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
-import { PendingInputMessages, LocalControlCommands, type LocalNotice } from "./thread_commands";
+import {
+  PendingInputMessages,
+  LocalControlCommands,
+  OutstandingDispatchCommands,
+  inlineDispatches,
+  receiptProgress,
+  selectedHistoryCommands,
+  type LocalNotice,
+} from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
-import { AcknowledgeDeliveryIssue, DispatchWorksetPanel } from "./dispatch_workset_panel";
-import { matchingLocalIssue } from "./command_notice_attention";
+import { isDeliveryIssue, matchingLocalIssue } from "./command_notice_attention";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -299,6 +306,9 @@ function ConversationBody({
       active = false;
     };
   }, [harness]);
+  const confirmedIds = new Set(
+    entities.flatMap((row) => (row.entity.case === "confirmedInput" ? row.entity.value.originCommandIds : []))
+  );
   const rows = historyRows(
     entities
       .filter(
@@ -307,20 +317,40 @@ function ConversationBody({
           row.entity.case === "confirmedInput" ||
           row.entity.case === "lifecycle" ||
           (row.entity.case === "command" &&
-            (pendingSentMessage(row) || row.entity.value.operation !== Operation.SUBMIT_INPUT))
+            ((pendingSentMessage(row) && !confirmedIds.has(row.entityId)) ||
+              row.entity.value.operation !== Operation.SUBMIT_INPUT))
       )
       .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
   const deliveryAttention = delivery.attention;
+  const inline = inlineDispatches(delivery);
+  // Invite History to surface the older exact IDs before showing a second representation.
+  useThreadSync().useCommandRows(inline.map((item) => item.commandId));
+  const historyIds = selectedHistoryCommands(entities);
+  const localIds = new Set(localCommands.map(({ command }) => command.commandId));
+  const byCommand = new Map(inline.map((item) => [item.commandId, item]));
   const localNotice: LocalNotice = (command) => {
-    const item = matchingLocalIssue(command, threadId, deliveryAttention.issues);
-    if (!item) return;
-    return {
-      acknowledged: deliveryAttention.acknowledged(item),
-      action: <AcknowledgeDeliveryIssue item={item} attention={deliveryAttention} />,
-    };
+    const exact = matchingLocalIssue(command, threadId, deliveryAttention.issues);
+    if (exact && deliveryAttention.acknowledged(exact)) return { acknowledged: true };
+    if (!command.attempted) return;
+    const item = exact ?? (delivery.workset.stale ? undefined : byCommand.get(command.command.commandId));
+    if (item && !deliveryAttention.acknowledged(item)) {
+      return {
+        acknowledged: false,
+        failed: isDeliveryIssue(item.state),
+        progress: receiptProgress(delivery, item),
+      };
+    }
   };
+  const projectedProgress = new Map(
+    inline
+      .filter((item) => isDeliveryIssue(item.state))
+      .map(
+        (item) =>
+          [item.commandId, deliveryAttention.acknowledged(item) ? null : receiptProgress(delivery, item)] as const
+      )
+  );
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
   for (const local of localCommands) {
     if (local.command.operation.case === "submitInput") {
@@ -349,11 +379,10 @@ function ConversationBody({
           localNotice={localNotice}
         />
       )}
-      <DispatchWorksetPanel
+      <OutstandingDispatchCommands
         delivery={delivery}
+        items={inline.filter((item) => !historyIds.has(item.commandId) && !localIds.has(item.commandId))}
         onOpenDeliveryHistory={onOpenDeliveryHistory}
-        localCommands={localCommands}
-        entities={entities}
       />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
@@ -376,6 +405,7 @@ function ConversationBody({
           inputEchoes={inputEchoes}
           onInputEchoLoaded={onInputEchoLoaded}
           tail={commandTail}
+          projectedProgress={projectedProgress}
           running={running}
           activeTurn={activeTurn}
           history={history}
@@ -570,7 +600,11 @@ export function ThreadConversation({
       <>
         <DeliveryHistoryFallback onOpen={onOpenDeliveryHistory} />
         {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
-        <DispatchWorksetPanel delivery={delivery} onOpenDeliveryHistory={onOpenDeliveryHistory} />
+        <OutstandingDispatchCommands
+          delivery={delivery}
+          items={inlineDispatches(delivery)}
+          onOpenDeliveryHistory={onOpenDeliveryHistory}
+        />
       </>
     );
   }

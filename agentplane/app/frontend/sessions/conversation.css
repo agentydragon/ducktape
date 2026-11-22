@@ -111,21 +111,27 @@
 }
 
 /* Let outcome text use the width below the bubble instead of squeezing it into the gutter. */
-.transcript-user-message-row:has(> .transcript-user-message-aside > .agentplane-command-progress-inline) {
+.transcript-user-message-row:has(
+  > .transcript-user-message-aside > :is(.agentplane-command-progress-inline, .agentplane-receipt-progress[data-inline])
+) {
   flex-wrap: wrap;
 }
 
-.transcript-user-message-aside:has(> .agentplane-command-progress-inline) {
+.transcript-user-message-aside:has(
+  > :is(.agentplane-command-progress-inline, .agentplane-receipt-progress[data-inline])
+) {
   order: 1;
   flex: 0 0 100%;
   max-width: 100%;
 }
 
-.agentplane-command-card-line:has(> .agentplane-command-progress-inline) {
+.agentplane-command-card-line:has(
+  > :is(.agentplane-command-progress-inline, .agentplane-receipt-progress[data-inline])
+) {
   flex-wrap: wrap;
 }
 
-.agentplane-command-card-line > .agentplane-command-progress-inline {
+.agentplane-command-card-line > :is(.agentplane-command-progress-inline, .agentplane-receipt-progress[data-inline]) {
   order: 1;
   flex-basis: 100%;
 }
@@ -297,6 +303,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Keep the entire requested setting readable beside delivery errors on narrow screens. */
+.agentplane-command-card-line:has(> .agentplane-receipt-progress[data-inline]) .agentplane-command-card-description {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.agentplane-receipt-progress {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The requested setting and its compact progress lights share one line, including on phones. */
