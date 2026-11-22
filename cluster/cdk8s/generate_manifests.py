@@ -830,18 +830,11 @@ def generate_manifests(root: Path) -> None:
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(kyverno_kustomization),
     )
-    tofu_controller_artifact = artifact(
-        "tofu-controller", tofu_controller_release.OUTPUT_DIR, tofu_controller_release.PINS_DIR
-    )
+    tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = flux.flux_kustomization(
         flux_chart,
         tofu_controller_release.NAME,
-        write_directory(
-            root,
-            tofu_controller_artifact,
-            tofu_controller_release.chart,
-            components=[posixpath.relpath(tofu_controller_release.PINS_DIR, tofu_controller_release.OUTPUT_DIR)],
-        ),
+        write_directory(root, tofu_controller_artifact, tofu_controller_release.chart),
         interval="10m0s",
         timeout="10m0s",
         depends_on=flux.flux_kustomization_depends_on_many(
