@@ -387,18 +387,18 @@ def kustomize_kustomization(
     cluster/docs/cdk8s.md) -- that's specific to that use, not a property of this
     field; a generated Component directory would work the same way.
 
-    A generated ConfigMap has no namespace unless its entry or `namespace` gives it one, and
-    the API server rejects it ("namespace not specified"), which fails the whole Flux apply of
-    the directory while every hand-authored object in it looks correct. So an entry without
-    one raises, unless `namespaced_by_overlay` says this is a base only overlays that set the
-    namespace include.
+    Each generated ConfigMap or Secret needs a namespace from its entry, the Kustomization,
+    or a consuming overlay. An unplaced resource can fail the whole Flux apply.
     """
-    unplaced = [entry.name for entry in config_map_generator if not entry.namespace]
-    if unplaced and not namespace and not namespaced_by_overlay:
-        raise ValueError(f"configMapGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
-    unplaced = [entry.name for entry in secret_generator if not entry.namespace]
-    if unplaced and not namespace and not namespaced_by_overlay:
-        raise ValueError(f"secretGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
+    if not namespace and not namespaced_by_overlay:
+        unplaced = [
+            f"{kind}/{entry.name}"
+            for kind, entries in (("ConfigMap", config_map_generator), ("Secret", secret_generator))
+            for entry in entries
+            if not entry.namespace
+        ]
+        if unplaced:
+            raise ValueError(f"Generated resources have no namespace: {', '.join(unplaced)}")
     manifest = _KustomizeKustomization(
         namespace=namespace,
         resources=resources,

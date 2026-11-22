@@ -130,17 +130,15 @@ def test_artifact_rejects_unsafe_directory_paths(directory: str) -> None:
         artifact("test-app", directory)
 
 
-def test_generator_entry_without_a_namespace_raises() -> None:
-    with pytest.raises(ValueError, match="unplaced="):
-        kustomize_kustomization(resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace=None)])
-
-
-def test_secret_generator_without_a_namespace_raises() -> None:
-    with pytest.raises(ValueError, match="secretGenerator entries"):
+def test_missing_namespaces_identify_all_unplaced_generator_entries() -> None:
+    with pytest.raises(ValueError, match="namespace") as error:
         kustomize_kustomization(
             resources=[],
-            secret_generator=[SecretGeneratorArgs(name="test-secret", namespace=None, files=["credentials.yaml"])],
+            config_map_generator=[ConfigMapArgs(name="settings", namespace=None)],
+            secret_generator=[SecretGeneratorArgs(name="credentials", namespace=None, files=["credentials.yaml"])],
         )
+    assert "ConfigMap/settings" in str(error.value)
+    assert "Secret/credentials" in str(error.value)
 
 
 @pytest.mark.parametrize(
