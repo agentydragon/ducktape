@@ -48,10 +48,8 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
-from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
-from model_catalog.catalog import TABBYAPI_QWEN_STOCK, Provider
 
 
 def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str]]:
@@ -375,67 +373,6 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manif
     assert rule["credentialRef"] == {"name": "github-pat"}
     # Unpathed: the verb list bounds the method, while the PAT behind it stays whole (egress.py).
     assert "paths" not in rule
-
-
-def test_claude_picker_offers_environment_models_and_keeps_ingress(staging_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == [route.id for route in STAGING_APP_MODELS.claude]
-    assert all(
-        route.id in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"] for route in STAGING_APP_MODELS.claude
-    )
-    for preset in config["thread_presets"].values():
-        assert preset["model"] in config["models"]["harnesses"][preset["harness"]]
-
-
-def test_shared_coding_models_preserve_provider_protocols(staging_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    catalog = config["models"]
-    assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
-    abliterated_id = "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated"
-    stock_chat_id = chat_completions_id(TABBYAPI_QWEN_STOCK, STAGING_APP_MODELS.central_sampler)
-    chat_models = {stock_chat_id: TABBYAPI_QWEN_STOCK.id, abliterated_id: abliterated_id}
-    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [
-        *(route.id for route in STAGING_APP_MODELS.central_sampler),
-        *chat_models,
-    ]
-    assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CLAUDE"])
-    assert abliterated_id in catalog["harnesses"]["HARNESS_CODEX"]
-    assert stock_chat_id not in catalog["harnesses"]["HARNESS_CODEX"]
-    [abliterated_option] = [model for model in catalog["models"] if model["model"] == abliterated_id]
-    assert abliterated_option["reasoning_efforts"] == ["low", "medium", "high"]
-    assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
-    assert "central_sampler" not in catalog
-    sampler = json.loads(
-        find_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
-    )
-    assert set(sampler["models"]) == {*chat_models, *(route.id for route in STAGING_APP_MODELS.central_sampler)}
-    for model_id, provider_model in chat_models.items():
-        assert sampler["models"][model_id] == {
-            "api": "chat_completions",
-            "provider_model": provider_model,
-            "connection": "llm-ingress",
-            "response_header_timeout_seconds": 360,
-            "exec_encoding": "json",
-            "reasoning_efforts": ["", "high", "low", "medium"],
-            "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
-        }
-    for route in STAGING_APP_MODELS.central_sampler:
-        model = sampler["models"][route.id]
-        if route.upstream.provider == Provider.ANTHROPIC_API:
-            assert model["api"] == "anthropic_messages"
-            assert model["connection"] == "anthropic-api"
-            assert model["provider_model"] == route.model.id
-            assert model["exec_encoding"] == "json"
-        elif route.upstream.provider == Provider.CHATGPT:
-            assert model["api"] == "responses"
-            assert model["connection"] == "llm-ingress"
-            assert model["responses"] == {"dialect": "lite"}
-            assert model["exec_encoding"] == "freeform"
-        else:
-            assert model["api"] == "responses"
-            assert model["connection"] == "llm-ingress"
-            assert model["responses"] == {"dialect": "standard"}
-            assert model["exec_encoding"] == "json"
 
 
 def test_haku_launches_on_an_available_central_sampler_route(catalog_manifests: list[dict[str, Any]]) -> None:

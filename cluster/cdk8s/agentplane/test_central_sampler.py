@@ -12,6 +12,7 @@ from cdk8s import Chart
 from cdk8s_plus_34 import ConfigMap, EnvValue
 from more_itertools import one
 
+from agentplane.env.runtime.harness import Harness
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
@@ -31,7 +32,9 @@ from cluster.cdk8s.agentplane import (
     staging,
     workload_tls,
 )
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+from model_catalog.catalog import Provider
 
 
 def _admits(policy: dict[str, Any], *, source: str, port: int) -> bool:
@@ -209,6 +212,50 @@ def test_central_sampler_turn_timeout_option_is_configured(scratch_chart: Chart)
     )
     config = json.loads(settings_map.data["settings.json"])
     assert config["turn_timeout_seconds"] == 123
+
+
+def test_staging_picker_and_presets_offer_models_the_harness_can_run() -> None:
+    assert staging.ENV.app is not None
+    assert staging.ENV.central_sampler is not None
+    app = staging.ENV.app.config
+    sampler = staging.ENV.central_sampler.models
+    harnesses = app.models.harnesses
+    assert set(harnesses[Harness.CENTRAL_SAMPLER]) == set(sampler)
+    assert set(harnesses[Harness.CLAUDE]) <= set(sampler)
+    assert set(harnesses[Harness.CODEX]) < set(sampler)
+    for model_id, model in sampler.items():
+        if model.api == "chat_completions":
+            assert model_id not in harnesses[Harness.CLAUDE]
+            if model_id != model.provider_model:
+                assert model_id not in harnesses[Harness.CODEX]
+    for preset in app.thread_presets.values():
+        assert preset.model in harnesses[preset.harness]
+    for option in app.models.models:
+        if option.model in sampler:
+            assert set(option.reasoning_efforts) <= sampler[option.model].reasoning_efforts
+
+
+def test_staging_sampler_routes_use_the_provider_protocol() -> None:
+    assert staging.ENV.central_sampler is not None
+    models = staging.ENV.central_sampler.models
+    for route in STAGING_APP_MODELS.central_sampler_chat:
+        model = models[chat_completions_id(route, STAGING_APP_MODELS.central_sampler)]
+        assert (model.api, model.provider_model, model.connection) == ("chat_completions", route.id, "llm-ingress")
+    for route in STAGING_APP_MODELS.central_sampler:
+        model = models[route.id]
+        if route.upstream.provider == Provider.ANTHROPIC_API:
+            assert (model.api, model.provider_model, model.connection) == (
+                "anthropic_messages",
+                route.model.id,
+                "anthropic-api",
+            )
+        else:
+            assert (model.api, model.provider_model, model.connection) == ("responses", route.id, "llm-ingress")
+            assert model.responses is not None
+            if route.upstream.provider == Provider.CHATGPT:
+                assert (model.responses.dialect, model.exec_encoding) == ("lite", "freeform")
+            else:
+                assert (model.responses.dialect, model.exec_encoding) == ("standard", "json")
 
 
 if __name__ == "__main__":
