@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
-from cluster.rotators.authentik_jwt_rotation.rotate import mint_jwt, probe_rejects_token, token_audiences
+from cluster.rotators.authentik_jwt_rotation.rotate import mint_jwt, token_audiences
 
 
 def _make_jwt(claims: dict) -> str:
@@ -125,22 +125,6 @@ def test_rotation_probe_requires_k8s_secret():
     assert r.probe.method == "POST"
 
 
-def test_probe_rejects_token_only_on_auth_statuses():
-    probe = Probe(url="https://example.test/x")
-    assert probe_rejects_token(_status_client(401), probe, "tok") is True
-    assert probe_rejects_token(_status_client(403), probe, "tok") is True
-    assert probe_rejects_token(_status_client(200), probe, "tok") is False
-    assert probe_rejects_token(_status_client(404), probe, "tok") is False
-    # Endpoint sickness is not a credential verdict — no hourly mint churn
-    # during an outage.
-    assert probe_rejects_token(_status_client(503), probe, "tok") is False
-
-    def _down(_request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("down")
-
-    assert probe_rejects_token(_mock_client(_down), probe, "tok") is False
-
-
 @pytest.fixture
 def probed_rotation(tmp_path: Path) -> Rotation:
     """A rotation whose SOPS file is stamped fresh and that carries a probe."""
@@ -173,41 +157,43 @@ def _stub_mint(monkeypatch):
     monkeypatch.setattr(rotate, "write_sops_yaml", lambda **_kwargs: None)
 
 
-def test_rotate_one_probe_rejection_forces_remint(monkeypatch, probed_rotation: Rotation):
+@pytest.mark.parametrize(
+    ("status", "remint"),
+    [(401, True), (403, True), (200, False), (404, False), (503, False), pytest.param(None, False, id="unreachable")],
+)
+def test_rotate_one_remints_only_if_the_probe_rejects_the_published_bearer(
+    monkeypatch, probed_rotation: Rotation, status: int | None, remint: bool
+) -> None:
     _stub_mint(monkeypatch)
     monkeypatch.setattr(
         rotate, "published_secret_data", lambda _out: {"token": base64.b64encode(b"live-token").decode()}
     )
     seen: list[httpx.Request] = []
-    assert rotate.rotate_one(_recording_client(401, seen), probed_rotation, Config(rotations=[])) is True
+
+    def probe(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if status is None:
+            raise httpx.ConnectError("down")
+        return httpx.Response(status)
+
+    with _mock_client(probe) as client:
+        assert rotate.rotate_one(client, probed_rotation, Config(rotations=[])) is remint
     [request] = seen
     assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.example.test/v1/metrics")
     assert request.headers["Authorization"] == "Bearer live-token"
 
 
-def test_rotate_one_probe_acceptance_keeps_fresh_token(monkeypatch, probed_rotation: Rotation):
-    monkeypatch.setattr(
-        rotate, "published_secret_data", lambda _out: {"token": base64.b64encode(b"live-token").decode()}
-    )
-    assert rotate.rotate_one(_status_client(200), probed_rotation, Config(rotations=[])) is False
-
-
-def test_rotate_one_probe_skipped_when_secret_unreadable(monkeypatch, probed_rotation: Rotation):
-    # None = "no verdict" (API down, Flux lag): keep the fresh token rather
-    # than mint-churning hourly while the publish pipeline is mid-flight.
-    monkeypatch.setattr(rotate, "published_secret_data", lambda _out: None)
-    seen: list[httpx.Request] = []
-    assert rotate.rotate_one(_recording_client(200, seen), probed_rotation, Config(rotations=[])) is False
-    assert seen == []
-
-
-def test_rotate_one_missing_token_key_forces_remint(monkeypatch, probed_rotation: Rotation):
-    # The published Secret exists but lacks the configured stringData key —
-    # the class of bug a wrong token_key produces; re-mint rewrites the manifest.
+@pytest.mark.parametrize(
+    ("data", "remint"),
+    [pytest.param(None, False, id="unreadable-secret"), pytest.param({"jwt": "eA=="}, True, id="missing-token-key")],
+)
+def test_rotate_one_without_a_published_bearer_skips_the_probe(
+    monkeypatch, probed_rotation: Rotation, data: dict[str, str] | None, remint: bool
+) -> None:
     _stub_mint(monkeypatch)
-    monkeypatch.setattr(rotate, "published_secret_data", lambda _out: {"jwt": base64.b64encode(b"x").decode()})
+    monkeypatch.setattr(rotate, "published_secret_data", lambda _out: data)
     seen: list[httpx.Request] = []
-    assert rotate.rotate_one(_recording_client(200, seen), probed_rotation, Config(rotations=[])) is True
+    assert rotate.rotate_one(_recording_client(200, seen), probed_rotation, Config(rotations=[])) is remint
     assert seen == []
 
 
