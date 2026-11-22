@@ -312,3 +312,39 @@ for (const [name, code, side] of [
 ]) {
   byBehavior(name, code, side);
 }
+
+// Read the global separately so that no array operation or coercion can mask getter reentry.
+{
+  const name = "host_global_getter_observes_factory";
+  const p = prepare(
+    name,
+    `var values = [1, 2, 3];
+globalThis.observe = () => typeof factory;
+var ratio = devicePixelRatio;
+var factory = () => 7;
+console.log(values.includes(ratio));`,
+    [0, 1, 3]
+  );
+  const host = path.join(temp, "host-global-getter.mjs");
+  writeFileSync(
+    host,
+    `Object.defineProperty(globalThis, "devicePixelRatio", {
+    get() { console.log(globalThis.observe()); return 2; }
+  });`
+  );
+  const verdict = lowersplit(p);
+  const forced = lowersplit(p, "--force");
+  for (const [file, expected] of [
+    [p.source, "undefined\ntrue\n"],
+    [path.join(p.dir, "entry.mjs"), "function\ntrue\n"],
+  ]) {
+    const result = run(process.execPath, ["--import", host, file]);
+    assert.equal(result.status, 0, describe(name, result));
+    assert.equal(result.stdout, expected, name);
+  }
+  const checked = translate(name, p.source, p.dir);
+  assert.deepEqual([verdict.status, checked.status], [1, 4], describe(name, verdict) + describe(name, checked));
+  assert.equal(forced.status, 1, describe(name, forced));
+  assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
+  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
+}
