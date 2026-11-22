@@ -81,7 +81,7 @@ def test_runtime_overrides_reach_the_vm_guest() -> None:
     data = environment_guest.guest_config_data(
         replace(staging.ENV, vm_console_autologin=True),
         gateway=launcher_relay.GUEST_GATEWAY,
-        block_devices=(),
+        block_devices=("/dev/vdb",),
         platform_instructions="Test platform guidance.",
         harness_env={"EXAMPLE_SERVICE_URL": "http://service.test"},
         session_reconcile_concurrency=2048,
