@@ -142,11 +142,14 @@ partial def outsideModel (inFn : Bool) (j : Json) : Option String :=
 
 /-- The declarations that give a module the names it uses out of one top-level `import` declaration, with the
 original source, attributes and `imported as local` spelling. -/
-def importLines (decl : Json) (used : String → Bool) : List String :=
+def importLines (decl : Json) (used : String → Bool) (sourceOverride : Option String := none)
+    (keepSideEffect : Bool := false) : List String :=
   let name (j : Json) := if Lower.typ j == "Literal" then q (Lower.specName j) else Lower.specName j
   let attrs := (Lower.items (Lower.fld decl "attributes")).toList.map fun a =>
     s!"{name (Lower.fld a "key")}: {name (Lower.fld a "value")}"
-  let source := s!"from {name (Lower.fld decl "source")}{if attrs.isEmpty then "" else s!" with \{ {", ".intercalate attrs} }"};"
+  let sourceName := sourceOverride.getD (Lower.specName (Lower.fld decl "source"))
+  let attrsSuffix := if attrs.isEmpty then "" else " with {" ++ ", ".intercalate attrs ++ "}"
+  let source := s!"from {q sourceName}{attrsSuffix};"
   let specs := (Lower.items (Lower.fld decl "specifiers")).toList.filterMap fun sp =>
     let l := Lower.specName (Lower.fld sp "local")
     if used l then some (Lower.typ sp, name (Lower.fld sp "imported"), l) else none
@@ -156,23 +159,74 @@ def importLines (decl : Json) (used : String → Bool) : List String :=
     else none
   let named := specs.filterMap fun (t, i, l) =>
     if t == "ImportSpecifier" then some (if i == l then l else s!"{i} as {l}") else none
-  whole ++ (if named.isEmpty then [] else [s!"import \{ {", ".intercalate named} } {source}"])
+  if whole.isEmpty && named.isEmpty && keepSideEffect then
+    [s!"import {q sourceName}{attrsSuffix};"]
+  else whole ++ (if named.isEmpty then [] else [s!"import \{ {", ".intercalate named} } {source}"])
 
 /-- Source text of a module of a bundle that has `import` statements (`imports`, with their statement numbers).
 What loads outside modules comes first, so that they still run before every statement of the bundle and in their
 order: the module's own `import` and `export … from` statements, which in the entry are all of the bundle's, and
 elsewhere an `import` of the outside names the module uses. Then the glue imports, the other statements verbatim,
 and the glue exports, as `Module.render` writes them. -/
+private def sourceLiteral (decl : Json) : String :=
+  Lower.specName (Lower.fld decl "source")
+
+private def exportRequestLines (decl : Json) (source : String) : List String :=
+  let name (j : Json) := if Lower.typ j == "Literal" then q (Lower.specName j) else Lower.specName j
+  let attrs := (Lower.items (Lower.fld decl "attributes")).toList.map fun a =>
+    s!"{name (Lower.fld a "key")}: {name (Lower.fld a "value")}"
+  let attrsSuffix := if attrs.isEmpty then "" else " with {" ++ ", ".intercalate attrs ++ "}"
+  let specs := (Lower.items (Lower.fld decl "specifiers")).toList.map fun sp =>
+    let localName := name (Lower.fld sp "local")
+    let exported := name (Lower.fld sp "exported")
+    if localName == exported then localName else s!"{localName} as {exported}"
+  [s!"export \{ {", ".intercalate specs} } from {q source}{attrsSuffix};"]
+
+private def renderNestedRequest (decl : Json) (modulePath : String) : Except String (List String) := do
+  let source ← rebaseRelativeRequest modulePath (sourceLiteral decl)
+  match Lower.typ decl with
+  | "ImportDeclaration" => pure (importLines decl (fun _ => true) (some source) true)
+  | "ExportNamedDeclaration" => pure (exportRequestLines decl source)
+  | other => throw s!"cannot rebase {other} from nested output module {modulePath}"
+
+private def validateNestedRequests (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan) :
+    Except String Unit := do
+  for m in P.mods do
+    if m.name.contains '/' then
+      let held := Std.HashSet.ofList m.stmts
+      for i in m.stmts do
+        let ast := asts.getD i Json.null
+        if isRequest ast && (sourceLiteral ast).startsWith "." then
+          let _ ← renderNestedRequest ast m.name
+      let uses := Std.HashSet.ofList (m.stmts.flatMap fun i => (B.stmt i).eager ++ (B.stmt i).lazy)
+      for (i, decl) in imports do
+        if !held.contains i && (Lower.items (Lower.fld decl "specifiers")).any
+            (fun spec => uses.contains (Lower.specName (Lower.fld spec "local"))) then
+          let _ ← rebaseRelativeRequest m.name (sourceLiteral decl)
+
 def renderModule (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan) (m : EsmSplit.Module) : String :=
   let held := Std.HashSet.ofList m.stmts
   let elsewhere := imports.filter fun (i, _) => !held.contains i
   let outside :=
     if elsewhere.isEmpty then [] else
       let uses := Std.HashSet.ofList (m.stmts.flatMap fun i => (B.stmt i).eager ++ (B.stmt i).lazy)
-      elsewhere.flatMap fun (_, d) => importLines d uses.contains
+      elsewhere.flatMap fun (_, d) =>
+        let source := sourceLiteral d
+        let override := if m.name.contains '/' && source.startsWith "." then
+            (rebaseRelativeRequest m.name source).toOption
+          else none
+        importLines d uses.contains override
   let (requests, body) := m.stmts.partition fun i => isRequest (asts.getD i Json.null)
+  let requestText := requests.flatMap fun i =>
+    let stmt := B.stmt i
+    let ast := asts.getD i Json.null
+    if m.name.contains '/' && isRequest ast && (sourceLiteral ast).startsWith "." then
+      match renderNestedRequest ast m.name with
+      | .ok lines => lines
+      | .error _ => [stmt.src]
+    else [stmt.src]
   let text (is : List Nat) := is.map fun i => (B.stmt i).src
-  renderBlocks [text requests ++ outside ++ m.importLines P, text body, m.exportLines]
+  renderBlocks [requestText ++ outside ++ m.importLines P, text body, m.exportLines]
 
 /-- The footprints `lower` printed for this bundle (one JSON object per statement). The analysis takes minutes on a
 large bundle and does not depend on the split, so a run of many splits computes it once. The scan of the statements is
@@ -591,6 +645,9 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
   if force || (ok && !bad) then
     let imports := asts.toList.zipIdx.filterMap fun (s, i) =>
       if Lower.typ s == "ImportDeclaration" then some (i, s) else none
+    match validateNestedRequests asts imports B P with
+    | .error message => IO.eprintln s!"cannot write nested output: {message}"; return 3
+    | .ok _ => pure ()
     writeModules B P out (renderModule asts imports B P)
     if let some planPath := planPath? then
       let (count, sample, _) := if ok then (0, #[], #[]) else conflictInversions B P
