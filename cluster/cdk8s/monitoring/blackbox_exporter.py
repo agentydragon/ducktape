@@ -1,6 +1,10 @@
-"""Pinned Blackbox exporter image shared by monitoring components."""
+"""Blackbox exporter image deployed by both monitoring probes and exercised by the exporter test."""
 
-IMAGE = (
-    "quay.io/prometheus/blackbox-exporter:v0.28.0"
-    "@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc"
-)
+import json
+
+from python.runfiles import Runfiles
+
+_pin = json.loads((Runfiles.CreateOrRaise().root() / "ducktape/devinfra/image_pins.json").read_bytes())[
+    "blackbox_exporter"
+]
+IMAGE = f"{_pin['image']}:{_pin['tag']}@{_pin['digest']}"

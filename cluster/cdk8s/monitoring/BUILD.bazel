@@ -9,7 +9,6 @@
 # gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 # gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
-load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -446,6 +445,8 @@ py_library(
 py_library(
     name = "blackbox_exporter",
     srcs = ["blackbox_exporter.py"],
+    data = ["//devinfra:image_pins.json"],
+    deps = ["@rules_python//python/runfiles"],
 )
 
 py_library(
@@ -472,12 +473,10 @@ py_test(
     srcs = ["test_home_application_probes.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {
-        "BLACKBOX_EXPORTER_PIN": BLACKBOX_EXPORTER_IMAGE + "@" + BLACKBOX_EXPORTER_DIGEST,
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
     },
     requires_docker = True,
     deps = [
-        ":blackbox_exporter",
         ":home_application_probes",
         "//:conftest",
         "//cluster/cdk8s:conftest",
