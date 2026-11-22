@@ -9,6 +9,8 @@ and volume claim templates are untyped in the operator's CRD schema, so they are
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from clickhouse_installation_crds.com.altinity.clickhouse import (
@@ -82,8 +84,6 @@ _KEEPER = ServiceRef(
 _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
-_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
-_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
@@ -98,6 +98,50 @@ _CONTAINER_SECURITY_CONTEXT = {
     "seccompProfile": _RUNTIME_DEFAULT_SECCOMP,
 }
 _TCP = "TCP"
+
+
+@dataclass(frozen=True)
+class _Replica:
+    selector_name: str
+    host_name: str
+    pod_template: str
+    node: str
+
+
+# Selector names survive the full-node retirement. Host 0-3 replaced the interrupted 0-2 replica.
+_REPLICAS = (
+    _Replica(selector_name="1", host_name="0-1", pod_template="clickhouse-piraeus-103656", node="ovh-ns103656"),
+    _Replica(selector_name="2", host_name="0-3", pod_template="clickhouse-piraeus-102453", node="ovh-ns102453"),
+)
+
+
+def _replica_layout() -> ClickHouseInstallationSpecConfigurationClustersLayout:
+    return ClickHouseInstallationSpecConfigurationClustersLayout(
+        shards_count=1,
+        replicas_count=len(_REPLICAS),
+        replicas=[
+            ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name=replica.selector_name)
+            for replica in _REPLICAS
+        ],
+        shards=[
+            ClickHouseInstallationSpecConfigurationClustersLayoutShards(
+                name="0",
+                replicas_count=len(_REPLICAS),
+                replicas=[
+                    ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
+                        name=replica.host_name,
+                        templates=(
+                            ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
+                                pod_template=replica.pod_template,
+                                data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
+                            )
+                        ),
+                    )
+                    for replica in _REPLICAS
+                ],
+            )
+        ],
+    )
 
 
 def _password(secret: str) -> dict[str, object]:
@@ -349,43 +393,7 @@ def clickhouse_chart(app: App) -> Chart:
                                 )
                             )
                         ),
-                        layout=ClickHouseInstallationSpecConfigurationClustersLayout(
-                            shards_count=1,
-                            replicas_count=2,
-                            # Preserve the existing StatefulSet selector labels after
-                            # removing the full-node host from the end of the layout.
-                            replicas=[
-                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="1"),
-                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="2"),
-                            ],
-                            shards=[
-                                ClickHouseInstallationSpecConfigurationClustersLayoutShards(
-                                    name="0",
-                                    replicas_count=2,
-                                    replicas=[
-                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0-1",
-                                            templates=(
-                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
-                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                                                )
-                                            ),
-                                        ),
-                                        # Use a fresh identity after the interrupted 0-2 replica.
-                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0-3",
-                                            templates=(
-                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
-                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                                                )
-                                            ),
-                                        ),
-                                    ],
-                                )
-                            ],
-                        ),
+                        layout=_replica_layout(),
                     )
                 ],
             ),
@@ -398,16 +406,12 @@ def clickhouse_chart(app: App) -> Chart:
                 ),
             ),
             templates=ClickHouseInstallationSpecTemplates(
-                pod_templates=[
-                    _clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR),
+                pod_templates=[_clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR)]
+                + [
                     _clickhouse_pod_template(
-                        _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
-                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103656"},
-                    ),
-                    _clickhouse_pod_template(
-                        _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
-                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns102453"},
-                    ),
+                        replica.pod_template, {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": replica.node}
+                    )
+                    for replica in _REPLICAS
                 ],
                 volume_claim_templates=[
                     ClickHouseInstallationSpecTemplatesVolumeClaimTemplates(
