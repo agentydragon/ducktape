@@ -330,28 +330,10 @@ class Actions(Construct):
         groups = dict(props.action_groups)
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
-            dispatcher_peer = ServicePeer(
-                target=dispatcher.authority,
-                request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
-            )
-            history_peer = ServicePeer(
-                target=history.authority,
-                request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
-            )
+            dispatcher_peer, history_peer = self._session_peers(_PEER_TIMEOUT_SECONDS)
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
-            delegated_dispatcher_peer = ServicePeer(
-                target=dispatcher.authority,
-                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
-            )
-            delegated_history_peer = ServicePeer(
-                target=history.authority,
-                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
-            )
+            delegated_dispatcher_peer, delegated_history_peer = self._session_peers(_DELEGATED_PEER_TIMEOUT_SECONDS)
         workload = self._add_workload()
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=ACTIONS_URI
@@ -401,6 +383,20 @@ class Actions(Construct):
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)
+
+    def _session_peers(self, timeout_seconds: int) -> tuple[ServicePeer, ServicePeer]:
+        return (
+            ServicePeer(
+                target=self.dispatcher.authority,
+                request_timeout_s=timeout_seconds,
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
+            ),
+            ServicePeer(
+                target=self.history.authority,
+                request_timeout_s=timeout_seconds,
+                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
+            ),
+        )
 
     def add_platform_resources(self) -> None:
         """Add the Cilium policy and Action Service availability alert."""

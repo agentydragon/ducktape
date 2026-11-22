@@ -201,11 +201,17 @@ def test_gaffer_policy_approves_only_scoped_branch_and_pr_requests(staging_manif
     assert actions_seen == required_args.keys()
 
 
-def test_staging_sampler_delegation_and_credential_files(staging_manifests: list[dict[str, Any]]) -> None:
+@pytest.fixture(scope="module")
+def staging_settings(staging_manifests: list[dict[str, Any]]) -> dict[str, Any]:
+    return config_map_yaml(staging_manifests, f"{actions.NAME}-settings", "settings.yaml")
+
+
+def test_staging_sampler_delegation_and_credential_files(
+    staging_manifests: list[dict[str, Any]], staging_settings: dict[str, Any]
+) -> None:
     deployment = find_resource(staging_manifests, "Deployment", "actions")
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
-    settings = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
-    assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
+    assert staging_settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
     sampler_rule = one(
@@ -218,27 +224,29 @@ def test_staging_sampler_delegation_and_credential_files(staging_manifests: list
         for port_rule in sampler_rule.get("toPorts", [])
         for port in port_rule.get("ports", [])
     )
-    assert "database_url" not in settings
-    assert "private_key_pem" not in settings["web_push"]
-    assert settings["mcp_servers"]["github"]["client_id_file"] == "/etc/agentplane-github/client_id"
+    assert "database_url" not in staging_settings
+    assert "private_key_pem" not in staging_settings["web_push"]
+    assert staging_settings["mcp_servers"]["github"]["client_id_file"] == "/etc/agentplane-github/client_id"
     assert (
-        "client_id" not in settings["mcp_servers"]["github"] or settings["mcp_servers"]["github"]["client_id"] is None
+        "client_id" not in staging_settings["mcp_servers"]["github"]
+        or staging_settings["mcp_servers"]["github"]["client_id"] is None
     )
     names = {entry["name"] for entry in container["env"]}
     assert "AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID" not in names
 
 
-def test_action_service_allows_only_configured_service_callers(staging_manifests: list[dict[str, Any]]) -> None:
+def test_action_service_allows_only_configured_service_callers(
+    staging_manifests: list[dict[str, Any]], staging_settings: dict[str, Any]
+) -> None:
     deployment = find_resource(staging_manifests, "Deployment", "actions")
     pod = deployment["spec"]["template"]["spec"]
     container = one(item for item in pod["containers"] if item["name"] == "actions")
-    settings = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
 
-    assert settings["service_readers"] == [NOTIFICATIONS_URI]
-    assert settings["operator_services"] == [APP_URI]
-    assert settings["connection_delegation_service"] == MCP_EDGE_URI
-    assert {auth["mode"] for auth in settings["rpc"]["auth"]} == {"spiffe"}
-    spiffe = one(auth for auth in settings["rpc"]["auth"] if auth["mode"] == "spiffe")
+    assert staging_settings["service_readers"] == [NOTIFICATIONS_URI]
+    assert staging_settings["operator_services"] == [APP_URI]
+    assert staging_settings["connection_delegation_service"] == MCP_EDGE_URI
+    assert {auth["mode"] for auth in staging_settings["rpc"]["auth"]} == {"spiffe"}
+    spiffe = one(auth for auth in staging_settings["rpc"]["auth"] if auth["mode"] == "spiffe")
     assert spiffe["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
 
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
@@ -247,9 +255,10 @@ def test_action_service_allows_only_configured_service_callers(staging_manifests
     assert mounted["/run/agentplane/workload-trust"]["configMap"]["name"] == "agentplane-workload-ca-bundle"
 
 
-def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifests: list[dict[str, Any]]) -> None:
-    settings = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
-    assert public_coder_egress.NAMESPACE not in settings["caller_service_account_namespaces"]
+def test_public_coder_namespace_is_not_an_action_service_caller(
+    staging_manifests: list[dict[str, Any]], staging_settings: dict[str, Any]
+) -> None:
+    assert public_coder_egress.NAMESPACE not in staging_settings["caller_service_account_namespaces"]
     assert not any(
         doc["kind"] == "WorkloadCredential" and doc["metadata"]["namespace"] == public_coder_egress.NAMESPACE
         for doc in staging_manifests
@@ -295,10 +304,11 @@ def test_disabling_sampler_delegation_removes_its_caller_and_ingress_rule(
     )
 
 
-def test_staging_session_delegation_tools_and_peer_credentials(staging_manifests: list[dict[str, Any]]) -> None:
+def test_staging_session_delegation_tools_and_peer_credentials(
+    staging_manifests: list[dict[str, Any]], staging_settings: dict[str, Any]
+) -> None:
     namespace = staging.ENV.namespace
-    settings = config_map_yaml(staging_manifests, f"{actions.NAME}-settings", "settings.yaml")
-    groups = settings["action_groups"]
+    groups = staging_settings["action_groups"]
     assert groups["environments"]["executor"]["kind"] == "session_delegation"
     assert set(groups["environments"]["direct_tools"]) == {"get", "list", "resume"}
     assert groups["sessions"]["executor"]["kind"] == "session_delegation"
@@ -314,8 +324,8 @@ def test_staging_session_delegation_tools_and_peer_credentials(staging_manifests
     dispatcher = runner_gateway.sessions_service(namespace)
     history = history_service.service(namespace)
     environments = environment_service.environments_service(namespace)
-    assert settings["environment_service"]["target"] == environments.authority
-    assert settings["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
+    assert staging_settings["environment_service"]["target"] == environments.authority
+    assert staging_settings["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     deployment = find_resource(staging_manifests, "Deployment", actions.NAME)
     pod = deployment["spec"]["template"]["spec"]
     container = one(item for item in pod["containers"] if item["name"] == actions.NAME)
@@ -329,7 +339,7 @@ def test_staging_session_delegation_tools_and_peer_credentials(staging_manifests
         ("history_service", HISTORY_SERVICE_URI, history.authority),
         ("session_delegation_history", HISTORY_SERVICE_URI, history.authority),
     ]:
-        peer = settings[peer_name]
+        peer = staging_settings[peer_name]
         assert peer["target"] == target
         assert peer["token_file"] == ""
         tls = peer["tls"]
