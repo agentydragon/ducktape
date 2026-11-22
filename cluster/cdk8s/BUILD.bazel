@@ -967,7 +967,6 @@ py_library(
         "//airlock/oauth:config",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

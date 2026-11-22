@@ -20,7 +20,6 @@ py_library(
         "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
