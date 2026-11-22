@@ -121,6 +121,8 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 	tlsRoute := "platform_routes: {listen_address: 127.0.0.1:3130, routes: {rules: {service_prefixes: [/rules.Service/], upstream: 'rules.test:8081', transport: {mode: tls_connect, server_uri: " + peertls.EgressProxyURI + "}}}}\n"
 	for name, content := range map[string]string{
 		"unknown key":                              required + "proxy_hots: typo\n",
+		"extra YAML document":                      required + "---\n{}\n",
+		"malformed trailing YAML":                  required + "---\n[\n",
 		"legacy proxy field":                       "proxy_host: p.example\ntoken_file: /token\n",
 		"proxy unknown key":                        strings.Replace(required, "transport:", "extra: true, transport:", 1),
 		"transport unknown key":                    strings.Replace(required, "auth:", "extra: true, auth:", 1),
