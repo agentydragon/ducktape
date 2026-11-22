@@ -1,44 +1,34 @@
 {
-  "validated_at_utc": "2026-11-21T15:29:09.733305+00:00",
-  "validation_scope": "RBE Chromium preview of the report, its evidence and shared assets, and the report index.",
-  "invocation": "196dff60-e236-4125-8170-9d3e1217df37",
-  "invocation_url": "https://app.buildbuddy.io/invocation/196dff60-e236-4125-8170-9d3e1217df37",
-  "target": "//devinfra/ci/x/latency_report_preview:test_preview",
-  "cases": [
-    "test_preview[desktop-dark]",
-    "test_preview[desktop-light]",
-    "test_preview[mobile-dark]",
-    "test_preview[mobile-light]"
+  "invocation": "e11e4190-08e1-4974-bd95-3c7420af798c",
+  "invocation_url": "https://app.buildbuddy.io/invocation/e11e4190-08e1-4974-bd95-3c7420af798c",
+  "validated_at_utc": "2026-11-22T03:11:19.038195+00:00",
+  "target": "//debug/ci_feedback_preview:preview_test",
+  "checks": [
+    "RBE Chromium at 1440 and 390 CSS pixels, light and dark, live color preference switching, actual CDN response, no page or request errors, daily disclosure and root navigation."
   ],
-  "screenshots_digest_verified": 14,
   "screenshot_sha256": {
-    "navigation-desktop-dark.png": "c478646437e989b81f156b8adff2b11ad85902bb3d5e5e73b24cb368d9708647",
-    "navigation-desktop-light.png": "a26ae047384460bb6a4b819123143868ce3dc9f7c94fc67cfdb09e80b2fee336",
-    "navigation-mobile-dark.png": "537575899e6da8c8c7e2d52bd4cc1b165820bbbe3d3c94b10d2efd4679bea957",
-    "navigation-mobile-light.png": "7cb62a46756290cc6d1de97119b650ca2f80d389b5f375c1dac0b9f034fb2ec3",
-    "retained-ssd-desktop-dark.png": "02ba44aae0264d2e79e9a7e63974ba5ea5de0b41c332c8f1687a6b41cb3c3ce9",
-    "retained-ssd-desktop-light.png": "6f3cb5a479801f444db03d295cad6b2d5d3dafc3468c355327074069bab374e5",
-    "retained-ssd-expanded-desktop-dark.png": "474d06ad737e5ecad110c3515992748261abdc83c75df6fb9369f6bfdb687d68",
-    "retained-ssd-expanded-desktop-light.png": "67e3cdb883339e3d72fbaa46caa588ce47da9737dc538b48914c61dd4ca07480",
-    "retained-ssd-expanded-mobile-dark.png": "9e9739beef4c6e4ac8a588cc934e210e6ab049f99d824e5db987438b850704ae",
-    "retained-ssd-expanded-mobile-light.png": "d01a3f67742fd7a42bb11e2ea4c9305c2e5773dce7e05a3f84df2b68df4e6d5c",
-    "retained-ssd-expanded-scrolled-mobile-dark.png": "e1169ffb8aff29ee4ba166f9560c4a0860de0f0e8d9fce5bbf1e8b1117e05d39",
-    "retained-ssd-expanded-scrolled-mobile-light.png": "e6ae77602b872f0446f39535b6661c147d0c18c9856aa191a36619b6ea9a2fff",
-    "retained-ssd-mobile-dark.png": "ec904e30068be480d29c364fe4ff8442e2a386b06ba636bc4b5da81925394f60",
-    "retained-ssd-mobile-light.png": "0c6bf21a08f25e97b38ca3252fd6248bf134cfd3d832a1b1e4259c626444be82"
+    "light-1440-change-class.png": "44f7adeb05cfc7cb4839e33953b1334ac03b4beb658ab572bcc7edfd07ce2c22",
+    "light-1440-weekly.png": "d5b1aa22102fa526f393810b6cda0b6ec333463598e4151e6f727b7e800b7d84",
+    "dark-390-shard-replay.png": "d83813adfc7cdf767311a7ad9755fc904d954a9d4a07690af221b71ef2f82eaf",
+    "dark-390-weekly.png": "7a04388a0245d4351eb03e3bd4009e95f7f546e31e397b8c2d970a4923031704",
+    "dark-1440-change-class.png": "00732b72d87724620889b71f11eedc51bde3e0f681a9896199ce8ef2a21a8848",
+    "light-1440-shard-replay.png": "48fdfd34fbd381aba013ce420a13d71a087647fbd8fbd9cd3cc16f9d30f117a5",
+    "dark-1440-shard-replay.png": "ac24d249f383e5e8e7e3382da1f00fdd1b6cdbb343eaf4912d36c43adae9311c",
+    "dark-390-change-class.png": "a68d47c2317ca20bfdcd402a3e0a39b8ad14c3a5a9e04b7b9341889d29c6b4b1",
+    "light-390-weekly.png": "0432aedb5338d0c4c04845ae3b0c64b5867b7722351cba5f751ea1eac753760f",
+    "dark-1440-runner-bootstrap.png": "3f93e2f5a7974c89886b91f60bbe05806b1e09deee3e49307fd2ef16ad6fb0a1",
+    "dark-1440-weekly.png": "ffc48e48e000e9589d4e867d9dfdf0552f3acb2a8a9dda6cf51bbb1062c57da5",
+    "light-1440-runner-bootstrap.png": "a5ffc1851e288d64855335327c8213bd62ae821769eb9f0a8400e5c77eaedaea",
+    "light-390-shard-replay.png": "43193d9d4d70d4718556827b7958aa6f4aadf9d869ab0f85ddd98194ae19ea1a",
+    "light-390-runner-bootstrap.png": "005aa599218e7150710d1d1a0d2d17a941b6b8adc4ddbe195a0cd660f65847dc",
+    "light-390-change-class.png": "b865511b55e53c6ea730ca8cad6361ab9c286a8f7a1b59ea2ae836c35845b51e",
+    "dark-390-runner-bootstrap.png": "6051e49d8ad62684bdb2ffc8e9768db899aa4b187bfcd80c4e5432a75e02dd34"
   },
   "rendered_sha256": {
-    "index.html": "c9d614510f0ee4bddfc6a9dfc40dcd87e5c18011f4dd669f674c0ee9057b683e",
-    "latency/index.html": "c66961c1f48b72f96a12b224d25cc3a3088c96e0006e6c1fe6a6f6173a903cec",
-    "latency/evidence.json": "4050123d3661f34c8c3dd45e28fa82b242cb133e2449d81f6a6b1c27a533f89f",
+    "latency/index.html": "56c9bf42b4520464683cedd4344d26388fb1afda9bf26f510b5a7778f7e049ba",
+    "latency/evidence.json": "18a30ec8f94413a204fa905c36f3b4f35bdecf552751d66654ca8d8ef6d043d9",
+    "index.html": "9f3b5eea5f9cbfb233038254a44e2009834aa335e819b275c4cab0802a8da967",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
-  },
-  "checks": [
-    "Manifest hashes, initial and changing color preference, external assets and populated charts.",
-    "The cold and retained SSD run links and measured writes render. The phase disclosure expands and the mobile table scrolls through its last column.",
-    "The root report index links to the retained SSD result and the earlier work-disk report remains available.",
-    "Visual review of the retained SSD comparison and expanded phase table and root navigation in desktop and mobile screenshots.",
-    "No browser page errors or failed network requests."
-  ]
+  }
 }

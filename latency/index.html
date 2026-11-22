@@ -63,10 +63,11 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=4050123d3661f34c8c3dd45e28fa82b242cb133e2449d81f6a6b1c27a533f89f",
+        "./evidence.json?v=18a30ec8f94413a204fa905c36f3b4f35bdecf552751d66654ca8d8ef6d043d9",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
+      const fresh = evidence.nov22_feedback;
       const podAdmission = evidence.managed_pod_admission;
       const cas = evidence.cas_followup;
       const overlap = evidence.firecracker_overlap;
@@ -84,7 +85,7 @@
       const kvmWorkDisk = evidence.kvm_work_disk_trial;
       const retainedVm = evidence.kvm_retained_vm_ssd;
       const gh = "https://github.com/agentydragon/ducktape";
-      const source = evidence.source_devel_commit;
+      const source = evidence.retained_nov20_source;
       const post = "after shadow retired";
       const groups = evidence.groups.filter((g) => g.period === post);
       const byPr = new Map(evidence.cases.map((c) => [c.pr, c]));
@@ -162,37 +163,134 @@
       function Report() {
         return html`<${Container} component="main" size="72rem" py="xl" style=${{ overflowWrap: "anywhere" }}>
           <${Stack} gap="xl">
-            <header>
-              ${link("../", "Ducktape reports")}
-              <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
-              <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM storage follow-ups added 21 November<//>
-              <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
-              <${Text} mt="sm">In the ${hhmm(census.window_utc[0])}–${hhmm(census.window_utc[1])} UTC refresh on 21 November, ${census.overall.outcomes.green ?? 0} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.eligible_prs - (census.overall.outcomes.green ?? 0)} heads had yet to reach green.<//>
-              <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs. It excludes superseded and unmatched heads. The weekly chart retains its original population.<//>
-            </header>
-            <section id="weekly-trend">
-              <${Title} order=${2}>Daily time to green · 13–19 November<//>
-              <${Text} my="sm">50 sampled PR heads per UTC day across change classes. Time starts at CI workflow creation and ends when all three required checks pass. Failed or unfinished heads contribute to the sample count only. Changes in the daily PR mix can move both lines.<//>
-              <div role="img" aria-label="Median and 90th percentile minutes to required green by UTC day">
-                <${LineChart} h=${225} data=${evidence.weekly_feedback.daily.map((d) => ({ day: d.day.slice(8), median: d.median_s / 60, p90: d.p90_s / 60 }))} dataKey="day" series=${[
-                  { name: "median", label: "Median", color: "blue.6" },
-                  { name: "p90", label: "p90", color: "orange.6" },
-                ]} withLegend curveType="linear" yAxisLabel="Minutes" yAxisProps=${{ tickFormatter: (v) => String(v) }} valueFormatter=${(v) => time(v * 60)} />
-              </div>
-              <${Accordion} variant="contained"><${Accordion.Item} value="weekly-counts"><${Accordion.Control}>Daily times and included heads<//><${Accordion.Panel}>
-                ${table(
-                  ["November UTC", "Green / sampled", "Median", "p90"],
-                  evidence.weekly_feedback.daily.map((d) => [
-                    d.day,
-                    `${d.n} / ${d.sampled}`,
-                    time(d.median_s),
-                    time(d.p90_s),
-                  ]),
-                  330,
-                )}
-              <//><//><//>
-            </section>
+<header>
+ ${link("../", "Ducktape reports")}
+ <${Title} order=${1} mt="md">PR time to green<//>
+ <${Text} size="lg" mt="sm">Required checks took 3m04s at the median and 8m57s at p90 from CI workflow creation, among 175 green heads. Of 245 sampled, 48 ended canceled and 22 failed. Five reached green on a later attempt.<//>
+ <${Text} size="sm" c="dimmed" mt="sm">15–21 November 2026 UTC · 35 same-repository PR heads per day · each day has equal weight · push, review, conflict and subscriber receipt times are unobserved.<//>
+ <${Group} gap="md" mt="sm">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}${link("#method-current", "Sampling and policy")}<//>
+</header>
+<section id="weekly-trend">
+ <${Title} order=${2}>Daily required-check feedback<//>
+ <${Box} role="img" aria-label="Median and p90 minutes among green heads by UTC day">
+ <${LineChart} h=${230} data=${Object.entries(fresh.daily).map(([date, r]) => ({ day: date.slice(-2), Median: r.median_s / 60, p90: r.p90_s / 60 }))} dataKey="day" withLegend curveType="linear" yAxisLabel="Minutes" yAxisProps=${{ tickFormatter: (v) => String(v) }} series=${[
+   { name: "Median", color: "blue.6" },
+   { name: "p90", color: "orange.6" },
+ ]} valueFormatter=${(v) => time(v * 60)} /><//>
+ <${Accordion} variant="contained"><${Accordion.Item} value="daily"><${Accordion.Control}>Daily sample counts and times<//><${Accordion.Panel}>
+ ${table(
+   ["November UTC", "Eligible heads", "Green / 35", "Median", "p90"],
+   Object.entries(fresh.daily).map(([d, r]) => [
+     d,
+     fresh.frame.byday[d],
+     r.n,
+     time(r.median_s),
+     time(r.p90_s),
+   ]),
+   430,
+ )}
+ <//><//><//>
+</section>
+<section id="change-class">
+ <${Title} order=${2}>What changed on the head commit?<//>
+ <${Text} my="sm">Backend edits took 9m49s at the median. Five of the 15 green backend heads needed a second Bazel attempt, including all three heads above half an hour. Docs edits reached green in 2m01s at the median. These classes use the last commit’s files so superseded heads count too. A PR can contain earlier changes in a different class.<//>
+ ${table(
+   ["Head commit", "Sample", "Green", "Failed", "Canceled", "Median", "p90"],
+   Object.entries(fresh.edits).map(([g, r]) => [
+     g,
+     r.sampled,
+     r.n,
+     r.outcomes.failed ?? 0,
+     r.outcomes.cancelled ?? 0,
+     time(r.median_s),
+     r.n < 10 ? "—" : time(r.p90_s),
+   ]),
+   615,
+ )}
+ <${Text} size="sm" c="dimmed" mt="sm">p90 shown for at least ten green heads. The evidence also groups the 124 heads whose full PR file list could be verified. Most failed or superseded heads lacked a verifiable current file list.<//>
+ <${Text} mt="sm">Test & Build finished last on 166 of 175 green heads, imports on eight and Pre-commit on three, including two ties. Moving Test & Build one minute earlier would save 47s on average with both other clocks fixed. Six heads spent at least two minutes setting up Nix on a required gate.<//>
+</section>
+<section id="backend-recovery">
+ <${Title} order=${2}>Retries explain the backend tail<//>
+ <${Text} my="sm">The five first attempts failed in four places. On #16972 the VM test failed, 21m55s elapsed before GitHub created the retry job, and the new runner started two seconds later. GitHub identifies the triggering accounts as users. The request source and reason for each wait are unknown.<//>
+ ${table(
+   ["PR", "First failure", "Red to next job created", "Required green"],
+   fresh.recoveries.map((r) => [
+     pr(r.pr),
+     link(r.failure, r.reason),
+     time(r.gap),
+     time(r.green),
+   ]),
+   555,
+ )}
+ <${Text} mt="sm">Both VM failures precede the required KVM cutover. Keep the existing 27 November or 50-fresh-execution follow-up for that route. The Pod failure was a managed Firecracker snapshot restore error before the test could run. Reducing VM scenario time or adding GitHub slots would leave that failure mode in place.<//>
+</section>
+<section id="shard-replay">
+ <${Title} order=${2}>Time the longest browser shard<//>
+ <${Text} my="sm">The action-presentation suite renders real approval and result surfaces at desktop and mobile widths. Pytest distributes cases by collection position. On #18283, all 16 shards ran fresh. They consumed 56.9 process-minutes and 74.2 CPU-minutes. Shard 11 took 300s of a 360s Bazel critical path. On #18753, shard 4 took 197s of a 328s critical path.<//>
+ ${table(
+   [
+     "Case-duration replay",
+     "Cases",
+     "Longest original sum",
+     "Longest redistributed sum",
+   ],
+   [
+     ["#18283 · fit", 524, "269.4s", "199.7s"],
+     ["#18753 · held out", 526, "182.3s", "149.6s"],
+   ],
+   500,
+ )}
+ <${Text} my="sm">The replay assigns the longest predicted case to the least-loaded of 16 shards, using #18283 JUnit durations and its median for two new cases. The held-out column uses #18753’s actual durations after placement. The 32.7s difference excludes worker queues, fixture setup and other work on the head.<//>
+ <${Text} my="sm">Keep the current shard assignment. In the real same-source trial, both arms passed all 529 cases. The weighted plan moved 491 cases and shortened the slowest fresh process by just 0.57s (171.77s to 171.20s). Total process time rose from 2,287s to 2,289s. Both arms waited under 0.07s for a worker on every shard. With this control’s per-case costs held fixed, the new placement predicted only 8.9s less case time. Actual case durations varied between arms. This trial does not justify maintaining a weight table.<//>
+ <${Text} size="sm">${build("2c599231-1058-50fe-8598-135673389153", "First critical path")} · ${build("0382f6c0-75e7-5b8e-b33c-d2956833e35e", "Held-out critical path")} · ${build("bbf765f9-0996-4b81-b8d8-d324217cb64f", "Same-source trial")}<//>
+</section>
+<section id="runner-bootstrap">
+ <${Title} order=${2}>Three checks slowed during the same cache incident<//>
+ <${Text} my="sm">On #18430, Pre-commit setup took 609s and the hooks took 14s. The runner reported an HTTP/2 stream error fetching rustc from the public Attic cache. Rustfmt skipped all four changed files. Test & Build and imports also spent 391s and 392s on Nix setup. Their logs end long silent intervals within the same second. Only the Pre-commit log identifies the failed transfer.<//>
+ <${Text} my="sm">Across 175 green heads, setup medians were 15s for Test & Build, 32s for imports and 36s for Pre-commit. Six heads had a setup interval of at least 120s. Shortening Pre-commit alone on #18430 would have moved the finish to Test & Build, saving at most 139s. The other gates must also improve to recover the rest.<//>
+ <${Text} my="sm">For this tail, split rustfmt from the base pre-commit tool closure and install it when the tested file list selects the Rust hook. Preserve the full toolset for unclassified and all-file runs and publish both closures to the public cache. Check that a Rust edit still invokes the pinned formatter, a non-Rust edit executes all applicable hooks, and the smaller closure excludes rustc. In the local closure trial, removing only rustfmt removed rustc and reduced the closure from 2,741 MB to 2,303 MB. The lean profile passed all applicable hooks on the four files at the exact #18430 head. The full profile passed the rustfmt hook on a tracked Rust file. Closure size is unpacked store size. Cold GitHub transfer time remains unmeasured.<//>
+ <${Text} size="sm">${link("https://github.com/agentydragon/ducktape/actions/runs/44862337516/job/136718280457", "Pre-commit log")} · ${link("https://github.com/agentydragon/ducktape/actions/runs/44862337456/job/136718280065", "Imports log")} · ${link("https://github.com/agentydragon/ducktape/actions/runs/44862337453/job/136718280338", "Bazel job")}<//>
+</section>
+<section id="cdk8s-trial">
+ <${Title} order=${2}>Sharing one chart saved little in a matched test<//>
+ <${Text} my="sm">#18790 shared one direct Platform Sessions chart across three checks and read chart objects directly. In one remote invocation on the same production source, all eight named cases passed in each of three runs per version. Fresh TestRunner process time averaged 13.43s before and 13.04s after. CPU averaged 17.10s and 16.12s. The wall-time ranges overlapped. Keep the simpler fixture. This result gives little reason to prioritize more conversions for PR speed.<//>
+ <${Text} my="sm">On infrastructure PR #18621, mypy on the manifest generator occupied 57.0s of the 58.0s inner critical path. A faster Platform Sessions test would leave that chain intact. The earlier single-worker SSD and cache experiments answer a different question about KVM fixtures.<//>
+ <${Text} size="sm">${pr(18790)} · ${build("8b170c77-2a90-4f74-ab24-30e5fc0dc7b8", "Six fresh runs")} · ${build("c5e74f5e-f5a5-5f57-aee9-ef38b36378d0", "Infrastructure critical path")}<//>
+</section>
+<section id="current-clocks">
+ <${Title} order=${2}>Where the time went<//>
+ ${table(
+   [
+     "PR",
+     "CI created UTC",
+     "Runner wait",
+     "Remote step UTC",
+     "Required green",
+     "Last gate",
+   ],
+   fresh.cases.map((c) => [
+     link(c.job, "#" + c.pr),
+     utc(c.start),
+     seconds(c.assignment),
+     utc(c.remote_start) + "–" + utc(c.remote_end),
+     time(c.green),
+     c.last,
+   ]),
+   640,
+ )}
+ <${Text} mt="sm">In the separate 01:20–02:50 UTC window on 22 November, 31 completed assigned PR Test & Build jobs waited 2s at both median and p90 for GitHub assignment. Completed jobs accounted for at least 19.91 runner-hours, peaking at 32 simultaneous jobs. This includes runners waiting on Remote Bazel. The fixed window excludes carry-in workflows and unfinished occupancy. A separate live-run sweep raced pagination (14 of 16 records).<//>
+ <${Text} mt="sm">On one live PR, the GitHub check was visible 35s after workflow creation. The BuildBuddy log was readable during execution. The GitHub job log returned 404 at 03:00:07 UTC and HTTP 200 in the 03:00:29 poll. The check read in that poll still said in progress. The 03:00:50 poll showed completion, stamped 03:00:28. Polls were about 21s apart and read the job, check and log sequentially. Default PR subscriptions cover completed checks and commit statuses. Actual inbox delivery and agent reads were unobserved.<//>
+ <${Text} size="sm">${link(fresh.signal[0].job, "Observed GitHub job")} · ${build(fresh.live_bb.invocation, "BuildBuddy log")}<//>
+</section>
+<section id="method-current">
+ <${Title} order=${2}>Sample and limits<//>
+ <${Text} my="sm">GitHub returned 3,912 PR CI workflow runs across seven complete UTC days. We excluded 594 fork or deleted-repository runs and 11 runs linked to another base, then deduplicated 3,222 heads. Runs with missing PR associations remain in the frame. Each day contributes the 35 lowest hashes of the head SHA with a fixed salt. Daily frames range from 115 to 881 heads. Pooled times describe this equal-day sample. The earlier 13–19 November sample used another frame, so the difference cannot establish a speedup.<//>
+ <${Text} my="sm">The clock starts at the first observed ci.yml PR run creation on the sampled branch and SHA. It stops at the first simultaneously accepted results for the three required contexts from matching PR workflow suites, including retries. Canceled and failed heads remain in the denominator. Current devel rules require a PR, linear history, zero ordinary approvals and an extra approval on unattributed changes. Required checks use non-strict mode. Auto-merge is enabled. Historical draft, conflict and review transitions lack timestamps here.<//>
+ <${Text} size="sm">${link(gh + "/rules/15894562", "Ruleset")} · ${link(gh + "/tree/" + fresh.source, "Inspected devel source")} · ${link(gh + "/tree/208d6f705e2fe4ae78204b3dc9f1d1c472f17b54/latency", "Previous snapshot and experiments")}<//>
+</section>
+<${Title} order=${2}>Earlier measurements · 19–21 November<//>
+
             <section id="cohort">
               <${Title} order=${2}>20 November follow-up · PR time by change class<//>
               <${Text} my="sm">From the first observed CI workflow creation for the exact head to the last accepted required check. Backend heads took 10m24s at the median and 23m27s at p90. The 67 post-shadow heads include 60 green, one failed, five canceled and one incomplete. Green timing includes successful reruns. Push time, historical merge eligibility and agent receipt remain unobserved.<//>
@@ -689,7 +787,7 @@
               <${Text} mt="sm">Across the selected backend and fixture invocations, 1,072 unique originating TestRunner actions used 27.68 process-hours and 46.99 observed CPU-hours. CPU was missing for 37 actions, including all sampled KVM VM and Firecracker actions. Thread-browser shards consumed 3.44 process-hours across 112 actions. Runner hours and remote action costs use different clocks.<///>
             </section>
             <section id="actions">
-              <${Title} order=${2}>Where to spend the next investigation<///>
+              <${Title} order=${2}>20 November investigation priorities<///>
               ${table(
                 ["Priority", "Change or test", "Expected effect and boundary"],
                 [
@@ -716,7 +814,7 @@
             </section>
             <${Accordion} variant="separated">
               <${Accordion.Item} value="method">
-                <${Accordion.Control}>Population, clocks and provenance<//>
+                <${Accordion.Control}>19–20 November population and clocks<//>
                 <${Accordion.Panel}>
                   <${Text} mb="sm">151 exact latest heads sampled from 264 matching heads across 19 November 20:00 through 20 November 21:12 UTC. GitHub returned 888 PR CI runs for the full window. The frame includes earlier heads and cross-repository runs. Gate estimates use only the joined latest same-repository devel heads with complete changed-file classes, plus one large-diff head in an unclassified row. Exact check attempts and cutoff outcomes appear in the evidence. These are balanced path samples and the earlier 10–16 November report used a different sampling frame.<///>
                   <${Text} mb="sm">The devel ruleset requires Test & Build, Pre-commit and Build artifacts + imports, with non-strict status checks and zero ordinary approvals. It requires a PR, linear history and extra approval for unattributed changes. Auto-merge is enabled in repository settings. Historical draft, review and conflict transitions were unavailable. Of the 60 green post-shadow heads all were already merged at collection. The sample does not assign auto-merge-ready timestamps.<///>
