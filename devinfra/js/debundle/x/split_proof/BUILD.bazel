@@ -5,9 +5,9 @@
 # gazelle:exclude lowering
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_binary")
+load(":experiments/splits/sweep.bzl", "real_split_sweeps")
 
 exports_files(
     [
@@ -219,21 +219,4 @@ js_binary(
     tags = ["manual"],
 )
 
-sh_binary(
-    name = "real_split_sweep",
-    srcs = ["experiments/splits/run_all.sh"],
-    args = [
-        "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:prepare_real_bundles)",
-        "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lower)",
-        "$(rlocationpath :real_split)",
-        "$(rlocationpath :summarize_real_splits)",
-    ],
-    data = [
-        ":real_split",
-        ":summarize_real_splits",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/translation:prepare_real_bundles",
-    ],
-    tags = ["manual"],
-    use_bash_launcher = True,
-)
+real_split_sweeps()

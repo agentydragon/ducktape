@@ -977,9 +977,9 @@ js_test(
 js_library(
     name = "bazel_parser",
     srcs = ["bazel_parser.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
     deps = [
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
     ],
-    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )

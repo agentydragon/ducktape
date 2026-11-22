@@ -16,19 +16,19 @@ bbr test "$p/..." --config=ci
 
 Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused checks and longer experiments, use the following commands with the same `p` (`out` is an absolute output path):
 
-| Task                                                         | Command                                                                                               |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                                     |
-| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                                   |
-| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`                           |
-| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                                 |
-| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                              |
-| Fuzz the example renderer                                    | `bb run "$p:render_fuzz" -- 600 1`                                                                    |
-| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/translation:effects_cases_test"` |
-| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted`     |
-| Run the extended CoreJS comparison                           | `bbr test "$p/translation:corejs_differential_sweep_test"`                                |
-| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                        |
-| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                                    |
+| Task                                                         | Command                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                     |
+| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                   |
+| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
+| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
+| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
+| Fuzz the example renderer                                    | `bb run "$p:render_fuzz" -- 600 1`                                                    |
+| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/translation:effects_cases_test"`         |
+| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
+| Run the extended CoreJS comparison                           | `bbr test "$p/translation:corejs_differential_sweep_test"`                            |
+| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
+| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
 
 To refresh the checked-in example instance after changing the inputs:
 
@@ -346,7 +346,6 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 | `extract/`                                  | JavaScript front end for the example (`extract.mjs`)                                                                                                                                       |
 | `example/`                                  | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                               |
 | `fuzz/`                                     | fuzzer and mutation test                                                                                                                                                                   |
-| `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by `run.sh` and Bazel tests                                                                                                               |
+| `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by the Bazel commands above                                                                                                               |
 | `translation/`, `effects/`, `model/`        | Translation validator, footprint analysis cases, and the CoreJS differential harness                                                                                                       |
 | `experiments/`                              | [research notes](experiments/README.md) and [timings](experiments/TIMINGS.md); research scripts in `scaling/`, `splits/`, `proof_search/`, and `esmeta/`; raw timing records in `records/` |
-| `run.sh`                                    | everything, end to end                                                                                                                                                                     |

@@ -222,7 +222,20 @@ bb run "$p:compare_footprints" -- "$out/"*.json
 ## 7. Real splits: halves, cuts, blocks, random placements
 
 A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
-Run `bb run //devinfra/js/debundle/x/split_proof:real_split_sweep -- "$out"` with an absolute output directory. The sweep prepares the bundles, computes footprints once per bundle, and writes a fresh results directory with JSONL and a summary. Add `--sample` for one semver split.
+Each bundle has an opt-in Bazel test, with the same strategies as the full sweep.
+Run one library variant or the whole corpus from the repository root:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p:real_split_zod_test"
+bbr test "$p:real_split_zod_min_test" --test_arg=--sample
+bbr test "$p:real_split_sweep"
+```
+
+The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
+`real_split_lodash_test`, and `real_split_semver_test`. Each test builds only its own
+bundle, computes its footprints once, and publishes JSONL and a summary as Bazel
+test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
 
 For every split, `lowersplit --force` checks it and writes the modules even when a check rejects it. Then [`splits/smoke.mjs`](splits/smoke.mjs) calls the
 entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
