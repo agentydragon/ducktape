@@ -222,7 +222,6 @@ py_test(
         "//finance/augur/sim:schedule",
         "//finance/augur/sim/testing:tlh",
         "//finance/augur/x/models:independent",
-        "//finance/augur/x/models:provider_config",
         "@pypi//more_itertools",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -275,6 +274,8 @@ py_library(
         "//finance/augur/api:product_service",
         "//finance/augur/api:wire",
         "//finance/augur/model:exogenous",
+        "//finance/augur/x/models:independent",
+        "//finance/augur/x/models:provider_config",
         "@pypi//pytest",
     ],
 )

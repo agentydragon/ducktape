@@ -33,7 +33,7 @@ from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.level_series_groups import SecurityDistributionGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.conftest import MakeProductService, with_fixture_macro
 from finance.augur.product.holdings import Distribution, opening_holdings
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, locations_by_id, resolve_primary_agent_id
 from finance.augur.product.service import ProductService
@@ -43,7 +43,7 @@ from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
 from finance.augur.sim.income import InterestIncome, Taxable, Treasury
 from finance.augur.sim.testing.tlh import NO_HARVEST
 from finance.augur.x.models.independent import IndependentProviderConfig
-from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
+from finance.augur.x.models.provider_config import ProviderConfig
 
 _SYMBOL = SecuritySymbol("bnd")
 _UNITS = 2_000.0
@@ -63,33 +63,19 @@ def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> Provi
     a stand-in that emitted only the fund would fail the request before reaching the engine.
     """
 
-    # The fixture's preset is composite(mirroring(independent)); asserted rather than matched
-    # so a fixture reshaped underneath this test fails here instead of silently patching nothing.
-    assert isinstance(model, CompositeProviderConfig)
-    macro = model.macro
-    assert isinstance(macro, MirroringProviderConfig)
-    inner = macro.model
-    assert isinstance(inner, IndependentProviderConfig)
-    return model.model_copy(
-        update={
-            "macro": macro.model_copy(
-                update={
-                    "model": inner.model_copy(
-                        update={
-                            "asset_prices": inner.asset_prices.model_copy(
-                                update={
-                                    "security": {**inner.asset_prices.security, _SYMBOL: Constant(value=_MODEL_PRICE)}
-                                }
-                            ),
-                            "security_distributions": SecurityDistributionGroups(
-                                security_distribution=({_SYMBOL: Constant(value=_PER_UNIT_USD)} if distributes else {})
-                            ),
-                        }
-                    )
-                }
-            )
-        }
-    )
+    def with_fund(inner: IndependentProviderConfig) -> IndependentProviderConfig:
+        return inner.model_copy(
+            update={
+                "asset_prices": inner.asset_prices.model_copy(
+                    update={"security": {**inner.asset_prices.security, _SYMBOL: Constant(value=_MODEL_PRICE)}}
+                ),
+                "security_distributions": SecurityDistributionGroups(
+                    security_distribution=({_SYMBOL: Constant(value=_PER_UNIT_USD)} if distributes else {})
+                ),
+            }
+        )
+
+    return with_fixture_macro(model, with_fund)
 
 
 def _with_bond_fund(config: Config, tax_character: tuple[DistributionTaxShareConfig, ...] | None) -> Config:

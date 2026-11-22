@@ -10,6 +10,8 @@ from finance.augur.api.product_service import build_product_service
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.exogenous import Sampler
 from finance.augur.product.service import ProductService
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 
 # What the `make_product_service` fixture hands tests: build a ProductService for one model.
 MakeProductService = Callable[..., ProductService]
@@ -33,3 +35,14 @@ def make_product_service(augur_config: Config, catalog: CatalogResponse) -> Make
         return build_product_service(cfg, {"current_model": model}, catalog=cat)
 
     return _make
+
+
+def with_fixture_macro(
+    provider: ProviderConfig, update: Callable[[IndependentProviderConfig], IndependentProviderConfig]
+) -> CompositeProviderConfig:
+    """Edit a fixture preset's independent series while retaining its mirrors and PE provider."""
+    assert isinstance(provider, CompositeProviderConfig)
+    macro = provider.macro
+    assert isinstance(macro, MirroringProviderConfig)
+    assert isinstance(macro.model, IndependentProviderConfig)
+    return provider.model_copy(update={"macro": macro.model_copy(update={"model": update(macro.model)})})
