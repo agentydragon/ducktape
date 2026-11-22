@@ -249,17 +249,17 @@ py_test(
     data = [
         "//agentplane/crds",
         K3S_BINARY,
-        ":pod_image_manifest",
+        ":pod_native_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
+        "//agentplane/system_tests/suites:pod_native_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
         "test.runner-recycling-key": k3s_recycling_key(vm = False),
@@ -267,9 +267,6 @@ py_test(
     tags = K3S_TAGS + ["manual"],
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
@@ -606,7 +603,6 @@ py_library(
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:runtime_proxy",
         "//agentplane/system_tests/scenarios:session_instructions",
-        "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:thread_history",
         "@pypi//pytest",
@@ -762,6 +758,42 @@ py_test(
         "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Storage mutates its own template and requires a stack with no other Sandboxes.
+py_test(
+    name = "test_pod_storage",
+    size = "enormous",
+    srcs = ["test_pod_storage.py"],
+    data = [
+        "//agentplane/crds",
+        K3S_BINARY,
+        ":pod_native_image_manifest",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "//agentplane/system_tests/suites:pod_native_manifests.json",
+        "@cert_manager_v1_21_2_release//file",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = False),
+    },
+    tags = K3S_TAGS,
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:storage",
         "@pypi//pytest_bazel",
     ],
 )

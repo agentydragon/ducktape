@@ -33,6 +33,7 @@ because it scales the app to zero after OAuth consent.
 | Target                                                                 | Coverage                                              |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
 | `//agentplane/system_tests/suites:test_pod`                            | App-backed Pod Sandbox scenarios                      |
+| `//agentplane/system_tests/suites:test_pod_storage`                    | Native Pod workspace replacement                      |
 | `//agentplane/system_tests/suites:test_pod_platform`                   | Native Pod workload trust and Egress credentials      |
 | `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and native CLI History reads         |
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
@@ -65,8 +66,7 @@ the [live-test instructions](#running-live) explain how to run them.
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
 which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
 own shared deployment/model-server lifetime, while each callback owns its clients, guests, and
-cleanup. The storage case carries an explicit exclusivity marker and runs before other Pod cases,
-so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
+cleanup. The storage case owns a separate stack with no other Sandboxes. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
 `case_timeout(seconds)` starts with the scenario, after shared deployment setup. It is separate
@@ -90,8 +90,8 @@ For matched concurrency experiments, override the slot count with
 `--test_env=AGENTPLANE_POD_CASE_LIMIT=2` (or another positive count). Claude and Codex
 open separate Sessions on that same Sandbox. Protocol cases reuse their worker's Sandbox; a
 fresh-guest case deletes its worker's cache before creating its own guests. Current nonexclusive
-cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Storage runs
-alone before the workers start. Failed guest cleanup aborts the batch before further allocations.
+cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Failed guest
+cleanup aborts the batch before further allocations.
 
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and

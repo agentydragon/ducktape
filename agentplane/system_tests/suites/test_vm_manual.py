@@ -23,15 +23,9 @@ pytest_plugins = ("agentplane.system_tests.vm.pytest_plugin", "agentplane.system
 pytestmark = pytest.mark.vm_sandboxes
 
 
-async def test_fresh_workspace_storage_survives_replacement(
-    cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, executor: Executor
-) -> None:
+async def test_fresh_workspace_storage_survives_replacement(cluster: Cluster, executor: Executor) -> None:
     await storage.fresh_workspace_storage_survives_replacement(
-        cluster,
-        client,
-        dispatcher,
-        executor,
-        vm_storage=storage.VmStorage(storage_class=STORAGE_CLASS, check_boot=guest_logs.check_boot),
+        cluster, executor, vm_storage=storage.VmStorage(storage_class=STORAGE_CLASS, check_boot=guest_logs.check_boot)
     )
 
 
