@@ -2,18 +2,18 @@
   "source_devel_commit": "16a394a1518add3599ace7b57968edc81fef8628",
   "window_start_utc": "2026-11-15T00:00:00Z",
   "window_end_utc": "2026-11-22T04:00:00Z",
-  "published_at_utc": "2026-11-22T06:04:15.054582+00:00",
+  "published_at_utc": "2026-11-22T06:13:21.707913+00:00",
   "attribution": "not collected",
   "weekly_feedback_window_utc": [
     "2026-11-15T00:00:00Z",
     "2026-11-22T00:00:00Z"
   ],
-  "previous_report_commit": "23794d295215d423202f7a989195803fd75f8316",
-  "report_sha256": "4232ce1f9b0e105b3b41a4777d82327e657941461b7ca90380a533e2a9f11628",
-  "evidence_sha256": "ecaf9f6136f49b1f92eb0b3796741406fd0ccb2df8fb4d8ac32772419d7e61d2",
+  "previous_report_commit": "9fa5b04bf9b4791661ff9348e5874130d89182f6",
+  "report_sha256": "4b4b4a5a68c128d86006879e16156d17ba4d0b7b03c80a81b10c527da2953a6e",
+  "evidence_sha256": "cb6357d2628f655a4ae14e651ccad3f75d5f965e6c34daeb868b86cf2efc27d6",
   "kvm_scale_up_window_utc": ["2026-11-21T04:47:00Z", "2026-11-22T04:47:00Z"],
   "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "6c3657e5a9b25b554ba368fd4f9969dd49c0f38558da34cd0984c65243518b0f",
+  "visual_validation_sha256": "05f778d0ac3eb7dc9d3202905573ae3e978d853fa025ec1aaba15c4a695e179c",
   "kvm_work_disk_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"],
   "kvm_stack_disk_breakdown": {
     "evidence_key": "kvm_stack_disk_breakdown",
@@ -22,5 +22,11 @@
       "2026-11-22T05:28:12.094044200Z",
       "2026-11-22T05:38:56.297591040Z"
     ]
+  },
+  "kvm_test_memory": {
+    "inspected_source_commit": "4bbeecc8ba0565079e7f178bd479f493856bf785",
+    "cohort_window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"],
+    "passes": 63,
+    "failures": 4
   }
 }
