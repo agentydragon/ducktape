@@ -1,4 +1,4 @@
-"""Create the final Haku console schema, retaining deployed revision 0135.
+"""Create the final Haku console schema, retaining deployed revision 0138.
 
 Already-at-head databases apply nothing. Older databases must first reach this
 revision with the pre-squash image. These definitions are independent of live ORM
@@ -9,9 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from agentplane.indexing.vector_type import HalfVector
-
-revision: str = "0135"
+revision: str = "0138"
 down_revision: str | None = None
 branch_labels: str | None = None
 depends_on: str | None = None
@@ -48,28 +46,19 @@ def upgrade() -> None:
     conn = op.get_bind()
     check_bodies = conn.scalar(sa.text("SHOW check_function_bodies"))
     op.execute("SET LOCAL check_function_bodies = false")
-    op.execute(sa.schema.CreateSchema("recall_index"))
     _create_types()
     _create_functions()
     _create_authority_tables()
     _create_console_tables()
-    _create_recall_tables()
     _preserve_deployed_constraint_names()
     _create_foreign_keys()
     _create_indexes()
     _create_triggers()
     conn.execute(sa.text("SELECT set_config('check_function_bodies', :value, true)"), {"value": check_bodies})
-    # The git index remains; the retired chat index must not return.
-    op.bulk_insert(
-        sa.table(
-            "indexes", sa.column("index_id", sa.Text()), sa.column("index_type", sa.Text()), schema="recall_index"
-        ),
-        [{"index_id": "haku-state", "index_type": "git"}],
-    )
 
 
 def downgrade() -> None:
-    raise RuntimeError("0135 is the forward-only Haku console baseline")
+    raise RuntimeError("0138 is the forward-only Haku console baseline")
 
 
 def _create_types() -> None:
@@ -1661,87 +1650,6 @@ def _create_console_tables() -> None:
         sa.PrimaryKeyConstraint("state", name="operator_login_flows_pkey"),
     )
 
-    op.create_table(
-        "push_subscriptions",
-        sa.Column("endpoint", sa.Text(), nullable=False),
-        sa.Column("operator_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("p256dh", sa.Text(), nullable=False),
-        sa.Column("auth", sa.Text(), nullable=False),
-        sa.Column("user_agent", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_failure_at", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("endpoint", name="push_subscriptions_pkey"),
-    )
-
-
-def _create_recall_tables() -> None:
-    op.create_table(
-        "content_embeddings",
-        sa.Column("content_sha", sa.Text(), nullable=False),
-        sa.Column("model_key", sa.Text(), nullable=False),
-        sa.Column("embedding", HalfVector(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.PrimaryKeyConstraint("content_sha", "model_key", name="content_embeddings_pkey"),
-        schema="recall_index",
-    )
-
-    op.create_table(
-        "contents",
-        sa.Column("content_sha", sa.Text(), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.PrimaryKeyConstraint("content_sha", name="contents_pkey"),
-        schema="recall_index",
-    )
-
-    op.create_table(
-        "git_chunks",
-        sa.Column("blob_sha", sa.Text(), nullable=False),
-        sa.Column("chunker_key", sa.Text(), nullable=False),
-        sa.Column("byte_start", sa.BigInteger(), nullable=False, autoincrement=False),
-        sa.Column("byte_end", sa.BigInteger(), nullable=False, autoincrement=False),
-        sa.Column("content_sha", sa.Text(), nullable=False),
-        sa.Column("index_id", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("index_id", "blob_sha", "chunker_key", "byte_start", name="git_chunks_pkey"),
-        schema="recall_index",
-    )
-
-    op.create_table(
-        "git_sync_state",
-        sa.Column("branch", sa.Text(), nullable=False),
-        sa.Column("remote_commit", sa.Text(), nullable=True),
-        sa.Column("remote_seen_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("commit_sha", sa.Text(), nullable=True),
-        sa.Column("chunker_key", sa.Text(), nullable=True),
-        sa.Column("synced_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("index_id", sa.Text(), nullable=False),
-        sa.CheckConstraint(
-            "(((commit_sha IS NULL) = (chunker_key IS NULL)) AND ((commit_sha IS NULL) = (synced_at IS NULL)))",
-            name="ck_git_sync_state_indexed_half",
-        ),
-        sa.PrimaryKeyConstraint("index_id", name="git_sync_state_pkey"),
-        schema="recall_index",
-    )
-
-    op.create_table(
-        "git_tip",
-        sa.Column("path", sa.Text(), nullable=False),
-        sa.Column("blob_sha", sa.Text(), nullable=False),
-        sa.Column("index_id", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("index_id", "path", name="git_tip_pkey"),
-        schema="recall_index",
-    )
-
-    op.create_table(
-        "indexes",
-        sa.Column("index_id", sa.Text(), nullable=False),
-        sa.Column("index_type", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.CheckConstraint("(index_type = 'git'::text)", name="ck_indexes_index_type"),
-        sa.PrimaryKeyConstraint("index_id", name="indexes_pkey"),
-        schema="recall_index",
-    )
-
 
 def _preserve_deployed_constraint_names() -> None:
     # PostgreSQL kept these names through column renames; reproduce them on fresh databases.
@@ -1983,65 +1891,6 @@ def _create_foreign_keys() -> None:
         ondelete="RESTRICT",
     )
 
-    op.create_foreign_key(
-        "push_subscriptions_operator_id_fkey",
-        "push_subscriptions",
-        "operators",
-        ["operator_id"],
-        ["operator_id"],
-        ondelete="CASCADE",
-    )
-
-    op.create_foreign_key(
-        "content_embeddings_content_sha_fkey",
-        "content_embeddings",
-        "contents",
-        ["content_sha"],
-        ["content_sha"],
-        source_schema="recall_index",
-        referent_schema="recall_index",
-    )
-
-    op.create_foreign_key(
-        "git_chunks_content_sha_fkey",
-        "git_chunks",
-        "contents",
-        ["content_sha"],
-        ["content_sha"],
-        source_schema="recall_index",
-        referent_schema="recall_index",
-    )
-
-    op.create_foreign_key(
-        "git_chunks_index_id_fkey",
-        "git_chunks",
-        "indexes",
-        ["index_id"],
-        ["index_id"],
-        source_schema="recall_index",
-        referent_schema="recall_index",
-    )
-
-    op.create_foreign_key(
-        "git_sync_state_index_id_fkey",
-        "git_sync_state",
-        "indexes",
-        ["index_id"],
-        ["index_id"],
-        source_schema="recall_index",
-        referent_schema="recall_index",
-    )
-
-    op.create_foreign_key(
-        "git_tip_index_id_fkey",
-        "git_tip",
-        "indexes",
-        ["index_id"],
-        ["index_id"],
-        source_schema="recall_index",
-        referent_schema="recall_index",
-    )
-
 
 def _create_indexes() -> None:
     op.create_index("idx_agent_name_reservations_agent_id", "agent_name_reservations", ["agent_id"])
@@ -2087,8 +1936,6 @@ def _create_indexes() -> None:
     op.create_index("idx_oidc_identities_anchor_id", "oidc_identities", ["anchor_id"])
 
     op.create_index("idx_operator_login_flows_expires_at", "operator_login_flows", ["expires_at"])
-
-    op.create_index("idx_push_subscriptions_operator_id", "push_subscriptions", ["operator_id"])
 
     op.create_index(
         "uq_credential_bindings_one_active_per_agent",

@@ -64,9 +64,9 @@ class StaticAgent:
 
 
 @pytest.fixture
-def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+def db_url(empty_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """Clone the pristine schema with a sync driver for the physical migration checks."""
-    return database_clones.clone(empty_vector_database_template, drivername="postgresql+psycopg")
+    return database_clones.clone(empty_database_template, drivername="postgresql+psycopg")
 
 
 def _now() -> datetime.datetime:
