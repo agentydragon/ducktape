@@ -418,37 +418,25 @@ def test_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-@pytest.fixture(scope="module")
-def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
-    """Bootstrap roots are not children of the generated Flux graph; build them rather than guessing their labels."""
-    bootstrap_roots = (k8s_dir / "flux/flux-system", k8s_dir / "flux/ducktape-flux")
-    return [resource for root in bootstrap_roots for resource in asyncio.run(run_kustomize_build(root))]
-
-
-@pytest.fixture(scope="module")
-def agent_permission_resources(cluster: ParsedCluster, bootstrap_resources: list[K8sResource]) -> list[K8sResource]:
-    # Suspension stops reconciliation, not the grants already present in a retained namespace.
-    resources = [
-        resource for group in cluster.flux_kust_resources(include_suspended=True).values() for resource in group
-    ]
-    resources.extend(bootstrap_resources)
-    return resources
-
-
-def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
+def test_no_legacy_agent_diagnostic_rbac(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """The delivered cluster has no implicit Kyverno-generated agent readers."""
-    assert not any(
-        resource.kind == "ClusterPolicy" and resource.name == "generate-agent-diagnostics-readers"
-        for resource in agent_permission_resources
-    )
-    assert not any(
-        resource.kind == "ClusterRole" and resource.name == "kyverno-background-controller-rolebindings"
-        for resource in agent_permission_resources
-    )
-    assert not any(
-        resource.kind == "RoleBinding" and resource.name in {"agent-readable-metadata", "agent-readable-logs"}
-        for resource in agent_permission_resources
-    )
+    # Suspended owners retain their grants. The two bootstrap roots are outside the Flux graph.
+    owners = cluster.flux_kust_resources(include_suspended=True)
+    for root in ("flux/flux-system", "flux/ducktape-flux"):
+        owners[root] = asyncio.run(run_kustomize_build(k8s_dir / root))
+
+    retired = {
+        ("ClusterPolicy", "generate-agent-diagnostics-readers"),
+        ("ClusterRole", "kyverno-background-controller-rolebindings"),
+        ("RoleBinding", "agent-readable-metadata"),
+        ("RoleBinding", "agent-readable-logs"),
+    }
+    assert not [
+        (owner, resource.kind, resource.namespace, resource.name)
+        for owner, resources in owners.items()
+        for resource in resources
+        if (resource.kind, resource.name) in retired
+    ]
 
 
 if __name__ == "__main__":
