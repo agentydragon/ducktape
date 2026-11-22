@@ -7,7 +7,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "config",
     srcs = ["config.py"],
-    # cluster/cdk8s/authentik/jwt_rotation.py builds the roster from this model.
+    # cluster/cdk8s/authentik/jwt_roster.py builds the roster from this model.
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/authentik:__pkg__",

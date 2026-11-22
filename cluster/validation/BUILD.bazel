@@ -293,14 +293,9 @@ py_test(
 py_test(
     name = "test_rotations_config",
     srcs = ["test_rotations_config.py"],
-    data = [
-        "//:sops_config",
-        # Importing the generator starts jsii's Node runtime.
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = ["//:sops_config"],
     deps = [
-        "//cluster/cdk8s/authentik:jwt_rotation",
+        "//cluster/cdk8s/authentik:jwt_roster",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",

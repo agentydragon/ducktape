@@ -1,12 +1,4 @@
-"""The authentik-jwt-rotation roster's entries stay independent.
-
-The generator builds the roster (`cluster/cdk8s/authentik/jwt_rotation.py`'s `ROTATIONS`) from
-the rotator's own `Config`, so every entry satisfies the model by construction. What the model
-cannot express is cross-entry, and a violation would pass CI and fail hourly in the cluster
-instead, which is the wrong place to find out.
-
-Not a change detector: nothing here restates a value from the roster.
-"""
+"""Check the Authentik JWT roster for conflicting outputs and missing SOPS rules."""
 
 from __future__ import annotations
 
@@ -16,7 +8,7 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.authentik.jwt_rotation import ROTATIONS
+from cluster.cdk8s.authentik.jwt_roster import ROTATIONS
 
 _SOPS_CONFIG = "ducktape/.sops.yaml"
 

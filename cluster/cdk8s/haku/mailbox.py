@@ -25,7 +25,7 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.haku import namespace
+from cluster.cdk8s.haku import mailbox_endpoint, namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -47,8 +47,6 @@ _INGRESS_OBJECT_NAME = "smtp-ingress"  # the DaemonSet and its CiliumNetworkPoli
 _TLS_SECRET = "mx-allegedly-works-tls"
 DATABASE = cluster.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
 _DB_PASSWORD = DATABASE.app_secret.key("password")
-PUBLIC_HOSTNAME = "haku-mailbox.allegedly.works"
-PUBLIC_URL = f"https://{PUBLIC_HOSTNAME}"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
 # (//cluster/k8s/haku/mailbox/image) -- upstream ships the CLI only as a distroless image,
 # unusable from the pod. Published by the push-images workflow; image-pins/ sets the tag Flux
@@ -124,7 +122,7 @@ def _add_deployment(chart: Chart) -> None:
     An init container applies it with a temporary fallback admin before production starts.
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
-    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=PUBLIC_URL)
+    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=mailbox_endpoint.PUBLIC_URL)
     # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
     # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
@@ -244,7 +242,7 @@ def _add_services(chart: Chart) -> None:
             annotations={
                 "description": (
                     "Stalwart's cluster-internal listeners: HTTP (JMAP + management API, exposed "
-                    f"publicly only via the cluster-gateway HTTPRoute {PUBLIC_HOSTNAME}) and "
+                    f"publicly only via the cluster-gateway HTTPRoute {mailbox_endpoint.PUBLIC_HOSTNAME}) and "
                     "plaintext IMAP for haku-sandbox clients (himalaya) — no route, no externalIPs, "
                     "OAUTHBEARER-only auth."
                 )
@@ -444,7 +442,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostnames=[PUBLIC_HOSTNAME],
+        hostnames=[mailbox_endpoint.PUBLIC_HOSTNAME],
         backend=HTTP,
         timeout="60s",
         hsts=False,
