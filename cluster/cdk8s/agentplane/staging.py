@@ -543,10 +543,7 @@ ENV = Environment(
         },
         connections={
             "llm-ingress": ConnectionConfig(
-                base_url=(
-                    f"https://{llm_ingress.service(STAGING_NAMESPACE).fqdn}:"
-                    f"{llm_ingress.service(STAGING_NAMESPACE).port.number}"
-                ),
+                base_url=f"https://{llm_ingress.service(STAGING_NAMESPACE).authority}",
                 auth=AuthConfig(type="agentplane_ingress"),
                 tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
             ),
