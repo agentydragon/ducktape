@@ -16,20 +16,25 @@ function prepare(source, modules, order) {
   fs.writeFileSync(placement, JSON.stringify({ entry: "entry.mjs", order, sequential: true, modules }));
   return ast;
 }
-function check(out, requested, status, ...args) {
+function request(out, requested, ...args) {
   const result = spawnSync(process.env.LOWERSPLIT, [input, placement, out, "--require", requested, ...args], {
     encoding: "utf8",
   });
   if (result.error) throw result.error;
   const diagnostics = result.stdout + result.stderr;
-  assert.equal(result.status, status === "certified" ? 0 : 1, diagnostics);
   const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
   assert.equal(verdict.requested, requested);
-  assert.equal(verdict.status, status, diagnostics);
-  if (status === "rejected") {
+  assert(["certified", "rejected"].includes(verdict.status), diagnostics);
+  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, diagnostics);
+  if (verdict.status === "rejected") {
     assert.equal(verdict.guarantee, null);
     assert(verdict.reason, diagnostics);
   }
+  return verdict;
+}
+function check(out, requested, status, ...args) {
+  const verdict = request(out, requested, ...args);
+  assert.equal(verdict.status, status, JSON.stringify(verdict));
   return verdict;
 }
 async function observe(url) {
@@ -154,3 +159,44 @@ const escaping = "../escaped.mjs";
 prepare("const local = 1;", { [entry]: [], [escaping]: ["#0"] }, [escaping]);
 check(unsupported, all, "rejected");
 assert(!fs.existsSync(path.join(root, "escaped.mjs")));
+
+// Choose the owner independently of each initializer's read. This produces both directions
+// of cross-module dependency, including cycles where the glue exposes a private entry binding.
+// Compare observable results in Node without preclassifying which placements Lean should accept.
+let certifiedCount = 0;
+let exposedByStructuralMode = 0;
+for (let seed = 0; seed < 8; seed++) {
+  const names = Array.from({ length: 3 + (seed % 3) }, (_, i) => `local${seed}_${i}`);
+  const owners = { [entry]: [], [left]: [] };
+  const declarations = names.map((name, i) => {
+    const owner = i === names.length - 1 || (i + seed) % 3 === 1 ? entry : left;
+    owners[owner].push("#" + i);
+    const ref = seed % 2 ? Math.max(i - 1, 0) : (i + 1) % names.length;
+    const operand = i === 0 && seed % 2 ? "-2" : names[ref];
+    return (
+      (i === names.length - 1 ? "export " : "") + "var " + name + " = " + "!".repeat((i + seed) % 3) + operand + ";"
+    );
+  });
+  const code = declarations.join("\n");
+  const expected = await observe("data:text/javascript," + encodeURIComponent(code));
+  prepare(code, owners, [left]);
+  const structural = path.join(root, "structural-partition-" + seed);
+  const baseline = spawnSync(process.env.LOWERSPLIT, [input, placement, structural], { encoding: "utf8" });
+  if (baseline.error) throw baseline.error;
+  assert([0, 1].includes(baseline.status), baseline.stderr);
+  const output = path.join(root, "partition-" + seed);
+  const verdict = request(output, normal);
+  if (verdict.status === "certified") {
+    certifiedCount++;
+    assert.deepEqual(await observe(pathToFileURL(path.join(output, entry))), expected, code);
+  }
+  if (baseline.status === 0) {
+    const observed = await observe(pathToFileURL(path.join(structural, entry)));
+    if (Array.isArray(observed) && observed.length > expected.length) {
+      assert.equal(verdict.status, "rejected", code);
+      exposedByStructuralMode++;
+    }
+  }
+}
+assert(certifiedCount > 0, "generated placements must include a certified control");
+assert(exposedByStructuralMode > 0, "generated placements must exercise private entry bindings exposed by glue");
