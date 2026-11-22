@@ -331,11 +331,18 @@ function ConversationBody({
   useThreadSync().useCommandRows(inline.map((item) => item.commandId));
   const historyIds = selectedHistoryCommands(entities);
   const localIds = new Set(localCommands.map(({ command }) => command.commandId));
+  // An older browser record may have a receipt without the current attempt flag.
+  const attemptedLocalIds = new Set(
+    localCommands.filter((value) => value.attempted || value.dispatch !== null).map(({ command }) => command.commandId)
+  );
   const byCommand = new Map([...inline, ...deliveryAttention.issues].map((item) => [item.commandId, item]));
   const uncertainLocalIds = localCommands.flatMap((command) => {
     const id = command.command.commandId;
     const issue = byCommand.get(id);
-    return command.attempted && issue && isDeliveryIssue(issue.state) && !matchingLocalIssue(command, threadId, [issue])
+    return attemptedLocalIds.has(id) &&
+      issue &&
+      isDeliveryIssue(issue.state) &&
+      !matchingLocalIssue(command, threadId, [issue])
       ? [id]
       : [];
   });
@@ -343,7 +350,7 @@ function ConversationBody({
   const localNotice: LocalNotice = (command) => {
     const id = command.command.commandId;
     const exact = matchingLocalIssue(command, threadId, deliveryAttention.issues);
-    const item = exact ?? (delivery.workset.stale || !command.attempted ? undefined : byCommand.get(id));
+    const item = exact ?? (delivery.workset.stale || !attemptedLocalIds.has(id) ? undefined : byCommand.get(id));
     if (!item) return;
     const original = localOriginals.commands?.get(id);
     const verified =
