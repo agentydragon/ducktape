@@ -332,10 +332,10 @@ async def test_operator_notice_acknowledgements_are_shared_across_replicas(
         next_page = (await http.get(path, params={"pageSize": 1, "pageToken": history["nextPageToken"]})).json()
         assert next_page["acknowledgements"] == [first_ack]
         assert "nextPageToken" not in next_page
-        assert (await other.get(other_path, params={"pageToken": history["nextPageToken"]})).status_code == 400
-        assert (await http.get(path, params={"pageSize": 101})).status_code == 400
+        assert (await other.get(other_path, params={"pageToken": history["nextPageToken"]})).status_code == 422
+        assert (await http.get(path, params={"pageSize": 101})).status_code == 422
         for notices in ([], [newer] * 101, [{"commandId": "shared-command"}]):
-            assert (await other.post(path + ":batchGet", json={"notices": notices})).status_code == 400
+            assert (await other.post(path + ":batchGet", json={"notices": notices})).status_code == 422
 
 
 async def test_unknown_facade_paths_are_not_forwarded(http: httpx.AsyncClient, peer: Peer) -> None:
