@@ -11,10 +11,8 @@ The unit also carries the filer DB (`filer_db.py`), the s3 gateway's config Secr
 (`s3_config.py`) and `stateful_infra`'s PriorityClass, whose charts `write_manifests` writes
 into the same file as this one.
 
-Hand-written beside the output: `filer.toml` and the directory's `kustomization.yaml`,
-whose configMapGenerator + replacement fill `spec.filer.config` from it (the TOML lives
-in its own file so it can be syntax-checked outside YAML string escaping), and the SOPS
-siblings it lists.
+The filer config is kept in filer.toml so it can be syntax-checked independently. The
+operator projects spec.filer.config into the ConfigMap mounted by the filer.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from python.runfiles import Runfiles
 from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
     AdminScript,
     AdminScriptSpec,
@@ -395,8 +394,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # replica count but worth closing (it is the SSOT for all SeaweedFS data; see
                 # the 2026_05_27 filer-metadata-loss lesson).
                 replicas=2,
-                # Filled in from filer.toml by the directory's kustomization (module docstring).
-                config="",
+                config=(Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/seaweedfs/filer.toml").read_text(),
                 env=[
                     # Soft heap ceiling ~90% of the memory limit below; see the sizing note at
                     # requests/limits. Go's GC (GOGC=100) otherwise ignores the cgroup limit

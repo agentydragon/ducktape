@@ -1,9 +1,5 @@
 # SeaweedFS filer config (postgres2 backend).
 #
-# Loaded into the Seaweed CR's filer.config via kustomize configMapGenerator
-# + replacements; the operator then re-emits this string as the
-# `seaweedfs-filer` ConfigMap that the filer pod mounts at /etc/seaweedfs.
-#
 # Postgres credentials are NOT here — they're injected as env vars
 # WEED_POSTGRES2_USERNAME / WEED_POSTGRES2_PASSWORD in the Seaweed CR
 # (sourced from the committed seaweedfs-filer-db-ssd-creds Secret).

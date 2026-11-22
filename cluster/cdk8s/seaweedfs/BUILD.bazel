@@ -20,6 +20,7 @@ py_library(
 py_library(
     name = "cluster",
     srcs = ["cluster.py"],
+    data = ["filer.toml"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:generation",
@@ -36,6 +37,7 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -122,6 +122,17 @@ def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster
     assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
 
 
+def test_flux_configmaps_and_secrets_have_namespaces(cluster: ParsedCluster) -> None:
+    """A namespace-less generated ConfigMap prevented the public-coder Deployment from reconciling."""
+    missing = [
+        f"{owner}: {resource.kind}/{resource.name}"
+        for owner, resources in cluster.flux_kust_resources(include_suspended=True).items()
+        for resource in resources
+        if resource.api_version == "v1" and resource.kind in {"ConfigMap", "Secret"} and not resource.namespace
+    ]
+    assert not missing, "Flux cannot apply resources missing a namespace:\n" + "\n".join(missing)
+
+
 def test_no_dependency_errors(cluster: ParsedCluster) -> None:
     """Operator prerequisites are dependencies; every sourceRef resolves."""
     errors = validate_dependencies(cluster)
