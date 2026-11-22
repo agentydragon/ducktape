@@ -281,26 +281,23 @@ the switch.
 
 ### Shared deployment definitions and parity contract
 
-`cluster/cdk8s/agent_access_profiles.py` holds existing Kubernetes grant references,
-static identity references, and deployment-side profile selections. Agentplane uses those
-references for its catalog, presets, and binding delegation.
+Each managed preset selects KubernetesRoleSets in `PRESET_ROLE_SETS`. The same selection
+supplies its account's RBAC and determines which sets also grant egress to its Identity.
+Static identities select individual grants. Both use the [deployment grant definitions](../cdk8s/agent_access_profiles.py).
 
-The logical profiles are distinct from the transport identities:
-
-| Access path                                         | Logical profile / contract                                                                          |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `oidc-ksbx-groups:haku` group                       | Static Haku; checked independently                                                                  |
-| `haku:access-profile:haku` group                    | Static Haku Console; checked independently                                                          |
-| `haku-sandbox/haku` ServiceAccount                  | Static Haku compute; checked independently                                                          |
-| `agentplane-staging/claude-ai` Identity             | Standing Claude.ai caller; Action PolicyBinding and Kubernetes account use set                      |
-| `agentplane-staging/haku-agent` Identity            | Standing Haku caller; Action PolicyBinding and Kubernetes account use set                           |
-| `agentplane-staging/public-coder-openclaw` Identity | Egress and reviewed Action principal for the paused OpenClaw workload                               |
-| Managed `haku` preset                               | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
-| Managed `finance-agent` preset                      | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
-
-| `agentplane-staging/claude-ai` ServiceAccount | Retained with independent RoleBindings; no Action-caller label or standing PolicyBinding |
-| `agentplane-staging/haku-agent` ServiceAccount | Retained same-named account; no Action-caller label or PolicyBinding |
-| `public-coder-agent/openclaw` ServiceAccount | Pod account for the paused OpenClaw Deployment; no Action-caller label or PolicyBinding subject |
+| Access path                                         | Logical profile or contract                                                                           |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `oidc-ksbx-groups:haku` group                       | Static Haku OIDC                                                                                      |
+| `haku:access-profile:haku` group                    | Static Haku Console                                                                                   |
+| `haku-sandbox/haku` ServiceAccount                  | Static Haku compute                                                                                   |
+| `agentplane-staging/claude-ai` Identity             | Standing Claude.ai caller with an Action PolicyBinding and a Kubernetes account                       |
+| `agentplane-staging/haku-agent` Identity            | Standing Haku caller with an Action PolicyBinding and a Kubernetes account                            |
+| `agentplane-staging/public-coder-openclaw` Identity | Egress and reviewed Actions for the paused OpenClaw workload                                          |
+| Managed `haku` preset                               | Covers public-coder's Kubernetes reads. Tests compare its permissions with each static Haku identity. |
+| Managed `finance-agent` preset                      | Public-coder diagnostics plus finance-specific reads. The preset has its own Kubernetes account.      |
+| `agentplane-staging/claude-ai` ServiceAccount       | Retained account with independent RoleBindings. Standing Actions use the Identity.                    |
+| `agentplane-staging/haku-agent` ServiceAccount      | Retained account. Standing Actions use the Identity.                                                  |
+| `public-coder-agent/openclaw` ServiceAccount        | Pod account for the paused OpenClaw Deployment. Its backend Identity holds the Action PolicyBinding.  |
 
 The managed finance and Haku presets and the standing `claude-ai` and `haku-agent` Identity
 bindings select `plaid-diagnostics-identity` for pgweb's `plaid_ro` read-only egress path, and
