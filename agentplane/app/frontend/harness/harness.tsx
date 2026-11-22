@@ -168,10 +168,9 @@ import {
   SSH_COMPLETED_ACTION,
   SSH_EXEC_RESULT,
   SSH_PENDING_ACTION,
-} from "./action_fixtures";
+} from "../actions/testing/visual_fixtures";
 import { mount } from "./mount";
 import { DisclosureVisual } from "./disclosure_visual";
-import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../sessions/local_commands";
 import { electricEntityVariant } from "../sessions/testing/electric_entity";
 import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
@@ -4113,9 +4112,6 @@ const visualHarness = {
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
-  },
-  mountOperationPresentation(): void {
-    mount(<OperationPresentationVisual />);
   },
   autosuspendCountdown,
   autosuspendBusy,

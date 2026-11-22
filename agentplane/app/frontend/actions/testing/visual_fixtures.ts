@@ -1,11 +1,11 @@
-import { clone, create, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { clone, create, fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import { ValueSchema } from "@bufbuild/protobuf/wkt";
 import {
   ActionIdentitySchema,
   ActionRequestSchema,
   type ActionRequest,
-} from "../../../action_service/api/contracts/action_service_pb";
-import type { Route } from "./fetch_mock";
+} from "../../../../action_service/api/contracts/action_service_pb";
+import type { Route } from "../../harness/fetch_mock";
 
 export type ActionKey = { group: string; name: string };
 export type ActionArguments = NonNullable<ActionRequest["arguments"]>;
@@ -19,7 +19,7 @@ function ago(ms: number): string {
 
 // What the ssh MCP server's `exec` (ssh_mcp_server/server.py) returns for a listing that names one
 // missing path: ls exits 2, and its output runs past the lines the widget shows before "Show all".
-export const SSH_EXEC_RESULT = {
+export const SSH_EXEC_RESULT: JsonObject = {
   host: "test-archive-host",
   user: "test-user",
   exit_code: 2,
@@ -37,7 +37,7 @@ export const SSH_EXEC_RESULT = {
   stderr_truncated: false,
 };
 
-export const SSH_PENDING_ACTION = fromJson(ActionRequestSchema, {
+export const SSH_PENDING_ACTION: ActionRequest = fromJson(ActionRequestSchema, {
   id: "70000000-0000-4000-8000-000000000006",
   // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh/exec.tsx).
   action: { group: "ssh", name: "exec" },
@@ -57,7 +57,7 @@ export const SSH_PENDING_ACTION = fromJson(ActionRequestSchema, {
   updatedAt: ago(2 * 60_000),
 });
 
-export const SSH_COMPLETED_ACTION = fromJson(ActionRequestSchema, {
+export const SSH_COMPLETED_ACTION: ActionRequest = fromJson(ActionRequestSchema, {
   id: "70000000-0000-4000-8000-000000000007",
   action: { group: "ssh", name: "exec" },
   arguments: {
@@ -99,7 +99,7 @@ export const SSH_COMPLETED_ACTION = fromJson(ActionRequestSchema, {
 });
 
 // A single losslessly rendered request, for compact approval screenshots.
-export const COMPACT_POD_ACTION = clone(ActionRequestSchema, SSH_PENDING_ACTION);
+export const COMPACT_POD_ACTION: ActionRequest = clone(ActionRequestSchema, SSH_PENDING_ACTION);
 COMPACT_POD_ACTION.id = "70000000-0000-4000-8000-000000000009";
 COMPACT_POD_ACTION.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" });
 COMPACT_POD_ACTION.arguments = {

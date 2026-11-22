@@ -1,9 +1,9 @@
 import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 
-import { JsonBlock, TextBlock } from "../ui/text_block";
-import { CodeBlock } from "../../../../util/frontend/code_block";
-import { ShellCommandView, OutputBlock } from "../ui/shell_command_view";
+import { JsonBlock, TextBlock } from "../../ui/text_block";
+import { CodeBlock } from "../../../../../util/frontend/code_block";
+import { ShellCommandView, OutputBlock } from "../../ui/shell_command_view";
 
 const manifest = [
   "apiVersion: v1",

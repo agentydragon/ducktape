@@ -1,4 +1,3 @@
-# gazelle:exclude test_visual_actions.py
 # gazelle:exclude test_visual_notifications.py
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
@@ -8,11 +7,9 @@
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
-# gazelle:exclude test_visual_operation_presentation.py
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -191,26 +188,23 @@ ts_library(
     srcs = [
         "harness/disclosure_visual.tsx",
         "harness/harness.tsx",
-        "harness/operation_presentation_visual.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":harness_action_fixtures",
         ":harness_fetch_mock",
         ":harness_mount",
         ":harness_network",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
+        "//agentplane/app/frontend/actions/testing:visual_fixtures",
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/egress:decision_fixture",
         "//agentplane/app/frontend/sandboxes:client",
@@ -227,8 +221,6 @@ ts_library(
         "//agentplane/app/frontend/transport:live",
         "//agentplane/app/frontend/transport:query",
         "//agentplane/app/frontend/transport:stream_status",
-        "//agentplane/app/frontend/ui:shell_command_view",
-        "//agentplane/app/frontend/ui:text_block",
         "//agentplane/egress/api/admin:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
@@ -315,12 +307,6 @@ agentplane_visual_test(
     title = "Agentplane: policies",
 )
 
-agentplane_visual_test(
-    name = "visual_operation_presentation",
-    src = "test_visual_operation_presentation.py",
-    title = "Agentplane: shared Action presentation",
-)
-
 ts_library(
     name = "harness_network",
     testonly = True,
@@ -361,65 +347,8 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "harness_action_fixtures",
+filegroup(
+    name = "visual_index_html",
     testonly = True,
-    srcs = ["harness/action_fixtures.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":harness_fetch_mock",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service/api/contracts:action_service_pb",
-    ],
-)
-
-ts_library(
-    name = "action_visual_harness_lib",
-    testonly = True,
-    srcs = [
-        "harness/action_harness.tsx",
-        "harness/action_presentations_visual.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":harness_action_fixtures",
-        ":harness_fetch_mock",
-        ":harness_mount",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tanstack/react-query",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions:history",
-        "//agentplane/app/frontend/actions:requests",
-        "//agentplane/app/frontend/actions:sidebar",
-        "//agentplane/app/frontend/actions/rendering:index",
-        "//agentplane/app/frontend/shell:shell_css",
-        "//agentplane/app/frontend/transport:query",
-    ],
-)
-
-agentplane_visual_bundle(
-    name = "action_visual_bundle",
-    entry_point = "harness/action_harness.js",
-    output_dir = "harness/actions",
-    deps = [":action_visual_harness_lib"],
-)
-
-copy_file(
-    name = "action_visual_index",
-    testonly = True,
-    src = "harness/index.html",
-    out = "harness/actions/index.html",
-)
-
-agentplane_visual_test(
-    name = "visual_actions",
-    src = "test_visual_actions.py",
-    bundle = ":action_visual_bundle",
-    index = ":action_visual_index",
-    shard_count = 16,
-    title = "Agentplane: action presentations",
+    srcs = ["harness/index.html"],
 )

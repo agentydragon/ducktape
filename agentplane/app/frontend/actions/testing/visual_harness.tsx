@@ -1,12 +1,13 @@
-import { routes } from "./fetch_mock";
+import { routes } from "../../harness/fetch_mock";
 import "@mantine/core/styles.css";
 
 import type { JsonValue } from "@bufbuild/protobuf";
-import type { ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
-import { ACTION_RENDERERS } from "../actions/rendering/index";
+import type { ActionRequest } from "../../../../action_service/api/contracts/action_service_pb";
+import { ACTION_RENDERERS } from "../rendering/index";
 import { ActionPresentationsVisual } from "./action_presentations_visual";
+import { OperationPresentationVisual } from "./operation_presentation_visual";
 // Action decision buttons use the shell stylesheet at desktop widths.
-import "../shell/shell.css";
+import "../../shell/shell.css";
 import {
   actionIntegrationSummaryRoute,
   actionPreview,
@@ -14,8 +15,8 @@ import {
   SSH_COMPLETED_ACTION,
   type ActionArguments,
   type ActionKey,
-} from "./action_fixtures";
-import { mount } from "./mount";
+} from "./visual_fixtures";
+import { mount } from "../../harness/mount";
 
 let pending: ActionRequest | undefined;
 let receipt: ActionRequest | undefined;
@@ -35,6 +36,9 @@ Object.assign(window, {
     },
     showActionReceipt(action: ActionKey, args: ActionArguments, result: JsonValue): void {
       receipt = actionReceipt(SSH_COMPLETED_ACTION, action, args, result);
+    },
+    mountOperationPresentation(): void {
+      mount(<OperationPresentationVisual />);
     },
     mountActionPresentations(sidebarWidth: number, detailWidth: number, mcp: boolean): void {
       if (pending === undefined || receipt?.execution === undefined) {

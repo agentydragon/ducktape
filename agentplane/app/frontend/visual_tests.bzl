@@ -59,7 +59,7 @@ def agentplane_visual_test(
             "@pypi//pytest_asyncio",
             "@pypi//pytest_bazel",
         ],
-        test_module = "agentplane.app.frontend." + src.removesuffix(".py"),
+        test_module = native.package_name().replace("/", ".") + "." + src.removesuffix(".py"),
         test_srcs = [src],
         title = title,
     )
