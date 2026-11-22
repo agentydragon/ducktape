@@ -113,6 +113,7 @@ _DEMAND_QUERY = (
 # and not retained; that Ubuntu worker used 0.75 GiB when idle. test_firecracker reserves 6 GiB (its EstimatedMemory),
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
+_NESTED_VIRT_FEATURES = ("svm", "vmx")
 # Qualified at fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; future guest images
 # require fresh-boot and workload qualification before changing this manual pin.
 _IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268"
@@ -186,7 +187,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
                 VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpuFeatures(
                     name=feature, policy="optional"
                 )
-                for feature in ("svm", "vmx")
+                for feature in _NESTED_VIRT_FEATURES
             ],
         ),
         # Reserve the observed sustained demand while allowing all four vCPUs to burst.
@@ -225,7 +226,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
                                 )
                             ]
                         )
-                        for feature in ("svm", "vmx")
+                        for feature in _NESTED_VIRT_FEATURES
                     ]
                 )
             )
@@ -348,11 +349,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
         ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
-        egress=[
-            cilium.dns_egress(resolves=["*"]),
-            EgressRule.to_fqdns(*_HTTPS_HOSTS),
-            EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
-        ],
+        egress=[cilium.dns_egress(resolves=["*"]), EgressRule.to_fqdns(*_HTTPS_HOSTS), zot.HTTP.egress()],
     )
     k8s.KubeService(
         chart,
@@ -484,6 +481,7 @@ def buildbuddy_kvm_worker(
     piraeus: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
+    group, version = VirtualMachinePool.GVK.api_version.split("/", 1)
     return flux_kustomization(
         chart,
         NAME,
@@ -494,11 +492,7 @@ def buildbuddy_kvm_worker(
             KustomizationSpecIgnore(
                 paths=["/spec/replicas"],
                 target=KustomizationSpecIgnoreTarget(
-                    group="pool.kubevirt.io",
-                    version="v1beta1",
-                    kind="VirtualMachinePool",
-                    name=NAME,
-                    namespace=NAMESPACE,
+                    group=group, version=version, kind=VirtualMachinePool.GVK.kind, name=NAME, namespace=NAMESPACE
                 ),
             )
         ],
