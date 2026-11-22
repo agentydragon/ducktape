@@ -861,7 +861,11 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
 
 @pytest.mark.parametrize(
     ("location", "central_enabled"),
-    [("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True), ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False)],
+    [
+        ("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True),
+        ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False),
+        ("K3S_FIRECRACKER_FIXTURE_RLOCATION", False),
+    ],
 )
 def test_native_recovery_profile_uses_service_caller_without_app(
     runfiles: Runfiles, location: str, central_enabled: bool

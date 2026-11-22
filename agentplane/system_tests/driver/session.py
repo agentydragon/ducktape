@@ -42,6 +42,11 @@ class Session:
         self._cursor = cursor
         self._history_attached = False
 
+    @property
+    def cursor(self) -> int:
+        """Last consumed History event, including the terminal event of a completed turn."""
+        return self._cursor
+
     @classmethod
     async def create(
         cls,

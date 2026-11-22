@@ -1,6 +1,8 @@
 """Render all ten system-test suite fixtures in one Bazel action."""
 
 import argparse
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from agentplane.system_tests.deployment import fixture_chart, suite_deployment
@@ -9,9 +11,11 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
     Backend,
+    McpInputs,
+    RenderedFixture,
     SandboxRuntime,
 )
-from agentplane.system_tests.suites import pod_native_deployment
+from agentplane.system_tests.suites import native_deployment
 from agentplane.system_tests.suites.mcp import (
     history_deployment,
     mcp_deployment,
@@ -22,9 +26,7 @@ from agentplane.system_tests.suites.mcp import (
 
 def render(path: Path, *, runtime: SandboxRuntime, backend: Backend, include_mcp_edge: bool) -> None:
     deployment = suite_deployment.begin_suite(runtime=runtime, backend=backend, include_mcp_edge=include_mcp_edge)
-    if runtime == SandboxRuntime.FIRECRACKER:
-        fixture_chart.add_firecracker_template(deployment.chart, deployment.env, deployment.runner_template)
-    elif runtime == SandboxRuntime.KUBEVIRT:
+    if runtime == SandboxRuntime.KUBEVIRT:
         fixture_chart.add_vm_templates(deployment.chart, deployment.env, deployment.runner_template)
     suite_deployment.add_common_postlude(deployment)
     fixture_chart.add_policy_controller(deployment.chart, deployment.env)
@@ -39,15 +41,15 @@ def main() -> None:
         ("pod_manifests.json", SandboxRuntime.POD, Backend.LOCAL_MODEL, False),
         ("probe_manifests.json", SandboxRuntime.POD, Backend.LOCAL_MODEL, True),
         ("vm_manifests.json", SandboxRuntime.KUBEVIRT, Backend.LOCAL_MODEL, False),
-        ("firecracker_manifests.json", SandboxRuntime.FIRECRACKER, Backend.LOCAL_MODEL, False),
         ("real_model_manifests.json", SandboxRuntime.POD, Backend.PUBLIC_LITELLM, True),
     ]
     for filename, runtime, backend, include_mcp_edge in recipes:
         render(args.output_dir / filename, runtime=runtime, backend=backend, include_mcp_edge=include_mcp_edge)
 
     shared_model = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
-    renderers = [
-        ("pod_native_manifests.json", pod_native_deployment.render, None),
+    renderers: list[tuple[str, Callable[[], RenderedFixture], McpInputs | None]] = [
+        ("pod_native_manifests.json", partial(native_deployment.render, SandboxRuntime.POD), None),
+        ("firecracker_manifests.json", partial(native_deployment.render, SandboxRuntime.FIRECRACKER), None),
         ("recovery_manifests.json", recovery_deployment.render, None),
         ("history_manifests.json", history_deployment.render, None),
         ("mcp_manifests.json", mcp_deployment.render, MCP_PLACEHOLDERS),
