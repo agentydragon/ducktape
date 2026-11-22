@@ -98,17 +98,19 @@ func TestPreviousImageStartupAndSQLWritesRemainCompatible(t *testing.T) {
 	if afterUpdate <= beforeUpdate {
 		t.Fatalf("previous image update version = %d, prior = %d", afterUpdate, beforeUpdate)
 	}
-	if _, err := db.ExecContext(t.Context(), "DELETE FROM dispatch WHERE command_id='uncertain-command'"); err != nil {
-		t.Fatal("previous image delete:", err)
+	// The old cleanup issues this statement even after a new replica retained
+	// the Session. Its update above is visible and its delete must keep the body.
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM dispatch WHERE sandbox_uid='00000000-0000-0000-0000-000000000001'"); err != nil {
+		t.Fatal("previous image cleanup:", err)
 	}
-	var tombstoneVersion int64
+	var command, admission []byte
 	var state string
-	if err := db.QueryRowContext(t.Context(), `SELECT version,state FROM dispatch_tombstone
-		WHERE command_id='uncertain-command'`).Scan(&tombstoneVersion, &state); err != nil {
-		t.Fatal("read previous image tombstone:", err)
+	if err := db.QueryRowContext(t.Context(), `SELECT command,admission,state FROM dispatch
+		WHERE command_id='uncertain-command'`).Scan(&command, &admission, &state); err != nil {
+		t.Fatal("read command after previous image cleanup:", err)
 	}
-	if tombstoneVersion <= afterUpdate || state != "FAILED" {
-		t.Fatalf("previous image tombstone version/state = %d/%q, after update %d", tombstoneVersion, state, afterUpdate)
+	if !bytes.Equal(command, []byte{0x08, 0x01}) || !bytes.Equal(admission, []byte{0x08, 0x02}) || state != "FAILED" {
+		t.Fatalf("previous image cleanup changed evidence: command=%x admission=%x state=%q", command, admission, state)
 	}
 }
 

@@ -710,6 +710,14 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                         assert response.dispatch.reason == "sandbox_deleted"
                         assert response.dispatch.command_id == deletion_command
                         break
+            retained = await stub.GetDispatch(pb.GetDispatchRequest(command_id=deletion_command), timeout=15)
+            assert retained.dispatch.state == pb.DELIVERY_STATE_FAILED
+            assert retained.dispatch.sandbox_uid == uid
+            listed = await stub.ListDispatches(
+                pb.ListDispatchesRequest(filter=pb.DispatchFilter(session_id=deletion_session)), timeout=15
+            )
+            assert [row.command_id for row in listed.dispatches] == [deletion_command]
+            assert listed.dispatches[0].state == retained.dispatch.state
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         else:
             environment_target = await stack.enter_async_context(

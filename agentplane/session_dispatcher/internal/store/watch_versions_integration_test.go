@@ -161,7 +161,8 @@ func TestVersionWatchBoundsDeletionAfterFrontierAndRechecksPruning(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
+	// A physical deletion still produces a prunable tombstone.
+	if _, err := store.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id='test-frontier-deletion-command'"); err != nil {
 		t.Fatal(err)
 	}
 	batch, err := store.readDispatchChangesThrough(ctx, filter, caller, 0, through, false)
