@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from python.runfiles import Runfiles
 
-from cluster.validation.k8s import K8sResource, parse_k8s_resources
+from cluster.validation.k8s import K8sResource, load_k8s_resources
 
 KUSTOMIZATION_FILE_NAMES = ("kustomization.yaml", "kustomization.yml", "Kustomization")
 
@@ -199,4 +199,4 @@ async def run_kustomize_build(kust: KustomizeFile) -> list[K8sResource]:
     if proc.returncode != 0:
         raise KustomizeBuildError(kust.path, stderr.decode())
 
-    return parse_k8s_resources(yaml.safe_load_all(stdout.decode()))
+    return load_k8s_resources(stdout)

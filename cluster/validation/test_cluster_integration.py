@@ -39,12 +39,7 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import (
-    AgentplaneSandboxTemplateResource,
-    ArtifactGeneratorResource,
-    K8sResource,
-    parse_k8s_resources,
-)
+from cluster.validation.k8s import AgentplaneSandboxTemplateResource, K8sResource, load_k8s_resources
 from cluster.validation.kustomize import (
     KustomizeFile,
     flux_generated_kustomization,
@@ -82,7 +77,7 @@ async def _build_namespace_override(
         stdout, stderr = await process.communicate()
         if process.returncode != 0:
             raise RuntimeError(f"Flux build failed for {spec.namespace}/{owner}: {stderr.decode()}")
-    return parse_k8s_resources(yaml.safe_load_all(stdout))
+    return load_k8s_resources(stdout)
 
 
 def _build_cluster(repo_root: Path) -> ParsedCluster:
@@ -91,14 +86,6 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
     # Build all local flux-referenced kustomizations (including suspended — kustomize
     # build should still succeed). Only validation checks filter suspended.
     kusts_by_dir = {path.parent.resolve(): kust for path, kust in parsed.kustomize_files.items()}
-
-    artifact_specs = {
-        (resource.namespace, artifact["name"]): [(copy["from"], copy["to"]) for copy in artifact.get("copy", [])]
-        for resources in parsed.source_resources.values()
-        for resource in resources
-        if isinstance(resource, ArtifactGeneratorResource)
-        for artifact in resource.spec.artifacts
-    }
 
     def needs_artifact_staging(copies: list[tuple[str, str]]) -> bool:
         # Directory copies already appear at their artifact paths in the source checkout.
@@ -118,7 +105,7 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
 
     staged_artifacts: dict[tuple[str, str], Path] = {}
     with ExitStack() as staging_dirs:
-        for key, copies in artifact_specs.items():
+        for key, copies in parsed.artifact_copies.items():
             if not needs_artifact_staging(copies):
                 continue
             staging_root = Path(staging_dirs.enter_context(tempfile.TemporaryDirectory(prefix="flux-artifact-")))

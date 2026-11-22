@@ -8,7 +8,6 @@ Other resources use the generic `K8sResource` base.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from pathlib import Path
 from typing import Any, NotRequired, TypedDict
 
 import yaml
@@ -373,12 +372,14 @@ def _resource_model(doc: dict) -> type[K8sResource]:
     return _GROUP_KIND_MODELS.get((group, kind), _KIND_MODELS.get(kind, K8sResource))
 
 
-def parse_k8s_resources(docs: Iterable[object]) -> list[K8sResource]:
-    """Parse YAML documents into K8s resources (typed subclass per kind), skipping non-resources."""
-    return [_resource_model(doc).model_validate(doc) for doc in docs if isinstance(doc, dict) and doc.get("kind")]
+def parse_k8s_resources(docs: Iterable[object], *, kinds: set[str] | None = None) -> list[K8sResource]:
+    """Build typed views of matching Kubernetes resources, skipping non-resource documents."""
+    return [
+        _resource_model(doc).model_validate(doc)
+        for doc in docs
+        if isinstance(doc, dict) and (kind := doc.get("kind")) and (kinds is None or kind in kinds)
+    ]
 
 
-def parse_k8s_resource_file(yaml_file: Path) -> list[K8sResource]:
-    """Parse a YAML file and extract all K8s resources."""
-    with yaml_file.open() as f:
-        return parse_k8s_resources(yaml.safe_load_all(f))
+def load_k8s_resources(data: bytes | str, *, kinds: set[str] | None = None) -> list[K8sResource]:
+    return parse_k8s_resources(yaml.load_all(data, Loader=yaml.CSafeLoader), kinds=kinds)
