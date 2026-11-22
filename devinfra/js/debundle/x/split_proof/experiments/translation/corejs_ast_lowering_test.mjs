@@ -128,6 +128,28 @@ assert.match(split(unsupported, ["--corejs", missing]), /proved slice: none\..*o
 file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "#1"] } }));
 assert.match(split("var a = 1; a();", ["--corejs", missing]), /proved slice: none\..*omits statement 1/);
 
+// Use both forms of the Lean placement spec. For each generated declaration list,
+// keep source order in one plan and move its final independent binding in the other.
+for (let width = 2; width <= 4; width++) {
+  const names = Array.from({ length: width }, (_, i) => `d${i}`);
+  const declarations = names.map((name, i) => `${name} = ${width + i}`).join(", ");
+  const code = `${["let", "const", "var"][width - 2]} ${declarations};`;
+  for (const moved of [0, width - 1]) {
+    const modules = {
+      "side.mjs": [names[moved]],
+      "entry.mjs": names.flatMap((_, i) => (i === moved ? [] : [`#${i}`])),
+    };
+    file("spec.json", JSON.stringify({ entry: "entry.mjs", modules }));
+    const log = split(code);
+    assert.match(log, /Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree/);
+    assert.match(log, moved === 0 ? /all modeled outcomes/ : /normally terminating executions/);
+  }
+}
+file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
+assert.match(split("var a; let b;"), /Declaration extraction: .*all modeled outcomes/);
+assert.match(split("export let a = b, b = 1;"), /Declaration extraction: .*all modeled outcomes/);
+assert.doesNotMatch(split(unsupported, ["--corejs", legacy]), /Declaration extraction:/);
+
 // Gaps in executable bodies still have source ordinals. Vary the width of an
 // exported list before a destructuring and an opaque closure so their IDs move.
 for (let width = 1; width <= 6; width++) {

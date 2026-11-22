@@ -2,6 +2,7 @@ import Experiments.ESTreeUnits
 import EsmSplit.Cli
 import Experiments.Effects
 import Experiments.CoreJS.FromESTree
+import Experiments.CoreJS.DeclarationCertificate
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Split
 import Experiments.CoreJS.Move
@@ -361,7 +362,7 @@ checker decides each slice as its theorem states it, of the bundle without its o
   total coverage check and do not conflict.
 - `CoreJS.moves_preserve_of_heritageMovesOk` moves a derived class across a block after checking an earlier
   class declaration establishes its superclass and intervening steps preserve it. -/
-def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
+def sliceLines (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
     (model : Except String ModelBody) : List String :=
   let kept := "order kept (`CoreJS.valid_order_kept_preserves`)"
   let moves := "moves (`CoreJS.moves_preserve`)"
@@ -406,8 +407,14 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
       else if heritage then "moves (certified class heritage) (`CoreJS.moves_preserve_of_heritageMovesOk`)"
       else "moves (certified bindings) (`CoreJS.moves_preserve_of_certifiedMovesOk`)"
     let (inverted, _, _) := if orderKept then (0, 0, none) else movesFailures (CoreJS.MayMoveAt arr) w.P.execOrder.toArray
+    let sourceProof := body.external == 0 && (orderKept || syntaxMoves || certifiedMoves)
+      && CoreJS.DeclarationCertificate.covers program ss
     pure ([if orderKept then s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"
         else s!"  proved slice: {name}: in the model, the split ends normally in a state exactly when the bundle does, for every world"]
+      ++ (if sourceProof then
+        let outcomes := if orderKept then "all modeled outcomes" else "normally terminating executions"
+        [s!"    Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree on {outcomes}."]
+        else [])
       ++ (if imports == 0 then [] else
         [s!"    of the bundle without its `import`s of outside modules ({imports}), which bind before any statement runs; the split without them is the same otherwise"])
       ++ [s!"    Valid: the nine checks{if imports == 0 then " above" else ", again"}"]
@@ -500,7 +507,7 @@ def main (args : List String) : IO UInt32 := do
     IO.FS.writeFile path ((match report with
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
-  for line in sliceLines asts B S P (ok && !bad) replicate?.isSome model do IO.println line
+  for line in sliceLines program asts B S P (ok && !bad) replicate?.isSome model do IO.println line
   if let some l := leanOut? then
     if bad then
       IO.println "  no kernel certificate: the front-end rule above failed, and Lean does not check it"
