@@ -121,6 +121,7 @@ py_library(
         "//agentplane/system_tests/driver:dispatcher_operations",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:identity",
+        "//agentplane/system_tests/driver:native_auth",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:sandbox_cleanup",
         "//agentplane/system_tests/driver:sandbox_diagnostics",

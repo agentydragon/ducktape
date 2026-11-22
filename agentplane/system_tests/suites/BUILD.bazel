@@ -281,7 +281,7 @@ py_test(
     ],
 )
 
-# This suite scales Dispatcher and deletes controller Pods on its own stack.
+# This suite scales Dispatcher and deletes controller Pods on its own native stack.
 py_test(
     name = "test_dispatcher",
     size = "enormous",
@@ -289,17 +289,17 @@ py_test(
     data = [
         "//agentplane/crds",
         K3S_BINARY,
-        ":pod_image_manifest",
+        ":pod_native_image_manifest",
+        ":pod_native_manifests.json",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :pod_native_manifests.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
         "test.runner-recycling-key": k3s_recycling_key(vm = False),
@@ -315,6 +315,7 @@ py_test(
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:native_auth",
         "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/scenarios:dispatcher",
         "@pypi//grpcio",
