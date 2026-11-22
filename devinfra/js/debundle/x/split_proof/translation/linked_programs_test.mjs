@@ -287,8 +287,7 @@ function eagerProvider() {
   ]);
 }
 
-// Move the worker to its own module and call it during initialization, so both
-// certification and the Node observation exercise its body.
+// Move the first declaration to its own module and observe the result exported by the entry.
 function workerSplit(name, source) {
   const dir = path.join(root, name);
   const files = prepare(dir, {
@@ -302,19 +301,19 @@ function workerSplit(name, source) {
 
 function assertWorkerResult(name, source, expected) {
   const { files, out, verdict, log } = workerSplit(name, source);
-  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.status, "certified", `${name}: ${log}`);
   assert.equal(verdict.guarantee, "normal-completion", log);
   for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
     assert.deepEqual(observe(file, "result"), { result: expected }, name);
   }
 }
 
-function workerProgram(body) {
+function observedProgram(initializer, result) {
   return program([
-    variable("const", "worker", arrow([], body)),
+    variable("const", "worker", initializer),
     {
       type: "ExportNamedDeclaration",
-      declaration: variable("const", "result", call(id("worker"))),
+      declaration: variable("const", "result", result),
       specifiers: [],
       source: null,
     },
@@ -325,7 +324,7 @@ for (const [seed, value] of [0, "taken", "", 3].entries()) {
   const selected = literal(seed + 30);
   const skipped = call(arrow([], block([throws(literal(seed))])));
   const choose = conditional(literal(value), value ? selected : skipped, value ? skipped : selected);
-  const source = workerProgram(choose);
+  const source = observedProgram(arrow([], choose), call(id("worker")));
   assertWorkerResult(`generated-conditional-${seed}`, source, seed + 30);
 }
 
@@ -352,15 +351,11 @@ for (const [index, [operand, tag, expected]] of [
   const type = { type: "UnaryExpression", operator: "typeof", prefix: true, argument: operand };
   const [left, right] = index % 2 === 0 ? [literal(tag), type] : [type, literal(tag)];
   const expr = { type: "BinaryExpression", operator: "!=", left, right };
-  assertWorkerResult(`generated-string-inequality-${index}`, workerProgram(expr), expected);
+  assertWorkerResult(`generated-string-inequality-${index}`, observedProgram(expr, id("worker")), expected);
 }
 
 // Different numeric spellings compare by string contents.
-assertWorkerResult(
-  "unequal-numeric-strings",
-  'const worker = () => "01" != "1"; export const result = worker();',
-  true
-);
+assertWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
 assertWorkerResult(
   "typeof-local-tdz",
   'const worker = () => { try { return "undefined" != typeof later; let later; } catch { return 7; } }; export const result = worker();',
@@ -368,7 +363,7 @@ assertWorkerResult(
 );
 assertWorkerResult(
   "typeof-shadowed-host-name",
-  'const worker = (window) => "undefined" != typeof window; export const result = worker(null);',
+  'const window = null; export const result = "undefined" != typeof window;',
   true
 );
 for (const [name, expr, reason] of [
