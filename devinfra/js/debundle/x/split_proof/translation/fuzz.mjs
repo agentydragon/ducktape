@@ -1048,7 +1048,10 @@ function renderBundle(bundle) {
 function split(bundle, r, opts) {
   const n = bundle.units.length;
   const modules = opts.place ? Math.max(...opts.place) + 1 : 1 + r.int(5);
-  const effectful = (u) => u.tmpl !== "constLit" && !/^(const|function|class|let|var) /.test(u.src);
+  const effectful = (unit) =>
+    unit.ast
+      ? !["VariableDeclaration", "FunctionDeclaration", "ClassDeclaration"].includes(unit.ast.type)
+      : unit.tmpl !== "constLit" && !/^(const|function|class|let|var) /.test(unit.src);
   const strategy = opts.place ? (opts.controlName ?? "callbackCorpus") : r.pick(["effectsInEntry", "random", "ranges"]);
   // the entry imports m1, m2, ... in ascending order and runs last, so range k of the bundle goes to module (k + 1) % modules
   const place = bundle.units.map((u, i) => {

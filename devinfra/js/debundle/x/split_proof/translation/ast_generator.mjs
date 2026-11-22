@@ -1,7 +1,4 @@
 // Bounded scope-aware AST generation. No source fragments participate in generation.
-const markTop = (name) => `\u0001${name}\u0002`;
-const markLocal = (name) => `\u0003${name}\u0004`;
-
 function random(seed) {
   let state = seed >>> 0;
   return (n) => {
@@ -30,24 +27,16 @@ const log = (value, label) =>
     )
   );
 
-/** Print only the AST forms this generator constructs. `marked` preserves binding
- * identity for the existing module-placement engine; plain output is runnable JS. */
-export function printAst(node, marked = false) {
-  const p = (child) => printAst(child, marked);
+/** Print runnable JavaScript, applying the module's spelling to bound identifiers. */
+export function printAst(node, names = {}) {
+  const p = (child) => printAst(child, names);
   switch (node.type) {
     case "Program":
       return node.body.map(p).join("\n") + "\n";
     case "Identifier":
-      if (marked && typeof marked === "object") {
-        if (node.binding === "top") return marked.top(node.name);
-        if (node.binding === "local") return marked.local(node.name);
-        return node.name;
-      }
-      return marked && node.binding === "top"
-        ? markTop(node.name)
-        : marked && node.binding === "local"
-          ? markLocal(node.name)
-          : node.name;
+      if (node.binding === "top" && names.top) return names.top(node.name);
+      if (node.binding === "local" && names.local) return names.local(node.name);
+      return node.name;
     case "Literal":
       return JSON.stringify(node.value);
     case "BlockStatement":
@@ -601,7 +590,6 @@ export function generateAstBundle(seed, round) {
     u.uses = [...uses];
     u.locals = [...locals];
     u.tmpl = `ast:${u.ast.type}`;
-    u.src = printAst(u.ast, true);
   }
   // Bias one plan toward a saved callback that can read the later binding.
   // Skip it if an intervening statement directly reads that binding: such a
