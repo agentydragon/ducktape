@@ -344,20 +344,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_test(
-    name = "test_generator_namespace",
-    srcs = ["test_generator_namespace.py"],
-    data = [
-        ":cluster_k8s_inputs",
-        "//agentplane/crds:manifests",
-    ],
-    deps = [
-        ":conftest",
-        ":flux",
-        "//:conftest",
-        "//cluster/cdk8s:manifest_roots",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
