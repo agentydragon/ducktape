@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/authentik-jwt-rotation
-    newTag: devel-20261121113134-1d454ab # {"$imagepolicy": "flux-system:authentik-jwt-rotation:tag"}
+    newTag: devel-20261122041347-7535389 # {"$imagepolicy": "flux-system:authentik-jwt-rotation:tag"}
