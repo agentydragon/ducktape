@@ -482,7 +482,12 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
       label: "Read GitHub issue",
       schema: read,
       result: issueReadResult,
-      compact: ({ args }) => <Text size="sm">{readMethods[args.method]}</Text>,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo}#{args.issue_number} · {readMethods[args.method]}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <IssueTarget args={args} />
@@ -497,6 +502,7 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     githubPresentation({
       label: "List GitHub issues",
       schema: readList,
+      cardDecision: true,
       compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
@@ -718,7 +724,12 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     githubPresentation({
       label: "Read GitHub issue label",
       schema: repoInput.extend({ name: z.string().min(1) }),
-      compact: ({ args }) => <Field name="Label" value={args.name} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo} · {args.name}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/labels" />

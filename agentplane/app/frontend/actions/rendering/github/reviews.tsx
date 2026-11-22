@@ -358,6 +358,7 @@ export const reviewRenderers: ReadonlyMap<string, ActionPresentation> = new Map(
     githubPresentation({
       label: "List GitHub pull requests",
       schema: listPulls,
+      cardDecision: true,
       result: listPullsResult,
       compact: ({ args }) => <Field name="Repository" value={`${args.owner}/${args.repo}`} />,
       request: ({ args }) => (
@@ -377,7 +378,12 @@ export const reviewRenderers: ReadonlyMap<string, ActionPresentation> = new Map(
       label: "Read GitHub pull request",
       schema: readPull,
       result: pullReadResult,
-      compact: ({ args }) => <Field name="Read" value={readMethods[args.method]} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo}#{args.pullNumber} · {readMethods[args.method]}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <PullTarget args={args} />

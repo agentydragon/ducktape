@@ -47,6 +47,33 @@ function fileBlocks(container: HTMLElement): Array<{ summary: HTMLButtonElement;
   }));
 }
 
+describe("GitHub read approvals", () => {
+  it.each([
+    ["list_branches", {}, "test-owner/test-repo"],
+    ["list_commits", {}, "test-owner/test-repo"],
+    ["list_tags", {}, "test-owner/test-repo"],
+    ["list_releases", {}, "test-owner/test-repo"],
+    ["get_latest_release", {}, "test-owner/test-repo"],
+    ["get_tag", { tag: "v1" }, "test-owner/test-repo"],
+    ["get_release_by_tag", { tag: "v1" }, "test-owner/test-repo"],
+    ["get_commit", { sha: "abc123" }, "test-owner/test-repo"],
+    ["list_issues", { state: "OPEN", labels: ["bug"] }, "test-owner/test-repo"],
+    ["list_pull_requests", {}, "test-owner/test-repo"],
+    ["get_file_contents", { path: "docs/guide.md" }, "test-owner/test-repo"],
+    ["get_label", { name: "bug" }, "test-owner/test-repo"],
+    ["issue_read", { issue_number: 42, method: "get_comments" }, "test-owner/test-repo#42"],
+    ["pull_request_read", { pullNumber: 42, method: "get_files" }, "test-owner/test-repo#42"],
+  ])("offers a scoped compact decision for %s", async (name, fields, scope) => {
+    const action = create(ActionIdentitySchema, { group: "github", name });
+    const args = { ...REPOSITORY, ...fields };
+    expect(shownText(await mount(renderPaneCollapsed(action, args)))).toContain(scope);
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action, { ...args, future_scope: true })).toBe(false);
+    expect(actionOffersCardDecisionButtons(action, { ...args, owner: "" })).toBe(false);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
+  });
+});
+
 describe("GitHub issue writes", () => {
   it("keeps label-only updates in the label and links the issue", async () => {
     const args = { ...ISSUE_UPDATE, labels: ["bug", "upstream-waiting"] };
