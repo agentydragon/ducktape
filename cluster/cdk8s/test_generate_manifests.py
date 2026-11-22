@@ -7,8 +7,11 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
+import base64
 import json
 import os
+import shutil
+import subprocess
 from difflib import unified_diff
 from pathlib import Path
 from typing import Any
@@ -722,31 +725,37 @@ def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(parsed_yaml_docum
     )
 
 
-def test_session_archive_credentials_source_reaches_its_secret_generator(
-    generated: Path, documents: list[dict[str, Any]], checkout: Path
+def test_session_archive_importers_mount_the_generated_credentials(
+    generated: Path, documents: list[dict[str, Any]], checkout: Path, tmp_path: Path, runfiles: Runfiles
 ) -> None:
-    credentials_source = "secrets/shared/session-backup.yaml"
-    assert (checkout / credentials_source).is_file(), "the encrypted credentials source must be in the source checkout"
-
     generator = find_resource(documents, "ArtifactGenerator", "ducktape-artifacts")
-    archive_artifact = next(item for item in generator["spec"]["artifacts"] if item["name"] == "ai-session-archive")
-    copies = archive_artifact["copy"]
-    assert {(copy["from"], copy["to"]) for copy in copies} >= {
-        ("@repo/cluster/generated/ai-session-archive/**", "@artifact/cluster/generated/ai-session-archive/"),
-        (
-            "@repo/secrets/shared/session-backup.yaml",
-            "@artifact/cluster/generated/ai-session-archive/session-backup.sops.yaml",
-        ),
-    }
+    archive = next(item for item in generator["spec"]["artifacts"] if item["name"] == "ai-session-archive")
+    destinations = {copy["from"]: tmp_path / copy["to"].removeprefix("@artifact/") for copy in archive["copy"]}
+    directory = "cluster/generated/ai-session-archive"
+    pins = "cluster/k8s/ai-session-archive-image-pins"
+    work = destinations[f"@repo/{directory}/**"]
+    shutil.copytree(generated / directory, work)
+    shutil.copytree(checkout / pins, destinations[f"@repo/{pins}/**"])
+    source = "secrets/shared/session-backup.yaml"
+    assert (checkout / source).is_file()
+    # Exercise the copy destination and key mapping without using the real ciphertext.
+    payload = b"synthetic encrypted payload"
+    destinations[f"@repo/{source}"].write_bytes(payload)
 
-    kustomization = yaml.safe_load((generated / "cluster/generated/ai-session-archive/kustomization.yaml").read_text())
-    assert kustomization["secretGenerator"] == [
-        {
-            "name": "session-backup-importer-credentials",
-            "namespace": "session-backup",
-            "files": ["session-backup.yaml=session-backup.sops.yaml"],
-        }
-    ]
+    kustomize = runfiles.root() / os.environ["KUSTOMIZE_RLOCATION"]
+    resources = list(yaml.safe_load_all(subprocess.check_output([kustomize, "build", work])))
+    [secret] = [doc for doc in resources if doc["kind"] == "Secret"]
+    jobs = [doc for doc in resources if doc["kind"] == "CronJob"]
+    assert jobs
+    for job in jobs:
+        pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        [credentials] = [volume["secret"] for volume in pod["volumes"] if volume["name"] == "restic-credentials"]
+        assert (job["metadata"]["namespace"], credentials["secretName"]) == (
+            secret["metadata"]["namespace"],
+            secret["metadata"]["name"],
+        )
+        [item] = credentials["items"]
+        assert base64.b64decode(secret["data"][item["key"]]) == payload
 
 
 def test_no_image_automation_markers(generated: Path) -> None:
