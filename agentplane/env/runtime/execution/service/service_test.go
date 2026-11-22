@@ -15,7 +15,9 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexshim"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
 	"golang.org/x/net/http2"
@@ -199,7 +201,7 @@ func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	finished := make(chan error, 1)
 	go func() {
-		finished <- runWithReady(t.Context(), Config{ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
+		finished <- runWithReady(t.Context(), Config{Implementation: codexexecserver.ImplementationCodex, ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: backendDone, Stop: func(context.Context) error {
 				close(stopEntered)
 				<-releaseStop
@@ -210,9 +212,9 @@ func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
 	select {
 	case <-attempted:
 	case err := <-finished:
-		t.Fatalf("service exited before native readiness probe: %v", err)
+		t.Fatalf("service exited before backend readiness probe: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("native readiness probe did not start")
+		t.Fatal("backend readiness probe did not start")
 	}
 	backendDone <- errors.Join(codexexecserver.ErrExecutionBackendLost, errors.New("native backend exited"))
 	select {
@@ -292,8 +294,8 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	t.Cleanup(server.Close)
 	endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 	config := Config{
-		ExecutorURL: endpoint,
-		Readiness:   codexexecserver.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
+		ExecutorURL: endpoint, Implementation: codexexecserver.ImplementationCodex,
+		Readiness: codexexecserver.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -357,8 +359,8 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		t.Cleanup(server.Close)
 		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 		config := Config{
-			ExecutorURL: endpoint,
-			Readiness:   codexexecserver.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
+			ExecutorURL: endpoint, Implementation: codexexecserver.ImplementationCodex,
+			Readiness: codexexecserver.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -412,8 +414,8 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		t.Cleanup(server.Close)
 		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 		config := Config{
-			ExecutorURL: endpoint,
-			Readiness:   codexexecserver.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
+			ExecutorURL: endpoint, Implementation: codexexecserver.ImplementationCodex,
+			Readiness: codexexecserver.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		ready := make(chan struct{}, 1)
@@ -452,6 +454,79 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		default:
 		}
 	})
+}
+
+func TestNativeHealthChecksDoNotConsumeExecutionSessions(t *testing.T) {
+	limits := native.DefaultLimits()
+	limits.MaxSessions = 1
+	core, err := native.NewWithLimits(limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = core.Close() })
+
+	checks := make(chan struct{}, 4)
+	rpc := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		response, err := handler(ctx, req)
+		if info.FullMethod == healthpb.Health_Check_FullMethodName {
+			checks <- struct{}{}
+		}
+		return response, err
+	}))
+	h := health.NewServer()
+	h.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(rpc, h)
+	t.Cleanup(rpc.Stop)
+	shim := codexshim.Handler{Server: core}
+	server := httptest.NewServer(h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			rpc.ServeHTTP(w, r)
+			return
+		}
+		shim.ServeHTTP(w, r)
+	}), &http2.Server{}))
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ready := make(chan struct{}, 1)
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithReady(ctx, Config{Implementation: codexexecserver.ImplementationNative, ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
+	}()
+	select {
+	case <-ready:
+	case err := <-finished:
+		t.Fatalf("native service exited before readiness: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("native service did not become ready")
+	}
+	// Wait for both startup readiness and the first periodic liveness check.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-checks:
+		case err := <-finished:
+			t.Fatalf("native service exited during health checks: %v", err)
+		case <-time.After(8 * time.Second):
+			t.Fatal("native health check did not arrive")
+		}
+	}
+	session, err := core.OpenSession("")
+	if err != nil {
+		t.Fatalf("health checks consumed the user session capacity: %v", err)
+	}
+	core.Detach(session.ID())
+	cancel()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("native service shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("native service did not shut down")
+	}
 }
 
 func TestTypedReadinessIsRequiredBeforePublishing(t *testing.T) {

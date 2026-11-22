@@ -35,6 +35,8 @@ go_test(
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/codexshim",
+        "//agentplane/env/runtime/execution/native",
         "//agentplane/env/runtime/supervision",
         "//agentplane/proto:identity_go_proto",
         "@com_github_coder_websocket//:websocket",

@@ -111,7 +111,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		}
 	}()
 	var backendConn *grpc.ClientConn
-	var checkTyped codexexecserver.Probe
+	checkBackend := codexexecserver.ProbeAt(config.ExecutorURL)
 	if config.Implementation == codexexecserver.ImplementationNative {
 		endpoint, err := url.Parse(config.ExecutorURL)
 		if err != nil {
@@ -123,7 +123,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		}
 		defer backendConn.Close()
 		healthClient := healthpb.NewHealthClient(backendConn)
-		checkTyped = func(ctx context.Context) error {
+		checkBackend = func(ctx context.Context) error {
 			result, err := healthClient.Check(ctx, &healthpb.HealthCheckRequest{})
 			if err != nil {
 				return err
@@ -138,13 +138,8 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 	err = retry.Do(readiness, retry.NewConstant(config.Readiness.ProbeInterval), func(ctx context.Context) error {
 		probeCtx, endProbe := context.WithTimeout(ctx, config.Readiness.ProbeTimeout)
 		defer endProbe()
-		if err := codexexecserver.ProbeAt(config.ExecutorURL)(probeCtx); err != nil {
+		if err := checkBackend(probeCtx); err != nil {
 			return retry.RetryableError(err)
-		}
-		if checkTyped != nil {
-			if err := checkTyped(probeCtx); err != nil {
-				return retry.RetryableError(err)
-			}
 		}
 		return nil
 	})
@@ -180,7 +175,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 			cancel()
 		}
 	}
-	go monitor("execution backend stopped responding", codexexecserver.ProbeAt(config.ExecutorURL))
+	go monitor("execution backend stopped responding", checkBackend)
 
 	var executionAdapter interface {
 		executorpb.ExecutorServer
@@ -192,7 +187,6 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 			Acquire: func(context.Context) (string, error) { return config.ExecutorURL, nil },
 		})
 	} else {
-		go monitor("typed execution backend health", checkTyped)
 		executionAdapter, err = typedproxy.New(lifetime, executorpb.NewExecutorClient(backendConn), config.admit)
 	}
 	if err != nil {
