@@ -1250,7 +1250,6 @@ py_test(
     deps = [
         ":conftest",
         ":environment_guest",
-        ":environment_sandbox",
         ":environment_vm",
         ":launcher_relay",
         ":staging",

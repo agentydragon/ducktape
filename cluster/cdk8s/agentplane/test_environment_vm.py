@@ -9,14 +9,14 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App
+from cdk8s import ApiObject, App
 from cdk8s_plus_34 import ConfigMap
 from constructs import IConstruct
 from more_itertools import one
 from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, SystemdEnvironment
-from cluster.cdk8s.agentplane import environment_guest, environment_sandbox, environment_vm, launcher_relay, staging
+from cluster.cdk8s.agentplane import environment_guest, environment_vm, launcher_relay, staging
 
 
 @pytest.fixture(scope="module")
@@ -25,13 +25,13 @@ def staging_constructs(scratch_app_factory: Callable[[], App]) -> list[IConstruc
 
 
 @pytest.fixture(scope="module")
-def vm_spec(staging_constructs: list[IConstruct]) -> dict[str, Any]:
-    vm = one(
-        node
-        for node in staging_constructs
-        if isinstance(node, environment_vm.EnvironmentVmTemplate) and node.name == environment_vm.NAME
-    )
-    return cast(dict[str, Any], vm.to_json()["spec"])
+def sandbox_templates(staging_constructs: list[IConstruct]) -> dict[str, ApiObject]:
+    return {obj.name: obj for obj in staging_constructs if isinstance(obj, ApiObject) and obj.kind == "SandboxTemplate"}
+
+
+@pytest.fixture(scope="module")
+def vm_spec(sandbox_templates: dict[str, ApiObject]) -> dict[str, Any]:
+    return cast(dict[str, Any], sandbox_templates[environment_vm.NAME].to_json()["spec"])
 
 
 @pytest.fixture(scope="module")
@@ -136,7 +136,7 @@ def test_vm_workspace_is_a_controller_attached_block_filesystem(vm_spec: dict[st
 
 
 def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_storage(
-    staging_constructs: list[IConstruct], vm_spec: dict[str, Any]
+    sandbox_templates: dict[str, ApiObject], vm_spec: dict[str, Any]
 ) -> None:
     vm_state = vm_spec["stateVolume"]
     vm_workspace = vm_spec["workspaceVolume"]
@@ -147,14 +147,10 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert vm_state["claim"]["storageClassName"] == vm_workspace["claim"]["storageClassName"]
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
-    environment_template = one(
-        node
-        for node in staging_constructs
-        if isinstance(node, environment_sandbox.EnvironmentSandboxTemplate) and node.name == staging.POD_TEMPLATE
-    )
-    pod_state = environment_template.spec["stateVolume"]
+    pod_spec = sandbox_templates[staging.POD_TEMPLATE].to_json()["spec"]
+    pod_state = pod_spec["stateVolume"]
     assert pod_state["claim"]["storageClassName"] != vm_state["claim"]["storageClassName"]
-    assert environment_template.spec["workspaceVolume"]["layout"] == {"type": "DirectoryTree"}
+    assert pod_spec["workspaceVolume"]["layout"] == {"type": "DirectoryTree"}
 
 
 def test_vm_storage_class_requires_vm_sandboxes() -> None:
