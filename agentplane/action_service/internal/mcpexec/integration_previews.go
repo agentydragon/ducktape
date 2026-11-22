@@ -13,6 +13,23 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+var githubLabelColor = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
+
+func (e *Executor) GitHubLabelSummaries(ctx context.Context, owner, repo string, names []string) []*operator_action_servicepb.GitHubLabelSummary {
+	return readSummaries(ctx, e, names, "github", "get_label", func(name string) map[string]any {
+		return map[string]any{"owner": owner, "repo": repo, "name": name}
+	}, func(name string, result *mcp.CallToolResult) *operator_action_servicepb.GitHubLabelSummary {
+		var label struct {
+			Name  string
+			Color string
+		}
+		if !parsePreviewObject(result, &label) || !strings.EqualFold(name, label.Name) || !githubLabelColor.MatchString(label.Color) {
+			return nil
+		}
+		return &operator_action_servicepb.GitHubLabelSummary{Name: name, Color: label.Color}
+	})
+}
+
 func (e *Executor) GmailThreadSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
 	return readSummaries(ctx, e, ids, "gmail", "threads_get", func(id string) map[string]any {
 		return map[string]any{"id": id, "format": "metadata"}

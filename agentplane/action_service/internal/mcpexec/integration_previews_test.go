@@ -383,3 +383,29 @@ func grocyEntitySummary(key string, result *mcp.CallToolResult) *operator_action
 func textResultForPreview(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
+
+func TestGitHubLabelSummariesUseRecordedNames(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "github-preview-test"}, nil)
+	server.AddTool(&mcp.Tool{Name: "get_label", InputSchema: json.RawMessage(`{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"name":{"type":"string"}},"required":["owner","repo","name"]}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct {
+			Owner string `json:"owner"`
+			Repo  string `json:"repo"`
+			Name  string `json:"name"`
+		}
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.Owner != "owner" || args.Repo != "repo" {
+			t.Errorf("unexpected target: %+v", args)
+		}
+		if args.Name == "missing" {
+			return &mcp.CallToolResult{IsError: true}, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(`{"name":%q,"color":"d73a4a"}`, args.Name)}}}, nil
+	})
+	executor := previewExecutor(t, "github", server)
+	got := executor.GitHubLabelSummaries(t.Context(), "owner", "repo", []string{"bug", "missing"})
+	if len(got) != 1 || got[0].GetName() != "bug" || got[0].GetColor() != "d73a4a" {
+		t.Errorf("GitHub labels = %v", got)
+	}
+}

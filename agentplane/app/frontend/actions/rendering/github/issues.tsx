@@ -1,6 +1,9 @@
 import { Badge, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
+
+import { getGitHubLabelSummaries } from "../../client";
 
 import { TextBlock } from "../../../ui/text_block";
 import type { ActionPresentation } from "../presentation";
@@ -288,6 +291,56 @@ function MetaTarget({ args }: { args: z.infer<typeof metaTarget> }): JSX.Element
   );
 }
 
+function IssueWriteLabel({
+  args,
+  requestId,
+}: {
+  args: z.infer<typeof write>;
+  requestId?: string;
+}): JSX.Element | string {
+  const parsed = labelWrite.safeParse(args);
+  const summaries = useQuery({
+    queryKey: ["action-github-label-summaries", requestId],
+    queryFn: ({ signal }) => getGitHubLabelSummaries(requestId ?? "", signal),
+    enabled: Boolean(requestId && parsed.success && parsed.data.labels.length),
+    retry: false,
+    staleTime: 30_000,
+  }).data;
+  if (!parsed.success) return "Change GitHub issue";
+  const target = `${parsed.data.owner}/${parsed.data.repo}#${parsed.data.issue_number}`;
+  if (parsed.data.labels.length === 0) return `Clear labels on ${target}`;
+  return (
+    <span>
+      Set labels on {target}:{" "}
+      {parsed.data.labels.map((label, index) => {
+        const color = summaries?.labels.find((entry) => entry.name === label)?.color;
+        const border = color && /^[0-9a-fA-F]{6}$/.test(color) ? `#${color}` : "var(--mantine-color-gray-6)";
+        return (
+          <Badge
+            key={index}
+            component="span"
+            variant="outline"
+            size="sm"
+            tt="none"
+            h="auto"
+            maw="100%"
+            style={{
+              verticalAlign: "middle",
+              marginRight: 4,
+              borderColor: border,
+              color: "var(--mantine-color-text)",
+              background: `color-mix(in srgb, ${border} 15%, var(--mantine-color-body))`,
+            }}
+            styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
+          >
+            {label}
+          </Badge>
+        );
+      })}
+    </span>
+  );
+}
+
 function IssueWriteArguments({ args }: { args: z.infer<typeof write> }): JSX.Element {
   return (
     <Stack gap={4}>
@@ -441,33 +494,7 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
         request: ({ args }) => <IssueWriteArguments args={args} />,
         result: defineResultPreview(issueWriteResult, IssueWriteReceipt),
       }),
-      label: definePreview(write, ({ args }) => {
-        const labels = labelWrite.safeParse(args);
-        if (!labels.success) return "Change GitHub issue";
-        const target = `${labels.data.owner}/${labels.data.repo}#${labels.data.issue_number}`;
-        if (labels.data.labels.length === 0) return `Clear labels on ${target}`;
-        return (
-          <span>
-            Set labels on {target}:{" "}
-            {labels.data.labels.map((label, index) => (
-              <Badge
-                key={index}
-                component="span"
-                variant="light"
-                color="gray"
-                size="sm"
-                tt="none"
-                h="auto"
-                maw="100%"
-                style={{ verticalAlign: "middle", marginRight: 4 }}
-                styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
-              >
-                {label}
-              </Badge>
-            ))}
-          </span>
-        );
-      }),
+      label: definePreview(write, IssueWriteLabel),
       pane: {
         collapsed: definePreview(write, ({ args }) =>
           labelWrite.safeParse(args).success ? null : (

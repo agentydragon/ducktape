@@ -121,7 +121,7 @@ export function ActionCall({
 }): JSX.Element {
   const action = actionIdentity(request);
   const args = actionArguments(request);
-  const actionLabel = renderActionLabel(action, args);
+  const actionLabel = renderActionLabel(action, args, request.id);
   const prettyArguments = renderDetailsArguments(
     action,
     args,

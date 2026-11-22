@@ -23,6 +23,8 @@ import {
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
+  GetGitHubLabelSummariesResponseSchema,
+  type GetGitHubLabelSummariesResponse,
   GetGmailResourceSummariesResponseSchema,
   type GetGmailResourceSummariesResponse,
   GetGmailThreadSummariesResponseSchema,
@@ -167,6 +169,17 @@ export async function getGoogleCalendarPreview(
       { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" },
       fetch
     )
+  );
+}
+
+export async function getGitHubLabelSummaries(
+  requestId: string,
+  signal: AbortSignal
+): Promise<GetGitHubLabelSummariesResponse> {
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}/github-label-summaries`;
+  return fromJsonString(
+    GetGitHubLabelSummariesResponseSchema,
+    await fetchText(path, { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" }, fetch)
   );
 }
 

@@ -393,3 +393,31 @@ func TestGmailMailLabelsUseOnlyTheMatchingSuccessfulReceipt(t *testing.T) {
 		t.Errorf("provider received %d label calls, want 2", count)
 	}
 }
+
+type githubLabelRecorder struct{ calls chan []string }
+
+func (r githubLabelRecorder) GitHubLabelSummaries(_ context.Context, owner, repo string, names []string) []*operator_action_servicepb.GitHubLabelSummary {
+	r.calls <- append([]string{owner, repo}, names...)
+	return []*operator_action_servicepb.GitHubLabelSummary{{Name: names[0], Color: "d73a4a"}}
+}
+
+func TestGitHubLabelSummariesUseOnlyRecordedIssueLabels(t *testing.T) {
+	recorder := githubLabelRecorder{calls: make(chan []string, 1)}
+	namespace := newPolicyNamespace(t)
+	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, IntegrationPreviews{GitHub: recorder})
+	receipt := s.submitAction(t, "github", "issue_write", `{"method":"update","owner":"owner","repo":"repo","issue_number":42,"labels":["bug","needs review","bug","3","4","5","6","7","8","9"]}`)
+	req := &operator_action_servicepb.GetGitHubLabelSummariesRequest{RequestId: receipt.ID.String()}
+	_, err := s.operators.GetGitHubLabelSummaries(as(t, callerCertificate), req)
+	wantCode(t, "workload cannot read GitHub label summaries", err, codes.Unauthenticated)
+	code, body := s.get(t, "/v1/operator/action-requests/"+receipt.ID.String()+"/github-label-summaries", s.operatorToken)
+	var response operator_action_servicepb.GetGitHubLabelSummariesResponse
+	if code != http.StatusOK || protojson.Unmarshal(body, &response) != nil || len(response.Labels) != 1 || response.Labels[0].GetColor() != "d73a4a" {
+		t.Fatalf("GitHub summary HTTP response %d %s", code, body)
+	}
+	if got := <-recorder.calls; !slices.Equal(got, []string{"owner", "repo", "bug", "needs review", "3", "4", "5", "6", "7", "8"}) {
+		t.Errorf("looked up %q", got)
+	}
+	wrong := s.submitAction(t, "gmail", "labels_get", `{"id":"bug"}`)
+	_, err = s.operators.GetGitHubLabelSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetGitHubLabelSummariesRequest{RequestId: wrong.ID.String()})
+	wantCode(t, "wrong integration", err, codes.InvalidArgument)
+}
