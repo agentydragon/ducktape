@@ -107,6 +107,19 @@ its default queries against that database, and the primary's instance reconcile 
 owner's password from the secret. When the role does not exist, that reconcile fails and
 skips every later step.
 
+### R7: CNPG VPAs are recommendation-only
+
+A VPA targeting a CNPG `Cluster` must use `updateMode: Off`. Do not use VPA
+admission or eviction modes, including `Initial` and `Recreate`, for its instance
+Pods. CNPG owns the Pod specification and orchestrates database-aware rolling
+updates; a VPA can change admitted resources without changing the Cluster's
+declared resources, and VPA eviction bypasses CNPG's switchover sequencing.
+
+Use VPA recommendations as sizing evidence, then set requests through the CNPG
+`Cluster` and, for the backup sidecar, its Barman `ObjectStore` configuration.
+The VPA 1.7.1 recommender skips init-container metrics, including restartable
+Barman sidecars, so size those separately. [CNPG 1.30 VPA guidance](https://cloudnative-pg.io/docs/1.30/resource_management/#integration-with-the-vertical-pod-autoscaler-vpa) · [VPA 1.7.1 recommender](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/recommender/input/cluster_feeder.go)
+
 ## Gotcha: replica stuck `0/1` after failover
 
 A former primary can finish `pg_rewind`, enter standby and stay `0/1` for ~30 minutes while the
