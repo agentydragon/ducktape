@@ -356,24 +356,113 @@ export function generatedBindingCases(seed) {
   ];
 }
 
+// Each seed constructs a chain and exercises one additional base-constructor outcome.
 export function generatedInheritanceCases(seed) {
-  const n = 1 + ((seed >>> 0) % 7);
-  return [
-    {
-      name: `default inheritance seed ${seed}`,
-      family: "inheritance",
-      source: `
-      const independent = () => ${n};
-      const first = ${n + 1};
-      class Base { field = ${n}; constructor(value) { this.value = value; } }
-      class Middle extends Base {}
-      class Leaf extends Middle { read() { return this.field + this.value; } }
-      const instance = new Leaf(${n + 2});
-      console.log(instance.read(), Object.getPrototypeOf(instance) === Leaf.prototype,
-        Object.getPrototypeOf(Leaf) === Middle, Leaf.length, independent(), first);
-    `,
-    },
-  ];
+  const cycle = (value, length) => ((value % length) + length) % length;
+  const field = 1 + cycle(seed, 7);
+  const depth = 1 + cycle(seed, 4);
+  const arity = 2 + cycle(seed, 3);
+  const parameters = Array.from({ length: arity }, (_, i) => `arg${i}`);
+  const args = parameters.map((_, i) => 3 + cycle(seed * 5, 13) + i * (field + 2));
+  const classes = ["Base", ...Array.from({ length: depth - 1 }, (_, i) => `Middle${i}`), "Leaf"];
+  const overrideAt = 1 + cycle(seed, depth);
+  const last = parameters.at(-1);
+  const outcome = cycle(seed + Math.floor(seed / 4), 3);
+
+  const witnesses = [];
+  const observe = (feature, expected, expressions) => {
+    witnesses.push({ feature, line: [feature, ...expected].join(" ") });
+    return `console.log(${JSON.stringify(feature)}, ${expressions.join(", ")});`;
+  };
+
+  const links = (suffix) =>
+    classes.slice(1).map((name, i) => `Object.getPrototypeOf(${name}${suffix}) === ${classes[i]}${suffix}`);
+  const declaration = outcome === 1 ? `const replacement = { value: ${field + 100} };` : "";
+  const earlyCompletion =
+    outcome === 1 ? "if (arg0 < 0) return replacement;" : outcome === 2 ? "if (arg0 < 0) throw arg1;" : "";
+  const derived = classes.slice(1).map((name, i) => {
+    const override = i + 1 === overrideAt ? `measure() { return this.arg0 * ${field + 1} + this.${last}; }` : "";
+    return `class ${name} extends ${classes[i]} { ${override} }`;
+  });
+
+  let additional;
+  if (outcome === 0) {
+    const index = 1 + cycle(seed + Math.floor(seed / 2), depth);
+    const target = classes[index];
+    additional = `
+      class Alternate { constructor(a, b) { this.adjusted = a - b; } }
+      Object.setPrototypeOf(${target}, Alternate);
+      const shifted = new Leaf(${args.join(", ")});
+      ${observe(
+        "retargeted constructor",
+        [args[0] - args[1], true, true],
+        [
+          "shifted.adjusted",
+          "Object.getPrototypeOf(shifted) === Leaf.prototype",
+          `Object.getPrototypeOf(${target}.prototype) === ${classes[index - 1]}.prototype`,
+        ]
+      )}`;
+  } else if (outcome === 1) {
+    additional = `
+      const returned = new Leaf(-1, ${args.slice(1).join(", ")});
+      ${observe(
+        "returned object",
+        [true, field + 100, false],
+        ["returned === replacement", "returned.value", "Object.getPrototypeOf(returned) === Leaf.prototype"]
+      )}`;
+  } else {
+    additional = `
+      try { new Leaf(-1, ${args.slice(1).join(", ")}); }
+      catch (caught) { ${observe("thrown value", [args[1]], ["caught"])} }`;
+  }
+
+  const measured = args[0] * (field + 1) + args.at(-1);
+  const inherited = args[0] + field;
+  const source = `
+      const independent = () => ${field};
+      const first = ${field + 1};
+      ${declaration}
+      class Base {
+        field = ${field};
+        constructor(${parameters.join(", ")}) {
+          ${earlyCompletion}
+          ${parameters.map((p) => `this.${p} = ${p};`).join(" ")}
+          this.receivedPrototype = Object.getPrototypeOf(this);
+          this.initialField = this.field;
+        }
+        baseValue() { return this.arg0 + this.field; }
+        measure() { return -this.arg0; }
+        get total() { return this.measure() + this.baseValue(); }
+      }
+      ${derived.join("\n")}
+      const instance = new Leaf(${args.join(", ")});
+      ${observe(
+        "forwarded arguments",
+        args,
+        parameters.map((p) => `instance.${p}`)
+      )}
+      ${observe("constructor links", Array(depth).fill(true), links(""))}
+      ${observe("prototype links", Array(depth).fill(true), links(".prototype"))}
+      ${observe(
+        "construction receiver",
+        [true, true, true, field, 0],
+        [
+          "instance.receivedPrototype === Leaf.prototype",
+          "Object.getPrototypeOf(instance) === Leaf.prototype",
+          "instance.constructor === Leaf",
+          "instance.initialField",
+          "Leaf.length",
+        ]
+      )}
+      ${observe(
+        "method dispatch",
+        [inherited, measured, inherited + measured],
+        ["instance.baseValue()", "instance.measure()", "instance.total"]
+      )}
+      ${additional}
+      console.log(independent(), first);
+    `;
+  return [{ name: `default inheritance seed ${seed}`, family: "inheritance", witnesses, source }];
 }
 
 export function generatedHeritageSplit(seed) {

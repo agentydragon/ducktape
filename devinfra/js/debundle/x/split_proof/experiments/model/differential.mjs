@@ -946,6 +946,51 @@ if (bindingOnly) {
   console.log(`certified binding moves: ${certifiedGenerated.length}, four runs and final state compared`);
 }
 if (inheritanceOnly) {
+  const always = [
+    "forwarded arguments",
+    "constructor links",
+    "prototype links",
+    "construction receiver",
+    "method dispatch",
+  ];
+  const outcomes = ["retargeted constructor", "returned object", "thrown value"];
+  const coverage = new Map();
+  for (const job of jobs.filter((j) => j.focused?.family === "inheritance")) {
+    const features = job.focused.witnesses.map(({ feature }) => feature);
+    assert.equal(features.length, always.length + 1, `${job.label}: expected one additional constructor outcome`);
+    assert(
+      always.every((feature) => features.includes(feature)) && outcomes.some((outcome) => features.includes(outcome)),
+      `${job.label}: missing generated inheritance observations`
+    );
+    for (const { feature, line } of job.focused.witnesses) {
+      const prefix = `${feature} `;
+      const observed = job.result.out.filter((out) => out.startsWith(prefix));
+      assert.deepEqual(observed, [line], `${job.label}: CoreJS witness for ${feature}`);
+      assert.deepEqual(
+        job.node.out.filter((out) => out.startsWith(prefix)),
+        observed,
+        `${job.label}: Node witness for ${feature}`
+      );
+      const entry = coverage.get(feature) ?? { programs: 0, widths: new Set() };
+      entry.programs++;
+      entry.widths.add(observed[0].slice(prefix.length).split(" ").length);
+      coverage.set(feature, entry);
+    }
+  }
+  for (const feature of always)
+    assert.equal(coverage.get(feature)?.programs, count, `every seed must execute ${feature}`);
+  assert.equal(coverage.get("forwarded arguments").widths.size, Math.min(count, 3), "distinct argument counts");
+  for (const feature of ["constructor links", "prototype links"])
+    assert.equal(coverage.get(feature).widths.size, Math.min(count, 4), `${feature}: distinct chain lengths`);
+  if (count >= 12)
+    assert(
+      outcomes.every((outcome) => coverage.has(outcome)),
+      "the generated sample must execute every outcome"
+    );
+  console.log("generated inheritance programs with matching runtime witnesses:");
+  console.table(Object.fromEntries([...coverage].map(([feature, { programs }]) => [feature, { programs }])));
+}
+if (inheritanceOnly) {
   const certified = splitJobs.filter((j) => j.named?.certifiedHeritage);
   assert.equal(certified.length, count + 1, "the handwritten and every generated heritage split must execute");
   const compositions = certified.flatMap((j) => (j.named.heritageCoverage ? [j.named.heritageCoverage] : []));

@@ -21,7 +21,7 @@ random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 | Objects, descriptors, getters/setters, prototypes                 | `cases.mjs`: inherited accessors, descriptor validation, prototype changes                                                                             | Getter/setter mutation, deletion, inherited membership, prototype replacement.                                                                       |
 | Arrays                                                            | `cases.mjs`: nested literals, reads, length, deletion                                                                                                  | Nested reads, identity, bounds and membership. Writes still end `unknown`.                                                                           |
 | Plain classes                                                     | `cases.mjs`: constructor, fields, statics, methods, accessors, names, errors                                                                           | Instance/static fields, constructor, getters/setters, captured `this`.                                                                               |
-| Default derived classes                                           | `cases.mjs`: prototype links, dynamic superclass, null heritage, TDZ, returns/throws; `opaque_cases.mjs`: opaque base body                             | Multi-level forwarding, base fields, inherited methods, instance prototype, constructor length.                                                      |
+| Default derived classes                                           | `cases.mjs`: prototype links, dynamic superclass, null heritage, TDZ, returns/throws; `opaque_cases.mjs`: opaque base body                             | Varied depth and arity, both prototype chains, base receiver and fields, method overrides, and retargeting, returns, and throws.                     |
 | Control flow and exceptions                                       | `cases.mjs`: loops, jumps, abrupt `finally`, TDZ, engine errors, thrown values                                                                         | Finite loops; caught primitive, engine and host exceptions; `finally` on return.                                                                     |
 | Primitive host calls                                              | `cases.mjs`: string/number/boolean methods, `Math`, parsing, throws, unknown boundaries                                                                | Primitive calls and chains; a caught host exception. Selected functions only.                                                                        |
 | Linked modules                                                    | [`module_cases.mjs`](module_cases.mjs): live bindings, cycles, hoisting/TDZ, import assignment, aliases, defaults, missing exports, evaluation failure | Live-binding diamond, cycle with caught TDZ, uncaught dependency exception. Aliases execute; defaults and frozen import targets remain manual-only.  |
@@ -119,10 +119,16 @@ capabilities not represented by the model end `unknown`.
 
 Handwritten cases cover chains, both prototype links, constructor-prototype mutation,
 invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
-invocation restrictions, and opaque base bodies. The separate `corejs_inheritance_differential_test` (`--inheritance-only`) runs
-these cases and the generated `inheritance` family, executing a default-constructor
-chain for each of 24 seeds across two shards. The chain cases reorder independent
-prefix allocations.
+invocation restrictions, and opaque base bodies. The separate
+`corejs_inheritance_differential_test` (`--inheritance-only`) also generates
+default-constructor chains with varying depth, argument count, and override
+position. Each seed retargets a constructor in the chain, observes a replacement
+object from the base constructor, or catches a value the base throws. Exact
+Node and CoreJS output checks witness argument order, both prototype chains,
+the receiver and field value during base construction, inherited getter dispatch,
+the override, and the selected outcome. The harness counts these generated
+observations separately from handwritten cases. The chain cases also execute
+in a split with independent prefix allocations reordered. The CI target runs 24 seeds over two shards.
 
 The guarded heritage cases move an anonymous subclass declaration across local
 allocations. Each seed composes an anonymous base and subclass from methods,
