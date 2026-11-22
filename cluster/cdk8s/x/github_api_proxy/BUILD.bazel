@@ -66,7 +66,6 @@ py_test(
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
-    tags = ["manual"],
     deps = [
         ":proxy",
         "//:conftest",
