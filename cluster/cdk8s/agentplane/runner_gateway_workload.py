@@ -240,7 +240,7 @@ class RunnerGateway(Construct):
         assert client.ca_file is not None
         central_sampler_target = (
             CentralSamplerTarget(
-                target=central_sampler.target(namespace),
+                target=central_sampler.service(namespace).authority,
                 tls=ClientTLS(
                     ca_file=Path(client.ca_file),
                     server_uri=CENTRAL_SAMPLER_URI,

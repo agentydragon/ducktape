@@ -28,6 +28,7 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS
 from agentplane.env import config as configuration
 from agentplane.env.config import (
     CONFIG_FILE,
@@ -289,12 +290,12 @@ class EnvironmentSandboxTemplate(Construct):
                 ),
             ),
             ingress=Endpoint(
-                target=f"{history_service.service(self.env.namespace).fqdn}:{history_service.service(self.env.namespace).pod_port}",
+                target=history_service.service(self.env.namespace).authority,
                 svid=SVIDEndpoint(
                     server_uri=HISTORY_SERVICE_URI, proxy_address=f"127.0.0.1:{sandbox_pod.SIDECAR_LISTEN_PORT}"
                 ),
             ),
-            model_config_target=platform_routes.model_config(self.env.namespace).local_target,
+            model_config_target=PLATFORM_ROUTES_LISTEN_ADDRESS,
             platform_instructions=platform_instructions(self.env, session_runtime=SessionRuntime.NATIVE_HARNESS),
             harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),
@@ -337,7 +338,7 @@ class EnvironmentSandboxTemplate(Construct):
                         for key, value in telemetry.service_environment(
                             self.env.namespace,
                             "agentplane-environment-runtime",
-                            endpoint=platform_routes.telemetry_endpoint(),
+                            endpoint=platform_routes.listener_url(),
                         ).items()
                     ),
                     *(key.env() for key in self.key_files),

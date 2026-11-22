@@ -203,10 +203,8 @@ def settings(
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
         sandbox_namespace=namespace,
-        runner_gateway_target=(
-            f"{environment_service.environments_service(namespace).fqdn}:{environment_service.environments_service(namespace).pod_port}"
-        ),
-        session_dispatcher_target=(runner_gateway.sessions_service(namespace).authority),
+        runner_gateway_target=environment_service.environments_service(namespace).authority,
+        session_dispatcher_target=runner_gateway.sessions_service(namespace).authority,
         policy_service_target=policy_controller.tls_service(namespace).authority,
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
         # Every in-cluster caller uses the app's mounted service SVID, so no peer names a bearer

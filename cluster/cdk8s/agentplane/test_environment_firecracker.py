@@ -79,7 +79,7 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(staging_manife
     route = platform["routes"]["history"]
     assert route == {
         "service_prefixes": ["/agentplane.history_service.HistoryService/"],
-        "upstream": f"{history.fqdn}:{history.pod_port}",
+        "upstream": history.authority,
         "transport": {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI},
     }
 

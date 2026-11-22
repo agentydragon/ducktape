@@ -24,7 +24,7 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PlatformRoute, PlatformRoutes
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoute, PlatformRoutes
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress, platform_routes
@@ -72,18 +72,18 @@ def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
     settings = sidecar_config.Settings(
         proxy=sidecar_config.Proxy(
-            address=f"{GATEWAY.fqdn}:{GATEWAY.pod_port}",
+            address=GATEWAY.authority,
             transport=sidecar_config.TLSProxyTransport(
                 ca_file=_TRUST_DIR / egress.CA_BUNDLE_KEY,
                 auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
             ),
         ),
         platform_routes=PlatformRoutes(
-            listen_address=RULES_ROUTE.local_target,
+            listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
             routes={
                 RULES_ROUTE.name: PlatformRoute(
                     service_prefixes=RULES_ROUTE.service_prefixes,
-                    upstream=f"{RULES_ROUTE.service.fqdn}:{RULES_ROUTE.service.pod_port}",
+                    upstream=RULES_ROUTE.service.authority,
                     transport=RULES_ROUTE.transport,
                 )
             },

@@ -326,8 +326,8 @@ def test_staging_session_delegation_tools_and_peer_credentials(staging_manifests
     for peer_name, server_uri, target in [
         ("session_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
         ("session_delegation_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
-        ("history_service", HISTORY_SERVICE_URI, f"{history.fqdn}:{history.pod_port}"),
-        ("session_delegation_history", HISTORY_SERVICE_URI, f"{history.fqdn}:{history.pod_port}"),
+        ("history_service", HISTORY_SERVICE_URI, history.authority),
+        ("session_delegation_history", HISTORY_SERVICE_URI, history.authority),
     ]:
         peer = settings[peer_name]
         assert peer["target"] == target

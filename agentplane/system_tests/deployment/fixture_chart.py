@@ -296,9 +296,7 @@ def app_props(
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
             egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
             sandbox_namespace=NAMESPACE,
-            runner_gateway_target=(
-                f"{environment_service.environments_service(NAMESPACE).fqdn}:{environment_service.environments_service(NAMESPACE).pod_port}"
-            ),
+            runner_gateway_target=environment_service.environments_service(NAMESPACE).authority,
             runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             session_dispatcher_target=(runner_gateway.sessions_service(NAMESPACE).authority),
             session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),

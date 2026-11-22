@@ -160,7 +160,7 @@ class Notifications(Construct):
                 tls=workload_tls.service_client_tls(ACTIONS_URI, client_uri=NOTIFICATIONS_URI),
             ),
             history_service=HistoryServiceSettings(
-                target=f"{history.fqdn}:{history.pod_port}",
+                target=history.authority,
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=NOTIFICATIONS_URI),
             ),
             session_dispatcher=SessionDispatcherSettings(
