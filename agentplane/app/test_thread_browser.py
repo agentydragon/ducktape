@@ -1742,9 +1742,13 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     assert source.runner.commands.empty()
 
 
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
 async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input(
-    thread_browser: ThreadBrowser,
+    review_thread_browser: ThreadBrowser, review_view: VisualPage, viewport_name: str
 ) -> None:
+    thread_browser = review_thread_browser
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1757,10 +1761,27 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    assert await page.evaluate(
+        """([thread, id]) => ['agentplane.pending:', 'agentplane.input-echo:'].some(prefix =>
+            localStorage.getItem(prefix + encodeURIComponent(thread) + ':' + encodeURIComponent(id)) !== null)""",
+        [str(thread.id), command.command_id],
+    )
     source.confirm_input(command, message_id="test-confirmed-message")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
+    await page.reload()
+    await page.get_by_role("button", name="More", exact=True).click()
+    await page.get_by_role("menuitem", name="Delivery history", exact=True).click()
+    history = page.get_by_role("dialog", name="Delivery history")
+    await expect(history.get_by_text(command.command_id, exact=True)).to_be_visible()
+    async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as read:
+        await history.get_by_role("button", name="Show original command").click()
+    assert (await read.value).ok
+    await expect(history.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    await review_view.capture(label=f"Retained command after reload on {viewport_name}")
+    assert source.runner.commands.empty()
 
 
 def _posted_input(request: Request) -> command_pb2.Command:
