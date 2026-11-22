@@ -27,7 +27,7 @@ from finance.augur.api.calibration_wire import (
     sanity_band_to_wire,
 )
 from finance.augur.api.catalog import build_calibration_info, build_catalog, build_settings
-from finance.augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
+from finance.augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
 from finance.augur.api.portfolio_sources import ResolvedPortfolioSources, resolve_portfolio_sources
 from finance.augur.api.product_service import build_product_service
@@ -61,21 +61,6 @@ from finance.budget.wire import (
 from finance.evidence.markets import Platform
 from finance.plaid.db.models import async_session_factory
 
-
-@dataclass(frozen=True)
-class LoadedCalibrationCatalog:
-    """The configured calibration catalog config paired with its parsed `MarketCatalog`.
-
-    `sample_sanity_spec` is the parsed `SampleSanitySpec` when the deployment configures a
-    `sample_sanity_path`, else None (the feature is simply absent). Only its `*_checks` are
-    consumed; the bands are scored against the live preset model the calibration endpoint runs.
-    """
-
-    config: CalibrationCatalogConfig
-    catalog: MarketCatalog
-    sample_sanity_spec: SampleSanitySpec | None = None
-
-
 PriceClientsProvider = AbstractAsyncContextManager[dict[Platform, PriceClient]]
 
 
@@ -86,36 +71,13 @@ async def static_price_clients(clients: dict[Platform, PriceClient]) -> AsyncIte
 
 
 @dataclass(frozen=True)
-class ApiServerConfig:
-    augur_config: Config
-    models: dict[str, Sampler]
-    # Prediction-market price sources for `/api/calibration/run` (per-market YES probs), as an
-    # async context manager entered once for the app's lifetime (server lifespan): it yields the
-    # `{Platform: client}` map and owns any provider lifecycle. Use `default_price_clients()` in
-    # production for evidence-checkout readers, `static_price_clients(...)` for already-built
-    # hermetic clients in tests.
-    price_clients: PriceClientsProvider
-    # The deployment's calibration catalog parsed into a `MarketCatalog` at startup. None only
-    # when the app is assembled directly without loading it (e.g. a product-only TestClient);
-    # `/api/calibration/run` then 400s. `create_app_from_augur_config` always loads it.
-    calibration_catalog: LoadedCalibrationCatalog | None = None
-    # Holds the plaid mirror session factory and the budget config it operates on. Constructed
-    # once at startup (so the asyncpg connection pool + SSL handshake are paid once, not per
-    # request) and shared across `/api/budget/*` calls. None when no `budget` is configured;
-    # the endpoints then 400.
-    budget_service: BudgetService | None = None
-
-
-@dataclass(frozen=True)
 class AppServices:
-    """The deployment state route handlers read, resolved once from an `ApiServerConfig` by `build_services`
-    (price clients are separate: the `create_app` lifespan enters them on the serving loop).
+    """Resources initialized once per deployment and shared by its route handlers."""
 
-    `create_app` binds it to the app as `app.state.services`; handlers resolve it per request via
-    `Services`, so `build_app` registers the production route graph without a deployment behind it
-    (how `export_schema` reaches `app.openapi()` without acquiring any runtime resource)."""
-
-    config: ApiServerConfig
+    models: dict[str, Sampler]
+    market_catalog: MarketCatalog
+    sample_sanity_spec: SampleSanitySpec | None
+    budget_service: BudgetService | None
     portfolio: ResolvedPortfolioSources
     catalog: CatalogResponse
     settings: SettingsResponse
@@ -125,28 +87,9 @@ class AppServices:
 
     @property
     def budget(self) -> BudgetService:
-        if self.config.budget_service is None:
+        if self.budget_service is None:
             raise ValueError("no budget config for this deployment")
-        return self.config.budget_service
-
-
-def build_services(config: ApiServerConfig) -> AppServices:
-    """Acquire the deployment's runtime resources: the property catalog, the portfolio sources
-    (Plaid is read here, at startup) and the product service over the realized models."""
-    augur_config = config.augur_config
-    catalog = build_catalog(augur_config)
-    loaded_calibration = config.calibration_catalog
-    return AppServices(
-        config=config,
-        portfolio=resolve_portfolio_sources(augur_config),
-        catalog=catalog,
-        settings=build_settings(augur_config),
-        calibration_info=build_calibration_info(
-            loaded_calibration.catalog if loaded_calibration is not None else None, augur_config.calibration_catalog
-        ),
-        deployment_info=build_deployment_info(),
-        product_service=build_product_service(augur_config, config.models, catalog=catalog),
-    )
+        return self.budget_service
 
 
 def _services(request: Request) -> AppServices:
@@ -226,21 +169,18 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     @app.post("/api/calibration/run", response_model=CalibrationRunResponse, response_model_exclude_none=True)
     async def calibration_run(
         request: CalibrationRunRequest, services: Services, price_clients: PriceClients
-    ) -> CalibrationRunResponse | JSONResponse:
-        config = services.config
-        loaded = config.calibration_catalog
-        if loaded is None:
-            return error(400, "calibration catalog is not loaded for this server instance")
-        preset_id = request.preset_id or config.augur_config.default_model_id
+    ) -> CalibrationRunResponse:
+        catalog = services.market_catalog
+        preset_id = request.preset_id or services.settings.default_model_id
         # KeyError on the preset lookup -> 400 via the registered handler.
-        model = config.models[preset_id]
+        model = services.models[preset_id]
         # The catalog self-describes its PE issuers; the run + fans cover the union the preset emits.
         emit_issuers = sorted(
             IssuerId(issuer)
-            for issuer in loaded.catalog.referenced_issuers()
+            for issuer in catalog.referenced_issuers()
             if IssuerId(issuer) in model.emittable_private_equity_issuers()
         )
-        spec = loaded.sample_sanity_spec
+        spec = services.sample_sanity_spec
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
         # Sample one full bundle that drives the market scoring, the issuer mark fan, AND the
         # sample-sanity bands — still a single rollout. The PE bundle goes to `run_calibration`/
@@ -260,7 +200,7 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
             spec_modeled_level, spec_modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
         # The macro markets / bucket families the catalog scores need their level series sampled too.
         # Request only the ones the preset can emit; markets on the rest surface as `unmodeled`.
-        catalog_level = {parse_level_series_key(wire) for wire in loaded.catalog.referenced_level_series()}
+        catalog_level = {parse_level_series_key(wire) for wire in catalog.referenced_level_series()}
         wanted_level = spec_modeled_level | (catalog_level & model.emittable_level_keys())
         sampling_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
@@ -270,16 +210,16 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
         )
         sampled = model.sample(sampling_request)
         bundle = sampled.private_equity
-        anchors = resolve_anchors(loaded.catalog)
+        anchors = resolve_anchors(catalog)
         level_paths = build_anchored_level_paths(
             sampled,
             anchors=anchors.anchors,
-            requested_wire_ids=loaded.catalog.referenced_level_series(),
+            requested_wire_ids=catalog.referenced_level_series(),
             rollout_count=request.rollouts,
             horizon_months=request.horizon_months,
         )
         result = await run_calibration(
-            loaded.catalog,
+            catalog,
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
             price_clients=price_clients,
@@ -369,16 +309,36 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     return app
 
 
-def create_app(config: ApiServerConfig) -> FastAPI:
-    services = build_services(config)
+def create_app(
+    augur_config: Config,
+    *,
+    models: dict[str, Sampler],
+    price_clients: PriceClientsProvider,
+    budget_service: BudgetService | None = None,
+) -> FastAPI:
+    catalog_config = augur_config.calibration_catalog
+    market_catalog = MarketCatalog.from_yaml(catalog_config.catalog_path)
+    catalog = build_catalog(augur_config)
+    services = AppServices(
+        models=models,
+        market_catalog=market_catalog,
+        sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
+        budget_service=budget_service,
+        portfolio=resolve_portfolio_sources(augur_config),
+        catalog=catalog,
+        settings=build_settings(augur_config),
+        calibration_info=build_calibration_info(market_catalog, catalog_config),
+        deployment_info=build_deployment_info(),
+        product_service=build_product_service(augur_config, models, catalog=catalog),
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Enter the price-client provider once for the process so any provider-owned resources are
         # bound to the serving loop and closed on shutdown. `/api/calibration/run` reads them off
         # `app.state` through `PriceClients`.
-        async with config.price_clients as price_clients:
-            app.state.price_clients = price_clients
+        async with price_clients as clients:
+            app.state.price_clients = clients
             yield
 
     app = build_app(lifespan=lifespan)
@@ -405,12 +365,6 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: PriceCl
     models: dict[str, Sampler] = {
         preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in augur_config.models.items()
     }
-    catalog_config = augur_config.calibration_catalog
-    calibration_catalog = LoadedCalibrationCatalog(
-        config=catalog_config,
-        catalog=MarketCatalog.from_yaml(catalog_config.catalog_path),
-        sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
-    )
     budget_service: BudgetService | None = None
     if augur_config.budget is not None:
         db_url_env = augur_config.budget.source.database_url_env
@@ -424,14 +378,7 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: PriceCl
         # /api/budget/* request via BudgetService.session_factory.
         _, session_factory = async_session_factory(db_url)
         budget_service = BudgetService(config=augur_config.budget, session_factory=session_factory)
-    server_config = ApiServerConfig(
-        augur_config=augur_config,
-        models=models,
-        calibration_catalog=calibration_catalog,
-        price_clients=price_clients,
-        budget_service=budget_service,
-    )
-    return create_app(server_config)
+    return create_app(augur_config, models=models, price_clients=price_clients, budget_service=budget_service)
 
 
 def _add_server_args(parser: argparse.ArgumentParser, *, api_only_help: str) -> None:
