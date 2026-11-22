@@ -256,20 +256,24 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     return .call callee (← args.mapM lower)
   | "ArrowFunctionExpression" | "FunctionExpression" =>
     let arrow := kind == "ArrowFunctionExpression"
-    if (← j.getObjValAs? Bool "async") || (← j.getObjValAs? Bool "generator") then
-      throw "unsupported async or generator function"
-    let params ← (← j.getObjValAs? (List Json) "params").mapM localBinding
-    unless params.Nodup do throw "duplicate function parameter"
     let id ← if arrow then pure Json.null else j.getObjVal? "id"
     let name ← if id == .null then pure nameHint else localBinding id
-    let body ← j.getObjVal? "body"
-    let stmts ← if (← field body "type") == "BlockStatement" then
-      linkedFunctionBody imports body
-    else if arrow then
-      pure [.ret (← linkedExpr imports true "" body)]
-    else throw "expected a function body block"
-    return .func (.mk name (if arrow then .arrow else .normal) (id != .null) params stmts)
+    return .func (← linkedFunction imports (if arrow then .arrow else .normal) name (id != .null) j)
   | _ => throw s!"unsupported linked expression {kind}"
+
+private partial def linkedFunction (imports : List Name) (kind : FuncKind) (name : Name) (self : Bool)
+    (j : Json) : Except String Func := do
+  if (← j.getObjValAs? Bool "async") || (← j.getObjValAs? Bool "generator") then
+    throw "unsupported async or generator function"
+  let params ← (← j.getObjValAs? (List Json) "params").mapM localBinding
+  unless params.Nodup do throw "duplicate function parameter"
+  let body ← j.getObjVal? "body"
+  let stmts ← if (← field body "type") == "BlockStatement" then
+    linkedFunctionBody imports body
+  else if kind == .arrow then
+    pure [.ret (← linkedExpr imports true "" body)]
+  else throw "expected a function body block"
+  return .mk name kind self params stmts
 
 /-- Keep every declarator in its enclosing statement list. Function instantiation hoists
 all its vars, and block instantiation creates the lexical bindings before initialization. -/
@@ -317,13 +321,19 @@ private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j
 
 end
 
-/-- A top-level declaration of the linked fragment, which also models ordinary closures and calls. -/
-def linkedDeclaration (imports : List Name) : Json → Except String (Name × Stmt) :=
-  declarationWith moduleBinding (linkedExpr imports false)
+/-- Function declarations initialize their module cells at link time. Recursive reads resolve
+through the module scope. -/
+def linkedDeclaration (imports : List Name) (j : Json) : Except String (Name × Stmt) := do
+  if (← field j "type") == "FunctionDeclaration" then
+    let name ← j.getObjVal? "id" >>= moduleBinding
+    return (name, .funDecl (← linkedFunction imports .normal name false j))
+  declarationWith moduleBinding (linkedExpr imports false) j
 
 /-- A top-level executable statement of the linked fragment. -/
-def linkedUnit (imports : List Name) : Json → Except String Stmt :=
-  linkedStatement imports false
+def linkedUnit (imports : List Name) (j : Json) : Except String Stmt := do
+  if (← field j "type") == "FunctionDeclaration" then
+    return (← linkedDeclaration imports j).2
+  linkedStatement imports false j
 
 /-- A named export of a local binding, in (public, local) order. -/
 def exportSpec (j : Json) : Except String (Name × Name) := do

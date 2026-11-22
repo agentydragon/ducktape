@@ -44,7 +44,11 @@ private partial def exprEq : MatchEq Expr
     let ⟨callee⟩ ← exprEq f f'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨callee ▸ arguments ▸ rfl⟩
-  | .func (.mk name kind self params body), .func (.mk name' kind' self' params' body') => do
+  | .func a, .func b => (funcEq a b).map fun h => ⟨congrArg Expr.func h.down⟩
+  | _, _ => none
+
+private partial def funcEq : MatchEq Func
+  | .mk name kind self params body, .mk name' kind' self' params' body' => do
     let ⟨n⟩ ← scalarEq name name'
     let ⟨k⟩ ← scalarEq kind kind'
     let ⟨s⟩ ← scalarEq self self'
@@ -61,6 +65,7 @@ private partial def propEq : MatchEq PropDef
   | _, _ => none
 
 private partial def stmtEq : MatchEq Stmt
+  | .funDecl a, .funDecl b => (funcEq a b).map fun h => ⟨congrArg Stmt.funDecl h.down⟩
   | .varDecl a, .varDecl b => (scalarEq a b).map fun h => ⟨congrArg Stmt.varDecl h.down⟩
   | .expr a, .expr b => (exprEq a b).map fun h => ⟨congrArg Stmt.expr h.down⟩
   | .ret a, .ret b => (exprEq a b).map fun h => ⟨congrArg Stmt.ret h.down⟩
