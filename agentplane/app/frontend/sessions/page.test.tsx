@@ -2482,16 +2482,34 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
   expect([...section.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
-it("shows the failure and reason for a server-only command", async () => {
-  const section = await renderServerOnlyChangeModelSection({
-    outcome: ThreadCommandOutcome.FAILED,
-    outcomeCursor: 1n,
-    outcomeReason: "model unavailable",
-    requestedValue: undefined,
-  });
-  const pending = pendingRow(section, "test-entity");
-  expect(pending.querySelector('[role="alert"]')?.textContent).toBe("Failed: model unavailable");
-  expect(pending.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
+it.each([
+  [Operation.CHANGE_MODEL, "Model change"],
+  [Operation.CHANGE_REASONING_EFFORT, "Reasoning effort change"],
+  [Operation.INTERRUPT_TURN, "Turn interrupt"],
+  [Operation.COMPACT, "Compact conversation"],
+])("places a failed %s command's status in the shared gutter", async (operation, description) => {
+  const section = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity({
+          case: "command",
+          value: {
+            operation,
+            outcome: ThreadCommandOutcome.FAILED,
+            outcomeCursor: 1n,
+            outcomeReason: "Command refused",
+          },
+        }),
+      ],
+    })
+  );
+  const row = pendingRow(section, "test-entity");
+  expect(row.querySelector(".agentplane-control-command-bubble")?.textContent).toBe(description);
+  const gutter = row.querySelector(".transcript-user-message-aside");
+  expect(gutter?.querySelector('[role="alert"]')?.textContent).toBe("Failed");
+  expect(gutter?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
+  expect((await openDeliveryDetails(row)).textContent).toContain("Command refused");
 });
 
 it("renders a server-only no-op control as a settled label, not a progress light", async () => {
@@ -2504,8 +2522,8 @@ it("renders a server-only no-op control as a settled label, not a progress light
   const row = pendingRow(section, "test-entity");
   expect(row.textContent).toContain("Change model to current-model");
   expect(row.querySelector(".agentplane-command-progress")).toBeNull();
-  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op: model already selected");
-  expect(row.querySelector('[role="status"]')?.getAttribute("title")).toBe("No-op: model already selected");
+  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
+  expect((await openDeliveryDetails(row)).textContent).toContain("model already selected");
 });
 
 it.each([
@@ -2538,8 +2556,9 @@ it.each([
   );
   const bubble = container.querySelector<HTMLElement>(`.transcript-user-bubble[data-message-phase="${phase}"]`);
   const plainOutcome = bubble?.parentElement?.querySelector(".agentplane-command-noop");
-  expect(plainOutcome?.textContent).toBe(outcome === "noop" ? status : undefined);
-  expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
+  expect(plainOutcome?.textContent).toBe(outcome === "noop" ? "No-op" : undefined);
+  if (outcome === "noop")
+    expect((await openDeliveryDetails(bubble!.parentElement!)).textContent).toContain("harness was stopping");
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
   expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(
     outcome === "effected" || outcome === "noop" ? 0 : 4

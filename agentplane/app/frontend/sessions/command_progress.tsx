@@ -54,7 +54,7 @@ export function CommandProgress({
   local = false,
   unsent = false,
 }: {
-  stage: Exclude<CommandStage, "noop">;
+  stage: CommandStage;
   subject: CommandSubject;
   reason?: string | null;
   details?: ReactNode;
@@ -72,7 +72,7 @@ export function CommandProgress({
         : subject === "effort"
           ? "effort change"
           : "result";
-  const labels: Record<Exclude<CommandStage, "noop">, string> = {
+  const labels: Record<CommandStage, string> = {
     local: "Saved in browser · waiting for Dispatcher",
     unconfirmed: "Dispatcher receipt unconfirmed",
     queued: "Queued in Dispatcher · waiting for runner",
@@ -83,6 +83,7 @@ export function CommandProgress({
     dispatch_failed: "Dispatcher could not deliver",
     cancelled: "Cancelled before delivery",
     unknown: "Outcome unknown",
+    noop: "No-op",
     refused: "Command refused",
   };
   const reasonLabel = waitingReasonLabel(reason);
@@ -115,7 +116,7 @@ export function CommandProgress({
             : "waiting"
   );
   const indicator =
-    stage === "effected" ? (
+    stage === "noop" ? null : stage === "effected" ? (
       <IconCheck className="agentplane-command-check" size={16} aria-hidden="true" />
     ) : (
       <span className="agentplane-command-lights" aria-hidden="true">
@@ -124,18 +125,23 @@ export function CommandProgress({
         ))}
       </span>
     );
-  if (failed || uncertain) {
-    const summary = stage === "dispatch_failed" ? "Delivery failed" : labels[stage];
+  if (failed || uncertain || stage === "noop" || (stage === "cancelled" && reasonLabel) || details) {
+    const summary =
+      stage === "dispatch_failed"
+        ? "Delivery failed"
+        : stage === "queued"
+          ? "Queued"
+          : stage === "delivering"
+            ? "Sending"
+            : labels[stage];
     return (
       <span
-        className="agentplane-command-progress agentplane-command-progress-inline"
+        className={`agentplane-command-progress-inline ${stage === "noop" ? "agentplane-command-noop" : "agentplane-command-progress"}`}
         data-stage={stage}
         role={failed ? "alert" : "status"}
       >
         {indicator}
-        {subject !== "input" ? (
-          <span>{label}</span>
-        ) : reasonLabel || details ? (
+        {reasonLabel || details ? (
           <Popover position="bottom-start" shadow="md" width="min(22rem, calc(100vw - 2rem))" trapFocus returnFocus>
             <Popover.Target>
               <button

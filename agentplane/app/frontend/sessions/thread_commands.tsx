@@ -1,6 +1,7 @@
-import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
+import { Button, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect } from "react";
 
+import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
@@ -89,8 +90,6 @@ function progressStage(
   }
 }
 
-/** No-op is a settled result, not a fourth progress state. Keep its reason readable,
- * with ellipsis in narrow gutters and a title for the complete text. */
 function CommandOutcome({
   stage,
   subject: commandSubject,
@@ -104,14 +103,6 @@ function CommandOutcome({
   local?: boolean;
   unsent?: boolean;
 }): JSX.Element {
-  if (stage === "noop") {
-    const label = reason ? `No-op: ${reason}` : "No-op";
-    return (
-      <Text size="xs" c="dimmed" className="agentplane-command-noop" role="status" title={reason ? label : undefined}>
-        {label}
-      </Text>
-    );
-  }
   return (
     <CommandProgress
       stage={stage}
@@ -330,12 +321,12 @@ function LocalControlRows({
           const admitted = value.admission !== null;
           const issue = commandIssue(value, errors);
           return (
-            <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
-              <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
-                <Text size="sm" className="agentplane-command-card-description">
-                  {controlDescription(operation)}
-                </Text>
-                {notice?.progress ?? (
+            <ControlCommandBubble
+              key={value.command.commandId}
+              id={value.command.commandId}
+              description={controlDescription(operation)}
+              progress={
+                notice?.progress ?? (
                   <CommandOutcome
                     stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
                     subject={subject(operation.case)}
@@ -347,41 +338,72 @@ function LocalControlRows({
                     local
                     unsent={!value.attempted}
                   />
-                )}
-                {(value.attempted || value.destination.kind === "session") &&
-                  !admitted &&
-                  !notice?.hasDispatcherReceipt &&
-                  value.dispatch === null &&
-                  !value.interruptResult && (
-                    <Button
-                      size="xs"
-                      variant="subtle"
-                      onClick={() =>
-                        value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
-                      }
-                    >
-                      {value.attempted
-                        ? value.destination.kind === "reconcile-only"
-                          ? "Check status"
-                          : "Retry"
-                        : "Cancel"}
-                    </Button>
-                  )}
-              </Group>
-            </ControlCommandFrame>
+                )
+              }
+              action={
+                (value.attempted || value.destination.kind === "session") &&
+                !admitted &&
+                !notice?.hasDispatcherReceipt &&
+                value.dispatch === null &&
+                !value.interruptResult && (
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    onClick={() =>
+                      value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
+                    }
+                  >
+                    {value.attempted
+                      ? value.destination.kind === "reconcile-only"
+                        ? "Check status"
+                        : "Retry"
+                      : "Cancel"}
+                  </Button>
+                )
+              }
+            />
           );
         })}
     </Stack>
   );
 }
 
-function ControlCommandFrame({ id, children }: { id: string; children: ReactNode }): JSX.Element {
+function ControlCommandBubble({
+  id,
+  description,
+  progress,
+  action,
+  entity,
+  children,
+}: {
+  id: string;
+  description: string;
+  progress?: ReactNode;
+  action?: ReactNode;
+  entity?: ThreadEntity;
+  children?: ReactNode;
+}): JSX.Element {
   return (
-    <Box className="agentplane-control-command-row" data-command-id={id}>
-      <Paper p="xs" withBorder className="agentplane-control-command-card">
-        {children}
-      </Paper>
-    </Box>
+    <UserMessage
+      rowAttributes={{ "data-command-id": id }}
+      bubbleAttributes={{
+        className: "agentplane-control-command-bubble transcript-inspection-owner",
+        "data-has-action": action ? "true" : undefined,
+        onClick: entity ? revealEvidenceOnTap : undefined,
+      }}
+      aside={
+        progress || action ? (
+          <>
+            {progress}
+            {action}
+          </>
+        ) : undefined
+      }
+      overlay={entity && <EvidenceToggle entity={entity} />}
+    >
+      <VerbatimText text={description} />
+      {children}
+    </UserMessage>
   );
 }
 
@@ -397,25 +419,20 @@ export function ProjectedControlCommand({
 }): JSX.Element | null {
   if (!isCommandEntity(row) || row.entity.value.operation === Operation.SUBMIT_INPUT) return null;
   const command = row.entity.value;
+  const description =
+    command.operation === Operation.CHANGE_MODEL && command.requestedValue
+      ? `Change model to ${command.requestedValue}`
+      : command.operation === Operation.CHANGE_REASONING_EFFORT && command.requestedValue
+        ? `Set reasoning effort to ${command.requestedValue}`
+        : deliveryOperationLabel(command.operation);
   return (
-    <ControlCommandFrame id={row.entityId}>
-      <Box className="transcript-inspection-owner" onClick={revealEvidenceOnTap}>
-        <EvidenceToggle entity={row} />
-        <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
-          <Text size="sm" className="agentplane-command-card-description">
-            {command.operation === Operation.CHANGE_MODEL
-              ? command.requestedValue
-                ? `Change model to ${command.requestedValue}`
-                : "Model change"
-              : command.operation === Operation.CHANGE_REASONING_EFFORT
-                ? command.requestedValue
-                  ? `Set reasoning effort to ${command.requestedValue}`
-                  : "Reasoning effort change"
-                : command.operation === Operation.INTERRUPT_TURN
-                  ? "Interrupt turn"
-                  : "Thread action"}
-          </Text>
-          {deliveryProgress !== undefined ? (
+    <Stack gap="xs">
+      <ControlCommandBubble
+        id={row.entityId}
+        entity={row}
+        description={description}
+        progress={
+          deliveryProgress !== undefined ? (
             deliveryProgress
           ) : (
             <CommandOutcome
@@ -423,12 +440,13 @@ export function ProjectedControlCommand({
               subject={subject(command.operation)}
               reason={command.outcomeReason}
             />
-          )}
-        </Group>
+          )
+        }
+      >
         {command.inputRef && <Body reference={command.inputRef} format="text" />}
-        <EvidencePanel threadId={threadId} entity={row} />
-      </Box>
-    </ControlCommandFrame>
+      </ControlCommandBubble>
+      <EvidencePanel threadId={threadId} entity={row} />
+    </Stack>
   );
 }
 
@@ -440,8 +458,10 @@ function controlDescription(operation: PendingCommand["operation"]): string {
       return `Set reasoning effort to ${operation.value.effort}`;
     case "interruptTurn":
       return `Interrupt turn ${operation.value.turnId}`;
+    case "compact":
+      return "Compact conversation";
     default:
-      return "Thread action";
+      return "Command";
   }
 }
 
@@ -518,14 +538,12 @@ export function OutstandingDispatchCommands({
           );
         }
         return (
-          <ControlCommandFrame key={id} id={id}>
-            <Group className="agentplane-command-card-line" gap="xs" align="start">
-              <Text size="sm" className="agentplane-command-card-description">
-                {original ? controlDescription(original) : deliveryOperationLabel(item.operation)}
-              </Text>
-              {progress}
-            </Group>
-          </ControlCommandFrame>
+          <ControlCommandBubble
+            key={id}
+            id={id}
+            description={original ? controlDescription(original) : deliveryOperationLabel(item.operation)}
+            progress={progress}
+          />
         );
       })}
       {workset.stale && (

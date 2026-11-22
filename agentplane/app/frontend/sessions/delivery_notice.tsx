@@ -8,7 +8,7 @@ import {
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { CommandProgress, waitingReasonLabel, type CommandStage, type CommandSubject } from "./command_progress";
-import { isDeliveryIssue, noticeKey, type NoticeAttention } from "./command_notice_attention";
+import { noticeKey, type NoticeAttention } from "./command_notice_attention";
 import { readFullDispatchReason, type ReadDispatchReceipts, type ReasonLookup } from "./dispatch_workset";
 
 import type { ThreadDeliveryState } from "./thread_delivery";
@@ -102,7 +102,7 @@ function useReceiptReason(readReceipts: ReadDispatchReceipts, item: DispatchWork
   };
 }
 
-const receiptStage: Partial<Record<DeliveryState, Exclude<CommandStage, "noop">>> = {
+const receiptStage: Partial<Record<DeliveryState, CommandStage>> = {
   [DeliveryState.QUEUED_IN_DISPATCHER]: "queued",
   [DeliveryState.DELIVERING_TO_RUNNER]: "delivering",
   [DeliveryState.RUNNER_ADMITTED]: "admitted",
@@ -127,37 +127,23 @@ export function DispatchReceiptProgress({
     </Text>
   );
   const stage = receiptStage[item.state] ?? "unknown";
-  if (subject === "input" && isDeliveryIssue(item.state)) {
-    return (
-      <Group gap={4} wrap="nowrap" className="agentplane-message-delivery">
-        <CommandProgress
-          stage={stage}
-          subject={subject}
-          reason={reason}
-          details={
-            accepted || actions ? (
-              <>
-                {accepted}
-                {actions}
-              </>
-            ) : undefined
-          }
-        />
-        <AcknowledgeDeliveryIssue item={item} attention={delivery.attention} />
-      </Group>
-    );
-  }
   return (
-    <Stack gap={2} className="agentplane-receipt-progress" data-inline={isDeliveryIssue(item.state) || undefined}>
-      <CommandProgress stage={stage} subject={subject} reason={reason} />
-      {accepted}
-      {(actions || delivery.attention.canAcknowledge(item)) && (
-        <Group gap="xs">
-          {actions}
-          <AcknowledgeDeliveryIssue item={item} attention={delivery.attention} />
-        </Group>
-      )}
-    </Stack>
+    <Group gap={4} wrap="nowrap" className="agentplane-command-delivery">
+      <CommandProgress
+        stage={stage}
+        subject={subject}
+        reason={reason}
+        details={
+          accepted || actions ? (
+            <>
+              {accepted}
+              {actions}
+            </>
+          ) : undefined
+        }
+      />
+      <AcknowledgeDeliveryIssue item={item} attention={delivery.attention} />
+    </Group>
   );
 }
 export function useDispatchOriginals(
