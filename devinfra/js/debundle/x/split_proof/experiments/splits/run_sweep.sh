@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
 # Run via the real_split_*_test targets registered by sweep.bzl.
 set -euo pipefail
-prepare=$(rlocation "$1")
-lower=$(rlocation "$2")
-split=$(rlocation "$3")
-summarize=$(rlocation "$4")
-bundle=$5
-cut_step=$6
-entry_first_step=$7
-shift 7
+lower=$(rlocation "$1")
+split=$(rlocation "$2")
+summarize=$(rlocation "$3")
+source=$(rlocation "$4")
+ast=$(rlocation "$5")
+bundle=$6
+cut_step=$7
+entry_first_step=$8
+shift 8
 if [[ $# -gt 1 || ($# == 1 && $1 != --sample) ]]; then
   echo "usage: pass --test_arg=--sample for a single split" >&2
   exit 2
 fi
-work="$TEST_TMPDIR/bundles"
+[[ -f $source && -f $ast ]]
+bundles=$(dirname "$source")
+footprints="$TEST_TMPDIR/footprints.jsonl"
 results="$TEST_UNDECLARED_OUTPUTS_DIR"
-"$prepare" "$work" "$bundle"
-"$lower" "$work/$bundle.json" >"$work/footprints.jsonl"
+"$lower" "$ast" >"$footprints"
 status=0
 run() {
   local strategy=$1
   shift
-  "$split" "$bundle" "$strategy" "$@" --bundles "$work" --footprints "$work/footprints.jsonl" \
+  "$split" "$bundle" "$strategy" "$@" --bundles "$bundles" --footprints "$footprints" \
     --out "$results/${bundle}_${strategy}.jsonl" || status=$?
 }
 run halves
