@@ -219,6 +219,18 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
     result := .binary .add result (← cooked quasi)
   return result
 
+/-- Decode a property access once, retaining the receiver for a call. The interpreter
+converts computed keys when it reads the property and refuses object coercion. -/
+private def linkedMember (lower : Json → Except String Expr) (j : Json) : Except String (Expr × Expr) := do
+  if ← j.getObjValAs? Bool "optional" then throw "unsupported optional member access"
+  let obj ← j.getObjVal? "object"
+  let prop ← j.getObjVal? "property"
+  if (← field obj "type") == "Super" then throw "unsupported super member access"
+  if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
+  let base ← lower obj
+  let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
+  return (base, key)
+
 mutual
 
 private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -227,6 +239,10 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   match kind with
   | "Literal" => literal (← field j "lit")
   | "Identifier" => reference imports inFunction j
+  | "ThisExpression" => return .this
+  | "MemberExpression" =>
+    let (base, key) ← linkedMember (linkedExpr imports inFunction "") j
+    return .get base key
   | "ObjectExpression" => linkedObject imports inFunction j
   | "TemplateLiteral" => linkedTemplate (linkedExpr imports inFunction "") j
   | "UnaryExpression" =>
@@ -251,9 +267,12 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr imports inFunction ""
-    let callee ← lower (← j.getObjVal? "callee")
+    let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
-    return .call callee (← args.mapM lower)
+    if (← field callee "type") == "MemberExpression" then
+      let (base, key) ← linkedMember lower callee
+      return .callMethod base key (← args.mapM lower)
+    return .call (← lower callee) (← args.mapM lower)
   | "ArrowFunctionExpression" | "FunctionExpression" =>
     let arrow := kind == "ArrowFunctionExpression"
     let id ← if arrow then pure Json.null else j.getObjVal? "id"
