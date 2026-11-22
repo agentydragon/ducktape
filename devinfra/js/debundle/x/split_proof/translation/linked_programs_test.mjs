@@ -356,6 +356,42 @@ for (const [index, [operand, tag, expected]] of [
   assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
 }
 
+// Two distinct provider modules supply live bindings to the exported record.
+{
+  const files = prepare(path.join(root, "record-providers"), {
+    source: 'const a = "left"; const b = "right"; const pair = { first: a, second: b }; export { pair as result };',
+    provider: "",
+    spec: {
+      entry: "entry.mjs",
+      modules: { "a.mjs": ["#0"], "b.mjs": ["#1"], "entry.mjs": ["#2", "#3"] },
+      order: ["a.mjs", "b.mjs"],
+    },
+  });
+  const out = path.join(root, "record-providers", "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    assert.deepEqual(observe(file, "result"), { result: { first: "left", second: "right" } });
+  }
+}
+
+// Vary the number, spelling and values of static properties across a module boundary.
+for (const seed of [0, 1, 2, 3]) {
+  const expected = {};
+  const properties = Array.from({ length: seed }, (_, i) => {
+    const key = i % 2 ? `quoted-key-${i}` : `field${i}`;
+    expected[key] = i % 2 ? i : seed;
+    const prop = property(key, i % 2 ? literal(i) : id("worker"));
+    return i % 2 ? { ...prop, key: literal(key) } : prop;
+  });
+  assertWorkerResult(
+    `generated-record-${seed}`,
+    observedProgram(literal(seed), { type: "ObjectExpression", properties }),
+    expected
+  );
+}
+
 // Different numeric spellings compare by string contents.
 assertWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
 assertWorkerResult(
@@ -369,12 +405,18 @@ assertWorkerResult(
   true
 );
 for (const [name, expr, reason] of [
+  ["record-prototype", "({ __proto__: null })", /unsupported __proto__/],
+  ["record-computed", '({ ["key"]: 1 })', /static data property/],
+  ["record-getter", "({ get key() { return 1; } })", /static data property/],
+  ["record-spread", "({ ...worker })", /static data property/],
+  ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
+  ["record-effectful-value", "({ key: worker() })", /literal or binding/],
   ["mixed-inequality", '"01" != 1', /requires two string operands/],
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {
   const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
   assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, reason);
+  assert.match(verdict.reason, reason, name);
   assert(!existsSync(out));
 }
 
