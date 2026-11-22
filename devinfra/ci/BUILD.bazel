@@ -405,3 +405,25 @@ py_test(
         "@rules_python//python/runfiles",
     ],
 )
+
+py_library(
+    name = "retry_snapshot_restore",
+    srcs = ["retry_snapshot_restore.py"],
+    deps = [
+        "//devinfra/buildbuddy:cli",
+        "//devinfra/buildbuddy/ci:bes",
+        "//devinfra/buildbuddy/ci:invocation_ids",
+    ],
+)
+
+py_test(
+    name = "test_retry_snapshot_restore",
+    srcs = ["test_retry_snapshot_restore.py"],
+    deps = [
+        ":retry_snapshot_restore",
+        "//:conftest",
+        "//devinfra/buildbuddy/ci:bes",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
