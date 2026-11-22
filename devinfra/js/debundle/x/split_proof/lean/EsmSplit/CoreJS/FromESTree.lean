@@ -203,8 +203,30 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     return .func (.mk name (if arrow then .arrow else .normal) (id != .null) params stmts)
   | _ => throw s!"unsupported linked expression {kind}"
 
+/-- A block introduces a fresh lexical scope each time it executes. Function `var`s
+still hoist through it via `Stmt.varNames`. -/
+private partial def linkedFunctionBlock (imports : List Name) (j : Json) : Except String Stmt := do
+  unless (← field j "type") == "BlockStatement" do throw "expected a statement block"
+  return .block (← (← j.getObjValAs? (List Json) "body").mapM (linkedStatement imports true))
+
 private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j : Json) :
-    Except String Stmt :=
+    Except String Stmt := do
+  if inFunction then
+    match ← field j "type" with
+    | "BlockStatement" => return ← linkedFunctionBlock imports j
+    | "TryStatement" =>
+      let body ← linkedFunctionBlock imports (← j.getObjVal? "block")
+      let handler ← j.getObjVal? "handler"
+      let finalizer ← j.getObjVal? "finalizer"
+      if handler == .null && finalizer == .null then throw "expected catch or finally"
+      let protectedBody ← if handler == .null then pure body else do
+        unless (← field handler "type") == "CatchClause" do throw "expected a catch clause"
+        let param ← handler.getObjVal? "param"
+        let name ← if param == .null then pure none else some <$> localBinding param
+        pure (.tryCatch body name (← linkedFunctionBlock imports (← handler.getObjVal? "body")))
+      if finalizer == .null then return protectedBody
+      return .tryFinally protectedBody (← linkedFunctionBlock imports finalizer)
+    | _ => pure ()
   let binder := if inFunction then localBinding else moduleBinding
   statementWith (linkedExpr imports inFunction "") (declarationWith binder (linkedExpr imports inFunction))
     inFunction j
