@@ -113,6 +113,8 @@ a wave as a group; do not impose a serial PR-and-observation cycle per workload.
   persistence and per-node availability; an observed Pod does not imply its
   operator supports VPA. Coordinate storage changes with the existing storage
   work rather than starting a competing migration.
+- CNPG Cluster VPAs are recommendation-only (`Off`); size requests through
+  their owners as described in the [CNPG conventions](../docs/cnpg_conventions.md#r7-cnpg-vpas-are-recommendation-only).
 - Set static requests where VPA is unsuitable. For compatible workloads, choose
   `Initial` or a tested automatic mode without assuming a namespace label will
   safely cover dynamic Sandboxes, operator-created Pods, or short Jobs.
