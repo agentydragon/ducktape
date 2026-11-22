@@ -6,10 +6,10 @@ Run the experimental Lean checker against the public, pinned Excalidraw bundle:
 bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:excalidraw_certificate_census
 ```
 
-This manual investigation target inventories every JS chunk, then probes four:
-the main entry, shared editor, shared roughjs, and smallest chunk with more than
-ten source statements. The first three are selected from stable entry/module
-identities, not content hashes. Each probe uses the actual Effects output, with
+This manual investigation target inventories every JS chunk. It probes the main
+entry, shared editor, shared roughjs, and smallest chunk with more than ten
+source statements, plus every chunk for which the frontend reports no module
+correspondence refusals. Each probe uses the actual Effects output, with
 default premises, and the CoreJS frontend with outside imports treated as the
 world. No source code, import.meta expression, or unsupported statement is removed.
 
@@ -18,8 +18,11 @@ For each selected chunk, the harness tries all statements in one module
 in two modules (`alternating`). Imports and exports stay in the entry module.
 These are diagnostic placements, not recovered upstream module boundaries or a
 translation of the Rust Excalidraw spec. They are not a search over partitions.
-Even the identity control emits into a new `entry.mjs`; it does not preserve the
-original module URL. A successful investigation target means the measurements
+Two editor probes keep the worker factory (unit 872) in the entry. One moves the
+usual prefix except for the factory (`prefix-fixed-factory`), and one stops the
+prefix just before it (`prefix-before-factory`). Both use the original chunk
+filename so the entry can be served at the original URL. The other probes use
+`entry.mjs`. A successful investigation target means the measurements
 completed, not that its splits were certified or executed successfully in a browser.
 
 Each subprocess has a 180-second budget. A killed process is reported separately
@@ -157,3 +160,40 @@ unit 9 can move past the seven active declarations in the alternating plan.
 For every CoreJS world, the split ends normally in a given state exactly when
 the bundle does. The other eleven probe verdicts match the default-derived
 census. [Census and inheritance differential suite](https://app.buildbuddy.io/invocation/6d319638-a866-4e58-a82c-144fbcff326f)
+
+## How much can be split without modeling module URLs?
+
+The pinned bundle contains 76 chunks (1,890 numbered source units) for which the
+frontend flags neither `import.meta` nor dynamic `import()`. Main, editor, and
+the subset worker are outside this count. Each row counts only placements that
+move at least one unit into `part.mjs`. A unit can appear in both rows.
+
+| Placement   | Nonempty candidates | Pass structural checks | Certified by CoreJS | Units moved in certified splits |
+| ----------- | ------------------: | ---------------------: | ------------------: | ------------------------------: |
+| Prefix      |                  64 |                     64 |                  64 |                             783 |
+| Alternating |                  65 |                     60 |                  60 |                             801 |
+
+Choosing the larger certified placement per chunk gives **837 units moved across
+65 chunks**. The 53 nonempty locale chunks account for 742 of those units
+(14 apiece); the other 12 chunks contribute 95. Each certificate covers one complete chunk under the checker's
+outside-import premises. The census checks each chunk separately. It does not
+establish equivalence of loading all 65 splits together.
+
+All 64 certified prefixes preserve order. Of the 60 certified alternating splits,
+57 invert at least one pair. All five rejected alternating splits fail `OrderOk`;
+`chunk-ZQ22LJCO.js` also fails `AssignsHome`. Eleven chunks have no nonempty
+placement in either family. One of those, the pica wrapper, fails even the
+identity control: CoreJS expects statement 2 to declare `*default*`, while the
+Effects footprint declares no name.
+
+In editor, keeping the factory in place and moving the other 887 prefix units
+fails `OrderOk`. Units 873 through 892 would run before unit 872; the move
+report lists all 20 inversions as unproved.
+
+Ending the prefix immediately before the factory moves **867 units** and passes
+all nine structural checks with zero inversions. The emitted plan places unit
+872 among the 920 units in the original editor filename. CoreJS still declines
+a certificate because its correspondence check sees the factory's
+`import.meta.url` in the complete input. This run checked the placement and
+certificate verdict; it did not execute the editor in a browser.
+[Census results and emitted plans](https://app.buildbuddy.io/invocation/eac77bf3-3e55-42ce-b345-28952b567496)

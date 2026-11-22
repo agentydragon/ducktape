@@ -45,12 +45,14 @@ const containing = (suffix) => {
   assert(match, `no chunk contains ${suffix}`);
   return chunks.find((c) => c.file === path.basename(match[0]));
 };
+const editor = containing("fractional-indexing/src/index.js");
 const selected = [
   ...new Set([
     chunks.find((c) => c.file === "main.js"),
-    containing("fractional-indexing/src/index.js"),
+    editor,
     containing("roughjs/bin/rough.js"),
     [...chunks].filter((c) => c.statements > 10).sort((a, b) => a.bytes - b.bytes)[0],
+    ...chunks.filter((c) => c.refused?.length === 0),
   ]),
 ];
 assert(selected.every(Boolean));
@@ -127,12 +129,21 @@ for (const chunk of selected) {
     ["prefix", (i) => i < Math.floor(n / 2)],
     ["alternating", (i) => i % 2 === 0],
   ];
-  for (const [name, move] of probes) {
-    const modules = { "entry.mjs": [], "part.mjs": [] };
-    for (let i = 0; i < n; i++) modules[!pinned[i] && move(i) ? "part.mjs" : "entry.mjs"].push(`#${i}`);
+  if (chunk === editor) {
+    const metaReaders = core.refused.filter((r) => r.why === "MetaProperty: import.meta").map((r) => r.id);
+    assert.deepEqual(metaReaders, [872], "reinspect the worker factory after a bundle update");
+    const [factory] = metaReaders;
+    probes.push(
+      ["prefix-fixed-factory", (i) => i < Math.floor(n / 2) && i !== factory, chunk.file],
+      ["prefix-before-factory", (i) => i < factory, chunk.file]
+    );
+  }
+  for (const [name, move, entry = "entry.mjs"] of probes) {
+    const modules = { [entry]: [], "part.mjs": [] };
+    for (let i = 0; i < n; i++) modules[!pinned[i] && move(i) ? "part.mjs" : entry].push(`#${i}`);
     if (modules["part.mjs"].length === 0) delete modules["part.mjs"];
     const specFile = path.join(dir, `${name}.json`);
-    writeFileSync(specFile, JSON.stringify({ entry: "entry.mjs", modules }));
+    writeFileSync(specFile, JSON.stringify({ entry, modules }));
     const r = await run(
       process.env.LOWERSPLIT,
       [
@@ -152,6 +163,7 @@ for (const chunk of selected) {
     );
     const probe = {
       name,
+      moved: modules["part.mjs"]?.length ?? 0,
       status: r.status,
       signal: r.signal,
       killed: r.killed,
