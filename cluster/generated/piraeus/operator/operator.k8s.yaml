@@ -41,5 +41,10 @@ spec:
     installCRDs: true
     nodeSelector:
       topology.kubernetes.io/region: hil
+    operator:
+      resources:
+        requests:
+          cpu: 200m
+          memory: 192Mi
     podDisruptionBudget:
       enabled: false

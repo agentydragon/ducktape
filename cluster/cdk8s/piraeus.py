@@ -210,6 +210,7 @@ def operator_chart(app: App) -> Chart:
         install=RETRY_FAILED_INSTALL,
         values={
             "installCRDs": True,
+            "operator": {"resources": {"requests": {"cpu": "200m", "memory": "192Mi"}}},
             # The controller is cluster-wide, but keep it on the existing OVH region.
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             # A single operator replica can be restarted during node maintenance.
@@ -417,7 +418,17 @@ def cluster_chart(app: App) -> Chart:
                 # Keep local PV affinity updates; omit the unrelated NFS server.
                 "affinityController": {
                     "enabled": True,
-                    "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
+                    "podTemplate": {
+                        "spec": {
+                            "nodeSelector": _CONTROLLER_NODE_SELECTOR,
+                            "containers": [
+                                {
+                                    "name": "linstor-affinity-controller",
+                                    "resources": {"requests": {"cpu": "15m", "memory": "64Mi"}},
+                                }
+                            ],
+                        }
+                    },
                 },
                 # Force-deletes Pods and VolumeAttachments stuck on a node whose DRBD primary lost
                 # quorum, so replicated volumes fail over without manual force-deletes.
