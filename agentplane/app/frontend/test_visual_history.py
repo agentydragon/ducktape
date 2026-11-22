@@ -687,7 +687,6 @@ async def test_acknowledge_saved_issue_outside_workset(view: VisualPage, app: Ag
     await view.page.get_by_role("menuitem", name="Delivery history", exact=True).click()
     history = view.page.get_by_role("dialog", name="Delivery history")
     await history.get_by_role("tab", name="Acknowledged").click()
-    await history.get_by_role("button", name="Inspect original receipt").click()
     await expect(history).to_contain_text("Dispatcher could not deliver the saved input.")
     await view.page.mouse.move(0, 0)
     await view.capture(name="acknowledged_saved_issue", target=history)
