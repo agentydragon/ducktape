@@ -7,7 +7,6 @@ schema objects, deferred constraints, triggers, and invalid rows rather than dom
 from __future__ import annotations
 
 import datetime
-import re
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -33,17 +32,9 @@ from haku.console.identity.agent import (
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
 from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import dump_migrated_schema
 
 _UTC = datetime.UTC
-
-
-def _schema(container: PostgresContainer, database: str) -> str:
-    result = container.get_wrapped_container().exec_run(
-        ["pg_dump", "-U", "postgres", "--schema-only", "--no-owner", "--exclude-table=public.alembic_version", database]
-    )
-    assert result.exit_code == 0, result.output.decode()
-    # Random psql restriction keys are transport framing, not schema.
-    return re.sub(r"^\\(?:un)?restrict .*\n", "", result.output.decode(), flags=re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -616,7 +607,7 @@ def test_database_already_at_head_is_unchanged(postgres_container: PostgresConta
     apply_migrations(db_url)
     database = make_url(db_url).database
     assert database is not None
-    schema_before = _schema(postgres_container, database)
+    schema_before = dump_migrated_schema(postgres_container, database)
     (undeclared_outputs_dir() / "haku_console_schema.sql").write_text(schema_before)
     engine = create_engine(db_url)
     operator_id = uuid4()
@@ -639,7 +630,7 @@ def test_database_already_at_head_is_unchanged(postgres_container: PostgresConta
             )
 
         apply_migrations(db_url)
-        assert _schema(postgres_container, database) == schema_before
+        assert dump_migrated_schema(postgres_container, database) == schema_before
 
         with engine.connect() as conn:
             # Re-applying when already at head is a no-op: the stamp is unchanged (asserting a

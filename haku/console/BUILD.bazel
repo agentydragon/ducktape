@@ -117,6 +117,7 @@ py_test(
         "//haku/console/identity:agent",
         "//haku/console/identity:operator_identity",
         "@ducktape_haku//haku/console:tool_calls",
+        "//testing:postgres_fixtures",
     ],
 )
 

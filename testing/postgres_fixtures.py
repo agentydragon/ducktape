@@ -17,6 +17,7 @@ different PostgreSQL image can override ``postgres_image`` in their conftest.
 
 import contextlib
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Generator, Iterator
 
@@ -72,6 +73,24 @@ def _onto_disk() -> Iterator[None]:
             each.removeHandler(handler)
             each.setLevel(level)
         handler.close()
+
+
+def dump_migrated_schema(container: PostgresContainer, database: str) -> str:
+    """Dump the application schema for comparison across Alembic upgrades."""
+    result = container.get_wrapped_container().exec_run(
+        [
+            "pg_dump",
+            "-U",
+            container.username,
+            "--schema-only",
+            "--no-owner",
+            "--exclude-table=public.alembic_version",
+            database,
+        ]
+    )
+    assert result.exit_code == 0, result.output.decode()
+    # pg_dump 18 emits random psql restriction keys, which are not schema.
+    return re.sub(r"^\\(?:un)?restrict .*\n", "", result.output.decode(), flags=re.MULTILINE)
 
 
 def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> PostgresContainer:
