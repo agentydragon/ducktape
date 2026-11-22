@@ -2199,20 +2199,18 @@ py_test(
     srcs = ["test_piraeus_metrics_rules.py"],
     data = [
         "testdata/piraeus_roaming_rules.yaml",
+        "//cluster:generated/piraeus/cluster/cluster.k8s.yaml",
         "@multitool//tools/promtool",
-        "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":conftest",
-        ":piraeus_metrics",
         "//:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )
