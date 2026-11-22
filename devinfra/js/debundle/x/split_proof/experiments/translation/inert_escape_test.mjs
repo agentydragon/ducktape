@@ -172,6 +172,44 @@ console.log(trigger());`,
   refuse(name, code, side);
 }
 
+// An escaped array can have an own index getter, even with the original Array.prototype.includes.
+// Both programs complete. Moving just the factory initialization changes what the callback observes.
+{
+  const name = "escaped_array_includes_observes_factory";
+  const p = prepare(
+    name,
+    `var ratios = [1, 2, 3];
+globalThis.installObserver(ratios, () => typeof factory);
+var scale = ratios.includes(2) ? 2 : 1;
+var factory = () => 7;
+console.log(scale);
+export { ratios, factory };`,
+    [0, 1, 3]
+  );
+  const host = path.join(temp, "array-observer.mjs");
+  writeFileSync(
+    host,
+    `globalThis.installObserver = (ratios, observe) => {
+  Object.defineProperty(ratios, "0", { get() { console.log(observe()); return 1; } });
+};`
+  );
+  const rejected = lowersplit(p);
+  assert.equal(rejected.status, 1, describe(name, rejected));
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/, name);
+  assert.equal(lowersplit(p, "--force").status, 1, name);
+  for (const [file, expected] of [
+    [p.source, "undefined\n2\n"],
+    [path.join(p.dir, "entry.mjs"), "function\n2\n"],
+  ]) {
+    const result = run(process.execPath, ["--import", host, file]);
+    assert.equal(result.status, 0, describe(name, result));
+    assert.equal(result.stdout, expected, name);
+  }
+  const checked = translate(name, p.source, p.dir);
+  assert.equal(checked.status, 4, describe(name, checked));
+  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
+}
+
 // Exported declarations have no export-specifier read in the input AST, yet an external cyclic importer may observe
 // their bindings during evaluation.
 {
@@ -234,6 +272,15 @@ for (const [name, code, side] of [
     "literal_array",
     `const x = 1;\nconst a = ["v",, true];\nfunction see() { return [x, a]; }\nconsole.log(see()[0], see()[1][0], 1 in see()[1]);`,
     [1],
+  ],
+  // The receiver is private and dense, and the search value is a primitive.
+  [
+    "private_array_includes_before_factory",
+    `var ratios = [1, 2, 3];
+var scale = ratios.includes(2) ? 2 : 1;
+var factory = () => 7;
+console.log(scale, factory());`,
+    [0, 2],
   ],
   // a read of an earlier initialized binding may move across an unrelated effect
   [
