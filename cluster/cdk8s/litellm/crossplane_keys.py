@@ -116,12 +116,7 @@ def _publish_key(
     annotations: Mapping[str, str] | None = None,
 ) -> None:
     store = single_secret_store(
-        chart,
-        f"crossplane-key-{key_name}",
-        reader=reader,
-        source_namespace=NAMESPACE,
-        source_secret=connection_secret,
-        consumer_namespace=NAMESPACE,
+        chart, f"crossplane-key-{key_name}", reader=reader, source_namespace=NAMESPACE, source_secret=connection_secret
     )
     ExternalSecret(
         chart,
@@ -164,7 +159,6 @@ def chart(app: App) -> Chart:
         reader=reader,
         source_namespace=NAMESPACE,
         source_secret="litellm-master-key",
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,

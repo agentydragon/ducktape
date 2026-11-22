@@ -211,7 +211,6 @@ def litellm_provider_chart(app: App) -> Chart:
         reader=reader,
         source_namespace="forgejo-images",
         source_secret=FORGEJO_PULL_SECRET,
-        consumer_namespace=NAMESPACE,
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE, secret_store_name=store)
     Provider(

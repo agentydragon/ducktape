@@ -91,12 +91,7 @@ def _oidc_credentials(chart: Chart) -> None:
         automount_token=False,
     )
     store = single_secret_store(
-        chart,
-        "plaid-link-oidc",
-        reader=reader,
-        source_namespace="authentik",
-        source_secret=_OIDC_CREDENTIALS.name,
-        consumer_namespace=NAMESPACE,
+        chart, "plaid-link-oidc", reader=reader, source_namespace="authentik", source_secret=_OIDC_CREDENTIALS.name
     )
     ExternalSecret(
         chart,

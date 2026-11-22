@@ -88,7 +88,6 @@ def _web_oidc_credentials(chart: Chart) -> None:
         reader=reader,
         source_namespace="authentik",
         source_secret=_WEB_OIDC_CREDENTIALS_NAME,
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
@@ -110,12 +109,7 @@ def _spend_policy_secret(chart: Chart) -> None:
         automount_token=False,
     )
     store = single_secret_store(
-        chart,
-        "plaid-spend-policy",
-        reader=reader,
-        source_namespace=POLICY_NAMESPACE,
-        source_secret=POLICY_SECRET,
-        consumer_namespace=NAMESPACE,
+        chart, "plaid-spend-policy", reader=reader, source_namespace=POLICY_NAMESPACE, source_secret=POLICY_SECRET
     )
     ExternalSecret(
         chart,
