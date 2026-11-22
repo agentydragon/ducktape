@@ -2,13 +2,19 @@
 .agentplane-operation-section {
   --ui-disclosure-gutter: 0px;
   --ui-disclosure-body-spacing: 0px;
+  --operation-section-padding: var(--agentplane-operation-padding, var(--ui-code-surface-padding, 0));
   box-sizing: border-box;
   min-width: 0;
   overflow-wrap: anywhere;
   background-color: var(--ui-code-surface-background, transparent);
   border: var(--ui-code-surface-border, 0);
   border-radius: var(--ui-code-surface-radius, 0);
-  padding: var(--agentplane-operation-padding, var(--ui-code-surface-padding, 0));
+  padding: var(--operation-section-padding);
+}
+
+.agentplane-operation-section[data-layout="disclosure"] {
+  --ui-disclosure-body-spacing: var(--operation-section-padding);
+  padding-block: 0;
 }
 
 .agentplane-operation-heading {
