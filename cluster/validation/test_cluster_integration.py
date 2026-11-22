@@ -246,9 +246,9 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
 
 
 def test_session_archive_importers_receive_the_backup_credentials(
-    cluster: ParsedCluster, repo_root: Path, tmp_path: Path
+    parsed_cluster: ParsedCluster, repo_root: Path, tmp_path: Path
 ) -> None:
-    owner = cluster.flux_kustomizations["ai-session-archive"]
+    owner = parsed_cluster.flux_kustomizations["ai-session-archive"]
     # Flux dry-run masks the ciphertext even if the owner has no decryption key.
     assert owner.decryption is not None
     assert owner.decryption.provider == "sops"
@@ -258,7 +258,7 @@ def test_session_archive_importers_receive_the_backup_credentials(
     source = owner.source_ref
     assert source is not None
     stage_artifact_copies(
-        repo_root, tmp_path, cluster.artifact_copies[source.namespace or owner.namespace, source.name]
+        repo_root, tmp_path, parsed_cluster.artifact_copies[source.namespace or owner.namespace, source.name]
     )
     # Flux dry-run masks SOPS payloads. Use Kustomize here to verify which file the importer actually receives.
     kustomize = Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"
