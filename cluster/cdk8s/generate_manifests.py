@@ -1989,9 +1989,7 @@ def generate_manifests(root: Path) -> None:
         session_archive.NAME,
         session_archive.OUTPUT_DIR,
         session_archive.PINS_DIR,
-        files={
-            "secrets/shared/session-backup.yaml": f"{session_archive.OUTPUT_DIR}/{session_archive.CREDENTIALS_SOURCE}"
-        },
+        files={"secrets/shared/session-backup.yaml": session_archive.CREDENTIALS_SOURCE},
     )
     session_archive.archive(
         flux_chart,
