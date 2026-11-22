@@ -9,7 +9,7 @@ from agentplane.app.testing.client import Client
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.native_platform import sandbox_harness_host
+from agentplane.system_tests.driver.native_platform import native_history_client, sandbox_harness_host
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
@@ -51,9 +51,12 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
 
 @pytest.mark.vm_sandboxes
 async def test_fresh_vm_session_workspace_is_created_for_harness_identity(
-    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes
+    cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes
 ) -> None:
-    await vm_workspace_ownership.fresh_vm_session_workspace_is_created_for_harness_identity(client, dispatcher, sandbox)
+    async with native_history_client(cluster) as history:
+        await vm_workspace_ownership.fresh_vm_session_workspace_is_created_for_harness_identity(
+            client, dispatcher, history, sandbox
+        )
 
 
 if __name__ == "__main__":

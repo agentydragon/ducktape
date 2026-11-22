@@ -392,11 +392,12 @@ py_library(
     srcs = ["vm_workspace_ownership.py"],
     deps = [
         "//agentplane/app/testing:client",
+        "//agentplane/history_service:client",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/driver:session",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
     ],
