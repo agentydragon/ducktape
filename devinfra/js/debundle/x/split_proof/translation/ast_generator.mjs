@@ -1,4 +1,6 @@
 // Bounded scope-aware AST generation. No source fragments participate in generation.
+import { generate } from "astring";
+
 function random(seed) {
   let state = seed >>> 0;
   return (n) => {
@@ -13,7 +15,39 @@ const id = (name, binding) => ({ type: "Identifier", name, binding });
 const num = (value) => ({ type: "Literal", value });
 const block = (body) => ({ type: "BlockStatement", body });
 const exprStmt = (expression) => ({ type: "ExpressionStatement", expression });
-const call = (callee, args) => ({ type: "CallExpression", callee, arguments: args });
+const call = (callee, args) => ({ type: "CallExpression", optional: false, callee, arguments: args });
+const arrow = (params, body) => ({
+  type: "ArrowFunctionExpression",
+  id: null,
+  params,
+  body,
+  expression: true,
+  async: false,
+  generator: false,
+});
+const returningFunction = (id, param, argument) => ({
+  type: "FunctionDeclaration",
+  id,
+  params: [param],
+  body: block([{ type: "ReturnStatement", argument }]),
+  expression: false,
+  async: false,
+  generator: false,
+});
+const objectWithValue = (value) => ({
+  type: "ObjectExpression",
+  properties: [
+    {
+      type: "Property",
+      kind: "init",
+      key: id("value", "property"),
+      value,
+      method: false,
+      shorthand: false,
+      computed: false,
+    },
+  ],
+});
 const declare = (binding, init, kind) => ({
   type: "VariableDeclaration",
   kind,
@@ -22,70 +56,29 @@ const declare = (binding, init, kind) => ({
 const log = (value, label) =>
   exprStmt(
     call(
-      { type: "MemberExpression", object: id("console", "global"), property: id("log", "property"), computed: false },
+      {
+        type: "MemberExpression",
+        optional: false,
+        object: id("console", "global"),
+        property: id("log", "property"),
+        computed: false,
+      },
       [{ type: "Literal", value: label }, value]
     )
   );
 
-/** Print runnable JavaScript, applying the module's spelling to bound identifiers. */
-export function printAst(node, names = {}) {
-  const p = (child) => printAst(child, names);
-  switch (node.type) {
-    case "Program":
-      return node.body.map(p).join("\n") + "\n";
-    case "Identifier":
-      if (node.binding === "top" && names.top) return names.top(node.name);
-      if (node.binding === "local" && names.local) return names.local(node.name);
-      return node.name;
-    case "Literal":
-      return JSON.stringify(node.value);
-    case "BlockStatement":
-      return `{ ${node.body.map(p).join(" ")} }`;
-    case "ExpressionStatement":
-      return `${p(node.expression)};`;
-    case "VariableDeclaration":
-      return `${node.kind} ${node.declarations.map(p).join(", ")};`;
-    case "VariableDeclarator":
-      return `${p(node.id)} = ${p(node.init)}`;
-    case "FunctionDeclaration":
-      return `function ${p(node.id)}(${node.params.map(p).join(", ")}) ${p(node.body)}`;
-    case "ArrowFunctionExpression":
-      return `(${node.params.map(p).join(", ")}) => ${p(node.body)}`;
-    case "ClassExpression":
-      return `class${node.superClass ? ` extends ${p(node.superClass)}` : ""} ${p(node.body)}`;
-    case "ClassBody":
-      return `{ ${node.body.map(p).join(" ")} }`;
-    case "MethodDefinition":
-      return `${node.static ? "static " : ""}${node.kind === "get" ? "get " : ""}${p(node.key)}(${node.value.params.map(p).join(", ")}) ${p(node.value.body)}`;
-    case "NewExpression":
-      return `new ${p(node.callee)}(${node.arguments.map(p).join(", ")})`;
-    case "ArrayExpression":
-      return `[${node.elements.map(p).join(", ")}]`;
-    case "ObjectExpression":
-      return `({ ${node.properties.map(p).join(", ")} })`;
-    case "Property":
-      return `${p(node.key)}: ${p(node.value)}`;
-    case "ReturnStatement":
-      return `return ${p(node.argument)};`;
-    case "UnaryExpression":
-      return `(${node.operator}${p(node.argument)})`;
-    case "BinaryExpression":
-      return `(${p(node.left)} ${node.operator} ${p(node.right)})`;
-    case "ConditionalExpression":
-      return `(${p(node.test)} ? ${p(node.consequent)} : ${p(node.alternate)})`;
-    case "CallExpression":
-      return `${p(node.callee)}(${node.arguments.map(p).join(", ")})`;
-    case "MemberExpression":
-      return node.computed ? `${p(node.object)}[${p(node.property)}]` : `${p(node.object)}.${p(node.property)}`;
-    case "UpdateExpression":
-      return `(${p(node.argument)}${node.operator})`;
-    case "AssignmentExpression":
-      return `(${p(node.left)} ${node.operator} ${p(node.right)})`;
-    case "IfStatement":
-      return `if (${p(node.test)}) ${p(node.consequent)} else ${p(node.alternate)}`;
-    default:
-      throw new Error(`unsupported generated node ${node.type}`);
+/** Apply the candidate module's spelling to bound names before unparsing. */
+export function generateRenamed(node, names) {
+  function rename(value) {
+    if (Array.isArray(value)) return value.map(rename);
+    if (value === null || typeof value !== "object") return value;
+    if (value.type === "Identifier") {
+      const spell = names[value.binding];
+      return spell ? { ...value, name: spell(value.name) } : value;
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, rename(child)]));
   }
+  return generate(rename(node));
 }
 
 function walk(node, visit, depth = 0) {
@@ -198,12 +191,19 @@ export function generateAstBundle(seed, round) {
       case "memberObject":
         return {
           type: "MemberExpression",
+          optional: false,
           object: ref(choose(scope.objects)),
           property: id("value", "property"),
           computed: false,
         };
       case "memberArray":
-        return { type: "MemberExpression", object: ref(choose(scope.arrays)), property: num(0), computed: true };
+        return {
+          type: "MemberExpression",
+          optional: false,
+          object: ref(choose(scope.arrays)),
+          property: num(0),
+          computed: true,
+        };
       default:
         return num(pick(10));
     }
@@ -258,10 +258,7 @@ export function generateAstBundle(seed, round) {
       const init = kind.endsWith("Alias")
         ? ref(choose(pool))
         : object
-          ? {
-              type: "ObjectExpression",
-              properties: [{ type: "Property", key: id("value", "property"), value: expression(scope, 2) }],
-            }
+          ? objectWithValue(expression(scope, 2))
           : { type: "ArrayExpression", elements: [expression(scope, 2)] };
       pool.push(binding);
       return { node: declare(binding, init, "const"), defs: [binding.name] };
@@ -297,13 +294,8 @@ export function generateAstBundle(seed, round) {
       scope.callbackShape = shape;
       if (scope.callbackFromEarly && shape !== "direct") indirectEarlyCallbacks++;
       let savedValue = ref(target);
-      if (shape.toLowerCase().includes("wrapper"))
-        savedValue = { type: "ArrowFunctionExpression", params: [], body: call(savedValue, [num(1)]) };
-      if (shape.startsWith("object"))
-        savedValue = {
-          type: "ObjectExpression",
-          properties: [{ type: "Property", key: id("value", "property"), value: savedValue }],
-        };
+      if (shape.toLowerCase().includes("wrapper")) savedValue = arrow([], call(savedValue, [num(1)]));
+      if (shape.startsWith("object")) savedValue = objectWithValue(savedValue);
       if (shape.startsWith("array")) savedValue = { type: "ArrayExpression", elements: [savedValue] };
       return {
         node: exprStmt({
@@ -311,6 +303,7 @@ export function generateAstBundle(seed, round) {
           operator: "=",
           left: {
             type: "MemberExpression",
+            optional: false,
             object: id("globalThis", "global"),
             property: id("saved", "property"),
             computed: false,
@@ -329,8 +322,10 @@ export function generateAstBundle(seed, round) {
             scope.callbackShape.startsWith("object") || scope.callbackShape.startsWith("array")
               ? {
                   type: "MemberExpression",
+                  optional: false,
                   object: {
                     type: "MemberExpression",
+                    optional: false,
                     object: id("globalThis", "global"),
                     property: id("saved", "property"),
                     computed: false,
@@ -340,6 +335,7 @@ export function generateAstBundle(seed, round) {
                 }
               : {
                   type: "MemberExpression",
+                  optional: false,
                   object: id("globalThis", "global"),
                   property: id("saved", "property"),
                   computed: false,
@@ -369,20 +365,14 @@ export function generateAstBundle(seed, round) {
       const inner = { ...scope, mutable: [], locals: [param], deferred: true };
       const callableArgument = scope.functions.some((b) => b.hoisted) && pick(3) !== 0;
       binding.callableArgument = callableArgument;
-      const returned = {
-        type: "ArrowFunctionExpression",
-        params: [],
-        body: callableArgument ? call(ref(param), [expression({ ...scope, deferred: true }, 1)]) : expression(inner, 3),
-      };
+      const returned = arrow(
+        [],
+        callableArgument ? call(ref(param), [expression({ ...scope, deferred: true }, 1)]) : expression(inner, 3)
+      );
       binding.needsPending = dependsOnPending(returned, scope);
       scope.factories.push(binding);
       return {
-        node: {
-          type: "FunctionDeclaration",
-          id: ref(binding),
-          params: [ref(param)],
-          body: block([{ type: "ReturnStatement", argument: returned }]),
-        },
+        node: returningFunction(ref(binding), ref(param), returned),
         defs: [binding.name],
       };
     }
@@ -409,16 +399,11 @@ export function generateAstBundle(seed, round) {
       scope.functions.push(binding);
       if (kind === "function")
         return {
-          node: {
-            type: "FunctionDeclaration",
-            id: ref(binding),
-            params: [ref(param)],
-            body: block([{ type: "ReturnStatement", argument: body }]),
-          },
+          node: returningFunction(ref(binding), ref(param), body),
           defs: [binding.name],
         };
       return {
-        node: declare(binding, { type: "ArrowFunctionExpression", params: [ref(param)], body }, "const"),
+        node: declare(binding, arrow([ref(param)], body), "const"),
         defs: [binding.name],
       };
     }
@@ -480,9 +465,7 @@ export function generateAstBundle(seed, round) {
         const targets = env.functions.filter((b) => b.hoisted && !b.needsPending);
         const factory = factories.length && targets.length ? choose(factories) : null;
         const target = factory ? choose(targets) : null;
-        init = factory
-          ? call(ref(factory), [ref(target)])
-          : { type: "ArrowFunctionExpression", params: [], body: num(pick(10)) };
+        init = factory ? call(ref(factory), [ref(target)]) : arrow([], num(pick(10)));
         future.needsPending = !!(factory?.needsPending || target?.needsPending);
         env.functions.push(future);
       } else {
@@ -542,6 +525,9 @@ export function generateAstBundle(seed, round) {
         const scope = getter ? env : { ...env, locals: [param] };
         const value = {
           type: "FunctionExpression",
+          async: false,
+          generator: false,
+          expression: false,
           id: null,
           params: getter ? [] : [ref(param)],
           body: block([{ type: "ReturnStatement", argument: expression(scope, 2) }]),
@@ -573,6 +559,7 @@ export function generateAstBundle(seed, round) {
     for (const { key, getter, isStatic } of members) {
       const access = {
         type: "MemberExpression",
+        optional: false,
         object: ref(isStatic ? parent : instance),
         property: key,
         computed: false,
@@ -606,7 +593,7 @@ export function generateAstBundle(seed, round) {
     ast,
     units,
     exports: [],
-    source: printAst(ast),
+    source: generate(ast),
     pending: [future.name, alias.name],
     earlyCallbacks,
     indirectEarlyCallbacks,

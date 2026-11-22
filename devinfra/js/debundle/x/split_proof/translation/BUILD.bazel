@@ -106,8 +106,15 @@ _CHECKER_RUNFILES = [
     _TRANSLATE,
 ]
 
+js_library(
+    name = "ast_generator",
+    testonly = True,
+    srcs = ["ast_generator.mjs"],
+    deps = [":node_modules/astring"],
+)
+
 # What `fuzz.mjs` imports besides the front end: the AST corpus and the generator of `gen/`.
-_FUZZ_SOURCES = ["ast_generator.mjs"] + glob(["gen/*.mjs"])
+_FUZZ_SOURCES = [":ast_generator"] + glob(["gen/*.mjs"])
 
 js_test(
     name = "fixtures_test",
@@ -148,7 +155,7 @@ _LOWER_CALLBACK_FUZZ_DATA = [
 js_test(
     name = "ast_emitter_fuzz_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + ["ast_generator.mjs"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_generator"],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -157,7 +164,7 @@ js_test(
     name = "ast_emitter_fuzz_seed_2027_test",
     size = "medium",
     args = ["2027"],
-    data = _LOWER_CALLBACK_FUZZ_DATA + ["ast_generator.mjs"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_generator"],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -538,7 +545,8 @@ exports_files(
 js_test(
     name = "ast_generator_validation_test",
     data = [
-        "ast_generator.mjs",
+        ":ast_assertions",
+        ":ast_generator",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
     ],

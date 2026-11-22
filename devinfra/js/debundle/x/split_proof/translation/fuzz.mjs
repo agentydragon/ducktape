@@ -23,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { frontBundle, frontTree } from "./frontend.mjs";
-import { generateAstBundle, astStatistics, printAst } from "./ast_generator.mjs";
+import { generateAstBundle, astStatistics, generateRenamed } from "./ast_generator.mjs";
 import { generateProgram } from "./gen/index.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -1153,7 +1153,7 @@ function split(bundle, r, opts) {
       const u = bundle.units[i];
       lines.push(
         u.ast
-          ? printAst(u.ast, {
+          ? generateRenamed(u.ast, {
               top: (name) => (u.defs.includes(name) ? topName(name) : nameIn(m, name)),
               local: localName,
             })
