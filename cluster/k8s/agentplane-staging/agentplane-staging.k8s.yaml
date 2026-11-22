@@ -6626,28 +6626,6 @@ spec:
               protocol: TCP
 ---
 apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: environments
-  name: environments
-  namespace: agentplane-staging
-spec:
-  externalIPs: []
-  ports:
-    - name: grpc
-      port: 8082
-      protocol: TCP
-      targetPort: 8082
-    - name: metrics
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    app.kubernetes.io/component: environments
-  type: ClusterIP
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: environments
@@ -6903,7 +6881,6 @@ spec:
       labels:
         agentplane.io/otel-class: service
         agentplane.io/otel-emitter: "true"
-        app.kubernetes.io/component: environments
         app.kubernetes.io/name: environments
         cdk8s.io/metadata.addr: agentplane-sandbox-controller-environments-deployment-c8d1d5ae
     spec:
@@ -6936,11 +6913,11 @@ spec:
             periodSeconds: 30
           name: environments
           ports:
-            - containerPort: 8080
-              name: metrics
-              protocol: TCP
             - containerPort: 8082
               name: grpc
+              protocol: TCP
+            - containerPort: 8080
+              name: metrics
               protocol: TCP
             - containerPort: 8081
               name: health
@@ -7023,6 +7000,28 @@ spec:
         - configMap:
             name: environments-settings
           name: configmap-environments-settings
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: environments
+  name: environments
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8082
+      protocol: TCP
+      targetPort: 8082
+    - name: metrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-controller-environments-deployment-c8d1d5ae
+  type: ClusterIP
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

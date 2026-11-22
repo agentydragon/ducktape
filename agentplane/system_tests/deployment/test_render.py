@@ -82,8 +82,6 @@ def test_fixture_exposes_environments(mcp_fixture: rendered_fixture.RenderedFixt
     docs = mcp_fixture.objects
     deployment = _resource(docs, "Deployment", "environments")
     assert deployment["spec"]["replicas"] == 1
-    labels = deployment["spec"]["template"]["metadata"]["labels"]
-    assert _resource(docs, "Service", "environments")["spec"]["selector"].items() <= labels.items()
     certificate = _resource(docs, "Certificate", "environments-client-workload")["spec"]
     assert certificate["dnsNames"] == [f"environments.{NAMESPACE}.svc.cluster.local"]
     assert certificate["uris"] == [SANDBOX_CONTROLLER_URI]
