@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from finance.augur.api.config import Config
 from finance.augur.api.conftest import MakeClient
-from finance.augur.api.server import ApiServerConfig, create_app, static_price_clients
+from finance.augur.api.server import create_app, static_price_clients
 from finance.augur.model.testing import ConstantFrameModel
 from finance.budget import service as budget_service
 from finance.budget.schema import BucketDef, BucketKind, BudgetConfig, BudgetSourceConfig, TransferDirection
@@ -88,12 +88,10 @@ def test_http_response_money_dates_nulls_and_csv(augur_config: Config, monkeypat
         default_inflow_bucket_id="income",
     )
     app = create_app(
-        ApiServerConfig(
-            augur_config=augur_config,
-            models={"current_model": ConstantFrameModel()},
-            price_clients=static_price_clients({}),
-            budget_service=budget_service.BudgetService(config=config, session_factory=async_sessionmaker()),
-        )
+        augur_config,
+        models={"current_model": ConstantFrameModel()},
+        price_clients=static_price_clients({}),
+        budget_service=budget_service.BudgetService(config=config, session_factory=async_sessionmaker()),
     )
     window = {"kind": "trailing_months", "months": 1}
     with TestClient(app) as client:
