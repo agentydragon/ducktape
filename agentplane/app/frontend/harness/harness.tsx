@@ -4488,6 +4488,18 @@ const visualHarness = {
     );
     threadEntityRows = (id) => setupRows(id, true);
   },
+  wrappedOutputHistory(): void {
+    threadEntityRows = (threadId) => [
+      { ...viewState(2, null), thread_id: threadId },
+      item(1, "question", ItemKind.ASSISTANT_TEXT, "Inspect the output.", { threadId }),
+      item(2, "wrap", ItemKind.TOOL_CALL, null, {
+        threadId,
+        tool: "Bash",
+        arguments: JSON.stringify({ command: "cat report.txt", description: "Read report" }),
+        output: "wrapped output ".repeat(650),
+      }),
+    ];
+  },
   collapsibleCommandHistory(): void {
     threadEntityRows = (id) => collapsibleCommandRows(id, 8);
   },

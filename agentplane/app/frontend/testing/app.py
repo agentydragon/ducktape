@@ -74,6 +74,7 @@ class Scene(StrEnum):
     AUTOSUSPEND_BUSY = "autosuspendBusy"
     AUTOSUSPEND_STARTING = "autosuspendStarting"
     SHELL_CALLS = "shellCalls"
+    WRAPPED_OUTPUT_HISTORY = "wrappedOutputHistory"
     COLLAPSIBLE_COMMAND_HISTORY = "collapsibleCommandHistory"
     MID_THREAD_COMMAND_HISTORY = "midThreadCommandHistory"
     MARKDOWN_CODE_FENCE = "markdownCodeFence"

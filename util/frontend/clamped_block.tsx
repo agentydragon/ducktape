@@ -49,36 +49,32 @@ export function ClampedBlock({
   const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
-    const element = content;
-    if (!element) return;
-    // Measure the content outside its clipping box against the cap in pixels.
-    const measure = () => {
-      const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setOverflows(element.offsetHeight > maxHeightRem * remPx + 1);
-    };
+    const preview = content?.parentElement;
+    if (expanded || !content || !preview) return;
+    // CSS has already bounded the preview. Observation only decides whether to offer "Show all".
+    const measure = () => setOverflows(preview.scrollHeight > preview.clientHeight);
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(element);
+    observer.observe(content);
+    observer.observe(preview);
     return () => observer.disconnect();
-  }, [content, maxHeightRem]);
-  const clipped = overflows && !expanded;
+  }, [content, expanded]);
+  const isClamped = !expanded && overflows;
   useLayoutEffect(() => {
     if (content) remeasureCodeBlocks(content);
-  }, [content, clipped]);
-  // Expansion is user state. CodeMirror briefly measures shorter while mounting inside the
-  // sticky shell; retain its collapse control through that transient measurement.
+  }, [content, expanded, maxHeightRem]);
   const body = (
     <>
       <div
-        data-clamped={clipped}
+        data-clamped={isClamped}
         style={{
           position: "relative",
           overflow: "hidden",
-          ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
+          maxHeight: expanded ? undefined : `${maxHeightRem}rem`,
         }}
       >
         <div ref={setContent}>{children}</div>
-        {clipped && (
+        {isClamped && (
           <div
             aria-hidden="true"
             style={{
@@ -92,7 +88,7 @@ export function ClampedBlock({
           />
         )}
       </div>
-      {clipped && (
+      {isClamped && (
         <UnstyledButton
           aria-expanded={false}
           onClick={() => setExpanded(true)}
