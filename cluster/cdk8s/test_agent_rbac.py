@@ -160,31 +160,38 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(static_res
     }
 
 
-def test_namespace_diagnostics_cover_static_and_managed_bindings(rendering: Rendering) -> None:
-    expected = {
-        (namespace, f"agent-readable-namespace-{level}")
+@pytest.fixture(scope="module")
+def namespace_readers() -> set[BoundRole]:
+    return {
+        BoundRole("ClusterRole", f"agent-readable-namespace-{level}", namespace)
         for namespace, classification in NAMESPACE_DIAGNOSTICS.items()
         for level in (("metadata", "logs") if classification is AgentReadable.LOGS else ("metadata",))
     }
-    readers = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
+
+
+def test_namespace_diagnostics_cover_static_and_managed_bindings(
+    rendering: Rendering, namespace_readers: set[BoundRole]
+) -> None:
     static_bindings = [
         doc
         for doc in rendering.resources
         if doc["kind"] == "RoleBinding"
         and doc["metadata"]["name"] in {"agent-diagnostics-metadata", "agent-diagnostics-logs"}
     ]
-    assert all(doc["roleRef"]["kind"] == "ClusterRole" for doc in static_bindings)
-    static = {(doc["metadata"]["namespace"], doc["roleRef"]["name"]) for doc in static_bindings}
-    assert static == expected
+    assert {
+        BoundRole(doc["roleRef"]["kind"], doc["roleRef"]["name"], doc["metadata"]["namespace"])
+        for doc in static_bindings
+    } == namespace_readers
 
     assert rendering.launches
     for preset, sets in rendering.launches.items():
         managed = {
-            (role.namespace, role.name)
+            role
             for role in rendering.rbac.held_roles(sets)
-            if role.kind == "ClusterRole" and role.name in readers
+            if role.kind == "ClusterRole"
+            and role.name in {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
         }
-        assert managed == expected, preset
+        assert managed == namespace_readers, preset
 
 
 def test_agent_readable_log_namespaces_are_in_loki_anonymous_allowlist() -> None:
@@ -215,10 +222,11 @@ def test_finance_spend_policy_role_is_named_get_only(rendering: Rendering) -> No
     assert rendering.rbac.bound({role}) == {Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")}
 
 
-def test_launch_accounts_receive_their_scoped_roles(rendering: Rendering) -> None:
+def test_launch_accounts_receive_their_scoped_roles(rendering: Rendering, namespace_readers: set[BoundRole]) -> None:
     # Expand the ServiceAccountGrant through its actual KubernetesRoleSets. An additional
     # binding or an accidental promotion to a ClusterRoleBinding must be visible here.
     shared = {
+        *namespace_readers,
         BoundRole("ClusterRole", "cluster-diagnostics-reader", None),
         BoundRole("Role", "agent-haku-console-metadata-reader", "haku-console"),
         BoundRole("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
@@ -226,10 +234,6 @@ def test_launch_accounts_receive_their_scoped_roles(rendering: Rendering) -> Non
         BoundRole("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
         BoundRole("Role", "public-coder-agent-reader", "public-coder-agent"),
     }
-    for namespace, classification in NAMESPACE_DIAGNOSTICS.items():
-        shared.add(BoundRole("ClusterRole", "agent-readable-namespace-metadata", namespace))
-        if classification is AgentReadable.LOGS:
-            shared.add(BoundRole("ClusterRole", "agent-readable-namespace-logs", namespace))
     inventory = {
         BoundRole("ClusterRole", "public-coder-agent-node-reader", None),
         BoundRole("ClusterRole", "public-coder-agent-cluster-metadata-reader", None),
@@ -265,7 +269,9 @@ def test_agent_permission_superset_and_finance_parity(rendering: Rendering) -> N
 
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
-def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(rendering: Rendering, account: str) -> None:
+def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
+    rendering: Rendering, account: str, namespace_readers: set[BoundRole]
+) -> None:
     agent_rbac = rendering.rbac
     expected: set[Permission] = set()
     if account == "claude-ai":
@@ -279,10 +285,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(rendering: Rend
             ("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
         ):
             expected.update(agent_rbac.rules(kind, name, namespace))
-        for namespace, classification in NAMESPACE_DIAGNOSTICS.items():
-            expected.update(agent_rbac.rules("ClusterRole", "agent-readable-namespace-metadata", namespace))
-            if classification is AgentReadable.LOGS:
-                expected.update(agent_rbac.rules("ClusterRole", "agent-readable-namespace-logs", namespace))
+        expected.update(agent_rbac.bound(namespace_readers))
     actual = agent_rbac.identity("ServiceAccount", account, _NAMESPACE)
     assert not uncovered(actual, expected)
     assert not uncovered(expected, actual)
