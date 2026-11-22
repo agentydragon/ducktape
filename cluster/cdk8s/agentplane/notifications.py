@@ -40,7 +40,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -101,29 +101,11 @@ class Notifications(Construct):
         http = webhook_service(env.namespace)
         variables = {"AGENTPLANE_NOTIFICATIONS_DATABASE_URL": database_url, **(container_env or {})}
         github = env.notifications_github
-        readiness = tls_grpc_probe(
+        health = TlsGrpcHealth(
             port=endpoint.pod_port,
             ca_file=workload_tls.TRUST_BUNDLE_FILE,
             server_uri=NOTIFICATIONS_URI,
-            initial_delay_seconds=3,
-            period_seconds=10,
-        )
-        liveness = tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=NOTIFICATIONS_URI,
-            service=_LIVENESS_HEALTH_SERVICE,
-            initial_delay_seconds=20,
-            period_seconds=30,
-        )
-        startup = tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=NOTIFICATIONS_URI,
-            initial_delay_seconds=0,
-            period_seconds=5,
-            service=_LIVENESS_HEALTH_SERVICE,
-            failure_threshold=60,
+            liveness_service=_LIVENESS_HEALTH_SERVICE,
         )
         workload = add_service_workload(
             self,
@@ -132,9 +114,9 @@ class Notifications(Construct):
             container="notifications",
             image=f"{_IMAGE}:unset",
             env_variables=variables,
-            readiness=readiness,
-            liveness=liveness,
-            startup=startup,
+            readiness=health.readiness(),
+            liveness=health.liveness(),
+            startup=health.startup(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),

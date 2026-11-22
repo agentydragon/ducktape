@@ -61,7 +61,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, ServiceRef
@@ -99,6 +99,9 @@ def _add_dispatcher_workload(
     memory_limit: Size | None,
     service_account: ServiceAccount,
 ) -> ServiceWorkload:
+    health = TlsGrpcHealth(
+        port=endpoint.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=SESSION_DISPATCHER_URI
+    )
     workload = add_service_workload(
         scope,
         env,
@@ -106,28 +109,9 @@ def _add_dispatcher_workload(
         container=endpoint.name,
         image=image,
         env_variables={database_env: database_url, **(container_env or {})},
-        readiness=tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=SESSION_DISPATCHER_URI,
-            initial_delay_seconds=3,
-            period_seconds=10,
-        ),
-        liveness=tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=SESSION_DISPATCHER_URI,
-            initial_delay_seconds=20,
-            period_seconds=30,
-        ),
-        startup=tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=SESSION_DISPATCHER_URI,
-            initial_delay_seconds=0,
-            period_seconds=5,
-            failure_threshold=60,
-        ),
+        readiness=health.readiness(),
+        liveness=health.liveness(),
+        startup=health.startup(),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(100)),
             memory=MemoryResources(request=memory_request, limit=memory_limit),

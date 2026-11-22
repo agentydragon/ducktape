@@ -37,7 +37,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -128,6 +128,9 @@ class HistoryService(Construct):
         )
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.go).
+        health = TlsGrpcHealth(
+            port=endpoint.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=HISTORY_SERVICE_URI
+        )
         workload = add_service_workload(
             self,
             env,
@@ -135,28 +138,9 @@ class HistoryService(Construct):
             container="history-service",
             image=f"{_IMAGE}:unset",
             env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url, **(container_env or {})},
-            readiness=tls_grpc_probe(
-                port=endpoint.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=HISTORY_SERVICE_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=endpoint.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=HISTORY_SERVICE_URI,
-                initial_delay_seconds=20,
-                period_seconds=30,
-            ),
-            startup=tls_grpc_probe(
-                port=endpoint.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=HISTORY_SERVICE_URI,
-                initial_delay_seconds=0,
-                period_seconds=5,
-                failure_threshold=180,
-            ),
+            readiness=health.readiness(),
+            liveness=health.liveness(),
+            startup=health.startup(failure_threshold=180),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),

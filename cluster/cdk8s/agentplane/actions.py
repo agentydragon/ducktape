@@ -51,7 +51,7 @@ from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.secret_ref import SecretRef
@@ -572,28 +572,11 @@ class Actions(Construct):
 
     def _add_workload(self, settings_name: str) -> ServiceWorkload:
         reload_secrets = self._reload_secrets()
-        readiness = tls_grpc_probe(
+        health = TlsGrpcHealth(
             port=self.service.pod_port,
             ca_file=workload_tls.TRUST_BUNDLE_FILE,
             server_uri=ACTIONS_URI,
-            initial_delay_seconds=3,
-        )
-        liveness = tls_grpc_probe(
-            port=self.service.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=ACTIONS_URI,
-            service="livez",
-            initial_delay_seconds=20,
-            period_seconds=30,
-        )
-        startup = tls_grpc_probe(
-            port=self.service.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=ACTIONS_URI,
-            initial_delay_seconds=0,
-            period_seconds=5,
-            service="livez",
-            failure_threshold=60,
+            liveness_service="livez",
         )
         workload = add_service_workload(
             self,
@@ -604,9 +587,9 @@ class Actions(Construct):
             image_pull_policy=self.image_pull_policy,
             replica_profile=self.env.replicas,
             env_variables=self._container_env(),
-            readiness=readiness,
-            liveness=liveness,
-            startup=startup,
+            readiness=health.readiness(),
+            liveness=health.liveness(),
+            startup=health.startup(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),

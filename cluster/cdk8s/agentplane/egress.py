@@ -82,7 +82,7 @@ from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SE
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -753,6 +753,12 @@ class Egress(Construct):
 
         zones = self.env.egress.zones
         extra_ports = [self.admin.container_port()]
+        health = TlsGrpcHealth(
+            port=self.admin.pod_port,
+            ca_file=_SVID_CA_FILE,
+            server_uri=EGRESS_PROXY_URI,
+            liveness_service=_LIVENESS_HEALTH_SERVICE,
+        )
         workload = add_service_workload(
             self,
             self.env,
@@ -765,35 +771,14 @@ class Egress(Construct):
                 **self.container_env,
             },
             extra_ports=extra_ports,
-            readiness=tls_grpc_probe(
-                port=self.admin.pod_port,
-                ca_file=_SVID_CA_FILE,
-                server_uri=EGRESS_PROXY_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=self.admin.pod_port,
-                ca_file=_SVID_CA_FILE,
-                server_uri=EGRESS_PROXY_URI,
-                service=_LIVENESS_HEALTH_SERVICE,
-                initial_delay_seconds=30,
-                period_seconds=30,
-            ),
+            readiness=health.readiness(),
+            liveness=health.liveness(initial_delay_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             termination_grace=Duration.seconds(60),
-            startup=tls_grpc_probe(
-                port=self.admin.pod_port,
-                ca_file=_SVID_CA_FILE,
-                server_uri=EGRESS_PROXY_URI,
-                service=_LIVENESS_HEALTH_SERVICE,
-                initial_delay_seconds=0,
-                period_seconds=5,
-                failure_threshold=60,
-            ),
+            startup=health.startup(),
             tolerate_control_plane=True,
             annotations={
                 "configmap.reloader.stakater.com/reload": f"{self.env.namespace}-egress-upstream-ca,public-web-pki"
