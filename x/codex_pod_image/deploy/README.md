@@ -22,6 +22,8 @@ Before reactivation:
 
 - Replace the parked SOPS credentials with runtime-managed credentials; explicitly
   approve and wire any external credentials the pod needs.
+- Provision new LiteLLM credentials for Responses and Messages; the experiment's
+  former Crossplane keys and reflected Secrets are no longer provisioned.
 - Fix the image evaluation and volume placement, then restore image publication,
   image automation and a Flux Kustomization.
 - If Attic caches are needed, add a rotating Kubernetes Secret/netrc target to

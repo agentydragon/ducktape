@@ -442,8 +442,8 @@ applications").
   SSH key, read grant on `ducktape` and token-mint Secret are no longer provisioned
   (`tf/gitops/forgejo-agentydragon-repos`, restore from `d36a089448`), and neither is its
   rotated Forgejo tea token (`secrets/codex-pod-forgejo-tea-token.yaml`, last rotated
-  2026-09-03). The two LiteLLM virtual keys `codex-pod` and `codex-pod-messages`
-  (`cluster/cdk8s/litellm/crossplane_keys.py`) are still provisioned.
+  2026-09-03). Its two LiteLLM virtual keys, `codex-pod` and
+  `codex-pod-messages`, are also no longer provisioned.
 - **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
