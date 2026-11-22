@@ -377,7 +377,7 @@ for (const [index, [operand, tag, expected]] of [
 }
 
 // Vary the number, spelling and values of static properties across a module boundary.
-for (const seed of [0, 1, 2, 3]) {
+for (const seed of [0, 1, 2, 3, 14]) {
   const expected = {};
   const properties = Array.from({ length: seed }, (_, i) => {
     const key = i % 2 ? `quoted-key-${i}` : `field${i}`;
@@ -390,6 +390,22 @@ for (const seed of [0, 1, 2, 3]) {
     observedProgram(literal(seed), { type: "ObjectExpression", properties }),
     expected
   );
+}
+
+// Even the largest witness is insufficient for 62 properties. A throw after
+// the first witness exhausts must instead report an abrupt initialization.
+for (const [width, useLater, reason] of [
+  [62, false, /exhausted the fuel search budget/],
+  [14, true, /original threw during linked initialization/],
+]) {
+  const props = Array.from({ length: width }, (_, i) =>
+    property(`field${i}`, useLater && i === width - 1 ? id("result") : literal(i))
+  );
+  const source = observedProgram(literal(0), { type: "ObjectExpression", properties: props });
+  const { verdict, out } = workerSplit(`record-fuel-${width}`, source);
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, reason);
+  assert(!existsSync(out));
 }
 
 // Different numeric spellings compare by string contents.
