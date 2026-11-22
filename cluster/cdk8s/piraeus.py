@@ -33,12 +33,10 @@ _CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.
 _CLUSTER_NODE_AFFINITY = {
     "nodeSelectorTerms": [{"matchExpressions": [{"key": _PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]}]
 }
-_FIRST_NODE_VOLUME_GROUP = "piraeus_ssd"
-_FIRST_NODE_THIN_POOL = "data"
+_VOLUME_GROUPS = {"ssd": "piraeus_ssd", "hdd": "piraeus_hdd"}
+_THIN_POOL = "data"
 _FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
 _FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
-_HDD_VOLUME_GROUP = "piraeus_hdd"
-_VOLUME_GROUPS = {"ssd": _FIRST_NODE_VOLUME_GROUP, "hdd": _HDD_VOLUME_GROUP}
 _HDD_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103656"}
 _HDD_FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"
 _HDD_NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103711"}
@@ -80,6 +78,7 @@ kind: PodMonitor
 metadata:
   name: linstor-satellite
 """
+_HDD_PROPERTIES = [{"name": "ExtCmd/WaitTimeout", "value": "180000"}]
 _SATELLITE_PATCHES = [
     {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH}
 ]
@@ -121,12 +120,12 @@ _NIXOS_SATELLITE_POD_TEMPLATE = {
 }
 
 
-def _storage_pool(name: str, volume_group: str, data_device: str) -> dict[str, Any]:
+def _storage_pool(name: str, data_device: str) -> dict[str, Any]:
     return {
         "name": name,
         "lvmThinPool": {
-            "volumeGroup": volume_group,
-            "thinPool": _FIRST_NODE_THIN_POOL,
+            "volumeGroup": _VOLUME_GROUPS[name],
+            "thinPool": _THIN_POOL,
             "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
         },
         "source": {"hostDevices": [data_device]},
@@ -139,7 +138,6 @@ def _satellite_configuration(
     pod_template: dict[str, Any],
     storage_pools: list[dict[str, Any]],
     *,
-    deletion_policy: str,
     properties: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     configuration: dict[str, Any] = {"name": name, "nodeSelector": node_selector}
@@ -149,7 +147,7 @@ def _satellite_configuration(
         {
             "patches": _SATELLITE_PATCHES,
             "podTemplate": pod_template,
-            "deletionPolicy": deletion_policy,
+            "deletionPolicy": "Retain",
             "storagePools": storage_pools,
         }
     )
@@ -367,8 +365,8 @@ def cluster_chart(app: App) -> Chart:
         chart,
         namespace=NAMESPACE,
         node_selector=_FIRST_NODE_SELECTOR,
-        volume_group=_FIRST_NODE_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
+        volume_group=_VOLUME_GROUPS["ssd"],
+        thin_pool=_THIN_POOL,
         storage_pool="ssd",
     )
     for monitor_id, node_selector, storage_pool, name, ready_node in (
@@ -387,7 +385,7 @@ def cluster_chart(app: App) -> Chart:
             namespace=NAMESPACE,
             node_selector=node_selector,
             volume_group=_VOLUME_GROUPS[storage_pool],
-            thin_pool=_FIRST_NODE_THIN_POOL,
+            thin_pool=_THIN_POOL,
             storage_pool=storage_pool,
             name=name,
             only_when_node_ready=ready_node,
@@ -441,8 +439,7 @@ def cluster_chart(app: App) -> Chart:
                     "ssd-first-node",
                     _FIRST_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _FIRST_NODE_DATA_DEVICE)],
-                    deletion_policy="Retain",
+                    [_storage_pool("ssd", _FIRST_NODE_DATA_DEVICE)],
                 ),
                 # Keep both the hostname and readiness label in the native selector.
                 # The source device is initialized only after a later cutover adds the label.
@@ -450,8 +447,7 @@ def cluster_chart(app: App) -> Chart:
                     "ssd-ovh-ns104952",
                     _NEXT_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _NEXT_NODE_DATA_DEVICE)],
-                    deletion_policy="Retain",
+                    [_storage_pool("ssd", _NEXT_NODE_DATA_DEVICE)],
                 ),
                 # Keep both the hostname and readiness label in the native selector.
                 # The source device is initialized only after a later cutover adds the label.
@@ -459,8 +455,7 @@ def cluster_chart(app: App) -> Chart:
                     "ssd-ovh-ns104963",
                     _THIRD_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _THIRD_NODE_DATA_DEVICE)],
-                    deletion_policy="Retain",
+                    [_storage_pool("ssd", _THIRD_NODE_DATA_DEVICE)],
                 ),
                 _satellite_configuration(
                     "ssd-optiplex",
@@ -468,8 +463,7 @@ def cluster_chart(app: App) -> Chart:
                     # until its parent disk and 112GiB size are verified after reimage.
                     _OPTIPLEX_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _OPTIPLEX_DATA_DEVICE)],
-                    deletion_policy="Retain",
+                    [_storage_pool("ssd", _OPTIPLEX_DATA_DEVICE)],
                 ),
                 # Keep the longer external-command wait scoped to this HDD satellite.
                 _satellite_configuration(
@@ -478,9 +472,8 @@ def cluster_chart(app: App) -> Chart:
                     # the worker's HDD has been wiped and its physical acceptance is complete.
                     _HDD_FIRST_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("hdd", _HDD_VOLUME_GROUP, _HDD_FIRST_NODE_DATA_DEVICE)],
-                    deletion_policy="Retain",
-                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                    [_storage_pool("hdd", _HDD_FIRST_NODE_DATA_DEVICE)],
+                    properties=_HDD_PROPERTIES,
                 ),
                 _satellite_configuration(
                     "hdd-ovh-ns103711",
@@ -488,9 +481,8 @@ def cluster_chart(app: App) -> Chart:
                     # layout is accepted; piraeus-ready is enabled only afterward.
                     _HDD_NEXT_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("hdd", _HDD_VOLUME_GROUP, _HDD_NEXT_NODE_DATA_DEVICE)],
-                    deletion_policy="Retain",
-                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                    [_storage_pool("hdd", _HDD_NEXT_NODE_DATA_DEVICE)],
+                    properties=_HDD_PROPERTIES,
                 ),
                 _satellite_configuration(
                     "hdd-ovh-ns102453",
@@ -498,9 +490,8 @@ def cluster_chart(app: App) -> Chart:
                     # layout is accepted; piraeus-ready is enabled only afterward.
                     _HDD_LAST_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("hdd", _HDD_VOLUME_GROUP, _HDD_LAST_NODE_DATA_DEVICE)],
-                    deletion_policy="Retain",
-                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                    [_storage_pool("hdd", _HDD_LAST_NODE_DATA_DEVICE)],
+                    properties=_HDD_PROPERTIES,
                 ),
                 # Both pools sit on thin Atlas zvols whose free space LINSTOR cannot see.
                 # The HDD pool's external commands get the same longer wait as OVH HDDs.
@@ -508,12 +499,8 @@ def cluster_chart(app: App) -> Chart:
                     "wyrm2",
                     _WYRM2_SELECTOR,
                     _NIXOS_SATELLITE_POD_TEMPLATE,
-                    [
-                        _storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _WYRM2_SSD_DATA_DEVICE),
-                        _storage_pool("hdd", _HDD_VOLUME_GROUP, _WYRM2_HDD_DATA_DEVICE),
-                    ],
-                    deletion_policy="Retain",
-                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                    [_storage_pool("ssd", _WYRM2_SSD_DATA_DEVICE), _storage_pool("hdd", _WYRM2_HDD_DATA_DEVICE)],
+                    properties=_HDD_PROPERTIES,
                 ),
                 # A roaming laptop: only strict-local `piraeus-ssd-local` claims land here (the
                 # replicated class keeps copies in hil-ovh), and they go offline with the laptop.
@@ -521,8 +508,7 @@ def cluster_chart(app: App) -> Chart:
                     "rugged",
                     _RUGGED_SELECTOR,
                     _NIXOS_SATELLITE_POD_TEMPLATE,
-                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _RUGGED_DATA_DEVICE)],
-                    deletion_policy="Retain",
+                    [_storage_pool("ssd", _RUGGED_DATA_DEVICE)],
                 ),
             ],
             "storageClasses": [
