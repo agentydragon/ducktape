@@ -7,6 +7,12 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+filegroup(
+    name = "flux_root",
+    srcs = glob(["flux/**"]) + ["//cluster/k8s/flux/flux-system:flux_system_files"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # Focused tests inline these direct-file inputs in their data lists.
 exports_files(
     ["haku/forgejo-tea/haku-forgejo-tea.sops.yaml"],
