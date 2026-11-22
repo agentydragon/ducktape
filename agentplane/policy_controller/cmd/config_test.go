@@ -1,12 +1,12 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,22 +20,13 @@ func requiredSettings() map[string]any {
 	}
 }
 
-func settingsFile(t *testing.T, content string) {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(configFileEnv, path)
-}
-
 func writeSettings(t *testing.T, settings map[string]any) {
 	t.Helper()
 	content, err := yaml.Marshal(settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settingsFile(t, string(content))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, string(content)))
 }
 
 func TestSettingsComeFromTheFile(t *testing.T) {
@@ -216,7 +207,7 @@ func TestInvalidSettingsFilesAreRefused(t *testing.T) {
 		"scalar list":        "policy_namespace: policies\nsubject_namespaces: agents,tools\naccounts_namespace: accounts\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			settingsFile(t, content)
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, content))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("started with invalid settings file")
 			}
