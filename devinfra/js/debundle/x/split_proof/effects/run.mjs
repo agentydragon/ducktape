@@ -8,6 +8,7 @@
 //
 // `--permutations N` also runs N random permutations of the units of every case (after the listed reorders) and fails on
 // a wrong accept: a tree that `translate` accepts and Node runs differently.
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,6 +78,19 @@ const shuffled = (n) => {
   }
   return a;
 };
+const shardCount = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+const shardIndex = Number(process.env.TEST_SHARD_INDEX ?? 0);
+assert(
+  Number.isInteger(shardCount) &&
+    shardCount > 0 &&
+    Number.isInteger(shardIndex) &&
+    shardIndex >= 0 &&
+    shardIndex < shardCount
+);
+const goldenPermutations = permutations > 0 && !process.env.CASES;
+assert(shardCount === 1 || goldenPermutations, "only the golden permutation suite supports sharding");
+if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
+
 const work = mkdtempSync(path.join(tmpdir(), "effects_"));
 const premisesOf = (c, n) => {
   const file = path.join(work, `premises_${n}.json`);
@@ -151,7 +165,17 @@ let failures = 0;
 const observedFamilies = new Set();
 const observedGaps = new Map();
 const observedGapFamilies = new Map();
+let caseCount = 0;
 for (const [n, raw] of cases.entries()) {
+  if (n % shardCount !== shardIndex) {
+    // Replay only the inexpensive shuffle draws. The owning shard checks whether the original throws.
+    if (!raw.throwsInNode) {
+      const lineCount = raw.source.trim().split("\n").length;
+      for (let k = 0; k < permutations; k++) shuffled(lineCount);
+    }
+    continue;
+  }
+  caseCount++;
   const c = { ...raw, source: raw.source.replaceAll("%VENDOR%", vendorFile), premisesFile: premisesOf(raw, n) };
   const source = path.join(work, "case.mjs");
   const bundle = path.join(work, "bundle.json");
@@ -174,6 +198,12 @@ for (const [n, raw] of cases.entries()) {
   console.log(`${ok ? "pass" : "FAIL"}  ${c.name}`);
   const lines = c.source.trim().split("\n");
   const original = c.reorders?.length || permutations ? nodeOutput(source) : undefined;
+  if (goldenPermutations)
+    assert.equal(
+      original.status !== 0,
+      Boolean(c.throwsInNode),
+      `${c.name}: unexpected original Node exit ${original.status}`
+    );
   for (const r of c.reorders ?? []) {
     const gap = c.knownGap ?? (generatedGaps ? r.knownGap : undefined);
     const res = reorder(c, bundle, lines, r.order);
@@ -246,4 +276,4 @@ if (generatedGaps) {
   const unobserved = Object.keys(requiredFamilies).filter((family) => !observedGapFamilies.has(family));
   if (unobserved.length) throw new Error(`no known gap reproduced for ${unobserved.join(", ")}`);
 }
-console.log(`${cases.length} cases`);
+console.log(`${caseCount} cases`);

@@ -120,6 +120,7 @@ box.inc();
   },
   {
     name: "the world: the console, a global, a call of something unknown",
+    throwsInNode: true,
     source: `
 console.log("x");
 window.title = "t";
@@ -172,6 +173,7 @@ bound();
   },
   {
     name: "accessors and conversion hooks run code",
+    throwsInNode: true,
     source: `
 const g = { get v() { console.log("g"); return 1; } };
 const r = g.v;
@@ -184,6 +186,7 @@ const z = w + 1;
   },
   {
     name: "a handler the world calls may assign a variable",
+    throwsInNode: true,
     source: `
 let ready = false;
 window.addEventListener("load", () => { ready = true; });
@@ -589,6 +592,7 @@ const z = k.z;
   },
   {
     name: "a property of an object the world holds is read like any other (premise P3)",
+    throwsInNode: true,
     source: `
 const cfg = { mode: "a" };
 window.addEventListener("x", () => cfg.mode);
@@ -599,6 +603,7 @@ cfg.mode = "b";
   },
   {
     name: "without premise P3 a property of an object the world holds may run a getter the world added",
+    throwsInNode: true,
     premises: {},
     source: `
 const cfg = { mode: "a" };
@@ -896,6 +901,7 @@ console.log(w);
   },
   {
     name: "vendor premise: listed functions and their members allocate, others are the world",
+    throwsInNode: true,
     source: `
 import { make, kit, other } from "./v.js";
 const s = make("x");
@@ -914,6 +920,7 @@ const u = s.parse(1);
   {
     // A module that imports this one back (a cycle) can have given `globalThis.notify` a closure over `observe`.
     name: "an exported function can be called by the world, and so can what it reads",
+    throwsInNode: true,
     source: `
 let state = 0;
 export function observe() { return state; }
@@ -1289,6 +1296,7 @@ console.log(a);
   },
   {
     name: "a function nobody gave the world is out of its reach",
+    throwsInNode: true,
     source: `
 let state = 0;
 function observe() { return state; }
