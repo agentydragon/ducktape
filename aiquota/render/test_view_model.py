@@ -439,9 +439,9 @@ def test_normalized_credit_rows_keep_pools_organizations_and_restrictions_separa
     )
     view = to_view(_quotas(_provider("claude", result)), _NOW).providers[0]
     assert [(row.label, row.value, row.group) for row in view.balances] == [
-        ("Available balance", "$26", None),
+        ("Balance", "$26", None),
         ("", "2,746 credits", None),
-        ("Available balance", "$123", "Main org"),
+        ("Balance", "$123", "Main org"),
     ]
     assert [(row.label, row.remaining, row.scope, row.group) for row in view.grants] == [
         ("Promo grant", "$123", "restricted", "Main org")

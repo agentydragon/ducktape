@@ -118,7 +118,7 @@ async def test_peak_burn_identifies_affected_models(view: VisualPage) -> None:
 async def test_openai_platform_credits(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
-    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Balance", exact=True)).to_be_visible()
     await expect(card.get_by_text("$126", exact=True)).to_be_visible()
     await expect(card.get_by_text("$100 remaining", exact=True)).to_be_visible()
     await expect(card.get_by_text("$26 remaining", exact=True)).to_be_visible()
@@ -135,7 +135,7 @@ async def test_openai_platform_credits(view: VisualPage) -> None:
 async def test_claude_prepaid_balance_states(view: VisualPage, expected_balance: str) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
     await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Balance", exact=True)).to_be_visible()
     await expect(card.get_by_text(expected_balance, exact=True)).to_be_visible()
 
 
