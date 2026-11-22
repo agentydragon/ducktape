@@ -391,7 +391,8 @@ function Report() {
     <${Title} order=${1} mt="md">Cluster VPA rollout<//>
     <${Text} size="lg" mt="sm"
       >The latest rollout has expanded request coverage. Next, verify KubeVirt
-      recovery and address the GitLab capacity gate before enabling more evictions.<//
+      recovery and address the GitLab capacity gate before enabling more
+      evictions.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -468,24 +469,26 @@ function Report() {
         both were 2/2 Ready on separate hosts after the rollout, and the handler
         recovered to 8/8. Flux reported Ready and the controller lease moved to
         a new replica. A guest-info request succeeded after rollout. A new VMI
-        reaching Ready after that handoff is still unverified.
-        ${" "}<${Anchor} href=${github + "pull/19077"}>Operator PR<//>
+        reaching Ready after that handoff is still unverified. ${" "}<${Anchor}
+          href=${github + "pull/19077"}
+          >Operator PR<//
+        >
         ${" · "}<${Anchor} href=${github + "pull/19086"}>Placement PR<//>.
       <//>
       <${Text} mt="sm">
         <strong>Request coverage.</strong> The MyQuest canary is Initial; its
         owner-matched admission dry run applied 175m CPU and about 1.22 GiB
         memory while retaining its limits. The existing Pod was not restarted.
-        SeaweedFS CSI sidecar requests are deployed, with the controller 1/1
-        and both node and mount DaemonSets 6/6 Ready at the rollout check.
+        SeaweedFS CSI sidecar requests are deployed, with the controller 1/1 and
+        both node and mount DaemonSets 6/6 Ready at the rollout check.
         ${" "}<${Anchor} href=${github + "pull/19067"}>Canary PR<//>
         ${" · "}<${Anchor} href=${github + "pull/19080"}>CSI PR<//>.
       <//>
       <${Text} mt="sm">
-        <strong>Other automatic updates.</strong> Claude session viewer,
-        Kyverno cleanup and staging History now use Recreate. Notifications
-        stays Initial; its delivery-backoff fix has merged. Existing readiness
-        and replay checks do not by themselves prove delivery through an eviction.
+        <strong>Other automatic updates.</strong> Claude session viewer, Kyverno
+        cleanup and staging History now use Recreate. Notifications stays
+        Initial; its delivery-backoff fix has merged. Existing readiness and
+        replay checks do not by themselves prove delivery through an eviction.
         ${" "}<${Anchor} href=${github + "pull/19069"}>Viewer<//>
         ${" · "}<${Anchor} href=${github + "pull/19071"}>Kyverno<//>
         ${" · "}<${Anchor} href=${github + "pull/19072"}>History<//>
@@ -499,12 +502,14 @@ function Report() {
       <${Stack} id="open-rollout-decisions" gap="sm" mt="sm">
         <${Text}>
           <strong>1. KubeVirt API and controller.</strong> Observe a new VMI
-          reaching Ready after the controller leadership handoff and exercise
-          an ordinary API client through turnover. Then review each controller
-          for Recreate with current PDB and placement headroom. The /leader
+          reaching Ready after the controller leadership handoff and exercise an
+          ordinary API client through turnover. Then review each controller for
+          Recreate with current PDB and placement headroom. The /leader
           readiness endpoint also returns success on standby, so it is not proof
           of active reconciliation. ${" "}<${Anchor}
-            href=${github + "pull/19086"}>Placement evidence<//>.
+            href=${github + "pull/19086"}
+            >Placement evidence<//
+          >.
         <//>
         <${Text} id="worker-loss-placement">
           <strong>2. GitLab Rails capacity.</strong> Keep admission sizing in
@@ -512,9 +517,10 @@ function Report() {
           10:15 UTC model is 322 MiB short after loss of either Rails host at
           current targets; at the Rails upper estimate and Sidekiq ceiling it is
           2,185 MiB short. A sufficient modeled budget is 10 GiB and 2,500m per
-          eligible worker before Rails, Sidekiq and Central Sampler, plus capacity
-          for other workloads displaced by a failed node. Refresh this model and
-          implement a durable capacity or recovery strategy before enabling it.
+          eligible worker before Rails, Sidekiq and Central Sampler, plus
+          capacity for other workloads displaced by a failed node. Refresh this
+          model and implement a durable capacity or recovery strategy before
+          enabling it.
         <//>
         <${Text}>
           <strong>3. Notifications recovery.</strong> Verify the backoff fix on
@@ -527,8 +533,8 @@ function Report() {
           other operator-owned Pods with their actual owners. The SeaweedFS CSI
           sidecars now have static requests. Batch compatible application
           admission sizing in parallel, preserving startup floors, limits and
-          HPA resource ownership; do not roll storage components merely to
-          prove sizing.
+          HPA resource ownership; do not roll storage components merely to prove
+          sizing.
         <//>
       <//>
       <${Title} order=${3} mt="lg">Review cohorts<//>
