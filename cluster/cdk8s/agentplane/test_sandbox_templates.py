@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart
+from cdk8s import Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from more_itertools import one
 
@@ -18,6 +18,7 @@ from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Envi
 from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import llm_ingress, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.pod_policy import workload_kind
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
@@ -40,13 +41,12 @@ def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> di
 
 
 def _runner_pod(
+    chart: Chart,
     *,
-    app: App,
     isolated_executor: bool,
-    environment_runtime_resources: k8s.ResourceRequirements,
-    executor_resources: k8s.ResourceRequirements | None,
+    environment_runtime_resources: k8s.ResourceRequirements | None = None,
+    executor_resources: k8s.ResourceRequirements | None = None,
 ) -> dict[str, Any]:
-    chart = Chart(app, "runner-template-test")
     template = EnvironmentSandboxTemplate(
         chart,
         "runner-template",
@@ -144,20 +144,14 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(
     assert {"ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "LITELLM_URL"}.isdisjoint(executor_env)
 
 
-def test_runner_template_can_override_executor_resources_independently(scratch_app: App) -> None:
-    environment_runtime_resources = k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
-        limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
-    )
-    executor_resources = k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("43m"), "memory": k8s.Quantity.from_string("509Mi")},
-        limits={"cpu": k8s.Quantity.from_string("71m"), "memory": k8s.Quantity.from_string("997Mi")},
-    )
+def test_runner_template_can_override_executor_resources_independently(scratch_chart: Chart) -> None:
     pod = _runner_pod(
-        app=scratch_app,
+        scratch_chart,
         isolated_executor=True,
-        environment_runtime_resources=environment_runtime_resources,
-        executor_resources=executor_resources,
+        environment_runtime_resources=container_resources(
+            cpu="17m", memory="127Mi", cpu_limit="31m", memory_limit="251Mi"
+        ),
+        executor_resources=container_resources(cpu="43m", memory="509Mi", cpu_limit="71m", memory_limit="997Mi"),
     )
     containers = {container["name"]: container for container in pod["containers"]}
     assert containers["environment-runtime"]["resources"]["requests"] == {"cpu": "17m", "memory": "127Mi"}
@@ -166,27 +160,17 @@ def test_runner_template_can_override_executor_resources_independently(scratch_a
     assert containers["codex-executor"]["resources"]["limits"] == {"cpu": "71m", "memory": "997Mi"}
 
 
-def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App) -> None:
-    environment_runtime_resources = k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
-        limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
-    )
-    pod = _runner_pod(
-        app=scratch_app,
-        isolated_executor=False,
-        environment_runtime_resources=environment_runtime_resources,
-        executor_resources=None,
-    )
+def test_environment_can_keep_codex_execution_inside_the_runner(scratch_chart: Chart) -> None:
+    pod = _runner_pod(scratch_chart, isolated_executor=False)
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
     assert containers["environment-runtime"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
-def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-runtime-overrides-test")
+def test_runtime_overrides_reach_the_runner_container(scratch_chart: Chart) -> None:
     template = EnvironmentSandboxTemplate(
-        chart,
+        scratch_chart,
         "runner-template",
         staging.ENV,
         name="test-runner",
@@ -200,7 +184,7 @@ def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
     )
     runtime_config = one(
         construct
-        for construct in chart.node.find_all()
+        for construct in scratch_chart.node.find_all()
         if isinstance(construct, ConfigMap) and construct.name == template.config_map_name
     ).data
     config = json.loads(runtime_config["environment-runtime.json"])
@@ -213,15 +197,10 @@ def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
     }
 
 
-def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: App) -> None:
+def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_chart: Chart) -> None:
     resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
     with pytest.raises(ValueError, match="executor_resources cannot be set"):
-        _runner_pod(
-            app=scratch_app,
-            isolated_executor=False,
-            environment_runtime_resources=resources,
-            executor_resources=resources,
-        )
+        _runner_pod(scratch_chart, isolated_executor=False, executor_resources=resources)
 
 
 def test_runner_template_renders_mtls_server_listener(
