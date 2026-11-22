@@ -59,10 +59,6 @@ func (state Context) MarshalJSON() ([]byte, error) {
 
 func (state *Context) RecordCount() int { return len(state.items) }
 
-func (state *Context) HasCompaction() bool {
-	return slices.ContainsFunc(state.items, func(item Item) bool { return item.Type == ItemCompaction })
-}
-
 func (state *Context) Clone() protocol.Context {
 	return &Context{items: append([]Item(nil), state.items...)}
 }

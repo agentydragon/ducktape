@@ -352,10 +352,10 @@ Codex metadata remain available for existing sessions.
 
 Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
 A model change always preserves the API. An idle, settled ChatGPT Responses Lite Session can
-switch between models on the same Agentplane ingress connection with the same tool encoding,
-while its original transcript is the active context. This includes model routes removed from
-configuration when retained sampling requests establish the matching contract. The sampler replays
-the retained conversation and leaves the provider to handle incompatible reasoning.
+switch between models on the same Agentplane ingress connection with the same tool encoding.
+This includes model routes removed from configuration when retained provider requests establish
+the matching contract. The sampler replays the active conversation window, including any opaque
+compaction, and leaves the provider to handle incompatible reasoning.
 If a Chat Completions route is removed, an idle, settled Session can switch to another Chat
 Completions route and replay its retained messages and tool calls. Other switches require the
 original route contract. See [the continuation rules](SPEC.md#model-changes). Standard routes

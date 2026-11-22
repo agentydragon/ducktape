@@ -71,7 +71,6 @@ var (
 	errModelChangeUnavailable = errors.New("cannot change model because the current model configuration is no longer available")
 	errModelIncompatible      = errors.New("cannot change to this model because its conversation format is incompatible with the current model")
 	errModelChangeUnsettled   = errors.New("cannot change model while the conversation has unfinished work")
-	errModelChangeCompacted   = errors.New("cannot change Responses model after provider compaction")
 	errTargetModelUnavailable = errors.New("requested model or reasoning effort is not available")
 	errEffortUnsupported      = errors.New("unsupported reasoning effort")
 	errEffortFixed            = errors.New("model route has fixed reasoning effort")
@@ -103,8 +102,6 @@ func samplerError(ctx context.Context, err error) error {
 		return status.Error(codes.FailedPrecondition, "cannot change model: the current sampler policy does not allow this model switch")
 	case errors.Is(err, errModelChangeUnsettled):
 		return status.Error(codes.FailedPrecondition, "cannot change model while the conversation has unfinished work")
-	case errors.Is(err, errModelChangeCompacted):
-		return status.Error(codes.FailedPrecondition, errModelChangeCompacted.Error())
 	case errors.Is(err, errTargetModelUnavailable):
 		return status.Error(codes.InvalidArgument, "requested model or reasoning effort is not available")
 	case errors.Is(err, errEffortUnsupported):
@@ -281,16 +278,9 @@ func (s *Sampler) validateModelChange(state sessionstore.AdmissionState, current
 	if state.HasQueuedCommands {
 		return errModelChangeUnsettled
 	}
-	transcript, ok := conversation.Transcript.(*responses.Context)
-	if !ok {
-		return refusal
-	}
-	if conversation.ActiveContext != nil || transcript.HasCompaction() {
-		return errModelChangeCompacted
-	}
 	// Check all distinct recorded request contracts. A shared ingress alone does not
 	// establish which upstream account and wire produced the retained items.
-	routes, err := state.SamplingRoutes()
+	routes, err := state.ProviderRoutes()
 	if err != nil {
 		return err
 	}
@@ -304,8 +294,9 @@ func (s *Sampler) validateModelChange(state sessionstore.AdmissionState, current
 			return refusal
 		}
 	}
-	// Replay the original transcript in order. Responses handles incompatible reasoning
-	// items at the provider, and there is no opaque compaction standing in for old turns.
+	// Replay the active context unchanged. In a Responses Lite probe through CLIProxyAPI,
+	// GPT-6.2 Sol recalled an exact marker from GPT-6.1 Terra's unchanged opaque compaction
+	// item and answered UNKNOWN without it. The provider also handles incompatible reasoning.
 	return nil
 }
 

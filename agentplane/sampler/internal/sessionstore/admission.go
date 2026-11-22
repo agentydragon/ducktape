@@ -24,12 +24,12 @@ var (
 )
 
 // AdmissionState holds the projected session and evidence read under its admission lock.
-// SamplingRoutes is only valid during the validation callback.
+// ProviderRoutes is only valid during the validation callback.
 type AdmissionState struct {
 	Session           *Session
 	Conversation      *Conversation
 	HasQueuedCommands bool
-	SamplingRoutes    func() ([]ProviderRequest, error)
+	ProviderRoutes    func() ([]ProviderRequest, error)
 }
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(AdmissionState) error) (*eventlogpb.EventEntry, error) {
@@ -108,8 +108,8 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				Session:           &projected,
 				Conversation:      conversation,
 				HasQueuedCommands: hasQueuedCommands,
-				SamplingRoutes: func() ([]ProviderRequest, error) {
-					return samplingRoutes(ctx, tx, conversation.ID)
+				ProviderRoutes: func() ([]ProviderRequest, error) {
+					return providerRoutes(ctx, tx, conversation.ID)
 				},
 			}); err != nil {
 				return err

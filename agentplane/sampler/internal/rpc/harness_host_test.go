@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -408,7 +410,7 @@ func TestModelChangeExplainsRejectedResponsesSession(t *testing.T) {
 }
 
 func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) {
-	for _, scenario := range []string{"configured", "removed", "compacted", "foreign-history"} {
+	for _, scenario := range []string{"configured", "removed", "compacted", "foreign-history", "foreign-compaction"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, _ := newHostFixture(t)
 			settings, store := &h.Sampler.Settings, h.Sampler.Store
@@ -496,18 +498,23 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 				t.Fatal(err)
 			}
 
-			if scenario == "compacted" {
+			compactionItem := json.RawMessage(`{"type":"compaction","id":"cmp_fixture","encrypted_content":"fixture-summary","created_by":"fixture-provider"}`)
+			if scenario == "compacted" || scenario == "foreign-compaction" {
 				conversation, err := store.Read(ctx, owner)
 				if err != nil {
 					t.Fatal(err)
 				}
 				prep.Compaction = true
-				compaction, _, err := store.BeginCompaction(ctx, owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, old), conversation.Context(), &prep, *providerAttemptTestPolicyPointer())
+				if scenario == "foreign-compaction" {
+					prep.ModelConfig = otherProvider
+				}
+				request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, prep.ModelConfig)
+				compaction, _, err := store.BeginCompaction(ctx, owner, request, conversation.Context(), &prep, *providerAttemptTestPolicyPointer())
 				if err != nil {
 					t.Fatal(err)
 				}
-				compacted := &responses.Context{}
-				if err := compacted.AppendRecords([]json.RawMessage{json.RawMessage(`{"type":"compaction","encrypted_content":"fixture-summary"}`)}); err != nil {
+				compacted, err := responses.ValidateCompaction(conversation.Context().(*responses.Context), []json.RawMessage{compactionItem}, nil, nil, "Fixture environment context")
+				if err != nil {
 					t.Fatal(err)
 				}
 				if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{"status": "completed"}, conversation.Context(), compacted); err != nil {
@@ -525,12 +532,7 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 					t.Fatalf("change to %q: %v", model, err)
 				}
 			}
-			if err := switchTo("switch", newModel); scenario == "compacted" {
-				if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "provider compaction") {
-					t.Fatalf("change after compaction: %v", err)
-				}
-				return
-			} else if scenario == "foreign-history" {
+			if err := switchTo("switch", newModel); scenario == "foreign-history" || scenario == "foreign-compaction" {
 				if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "current model configuration is no longer available") {
 					t.Fatalf("change with a different retained provider account: %v", err)
 				}
@@ -548,6 +550,7 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 				t.Fatalf("session after change=%+v err=%v", session, err)
 			}
 			prep.ModelConfig = replacement
+			prep.Compaction = false
 			_, body, err := store.Begin(ctx, owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, replacement), &prep, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
@@ -566,8 +569,36 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 			for _, item := range continued.Input {
 				input.Write(item)
 			}
+			fragments := []string{"Remember the fixture's earlier request.", "fixture-opaque-reasoning", "Earlier answer", "Continue on the replacement."}
+			if scenario == "compacted" {
+				sameItem := func(actual, expected json.RawMessage) bool {
+					var actualFields, expectedFields map[string]any
+					if err := json.Unmarshal(actual, &actualFields); err != nil {
+						t.Fatal(err)
+					}
+					if err := json.Unmarshal(expected, &expectedFields); err != nil {
+						t.Fatal(err)
+					}
+					return reflect.DeepEqual(actualFields, expectedFields)
+				}
+				if !slices.ContainsFunc(continued.Input, func(item json.RawMessage) bool { return sameItem(item, compactionItem) }) {
+					t.Fatalf("continuation omitted or changed the opaque compaction item: %s", body)
+				}
+				if strings.Contains(input.String(), "fixture-opaque-reasoning") {
+					t.Fatalf("continuation sent the full transcript instead of the active context: %s", body)
+				}
+				fragments = []string{"Fixture environment context", "fixture-summary", "Continue on the replacement."}
+				conversation, err := store.Read(ctx, owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				transcript, err := conversation.Transcript.Records()
+				if err != nil || !slices.ContainsFunc(transcript, func(item json.RawMessage) bool { return sameItem(item, records[0]) }) {
+					t.Fatalf("retained reasoning changed after switch: %s, %v", transcript, err)
+				}
+			}
 			at := -1
-			for _, fragment := range []string{"Remember the fixture's earlier request.", "fixture-opaque-reasoning", "Earlier answer", "Continue on the replacement."} {
+			for _, fragment := range fragments {
 				index := strings.Index(input.String(), fragment)
 				if index <= at {
 					t.Fatalf("missing or out-of-order %q in continued request: %s", fragment, body)
