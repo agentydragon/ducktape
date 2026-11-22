@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.artifact_generators import artifact
@@ -55,7 +55,7 @@ def test_write_app_reports_fleet_violations_across_charts(scratch_app: App, tmp_
     k8s.KubePodTemplate(
         Chart(scratch_app, "workloads"),
         "bare",
-        metadata=ApiObjectMetadata(name="bare"),
+        metadata=k8s.ObjectMeta(name="bare"),
         template=k8s.PodTemplateSpec(spec=k8s.PodSpec(containers=[k8s.Container(name="main", image="example")])),
     )
     with pytest.raises(Exception, match="Validation failed") as failure:
