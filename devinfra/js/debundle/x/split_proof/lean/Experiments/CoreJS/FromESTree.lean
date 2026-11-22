@@ -31,7 +31,7 @@ private def literal (key : String) : Except String Expr := do
       return .num n
     throw "unsupported literal"
 
-private def expr (j : Json) : Except String Expr := do
+def expr (j : Json) : Except String Expr := do
   match ← field j "type" with
   | "Literal" => literal (← field j "lit")
   | "Identifier" =>
@@ -47,11 +47,14 @@ private def expr (j : Json) : Except String Expr := do
     | k => throw s!"unsupported binding class {k}"
   | kind => throw s!"unsupported expression {kind}"
 
-private def declaration (j : Json) : Except String (Name × Stmt) := do
-  let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
-  let id ← d.getObjVal? "id"
+def moduleBinding (id : Json) : Except String Name := do
   let x ← identifier id
   unless (← field id "k") == "T" do throw "expected a module binding"
+  return x
+
+private def declaration (j : Json) : Except String (Name × Stmt) := do
+  let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
+  let x ← d.getObjVal? "id" >>= moduleBinding
   let init ← d.getObjVal? "init"
   match ← field j "kind", init with
   | "var", .null => return (x, .varDecl x)
