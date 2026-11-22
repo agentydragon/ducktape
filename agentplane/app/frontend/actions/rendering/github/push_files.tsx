@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { createTwoFilesPatch } from "diff";
+import { createTwoFilesPatch, OMIT_HEADERS } from "diff";
 import { filesPushed, GitHubLink, repositoryHref } from "./receipts";
 
 import { getGitHubPushFilesPreview } from "../../client";
@@ -122,7 +122,10 @@ function PushedFileContent({ file, before }: { file: PushedFile; before: string 
   const patch =
     before === file.content
       ? undefined
-      : createTwoFilesPatch("before", "after", before, file.content, undefined, undefined, { timeout: 50 });
+      : createTwoFilesPatch("before", "after", before, file.content, undefined, undefined, {
+          headerOptions: OMIT_HEADERS,
+          timeout: 50,
+        });
   return (
     <Stack gap="xs">
       {patch === undefined ? (

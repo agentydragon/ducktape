@@ -3183,6 +3183,8 @@ async def test_action_presentations(
     )
     if example.group == "grocy_sf" and summaries is None:
         summaries = {"grocy-reference-summaries": {"references": []}}
+    if example.key == "github.push_files":
+        summaries = {"github-push-files-preview": {}}
     gmail_labeled_read = example.key in {"gmail.messages_get", "gmail.threads_get"}
     if gmail_labeled_read:
         summaries = {"gmail-resource-summaries": {"labels": [{"id": GMAIL_LABEL["id"], "title": GMAIL_LABEL["name"]}]}}
@@ -3330,6 +3332,8 @@ async def test_action_presentations(
         elif example.key == "google_calendar.list_events":
             await expect(sidebar).to_contain_text("Ending after")
             await expect(sidebar).to_contain_text("Starting before")
+        elif example.key == "github.push_files":
+            await expect(sidebar.get_by_text("Comparison unavailable. Files show proposed contents.")).to_be_visible()
         elif example.key == "tana.get_tag_schema":
             await expect(sidebar).to_contain_text("Include inherited fields")
             await expect(sidebar).to_contain_text("Include edit instructions")
@@ -3583,12 +3587,17 @@ async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture
         "href", f"https://github.com/example/service/commit/{sha}"
     )
     await sidebar.get_by_role("button", name="docs/deploy.md", exact=False).click()
-    await expect(sidebar.get_by_text("-Wait 30 seconds.", exact=True)).to_be_visible()
-    await expect(sidebar.get_by_text("+Check readiness.", exact=True)).to_be_visible()
-    await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
-    await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_visible()
-    await wait_for_stable(view.page)
-    await view.capture(target=sidebar)
+    added = sidebar.get_by_text("+Check readiness.", exact=True)
+    await added.scroll_into_view_if_needed()
+    await expect(sidebar.get_by_text("-Wait 30 seconds.", exact=True)).to_be_in_viewport()
+    await expect(added).to_be_in_viewport()
+    await view.capture("diff", target=sidebar)
+
+    approve = sidebar.get_by_role("button", name="Approve ", exact=False)
+    await approve.scroll_into_view_if_needed()
+    await expect(approve).to_be_in_viewport()
+    await expect(sidebar.get_by_role("button", name="Deny ", exact=False)).to_be_in_viewport()
+    await view.capture("decision", target=sidebar)
 
     await sidebar.get_by_role("button", name="Proposed contents", exact=True).click()
     await expect(sidebar.get_by_text("Check readiness.", exact=True)).to_be_visible()

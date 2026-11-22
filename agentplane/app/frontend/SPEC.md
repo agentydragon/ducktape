@@ -18,8 +18,9 @@ The view can render the saved arguments immediately and keep showing them if the
 The page and Web Push worker both use the operator-authenticated Action Service facade.
 
 Pending GitHub file pushes show a per-file diff in the expanded Actions card and detail view
-when the old text is available. The comparison identifies the branch commit it read and does
-not constrain execution. Files always offer their complete proposed contents.
+when the old text is available. The comparison identifies the branch commit it read.
+GitHub resolves the branch again when it runs the push. Files always offer their complete
+proposed contents.
 
 Calendar approvals can resolve an event or series title, schedule, scope and Google Calendar link
 through the operator facade. A missing preview leaves the request's calendar and event IDs
