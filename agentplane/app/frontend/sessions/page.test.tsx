@@ -770,7 +770,7 @@ it("sends the draft on Enter and clears it", async () => {
     "Saved in browser · waiting for Dispatcher"
   );
   expect(bubble?.querySelector('[role="status"]')).toBeNull();
-  expect(buttonIn(bubble?.parentElement, "Check status")).toBeDefined();
+  expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
   expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
 
@@ -1385,11 +1385,11 @@ function progressLabel(container: HTMLDivElement, commandId: string): string | n
   );
 }
 
-function checkStatus(container: HTMLDivElement, commandId: string): HTMLButtonElement {
+function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
   const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
-    (candidate) => candidate.textContent === "Check status"
+    (candidate) => candidate.textContent === "Retry"
   );
-  if (!found) throw new Error(`Missing Check status for ${commandId}`);
+  if (!found) throw new Error(`Missing Retry for ${commandId}`);
   return found;
 }
 
@@ -1435,6 +1435,7 @@ it("keeps legacy input visible for reconciliation without replaying it on mount 
   expect(row.textContent).toContain("Test input legacy-targeted");
   expect(progressLabel(container, legacy.commandId)).toContain("Dispatcher could not verify");
   expect(buttonIn(row, "Check status")).toBeDefined();
+  expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 
   await act(async () => window.dispatchEvent(new Event("online")));
@@ -1474,7 +1475,7 @@ it.each([
   expect(
     [...row.querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))
   ).toEqual(["done", "done", "waiting", "future"]);
-  expect(buttonIn(row, "Check status")).toBeUndefined();
+  expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 });
 
@@ -1499,7 +1500,7 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
   expect(row.querySelector('[role="alert"]')?.textContent).toBe(
     "Dispatcher could not deliver: Sandbox did not become Ready within 10 minutes: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound"
   );
-  expect(buttonIn(row, "Check status")).toBeUndefined();
+  expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 });
 
@@ -1643,7 +1644,7 @@ it("lets the browser cancel only a locally queued, never-sent message", async ()
   expect(vi.mocked(submitInput)).not.toHaveBeenCalled();
   const row = pendingRow(container, "unsent");
   expect(buttonIn(row, "Cancel")).toBeDefined();
-  expect(buttonIn(row, "Check status")).toBeUndefined();
+  expect(buttonIn(row, "Retry")).toBeUndefined();
   await act(async () => buttonIn(row, "Cancel")?.click());
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toEqual([]);
   online.mockReturnValue(true);
@@ -1695,7 +1696,7 @@ it("checks an ambiguous submission against the stored command without resending 
   expect(progressLabel(container, "hung")).toContain("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
 
-  await act(async () => checkStatus(container, "hung").click());
+  await act(async () => retry(container, "hung").click());
   expect(sentIds()).toEqual(["hung"]);
   expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, "hung");
   expect(progressLabel(container, "hung")).toContain("Runner accepted · waiting for agent confirmation");
@@ -1710,6 +1711,7 @@ it("leaves a command whose delivery reply was lost unconfirmed", async () => {
 });
 
 it("keeps authored input when reconnect cannot recover its receipt", async () => {
+  vi.mocked(getDispatch).mockRejectedValue(new Error("receipt lookup unavailable"));
   const command = message("offline");
   new LocalCommands(THREAD.metadata.threadId).remember(command);
   vi.mocked(submitInput).mockRejectedValueOnce(new Error("lost reply"));
@@ -1718,7 +1720,7 @@ it("keeps authored input when reconnect cannot recover its receipt", async () =>
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId);
   expect(sentIds()).toEqual(["offline"]);
-  expect(progressLabel(container, "offline")).toContain("Dispatcher could not verify");
+  expect(progressLabel(container, "offline")).toContain("receipt lookup unavailable");
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands[0].command).toEqual(command);
 });
 
@@ -1800,7 +1802,7 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
   );
   expect(pending.textContent).not.toContain("Saved in browser");
   expect(pending.querySelector('[data-stage="admitted"]')).not.toBeNull();
-  expect([...section.querySelectorAll("button")].some((button) => button.textContent === "Check status")).toBe(false);
+  expect([...section.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
 it("shows the failure and reason for a server-only command", async () => {

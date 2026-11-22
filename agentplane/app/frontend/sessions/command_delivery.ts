@@ -87,21 +87,25 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
         if (!navigator.onLine) return;
         if (value.attempted || value.destination.kind === "reconcile-only") {
           const receipt = await getDispatch(threadId, id);
-          if (
-            !receipt?.command ||
-            (value.destination.kind === "reconcile-only" && value.destination.target && !receipt.sandboxUid)
-          ) {
+          if (receipt?.command) {
+            if (value.destination.kind === "reconcile-only" && value.destination.target && !receipt.sandboxUid) {
+              throw new Error("Dispatcher receipt could not verify the original Sandbox destination");
+            }
+            store.acknowledgeDispatch(value.command, receipt);
+            settle(null);
+            return;
+          }
+          if (receipt !== null || value.destination.kind === "reconcile-only") {
             settle({
               kind: "unconfirmed",
               message: "Dispatcher could not verify the stored command. The original is saved in this browser.",
             });
             return;
           }
-          store.acknowledgeDispatch(value.command, receipt);
-          settle(null);
-          return;
+          // Only a missing live receipt for a Session-addressed command permits an exact retry.
+          // Dispatcher serializes the command ID and fences admission on the Session's immutable Sandbox UID.
         }
-        if (!store.markAttempted(id)) return;
+        if (!store.markAttempted(id, value.attempted ? value.command : undefined)) return;
         const operation = value.command.operation;
         const commandId = value.command.commandId;
         let result: CommandSubmission;
@@ -128,7 +132,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           // A lost reply says nothing about how far the command got; the thread's history shows its
           // admission once the runner journaled it.
           {
-            kind: reason instanceof CommandSubmissionRefused ? "refused" : "unconfirmed",
+            kind: reason instanceof CommandSubmissionRefused && !value.attempted ? "refused" : "unconfirmed",
             message: displayableError(reason),
           }
         );

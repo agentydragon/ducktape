@@ -105,8 +105,12 @@ its ID as a placeholder; clearing the name restores that placeholder.
 ## Thread command outcomes
 
 The thread shows command failures, refusals, unconfirmed Dispatcher receipts and unknown delivery
-outcomes below the command, including the reason when available. Unconfirmed submissions offer
-Retry when the browser can resend the command.
+outcomes below the command, including the reason when available. For an attempted command without
+a receipt, reload, reconnect and Retry first read its Dispatch by ID. The full command and Session must
+match the saved record. A missing live Dispatch allows the browser to retry a Session-addressed command
+with its original ID and payload. An incomplete or contradictory receipt, or a lookup error, leaves
+the command unconfirmed. Older commands with uncertain or Sandbox-addressed destinations offer
+Check status and retain their original input.
 
 ## Composer activity
 

@@ -217,7 +217,10 @@ export function PendingInputMessages({
             action={
               canAct
                 ? value.attempted
-                  ? { label: "Check status", onClick: () => void deliver(value) }
+                  ? {
+                      label: value.destination.kind === "reconcile-only" ? "Check status" : "Retry",
+                      onClick: () => void deliver(value),
+                    }
                   : { label: "Cancel", onClick: () => store.cancelUnsent(id) }
                 : undefined
             }
@@ -311,7 +314,11 @@ function LocalControlRows({
                         value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
                       }
                     >
-                      {value.attempted ? "Check status" : "Cancel"}
+                      {value.attempted
+                        ? value.destination.kind === "reconcile-only"
+                          ? "Check status"
+                          : "Retry"
+                        : "Cancel"}
                     </Button>
                   )}
               </Group>

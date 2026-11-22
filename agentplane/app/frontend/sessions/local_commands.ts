@@ -211,21 +211,16 @@ export class LocalCommands {
   }
 
   /** Record the attempt *before* sending: a lost response can never become a cancellable draft. */
-  markAttempted(id: string): boolean {
+  markAttempted(id: string, retryCommand?: PendingCommand): boolean {
     const key = this.key(id);
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
     const record = parseRecord(raw);
     const value = decode(record);
-    if (
-      value.attempted ||
-      value.destination.kind === "reconcile-only" ||
-      value.admission ||
-      value.dispatch ||
-      value.interruptResult
-    ) {
+    if (value.destination.kind === "reconcile-only" || value.admission || value.dispatch || value.interruptResult) {
       return false;
     }
+    if (value.attempted) return retryCommand !== undefined && sameCommand(value.command, retryCommand);
     localStorage.setItem(key, JSON.stringify({ ...record, attempted: true }));
     this.reload();
     return true;
