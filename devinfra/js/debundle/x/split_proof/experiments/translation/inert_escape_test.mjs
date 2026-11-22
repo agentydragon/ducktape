@@ -348,3 +348,29 @@ console.log(values.includes(ratio));`,
   assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
   assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
+
+// Both constructors finish normally. Only the position of the factory initializer changes.
+for (const [name, setup, length] of [
+  ["replaced_array_constructor", "globalThis.Array = function () { console.log(typeof factory); };", "3"],
+  ["array_length_coercion", "var width = {valueOf() { console.log(typeof factory); return 3; }};", "(width + 2) * 2"],
+]) {
+  const p = prepare(name, `${setup}\nvar slots = new Array(${length});\nvar factory = () => 7;`, [2]);
+  const verdict = lowersplit(p);
+  const forced = lowersplit(p, "--force");
+  for (const [file, expected] of [
+    [p.source, "undefined\n"],
+    [path.join(p.dir, "entry.mjs"), "function\n"],
+  ]) {
+    const result = run(process.execPath, [file]);
+    assert.equal(result.status, 0, describe(name, result));
+    assert.equal(result.stdout, expected, name);
+  }
+  const checked = translate(name, p.source, p.dir);
+  assert.deepEqual(
+    [verdict.status, forced.status, checked.status],
+    [1, 1, 4],
+    describe(name, verdict) + describe(name, checked)
+  );
+  assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
+  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
+}
