@@ -352,12 +352,13 @@ an entered module is skipped (that is how cycles end). `OrderOk` rests on it, an
 [`es_order/check.mjs`](es_order/check.mjs) builds random import graphs (2–8 modules, 0–3 imports each, cycles and unreachable modules included).
 Every module prints its name. The order Node prints must equal `Plan.evalOrder`, which the `evalorder` executable ([`EvalOrder.lean`](../lean/Experiments/EvalOrder.lean)) prints.
 
-| Run                                                                         | Graphs | With a cycle | Mismatches |
-| --------------------------------------------------------------------------- | ------ | ------------ | ---------- |
-| `node check.mjs 500 1`                                                      | 500    | 262          | 0          |
-| `node check.mjs 100 1 --control` (Node sees each module's imports reversed) | 100    | 59           | 24         |
+CI compares 40 seeded random graphs and a fixed cycle with an unreachable module. As a negative control,
+reversing the fixed graph's imports in Node alone must change the observed order.
 
-The control shows that the test can fail.
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/experiments/es_order:es_order_test
+bbr test //devinfra/js/debundle/x/split_proof/experiments/es_order:es_order_sweep_test  # 500 graphs
+```
 
 ## 11. debundle's e2e cases
 
