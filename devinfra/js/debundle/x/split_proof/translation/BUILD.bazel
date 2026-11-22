@@ -34,6 +34,7 @@ js_binary(
         ":node_modules/acorn",
         ":node_modules/astring",
         ":node_modules/eslint-scope",
+        ":scope_metadata",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     ],
     entry_point = "module_io.mjs",

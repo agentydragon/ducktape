@@ -96,6 +96,7 @@ fs.unlinkSync(extra);
 fs.renameSync(path.join(out, left), extra);
 check(out, all, "rejected", "--check-output");
 fs.renameSync(extra, path.join(out, left));
+
 // Publication must leave a previously populated destination intact on failure.
 const sentinel = path.join(out, "unrelated");
 fs.writeFileSync(sentinel, "keep");
@@ -223,3 +224,23 @@ for (let seed = 0; seed < 8; seed++) {
 }
 assert(certifiedCount > 0, "generated placements must include a certified control");
 assert(exposedByStructuralMode > 0, "generated placements must exercise private entry bindings exposed by glue");
+
+const hashbangSource = "#!/usr/bin/env node\nexport const marker = 1;";
+const hashbangFile = path.join(root, "hashbang.mjs");
+fs.writeFileSync(hashbangFile, hashbangSource);
+prepare(hashbangSource, { [entry]: ["#0"] }, []);
+const hashbangOut = path.join(root, "hashbang-output");
+assert.equal(requestFile(hashbangFile, hashbangOut, all).status, "certified");
+const hashbangEntry = path.join(hashbangOut, entry);
+const hashbangOutput = fs.readFileSync(hashbangEntry, "utf8");
+assert(hashbangOutput.startsWith("#!/usr/bin/env node\n"), hashbangOutput);
+fs.writeFileSync(hashbangEntry, hashbangOutput.replace("#!/usr/bin/env node", "#!/usr/bin/env node --no-warnings"));
+check(hashbangOut, all, "rejected", "--check-output");
+
+// JSON stores both of these Literal.value fields as the string "Infinity".
+const infiniteString = 'export const value = "Infinity";';
+prepare(infiniteString, { [entry]: ["#0"] }, []);
+const literalOut = path.join(root, "literal-type");
+check(literalOut, all, "certified");
+fs.writeFileSync(path.join(literalOut, entry), "export const value = 1e999;");
+check(literalOut, all, "rejected", "--check-output");

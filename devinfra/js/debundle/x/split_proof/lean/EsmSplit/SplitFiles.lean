@@ -41,10 +41,10 @@ def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) : IO Jso
     javascript #["--load-input"] #[path, upgraded]
     readJson upgraded
 
-def printModules (programs : Json) (dir work source : System.FilePath) : IO Unit := do
+def writeProgramManifest (programs : Json) (work : System.FilePath) : IO System.FilePath := do
   let manifest := work / "output-programs.json"
   IO.FS.writeFile manifest programs.compress
-  javascript #["--print"] #[manifest, dir, source]
+  return manifest
 
 /-- Read the actual provider graph. Lean resolves each edge from the parsed import declaration;
 the shared JavaScript frontend reads only the next batch of filenames. -/
@@ -78,35 +78,32 @@ partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : 
       frontier := frontier.push (name, ast)
   return Json.mkObj providers.toList
 
-def certifyFiles (providers : Json) (B : Bundle) (P : Plan)
+/-- Certify the exact program map handed to the printer or compared with an existing directory. -/
+def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly : Bool) (asts : Array Json) (source : String)
     (check : Json → IO Unit) : IO Unit := do
   let dependencies := (← IO.ofExcept providers.getObj?).toList
-  let verify (dir : System.FilePath) : IO Unit := do
-    let reply := work / "reparsed.json"
-    javascript #["--read-output"] #[dir, reply]
-    let parsed ← readJson reply
-    let mut files ← IO.ofExcept parsed.getObj?
-    for (name, expected) in dependencies do
-      unless files.get? name == some expected do throw (IO.userError s!"provider {name} differs from the source graph")
-      files := files.erase name
-    check (.obj files)
   for (name, _) in dependencies do
     if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
-  if checkOnly then verify out else
+  let programs ← IO.ofExcept (ESTreeEmit.programs asts B P source)
+  check programs
+  let manifest ← writeProgramManifest programs work
+  if checkOnly then
+    let providerManifest := work / "provider-programs.json"
+    IO.FS.writeFile providerManifest providers.compress
+    javascript #["--check-output"] #[manifest, input, providerManifest, out]
+  else
     let parent := out.parent.getD "."
     IO.FS.createDirAll parent
     -- A sibling directory makes publication a single same-filesystem rename.
     let stage := parent / (".split-proof-" ++ work.fileName.get!)
     IO.FS.createDir stage
     try
-      let programs ← IO.ofExcept (ESTreeEmit.programs asts B P source)
-      printModules programs stage work input
+      javascript #["--print"] #[manifest, stage, input]
       for (name, ast) in dependencies do
         let dest := stage / name
         IO.FS.createDirAll (dest.parent.getD stage)
         IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-      verify stage
       IO.FS.rename stage out
     finally
       if ← stage.pathExists then IO.FS.removeDirAll stage

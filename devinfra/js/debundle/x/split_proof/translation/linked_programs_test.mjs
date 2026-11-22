@@ -235,6 +235,22 @@ for (let seed = 0; seed < 8; seed++) {
 
     const entryFile = path.join(out, "entry.mjs");
     const entrySource = readFileSync(entryFile, "utf8");
+    writeFileSync(entryFile, `// formatting outside callables is immaterial\n${entrySource}`);
+    const formatting = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
+    assert.equal(formatting.verdict.status, "certified", formatting.log);
+    writeFileSync(entryFile, entrySource);
+
+    const callable = entrySource.match(/\(\)\s*=>\s*moved0/)?.[0];
+    assert(callable, entrySource);
+    const alternateCallable = callable.includes("=> ")
+      ? callable.replace("=> ", "=>  ")
+      : callable.replace("=>", " =>");
+    assert.notEqual(alternateCallable, callable);
+    writeFileSync(entryFile, entrySource.replace(callable, alternateCallable));
+    const callableMutation = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
+    assert.equal(callableMutation.verdict.status, "rejected", callableMutation.log);
+    writeFileSync(entryFile, entrySource);
+
     const link = new RegExp(`\\b${fixture.publicFactory}(?=\\s+as\\s+${fixture.localFactory}\\b)`);
     assert.match(entrySource, link);
     writeFileSync(entryFile, entrySource.replace(link, fixture.sameValueFactory));

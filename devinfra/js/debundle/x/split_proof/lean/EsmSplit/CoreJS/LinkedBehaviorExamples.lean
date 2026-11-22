@@ -55,4 +55,47 @@ theorem movedClosure : LinkedBehavior.Equivalent source candidate ∧ LinkedBeha
 
 #audit_linked_programs movedClosure
 
+open Lean (Json)
+
+-- The insertion order and a negative decimal distinguish this literal from a reparse of
+-- canonical printed JSON. The string also exercises quotes, escapes and Lean comment syntax.
+private def jsonFixture := Json.mkObj [
+  ("z", .num ⟨-20, 1⟩), ("a", .arr #[.null, .bool false]),
+  ("q", .str "\"\\\n/- -- #eval λ"), ("b", .bool true)]
+
+open Lean Elab in
+elab "quotedJsonFixture%" : term => do
+  let .ok stx := Parser.runParserCategory (← getEnv) `term (LinkedBehavior.jsonLiteral jsonFixture)
+    | throwError "could not parse the fixture AST literal"
+  Term.elabTerm stx (some (mkConst ``Json))
+
+theorem jsonLiteralRoundTrip : quotedJsonFixture% = jsonFixture := rfl
+
+private def node (kind : String) (fields : List (String × Json)) : Json :=
+  Json.mkObj (("type", .str kind) :: fields)
+
+/-- A proof for a closure returning "first" cannot be reused for a decoded closure returning
+"second", even though constructing each closure separately finishes normally. -/
+private def closureAST (value : String) : Json :=
+  let body := node "Literal" [("value", .str value), ("lit", .str ("s:" ++ value))]
+  let arrow := node "ArrowFunctionExpression" [("async", .bool false), ("generator", .bool false),
+    ("params", .arr #[]), ("body", body)]
+  node "Program" [("sourceType", .str "module"), ("body", .arr #[node "ExpressionStatement" [("expression", arrow)]])]
+
+private def closureProgram : Program :=
+  ⟨"main.mjs", [⟨"main.mjs", [], [(0, .expr (.func (.mk "" .arrow false [] [.ret (.str "first")])))], []⟩]⟩
+
+private theorem closureExecution :
+    LinkedBehavior.Equivalent closureProgram closureProgram ∧ LinkedBehavior.SameExports closureProgram closureProgram := by
+  verify_linked_programs 16
+
+private def checkClosure (value : String) :=
+  let source := closureAST value
+  let files := Json.mkObj [("main.mjs", source)]
+  let plan : EsmSplit.Plan := ⟨"main.mjs", [⟨"main.mjs", [0], [], []⟩]⟩
+  (LinkedBehavior.certifyASTs source (Json.mkObj []) files plan closureProgram closureProgram closureExecution).isOk
+
+#guard checkClosure "first"
+#guard !checkClosure "second"
+
 end CoreJS.LinkedBehaviorExamples

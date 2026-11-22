@@ -400,9 +400,10 @@ def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec
 
 /-- Elaborate the concrete execution proof with the same toolchain and compiled model
 as the splitter. Publication waits for the kernel to accept it. -/
-private def verifyExecution (work : System.FilePath) (original candidate : CoreJS.Program) : IO Unit := do
+private def verifyExecution (work : System.FilePath) (program providers files : Json) (P : Plan)
+    (original candidate : CoreJS.Program) : IO Unit := do
   let file := work / "LinkedExecution.lean"
-  IO.FS.writeFile file (← IO.ofExcept (CoreJS.LinkedBehavior.certificate original candidate))
+  IO.FS.writeFile file (← IO.ofExcept (CoreJS.LinkedBehavior.certificate program providers files P original candidate))
   let exe ← IO.appPath
   let args := #["-DwarningAsError=true", s!"--root={work}", file.toString]
   let proc ← if exe.fileName == some "lean" then
@@ -524,18 +525,18 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
       try
         if request == .allOutcomes && level != .allOutcomes then
           throw (IO.userError "the checked reorder proves only normal-completion")
-        certifyFiles (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
+        certifyOutput (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
           IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
         return ← emitVerdict request.label (.ok level) "closed-declarations"
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
     try
       unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
       let providers ← loadProviders program bundlePath work
-      certifyFiles providers B P out work input checkOnly outputAsts source fun files => do
+      certifyOutput providers B P out work input checkOnly outputAsts source fun files => do
         let (original, candidate) ← IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P)
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
-        verifyExecution work original candidate
+        verifyExecution work program providers files P original candidate
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
   let model ← modelBody asts corejsPath?
@@ -554,7 +555,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   if force || (ok && !bad) then
     match ESTreeEmit.programs outputAsts B P source with
     | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
-    | .ok programs => printModules programs out work input
+    | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, out, input]
     if let some planPath := planPath? then
       let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P allConflicts
       let pairs := if allConflicts then

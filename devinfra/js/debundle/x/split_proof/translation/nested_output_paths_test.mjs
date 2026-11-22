@@ -119,4 +119,4 @@ const wrongTarget = spawnSync(
 const wrongTargetVerdict = JSON.parse(wrongTarget.stdout.trim().split("\n").at(-1));
 assert.equal(wrongTarget.status, 1, wrongTarget.stdout + wrongTarget.stderr);
 assert.equal(wrongTargetVerdict.status, "rejected", JSON.stringify(wrongTargetVerdict));
-assert.match(wrongTargetVerdict.reason, /ordered imports differ from the plan/);
+assert.match(wrongTargetVerdict.reason, /output module public\/entry\.mjs differs from its generated ESTree/);
