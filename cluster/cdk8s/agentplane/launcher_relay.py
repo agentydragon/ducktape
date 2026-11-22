@@ -32,7 +32,6 @@ fail to start; nothing else in the namespace or the cluster waits on it.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, ServiceAccount
@@ -86,10 +85,6 @@ RUNNER_CREDENTIAL_VMI_UID_ANNOTATION = "agentplane.allegedly.works/environment-r
 RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
 
 
-def _cel_strings(items: Sequence[str]) -> str:
-    return "[" + ", ".join(f"'{item}'" for item in items) + "]"
-
-
 def _owner(kind: str, api_version: str, of: str) -> str:
     return (
         f"{of}.metadata.ownerReferences.filter(r, r.kind == '{kind}' && r.apiVersion == '{api_version}' "
@@ -136,9 +131,7 @@ def _launcher_variables(*, relay_name: str) -> dict[str, str]:
     }
 
 
-def _launcher_validations(
-    *, relay_name: str, protected_volumes: Sequence[str]
-) -> list[ValidatingPolicySpecValidations]:
+def _launcher_validations(*, relay_name: str) -> list[ValidatingPolicySpecValidations]:
     on_create = "request.operation != 'CREATE' || "
     annotations = "variables.vm.metadata.annotations"
     uid = "variables.vmi.metadata.uid"
@@ -149,7 +142,7 @@ def _launcher_validations(
         (
             "Only the launcher relay may mount the runner credential and trust files.",
             "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) "
-            f"&& c.volumeMounts.exists(m, m.name in {_cel_strings(protected_volumes)}))",
+            f"&& c.volumeMounts.exists(m, m.name == '{RUNNER_TLS_VOLUME_NAME}'))",
         ),
         (
             "A launcher must be created by KubeVirt's controller.",
@@ -328,16 +321,14 @@ class LauncherRelayPolicy(Construct):
     ) -> None:
         super().__init__(scope, id)
         relay_name = sidecar_config.CONTAINER_NAME
-        protected_volumes = [RUNNER_TLS_VOLUME_NAME]
         # A Pod's volumes are immutable, so only a Pod created with the token volume can be updated to mount it.
         is_launcher = " && ".join(
             f"has(object.metadata.labels) && '{key}' in object.metadata.labels && object.metadata.labels['{key}'] == '{value}'"
             for key, value in LAUNCHER_LABELS.items()
         )
-        protected_volume_predicates = [
-            f"object.spec.volumes.exists(v, v.name == '{name}')" for name in protected_volumes
-        ]
-        has_protected_volume = "has(object.spec.volumes) && (" + " || ".join(protected_volume_predicates) + ")"
+        has_protected_volume = (
+            f"has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == '{RUNNER_TLS_VOLUME_NAME}')"
+        )
         # The webhooks are cluster-wide and the rules' `namespaces` match applies only inside Kyverno, so
         # without this an outage would fail every namespace's launchers.
         in_namespace = f"request.namespace == '{namespace}'"
@@ -376,7 +367,7 @@ class LauncherRelayPolicy(Construct):
                     ValidatingPolicySpecVariables(name=variable, expression=expression)
                     for variable, expression in variables.items()
                 ],
-                validations=_launcher_validations(relay_name=relay_name, protected_volumes=protected_volumes),
+                validations=_launcher_validations(relay_name=relay_name),
             ),
         )
         template_variables = {

@@ -5826,7 +5826,7 @@ spec:
   matchConditions:
     - expression: request.namespace == 'agentplane-staging'
       name: in-namespace
-    - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls')))"
+    - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))"
       name: launcher-or-relay-credential-volume
   matchConstraints:
     resourceRules:
@@ -5843,7 +5843,7 @@ spec:
   validationActions:
     - Deny
   validations:
-    - expression: "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) && c.volumeMounts.exists(m, m.name in ['agentplane-runner-relay-tls']))"
+    - expression: "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) && c.volumeMounts.exists(m, m.name == 'agentplane-runner-relay-tls'))"
       message: Only the launcher relay may mount the runner credential and trust files.
     - expression: request.operation != 'CREATE' || request.userInfo.username == 'system:serviceaccount:kubevirt:kubevirt-controller'
       message: A launcher must be created by KubeVirt's controller.

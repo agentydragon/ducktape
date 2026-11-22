@@ -19,6 +19,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.agentplane.launcher_relay import (
     CONTROLLER_USERNAME,
     LAUNCHER_LABELS,
@@ -73,47 +74,34 @@ class Policies:
 
 
 @pytest.fixture(scope="module")
-def policy(scratch_app_factory: Callable[[], App]) -> Policies:
+def relay_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     chart = Chart(scratch_app_factory(), "test")
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, template_name="relay-test-template", settings_config_map=RELAY_SETTINGS
     )
-    documents = Cdk8sTesting.synth(chart)
-    mutation: dict = one(doc for doc in documents if doc["kind"] == "MutatingPolicy")
-    validation: dict = one(doc for doc in documents if doc["kind"] == "ValidatingPolicy")
-    # The CLI's policy validation needs a cluster to check match conditions against and panics
-    # without one; they narrow which requests reach the policy, not what it decides.
-    del mutation["spec"]["matchConditions"]
-    del validation["spec"]["matchConditions"]
-    return Policies(mutation=mutation, validation=validation)
+    return Cdk8sTesting.synth(chart)
 
 
-def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_namespace(scratch_chart: Chart) -> None:
-    LauncherRelayPolicy(
-        scratch_chart,
-        "policy",
-        namespace=NAMESPACE,
-        template_name="relay-test-template",
-        settings_config_map=RELAY_SETTINGS,
+@pytest.fixture(scope="module")
+def policy(relay_resources: list[dict[str, Any]]) -> Policies:
+    return Policies(
+        mutation=one(doc for doc in relay_resources if doc["kind"] == "MutatingPolicy"),
+        validation=one(doc for doc in relay_resources if doc["kind"] == "ValidatingPolicy"),
     )
-    documents = Cdk8sTesting.synth(scratch_chart)
-    role = one(doc for doc in documents if doc["kind"] == "Role")
-    assert role["metadata"]["namespace"] == NAMESPACE
-    assert role["rules"] == [
-        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get"]},
-        {"apiGroups": [GROUP], "resources": ["sandboxtemplates"], "verbs": ["get"]},
-        {"apiGroups": [GROUP], "resources": ["workloadcredentials"], "verbs": ["get"]},
-    ]
-    binding = one(doc for doc in documents if doc["kind"] == "RoleBinding")
-    assert binding["metadata"]["namespace"] == NAMESPACE
-    assert binding["roleRef"] == {
-        "apiGroup": "rbac.authorization.k8s.io",
-        "kind": "Role",
-        "name": role["metadata"]["name"],
-    }
+
+
+def test_tls_injection_grants_only_the_admission_controller_its_required_reads(
+    relay_resources: list[dict[str, Any]],
+) -> None:
+    rbac = Rbac(relay_resources)
+    [binding] = rbac.bindings
     assert binding["subjects"] == [
         {"apiGroup": "", "kind": "ServiceAccount", "name": "kyverno-admission-controller", "namespace": "kyverno"}
     ]
+    assert rbac.binding_rules(binding) == {
+        Permission(NAMESPACE, GROUP, resource, "get")
+        for resource in ("sandboxes", "sandboxtemplates", "workloadcredentials")
+    }
 
 
 def reads(
@@ -213,21 +201,23 @@ class Admission:
         return self.mutation.mutated_resources
 
 
-def mutation_policy(policy: Policies, **supplied: dict) -> dict:
-    mutation = deepcopy(policy.mutation)
-    supplied = {**supplied, "templatePod": RUNNER_POD["spec"]}
-    for variable in mutation["spec"]["variables"]:
+def _with_api_reads(rendered: dict, supplied: dict[str, dict]) -> dict:
+    policy = deepcopy(rendered)
+    # The CLI needs a cluster to evaluate match conditions. These cases exercise the policy decision.
+    del policy["spec"]["matchConditions"]
+    for variable in policy["spec"]["variables"]:
         if variable["name"] in supplied:
+            # CEL literals of mixed types do not type-check. Parse the supplied object from JSON text.
             variable["expression"] = f"json.unmarshal({json.dumps(json.dumps(supplied[variable['name']]))})"
-    return mutation
+    return policy
+
+
+def mutation_policy(policy: Policies, **supplied: dict) -> dict:
+    return _with_api_reads(policy.mutation, {**supplied, "templatePod": RUNNER_POD["spec"]})
 
 
 def validation_policy(policy: Policies, operation: str, **supplied: dict) -> dict:
-    validation = deepcopy(policy.validation)
-    for variable in validation["spec"]["variables"]:
-        if variable["name"] in supplied:
-            # A CEL literal of mixed types does not type-check, so the object is parsed from JSON text.
-            variable["expression"] = f"json.unmarshal({json.dumps(json.dumps(supplied[variable['name']]))})"
+    validation = _with_api_reads(policy.validation, supplied)
     for check in validation["spec"]["validations"]:
         check["expression"] = check["expression"].replace("request.operation", f"'{operation}'")
     return validation
