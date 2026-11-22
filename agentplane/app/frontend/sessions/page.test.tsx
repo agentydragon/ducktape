@@ -1784,12 +1784,15 @@ it.each(["conversation", "archive"])("shares an exact acknowledgement from the %
   );
   const writes = vi.fn();
   const lookups = vi.fn();
-  const olderResponse = Promise.withResolvers<Response>();
+  let finishLookup!: (response: Response) => void;
+  const olderResponse = new Promise<Response>((resolve) => {
+    finishLookup = resolve;
+  });
   deliveryRequest = (url, init) => {
     const body = JSON.parse(String(init?.body));
     if (url.pathname.endsWith(":batchGet")) {
       lookups(body.notices);
-      return lookups.mock.calls.length === 1 ? olderResponse.promise : Response.json({ acknowledgements: [] });
+      return lookups.mock.calls.length === 1 ? olderResponse : Response.json({ acknowledgements: [] });
     }
     writes(body.notice);
     return Response.json({});
@@ -1812,7 +1815,7 @@ it.each(["conversation", "archive"])("shares an exact acknowledgement from the %
   expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
   expect(panel.isConnected).toBe(false);
 
-  await act(async () => olderResponse.resolve(Response.json({ acknowledgements: [] })));
+  await act(async () => finishLookup(Response.json({ acknowledgements: [] })));
   expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
   await showIssues(watch, issueReceipt(issue.commandId, "42", "A newer delivery failure"));
   expect(container.textContent).toContain("A newer delivery failure");
@@ -2223,12 +2226,19 @@ it("does not retry an old Session after leaving while its recovery read is pendi
   const store = new LocalCommands(THREAD.metadata.threadId);
   store.remember(command);
   expect(store.markAttempted(command.commandId)).toBe(true);
-  const read = Promise.withResolvers<null>();
-  vi.mocked(getDispatch).mockReturnValueOnce(read.promise);
+  let finishRecovery!: () => void;
+  vi.mocked(getDispatch).mockReturnValueOnce(
+    new Promise<null>((resolve) => {
+      finishRecovery = () => resolve(null);
+    })
+  );
   const container = await render();
   const call = vi.mocked(getDispatch).mock.calls[0];
   expect(call).toEqual([THREAD.metadata.threadId, command.commandId, expect.any(AbortSignal)]);
   const view = mounted.find((entry) => entry.container === container)!;
+  vi.mocked(getThread).mockImplementation(async (threadId) =>
+    threadView({ metadata: { ...THREAD.metadata, threadId } })
+  );
   await act(async () =>
     view.root.render(
       <TestLiveProviders>
@@ -2237,7 +2247,7 @@ it("does not retry an old Session after leaving while its recovery read is pendi
     )
   );
   expect(call[2]?.aborted).toBe(true);
-  await act(async () => read.resolve(null));
+  await act(async () => finishRecovery());
   expect(submitInput).not.toHaveBeenCalled();
   expect(store.getSnapshot().commands[0]?.command).toEqual(command);
 });
