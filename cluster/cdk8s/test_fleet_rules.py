@@ -19,7 +19,7 @@ from cluster.cdk8s.fleet_rules import (
     pinned_https_egress,
     pod_hardening,
     reference_kind_mismatches,
-    unused_waivers,
+    vpa_auto_mode_policies_set_controlled_values,
 )
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
 from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
@@ -186,32 +186,27 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
         _policy("open", [_https({"toEntities": ["world"]})]),
         _policy("pinned", [_https({"toEntities": ["world"]}, ["a.example.test"])]),
     ]
-    assert unused_waivers(objects, unhardened={"Deployment/bare"}, unpinned={"open"}) == []
-    assert unused_waivers(objects, unhardened={"Deployment/ok", "Deployment/gone"}, unpinned={"pinned"}) == [
+    assert pod_hardening(objects, unhardened={"Deployment/bare", "Deployment/ok", "Deployment/gone"}) == [
         "pod hardening waived for Deployment/gone, which is not in this App or passes",
         "pod hardening waived for Deployment/ok, which is not in this App or passes",
-        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes",
+    ]
+    assert pinned_https_egress(objects, unpinned={"open", "pinned"}) == [
+        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes"
     ]
 
 
-def test_auto_vpa_namespace_owned_policy_requires_controlled_values(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "vpa")
-    ApiObject(
-        chart,
-        "partial-vpa-policy",
-        api_version="v1",
-        kind="Namespace",
-        metadata=ApiObjectMetadata(
-            name="partial",
-            labels={VPA_UPDATE_MODE_LABEL: "auto"},
-            annotations={
-                VPA_RESOURCE_POLICY_ANNOTATION: '{"containerPolicies":[{"containerName":"*","minAllowed":{"cpu":"10m"}}]}'
-            },
-        ),
-    )
-    add_fleet_rules(chart)
-    with pytest.raises(Exception, match=r"Namespace/partial: VPA container policy '\*' lacks controlledValues"):
-        Cdk8sTesting.synth(chart)
+def test_auto_vpa_namespace_owned_policy_requires_controlled_values() -> None:
+    namespace = {
+        "kind": "Namespace",
+        "metadata": {
+            "name": "partial",
+            "labels": {VPA_UPDATE_MODE_LABEL: "auto"},
+            "annotations": {VPA_RESOURCE_POLICY_ANNOTATION: '{"containerPolicies":[{"containerName":"*"}]}'},
+        },
+    }
+    assert vpa_auto_mode_policies_set_controlled_values([namespace]) == [
+        "Namespace/partial: VPA container policy '*' lacks controlledValues"
+    ]
 
 
 def _reader(

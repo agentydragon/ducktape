@@ -8,7 +8,7 @@ admission denial or a CreateContainerConfigError on the cluster.
 from __future__ import annotations
 
 import json
-from collections.abc import Collection, Iterator, Set
+from collections.abc import Collection, Iterable, Iterator
 from itertools import combinations
 from typing import Any, cast
 
@@ -32,34 +32,40 @@ _CONFIG_MAP_REF_KEYS = {"configMapKeyRef", "configMapRef"}
 _OUT_OF_SERVICE_TAINT = "node.kubernetes.io/out-of-service"
 
 
-def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, Any]]]:
+def _apply_waivers(violations: Iterable[tuple[str, str]], waived: Collection[str], *, description: str) -> list[str]:
+    unused = set(waived)
+    errors = []
+    for name, message in violations:
+        if name in waived:
+            unused.discard(name)
+        else:
+            errors.append(message)
+    errors.extend(f"{description} waived for {name}, which is not in this App or passes" for name in sorted(unused))
+    return errors
+
+
+def _pod_hardening_violations(objects: list[dict[str, Any]]) -> Iterator[tuple[str, str]]:
+    """Every container uses RuntimeDefault seccomp, requests CPU and memory, and limits memory.
+    CPU limits come from the namespace LimitRange."""
     for obj in objects:
-        if embeds_pod(obj):
-            yield f"{obj['kind']}/{obj['metadata']['name']}", pod_spec(obj)
-
-
-def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str]) -> list[str]:
-    """Every container runs under the RuntimeDefault seccomp profile (its own or the
-    Pod's) and declares cpu/memory requests and a memory limit. CPU limits are left to
-    the namespace LimitRange's default on purpose. `unhardened` names the workloads
-    (`Kind/name`) waived until they are fixed."""
-    errors: list[str] = []
-    for name, pod in _pod_specs(objects):
-        if name in unhardened:
+        if not embeds_pod(obj):
             continue
+        name = f"{obj['kind']}/{obj['metadata']['name']}"
+        pod = pod_spec(obj)
         pod_seccomp = pod.get("securityContext", {}).get("seccompProfile", {}).get("type")
         for container in [*pod.get("initContainers", []), *pod["containers"]]:
             own = f"{name} container {container['name']}"
             seccomp = (container.get("securityContext") or {}).get("seccompProfile", {}).get("type") or pod_seccomp
             if seccomp != "RuntimeDefault":
-                errors.append(f"{own}: seccomp profile is {seccomp!r}, not RuntimeDefault")
+                yield name, f"{own}: seccomp profile is {seccomp!r}, not RuntimeDefault"
             resources = container.get("resources", {})
-            errors.extend(
-                f"{own}: resources.{section} lacks {sorted(missing)}"
-                for section, required in (("requests", {"cpu", "memory"}), ("limits", {"memory"}))
-                if (missing := required - set(resources.get(section, {})))
-            )
-    return errors
+            for section, required in (("requests", {"cpu", "memory"}), ("limits", {"memory"})):
+                if missing := required - set(resources.get(section, {})):
+                    yield name, f"{own}: resources.{section} lacks {sorted(missing)}"
+
+
+def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str]) -> list[str]:
+    return _apply_waivers(_pod_hardening_violations(objects), unhardened, description="pod hardening")
 
 
 def _outside_https_rules(obj: dict[str, Any]) -> Iterator[tuple[list[Any], bool]]:
@@ -73,18 +79,22 @@ def _outside_https_rules(obj: dict[str, Any]) -> Iterator[tuple[list[Any], bool]
                 yield destination, bool(to_ports.get("serverNames"))
 
 
+def _unpinned_https_violations(objects: list[dict[str, Any]]) -> Iterator[tuple[str, str]]:
+    for obj in objects:
+        if obj["kind"] == _NETWORKPOLICY_KIND:
+            name = f"{_NETWORKPOLICY_KIND}/{obj['metadata']['name']}"
+            for destination, pins_sni in _outside_https_rules(obj):
+                if not pins_sni:
+                    yield name, f"{name}: HTTPS egress to {destination} without serverNames"
+
+
 def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: Collection[str]) -> list[str]:
     """A CiliumNetworkPolicy egress rule reaching port 443 outside the cluster (world,
     remote-node, host, FQDNs) names the TLS server names it allows: without SNI it is
     "any HTTPS server". `unpinned` names the policies allowed through by design -- a
     TLS-terminating proxy whose allowlist is its own configuration."""
-    return [
-        f"CiliumNetworkPolicy/{obj['metadata']['name']}: HTTPS egress to {destination} without serverNames"
-        for obj in objects
-        if obj["kind"] == _NETWORKPOLICY_KIND and obj["metadata"]["name"] not in unpinned
-        for destination, pins_sni in _outside_https_rules(obj)
-        if not pins_sni
-    ]
+    waived = {f"{_NETWORKPOLICY_KIND}/{name}" for name in unpinned}
+    return _apply_waivers(_unpinned_https_violations(objects), waived, description="unpinned HTTPS egress")
 
 
 def cilium_rules_enforce_something(objects: list[dict[str, Any]]) -> list[str]:
@@ -254,31 +264,6 @@ def reference_kind_mismatches(objects: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
-def unused_waivers(objects: list[dict[str, Any]], *, unhardened: Set[str], unpinned: Set[str]) -> list[str]:
-    """Every waiver names an object in this App that still breaks its rule, so a fixed or
-    deleted object takes its waiver with it."""
-    failing_pods = {
-        f"{obj['kind']}/{obj['metadata']['name']}"
-        for obj in objects
-        if embeds_pod(obj) and pod_hardening([obj], unhardened=set())
-    }
-    failing_policies = {
-        obj["metadata"]["name"]
-        for obj in objects
-        if obj["kind"] == _NETWORKPOLICY_KIND and pinned_https_egress([obj], unpinned=set())
-    }
-    return [
-        *(
-            f"pod hardening waived for {name}, which is not in this App or passes"
-            for name in sorted(unhardened - failing_pods)
-        ),
-        *(
-            f"unpinned HTTPS egress waived for CiliumNetworkPolicy/{name}, which is not in this App or passes"
-            for name in sorted(unpinned - failing_policies)
-        ),
-    ]
-
-
 def vpa_auto_mode_policies_set_controlled_values(objects: list[dict[str, Any]]) -> list[str]:
     """A namespace-owned VPA policy opts out of the Kyverno default, so every container
     policy on an auto-mode namespace must state whether VPA controls requests or limits."""
@@ -337,7 +322,6 @@ class FleetRules:
             *reference_kind_mismatches(objects),
             *vpa_auto_mode_policies_set_controlled_values(objects),
             *daemonsets_leave_offline_nodes(objects),
-            *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),
         ]
 
 
