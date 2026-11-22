@@ -20,21 +20,23 @@ def supportedFilename (name : String) : Bool :=
 
 /-- Resolve a local URL request from the importing file's directory. Refuse paths that need
 URL decoding, query or fragment semantics, or access outside the supplied module tree. -/
-private def resolve (importer request : String) : Except String String := do
-  unless request.startsWith "./" || request.startsWith "../" do throw "expected a relative glue import"
+def resolve (importer request : String) : Except String String := do
+  unless request.startsWith "./" || request.startsWith "../" do throw "expected a relative module request"
   let parts := request.splitOn "/"
   unless parts.getLast?.any fileSegment do throw "expected a module filename"
   let mut dir := (importer.splitOn "/").reverse.drop 1
   for part in parts do
     if part == ".." then
-      let _ :: parent := dir | throw "glue import leaves the module tree"
+      let _ :: parent := dir | throw "import leaves the module tree"
       dir := parent
     else if part != "." then
       unless fileSegment part do throw "unsupported module URL segment"
       dir := part :: dir
   return "/".intercalate dir.reverse
 
-private def importDecl (importer : String) (j : Json) : Except String Import := do
+/-- Read a named or side-effect-only import and resolve its relative module request. -/
+def importDecl (importer : String) (j : Json) : Except String Import := do
+  unless (← typ j) == "ImportDeclaration" do throw "expected an import declaration"
   let src ← j.getObjVal? "source"
   unless (← typ src) == "Literal" do throw "expected a literal import source"
   let lit ← src.getObjValAs? String "lit"
@@ -44,7 +46,7 @@ private def importDecl (importer : String) (j : Json) : Except String Import := 
     unless (← attrs.getArr?).isEmpty do throw "unsupported import attributes"
   let specs ← j.getObjValAs? (List Json) "specifiers"
   let names ← specs.mapM fun sp => do
-    unless (← typ sp) == "ImportSpecifier" do throw "expected a named glue import"
+    unless (← typ sp) == "ImportSpecifier" do throw "expected a named import"
     return (← FromESTree.identifier (← sp.getObjVal? "imported"), ← FromESTree.identifier (← sp.getObjVal? "local"))
   return { source, names }
 
@@ -72,9 +74,7 @@ private def readModule (file : Json) (md : EsmSplit.Module) : Except String Modu
       if decl == .null then
         let specs ← j.getObjValAs? (Array Json) "specifiers"
         if specs.isEmpty then throw "unexpected empty export"
-        glue ← specs.mapM fun sp => do
-          unless (← typ sp) == "ExportSpecifier" do throw "expected a named glue export"
-          return (← FromESTree.identifier (← sp.getObjVal? "exported"), ← FromESTree.identifier (← sp.getObjVal? "local"))
+        glue ← specs.mapM FromESTree.exportSpec
       else
         if exported then
           unless (← j.getObjValAs? (Array Json) "specifiers").isEmpty do throw "expected an inline export"

@@ -63,34 +63,45 @@ private theorem objValSizeOfLt {j v : Json} {key : String}
     simp +arith
     omega
 
+/-- Read a scope-annotated reference. The linked fragment also accepts local references
+inside function bodies. -/
+private def reference (imports : List Name) (inFunction : Bool) (j : Json) : Except String Expr := do
+  let x ← identifier j
+  match ← field j "k" with
+  | "T" => return .var x
+  | "L" =>
+    unless inFunction do throw s!"unexpected function-local name {x}"
+    return .var x
+  | "V" =>
+    unless imports.contains x do throw s!"unlinked imported name {x}"
+    return .var x
+  | "G" =>
+    match x with
+    | "undefined" => return .undef
+    | "Infinity" => return .num Num.inf
+    | "NaN" => return .num Num.nan
+    | _ => throw s!"unsupported global {x}"
+  | k => throw s!"unsupported binding class {k}"
+
+private def unary (op : String) (argument : Json) (lower : Unit → Except String Expr) :
+    Except String Expr := do
+  match op with
+  | "!" => return .unary .not (← lower ())
+  | "-" =>
+    unless (← field argument "type") == "Literal" do throw "expected a numeric literal after unary minus"
+    let .num n ← literal (← field argument "lit") | throw "expected a numeric literal after unary minus"
+    return .unary .neg (.num n)
+  | _ => throw s!"unsupported unary operator {op}"
+
 private def exprWithImports (imports : List Name) (j : Json) : Except String Expr := do
   match ← field j "type" with
   | "Literal" => literal (← field j "lit")
-  | "Identifier" =>
-    let x ← identifier j
-    match ← field j "k" with
-    | "T" => return .var x
-    | "V" =>
-      unless imports.contains x do throw s!"unlinked imported name {x}"
-      return .var x
-    | "G" =>
-      match x with
-      | "undefined" => return .undef
-      | "Infinity" => return .num Num.inf
-      | "NaN" => return .num Num.nan
-      | _ => throw s!"unsupported global {x}"
-    | k => throw s!"unsupported binding class {k}"
+  | "Identifier" => reference imports false j
   | "UnaryExpression" =>
     match _lookup : j.getObjVal? "argument" with
     | .error err => throw err
     | .ok argument =>
-      match ← field j "operator" with
-      | "!" => return .unary .not (← exprWithImports imports argument)
-      | "-" =>
-        unless (← field argument "type") == "Literal" do throw "expected a numeric literal after unary minus"
-        let .num n ← literal (← field argument "lit") | throw "expected a numeric literal after unary minus"
-        return .unary .neg (.num n)
-      | op => throw s!"unsupported unary operator {op}"
+      unary (← field j "operator") argument (fun _ => exprWithImports imports argument)
   | kind => throw s!"unsupported expression {kind}"
 termination_by sizeOf j
 decreasing_by
@@ -103,26 +114,102 @@ def moduleBinding (id : Json) : Except String Name := do
   unless (← field id "k") == "T" do throw "expected a module binding"
   return x
 
-/-- One emitted declaration; an imported reference can read only a local name in its import table. -/
-def declaration (imports : List Name) (j : Json) : Except String (Name × Stmt) := do
+/-- Lower one declaration with the binder and initializer rules of the calling fragment. -/
+private def declarationWith (binder : Json → Except String Name) (initializer : Name → Json → Except String Expr)
+    (j : Json) : Except String (Name × Stmt) := do
   unless (← field j "type") == "VariableDeclaration" do throw "expected a variable declaration"
   let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
   unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
-  let x ← d.getObjVal? "id" >>= moduleBinding
+  let x ← d.getObjVal? "id" >>= binder
   let init ← d.getObjVal? "init"
   match ← field j "kind", init with
   | "var", .null => return (x, .varDecl x)
   | "let", .null => return (x, .decl .let_ x .undef)
-  | "var", e => return (x, .decl .var x (← exprWithImports imports e))
-  | "let", e => return (x, .decl .let_ x (← exprWithImports imports e))
-  | "const", e => return (x, .decl .const x (← exprWithImports imports e))
+  | "var", e => return (x, .decl .var x (← initializer x e))
+  | "let", e => return (x, .decl .let_ x (← initializer x e))
+  | "const", .null => throw "const declaration needs an initializer"
+  | "const", e => return (x, .decl .const x (← initializer x e))
   | kind, _ => throw s!"unsupported declaration {kind}"
+
+/-- One emitted declaration; an imported reference can read only a local name in its import table. -/
+def declaration (imports : List Name) (j : Json) : Except String (Name × Stmt) :=
+  declarationWith moduleBinding (fun _ => exprWithImports imports) j
+
+private def statementWith (lower : Json → Except String Expr) (decl : Json → Except String (Name × Stmt))
+    (inFunction : Bool) (j : Json) : Except String Stmt := do
+  match ← field j "type" with
+  | "VariableDeclaration" => return (← decl j).2
+  | "ExpressionStatement" => return .expr (← lower (← j.getObjVal? "expression"))
+  | "ThrowStatement" => return .throw (← lower (← j.getObjVal? "argument"))
+  | "ReturnStatement" =>
+    unless inFunction do throw "unexpected module-level return"
+    let arg ← j.getObjVal? "argument"
+    let value ← if arg == .null then pure .undef else lower arg
+    return .ret value
+  | kind => throw s!"unsupported statement {kind}"
+
+private def localBinding (id : Json) : Except String Name := do
+  let name ← identifier id
+  unless (← field id "k") == "L" do throw "expected a function-local binding"
+  return name
+
+mutual
+
+private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
+    (j : Json) : Except String Expr := do
+  let kind ← field j "type"
+  match kind with
+  | "Literal" => literal (← field j "lit")
+  | "Identifier" => reference imports inFunction j
+  | "UnaryExpression" =>
+    let argument ← j.getObjVal? "argument"
+    unary (← field j "operator") argument (fun _ => linkedExpr imports inFunction "" argument)
+  | "CallExpression" =>
+    if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
+    let lower := linkedExpr imports inFunction ""
+    let callee ← lower (← j.getObjVal? "callee")
+    let args ← j.getObjValAs? (List Json) "arguments"
+    return .call callee (← args.mapM lower)
+  | "ArrowFunctionExpression" | "FunctionExpression" =>
+    let arrow := kind == "ArrowFunctionExpression"
+    if (← j.getObjValAs? Bool "async") || (← j.getObjValAs? Bool "generator") then
+      throw "unsupported async or generator function"
+    let params ← (← j.getObjValAs? (List Json) "params").mapM localBinding
+    unless params.Nodup do throw "duplicate function parameter"
+    let id ← if arrow then pure Json.null else j.getObjVal? "id"
+    let name ← if id == .null then pure nameHint else localBinding id
+    let body ← j.getObjVal? "body"
+    let stmts ← if (← field body "type") == "BlockStatement" then
+      (← body.getObjValAs? (List Json) "body").mapM (linkedStatement imports true)
+    else if arrow then
+      pure [.ret (← linkedExpr imports true "" body)]
+    else throw "expected a function body block"
+    return .func (.mk name (if arrow then .arrow else .normal) (id != .null) params stmts)
+  | _ => throw s!"unsupported linked expression {kind}"
+
+private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j : Json) :
+    Except String Stmt :=
+  let binder := if inFunction then localBinding else moduleBinding
+  statementWith (linkedExpr imports inFunction "") (declarationWith binder (linkedExpr imports inFunction))
+    inFunction j
+
+end
+
+/-- A top-level declaration of the linked fragment, which also models ordinary closures and calls. -/
+def linkedDeclaration (imports : List Name) : Json → Except String (Name × Stmt) :=
+  declarationWith moduleBinding (linkedExpr imports false)
+
+/-- A top-level executable statement of the linked fragment. -/
+def linkedUnit (imports : List Name) : Json → Except String Stmt :=
+  linkedStatement imports false
+
+/-- A named export of a local binding, in (public, local) order. -/
+def exportSpec (j : Json) : Except String (Name × Name) := do
+  unless (← field j "type") == "ExportSpecifier" do throw "expected a local named export"
+  return (← identifier (← j.getObjVal? "exported"), ← identifier (← j.getObjVal? "local"))
 
 def unit (j : Json) : Except String (Option Stmt × List (Name × Name)) := do
   match ← field j "type" with
-  | "VariableDeclaration" => return (some (← declaration [] j).2, [])
-  | "ExpressionStatement" => return (some (.expr (← expr (← j.getObjVal? "expression"))), [])
-  | "ThrowStatement" => return (some (.throw (← expr (← j.getObjVal? "argument"))), [])
   | "EmptyStatement" | "DebuggerStatement" => return (none, [])
   | "ExportNamedDeclaration" =>
     unless (← j.getObjVal? "source") == .null do throw "re-export from another module"
@@ -131,11 +218,10 @@ def unit (j : Json) : Except String (Option Stmt × List (Name × Name)) := do
       unless (← field d "type") == "VariableDeclaration" do throw "unsupported exported declaration"
       let (x, s) ← declaration [] d
       return (some s, [(x, x)])
-    let specs ← j.getObjVal? "specifiers" >>= Json.getArr?
-    let names ← specs.toList.mapM fun sp => do
-      return (← identifier (← sp.getObjVal? "exported"), ← identifier (← sp.getObjVal? "local"))
+    let specs ← j.getObjValAs? (List Json) "specifiers"
+    let names ← specs.mapM exportSpec
     return (none, names)
-  | kind => throw s!"unsupported statement {kind}"
+  | _ => return (some (← statementWith expr (declaration []) false j), [])
 
 def program (asts : Array Json) : Except String Program := do
   let mut body := #[]
