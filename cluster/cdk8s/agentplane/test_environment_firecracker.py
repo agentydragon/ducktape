@@ -1,59 +1,23 @@
 """The opt-in Firecracker template preserves the host/guest security boundary."""
 
 import json
-from collections.abc import Callable
-from dataclasses import replace
-from typing import Any, cast
+from typing import Any
 from urllib.parse import urlsplit
 
-import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
-from agentplane.session_instructions.platform_instructions import SessionRuntime
-from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
+from cluster.cdk8s.agentplane import environment_firecracker, environment_vm, history_service, staging
 from cluster.cdk8s.agentplane.egress import DEFAULT_POLICIES
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
-from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
-from cluster.cdk8s.pod_policy import harden, pod_spec
+from cluster.cdk8s.pod_policy import pod_spec
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
-_RUNNER_IMAGE = "registry.test/runner@sha256:123"
 
-
-@pytest.fixture(scope="module")
-def firecracker_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    chart = Chart(scratch_app_factory(), "firecracker-test")
-    env = replace(staging.ENV, firecracker_sandboxes=True)
-    gateway = environment_firecracker.GATEWAY
-    state = {
-        "name": "state",
-        "claim": {"storageClassName": "test-storage", "volumeMode": "Filesystem"},
-        "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
-    }
-    template = environment_firecracker.EnvironmentFirecrackerTemplate(
-        chart,
-        "template",
-        env,
-        labels={"app.kubernetes.io/name": "agentplane-environment-runtime"},
-        state_volume=state,
-        workspace_volume=environment_sandbox.workspace_volume_spec(state, layout_type="RawDiskImage"),
-        runner_image=_RUNNER_IMAGE,
-        platform_instructions=platform_instructions(
-            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=gateway
-        ),
-        harness_env=agent_cli_environment(service_urls(env, egress_host=gateway)),
-    )
-    # Fleet hardening must reach the Firecracker pod without overwriting its privileged VMM.
-    harden(template.template)
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-
-
-def test_firecracker_preserves_host_guest_isolation(firecracker_manifests: list[dict[str, Any]]) -> None:
-    rendered = find_resource(firecracker_manifests, "SandboxTemplate", environment_firecracker.NAME)
+def test_firecracker_preserves_host_guest_isolation(staging_manifests: list[dict[str, Any]]) -> None:
+    rendered = find_resource(staging_manifests, "SandboxTemplate", environment_firecracker.NAME)
     pod = pod_spec(rendered)
     host = one(c for c in pod["containers"] if c["name"] == "environment-runtime")
     relay = one(c for c in pod["initContainers"] if c["name"] == "egress-sidecar")
@@ -63,7 +27,7 @@ def test_firecracker_preserves_host_guest_isolation(firecracker_manifests: list[
     assert pod["automountServiceAccountToken"] is False
     assert pod["restartPolicy"] == "Never"
     assert host["readinessProbe"]["httpGet"] == {"path": "/readyz", "port": 9092}
-    guest_config = find_resource(firecracker_manifests, "ConfigMap", "environment-firecracker-config")
+    guest_config = find_resource(staging_manifests, "ConfigMap", "environment-firecracker-config")
     runtime = json.loads(guest_config["data"]["environment-runtime.json"])
     assert runtime["environment"]["block_devices"] == ["/dev/vdd"]
     assert runtime["environment"]["executor"]["owner"] == {"kind": "systemd"}
@@ -73,21 +37,21 @@ def test_firecracker_preserves_host_guest_isolation(firecracker_manifests: list[
         staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
     )
     assert runtime["harness_environment"]["values"]["HTTP_PROXY"] == "http://192.0.2.1:3128"
-    status_policy = one(doc for doc in firecracker_manifests if doc["kind"] == "CiliumNetworkPolicy")
+    status_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", f"{environment_firecracker.NAME}-status")
     assert status_policy["spec"]["ingress"][0]["fromEntities"] == ["kube-apiserver", "host"]
-    assert rendered["spec"]["firecracker"]["runnerImage"] == _RUNNER_IMAGE
+    assert rendered["spec"]["firecracker"]["runnerImage"] == environment_vm.RUNNER_DISK_IMAGE
 
 
-def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(firecracker_manifests: list[dict[str, Any]]) -> None:
-    config_map = find_resource(firecracker_manifests, "ConfigMap", "environment-firecracker-config")
+def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(staging_manifests: list[dict[str, Any]]) -> None:
+    config_map = find_resource(staging_manifests, "ConfigMap", "environment-firecracker-config")
     runtime = json.loads(config_map["data"]["environment-runtime.json"])
     harness = runtime["harness_environment"]["values"]
-    relay_settings = config_map_yaml(firecracker_manifests, "environment-firecracker-relay", "settings.yaml")
+    relay_settings = config_map_yaml(staging_manifests, "environment-firecracker-relay", "settings.yaml")
     assert relay_settings["listen_address"] == "[::]:3128"
     platform = relay_settings["platform_routes"]
     listener = urlsplit(f"//{platform['listen_address']}")
     assert (listener.hostname, listener.port) == ("0.0.0.0", PLATFORM_ROUTES_PORT)
-    launcher_config = find_resource(firecracker_manifests, "ConfigMap", "environment-firecracker-launcher")
+    launcher_config = find_resource(staging_manifests, "ConfigMap", "environment-firecracker-launcher")
     assert json.loads(launcher_config["data"]["config.json"])["platform_route_ports"] == [listener.port]
     assert "/agentplane.llm_ingress.v1.ModelConfigService/" in platform["routes"]["model-config"]["service_prefixes"]
     for url in (

@@ -353,11 +353,10 @@ py_test(
         ":rules",
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -377,12 +376,11 @@ py_test(
         ":gateway_probe",
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -545,8 +543,8 @@ py_test(
     deps = [
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

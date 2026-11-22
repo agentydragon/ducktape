@@ -1,20 +1,16 @@
 """Check online/offline handling of a roaming node's Piraeus alerts."""
 
-import subprocess
-from pathlib import Path
-
 import pytest_bazel
-import yaml
 from cdk8s import (
     Chart,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
-from python.runfiles import Runfiles
 
 from cluster.cdk8s import piraeus_metrics
+from cluster.cdk8s.testing.promtool import PromtoolRules
 
 
-def test_roaming_piraeus_alerts(scratch_chart: Chart, runfiles: Runfiles, promtool: Path, tmp_path: Path) -> None:
+def test_roaming_piraeus_alerts(scratch_chart: Chart, promtool: PromtoolRules) -> None:
     piraeus_metrics.add_thin_pool_monitoring(
         scratch_chart,
         namespace="piraeus-datastore",
@@ -26,11 +22,7 @@ def test_roaming_piraeus_alerts(scratch_chart: Chart, runfiles: Runfiles, promto
         only_when_node_ready="rugged",
     )
     rule = next(obj for obj in Cdk8sTesting.synth(scratch_chart) if obj["kind"] == "PrometheusRule")
-    (tmp_path / "piraeus.yaml").write_text(yaml.safe_dump(rule["spec"]))
-    (tmp_path / "tests.yaml").write_text(
-        (runfiles.root() / "ducktape/cluster/cdk8s/testdata/piraeus_roaming_rules.yaml").read_text()
-    )
-    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
+    promtool("ducktape/cluster/cdk8s/testdata/piraeus_roaming_rules.yaml", {"piraeus.yaml": rule["spec"]})
 
 
 if __name__ == "__main__":

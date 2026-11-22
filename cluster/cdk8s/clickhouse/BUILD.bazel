@@ -89,7 +89,9 @@ py_test(
         ":installation",
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

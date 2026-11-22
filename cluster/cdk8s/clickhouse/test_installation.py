@@ -1,19 +1,31 @@
 """The AIQuota history reader's generated credential and database grants stay separate."""
 
+from collections.abc import Callable
+from typing import Any
+
+import pytest
 import pytest_bazel
-from cdk8s import App, Testing as CdkTesting
+from cdk8s import App
 
 from cluster.cdk8s.clickhouse import client, installation
+from cluster.cdk8s.testing.manifests import find_resource
 
 
-def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history(scratch_app: App) -> None:
-    docs = CdkTesting.synth(installation.clickhouse_chart(scratch_app))
+@pytest.fixture(scope="module")
+def installation_docs(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    return installation.clickhouse_chart(scratch_app_factory()).to_json()
+
+
+@pytest.fixture(scope="module")
+def chi(installation_docs: list[dict[str, Any]]) -> dict[str, Any]:
+    return find_resource(installation_docs, "ClickHouseInstallation", client.NAME)
+
+
+def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history(
+    installation_docs: list[dict[str, Any]], chi: dict[str, Any]
+) -> None:
     user = client.AIQUOTA_HISTORY_USER
-    chi = next(doc for doc in docs if doc["kind"] == "ClickHouseInstallation")
     users = chi["spec"]["configuration"]["users"]
-    assert users[f"{user}/password"] == {
-        "valueFrom": {"secretKeyRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS, "key": client.PASSWORD_KEY}}
-    }
     assert users[f"{user}/profile"] == "readonly"
     assert users[f"{user}/quota"] == "readonly"
     assert users[f"{user}/grants/query"] == [
@@ -21,29 +33,28 @@ def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history(scra
         "GRANT SELECT ON aiquota.token_activity_daily",
         "GRANT SELECT ON aiquota.reset_credits",
     ]
-    generator = next(doc for doc in docs if doc["kind"] == "Password")
-    assert generator["metadata"]["name"] == client.AIQUOTA_HISTORY_CREDENTIALS
-    secret = next(doc for doc in docs if doc["kind"] == "ExternalSecret")
-    assert secret["metadata"]["name"] == client.AIQUOTA_HISTORY_CREDENTIALS
+    secret = find_resource(installation_docs, "ExternalSecret", client.AIQUOTA_HISTORY_CREDENTIALS)
     assert secret["spec"]["refreshPolicy"] == "CreatedOnce"
-    assert "password" in secret["spec"]["target"]["template"]["data"]
+    target = secret["spec"]["target"]
+    assert target["name"] == client.AIQUOTA_HISTORY_CREDENTIALS
+    assert users[f"{user}/password"] == {
+        "valueFrom": {"secretKeyRef": {"name": target["name"], "key": client.PASSWORD_KEY}}
+    }
+    assert client.PASSWORD_KEY in target["template"]["data"]
+    [source] = secret["spec"]["dataFrom"]
+    generator = source["sourceRef"]["generatorRef"]
+    assert generator["kind"] == "Password"
+    find_resource(installation_docs, generator["kind"], generator["name"])
 
 
-def test_shared_services_use_ready_installation_replicas(scratch_app: App) -> None:
-    chi = next(
-        doc
-        for doc in CdkTesting.synth(installation.clickhouse_chart(scratch_app))
-        if doc["kind"] == "ClickHouseInstallation"
-    )
-    service = next(doc for doc in CdkTesting.synth(installation.service_chart(scratch_app)) if doc["kind"] == "Service")
+def test_shared_services_use_ready_installation_replicas(scratch_app: App, chi: dict[str, Any]) -> None:
+    service = find_resource(installation.service_chart(scratch_app).to_json(), "Service", client.HTTP.name)
     assert "serviceTemplate" not in chi["spec"]["defaults"]["templates"]
     assert service["spec"]["selector"] == client.HTTP.pods.selector
     assert service["spec"]["selector"]["clickhouse.altinity.com/ready"] == "yes"
 
 
-def test_retiring_full_node_preserves_surviving_host_and_replica_names(scratch_app: App) -> None:
-    docs = CdkTesting.synth(installation.clickhouse_chart(scratch_app))
-    chi = next(doc for doc in docs if doc["kind"] == "ClickHouseInstallation")
+def test_retiring_full_node_preserves_surviving_host_and_replica_names(chi: dict[str, Any]) -> None:
     layout = chi["spec"]["configuration"]["clusters"][0]["layout"]
     assert layout["replicasCount"] == 2
     assert [replica["name"] for replica in layout["replicas"]] == ["1", "2"]

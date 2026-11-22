@@ -703,7 +703,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -952,8 +951,6 @@ py_test(
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -1049,7 +1046,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -1080,7 +1076,6 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/testing:manifests",
-        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -1101,12 +1096,15 @@ py_test(
         ":conftest",
         ":history_service",
         ":llm_ingress",
+        ":model_selections",
         ":policy_controller",
         ":runner_gateway",
         ":staging",
         ":workload_tls",
+        "//agentplane/env/runtime:harness",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s/testing:manifests",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
@@ -1512,7 +1510,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -1771,21 +1768,17 @@ py_test(
         ":conftest",
         ":egress",
         ":environment_firecracker",
-        ":environment_sandbox",
+        ":environment_vm",
         ":history_service",
         ":kubernetes_account_ref",
-        ":platform_instructions",
         ":staging",
         "//:conftest",
         "//agentplane/egress:platform_routes",
         "//agentplane/net/peertls:config",
-        "//agentplane/session_instructions:platform_instructions",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/testing:manifests",
-        "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -1825,10 +1818,10 @@ py_test(
         "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/public_coder:egress",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

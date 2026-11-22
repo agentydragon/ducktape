@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest_bazel
-import yaml
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, staging
@@ -58,8 +57,7 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
     service = find_resource(staging_manifests, "Service", runner_gateway.sessions_service(staging.ENV.namespace).name)
     grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
-    app_config_map = find_resource(staging_manifests, "ConfigMap", "app-config")
-    app_config = yaml.safe_load(app_config_map["data"]["config.yaml"])
+    app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     assert app_config["session_dispatcher_target"] == endpoint
 
 

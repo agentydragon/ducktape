@@ -21,3 +21,14 @@ py_library(
         "@pypi//pyyaml",
     ],
 )
+
+py_library(
+    name = "promtool",
+    srcs = ["promtool.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)

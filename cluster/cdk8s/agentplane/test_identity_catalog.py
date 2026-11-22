@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest_bazel
-import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
 from more_itertools import one
 
@@ -17,6 +16,7 @@ from cluster.cdk8s.agentplane import binding_delegation, egress, kubernetes_acco
 from cluster.cdk8s.agentplane.actions_staging_policies import COMMON_GITHUB_READ_SET
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY, KUBERNETES_HOST
 from cluster.cdk8s.public_coder import egress as public_coder_egress
+from cluster.cdk8s.testing.manifests import config_map_yaml
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 
@@ -31,8 +31,7 @@ def _names(docs: list[dict[str, Any]], kind: str) -> set[tuple[str, str]]:
 
 def test_flux_bindings_and_launches_name_rendered_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
     policy_sets = {name for _, name in _names(catalog_manifests, "PolicySet")}
-    app_config = one(doc for doc in _of(catalog_manifests, "ConfigMap") if doc["metadata"]["name"] == "app-config")
-    config = yaml.safe_load(app_config["data"]["config.yaml"])
+    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
     named = {
         (f"preset {preset}", name) for preset, spec in config["sandbox_presets"].items() for name in spec["policy_sets"]
     }
@@ -146,8 +145,7 @@ def test_openclaw_identity_and_grants_are_independent_of_the_catalog_switch(
 def test_every_standing_record_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
     """Every `WorkloadCredential` staging renders is standing and acts as an Identity the policy
     namespace renders, never as a ServiceAccount."""
-    actions = one(doc for doc in _of(staging_manifests, "ConfigMap") if doc["metadata"]["name"] == "actions-settings")
-    policy_namespace = yaml.safe_load(one(actions["data"].values()))["policy_namespace"]
+    policy_namespace = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")["policy_namespace"]
     identities = _names(staging_manifests, "Identity")
     records = _of(staging_manifests, "WorkloadCredential")
     assert records
@@ -201,8 +199,7 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
             assert (account["namespace"], account["name"]) in accounts, name
             assert (name, rules) == (rule["credentialRef"]["name"], [rule])
             account_sets.add(name)
-    app_config = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "app-config")
-    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    presets = config_map_yaml(docs, "app-config", "config.yaml")["sandbox_presets"]
     # Every preset grants the shared diagnostics account's use set.
     assert all(account_sets & set(spec["policy_sets"]) for spec in presets.values()), presets
 

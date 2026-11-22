@@ -3,12 +3,11 @@
 from typing import Any
 
 import pytest_bazel
-import yaml
 from more_itertools import one
 
 from agentplane.net.peertls.config import APP_URI
 from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def test_public_notification_routes_are_webhook_only(staging_manifests: list[dict[str, Any]]) -> None:
@@ -41,11 +40,10 @@ def test_only_staging_notifications_admit_gateway(staging_manifests: list[dict[s
 
 
 def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[dict[str, Any]]) -> None:
-    config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, f"{notifications.NAME}-settings", "settings.yaml")
     assert settings["operator_reader_services"] == [APP_URI]
     assert [auth["mode"] for auth in settings["rpc"]["auth"]] == ["spiffe"]
-    github = settings.get("github")
+    github = settings["github"]
     pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     prefix = "AGENTPLANE_NOTIFICATIONS_GITHUB__"
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
@@ -82,8 +80,7 @@ def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[
 
 
 def test_notifications_use_the_configured_backend_targets(staging_manifests: list[dict[str, Any]]) -> None:
-    config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, f"{notifications.NAME}-settings", "settings.yaml")
     actions = action_service.service(staging.ENV.namespace)
     assert settings["actions"]["url"] == f"https://{actions.authority}/"
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
