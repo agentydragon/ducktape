@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sampleradminpb "github.com/agentydragon/ducktape/agentplane/sampler/api/sampleradminpb"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
@@ -20,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -401,6 +404,177 @@ func TestModelChangeExplainsRejectedResponsesSession(t *testing.T) {
 	_, err = h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "input", Text: "continue"})
 	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(status.Convert(err).Message(), "selected model is no longer configured") {
 		t.Fatalf("input with missing model: %v", err)
+	}
+}
+
+func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) {
+	for _, scenario := range []string{"configured", "removed", "compacted", "foreign-history"} {
+		t.Run(scenario, func(t *testing.T) {
+			h, _ := newHostFixture(t)
+			settings, store := &h.Sampler.Settings, h.Sampler.Store
+			ctx := grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.SessionsURI), &hostTransport{})
+			const oldModel = "chatgpt-sub/oai-responses/fixture-old"
+			const newModel = "chatgpt-sub/oai-responses/fixture-new"
+			connection := samplersettings.ConnectionConfig{
+				BaseURL: "https://ingress.example.test",
+				Auth:    samplersettings.AuthConfig{Type: samplersettings.AuthTypeAgentplaneIngress},
+			}
+			old := settings.Models["test-model"]
+			old.Connection, old.ProviderModel = "fixture-ingress", oldModel
+			replacement := old
+			replacement.ProviderModel = newModel
+			settings.Connections[old.Connection] = connection
+			settings.Models[oldModel], settings.Models[newModel] = old, replacement
+			chat := samplersettings.ModelConfig{Connection: old.Connection, ProviderModel: "fixture-chat", API: protocol.APIStyleChatCompletions, ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""}}
+			settings.Models["fixture-chat"] = chat
+			standard := replacement
+			standard.Responses.Dialect = responses.DialectStandard
+			settings.Models["fixture-standard"] = standard
+			otherProvider := replacement
+			otherProvider.ProviderModel = "fixture-account/oai-responses/fixture-new"
+			settings.Models["fixture-other-provider"] = otherProvider
+			otherConnection := replacement
+			otherConnection.Connection = "other-ingress"
+			settings.Connections[otherConnection.Connection] = connection
+			settings.Models["fixture-other-connection"] = otherConnection
+
+			request := hostCreateRequest()
+			request.Spec.Model = oldModel
+			if _, err := h.CreateSession(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.GetSession(ctx, request.SessionId, peertls.SessionsURI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner, err := store.Claim(ctx, session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			submit := func(id, message string) error {
+				_, err := h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: session.ID, CommandId: id, Text: message})
+				return err
+			}
+			switchTo := func(id, model string) error {
+				_, err := h.ChangeModel(ctx, &harnesshostpb.ChangeModelRequest{SessionId: session.ID, CommandId: id, Model: model})
+				return err
+			}
+			next := func(id string) {
+				t.Helper()
+				command, err := store.NextCommand(ctx, owner, session.ID)
+				if err != nil || command == nil || command.ID != id {
+					t.Fatalf("next command=%v err=%v, want %s", command, err, id)
+				}
+			}
+			if err := submit("initial", "Remember the fixture's earlier request."); err != nil {
+				t.Fatal(err)
+			}
+			if err := switchTo("queued", newModel); status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "unfinished work") {
+				t.Fatalf("change with earlier queued input: %v", err)
+			}
+			next("initial")
+			if err := switchTo("active", newModel); status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "unfinished work") {
+				t.Fatalf("change during an active turn: %v", err)
+			}
+			source := old
+			if scenario == "foreign-history" {
+				source.ProviderModel = otherProvider.ProviderModel
+			}
+			prep := providerrequest.Preparation{ModelConfig: source, SessionConfiguration: session.Configuration}
+			initial, _, err := store.Begin(ctx, owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, source), &prep, providerAttemptTestPolicyPointer())
+			if err != nil {
+				t.Fatal(err)
+			}
+			records := []json.RawMessage{
+				json.RawMessage(`{"type":"reasoning","id":"rs_fixture","summary":[],"encrypted_content":"fixture-opaque-reasoning"}`),
+				json.RawMessage(`{"type":"message","id":"msg_fixture","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Earlier answer"}]}`),
+			}
+			if err := store.Finish(ctx, owner, initial, map[string]any{"status": "completed"}, records, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.FinishCommand(ctx, owner, session.ID, "initial", sessionstore.TurnDone); err != nil {
+				t.Fatal(err)
+			}
+
+			if scenario == "compacted" {
+				conversation, err := store.Read(ctx, owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				prep.Compaction = true
+				compaction, _, err := store.BeginCompaction(ctx, owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, old), conversation.Context(), &prep, *providerAttemptTestPolicyPointer())
+				if err != nil {
+					t.Fatal(err)
+				}
+				compacted := &responses.Context{}
+				if err := compacted.AppendRecords([]json.RawMessage{json.RawMessage(`{"type":"compaction","encrypted_content":"fixture-summary"}`)}); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{"status": "completed"}, conversation.Context(), compacted); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario != "configured" {
+				delete(settings.Models, oldModel)
+				if err := submit("before-switch", "Cannot submit on the retired model."); status.Code(err) != codes.FailedPrecondition {
+					t.Fatalf("input on missing model: %v", err)
+				}
+			}
+			for _, model := range []string{"fixture-chat", "fixture-standard", "fixture-other-provider", "fixture-other-connection"} {
+				if err := switchTo("reject-"+model, model); status.Code(err) != codes.FailedPrecondition {
+					t.Fatalf("change to %q: %v", model, err)
+				}
+			}
+			if err := switchTo("switch", newModel); scenario == "compacted" {
+				if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "provider compaction") {
+					t.Fatalf("change after compaction: %v", err)
+				}
+				return
+			} else if scenario == "foreign-history" {
+				if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "current model configuration is no longer available") {
+					t.Fatalf("change with a different retained provider account: %v", err)
+				}
+				return
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if err := submit("continue", "Continue on the replacement."); err != nil {
+				t.Fatalf("input immediately after queued switch: %v", err)
+			}
+			next("switch")
+			next("continue")
+			session, err = store.GetSession(ctx, session.ID, peertls.SessionsURI)
+			if err != nil || session.Model != newModel || session.Blocked {
+				t.Fatalf("session after change=%+v err=%v", session, err)
+			}
+			prep.ModelConfig = replacement
+			_, body, err := store.Begin(ctx, owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, replacement), &prep, providerAttemptTestPolicyPointer())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var continued struct {
+				Model string
+				Input []json.RawMessage
+			}
+			if err := json.Unmarshal(body, &continued); err != nil {
+				t.Fatal(err)
+			}
+			if continued.Model != newModel {
+				t.Fatalf("continued provider model = %q, want %q", continued.Model, newModel)
+			}
+			var input strings.Builder
+			for _, item := range continued.Input {
+				input.Write(item)
+			}
+			at := -1
+			for _, fragment := range []string{"Remember the fixture's earlier request.", "fixture-opaque-reasoning", "Earlier answer", "Continue on the replacement."} {
+				index := strings.Index(input.String(), fragment)
+				if index <= at {
+					t.Fatalf("missing or out-of-order %q in continued request: %s", fragment, body)
+				}
+				at = index
+			}
+		})
 	}
 }
 

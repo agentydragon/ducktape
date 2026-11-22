@@ -82,3 +82,27 @@ func previousRequest(ctx context.Context, tx *sql.Tx, conversationID string, kin
 	request.ContextID = context.String
 	return request, err
 }
+
+// samplingRoutes returns the distinct contracts of persisted sampling attempts, including
+// attempts whose outcome is unknown. It does not load request bodies or result evidence.
+func samplingRoutes(ctx context.Context, tx *sql.Tx, conversationID string) ([]ProviderRequest, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT
+		COALESCE(i.request->>'api',''), COALESCE(i.request->>'connection',''),
+		COALESCE(i.request->>'provider_model',''), COALESCE(i.request->>'url',''), mr.projection_key
+		FROM sampler_model_request mr
+		JOIN sampler_intent i ON i.id=mr.id
+		WHERE mr.conversation_id=$1 AND i.request->>'kind'=$2`, conversationID, string(PendingIntentSampling))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var routes []ProviderRequest
+	for rows.Next() {
+		var route ProviderRequest
+		if err := rows.Scan(&route.API, &route.Connection, &route.ProviderModel, &route.URL, &route.ProjectionKey); err != nil {
+			return nil, err
+		}
+		routes = append(routes, route)
+	}
+	return routes, rows.Err()
+}

@@ -23,7 +23,16 @@ var (
 	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
 )
 
-func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session, *Conversation) error) (*eventlogpb.EventEntry, error) {
+// AdmissionState holds the projected session and evidence read under its admission lock.
+// SamplingRoutes is only valid during the validation callback.
+type AdmissionState struct {
+	Session           *Session
+	Conversation      *Conversation
+	HasQueuedCommands bool
+	SamplingRoutes    func() ([]ProviderRequest, error)
+}
+
+func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(AdmissionState) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerKey == "" {
 		return nil, protocol.ErrInvalid
 	}
@@ -66,6 +75,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
 			projected := *session
+			hasQueuedCommands := false
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM sampler_command
                 WHERE session_id=$1 AND outcome=$2 ORDER BY admission`, id,
 				int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
@@ -74,6 +84,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			}
 			defer rows.Close()
 			for rows.Next() {
+				hasQueuedCommands = true
 				var wire []byte
 				if err := rows.Scan(&wire); err != nil {
 					return err
@@ -93,7 +104,14 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			rows.Close()
-			if err := validate(&projected, conversation); err != nil {
+			if err := validate(AdmissionState{
+				Session:           &projected,
+				Conversation:      conversation,
+				HasQueuedCommands: hasQueuedCommands,
+				SamplingRoutes: func() ([]ProviderRequest, error) {
+					return samplingRoutes(ctx, tx, conversation.ID)
+				},
+			}); err != nil {
 				return err
 			}
 		}
