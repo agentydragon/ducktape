@@ -14,14 +14,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// subscribeWatch registers before the initial read, closing the subscribe/snapshot race.
-// The same Hub and helper serve dispatch and Session watches. Reconnects coalesce into a
-// wakeup, so the next version read covers commits made while LISTEN was disconnected.
-func subscribeWatch(hub *wakeups.Hub, channels ...string) (<-chan struct{}, func(), error) {
+// Subscribe before the initial read. Session-keyed notifications include deletion pruning.
+// The Hub wakes both subscription types on a LISTEN disconnect/reconnect.
+func subscribeDispatchWatch(hub *wakeups.Hub, filter *dispatcherpb.DispatchFilter) (<-chan struct{}, func(), error) {
 	if hub == nil {
 		return nil, nil, status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
 	}
-	changed, unsubscribe, err := hub.Subscribe(channels...)
+	var changed <-chan struct{}
+	var unsubscribe func()
+	var err error
+	if filter.GetRecentIssueLimit() != 0 {
+		changed, unsubscribe, err = hub.SubscribeKey(store.NotifyChannel, filter.GetSessionId())
+	} else {
+		changed, unsubscribe, err = hub.Subscribe(store.NotifyChannel)
+	}
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "dispatcher watch subscription unavailable")
 	}
@@ -78,7 +84,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
-	changed, unsubscribe, err := subscribeWatch(s.Hub, store.NotifyChannel)
+	changed, unsubscribe, err := subscribeDispatchWatch(s.Hub, filter)
 	if err != nil {
 		return err
 	}
@@ -89,8 +95,12 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	leaseCtx, endLease := context.WithTimeout(ctx, s.WatchLease)
 	defer endLease()
 	first := true
+	var lastIssues *dispatcherpb.RecentDispatchIssues
 	for {
 		generation := s.Hub.Generation()
+		if filter.GetRecentIssueLimit() != 0 && !s.Hub.Connected() {
+			return status.Error(codes.Unavailable, "dispatcher delivery issue updates disconnected")
+		}
 		batch, err := s.Store.ReadDispatchChanges(leaseCtx, filter, caller, last, resuming)
 		if err != nil {
 			if leaseCtx.Err() != nil && ctx.Err() == nil {
@@ -111,12 +121,18 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 			}
 		}
 		if batch.RecentIssues != nil {
-			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
-				Frame:       &dispatcherpb.WatchDispatchesResponse_RecentIssues{RecentIssues: batch.RecentIssues},
-				ResumeToken: resumetoken.Encode(batch.Through, digest),
-			})
-			if ended || err != nil {
-				return err
+			if !s.Hub.Connected() || s.Hub.Generation() != generation {
+				return status.Error(codes.Unavailable, "dispatcher delivery issue updates disconnected")
+			}
+			if !proto.Equal(lastIssues, batch.RecentIssues) {
+				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+					Frame:       &dispatcherpb.WatchDispatchesResponse_RecentIssues{RecentIssues: batch.RecentIssues},
+					ResumeToken: resumetoken.Encode(batch.Through, digest),
+				})
+				if ended || err != nil {
+					return err
+				}
+				lastIssues = batch.RecentIssues
 			}
 		} else if first || batch.Through > last {
 			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{

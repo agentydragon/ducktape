@@ -94,19 +94,6 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 		evidence := "admission,delivery_blocker,wake_assessment"
 		recentLimit := int(filter.GetRecentIssueLimit())
 		if recentLimit != 0 {
-			if resuming {
-				var changed bool
-				if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-					SELECT 1 FROM dispatch WHERE session_id=$1 AND version>$2 AND version<=$3
-					UNION ALL
-					SELECT 1 FROM dispatch_tombstone WHERE session_id=$1 AND version>$2 AND version<=$3
-				)`, scopeValue, after, through).Scan(&changed); err != nil {
-					return err
-				}
-				if !changed {
-					return nil
-				}
-			}
 			// A replacement describes the current MVCC snapshot. A commit above the frontier
 			// may appear early here and will trigger another read when its version is covered.
 			args = nil

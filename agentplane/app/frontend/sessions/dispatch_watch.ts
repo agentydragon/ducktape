@@ -176,33 +176,30 @@ export function watchRecentDispatchIssues(
     onOpen: () => undefined,
     onFrame: (result) => {
       const frame = readFrame(result);
-      const previous = state;
-      if (frame.recentIssues !== undefined) {
-        const snapshot = fromJson(RecentDispatchIssuesSchema, frame.recentIssues);
-        if (
-          snapshot.receipts.length > RECENT_ISSUE_LIMIT ||
-          snapshot.receipts.some(
-            (row) =>
-              !row.commandId ||
-              row.sessionId !== sessionId ||
-              (row.state !== DeliveryState.FAILED && row.state !== DeliveryState.UNKNOWN)
-          )
-        ) {
-          throw new Error("Dispatcher returned invalid recent delivery issues");
-        }
-        const received = new Set<string>();
-        const receipts = snapshot.receipts.filter((row) => {
-          if (received.has(row.commandId)) return false;
-          received.add(row.commandId);
-          return true;
-        });
-        state = { ...state, receipts, moreAvailable: snapshot.moreAvailable, connection: "current" };
-      } else if (frame.caughtUp === undefined || resumeToken === null) {
+      if (frame.recentIssues === undefined) {
         throw new Error("Dispatcher omitted the recent delivery issues snapshot");
       }
+      const snapshot = fromJson(RecentDispatchIssuesSchema, frame.recentIssues);
+      if (
+        snapshot.receipts.length > RECENT_ISSUE_LIMIT ||
+        snapshot.receipts.some(
+          (row) =>
+            !row.commandId ||
+            row.sessionId !== sessionId ||
+            (row.state !== DeliveryState.FAILED && row.state !== DeliveryState.UNKNOWN)
+        )
+      ) {
+        throw new Error("Dispatcher returned invalid recent delivery issues");
+      }
+      const received = new Set<string>();
+      const receipts = snapshot.receipts.filter((row) => {
+        if (received.has(row.commandId)) return false;
+        received.add(row.commandId);
+        return true;
+      });
+      state = { ...state, receipts, moreAvailable: snapshot.moreAvailable, connection: "current" };
       resumeToken = frame.resumeToken;
-      if (state.connection !== "current") state = { ...state, connection: "current" };
-      if (state !== previous) publish(state);
+      publish(state);
     },
     onConnection: ({ phase }) => {
       if (phase === "reconnecting") {

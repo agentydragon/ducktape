@@ -127,10 +127,12 @@ func TestRecentDispatchIssuesReplacesBoundedSnapshot(t *testing.T) {
 	change("first-failure", store.CancelledState, "test removed issue")
 	assertIssues(resumed.next(t), false, "earlier-input")
 
+	resumed.stop(t)
 	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	deleted := resumed.next(t)
+	fresh := startVersionWatch(t, ctx, queueStore, hub, filter, "")
+	deleted := fresh.next(t)
 	assertIssues(deleted, false, "earlier-input")
 	if row := deleted.GetRecentIssues().GetReceipts()[0]; row.GetState() != issue.GetState() || row.GetReason() != issue.GetReason() {
 		t.Fatalf("tombstone lost its outcome: %v", row)
