@@ -101,9 +101,12 @@ edge protocols.
 ## Errors
 
 - **Server:** a service maps each RPC's error to a status code in one place (`failure` in
-  `history_service/internal/rpc/service.go`). Messages are fixed strings: no error text, Kubernetes
-  response, SQL or bearer data reaches a client. A failure whose fixed message names no cause logs
-  the error behind it.
+  `history_service/internal/rpc/service.go`). Give callers specific, actionable causes without
+  exposing credentials or bearer data. Service APIs also serve workload and external identities;
+  do not assume every caller has operator authority. Preserve additional diagnostics for the
+  authenticated operator through an appropriately authorized path. An unexpected failure that
+  cannot safely carry its cause logs the detail and identifies the failed operation to the caller.
+  See [error visibility](principles.md#keep-the-information-make-dropping-it-a-decision).
 - **Client:** `agentplane.grpc.calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
   `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; `call_unary`
   reads `FAILED_PRECONDITION` as `RefusedError`).
