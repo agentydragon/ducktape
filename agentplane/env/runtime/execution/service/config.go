@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
@@ -28,8 +28,8 @@ type Config struct {
 	CommandSupervisor *supervision.Supervisor
 	LimitsJSON        string
 	Environment       map[string]string
-	Owner             codexexecserver.Owner
-	Readiness         codexexecserver.Readiness
+	Owner             backend.Owner
+	Readiness         backend.Readiness
 	// ProcessHost binds native systemd work to Runtime's process finalizers.
 	ProcessHost       *supervision.Host
 	Supervisor        *supervision.Supervisor
@@ -44,7 +44,7 @@ func (c Config) Resolve() (Config, error) {
 		return Config{}, err
 	}
 	c.Readiness = readiness
-	c.Implementation, err = codexexecserver.ResolveImplementation(c.Implementation)
+	c.Implementation, err = backend.ResolveImplementation(c.Implementation)
 	if err != nil {
 		return Config{}, err
 	}
@@ -60,11 +60,11 @@ func (c Config) Validate() error {
 }
 
 func (c Config) validate() error {
-	if c.Placement != codexexecserver.PlacementDirect && c.Placement != codexexecserver.PlacementSystemd {
+	if c.Placement != backend.PlacementDirect && c.Placement != backend.PlacementSystemd {
 		return errors.New("unknown command placement")
 	}
-	if c.Placement == codexexecserver.PlacementSystemd {
-		if c.Owner != codexexecserver.OwnerSystemd || c.Implementation != codexexecserver.ImplementationNative || c.CommandSupervisor == nil {
+	if c.Placement == backend.PlacementSystemd {
+		if c.Owner != backend.OwnerSystemd || c.Implementation != backend.ImplementationNative || c.CommandSupervisor == nil {
 			return errors.New("systemd command placement requires a native executor with a systemd owner and command supervisor")
 		}
 	} else if c.CommandSupervisor != nil {
@@ -76,18 +76,18 @@ func (c Config) validate() error {
 	if !filepath.IsAbs(c.StateDir) {
 		return errors.New("execution state directory must be absolute")
 	}
-	if c.Implementation == codexexecserver.ImplementationCodex && c.LimitsJSON != "" {
+	if c.Implementation == backend.ImplementationCodex && c.LimitsJSON != "" {
 		return errors.New("execution limits are configurable only for the native implementation")
 	}
-	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
+	if err := backend.ValidateURL(c.ExecutorURL); err != nil {
 		return err
 	}
 	switch c.Owner {
-	case codexexecserver.OwnerCompanion:
+	case backend.OwnerCompanion:
 		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.CodexBinary != "" || c.WorkingDirectory != "" {
 			return errors.New("companion execution requires an absolute ownership socket; its process configuration belongs to the companion")
 		}
-	case codexexecserver.OwnerSystemd:
+	case backend.OwnerSystemd:
 		if !filepath.IsAbs(c.binary()) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
 			return errors.New("systemd executor requires an absolute binary and working directory and no companion socket")
 		}
@@ -101,7 +101,7 @@ func (c Config) validate() error {
 }
 
 func (c Config) binary() string {
-	if c.Implementation == codexexecserver.ImplementationCodex {
+	if c.Implementation == backend.ImplementationCodex {
 		return c.CodexBinary
 	}
 	return c.Binary

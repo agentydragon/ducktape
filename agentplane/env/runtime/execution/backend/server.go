@@ -1,14 +1,12 @@
-package codexexecserver
+package backend
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"net"
-	"net/http"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -17,7 +15,6 @@ import (
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -186,14 +183,14 @@ func Command(implementation, binary, endpoint, limitsJSON string) ([]string, err
 	return command, nil
 }
 
-type NativeConfig struct {
+type StartConfig struct {
 	Config            Config
 	Binary            string
 	StateDir          string
 	Environment       map[string]string
 	Supervisor        *supervision.Supervisor
 	CommandSupervisor *supervision.Supervisor
-	// LaunchProcess binds an embedded native executor to Runtime's process
+	// LaunchProcess binds an embedded execution backend to Runtime's process
 	// controller.
 	LaunchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 }
@@ -207,8 +204,8 @@ type nativeProcess interface {
 	ExitDescription() string
 }
 
-// NativeStart creates the platform-specific launch adapter used by the execution backend lifecycle.
-func NativeStart(config NativeConfig) Start {
+// StartOwned creates the platform-specific launch adapter used by the execution backend lifecycle.
+func StartOwned(config StartConfig) Start {
 	return func(ctx context.Context) (*supervision.Instance, error) {
 		env := maps.Clone(config.Environment)
 		if env == nil {
@@ -334,10 +331,6 @@ func NativeStart(config NativeConfig) Start {
 	}
 }
 
-func ProbeAt(endpoint string) Probe {
-	return func(ctx context.Context) error { return probe(ctx, endpoint) }
-}
-
 // Monitor bounds backend liveness for the embedded service lifetime; label names the probed surface in the loss error.
 func Monitor(ctx context.Context, label string, check Probe) error {
 	ticker := time.NewTicker(healthInterval)
@@ -374,58 +367,6 @@ func ValidateURL(value string) error {
 	port, err := strconv.Atoi(u.Port())
 	if err != nil || port < 1 || port > 65535 || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return errors.New("executor URL must be ws://127.0.0.1:<nonzero port>")
-	}
-	return nil
-}
-
-// probe validates the executor dispatcher with a deadline on both handshake and response.
-func probe(ctx context.Context, endpoint string) error {
-	connection, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPClient: &http.Client{Transport: &http.Transport{Proxy: nil}}})
-	if err != nil {
-		return fmt.Errorf("executor WebSocket dial: %w", err)
-	}
-	defer connection.CloseNow()
-	connection.SetReadLimit(65536)
-	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":1,"method":"initialize","params":{"clientName":"agentplane-health"}}`)); err != nil {
-		return fmt.Errorf("executor initialize write: %w", err)
-	}
-	_, data, err := connection.Read(ctx)
-	if err != nil {
-		return fmt.Errorf("executor initialize read: %w", err)
-	}
-	var response struct {
-		ID     int `json:"id"`
-		Result struct {
-			SessionID string `json:"sessionId"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(data, &response); err != nil {
-		return fmt.Errorf("executor initialize decode: %w", err)
-	}
-	if response.ID != 1 || response.Result.SessionID == "" {
-		return errors.New("executor health initialize returned no session")
-	}
-	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"method":"initialized","params":null}`)); err != nil {
-		return fmt.Errorf("executor initialized write: %w", err)
-	}
-	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":2,"method":"environment/status","params":null}`)); err != nil {
-		return fmt.Errorf("executor environment/status write: %w", err)
-	}
-	_, data, err = connection.Read(ctx)
-	if err != nil {
-		return fmt.Errorf("executor environment/status read: %w", err)
-	}
-	var status struct {
-		ID     int `json:"id"`
-		Result struct {
-			Status string `json:"status"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(data, &status); err != nil {
-		return fmt.Errorf("executor environment/status decode: %w", err)
-	}
-	if status.ID != 2 || status.Result.Status != "ready" {
-		return fmt.Errorf("executor environment/status returned id=%d status=%q, expected id=2 status=ready", status.ID, status.Result.Status)
 	}
 	return nil
 }

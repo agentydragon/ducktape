@@ -39,7 +39,7 @@ paths therefore identify the services that ran the two commands, rather than
 an observer choosing the wrong leaf. The [systemd launcher](../../../env/runtime/supervision/systemd_launcher.go)
 uses a stable owner-scope prefix; [each transient service launch](../../../env/runtime/supervision/internal/systemd/backend.go)
 gets a new UUID. The different UUIDs establish executor service replacement.
-The [health monitor](../../../env/runtime/execution/codexexecserver/server.go) probes every five
+The [health monitor](../../../env/runtime/execution/backend/server.go) probes every five
 seconds, with a three-second deadline and three-failure limit. A backend loss
 then goes through [embedded Execution fencing](../../../env/runtime/execution/service/service.go).
 The scenario's Runner status checks track the Codex harness and Session, not
@@ -69,7 +69,7 @@ chain was `execution backend lost` → `execution backend stopped responding`
 `context deadline exceeded`. The successor unit started at 23:25:39.883Z and
 was active at 23:25:41.790Z.
 
-The monitor in [the executor service](../../../env/runtime/execution/codexexecserver/server.go)
+The monitor in [the executor service](../../../env/runtime/execution/backend/server.go)
 uses a five-second interval, three-second deadline, and three consecutive
 failures. It logs only the final error, not each failed probe or its timestamp.
 The [native unit configuration](../../../env/runtime/supervision/internal/systemd/backend.go) sets

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -114,7 +114,7 @@ func TestNativeStopWaitRejectsGenerationSupersededDuringStatusRead(t *testing.T)
 }
 
 func TestExecutionReadinessFollowsOwnerLifetime(t *testing.T) {
-	r := &Runtime{config: Config{CodexExecServer: &codexexecserver.Config{}}, desired: lifecycle.EnvironmentDesired{IncarnationUID: "incarnation"}}
+	r := &Runtime{config: Config{ExecutionBackend: &backend.Config{}}, desired: lifecycle.EnvironmentDesired{IncarnationUID: "incarnation"}}
 	ready, err := r.executionReady(t.Context())
 	if err != nil || ready {
 		t.Fatalf("readiness before Execution owner = %t, %v", ready, err)

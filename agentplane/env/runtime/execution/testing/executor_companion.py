@@ -25,7 +25,7 @@ from third_party.containers import debian_slim
 
 
 @dataclass(frozen=True)
-class CodexExecServerContainer:
+class ExecutorCompanion:
     url: str
     socket: Path
     container: LoggedContainer
@@ -39,21 +39,21 @@ class CodexExecServerContainer:
 
 
 @dataclass(frozen=True)
-class CodexExecServerContainerStatus:
+class ExecutorCompanionStatus:
     generation: str
     owned: bool
 
 
-def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerStatus:
+def inspect_executor_companion(path: Path) -> ExecutorCompanionStatus:
     with grpc.insecure_channel(
         f"unix://{path}", options=(("grpc.enable_retries", 0), ("grpc.use_local_subchannel_pool", 1))
     ) as channel:
         status = control_pb2_grpc.CompanionControlStub(channel).Inspect(control_pb2.InspectRequest(), timeout=2)
-        return CodexExecServerContainerStatus(generation=status.generation, owned=status.owned)
+        return ExecutorCompanionStatus(generation=status.generation, owned=status.owned)
 
 
 @pytest.fixture
-def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerContainer]:
+def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
     debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
     runfiles_root = Runfiles.CreateOrRaise().root()
     execution_binary = (runfiles_root / launches.EXECUTION_BINARY).resolve()
@@ -93,7 +93,7 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
         # Until the companion starts its ownership service, inspection is unavailable.
         Retrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(grpc.RpcError), reraise=True
-        )(inspect_codex_exec_server_container, socket_path)
-        companion = CodexExecServerContainer(url=url, socket=socket_path, container=container, health_port=health_port)
+        )(inspect_executor_companion, socket_path)
+        companion = ExecutorCompanion(url=url, socket=socket_path, container=container, health_port=health_port)
         companion.check_health()
         yield companion

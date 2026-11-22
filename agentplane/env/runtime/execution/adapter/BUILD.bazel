@@ -8,6 +8,7 @@ go_library(
         "adapter.go",
         "connection.go",
         "methods.go",
+        "probe.go",
         "protocol.go",
         "sessions.go",
     ],
@@ -25,7 +26,10 @@ go_library(
 
 go_test(
     name = "adapter_test",
-    srcs = ["adapter_test.go"],
+    srcs = [
+        "adapter_test.go",
+        "probe_test.go",
+    ],
     embed = [":adapter"],
     race = "on",
     deps = [

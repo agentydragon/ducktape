@@ -1,22 +1,18 @@
-package codexexecserver
+package backend
 
 import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -26,7 +22,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
+func TestStartOwnedUsesManagedProcessAdmission(t *testing.T) {
 	for _, test := range []struct {
 		implementation string
 		binary         string
@@ -39,7 +35,7 @@ func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
 		t.Run(test.implementation, func(t *testing.T) {
 			wantErr := errors.New("managed admission refused")
 			var observed supervision.ProcessConfig
-			start := NativeStart(NativeConfig{
+			start := StartOwned(StartConfig{
 				Config: Config{Owner: OwnerSystemd, Placement: PlacementDirect, URL: "ws://127.0.0.1:4501", Implementation: test.implementation, LimitsJSON: test.limits},
 				Binary: test.binary, StateDir: "/state",
 				Environment: map[string]string{"PATH": "/bin", "OPENAI_API_KEY": "secret"},
@@ -61,7 +57,7 @@ func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
 	}
 }
 
-func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
+func TestStartOwnedIsOwnedAndFencedByProcessController(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
@@ -92,7 +88,7 @@ func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := NativeStart(NativeConfig{
+	start := StartOwned(StartConfig{
 		Config: Config{Owner: OwnerSystemd, Placement: PlacementDirect, URL: "ws://127.0.0.1:4501"}, Binary: binary, StateDir: t.TempDir(),
 		LaunchProcess: func(ctx context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 			return host.Launch(ctx, "execution-service", 42, supervisor, config)
@@ -121,59 +117,6 @@ func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
 	}
 	if _, found, err := supervision.ReadDesiredState(ctx, store, namespace, id); err != nil || found {
 		t.Fatalf("executor intent after fence: found=%t error=%v", found, err)
-	}
-}
-
-func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
-	for _, test := range []struct {
-		name, response, status, wantError string
-	}{
-		{"healthy", `{"id":1,"result":{"sessionId":"test-session"}}`, `{"id":2,"result":{"status":"ready"}}`, ""},
-		{"RPC error", `{"id":1,"error":{"code":-32603,"message":"unavailable"}}`, "", "executor health initialize returned no session"},
-		{"wrong request", `{"id":2,"result":{"sessionId":"test-session"}}`, "", "executor health initialize returned no session"},
-		{"stalled dispatcher", "", "", "executor initialize read"},
-		{"invalid initialize JSON", "{", "", "executor initialize decode"},
-		{"stalled status", `{"id":1,"result":{"sessionId":"test-session"}}`, "", "executor environment/status read"},
-		{"invalid status JSON", `{"id":1,"result":{"sessionId":"test-session"}}`, "{", "executor environment/status decode"},
-		{"not ready", `{"id":1,"result":{"sessionId":"test-session"}}`, `{"id":2,"result":{"status":"starting"}}`, `executor environment/status returned id=2 status="starting"`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				connection, err := websocket.Accept(w, r, nil)
-				if err != nil {
-					return
-				}
-				defer connection.CloseNow()
-				ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-				defer cancel()
-				if _, _, err := connection.Read(ctx); err != nil {
-					return
-				}
-				if test.response != "" {
-					_ = connection.Write(ctx, websocket.MessageText, []byte(test.response))
-				}
-				if _, _, err := connection.Read(ctx); err != nil {
-					return
-				}
-				if _, _, err := connection.Read(ctx); err != nil {
-					return
-				}
-				if test.status != "" {
-					_ = connection.Write(ctx, websocket.MessageText, []byte(test.status))
-				}
-				_, _, _ = connection.Read(ctx)
-			}))
-			defer server.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-			defer cancel()
-			err := ProbeAt("ws" + strings.TrimPrefix(server.URL, "http"))(ctx)
-			if test.wantError == "" && err != nil {
-				t.Fatalf("probe = %v, want success", err)
-			}
-			if test.wantError != "" && (err == nil || !strings.Contains(err.Error(), test.wantError)) {
-				t.Fatalf("probe = %v, want error containing %q", err, test.wantError)
-			}
-		})
 	}
 }
 

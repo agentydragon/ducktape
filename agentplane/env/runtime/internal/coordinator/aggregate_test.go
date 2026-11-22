@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -156,7 +156,7 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	execution := &uncertainCloseExecution{}
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return execution, nil
@@ -194,7 +194,7 @@ func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
 			config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 			config.expectCloseError = true
 			first := newControllerExecutionHandle(nil)
-			config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+			config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 			config.HarnessEnvironment = map[string]string{}
 			config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 				return first, nil
@@ -279,7 +279,7 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	execution := &heldCloseExecution{started: make(chan struct{}), release: make(chan struct{})}
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return execution, nil

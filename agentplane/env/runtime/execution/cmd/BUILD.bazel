@@ -11,7 +11,7 @@ go_binary(
     pure = "on",
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
-        "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/backend",
         "//agentplane/env/runtime/execution/codexshim",
         "//agentplane/env/runtime/execution/companion:executor",
         "//agentplane/env/runtime/execution/native",

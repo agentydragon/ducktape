@@ -9,7 +9,7 @@ import (
 	"io"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -65,7 +65,7 @@ type Resolved struct {
 	Claude, Codex                    *harness.LaunchConfig
 	SystemdLauncher                  *supervision.SystemdLauncher
 	Supervision                      string
-	CodexExecServer                  *codexexecserver.Config
+	ExecutionBackend                 *backend.Config
 	CodexAppServerReadiness          codexappserver.Readiness
 	CodexTurnDiffNotifications       bool
 	WorkspaceRoot, InitializationCwd string

@@ -18,7 +18,7 @@ from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.runtime_with_history import run_runtime_with_history
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
-from agentplane.env.runtime.execution.testing.codex_exec_server_container import CodexExecServerContainer
+from agentplane.env.runtime.execution.testing.executor_companion import ExecutorCompanion
 from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
@@ -39,7 +39,7 @@ pytest_plugins = (
     "agentplane.testing.native_gateway_fixtures",
     "agentplane.env.e2e.testing.fixtures",
     "agentplane.history_service.testing.fixtures",
-    "agentplane.env.runtime.execution.testing.codex_exec_server_container",
+    "agentplane.env.runtime.execution.testing.executor_companion",
 )
 
 
@@ -94,14 +94,8 @@ async def runner(
 @pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 class TestGatewayContinuity:
     @pytest.fixture
-    def config(
-        self, config: RunnerTestConfig, codex_exec_server_container: CodexExecServerContainer
-    ) -> RunnerTestConfig:
-        return replace(
-            config,
-            codex_executor_url=codex_exec_server_container.url,
-            codex_executor_socket=codex_exec_server_container.socket,
-        )
+    def config(self, config: RunnerTestConfig, executor_companion: ExecutorCompanion) -> RunnerTestConfig:
+        return replace(config, executor_url=executor_companion.url, executor_socket=executor_companion.socket)
 
     @pytest.fixture
     async def gateway_service(

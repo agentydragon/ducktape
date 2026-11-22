@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedproxy"
 	"google.golang.org/grpc"
@@ -55,7 +55,7 @@ func newExecutionRuntime(t *testing.T, url string, acquire func(context.Context)
 func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Context) (string, error)) runtimeTestConfig {
 	t.Helper()
 	config := lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: url}
+	config.ExecutionBackend = &backend.Config{URL: url}
 	config.HarnessEnvironment = map[string]string{}
 
 	config.deps.startExecution = func(_ context.Context, config Config, _ string) (executionHandle, error) {
