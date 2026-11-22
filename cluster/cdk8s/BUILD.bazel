@@ -127,10 +127,21 @@ py_library(
 )
 
 py_library(
+    name = "api_objects",
+    srcs = ["api_objects.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "flux",
     srcs = ["flux.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":api_objects",
         ":manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
@@ -430,11 +441,11 @@ py_library(
     name = "fleet_rules",
     srcs = ["fleet_rules.py"],
     deps = [
+        ":api_objects",
         ":cilium_rule_sections",
         ":namespaces",
         ":pod_policy",
         ":vpa_policy",
-        "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//jsii",
     ],

@@ -1826,6 +1826,7 @@ py_test(
         ":staging",
         "//:conftest",
         "//cluster/cdk8s:agent_rbac_test_support",
+        "//cluster/cdk8s:api_objects",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/testing:manifests",

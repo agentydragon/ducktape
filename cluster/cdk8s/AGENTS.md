@@ -273,8 +273,8 @@ whose object is gone or now passes.
 
 ## Gotchas
 
-- `Chart.api_objects` is direct children only: walk `chart.node.find_all()` filtered by
-  `ApiObject.is_api_object`.
+- Use `api_objects_in(scope)` from `api_objects.py` to include resources nested inside constructs.
+  `Chart.api_objects` lists direct children only.
 - `cdk8s.Testing.synth(chart)` is `chart.to_json()`, which validates the whole app, so
   `add_validation` rules run in tests. In a `test_*.py`, `from cdk8s import Testing` gets
   collected by pytest: import `Testing as Cdk8sTesting` with a comment saying why.
