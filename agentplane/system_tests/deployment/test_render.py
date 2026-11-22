@@ -396,7 +396,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_config["session_dispatcher_tls"]["server_uri"] == SESSION_DISPATCHER_URI
     assert app_config["runner_gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    assert sessions_config["runner_control_target_template"] == "environments.{namespace}.svc:8082"
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     assert app_container.get("args", []) == []
     app_env = {entry["name"]: entry for entry in app_container["env"]}

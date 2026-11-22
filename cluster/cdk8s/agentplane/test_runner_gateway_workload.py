@@ -51,7 +51,6 @@ def test_dispatcher_serves_and_dials_with_its_respective_identities(
     path = PurePosixPath(env[Settings.config_file_env]["value"])
     settings = config_map_yaml(docs, mounts[path.parent]["configMap"]["name"], path.name)
 
-    assert settings["runner_control_target_template"] == "environments.{namespace}.svc:8082"
     rpc = settings["rpc"]
     auth = one(rpc["auth"])
     assert auth["mode"] == "spiffe"

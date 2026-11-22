@@ -3,17 +3,11 @@
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "environments"
+_GRPC = Port(name="grpc", number=8082)
+# Clients substitute the destination namespace when dialing its receiver.
+CONTROL_TARGET_TEMPLATE = f"{NAME}.{{namespace}}.svc:{_GRPC.number}"
 ENVIRONMENTS_ROUTING_LABELS = {"app.kubernetes.io/component": "environments"}
 
 
 def environments_service(namespace: str) -> ServiceRef:
-    return ServiceRef(
-        name=NAME,
-        port=Port(name="grpc", number=8082),
-        pods=Pods(namespace=namespace, labels=(("app.kubernetes.io/name", NAME),)),
-    )
-
-
-def environments_control_target(namespace: str) -> str:
-    endpoint = environments_service(namespace)
-    return f"{endpoint.name}.{{namespace}}.svc:{endpoint.port.number}"
+    return ServiceRef(name=NAME, port=_GRPC, pods=Pods(namespace=namespace, labels=(("app.kubernetes.io/name", NAME),)))
