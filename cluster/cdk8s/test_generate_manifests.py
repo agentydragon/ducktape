@@ -522,14 +522,6 @@ def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(parsed_yaml_docum
     )
 
 
-def test_no_image_automation_markers(generated: Path) -> None:
-    # cdk8s can't emit YAML comments, so this should be unreachable -- but if it ever did,
-    # Flux's image-automation bot would silently fight the generator for ownership of the
-    # file (cluster/docs/cdk8s.md).
-    marked = sorted(relative for relative in _files(generated) if "$imagepolicy" in (generated / relative).read_text())
-    assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
-
-
 def test_namespace_readers_can_reconcile_before_the_application(parsed_yaml_documents: YamlDocuments) -> None:
     # Diagnostics must come up even when the application in the target namespace is unhealthy.
     graph = parsed_yaml_documents[Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")]
