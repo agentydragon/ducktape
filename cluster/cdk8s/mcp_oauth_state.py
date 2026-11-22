@@ -7,7 +7,6 @@ ClusterSecretStore. Consumer Kustomizations copy only their own DSN into their n
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
@@ -29,20 +28,13 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -85,18 +77,6 @@ STORES = (GROCY_SF, GROCY_VALLEJO, TANA)
 _RETIRED_PLAID_DB = OAuthStateStore(
     id="plaid-db", namespace="plaid-mcp", database="mcp_oauth_plaid_db", role="mcp_oauth_plaid_db"
 )
-
-
-def _namespace_chart(app: App) -> Chart:
-    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAMESPACE,
-        vpa=Vpa.RECOMMEND,
-        # This namespace contains OAuth client registrations and bearer/refresh tokens.
-    )
-    return chart
 
 
 def _consumer_secret_access(chart: Chart, store: OAuthStateStore) -> None:
@@ -143,8 +123,9 @@ def _consumer_secret_access(chart: Chart, store: OAuthStateStore) -> None:
     )
 
 
-def _db_chart(app: App) -> Chart:
+def chart(app: App) -> Chart:
     chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
     for store in STORES:
         mint_db_role_secret(
             chart,
@@ -228,20 +209,9 @@ def add_consumer_credentials(scope: Chart, store: OAuthStateStore) -> None:
     )
 
 
-def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / OUTPUT_DIR / "db" / "kustomization.yaml",
-        kustomize_kustomization(resources=[write_charts(root, f"{OUTPUT_DIR}/db", _db_chart)]),
-    )
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[write_charts(root, OUTPUT_DIR, _namespace_chart), "db"]),
-    )
-
-
 def mcp_oauth_state_db(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg_operator: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
@@ -251,7 +221,7 @@ def mcp_oauth_state_db(
     return flux_kustomization(
         chart,
         "mcp-oauth-state-db",
-        artifact,
+        directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         health_check_exprs=[database_health()],

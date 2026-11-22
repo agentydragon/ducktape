@@ -60,7 +60,6 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
-cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/external-credentials/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true

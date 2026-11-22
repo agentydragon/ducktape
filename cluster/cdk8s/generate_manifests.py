@@ -280,8 +280,6 @@ def generate_manifests(root: Path) -> None:
     litellm_proxy_chart = litellm_proxy.write_manifests(root, mesh)
     litellm_database_chart = litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
-    tofu_state.write_manifests(root)
-    mcp_oauth_state.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
@@ -960,12 +958,15 @@ def generate_manifests(root: Path) -> None:
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state.OUTPUT_DIR)
     tofu_state_db_kustomization = tofu_state.tofu_state_db(
-        flux_chart, tofu_state_db_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, tofu_state_db_artifact, tofu_state.chart, siblings=[tofu_state.CREDENTIALS_FILE]),
+        cnpg_kustomization,
+        seaweedfs_operator_kustomization,
     )
     mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
     mcp_oauth_state_kustomization = mcp_oauth_state.mcp_oauth_state_db(
         flux_chart,
-        mcp_oauth_state_artifact,
+        write_directory(root, mcp_oauth_state_artifact, mcp_oauth_state.chart),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,

@@ -10,9 +10,6 @@ reads the encrypted source directly.
 
 from __future__ import annotations
 
-from functools import partial
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
@@ -22,26 +19,18 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecPostgresql,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.health import database_health
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import namespace_chart, write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 
 _NAMESPACE = "tofu-state"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}"
-_DB_DIR = f"{OUTPUT_DIR}/db"
-_CREDENTIALS_FILE = "credentials.sops.yaml"
+CREDENTIALS_FILE = "db/credentials.sops.yaml"
 DATABASE = cluster.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
 STATE_DATABASE_NAME = "tfstate"
 STATE_PASSWORD = SecretRef(namespace="flux-system", name="tofu-state-db-credentials").key("password")
@@ -57,6 +46,7 @@ def gitops_state_schema(name: str) -> str:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
     cluster.cluster(
         chart,
         "cluster",
@@ -100,26 +90,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    """Write the Namespace and database directories reconciled together by tofu-state-db."""
-    write_yaml(
-        root / _DB_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[_CREDENTIALS_FILE, write_charts(root, _DB_DIR, chart)]),
-    )
-    namespace = write_charts(root, OUTPUT_DIR, partial(namespace_chart, name=_NAMESPACE, vpa=Vpa.AUTO))
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[namespace, "db"]))
-
-
 def tofu_state_db(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, seaweedfs_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "tofu-state-db",
-        artifact,
+        directory,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         health_check_exprs=[database_health()],
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
     )
