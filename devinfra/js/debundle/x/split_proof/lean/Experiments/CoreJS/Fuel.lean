@@ -182,7 +182,7 @@ variable {n m : Nat} (ih : Mono W n m)
 include ih
 
 theorem Mono.expr_succ (env : Env) (e : Expr) : (evalExpr (n + 1) env e : M W _) ⊑ evalExpr (m + 1) env e := by
-  cases e <;> unfold evalExpr <;> mono ih
+  cases e <;> unfold evalExpr <;> try unfold finishDerived <;> mono ih
 
 theorem Mono.args_succ (env : Env) (es : List Expr) : (evalArgs (n + 1) env es : M W _) ⊑ evalArgs (m + 1) env es := by
   cases es <;> unfold evalArgs <;> mono ih

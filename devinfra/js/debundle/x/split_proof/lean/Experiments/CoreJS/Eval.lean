@@ -176,6 +176,19 @@ def classParents (call : Call W) (base : Val) : M W (Addr × Option Addr) := do
     | .obj a => pure (a, pp)
     | _ => unknown "host superclass"
 
+/-- Build the class after evaluating and checking its heritage. -/
+def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
+    (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr) : M W Val := do
+  let proto ← alloc { proto := parents.2, props := [] }
+  let c ← alloc {
+    proto := some parents.1, code := some .derived,
+    props := [("length", .data (.num 0) false false true),
+      ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
+  modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] }
+  let _ ← runMembers env proto c members
+  initSelf env self name (.obj c)
+  pure (.obj c)
+
 mutual
 
 def evalExpr : Nat → Env → Expr → M W Val
@@ -224,16 +237,8 @@ def evalExpr : Nat → Env → Expr → M W Val
       if !(fieldInits members).isEmpty then unknown "derived class fields" else do
       let env ← selfScope env self name
       let base ← evalExpr n env parent
-      let (ctorParent, protoParent) ← classParents (callFn n) base
-      let proto ← alloc { proto := protoParent, props := [] }
-      let c ← alloc {
-        proto := some ctorParent, code := some .derived,
-        props := [("length", .data (.num 0) false false true),
-          ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
-      modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] }
-      let _ ← evalMembers n env proto c members
-      initSelf env self name (.obj c)
-      pure (.obj c)
+      let parents ← classParents (callFn n) base
+      finishDerived (evalMembers n) env name self members parents
     | .get o k => do
       let base ← evalExpr n env o
       let key ← evalExpr n env k

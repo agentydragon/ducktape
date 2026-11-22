@@ -453,6 +453,7 @@ theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent
     · have h2 : Agree (parent.free ++ freeMembers members) env1 env1' := h1.mono fun x hx => List.mem_append_right _ hx
       refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
       refine M.bind_congr rfl fun parents => ?_
+      unfold finishDerived
       refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
       refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun _ => ?_
       refine M.bind_congr ?_ fun _ => rfl

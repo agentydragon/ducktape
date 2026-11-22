@@ -390,6 +390,19 @@ theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         · cases static <;> assumption
         · exact (local_pure _).bind' fun field => (ih ms h).bind' fun _ => local_pure _
 
+/-- Once its prototype parents are known, an anonymous class with plain members is local. -/
+theorem local_finishDerived_plain (n : Nat) (env : Env) (name : Name) (members : List ClassMember)
+    (parents : Addr × Option Addr) (h : plainClassMembers members = true) :
+    Local r R (finishDerived (evalMembers n) env name false members parents : M W Val) := by
+  unfold finishDerived
+  refine (local_alloc _).bind fun proto ⟨s1, s1', hr1, h1⟩ => ?_
+  have hp : proto.region = r := (alloc_region h1).trans hr1
+  refine (local_alloc _).bind fun c ⟨s2, s2', hr2, h2⟩ => ?_
+  have hc : c.region = r := (alloc_region h2).trans hr2
+  refine (local_modifyObj hp _).bind' fun _ => ?_
+  refine (local_evalMembers_plain n env proto c members h hp hc).bind' fun _ => ?_
+  exact (local_pure ()).bind' fun _ => local_pure _
+
 end local_
 
 /-! ## An expression that only allocates is local -/
