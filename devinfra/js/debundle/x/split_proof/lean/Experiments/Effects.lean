@@ -1508,8 +1508,8 @@ partial def evalIdent (fr : Fr) (n : String) : M AV := do
       return AV.ofObj (← builtinObj n)
     else if envGlobals.contains n then return AV.ofObj (← builtinObj ("env:" ++ n))
     else
-      -- an undeclared global the analysis does not know: the environment
-      setTrace ("global " ++ n)
+      -- A host global can be an accessor that calls a previously escaped closure.
+      setWorld ("read of host global " ++ n)
       return AV.top
 
 partial def evalArgs (fr : Fr) (args : Array Json) : M (List AV) := do
