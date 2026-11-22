@@ -418,12 +418,12 @@ def test_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-async def test_no_legacy_agent_diagnostic_rbac(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_no_legacy_agent_diagnostic_rbac(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """The delivered cluster has no implicit Kyverno-generated agent readers."""
     # Suspended owners retain their grants. The two bootstrap roots are outside the Flux graph.
     owners = cluster.flux_kust_resources(include_suspended=True)
     for root in ("flux/flux-system", "flux/ducktape-flux"):
-        owners[root] = await run_kustomize_build(k8s_dir / root)
+        owners[root] = asyncio.run(run_kustomize_build(k8s_dir / root))
 
     retired = {
         ("ClusterPolicy", "generate-agent-diagnostics-readers"),
