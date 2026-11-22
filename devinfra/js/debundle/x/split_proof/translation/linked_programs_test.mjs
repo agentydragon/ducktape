@@ -11,6 +11,12 @@ assert(root, "TEST_TMPDIR is required");
 const id = (name) => ({ type: "Identifier", name });
 const literal = (value) => ({ type: "Literal", value });
 const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
+const conditional = (test, consequent, alternate) => ({
+  type: "ConditionalExpression",
+  test,
+  consequent,
+  alternate,
+});
 const expression = (expression) => ({ type: "ExpressionStatement", expression });
 const returns = (argument) => ({ type: "ReturnStatement", argument });
 const throws = (argument) => ({ type: "ThrowStatement", argument });
@@ -279,6 +285,53 @@ function eagerProvider() {
     ),
     exportNamed([["factory", "create"]]),
   ]);
+}
+
+// Execute the conditional during module initialization so certification exercises the
+// interpreter. The Node observation independently checks which branch supplied the value.
+function assertConditionalSplit(name, source, expected) {
+  const dir = path.join(root, name);
+  const files = prepare(dir, {
+    source,
+    provider: "",
+    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] }, order: ["worker.mjs"] },
+  });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    assert.deepEqual(observe(file, "result"), { result: expected }, name);
+  }
+}
+
+for (const [seed, value] of [0, "taken", "", 3].entries()) {
+  const selected = literal(seed + 30);
+  const skipped = call(arrow([], block([throws(literal(seed))])));
+  const choose = conditional(literal(value), value ? selected : skipped, value ? skipped : selected);
+  const source = program([
+    variable("const", "worker", arrow([], choose)),
+    {
+      type: "ExportNamedDeclaration",
+      declaration: variable("const", "result", call(id("worker"))),
+      specifiers: [],
+      source: null,
+    },
+  ]);
+  assertConditionalSplit(`generated-conditional-${seed}`, source, seed + 30);
+}
+
+// The temporal dead zone throws from the test and from the selected arm respectively.
+// Returning normally through either expression would bypass the catch.
+for (const [name, expr] of [
+  ["test", "later ? 1 : 2"],
+  ["arm", "true ? later : 2"],
+]) {
+  const source = `const worker = () => {
+    try { return ${expr}; let later; } catch { return 7; }
+  };
+  export const result = worker();`;
+  assertConditionalSplit(`conditional-abrupt-${name}`, source, 7);
 }
 
 // Generated aliases, layouts and provider-body shapes exercise the ordinary

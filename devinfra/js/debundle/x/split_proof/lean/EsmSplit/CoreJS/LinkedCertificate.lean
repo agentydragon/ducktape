@@ -29,6 +29,11 @@ private partial def exprEq : MatchEq Expr
     let ⟨o⟩ ← scalarEq op op'
     let ⟨v⟩ ← exprEq a b
     return ⟨o ▸ v ▸ rfl⟩
+  | .cond c t e, .cond c' t' e' => do
+    let ⟨test⟩ ← exprEq c c'
+    let ⟨yes⟩ ← exprEq t t'
+    let ⟨no⟩ ← exprEq e e'
+    return ⟨test ▸ yes ▸ no ▸ rfl⟩
   | .call f args, .call f' args' => do
     let ⟨callee⟩ ← exprEq f f'
     let ⟨arguments⟩ ← listEq exprEq args args'
