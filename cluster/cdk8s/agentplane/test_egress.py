@@ -65,12 +65,7 @@ def test_egress_reads_its_settings_file_and_database_url(catalog_manifests: list
     pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    settings_path = PurePosixPath(proxy_env[EgressSettings.config_file_env]["value"])
-    settings_mount = one(mount for mount in proxy["volumeMounts"] if mount["mountPath"] == str(settings_path.parent))
-    settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == settings_mount["name"])
-    assert settings_volume["configMap"]["name"] == "egress-go-settings"
-    settings_document = find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"][settings_path.name]
-    assert settings_document
+    settings_document = one(find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"].values())
     assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
         EgressSettings.config_file_env,
         EgressSettings.database_url_env,

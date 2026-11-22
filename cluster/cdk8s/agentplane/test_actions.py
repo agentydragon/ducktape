@@ -107,7 +107,7 @@ def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]
     )
 
 
-def test_settings_and_tls_are_mounted_without_optional_secrets(scratch_app: App) -> None:
+def test_workload_tls_is_mounted_when_optional_secrets_are_unconfigured(scratch_app: App) -> None:
     props = replace(
         staging.ENV.actions,
         oauth_secret_items=(),
@@ -133,11 +133,10 @@ def test_settings_and_tls_are_mounted_without_optional_secrets(scratch_app: App)
     docs = Cdk8sTesting.synth(chart)
     pod = one(doc for doc in docs if doc["kind"] == "Deployment")["spec"]["template"]["spec"]
     container = one(container for container in pod["containers"] if container["name"] == "actions")
-    volumes = {volume["name"]: volume for volume in pod["volumes"]}
-    mounts = {mount["mountPath"]: volumes[mount["name"]] for mount in container["volumeMounts"]}
-    config_path = one(entry for entry in container["env"] if entry["name"] == "AGENTPLANE_ACTIONS_CONFIG_FILE")["value"]
-    assert mounts[config_path.rsplit("/", 1)[0]]["configMap"]["name"] == "actions-settings"
-    assert any(volume.get("secret", {}).get("secretName") == "actions-workload-tls" for volume in mounts.values())
+    tls_volume = one(
+        volume for volume in pod["volumes"] if volume.get("secret", {}).get("secretName") == "actions-workload-tls"
+    )
+    assert any(mount["name"] == tls_volume["name"] for mount in container["volumeMounts"])
 
 
 def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> None:

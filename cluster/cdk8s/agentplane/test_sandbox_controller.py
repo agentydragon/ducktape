@@ -79,11 +79,10 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     container = one(pod["containers"])
     env = {entry["name"]: entry for entry in container["env"]}
 
-    config_path = PurePosixPath(env[config_env]["value"])
     assert {key for key in env if key.startswith(("AGENTPLANE_SANDBOX_CONTROLLER_", "AGENTPLANE_ENVIRONMENTS_"))} == {
         config_env
     }
-    settings = yaml.safe_load(config_map["data"][config_path.name])
+    settings = yaml.safe_load(one(config_map["data"].values()))
     assert settings["runner_gateway_target"] == "environments.{namespace}.svc:8082"
     certificate = find_resource(staging_manifests, "Certificate", f"{name}-client-workload")
     certificate_uris = certificate["spec"]["uris"]

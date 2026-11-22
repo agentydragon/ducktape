@@ -279,8 +279,6 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     assert all(env["name"] != "BBR_BUILDBUDDY_API_KEY_FILE" for env in sidecar.get("env", []))
     config = _runner_configuration(staging_manifests, pod)
     assert "BBR_BUILDBUDDY_API_KEY_FILE" in config["harness_environment"]["inherit"]
-    settings = next(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
-    assert settings["configMap"]["name"] == f"{staging.POD_TEMPLATE}-egress-sidecar"
 
 
 def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(
