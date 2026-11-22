@@ -246,6 +246,12 @@ def test_session_archive_importers_receive_the_backup_credentials(
     cluster: ParsedCluster, repo_root: Path, tmp_path: Path
 ) -> None:
     owner = cluster.flux_kustomizations["ai-session-archive"]
+    # Flux dry-run masks the ciphertext even if the owner has no decryption key.
+    assert owner.decryption is not None
+    assert owner.decryption.provider == "sops"
+    assert owner.decryption.secret_ref is not None
+    # persistent-auth.tf provisions this key and reflects it into ducktape-flux.
+    assert owner.decryption.secret_ref.name == "sops-age-cluster-secrets"
     source = owner.source_ref
     assert source is not None
     stage_artifact_copies(
