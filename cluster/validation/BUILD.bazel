@@ -318,21 +318,15 @@ py_test(
 
 py_test(
     name = "test_flux_build",
-    # The whole cluster manifest tree below is fetched inside this test's own clock on RBE,
-    # which is minutes against the ~7s the test itself spends; see
-    # <devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md>.
     size = "medium",
     srcs = ["test_flux_build.py"],
-    # Flux needs the whole tree the root Kustomization references.
-    # cluster_all_files' glob stops at package boundaries, so each local package
-    # supplies its Kustomize inputs through the :cluster_k8s_inputs filegroup.
     data = [
-        ":cluster_k8s_inputs",
-        "//cluster:generated_manifests",
+        "//cluster/k8s:flux_root",
         "@multitool//tools/flux",
     ],
     deps = [
         ":conftest",
+        ":flux",
         ":k8s",
         "//:conftest",
         "@pypi//pytest_bazel",

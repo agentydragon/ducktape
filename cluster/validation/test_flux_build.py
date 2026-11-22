@@ -8,33 +8,38 @@ from pathlib import Path
 import pytest_bazel
 from python.runfiles import Runfiles
 
+from cluster.validation.flux import parse_flux_kustomizations
 from cluster.validation.k8s import load_k8s_resources
 
 
-def test_flux_build_renders_tree(k8s_dir: Path) -> None:
-    flux_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
+def test_flux_build_renders_tree(repo_root: Path, runfiles: Runfiles) -> None:
+    sync = repo_root / "cluster/k8s/flux/flux-system/gotk-sync.yaml"
+    root = parse_flux_kustomizations(sync)["flux-system"]
     result = subprocess.run(
         [
-            flux_bin,
+            runfiles.root() / "multitool/tools/flux/flux",
             "build",
             "kustomization",
             "flux-system",
+            "--namespace",
+            root.namespace,
             "--path",
-            k8s_dir,
+            repo_root / root.path,
             "--kustomization-file",
-            k8s_dir / "flux/flux-system/gotk-sync.yaml",
+            sync,
             "--dry-run",
-            "--verbose",
         ],
-        capture_output=True,
-        text=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        check=True,
         timeout=60,
     )
-    assert result.returncode == 0, f"flux build failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    kinds = {r.kind for r in load_k8s_resources(result.stdout)}
-    missing = {"Kustomization", "GitRepository"} - kinds
-    assert not missing, f"flux build did not render {sorted(missing)}:\n{result.stderr}"
+    resources = load_k8s_resources(result.stdout, kinds={"Kustomization", "GitRepository"})
+    assert root.source_ref is not None
+    source = root.source_ref
+    assert (source.kind, source.namespace or root.namespace, source.name) in {
+        (resource.kind, resource.namespace, resource.name) for resource in resources
+    }
+    assert any(resource.kind == "Kustomization" and resource.namespace == "ducktape-flux" for resource in resources)
 
 
 if __name__ == "__main__":

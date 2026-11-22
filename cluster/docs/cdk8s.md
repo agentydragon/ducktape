@@ -158,9 +158,9 @@ comment next to the `depends_on` entry.
 
 The root `cluster/k8s/kustomization.yaml` includes `flux/`; the hand-written
 `cluster/k8s/flux/kustomization.yaml` includes the generated central chart and the
-hand-written bootstrap/source resources. `dependsOn` addresses Kustomizations by name;
-`cluster/validation`'s graph checks (`test_dependencies`, `test_crd_layering`,
-`test_flux_build`) run over rendered `kustomize build` output of both roots; kubeconform
+hand-written bootstrap/source resources. `test_flux_build` runs the Flux CLI against the bootstrap
+Kustomization's configured path and checks that it includes the app graph.
+`cluster/validation` checks dependencies across application owners, and kubeconform
 validates every `cluster/{k8s,generated}/**/*.yaml`.
 
 ## One writer per byte range
