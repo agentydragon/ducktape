@@ -1,5 +1,6 @@
 # The retained and cold targets share the source through firecracker_test.
 # gazelle:exclude test_firecracker.py
+# gazelle:exclude test_firecracker_cleanup_overlap.py
 # gazelle:exclude test_vm.py
 load("//agentplane/system_tests/firecracker:defs.bzl", "firecracker_test")
 load(
@@ -192,6 +193,23 @@ firecracker_test(
 firecracker_test(
     name = "test_firecracker_cold",
     recycle = False,
+    tags = ["manual"],
+)
+
+# Compare serial and cleanup-overlap arms on the same hardware path.
+firecracker_test(
+    name = "test_firecracker_cleanup_overlap",
+    extra_deps = [
+        "//agentplane/system_tests/driver:app_sandbox",
+        "//agentplane/system_tests/driver:case_batch",
+        "//agentplane/system_tests/driver:cleanup",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:tracing",
+        "//util:net",
+        "@pypi//pytest_asyncio",
+    ],
+    recycle = True,
+    suite = ":test_firecracker_cleanup_overlap.py",
     tags = ["manual"],
 )
 

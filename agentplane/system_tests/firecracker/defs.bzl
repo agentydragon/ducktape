@@ -3,13 +3,19 @@
 load("//agentplane/system_tests/k3s:defs.bzl", "GENERIC_DEVICE_PLUGIN_IMAGE", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
 load("//devinfra/python:defs.bzl", "py_test")
 
-def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
+def firecracker_test(
+        name,
+        recycle,
+        pool = "kvm-vm",
+        tags = [],
+        suite = "//agentplane/system_tests/suites:test_firecracker.py",
+        extra_deps = []):
     """Run both acceptance scenarios with a retained or explicitly discarded K3s baseline."""
     py_test(
         name = name,
         size = "enormous",
-        srcs = ["//agentplane/system_tests/suites:test_firecracker.py"],
-        main = "//agentplane/system_tests/suites:test_firecracker.py",
+        srcs = [suite],
+        main = suite,
         args = ["-o", "junit_duration_report=call", "--durations=0"] + ([] if recycle else ["--discard-recycled-runner"]),
         data = [
             "//agentplane/crds",
@@ -66,5 +72,5 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
             "//agentplane/system_tests/scenarios:workload_trust",
             "@pypi//pytest",
             "@pypi//pytest_bazel",
-        ],
+        ] + extra_deps,
     )
