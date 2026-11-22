@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
+from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.scenarios import storage
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
@@ -66,7 +68,10 @@ async def test_storage_keeps_all_probes_after_controller_recovery(
         monkeypatch.setattr(Cluster, "kubectl", observe_wait)
         scenario = tasks.create_task(
             storage.fresh_workspace_storage_survives_replacement(
-                cluster, client, dispatcher, Executor(template=POD_TEMPLATE, cwd="/state/work"), vm_storage=None
+                cluster,
+                partial(run_setup, client, dispatcher),
+                Executor(template=POD_TEMPLATE, cwd="/state/work"),
+                vm_storage=None,
             )
         )
         async with asyncio.timeout(10):
