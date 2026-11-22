@@ -14,6 +14,7 @@ import base64
 import shutil
 import subprocess
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -67,9 +68,7 @@ async def _build_namespace_override(owner: str, spec: FluxKustomizationSpec, dir
     return load_k8s_resources(stdout)
 
 
-def _build_cluster(repo_root: Path) -> ParsedCluster:
-    parsed = parse_cluster(repo_root)
-
+def _build_cluster(parsed: ParsedCluster, repo_root: Path) -> ParsedCluster:
     async def build(owner: str, spec: FluxKustomizationSpec, directory: Path) -> tuple[str, list[K8sResource]]:
         # Flux temporarily rewrites kustomization.yaml. Give each namespace override a private source,
         # even when another owner builds the same path with a different targetNamespace.
@@ -105,21 +104,18 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
             )
         )
 
-    parsed.rendered_resources = asyncio.run(build_all())
-    return parsed
+    return replace(parsed, rendered_resources=asyncio.run(build_all()))
 
 
 @pytest.fixture(scope="session")
-def cluster(repo_root: Path) -> ParsedCluster:
-    """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
-    return _build_cluster(repo_root)
+def parsed_cluster(repo_root: Path) -> ParsedCluster:
+    return parse_cluster(repo_root)
 
 
-def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, repo_root: Path) -> None:
-    """Every flux kustomization pointing to a local path must have a build result."""
-    expected = {name for name, spec in cluster.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
-    missing = sorted(expected - cluster.flux_kust_resources().keys())
-    assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
+@pytest.fixture(scope="session")
+def cluster(parsed_cluster: ParsedCluster, repo_root: Path) -> ParsedCluster:
+    """Build every local owner. A missing directory or failed build fails the fixture."""
+    return _build_cluster(parsed_cluster, repo_root)
 
 
 def test_flux_configmaps_and_secrets_have_namespaces(cluster: ParsedCluster) -> None:
@@ -232,7 +228,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
             {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": ["resources.yaml"]},
         )
 
-    parsed = _build_cluster(tmp_path)
+    parsed = _build_cluster(parse_cluster(tmp_path), tmp_path)
     builds = parsed.flux_kust_resources()
     assert {
         owner_name: {resource.namespace for resource in builds[owner_name] if resource.kind == "ExternalSecret"}
@@ -399,14 +395,14 @@ def test_sops_secrets_have_decryption_block(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_retry_policy(cluster: ParsedCluster) -> None:
-    errors = check_retry_policy(cluster)
+def test_retry_policy(parsed_cluster: ParsedCluster) -> None:
+    errors = check_retry_policy(parsed_cluster)
     assert not errors, "\n".join(errors)
 
 
-def test_no_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> None:
+def test_no_orphaned_files(parsed_cluster: ParsedCluster, repo_root: Path) -> None:
     """All active YAML files must be referenced by a kustomization.yaml."""
-    errors = find_orphaned_files(cluster, repo_root)
+    errors = find_orphaned_files(parsed_cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 
