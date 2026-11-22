@@ -45422,6 +45422,31 @@
         "matching_runner_paused_again_utc": "2026-11-22T03:49:09.759Z",
         "time_until_runner_free_s": 158.26
       }
-    ]
+    ],
+    "retention_sample": {
+      "window_utc": ["2026-11-22T00:00:00Z", "2026-11-22T04:00:00Z"],
+      "platform_key_suffix": "cb0021f1",
+      "worker_lookups": 18,
+      "local_paused_match": 6,
+      "no_local_paused_match": 12,
+      "method": "Count guest Looking for match messages with this KubeVirt key, deduplicating duplicated console records by execution ID. Retries and cancelled attempts can each issue their own lookups. A paused platform-key match is a candidate for fixture reuse.",
+      "worker_4": {
+        "recycled_utc": "2026-11-22T00:17:48.780Z",
+        "executor_shutdown_utc": "2026-11-22T00:33:15.904Z",
+        "next_cold_lookups_utc": [
+          "2026-11-22T00:37:39.363Z",
+          "2026-11-22T00:40:55.552Z"
+        ],
+        "last_six_replica_sample_utc": "2026-11-22T00:33:11.654Z",
+        "first_five_replica_sample_utc": "2026-11-22T00:34:11.654Z"
+      },
+      "desired_replicas_metric": "kube_customresource_kubevirt_vmpool_desired_replicas{namespace=\"buildbuddy-executor\",name=\"buildbuddy-kvm-worker\"}",
+      "minute_samples": 240,
+      "desired_worker_minutes": 1463,
+      "retention_replay_worker_minutes": 1636,
+      "extra_worker_minutes": 173,
+      "replay": "At each one-minute scrape, take the maximum observed desired replica count from that sample and the previous 15 minutes, including pre-window history. Sum the 240 counts. This prices delayed scale-in on the recorded demand trace. It does not simulate HPA recommendations, VM identity, routing or elapsed PR time.",
+      "metrics": "https://grafana.allegedly.works/d/buildbuddy-executor-pool/buildbuddy-executor-pool?from=1795305600000&to=1795320000000"
+    }
   }
 }
