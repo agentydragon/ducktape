@@ -120,6 +120,42 @@ Use VPA recommendations as sizing evidence, then set requests through the CNPG
 The VPA 1.7.1 recommender skips init-container metrics, including restartable
 Barman sidecars, so size those separately. [CNPG 1.30 VPA guidance](https://cloudnative-pg.io/docs/1.30/resource_management/#integration-with-the-vertical-pod-autoscaler-vpa) · [VPA 1.7.1 recommender](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/recommender/input/cluster_feeder.go)
 
+## Changing database requests
+
+Changing `Cluster.spec.resources` rolls the PostgreSQL Pods. For a healthy
+replicated Cluster, prefer `primaryUpdateMethod: switchover` for a sizing
+change: CNPG updates the replicas first, then with the default `unsupervised`
+strategy promotes an updated replica before replacing the former primary. The
+`supervised` strategy waits for operator intervention. This still disconnects
+clients; it is not a zero-downtime promise. A singleton has no replica to
+promote and needs its own maintenance and recovery plan. See [CNPG rolling updates](https://cloudnative-pg.io/docs/current/rolling_update/).
+
+1. Review the requested sizes against usage, startup and failover headroom, and
+   capacity on the nodes where each instance can run. Confirm a recent usable
+   backup, healthy continuous archiving, healthy instances, and a streaming
+   replica caught up to a primary WAL position. Record the primary and Pod/PVC
+   identities. Check the application-specific recovery path and agree on an
+   acceptable interruption before proceeding.
+2. Change the Cluster's request and update method through its Git owner. Apply
+   one database at a time and observe each rollout before starting the next.
+   When using `switchover`, do not change the PostgreSQL image and PostgreSQL
+   configuration parameters in the same update; CNPG rejects that combination.
+   Size Barman separately through its ObjectStore.
+3. Measure service recovery through a representative client, including
+   reconnection and the application's read/write path. Verify the new primary,
+   read-write Service endpoint, expected replicas and streaming replication,
+   PVC identities, archiving, and Flux reconciliation. Investigate failed
+   application operations even if CNPG reports Ready.
+
+On 2026-11-22, [Study Casino's sizing test](https://github.com/agentydragon/ducktape/pull/19119)
+promoted its replica and restored two healthy instances. A one-second client
+read probe saw an 11.1-second gap between successful reads and ten failed
+attempts; it did not test committed writes. This is one observed rollout, not
+an outage bound. The previous [four-database request wave](https://github.com/agentydragon/ducktape/pull/19102)
+used `restart` and left three write endpoints unready for roughly three minutes
+each while existing connections delayed shutdown. The [VPA report](https://agentydragon.github.io/ducktape/vpa/#rollout-status)
+tracks the dated rollout evidence and remaining sizing work.
+
 ## Gotcha: replica stuck `0/1` after failover
 
 A former primary can finish `pg_rewind`, enter standby and stay `0/1` for ~30 minutes while the
