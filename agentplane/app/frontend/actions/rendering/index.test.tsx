@@ -183,16 +183,17 @@ describe("Action presentation slots", () => {
   });
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
-    const calendar = await mount(
-      renderPaneCollapsed(identity("tana", "get_or_create_calendar_node"), {
-        workspaceId: "workspace-123",
-        granularity: "week",
-        date: "2026-10-12",
-      })
-    );
+    const calendarAction = identity("tana", "get_or_create_calendar_node");
+    const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
+    const calendar = await mount(renderPaneCollapsed(calendarAction, args));
     expect(calendar.textContent).toContain("week containing");
     expect(calendar.textContent).toContain("2026-10-12");
     expect(calendar.textContent).toContain("workspace-123");
+    expect(actionOffersCardDecisionButtons(calendarAction, args)).toBe(true);
+    const unknown = { ...args, mode: "unknown" };
+    expect(actionOffersCardDecisionButtons(calendarAction, unknown)).toBe(false);
+    expect(actionOffersCardDecisionButtons(calendarAction, unknown, true)).toBe(false);
+    expect(actionCompactCardExpands(calendarAction, unknown)).toBe(true);
 
     const deletion = await mount(
       renderPaneCollapsed(identity("kubernetes_admin", "resources_delete"), {

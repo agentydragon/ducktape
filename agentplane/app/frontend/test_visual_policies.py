@@ -308,9 +308,8 @@ async def test_action_argument_layouts(
             await expect(disclosure).to_have_count(0)
             for value in visible:
                 await expect(section.get_by_text(value, exact=False)).to_be_visible()
-        if (group, name) != ("tana", "get_or_create_calendar_node"):
-            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     await view.capture(target=section)
 
 

@@ -3286,6 +3286,7 @@ async def test_action_presentations(
         "grocy_sf.shopping_lists_create",
         "kubernetes_admin.pods_run",
         "kubernetes_admin.resources_scale",
+        "tana.get_or_create_calendar_node",
     }:
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await wait_for_stable(page)

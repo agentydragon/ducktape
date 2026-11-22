@@ -59,6 +59,7 @@ const calendarNodePresentation: ActionPresentation = {
   fallbackLabel: "Get or create Tana calendar node",
   pane: { collapsed: calendarNode },
   details: { arguments: calendarNode, result: calendarResult },
+  offersCardDecisionButtons: (args) => calendarNodeArguments.safeParse(args).success,
   compactCardExpands: expandsForRejectedArguments(calendarNodeArguments),
 };
 
