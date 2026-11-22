@@ -56,9 +56,10 @@ import { format } from "node:util";
 import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
-import { cases, inheritanceCases, splitCases, bindingSplitCases } from "./cases.mjs";
+import { cases, inheritanceCases, inheritanceSplitCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {
   generatedCases,
+  generatedHeritageSplit,
   generatedInheritanceCases,
   generatedModuleCases,
   generatedOpaqueCase,
@@ -337,14 +338,22 @@ for (const c of selectedCases) {
 const bindingCases = bindingOnly
   ? Array.from({ length: count }, (_, i) => generatedBindingCases(firstSeed + i)).flat()
   : [];
-for (const c of bindingOnly ? [...bindingSplitCases, ...bindingCases] : inheritanceOnly ? [] : splitCases) {
+const heritageCases = inheritanceOnly
+  ? Array.from({ length: count }, (_, i) => generatedHeritageSplit(firstSeed + i))
+  : [];
+const namedSplits = bindingOnly
+  ? [...bindingSplitCases, ...bindingCases]
+  : inheritanceOnly
+    ? [...inheritanceSplitCases, ...heritageCases]
+    : splitCases;
+for (const c of namedSplits) {
   const translated = accepted(c.source);
   assert(translated !== null, `split case ${c.name}: the front end refuses the bundle`);
   jobs.push({
     label: `split case ${c.name}`,
     source: c.source,
     program: single(translated),
-    expectEnd: null,
+    expectEnd: inheritanceOnly ? "normal" : null,
     set: null,
     splitCase: c,
   });
@@ -675,9 +684,26 @@ function split(job, bundle, dump, kind, spec, named) {
     assert(!orderKept, `${label}: the binding certificate regression must reorder statements`);
     assert(slice?.startsWith("moves (certified bindings)"), `${label}: missing certified binding slice: ${slice}`);
   }
+  if (named?.certifiedHeritage) {
+    const { pivot, crossed } = named.certifiedHeritage;
+    assert.deepEqual(
+      statements.filter((id) => id === pivot || crossed.includes(id)),
+      [...crossed, pivot],
+      `${label}: local declarations must run before the subclass`
+    );
+    assert.match(
+      slice ?? "",
+      /^moves \(certified class heritage\).*: in the model, the split ends normally in a state exactly when the bundle does, for every world$/,
+      `${label}: missing class heritage certification and normal equivalence`
+    );
+  }
   if (named?.uncertified) {
     assert(!orderKept, `${label}: the uncertified control must reorder statements`);
     assert.match(slice, /^none\./, `${label}: unsupported syntax must gain no permission`);
+  }
+  if (named?.uncertifiedHeritage) {
+    assert(!orderKept, `${label}: the uncertified heritage control must reorder statements`);
+    assert.match(slice ?? "", /^none\..*\(OrderKept\)/, `${label}: the heritage guard must reject the proposed moves`);
   }
   if (named?.poisonWrite !== undefined) {
     const analysis = spawnSync(lower, [path.join(dir, "ast.json")], { encoding: "utf8" });
@@ -910,6 +936,17 @@ if (bindingOnly) {
     "every generated binding case must execute equivalently through the certified moves slice"
   );
   console.log(`certified binding moves: ${certifiedGenerated.length}, four runs and final state compared`);
+}
+if (inheritanceOnly) {
+  const certified = splitJobs.filter((j) => j.named?.certifiedHeritage);
+  assert.equal(certified.length, count + 1, "the handwritten and every generated heritage split must execute");
+  assert(
+    certified.every(
+      (j) => j.moves && j.result.end === "normal" && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)
+    ),
+    "class heritage moves must preserve normal execution in the model and in Node"
+  );
+  console.log(`certified class heritage moves: ${certified.length}, four runs and final state compared`);
 }
 console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);

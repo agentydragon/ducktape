@@ -100,6 +100,24 @@ reject a corresponding dependency-bearing plan. A mutation control reloads actua
 Effects output, removes a required write, and requires the semantic certificate
 to reject it. Unsupported code gains no permission from the new certificate.
 
+## Class heritage
+
+For `var Child = class extends Base { ... }`, class creation reads both the
+binding of `Base` and its constructor's `prototype` property. A getter could
+observe a crossed declaration. The `moves (certified class heritage)` check
+looks for an earlier anonymous base class with literal instance methods or
+accessors. Its creation establishes the bound constructor and its own data
+property. The checker tracks those facts through intervening statements,
+including another plain subclass of the same base.
+
+The checker tries one subclass per plan. It first verifies an intermediate
+order with the existing certified moves. It then checks that the subclass can
+cross a contiguous block of inert or allocation-only declarations whose eager
+reads exclude the subclass binding. Both orders must share the prefix that
+establishes the base. The resulting theorem quantifies over all CoreJS worlds
+and fuel bounds and compares the entire final state on successful execution.
+[Checker and theorem](../lean/Experiments/CoreJS/HeritageCertificate.lean)
+
 ## Current proof inventory
 
 | Rule family                                                                                         | Existing proof                                               | Remaining footprint obligation                                                   |

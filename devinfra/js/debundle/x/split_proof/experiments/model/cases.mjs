@@ -89,6 +89,74 @@ export const inheritanceCases = [
   },
 ];
 
+const heritageSplit = {
+  entry: "entry.mjs",
+  modules: { "prefix.mjs": ["#0", "#1", "#3", "#4"], "entry.mjs": ["#2", "#5"] },
+};
+
+export const inheritanceSplitCases = [
+  {
+    name: "reassigning the superclass breaks the heritage prefix",
+    source: `
+      var Base = class { value() { return 1; } };
+      Base = class { value() { return 2; } };
+      var Earlier = class extends Base {};
+      var Pivot = class extends Base {};
+      var config = { factor: 3 };
+      var local = [5];
+      console.log(new Earlier().value(), new Pivot().value(), config.factor, local[0]);
+    `,
+    spec: {
+      entry: "entry.mjs",
+      modules: { "prefix.mjs": ["#0", "#1", "#2", "#4", "#5"], "entry.mjs": ["#3", "#6"] },
+    },
+    uncertifiedHeritage: true,
+  },
+  {
+    name: "a function superclass lacks the recognized class origin",
+    source: `
+      var Base = function (value) { this.value = value; };
+      var Earlier = class extends Base {};
+      var Pivot = class extends Base {};
+      var config = { factor: 3 };
+      var local = [5];
+      console.log(new Earlier(7).value, new Pivot(11).value, config.factor, local[0]);
+    `,
+    spec: heritageSplit,
+    uncertifiedHeritage: true,
+  },
+  {
+    name: "a declaration cannot read the subclass before its initialization",
+    source: `
+      var Base = class {};
+      var Earlier = class extends Base {};
+      var Pivot = class extends Base {};
+      var saved = Pivot;
+      var local = [5];
+      console.log(Object.getPrototypeOf(Earlier) === Base, saved === Pivot, local[0]);
+    `,
+    spec: heritageSplit,
+    refused: true,
+  },
+  {
+    name: "heritage checks replay after another subclass and across local allocations",
+    source: `
+      var Base = class {
+        constructor(value) { this.value = value; }
+        get amount() { return this.value; }
+      };
+      var Earlier = class extends Base { read() { return this.amount + 1; } };
+      var Pivot = class extends Base { read() { return this.amount * 2; } };
+      var config = { factor: 3 };
+      var local = [5];
+      console.log(new Earlier(7).read(), new Pivot(11).read(), config.factor, local[0],
+        Object.getPrototypeOf(Pivot) === Base, Object.getPrototypeOf(Pivot.prototype) === Base.prototype);
+    `,
+    spec: heritageSplit,
+    certifiedHeritage: { pivot: 2, crossed: [3, 4] },
+  },
+];
+
 export const cases = [
   {
     name: "getter on a prototype three levels up sees the receiver",

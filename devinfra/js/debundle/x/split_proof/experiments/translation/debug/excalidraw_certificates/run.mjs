@@ -166,6 +166,12 @@ for (const chunk of selected) {
         probe.invertedPairs = report.invertedPairs;
         probe.failedPairs = report.failedPairs;
         probe.failedPairExamples = report.failedPairExamples;
+        probe.pairwiseFailedPairs = report.pairwiseFailedPairs;
+        probe.certifiedClassHeritage = report.certifiedClassHeritage;
+        if (probe.certifiedClassHeritage) {
+          assert(probe.pairwiseFailedPairs > 0);
+          assert.equal(probe.failedPairs, 0);
+        }
         assert(report.failedPairs <= report.invertedPairs);
         assert.equal(new Set(report.statements.map((s) => s.id)).size, report.statements.length);
         assert(report.statements.every((s) => s.id >= 0 && s.id < n));

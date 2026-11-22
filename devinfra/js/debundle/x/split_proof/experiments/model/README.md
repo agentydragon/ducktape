@@ -88,11 +88,9 @@ modeled eager keys/static initializers remain explicit. New body fallback does
 not handle `super`, `new.target`, async/generator functions, direct eval, or relocation-sensitive
 imports. A refused body cannot silently erase those restrictions.
 
-The allocation proof admits only fixed-string method/accessor keys and no fields.
+The plain-class allocation proof admits only fixed-string method/accessor keys and no fields.
 It captures method bodies without executing them, writes only fresh objects and
 the class's own binding, and composes with the existing allocation move theorem.
-Inheritance and broader class shapes gain no new proof permission. This is the
-syntax-based `moves` slice, not the binding-certificate slice.
 
 Handwritten cases cover deferred execution, receivers/arguments, class self names,
 nested lexical captures, constructor returns/throws, invocation restrictions,
@@ -120,13 +118,16 @@ Handwritten cases cover chains, both prototype links, constructor-prototype muta
 invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
 invocation restrictions, and opaque base bodies. The separate `corejs_inheritance_differential_test` (`--inheritance-only`) runs
 these cases and the generated `inheritance` family, executing a default-constructor
-chain for each of the same 12 seeds. Its required reordered split
-moves independent prefix allocations; it does not move the derived declaration.
+chain for each of the same 12 seeds. The chain cases reorder independent prefix
+allocations.
 
-Derived creation has **no commutation permission yet**. The existing allocation
-rule's replay premise permits own-region object reads and selected lexical-cell
-reads. Reading an existing superclass/prototype requires an additional heap-read
-stability proof; adding only the superclass binding to `readsNow` is insufficient.
+The guarded heritage cases move an anonymous subclass declaration across local
+allocations. An anonymous plain base class and an earlier subclass remain in the
+prefix. The handwritten plan and every generated seed must reach
+`moves (certified class heritage)` with a normal-equivalence verdict, agree in
+the four Node and CoreJS executions, and match the final model-state hash.
+Negative cases exercise a superclass reassignment, a function superclass, and
+a crossed declaration that reads the moving subclass.
 
 The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
 case labels, CoreJS batch boundaries, and module-order/split subprocess boundaries for timeout diagnosis. The inheritance

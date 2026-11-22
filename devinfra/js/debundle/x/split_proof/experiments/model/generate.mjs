@@ -282,3 +282,30 @@ export function generatedInheritanceCases(seed) {
     },
   ];
 }
+
+export function generatedHeritageSplit(seed) {
+  const n = 1 + ((seed >>> 0) % 7);
+  const locals = Array.from({ length: 1 + ((seed >>> 0) % 4) }, (_, i) => `config${i}`);
+  const pivot = 2;
+  const crossed = locals.map((_, i) => pivot + 1 + i);
+  return {
+    name: `certified heritage seed ${seed}`,
+    source: `
+      var Base = class { constructor(value) { this.value = value; } };
+      var Earlier = class extends Base { read() { return this.value + ${n}; } };
+      var Pivot = class extends Base { get adjusted() { return this.value * ${n + 1}; } };
+      ${locals.map((name, i) => `var ${name} = { value: ${n + i} };`).join("\n")}
+      console.log(new Earlier(${n + 2}).read(), new Pivot(${n + 3}).adjusted,
+        Object.getPrototypeOf(Pivot) === Base, Object.getPrototypeOf(Pivot.prototype) === Base.prototype,
+        ${locals.map((name) => `${name}.value`).join(", ")});
+    `,
+    spec: {
+      entry: "entry.mjs",
+      modules: {
+        "prefix.mjs": ["#0", "#1", ...crossed.map((id) => `#${id}`)],
+        "entry.mjs": [`#${pivot}`, `#${pivot + locals.length + 1}`],
+      },
+    },
+    certifiedHeritage: { pivot, crossed },
+  };
+}
