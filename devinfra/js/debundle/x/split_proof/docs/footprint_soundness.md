@@ -132,6 +132,14 @@ The [`model` coverage matrix](../experiments/model/README.md) and
 [`effects` tests](../experiments/effects/README.md) describe executable evidence.
 Passing those tests is not a footprint soundness proof.
 
+For a flat `var` object pattern with a named RHS, the conditional
+[`DataProjection.declaration_commutes_at`](../lean/Experiments/CoreJS/DataProjection.lean)
+covers the entire CoreJS block, including receiver capture, getter-free reads and
+writes to each target. Its premises require the resolved binding and the actual
+own data descriptors in the state at the crossing, with the other unit local to
+a separate region. The ordinary checker still needs a proof that the preceding
+units establish and preserve those premises before it can use this theorem.
+
 ## Implementation boundaries and milestones
 
 Most of `Effects.eval` and `Effects.exec` is a mutually recursive `partial def`
