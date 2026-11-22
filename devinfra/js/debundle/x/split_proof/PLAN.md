@@ -1,6 +1,12 @@
 # Plan
 
-Goal: turn a minified production bundle into readable modules, with a machine-checked guarantee that the split program behaves like the original, resting on as few unproved assumptions as possible, each one stated.
+The goal is to turn the production bundle in `gaffer-private` into runnable, readable modules following its authored spec, with a machine-checked guarantee that the split behaves like the original.
+
+## Acceptance contract
+
+Given the original module graph, a proposed placement and a requested guarantee, Lean may certify the output module graph or refuse. Certification covers the entry’s exact public names and the live bindings they denote, including the effects of generated imports and exports. For every modeled world, `normal-completion` means that each successful final state of either program is also a successful final state of the other. `all-outcomes` extends that comparison to every modeled ending, including throws. The verdict must identify the guarantee achieved and reject a request for a stronger one. Applying that result to JavaScript assumes faithful parsing, scope annotations, printing and CoreJS semantics for the supported fragment.
+
+The production acceptance run uses the private bundle, its dependencies and the reviewed placement. Record the certified guarantee for the complete split, which authored boundaries it realizes, and the result of running the emitted application through its browser smoke test. Until it certifies, record the first reproducible blocker on that input. Keep the bundle, selectors and run artifacts in the private repository.
 
 The work was parked on 2026-11-21. This file is the hand-over: what existed then, what to do next and in which order, and what was still owed. Measurements below remain historical results from that revision; they do not certify the current emitted artifacts. Use `lowersplit --diagnostic` to reproduce structural and model diagnostics. [`docs/lessons_learned.md`](docs/lessons_learned.md) has the experience behind it, [`SUPPORT.md`](SUPPORT.md) what a debundler has to support, [`translation/PLAN.md`](translation/PLAN.md) the plan of the translation checker, and [`TODO.md`](TODO.md) the smaller items.
 
@@ -88,19 +94,16 @@ What the statement forces:
 
 Two tracks. The proof track is ordered: each step needs the one before. The engineering track is independent of it and of itself, so its steps can run in parallel. Every step ends with its checks run and its numbers in the PR.
 
-### Excalidraw
+### Excalidraw (public intermediate milestone)
 
-Defer modeling or rewriting `import.meta.url`. Start with the editor prefix split in the [Excalidraw census](translation/debug/excalidraw_certificates/README.md). Its 888 candidate units include the worker factory (unit 872), which reads `import.meta.url` when its static method runs. Keep that unit in the editor entry at the original chunk URL and try extracting the other 887.
+Use the public editor and its real providers to exercise the same certification path while the private input is unavailable. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) currently adds five private names to the entry’s exports. Keep that output as a rejection case.
 
-Run the structural checks and the CoreJS checker on each complete candidate split. Record how many units move, which splits pass the structural checks, and which receive a CoreJS equivalence certificate under the stated premises. If the retained factory still blocks a whole-split certificate, record that verdict and try other placements or chunks whose certification does not depend on module URLs. Report the first blocker for each unsuccessful probe.
+The strict replay of the pair currently stops at statement 5 with `expected a single declarator`. Isolate the failing declaration before extending the lowering. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`. When private access is available, replay the authored production placement and use its blockers to prioritize further work.
 
-The one-arrow scroll placement moves unit 1337 (`Jb`) and preserves all 611 public editor names.
 An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as calls to
 `Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require
 establishing its runtime premises at each crossing. The first of the other 245 pairs
-was unit 19, `Ml = ra(yo())`, crossing `Jb`. The acceptance case runs the ordinary
-splitter on the whole editor and its providers. The linked decoder reaches statement 5
-and rejects a declaration with multiple declarators.
+was unit 19, `Ml = ra(yo())`, crossing `Jb`.
 [Scroll replay and proof scope](translation/debug/excalidraw_certificates/README.md#strict-certification-of-the-scroll-module)
 
 Seven of the editor's eight flat destructuring declarations read keys present in
@@ -247,8 +250,8 @@ Guard anything added with the corpus' rejections that must stay rejected (`proxy
 
 ### 4. The entry's public surface
 
-- `Valid` knows what each `export` statement publishes (`Stmt.exports`) and keeps a module's export names apart (`ExportsUnique`). It does not say that the entry still exports what the bundle exported: glue adds names to the entry (`av$1` beside `av`), and nothing checks that the old names keep their bindings.
-- `Correct` adds: the entry's public surface (name → binding) is the bundle's, plus glue names. `mkPlan` could reuse `export { X as av }` for an importer of `X` (`import { av as X }`) and add fewer names.
+- `ExportsUnique` keeps export names distinct within each module. The certification step must also compare the entry’s public name-to-binding mapping with the original. An extra glue export changes what a namespace importer can observe.
+- Reuse an existing public alias where possible. For example, if the entry already exports `X` as `av`, a generated importer can use `import { av as X }` without widening the entry’s interface.
 - The same step can fold the entry-only rule for `import` and `export` statements into `Valid` (TODO.md).
 
 ### 5. Import-only edges for evaluation order (1 entry, likely more after step 1)
