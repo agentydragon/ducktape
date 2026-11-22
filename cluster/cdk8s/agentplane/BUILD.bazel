@@ -968,8 +968,10 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//jsonschema",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
+        "@pypi//referencing",
     ],
 )
 

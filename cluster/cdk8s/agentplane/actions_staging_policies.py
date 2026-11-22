@@ -180,11 +180,16 @@ def _kubernetes_account_use(caller: StandingCaller) -> list[str]:
     return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name]
 
 
-def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
+def _policy_set(scope: Construct, name: str, *, description: str, rules: Sequence[PolicySetSpecRules]) -> None:
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
     # kind or key, an invalid JSON Schema); a set it refuses grants nothing on the cluster, so
     # it fails here instead.
-    policy_set_object = PolicySet(scope, id, metadata=metadata, spec=PolicySetSpec(rules=rules))
+    policy_set_object = PolicySet(
+        scope,
+        name,
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
+        spec=PolicySetSpec(rules=rules),
+    )
     for rule in policy_set_object.to_json()["spec"]["rules"]:
         parse_action_rule(rule)
 
@@ -199,10 +204,7 @@ def _exact_actions_policy_set(
 ) -> None:
     """Create a named staging PolicySet for an exact Action allowlist."""
     _policy_set(
-        scope,
-        name,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
-        rules=[AutoApproveIf.exact_actions(actions=actions), *additional_rules],
+        scope, name, description=description, rules=[AutoApproveIf.exact_actions(actions=actions), *additional_rules]
     )
 
 
@@ -478,14 +480,8 @@ def add_staging_action_policies(
     # and the private gaffer-private.
     _policy_set(
         scope,
-        "common-github-read",
-        metadata=ApiObjectMetadata(
-            name=COMMON_GITHUB_READ_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public, and of agentydragon/ducktape, its fork agentydragon-agent/ducktape and the private agentydragon/gaffer-private."
-            },
-        ),
+        COMMON_GITHUB_READ_SET,
+        description="Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public, and of agentydragon/ducktape, its fork agentydragon-agent/ducktape and the private agentydragon/gaffer-private.",
         rules=[
             AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS}),
             *(
@@ -507,16 +503,10 @@ def add_staging_action_policies(
     # runs, though the MCP arguments do not expose a run's originating event for PR-only filtering.
     _policy_set(
         scope,
-        "ducktape-pr-failed-jobs",
-        metadata=ApiObjectMetadata(
-            name=DUCKTAPE_PR_FAILED_JOBS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; "
-                    "dispatch, whole-run rerun, cancellation and log deletion remain on the human path."
-                )
-            },
+        DUCKTAPE_PR_FAILED_JOBS_SET,
+        description=(
+            "Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; "
+            "dispatch, whole-run rerun, cancellation and log deletion remain on the human path."
         ),
         rules=[
             AutoApproveIf.argument_schema(
@@ -543,17 +533,11 @@ def add_staging_action_policies(
     #    scoped to this repository and this one Action.
     _policy_set(
         scope,
-        "gaffer-private-branch-and-pr-creation",
-        metadata=ApiObjectMetadata(
-            name=GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting "
-                    "agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not "
-                    "merged, and other writes remain human-approved."
-                )
-            },
+        GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
+        description=(
+            "Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting "
+            "agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not "
+            "merged, and other writes remain human-approved."
         ),
         rules=[
             AutoApproveIf.argument_schema(
