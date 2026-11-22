@@ -71,6 +71,7 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json) : Exc
   | "T" => return .var x
   | "L" =>
     unless inFunction do throw s!"unexpected function-local name {x}"
+    if x == "arguments" then throw "unsupported implicit arguments reference"
     return .var x
   | "V" =>
     unless imports.contains x do throw s!"unlinked imported name {x}"
