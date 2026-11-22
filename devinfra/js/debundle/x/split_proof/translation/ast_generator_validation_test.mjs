@@ -3,7 +3,35 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { parse } from "acorn";
 import { analyze } from "eslint-scope";
-import { generateAstBundle } from "./ast_generator.mjs";
+import { astShape } from "./ast_assertions.mjs";
+import { generateAstBundle, generateRenamed } from "./ast_generator.mjs";
+
+const parseModule = (source) => parse(source, { ecmaVersion: "latest", sourceType: "module", ranges: true });
+const spellings = { top: (name) => `module_${name}`, local: (name) => `local_${name}` };
+
+// eslint-scope resolves occurrences independently of the generator's binding tags.
+function visitBindings(ast, visit) {
+  const manager = analyze(ast, { ecmaVersion: 2022, sourceType: "module" });
+  for (const scope of manager.scopes) {
+    const binding = scope.type === "module" ? "top" : "local";
+    for (const variable of scope.variables) {
+      for (const id of variable.identifiers) visit(id, binding, variable.name);
+      for (const ref of variable.references) visit(ref.identifier, binding, variable.name);
+    }
+  }
+}
+
+// The same spelling denotes three things here: a module binding, a shadowing parameter, and a property key.
+{
+  const source = "const value = 1; function f(value) { return {value: value}.value; } f(value);";
+  const input = parseModule(source);
+  visitBindings(input, (id, binding) => {
+    id.binding = binding;
+  });
+  const expected =
+    "const module_value = 1; function module_f(local_value) { return {value: local_value}.value; } module_f(module_value);";
+  assert.deepEqual(astShape(parseModule(generateRenamed(input, spellings))), astShape(parseModule(expected)));
+}
 
 const kinds = new Set();
 const programs = new Set();
@@ -41,7 +69,15 @@ for (const seed of [1, 2026, 2027, 1337]) {
     const bundle = generateAstBundle(seed, round);
     assert.equal(bundle.source, generateAstBundle(seed, round).source, "generation must be deterministic");
     programs.add(bundle.source);
-    const ast = parse(bundle.source, { ecmaVersion: "latest", sourceType: "module", ranges: true });
+    const ast = parseModule(bundle.source);
+    const intended = JSON.parse(JSON.stringify(bundle.ast, (key, value) => (key === "binding" ? undefined : value)));
+    assert.deepEqual(astShape(ast), intended, `AST round trip at ${seed}/${round}`);
+    const expected = parseModule(bundle.source);
+    visitBindings(expected, (id, binding, name) => {
+      id.name = spellings[binding](name);
+    });
+    const renamed = parseModule(generateRenamed(bundle.ast, spellings));
+    assert.deepEqual(astShape(renamed), astShape(expected), `renamed AST at ${seed}/${round}`);
     assert.equal(ast.body.length, bundle.units.length, `seed ${seed} round ${round}: unit count`);
     walk(ast);
     const manager = analyze(ast, { ecmaVersion: 2022, sourceType: "module" });
