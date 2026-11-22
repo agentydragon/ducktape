@@ -16,7 +16,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap
 from constructs import Construct
 
-from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -44,7 +43,6 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.monitoring import alloy_endpoints
@@ -216,13 +214,7 @@ def environment_chart(
             "environment-vm-config",
             metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
             data=environment_guest.guest_config_data(
-                env,
-                gateway=launcher_relay.GUEST_GATEWAY,
-                block_devices=("/dev/disk/by-id/virtio-workspace",),
-                platform_instructions=platform_instructions(
-                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
-                ),
-                harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
+                env, gateway=launcher_relay.GUEST_GATEWAY, block_devices=("/dev/disk/by-id/virtio-workspace",)
             ),
         )
         environment_vm.EnvironmentVmTemplate(
@@ -246,7 +238,6 @@ def environment_chart(
         firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
         firecracker_workspace = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
         firecracker_workspace["claim"]["resources"] = state_volume["claim"]["resources"]
-        guest_gateway = environment_firecracker.GATEWAY
         environment_firecracker.EnvironmentFirecrackerTemplate(
             runner_scope,
             "firecracker-template",
@@ -255,10 +246,6 @@ def environment_chart(
             state_volume=firecracker_state,
             workspace_volume=firecracker_workspace,
             runner_image=environment_vm.RUNNER_DISK_IMAGE,
-            platform_instructions=platform_instructions(
-                env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
-            ),
-            harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
             image_pull_secret_name=sandbox_pod.SECRET_NAME,
         )
     runner_template.add_platform_resources(runner_scope)
