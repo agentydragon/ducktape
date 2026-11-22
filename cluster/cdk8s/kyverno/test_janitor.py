@@ -59,8 +59,8 @@ class TestJanitor:
 
     def test_younger_object_is_kept(self, janitor_policy: Path, tmp_path: Path):
         result = apply_policy(janitor_policy, _pod(tmp_path, age=timedelta(days=6)))
-        assert result.ok, result.stdout
-        assert result.passed == 0, result.stdout
+        # For a deleting policy the CLI reports a nonmatching Pod as a failed match.
+        assert (result.passed, result.failed, result.errored) == (0, 1, 0), result.stdout
 
 
 if __name__ == "__main__":
