@@ -98,7 +98,7 @@ Two tracks. The proof track is ordered: each step needs the one before. The engi
 
 On 2026-11-22 the pairing covered all 9,707 body units in the archived review tree. The archived pairing assigns three occurrences of the same call to output positions that put two owners out of source order. Reassigning those occurrences in a scratch pairing preserved every output position and let the current adapter represent the full body-unit schedule. The calls have identical source syntax and resolve to the same callee. This checks placement representability only. Independently, the reviewed entry exposes all 268 original export names and 266 extra names. Recheck both the schedule and the public interface before treating this tree as a certification candidate.
 
-Strict replay of the isolated first production statement now gets through the function-body `try` and the grouped local `var` declaration. It rejects the first initializer with `statement 0: unsupported linked expression ConditionalExpression`. The next lowering case is the conditional operator: evaluate its test once and only the selected arm. The production test expression itself contains further operations whose support has yet to be checked by this replay.
+Strict replay of the isolated first production statement reaches the test of a conditional initializer and rejects it with `statement 0: unsupported linked expression BinaryExpression`. The comparison uses loose inequality (`!=`). Establish which operand types the model handles before admitting that comparison, then replay the same statement.
 
 ### Excalidraw (public intermediate milestone)
 

@@ -460,6 +460,7 @@ lean_axiom_test(
         "CoreJS.allocOnly_class_nonliteralKey_rejected",
         "CoreJS.allocOnly_derivedClass_rejected",
         "CoreJS.decl_allocOnly",
+        "CoreJS.evalExpr_cond",
         "CoreJS.fuel_mono",
         "CoreJS.Ends.unique",
         "CoreJS.same",

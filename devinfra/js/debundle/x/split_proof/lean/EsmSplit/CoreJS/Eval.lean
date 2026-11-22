@@ -535,6 +535,26 @@ def loop : Nat → Env → List Name → Expr → Expr → Stmt → M W Flow
 
 end
 
+/-- A conditional evaluates its test once. Both truthiness and the chosen branch see
+the state left by the test. Any abrupt result of the test or branch propagates. -/
+theorem evalExpr_cond (n : Nat) (env : Env) (test yes no : Expr) (s : State W) :
+    evalExpr (n + 1) env (.cond test yes no) s =
+      match evalExpr n env test s with
+      | .ok v s' =>
+        (do
+          let b ← lift (toBoolean v)
+          evalExpr n env (if b then yes else no)) s'
+      | .throw v s' => .throw v s'
+      | .unknown why s' => .unknown why s'
+      | .fuel => .fuel := by
+  rw [evalExpr]
+  cases h : evalExpr n env test s with
+  | ok v s' =>
+    cases ht : toBoolean v with
+    | ok b => cases b <;> simp [bind, h, ht, lift, pure]
+    | error err => cases err <;> simp [bind, h, ht, lift, throwErr, throwVal, unknown]
+  | _ => simp [bind, h]
+
 def construct (n : Nat) (callee : Val) (args : List Val) : M W Val :=
   constructTarget n callee callee args
 

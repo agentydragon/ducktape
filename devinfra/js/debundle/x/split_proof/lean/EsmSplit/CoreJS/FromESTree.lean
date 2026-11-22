@@ -183,6 +183,10 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
     unary (← field j "operator") argument (fun _ => linkedExpr imports inFunction "" argument)
+  | "ConditionalExpression" =>
+    let lower := linkedExpr imports inFunction ""
+    return .cond (← lower (← j.getObjVal? "test")) (← lower (← j.getObjVal? "consequent"))
+      (← lower (← j.getObjVal? "alternate"))
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr imports inFunction ""
