@@ -8,17 +8,21 @@ from python.runfiles import Runfiles
 
 def test_helm_templates_render(runfiles: Runfiles) -> None:
     root = runfiles.root()
+    bootstrap = root / "ducktape/cluster/terraform/main"
     subprocess.run(
         [
             root / "multitool/tools/helm/helm",
             "template",
-            "test-release",
+            "cilium",
             "cilium",
             "--repo",
             "https://helm.cilium.io/",
+            "--version",
+            (bootstrap / "cilium-version.txt").read_text().strip(),
+            "--namespace",
+            "kube-system",
             "--values",
-            root / "ducktape/cluster/terraform/main/cilium-values.yaml",
-            "--dry-run=client",
+            bootstrap / "cilium-values.yaml",
         ],
         check=True,
         stdout=subprocess.DEVNULL,

@@ -241,6 +241,7 @@ py_test(
     srcs = ["test_helm_templates.py"],
     data = [
         "//cluster/terraform/main:cilium-values.yaml",
+        "//cluster/terraform/main:cilium-version.txt",
         "@multitool//tools/helm",
     ],
     deps = [

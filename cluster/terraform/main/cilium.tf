@@ -4,7 +4,7 @@
 # and install it via helm CLI after the k8s API is reachable.
 
 locals {
-  cilium_version      = "1.19.8"
+  cilium_version      = trimspace(file("${path.module}/cilium-version.txt"))
   gateway_api_version = "v1.5.1"
 }
 
@@ -57,8 +57,7 @@ resource "null_resource" "cilium_bootstrap" {
     # (cluster/docs/network.md).
     command = <<-EOT
       set -e
-      helm repo add cilium https://helm.cilium.io/ && helm repo update cilium
-      helm upgrade --install cilium cilium/cilium \
+      helm upgrade --install cilium cilium --repo https://helm.cilium.io/ \
         --version ${local.cilium_version} \
         --namespace kube-system \
         --create-namespace \
