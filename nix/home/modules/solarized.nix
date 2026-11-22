@@ -10,19 +10,23 @@
   ...
 }:
 let
+  autoProfile = "50b88bb4-6263-4bbb-9b2d-11d6a8463e58";
+  lightProfile = "b1dcc9dd-5262-4d8d-a863-c897e6d979b9";
+  darkProfile = "5083e06b-024e-46be-9cd2-892b814f1fc8";
+
   # Theme switching scripts - wrappers around gterm-theme.
   # Installed to PATH via home.packages; called by Night Theme Switcher
   # extension on sunrise/sunset and available for manual use.
   set_light_theme = pkgs.writeShellApplication {
     name = "set_light_theme";
     runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
-    text = "gterm-theme --profile='Solarized Light'";
+    text = "gterm-theme --target_profile=${autoProfile} --profile=${lightProfile}";
   };
 
   set_dark_theme = pkgs.writeShellApplication {
     name = "set_dark_theme";
     runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
-    text = "gterm-theme --profile='Solarized Dark'";
+    text = "gterm-theme --target_profile=${autoProfile} --profile=${darkProfile}";
   };
 in
 {
@@ -146,7 +150,7 @@ in
   };
 
   # GNOME Terminal Solarized profiles using nix-colors schemes (GUI only)
-  # This creates both profiles which can be switched dynamically with switch_gnome_terminal_profile
+  # The switcher copies colors from these source profiles into Auto.
   programs.gnome-terminal = lib.mkIf enableGui {
     enable = true;
     showMenubar = false;
@@ -176,23 +180,23 @@ in
         # Base profile definitions
         baseProfiles = {
           # Solarized Light profile
-          "b1dcc9dd-5262-4d8d-a863-c897e6d979b9" = {
+          ${lightProfile} = {
             visibleName = "Solarized Light";
             default = true;
             colors = {
               foregroundColor = "#${solarizedLight.palette.base05}";
-              backgroundColor = "#${solarizedLight.palette.base07}";
+              backgroundColor = "#${solarizedLight.palette.base00}";
               boldColor = "#${solarizedLight.palette.base04}";
               palette = mkTerminalPalette solarizedLight;
               cursor = {
-                foreground = "#${solarizedLight.palette.base07}";
+                foreground = "#${solarizedLight.palette.base00}";
                 background = "#${solarizedLight.palette.base05}";
               };
             };
           };
 
           # Solarized Dark profile
-          "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
+          ${darkProfile} = {
             visibleName = "Solarized Dark";
             colors = {
               foregroundColor = "#${solarizedDark.palette.base05}";
@@ -258,6 +262,17 @@ in
   ];
 
   dconf.settings = lib.mkIf enableGui {
+    # Home Manager owns membership and identity; gterm-theme owns Auto's colors.
+    "org/gnome/terminal/legacy/profiles:" = {
+      default = lib.mkForce autoProfile;
+      list = lib.mkForce [
+        darkProfile
+        lightProfile
+        autoProfile
+      ];
+    };
+    "org/gnome/terminal/legacy/profiles:/:${autoProfile}".visible-name = "Auto";
+
     # Set default terminal
     "org/gnome/desktop/applications/terminal" = {
       exec = "gnome-terminal.wrapper";
