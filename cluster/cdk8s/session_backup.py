@@ -24,7 +24,7 @@ from cdk8s_plus_34 import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -60,7 +60,7 @@ def chart(app: App) -> Chart:
             name=_HDD_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-        storage_class_name="piraeus-hdd-2",
+        storage_class_name=piraeus_storage.HDD_REPLICATED,
         storage=Size.gibibytes(100),
     )
     deployment = Deployment(

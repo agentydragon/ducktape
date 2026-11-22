@@ -27,7 +27,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
@@ -70,7 +70,7 @@ def _data_claim(scope: Construct) -> None:
     # Single replica (Recreate strategy) because refresh tokens are rotated by this one writer.
     # A few MiB of files: two DRBD copies, following the Pod onto its node.
     volume_claim(
-        scope, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="256Mi"
+        scope, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_REPLICATED, size="256Mi"
     )
 
 

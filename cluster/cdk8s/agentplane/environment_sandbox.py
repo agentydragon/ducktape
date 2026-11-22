@@ -47,7 +47,7 @@ from agentplane.env.config import (
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from agentplane.session_instructions.platform_instructions import SessionRuntime
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, piraeus_storage
 from cluster.cdk8s.agentplane import (
     egress,
     environment_vm,
@@ -69,7 +69,6 @@ from cluster.cdk8s.settings_file import SettingsFile
 NAME = "environment-tools"
 _POD_LABEL_NAME = "agentplane-environment-runtime"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 ENVIRONMENT_RUNTIME_LABELS = {**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS}
 _SANDBOX_CONTROLLER_CILIUM_LABELS = {"app.kubernetes.io/name": "sandbox-controller"}
@@ -174,7 +173,7 @@ class EnvironmentSandboxTemplate(Construct):
         name: str,
         image: str,
         key_files: Sequence[KeyFile] = (),
-        storage_class: str = _STORAGE_CLASS,
+        storage_class: str = piraeus_storage.HDD_LOCAL,
         environment_runtime_resources: k8s.ResourceRequirements | None = None,
         executor_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,

@@ -424,38 +424,29 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(documents: list[dict[str,
     assert len(classes) == len(values["storageClasses"])
     # StorageClass names and pool types are a deployment contract. Every class must
     # resolve to a pool on a prepared node.
-    expected_class_pools = {
-        "piraeus-ssd-local": "ssd",
-        "piraeus-ssd-local-delete": "ssd",
-        "piraeus-hdd-local": "hdd",
-        "piraeus-ssd-2-autodiskful": "ssd",
-        "piraeus-hdd-2": "hdd",
+    # Each entry gives the promised pool, reclaim policy and replica count.
+    expected = {
+        "piraeus-ssd-local": ("ssd", "Retain", "1"),
+        "piraeus-ssd-local-delete": ("ssd", "Delete", "1"),
+        "piraeus-hdd-local": ("hdd", "Retain", "1"),
+        "piraeus-ssd-2-autodiskful": ("ssd", "Retain", "2"),
+        "piraeus-hdd-2": ("hdd", "Retain", "2"),
     }
-    expected_reclaim_policies = {
-        "piraeus-ssd-local": "Retain",
-        "piraeus-ssd-local-delete": "Delete",
-        "piraeus-hdd-local": "Retain",
-        "piraeus-ssd-2-autodiskful": "Retain",
-        "piraeus-hdd-2": "Retain",
-    }
-    assert set(classes) == set(expected_class_pools)
+    assert classes.keys() == expected.keys()
     available_pools = {name for pools in actual_devices.values() for name in pools}
-    local_classes = {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"}
-    replicated_classes = {"piraeus-ssd-2-autodiskful", "piraeus-hdd-2"}
     for name, storage_class in classes.items():
-        assert storage_class["reclaimPolicy"] == expected_reclaim_policies[name]
+        pool, reclaim_policy, replicas = expected[name]
+        assert storage_class["reclaimPolicy"] == reclaim_policy
         assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
         assert storage_class["allowVolumeExpansion"] is True
         parameters = storage_class["parameters"]
-        assert parameters["linstor.csi.linbit.com/storagePool"] in available_pools
-        if name in expected_class_pools:
-            assert parameters["linstor.csi.linbit.com/storagePool"] == expected_class_pools[name]
-        if name in local_classes:
-            assert parameters["linstor.csi.linbit.com/placementCount"] == "1"
+        assert parameters["linstor.csi.linbit.com/storagePool"] == pool
+        assert pool in available_pools
+        assert parameters["linstor.csi.linbit.com/placementCount"] == replicas
+        if replicas == "1":
             assert parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"] == "false"
-        elif name in replicated_classes:
+        else:
             # Replicated copies and attachments stay inside OVH, never across the home link.
-            assert parameters["linstor.csi.linbit.com/placementCount"] == "2"
             assert parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"
             assert yaml.safe_load(parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
                 {"fromSame": ["topology.kubernetes.io/zone"]}
@@ -488,7 +479,14 @@ def test_descheduler_protects_piraeus_node_local_storage_classes(documents: list
         ]
     }
     # nodeFit does not account for a strict-local PV, so eviction cannot move these Pods.
-    assert {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"} <= protected_classes
+    linstor = find_resource(documents, "HelmRelease", "linstor-cluster")
+    local_classes = {
+        storage_class["name"]
+        for storage_class in linstor["spec"]["values"]["storageClasses"]
+        if storage_class["parameters"]["linstor.csi.linbit.com/allowRemoteVolumeAccess"] == "false"
+    }
+    assert local_classes
+    assert local_classes <= protected_classes
 
 
 def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(documents: list[dict[str, Any]]) -> None:

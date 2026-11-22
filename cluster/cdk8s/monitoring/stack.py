@@ -16,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import node_scheduling, ntfy
+from cluster.cdk8s import node_scheduling, ntfy, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -234,7 +234,7 @@ def _values() -> dict[str, object]:
                     "volumeClaimTemplate": {
                         "metadata": {"name": "db"},
                         "spec": {
-                            "storageClassName": "piraeus-hdd-local",
+                            "storageClassName": piraeus_storage.HDD_LOCAL,
                             "accessModes": ["ReadWriteOnce"],
                             "resources": {"requests": {"storage": "1Gi"}},
                         },

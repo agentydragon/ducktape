@@ -17,7 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, piraeus_storage
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -78,7 +78,7 @@ def _claims(scope: Construct) -> None:
         "piraeus-models",
         name=_MODELS_CLAIM,
         namespace=NAMESPACE,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         size="200Gi",
     )
     volume_claim(
@@ -86,7 +86,7 @@ def _claims(scope: Construct) -> None:
         "piraeus-ssd-models",
         name=_SSD_MODELS_CLAIM,
         namespace=NAMESPACE,
-        storage_class="piraeus-ssd-local",
+        storage_class=piraeus_storage.SSD_LOCAL,
         size="100Gi",
     )
 

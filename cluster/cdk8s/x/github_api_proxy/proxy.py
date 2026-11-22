@@ -49,7 +49,7 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, piraeus_storage
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
@@ -203,7 +203,7 @@ def _capture_claim(scope: Construct) -> None:
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
+            storage_class_name=piraeus_storage.SSD_REPLICATED,
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
         ),
     )

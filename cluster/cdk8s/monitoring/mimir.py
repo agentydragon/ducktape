@@ -6,7 +6,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -150,7 +150,7 @@ def _values() -> dict[str, object]:
         "distributor": _component(1, "50m", "128Mi"),
         "ingester": {
             "replicas": 2,
-            "persistentVolume": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
+            "persistentVolume": {"storageClass": piraeus_storage.HDD_LOCAL, "size": "10Gi"},
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs

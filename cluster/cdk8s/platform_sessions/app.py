@@ -10,7 +10,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, piraeus_storage
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
@@ -32,7 +32,7 @@ SERVICE = ServiceRef(
 
 def _claim(chart: Chart, name: str, namespace: str) -> None:
     volume_claim(
-        chart, f"claim-{namespace}", name=name, namespace=namespace, storage_class="piraeus-ssd-local", size="1Gi"
+        chart, f"claim-{namespace}", name=name, namespace=namespace, storage_class=piraeus_storage.SSD_LOCAL, size="1Gi"
     )
 
 

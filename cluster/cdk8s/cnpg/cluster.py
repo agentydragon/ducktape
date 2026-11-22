@@ -33,7 +33,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -62,11 +62,11 @@ class ClusterPlacement:
 
 
 # OVH Piraeus SSD pools are on control-plane nodes, so this profile carries their toleration.
-OVH_PIRAEUS_SSD = ClusterPlacement(storage_class="piraeus-ssd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
-OVH_PIRAEUS_HDD = ClusterPlacement(storage_class="piraeus-hdd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
+OVH_PIRAEUS_SSD = ClusterPlacement(storage_class=piraeus_storage.SSD_LOCAL, affinity=_OVH_CONTROL_PLANE_AFFINITY)
+OVH_PIRAEUS_HDD = ClusterPlacement(storage_class=piraeus_storage.HDD_LOCAL, affinity=_OVH_CONTROL_PLANE_AFFINITY)
 # Single-instance only: one node, so no anti-affinity to satisfy.
 OPTIPLEX_PIRAEUS_SSD = ClusterPlacement(
-    storage_class="piraeus-ssd-local",
+    storage_class=piraeus_storage.SSD_LOCAL,
     affinity=ClusterSpecAffinity(node_selector=node_scheduling.OPTIPLEX.node_selector),
 )
 

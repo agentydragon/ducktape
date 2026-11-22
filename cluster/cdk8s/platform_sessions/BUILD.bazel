@@ -38,6 +38,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s:service_ref",

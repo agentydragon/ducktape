@@ -25,6 +25,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:stateful_infra",
         "//cluster/cdk8s/providers/seaweedfs:adminscript",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",

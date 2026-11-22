@@ -32,7 +32,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -80,7 +80,6 @@ CONFIG_CLAIM = "home-assistant-config-piraeus"
 _METRICS_TOKEN = SecretRef(namespace=NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
-_STORAGE_CLASS = "piraeus-ssd-local"
 IMAGE = "ghcr.io/home-assistant/home-assistant:2026.9.2"
 _ONBOARDING = "home-assistant-onboarding"
 _ONBOARDING_JOB = "onboarding"
@@ -519,7 +518,7 @@ def _backup(scope: Construct) -> None:
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
         mover=direct_restic_mover(
             repository="home-assistant-config-restic-tenant",
-            cache_storage_class_name=_STORAGE_CLASS,
+            cache_storage_class_name=piraeus_storage.SSD_LOCAL,
             mover_pod_labels=_BACKUP_LABELS,
             mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
                 run_as_user=0,
@@ -553,7 +552,9 @@ def _backup(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    volume_claim(chart, "config", name=CONFIG_CLAIM, namespace=NAMESPACE, storage_class=_STORAGE_CLASS, size="32Gi")
+    volume_claim(
+        chart, "config", name=CONFIG_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_LOCAL, size="32Gi"
+    )
     # Retain storage class plus prune protection preserve these historical copies.
     # Pinned restore helpers bind them on OptiPlex before application startup.
     for name, capacity in (("recovered-config-608a0bc6", "32Gi"), ("recovered-cache-7e9d03f8", "1Gi")):
@@ -562,7 +563,7 @@ def chart(app: App) -> Chart:
             name,
             name=name,
             namespace=NAMESPACE,
-            storage_class=_STORAGE_CLASS,
+            storage_class=piraeus_storage.SSD_LOCAL,
             size=capacity,
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
         )

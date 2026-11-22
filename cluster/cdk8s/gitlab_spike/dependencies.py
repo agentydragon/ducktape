@@ -20,6 +20,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
+from cluster.cdk8s import piraeus_storage
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
@@ -103,7 +104,7 @@ def _valkey(chart: Chart) -> None:
         cpu_limit=Cpu.units(2),
         memory_limit=Size.gibibytes(2),
         max_memory_percent_of_limit=75,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         storage_size=Size.gibibytes(5),
     )
 

@@ -16,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -27,12 +27,6 @@ NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
 CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
-_SSD_LOCAL = "piraeus-ssd-local"
-_HDD_LOCAL = "piraeus-hdd-local"
-# Disposable, strict-local SSD for rebuildable worker cache/work data.
-SSD_LOCAL_DELETE = "piraeus-ssd-local-delete"
-# One copy with no remote access: the volume lives on one node's storage pool.
-NODE_LOCAL_STORAGE_CLASSES = {_SSD_LOCAL, _HDD_LOCAL, SSD_LOCAL_DELETE}
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
 # Controller Pods can run on any prepared OVH node.
 _CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
@@ -532,11 +526,10 @@ def cluster_chart(app: App) -> Chart:
                 ),
             ],
             "storageClasses": [
-                _local_storage_class(_SSD_LOCAL, "ssd", "Retain"),
-                # BuildBuddy executor work disks only contain rebuildable cache data.
-                # Delete the local LINSTOR volume with its PVC so scale-down frees SSD.
-                _local_storage_class(SSD_LOCAL_DELETE, "ssd", "Delete"),
-                _local_storage_class(_HDD_LOCAL, "hdd", "Retain"),
+                *(
+                    _local_storage_class(name, pool, reclaim_policy)
+                    for name, (pool, reclaim_policy) in piraeus_storage.LOCAL_CLASSES.items()
+                ),
                 # Two synchronous copies (DRBD's default protocol C) on distinct OVH SSD nodes,
                 # attachable disklessly from any OVH node, so a single-writer app keeps Seaweed's
                 # two-copy, run-anywhere behavior. Copies and attachments stay in hil-ovh, never
@@ -546,9 +539,9 @@ def cluster_chart(app: App) -> Chart:
                 # own copy after a minute of diskless use (where that node has an `ssd` pool), and
                 # cleanup then drops the surplus copy. Meant for small volumes, where that resync
                 # is trivial.
-                _auto_diskful_storage_class("piraeus-ssd-2-autodiskful", "ssd", "Retain"),
+                _auto_diskful_storage_class(piraeus_storage.SSD_REPLICATED, "ssd", "Retain"),
                 # Auto-diskful moves a replica to the consumer after it stays on an HDD node.
-                _auto_diskful_storage_class("piraeus-hdd-2", "hdd", "Retain"),
+                _auto_diskful_storage_class(piraeus_storage.HDD_REPLICATED, "hdd", "Retain"),
             ],
         },
         post_renderers=[
