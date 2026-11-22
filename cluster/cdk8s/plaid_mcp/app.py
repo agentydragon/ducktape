@@ -10,20 +10,15 @@ stays hand-written beside the generated output in the flat Plaid manifest direct
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetDeletionPolicy,
-)
+from cdk8s_plus_34 import ConfigMap, k8s
 
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
+from cluster.cdk8s.plaid_mcp.secret_copy import copy_secret
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -40,7 +35,6 @@ _WEB = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
 _OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link/"
-_OIDC_READER = "plaid-link-oidc-reader"
 _WEBHOOK_HOST = "plaid-mcp.allegedly.works"
 _WEBHOOK_URL = f"https://{_WEBHOOK_HOST}/webhooks/plaid"
 _CONFIG = {
@@ -80,29 +74,6 @@ def _container_security_context() -> k8s.SecurityContext:
 
 def _resources() -> k8s.ResourceRequirements:
     return container_resources(cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi")
-
-
-def _oidc_credentials(chart: Chart) -> None:
-    """Read only the app's Authentik client Secret from the Authentik namespace through ESO."""
-    reader = ServiceAccount(
-        chart,
-        "oidc-secret-reader",
-        metadata=ApiObjectMetadata(name=_OIDC_READER, namespace=NAMESPACE),
-        automount_token=False,
-    )
-    store = single_secret_store(
-        chart, "plaid-link-oidc", reader=reader, source_namespace="authentik", source_secret=_OIDC_CREDENTIALS.name
-    )
-    ExternalSecret(
-        chart,
-        "oidc-external-secret",
-        metadata=ApiObjectMetadata(name=_OIDC_CREDENTIALS.name, namespace=NAMESPACE),
-        refresh_interval="10m",
-        secret_store_ref=SecretStoreRef.cluster(store),
-        data_from=[DataFrom.from_extract(_OIDC_CREDENTIALS.name)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
-    )
 
 
 def _rbac(chart: Chart) -> None:
@@ -243,7 +214,7 @@ def chart(app: App) -> Chart:
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     ConfigMap(chart, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
     _rbac(chart)
-    _oidc_credentials(chart)
+    copy_secret(chart, "plaid-link-oidc", source_namespace="authentik", target=_OIDC_CREDENTIALS)
     _deployment(chart)
     _sync_cronjob(chart)
     k8s.KubeService(
