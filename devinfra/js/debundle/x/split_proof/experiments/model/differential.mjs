@@ -683,6 +683,10 @@ function split(job, bundle, dump, kind, spec, named) {
     );
   else if (orderKept) tally.sliceNamed++;
   else if (slice?.startsWith("moves")) tally.movesNamed++;
+  if (named?.localNegation) {
+    assert.deepEqual(statements, [0, 2, 1, 3], label);
+    assert.match(slice ?? "", /^moves \(`CoreJS\.moves_preserve`\)/, label);
+  }
   if (named?.certified) {
     assert(!orderKept, `${label}: the binding certificate regression must reorder statements`);
     assert(slice?.startsWith("moves (certified bindings)"), `${label}: missing certified binding slice: ${slice}`);
@@ -930,6 +934,9 @@ for (const job of jobs.filter((j) => j.focused)) {
     covered.reordered++;
 }
 if (bindingOnly) {
+  const negations = splitJobs.filter((j) => j.named?.localNegation);
+  assert.equal(negations.length, count);
+  assert(negations.every((j) => j.moves && j.result.end === "normal" && sameRun(j.node, j.of.node)));
   const certifiedGenerated = splitJobs.filter((j) => j.named?.generatedBinding);
   assert.equal(certifiedGenerated.length, 4 * count, "every generated binding case must be split");
   for (const family of ["literal", "binary", "unary", "branch"]) {

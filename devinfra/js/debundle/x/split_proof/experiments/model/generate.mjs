@@ -291,8 +291,7 @@ export function generatedOpaqueClassCase(seed) {
   };
 }
 
-// Each generated plan crosses two real writes, with each assignment kept beside its own declaration.
-// Successful certification is mandatory; these cases do not rely on random split selection.
+// Give each generated program a fixed split so every seed exercises the intended move or refusal.
 export function generatedBindingCases(seed) {
   const value = 1 + ((seed >>> 0) % 17);
   const literals = ["undefined", "null", "false", "true", String(value), JSON.stringify(`value-${value}`)];
@@ -345,6 +344,14 @@ export function generatedBindingCases(seed) {
       spec,
       certified: true,
       generatedBinding: true,
+    },
+    {
+      name: `fresh record with a negated initializer seed ${seed}`,
+      source: `var input = ${literal};
+        var record = { flag: ${"!".repeat(1 + ((seed >>> 0) % 3))}input, offset: -${value} };
+        var make = () => ${value}; console.log(record.flag, record.offset, make());`,
+      spec: { entry: "entry.mjs", modules: { "side.mjs": ["#0", "#2"], "entry.mjs": ["#1", "#3"] } },
+      localNegation: true,
     },
     {
       name: `dependent binding assignments seed ${seed}`,

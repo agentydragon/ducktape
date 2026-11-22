@@ -376,6 +376,13 @@ theorem finishDerived_plain_keeps (n : Nat) (env : Env) (name : Name) (members :
 /-! ## The shape, and the theorem -/
 
 
+/-- Both admitted unary operations return a value determined by the operand alone. -/
+theorem evalExpr_localUnary {W : World} {op : UnOp} {operand : Expr}
+    (h : localUnaryOperand op operand = true) (n : Nat) (env : Env) :
+    evalExpr (W := W) (n + 1) env (.unary op operand) =
+      (evalExpr n env operand >>= fun v => lift (unop (initialState W 0) op v)) := by
+  rcases localUnaryOperand_ops h with rfl | rfl <;> rfl
+
 theorem allocOnly_keeps (n : Nat) :
     (∀ env e (base s : State W), e.allocOnly = true → Extends base s → (evalExpr n env e s).Keeps base) ∧
     (∀ env es (base s : State W), allocOnlyAll es = true → Extends base s → (evalArgs n env es s).Keeps base) ∧
@@ -390,9 +397,16 @@ theorem allocOnly_keeps (n : Nat) :
   | succ n ih =>
     obtain ⟨ihE, ihA, ihP⟩ := ih
     refine ⟨fun env e base s he hb => ?_, fun env es base s he hb => ?_, fun env a ps base s he hb ha => ?_⟩
-    · cases e <;> simp only [Expr.allocOnly, Bool.false_eq_true] at he <;> unfold evalExpr
+    · cases e <;> try simp only [Expr.allocOnly, Bool.false_eq_true] at he
+      all_goals try unfold evalExpr
       case undef | null | bool | num | str | host | this => exact (inert_pure _).keeps hb
       case var x => exact (inert_readVar env x).keeps hb
+      case unary op operand =>
+        simp only [Bool.and_eq_true] at he
+        obtain ⟨hop, ha⟩ := he
+        change (evalExpr (n + 1) env (.unary op operand) s).Keeps base
+        rw [evalExpr_localUnary hop]
+        exact keeps_bind (ihE env operand base s ha hb) fun _ _ _ h => (inert_lift _).keeps h
       case func f => exact makeFunc_keeps env f hb
       case obj props =>
         refine keeps_bind (alloc_keeps _ hb) fun a s1 h1 hb1 => ?_
