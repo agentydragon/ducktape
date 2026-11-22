@@ -1,0 +1,135 @@
+{
+  "report": "agentplane-protocol-shapes",
+  "findings": [
+    {
+      "id": "typed-overrides",
+      "heading": "Preserve Session override presence",
+      "finding": "AppService.CreateSession parses a strict partial SessionSpec and copies only supplied keys over the selected preset. The setup script separately distinguishes omission, null and a string.",
+      "action": "Prototype one typed field behind the current facade. Compare omitted, zero, empty, null and invalid inputs with the current merge, including casing aliases and reconciliation using the same caller-minted Session ID.",
+      "links": [
+        {
+          "label": "CreateSession request",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/app/app_service.proto#L272"
+        },
+        {
+          "label": "Current merge",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/app/internal/sessionclient/session_client.go#L91"
+        },
+        {
+          "label": "Open facade decision",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/plans/grpc_http_facade.md#L21"
+        }
+      ],
+      "probe": "The existing facade test covers omitted preset values, an explicit empty model, and setup-script null and replacement. Use additional field-specific null and default vectors before choosing a typed request shape."
+    },
+    {
+      "id": "config",
+      "heading": "Compare the Sessions settings loaders",
+      "finding": "Sessions still repeats settings fields in the cdk8s authoring model and the Go loader. The shared configfile package now owns common strict YAML decoding and safe errors.",
+      "action": "Use the Sessions pair to trial shared default and rejection vectors, including nested delegation entries and redacted credential errors. Choose a schema generator only after those vectors work.",
+      "links": [
+        {
+          "label": "Python authoring fields",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/session_dispatcher/settings.py#L59"
+        },
+        {
+          "label": "Go loader",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/session_dispatcher/internal/app/config.go"
+        },
+        {
+          "label": "Shared Go decoder",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/configfile/config.go"
+        },
+        {
+          "label": "Settings design gate",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/plans/task_dag.md#L2229"
+        }
+      ],
+      "probe": "A declaration comparison matched all 15 top-level serialized keys after excluding the Go environment-only field. That result covers names only."
+    },
+    {
+      "id": "telemetry",
+      "heading": "Keep the browser diagnostics contract strict",
+      "finding": "The browser emits HistoryEvent marks; Python reads them through a discriminated union that rejects extra fields. These are test diagnostics with explicit privacy boundaries.",
+      "action": "Keep the current models and add one executable parity check when expanding the event contract. Exercise a known nullable field, an unknown kind and an extra field.",
+      "links": [
+        {
+          "label": "Browser event union",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/util/frontend/transcript/history_diagnostics.ts#L12"
+        },
+        {
+          "label": "Python event union",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/app/testing/thread_view_marks.py#L132"
+        }
+      ],
+      "probe": "The source comparison matched 15 kinds, 36 non-discriminator fields, two nullable fields and the literal vocabularies."
+    },
+    {
+      "id": "action-mapping",
+      "heading": "Test generated Action client edge cases",
+      "finding": "The frontend uses generated Action messages. Its client still enforces required decision and request fields and explicitly maps status filters into query strings.",
+      "action": "Check absent principals, unknown state and unsupported outcome branches at the client boundary. Reuse the generated message schemas for valid payloads.",
+      "links": [
+        {
+          "label": "Validation and query mapping",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/app/frontend/actions/client.ts#L67"
+        }
+      ],
+      "probe": null
+    },
+    {
+      "id": "policy-mapping",
+      "heading": "Keep historical Action policy evidence readable",
+      "finding": "The Action Store already tests historical policy evidence and rejects invalid domain values. Its conversion is an explicit compatibility boundary from persisted JSON to the service contract.",
+      "action": "Keep the existing vectors. Add a historical row only when storage or the public evidence shape changes.",
+      "links": [
+        {
+          "label": "Policy evidence conversion",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/action_service/internal/store/protobuf.go#L47"
+        },
+        {
+          "label": "Historical inputs and negative tests",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/action_service/internal/store/golden_test.go#L145"
+        }
+      ],
+      "probe": null
+    }
+  ],
+  "source_probes": {
+    "sessions_serialized_keys": [
+      "central_sampler",
+      "dispatcher_service_callers",
+      "dispatcher_service_delegation",
+      "dispatcher_watch_lease_seconds",
+      "gateway_tls",
+      "kubeconfig",
+      "kubernetes_client_qps",
+      "max_queued_per_session",
+      "policy_namespace",
+      "rpc",
+      "runner_control_target_template",
+      "runner_request_timeout_seconds",
+      "runner_token_file",
+      "sandbox_namespace",
+      "wake_service_callers"
+    ],
+    "thread_diagnostics": {
+      "kinds": 15,
+      "non_discriminator_fields": 36,
+      "nullable_fields": 2
+    }
+  },
+  "scope": "Selected contracts in tracked source. The declaration screen compares keys, types and literals. Runtime agreement requires coverage of serialization and accepted inputs.",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "audited_at_utc": "2026-11-22T10:58:33Z",
+  "previous_snapshot": "https://github.com/agentydragon/ducktape/tree/62929b186a/agentplane-protocol-shapes",
+  "validation": {
+    "summary": "Fresh Bazel checks passed for the App Session facade and Sessions configuration loader. The declaration comparison covers the current serialized keys and browser diagnostics union.",
+    "links": [
+      {
+        "url": "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06",
+        "label": "Focused tests on reviewed devel"
+      }
+    ]
+  }
+}

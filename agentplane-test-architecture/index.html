@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agentplane fast CI architecture plan</title>
+    <title>Agentplane test architecture</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -51,12 +51,9 @@
       import {
         Alert,
         Anchor,
-        Badge,
         Box,
         Container,
         Group,
-        Paper,
-        SimpleGrid,
         Stack,
         Table,
         Text,
@@ -115,61 +112,63 @@
           return html`<${Container} py="xl"
             ><${Text}>Loading current branch evidence…<//><//
           >`;
-        const source = (path, revision = data.source.head) =>
-          `${repo}/blob/${revision}/${path}`;
-        const link = (path, label, revision) =>
-          html`<${Anchor} href=${source(path, revision)}>${label}<//>`;
-        return html`<${Container} size="lg" py="xl">
+        const audit = data.source_audit;
+        const history = data.historical;
+        const links = (entries) =>
+          html`<${Group} gap="sm">
+            ${entries.map((entry) => html`<${Anchor} key=${entry.url} href=${entry.url}>${entry.label}<//>`)}
+          <//>`;
+        return html`<${Container}
+          size="lg"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
           <${Anchor} href="../">All reports<//>
-          <${Title} order=${1} mt="md">Agentplane CI: current branch plan<//>
-          ${paragraph("All four native acceptance architecture ports are now merged on devel. This pinned comparison shows the remaining manual harness and experiment records in draft PR #16489, alongside the landed architecture and its correctness checks. The goal remains good PR regression coverage with at least 30% faster complete required feedback and at most 25% more compute; that improvement is not yet established.")}
-          <${Paper} withBorder p="md" radius="md">
-            <${Stack} gap="xs">
-              <${Text}>${"Reviewed " + data.observed_at_utc}<//>
-              <${Anchor}
-                style=${{ overflowWrap: "anywhere" }}
-                href=${repo + "/commit/" + data.source.base}
-                >${"devel base " + data.source.base}<//
-              >
-              <${Anchor}
-                style=${{ overflowWrap: "anywhere" }}
-                href=${repo + "/commit/" + data.source.head}
-                >${"PR head " + data.source.head}<//
-              >
-              <${Group}
-                ><${Badge} color="blue">Draft experiment<//
-                ><${Badge}
-                  color=${data.validation.implementation_checks_passed ? "green" : "yellow"}
-                  >${data.validation.summary}<//
-                ><//
-              >
-              <${Anchor}
-                href=${repo + "/compare/" + data.source.base + "..." + data.source.head}
-                >Exact remaining diff<//
-              >
-            <//>
+          <${Title} order=${1} mt="md">Agentplane test architecture<//>
+          ${paragraph(audit.headline)}
+          <${Group} gap="md" mt="sm">
+            <${Anchor} href=${repo + "/commit/" + audit.source_devel_commit}
+              >${"devel " + audit.source_devel_commit.slice(0, 10)}<//
+            >
+            <${Text} size="sm" c="dimmed"
+              >${"Reviewed " + audit.audited_at_utc.slice(0, 10) + " UTC"}<//
+            >
           <//>
-          <${Group} mt="md" gap="lg">
-            <${Anchor} href="#devel">Already on devel<//
-            ><${Anchor} href="#branch">Remaining branch changes<//>
-            <${Anchor} href="#pytest-fixtures">Fixture ownership<//
-            ><${Anchor} href="#next">Next work<//>
-            <${Anchor} href="#devel-pod-concurrency">Devel concurrency<//>
-            <${Anchor} href="#validation">Validation<//>
+          <${Group} component="nav" gap="md" mt="md">
+            <${Anchor} href="#pytest-fixtures">Fixture ownership<//>
+            <${Anchor} href="#next">Next actions<//>
+            <${Anchor} href="#validation">Verification<//>
+            <${Anchor} href="#devel-pod-concurrency">Historical measurements<//>
           <//>
-          <${Alert} mt="lg" color="blue" title="Current decision">
-            ${data.decision}
+          <${Section} id="pytest-fixtures" title="Fixture ownership on devel">
+            <${Rows}
+              headers=${["Boundary", "Current coverage", "Guardrail", "Evidence"]}
+              rows=${audit.boundaries.map((row) => [row.heading, row.finding, row.action, links(row.links)])}
+            />
+            ${paragraph(audit.scope)} ${paragraph(audit.comparison.finding)}
+            ${links(audit.comparison.links)}
+          <//>
+          <${Section} id="next" title="Ranked next actions">
+            <${Rows}
+              headers=${["Step", "Experiment", "Decision gate"]}
+              rows=${audit.actions}
+            />
+          <//>
+          <${Section} id="validation" title="Current verification">
+            ${audit.validation ? html`${paragraph(audit.validation.summary)}${links(audit.validation.links)}` : null}
+            <${Anchor} href="evidence.json">Evidence and case inventory<//>
+            <${Anchor} href="manifest.json"> Manifest<//>
           <//>
           ${
-            data.devel_pod_concurrency &&
+            history.devel_pod_concurrency &&
             html`<${Section}
               id="devel-pod-concurrency"
               title="Historical concurrency port: matched 22-case cohort"
             >
-              ${paragraph(data.devel_pod_concurrency.decision)}
+              ${paragraph(history.devel_pod_concurrency.decision)}
               <${Rows}
                 headers=${["Case slots", "Fresh passes", "Mean action (s)", "Mean case envelope (s)", "Mean CPU (s)", "Maximum action memory (GiB)", "Immutable runs"]}
-                rows=${data.devel_pod_concurrency.rows.map((row) => [
+                rows=${history.devel_pod_concurrency.rows.map((row) => [
                   row.slots,
                   row.passes + "/" + row.runs,
                   row.mean_action_seconds.toFixed(1),
@@ -181,19 +180,19 @@
                   >`,
                 ])}
               />
-              ${paragraph(data.devel_pod_concurrency.scope)}
-              ${paragraph(data.devel_pod_concurrency.memory_finding)}
-              ${paragraph("Observation window: " + data.devel_pod_concurrency.window_start_utc + " to " + data.devel_pod_concurrency.window_end_utc)}
+              ${paragraph(history.devel_pod_concurrency.scope)}
+              ${paragraph(history.devel_pod_concurrency.memory_finding)}
+              ${paragraph("Observation window: " + history.devel_pod_concurrency.window_start_utc + " to " + history.devel_pod_concurrency.window_end_utc)}
               <${Stack} gap="xs">
                 <${Anchor}
                   style=${{ overflowWrap: "anywhere" }}
-                  href=${repo + "/commit/" + data.devel_pod_concurrency.source_base}
-                  >${"devel base " + data.devel_pod_concurrency.source_base}<//
+                  href=${repo + "/commit/" + history.devel_pod_concurrency.source_base}
+                  >${"devel base " + history.devel_pod_concurrency.source_base}<//
                 >
                 <${Anchor}
                   style=${{ overflowWrap: "anywhere" }}
-                  href=${repo + "/commit/" + data.devel_pod_concurrency.source_head}
-                  >${"Fixed benchmark source " + data.devel_pod_concurrency.source_head}<//
+                  href=${repo + "/commit/" + history.devel_pod_concurrency.source_head}
+                  >${"Fixed benchmark source " + history.devel_pod_concurrency.source_head}<//
                 >
                 <${Anchor} href=${repo + "/pull/16659"}
                   >Independent devel PR #16659<//
@@ -201,84 +200,16 @@
               <//>
             <//>`
           }
-          <${Section} id="devel" title="What devel already has">
-            ${paragraph("All four ports below are merged. Their CI checks establish correctness and preserved scenario inventories; they are not a new latency or flake-rate measurement.")}
-            <${Rows}
-              headers=${["Merged port", "Checked source", "Result", "Immutable evidence"]}
-              rows=${data.merged_ports.map((row) => [
-                html`<${Anchor} href=${repo + "/pull/" + row.pr}
-                  >${"#" + row.pr + " · " + row.label}<//
-                >`,
-                html`<${Anchor} href=${repo + "/commit/" + row.head}
-                  >${row.head.slice(0, 10)}<//
-                >`,
-                row.result,
-                html`<${Stack} gap="xs"
-                  ><${Anchor}
-                    href=${"https://app.buildbuddy.io/invocation/" + row.invocation}
-                    >CI run<//
-                  ><${Anchor} href=${repo + "/commit/" + row.merge}
-                    >Merged commit<//
-                  ><//
-                >`,
-              ])}
-            />
-            ${paragraph("The architecture below is inherited from devel. The former prototype's Controller bearer opt-in and extra certificate are absent; native clients use the existing App-role service SVID without an App process.")}
-            <${Rows}
-              headers=${["Existing mechanism", "Current owner"]}
-              rows=${data.already_on_devel.map((row) => [row.description, link(row.path, row.label, data.source.base)])}
-            />
-          <//>
-          <${Section} id="branch" title="What PR #16489 still adds">
-            <${Rows}
-              headers=${["Boundary", "Remaining change", "Coverage retained"]}
-              rows=${data.remaining_changes.map((row) => [link(row.path, row.label), row.change, row.retained])}
-            />
-            ${paragraph("The remaining diff contains no required-suite, native-client, pooling or production authentication implementation change. The manual targets inherit devel's current sixteen App scenarios; the previous fifteen-case shard result remains pinned historical evidence. Required acceptance and its failure coverage stay on devel's CaseBatch.")}
-          <//>
-          <${Section}
-            id="pytest-fixtures"
-            title="Fixture architecture now on devel"
-          >
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
-              <${Paper} withBorder p="md"
-                ><${Title} order=${3}>Deployment<//
-                >${paragraph("Build and start once per Bazel test action. Distinct deployment profiles declare their actual workloads and image sets.")}<//
-              >
-              <${Paper} withBorder p="md"
-                ><${Title} order=${3}>Compatible probes<//
-                >${paragraph("The platform module shares native clients and one ordinary Pod across three trust probes. Every lease rechecks the full Sandbox target, Pod UID and readiness.")}<//
-              >
-              <${Paper} withBorder p="md"
-                ><${Title} order=${3}>Mutating scenarios<//
-                >${paragraph("Failed or replaced leases are discarded before reuse. Impostor workloads, revocation and lifecycle resources stay owned by their individual cases.")}<//
-              >
-            <//>
-            ${paragraph("Use standard pytest yield fixtures, pytest-asyncio's module loop and AsyncExitStack. Devel already supplies the shared cancellation-safe cleanup drain and diagnostic failure precedence, including merged PR #16615. The native Pod pool uses those existing owners.")}
-            ${paragraph("Common pytest hooks now own tracing, harness parameters and scripted models. Suites needing App clients, model discovery or App-backed Sandbox ownership explicitly load app_fixtures. MCP operator-login fixtures also load explicitly. Shared Sandbox types and template names have no App client dependency; App lifecycle operations live in app_sandbox. The native suites therefore keep the shared reporting machinery without loading App code.")}
-            ${paragraph("Exact UIDs, acknowledged-create registration before readiness, uncertain-create ownership, deletion order and private secondary-error notes remain domain responsibilities. A general pytest plugin cannot infer those contracts.")}
-            <${Alert}
-              color="blue"
-              title="Required acceptance and manual comparisons"
-            >
-              The required Pod target keeps CaseBatch. Manual ordinary-pytest
-              targets call the same scenario functions with the same marks.
-              Their two stacks group compatible shared-runner probes together
-              and keep the fresh-inventory storage check first. Promotion also
-              needs complete-feedback, compute and failure-isolation evidence.
-              Actual fixtures still use pytest-asyncio.
-            <//>
-          <//>
           ${
-            data.pod_concurrency &&
+            history.pod_concurrency &&
             html`<${Section}
               id="pod-concurrency"
               title="Historical 15-case concurrency screen: fixed memory settings"
             >
-              ${paragraph(data.pod_concurrency.decision)}
+              ${paragraph(history.pod_concurrency.decision)}
               <${Rows}
                 headers=${["Case slots", "Fresh passes", "Mean action (s)", "Mean case envelope (s)", "Mean CPU (s)", "Maximum action memory (GiB)", "Immutable runs"]}
-                rows=${data.pod_concurrency.rows.map((row) => [
+                rows=${history.pod_concurrency.rows.map((row) => [
                   row.slots,
                   row.passes + "/" + row.runs,
                   row.mean_action_seconds.toFixed(1),
@@ -290,10 +221,10 @@
                   >`,
                 ])}
               />
-              ${paragraph(data.pod_concurrency.scope)}
-              ${paragraph(data.pod_concurrency.memory_finding)}
+              ${paragraph(history.pod_concurrency.scope)}
+              ${paragraph(history.pod_concurrency.memory_finding)}
               <${Anchor}
-                href=${repo + "/commit/" + data.pod_concurrency.source_head}
+                href=${repo + "/commit/" + history.pod_concurrency.source_head}
                 >Fixed benchmark source<//
               >
             <//>`
@@ -304,7 +235,7 @@
           >
             <${Rows}
               headers=${["Screen", "Observed result", "What it establishes"]}
-              rows=${data.current_screens.map((row) => [
+              rows=${history.current_screens.map((row) => [
                 html`<${Anchor} href=${row.url}>${row.title}<//>`,
                 row.result,
                 row.scope,
@@ -312,32 +243,11 @@
             />
             ${paragraph("The selector screen replays exact historical changes to one source file at a time through the production bazel-diff algorithm and tag filtering. It does not replay each entire historical PR. Selected-test counts, action execution time and complete required feedback are different measures. Raw JUnit, traces and execution payloads remain private; reviewed summaries retain immutable source and invocation links.")}
           <//>
-          <${Section}
-            id="next"
-            title="Next work toward a substantial feedback improvement"
-          >
-            <${Rows}
-              headers=${["Step", "Concrete change or experiment", "Decision gate"]}
-              rows=${data.next_steps.map((row) => [row.title, row.action, row.acceptance])}
-            />
-            ${paragraph("Count complete required feedback from PR update through every required check, including failures, cancellations and reruns. Keep queue time, setup, test execution, worker occupancy and observed CPU as separate clocks. Do not add overlapping setup savings, mistake requested resources for capacity, or infer a flake rate from a small passing sample.")}
-          <//>
-          <${Section} id="validation" title="Validation of the rebased branch">
-            ${paragraph(data.validation.detail)}
-            <${Stack} gap="xs"
-              >${(data.validation.links || []).map((entry) => html`<${Anchor} key=${entry.url} href=${entry.url}>${entry.label}<//>`)}<//
-            >
-            ${paragraph("Correctness checks and focused ownership tests do not establish a CI speedup or a reliability-rate improvement. Broad performance qualification remains open.")}
-          <//>
-          <${Text} size="sm" c="dimmed"
-            >Earlier report snapshots and benchmark sources are records, not the
-            current branch state.<//
-          >
           <${Group} mt="sm">
-            <${Anchor} href=${data.records.previous_report}
+            <${Anchor} href=${history.records.previous_report}
               >Earlier report snapshot<//
             >
-            <${Anchor} href=${data.records.experiments}
+            <${Anchor} href=${history.records.experiments}
               >Immutable experiment records<//
             >
             <${Anchor} href=${repo + "/pull/16489"}>Source PR #16489<//>

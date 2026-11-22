@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "b787f656b0e6be2b7ee3285f726205ac7fbe6a64",
-  "observed_at_utc": "2026-11-18T03:39:30Z",
+  "source_sha": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "observed_at_utc": "2026-11-22T10:58:33Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1470,
-    "directories": 277,
-    "production": 815,
-    "tests": 655
+    "files": 1512,
+    "directories": 285,
+    "production": 840,
+    "tests": 672
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -35,8 +35,8 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 164,
-        "directories": 26
+        "files": 172,
+        "directories": 25
       },
       "directories": [
         {
@@ -53,12 +53,6 @@
           "production": 1,
           "tests": 0,
           "files": ["agentplane/action_service/actionstate/state.go"]
-        },
-        {
-          "path": "agentplane/action_service/callers",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/action_service/callers/labels.go"]
         },
         {
           "path": "agentplane/action_service/cmd",
@@ -85,9 +79,10 @@
         {
           "path": "agentplane/action_service/internal/admission/catalog",
           "production": 3,
-          "tests": 3,
+          "tests": 4,
           "files": [
             "agentplane/action_service/internal/admission/catalog/arguments.go",
+            "agentplane/action_service/internal/admission/catalog/arguments_test.go",
             "agentplane/action_service/internal/admission/catalog/catalog.go",
             "agentplane/action_service/internal/admission/catalog/catalog_test.go",
             "agentplane/action_service/internal/admission/catalog/golden_test.go",
@@ -120,9 +115,10 @@
         {
           "path": "agentplane/action_service/internal/admission/policies",
           "production": 6,
-          "tests": 2,
+          "tests": 3,
           "files": [
             "agentplane/action_service/internal/admission/policies/argument_schema.go",
+            "agentplane/action_service/internal/admission/policies/argument_schema_test.go",
             "agentplane/action_service/internal/admission/policies/github.go",
             "agentplane/action_service/internal/admission/policies/golden_test.go",
             "agentplane/action_service/internal/admission/policies/home_assistant.go",
@@ -162,13 +158,16 @@
         },
         {
           "path": "agentplane/action_service/internal/mcpexec",
-          "production": 4,
-          "tests": 6,
+          "production": 6,
+          "tests": 7,
           "files": [
             "agentplane/action_service/internal/mcpexec/config.go",
             "agentplane/action_service/internal/mcpexec/execution_integration_test.go",
             "agentplane/action_service/internal/mcpexec/executor.go",
             "agentplane/action_service/internal/mcpexec/golden_test.go",
+            "agentplane/action_service/internal/mcpexec/grocy_previews.go",
+            "agentplane/action_service/internal/mcpexec/integration_previews.go",
+            "agentplane/action_service/internal/mcpexec/integration_previews_test.go",
             "agentplane/action_service/internal/mcpexec/integration_testmain_test.go",
             "agentplane/action_service/internal/mcpexec/linkage.go",
             "agentplane/action_service/internal/mcpexec/supervision_integration_test.go",
@@ -193,8 +192,8 @@
         },
         {
           "path": "agentplane/action_service/internal/rpc",
-          "production": 10,
-          "tests": 16,
+          "production": 12,
+          "tests": 18,
           "files": [
             "agentplane/action_service/internal/rpc/attribution_test.go",
             "agentplane/action_service/internal/rpc/catalog.go",
@@ -205,6 +204,10 @@
             "agentplane/action_service/internal/rpc/fixture_test.go",
             "agentplane/action_service/internal/rpc/gate_policy_test.go",
             "agentplane/action_service/internal/rpc/gate_test.go",
+            "agentplane/action_service/internal/rpc/grocy_previews.go",
+            "agentplane/action_service/internal/rpc/grocy_previews_test.go",
+            "agentplane/action_service/internal/rpc/integration_previews.go",
+            "agentplane/action_service/internal/rpc/integration_previews_test.go",
             "agentplane/action_service/internal/rpc/integration_testmain_test.go",
             "agentplane/action_service/internal/rpc/mcp_servers.go",
             "agentplane/action_service/internal/rpc/mcp_servers_test.go",
@@ -409,7 +412,6 @@
         "reviewed_package_paths": [
           "agentplane/action_service/actionresult",
           "agentplane/action_service/actionstate",
-          "agentplane/action_service/callers",
           "agentplane/action_service/cmd",
           "agentplane/action_service/docs",
           "agentplane/action_service/internal/admission/catalog",
@@ -469,21 +471,6 @@
           }
         },
         {
-          "path": "agentplane/action_service/callers",
-          "role": "Stable caller label constants used by workload admission and policy objects.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Names an external Kubernetes label contract; small size does not erase the shared spelling owner.",
-          "gate": "",
-          "evidence_paths": ["agentplane/action_service/callers/labels.go"],
-          "declared_packages": ["callers"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
           "path": "agentplane/action_service/cmd",
           "role": "Executable composition, settings, listeners, dependency wiring and service tests.",
           "decision": "retain",
@@ -531,7 +518,7 @@
           "pending_tracks": ["orchestration-v1-retirement"],
           "counts": {
             "non_test": 3,
-            "tests": 3
+            "tests": 4
           }
         },
         {
@@ -585,7 +572,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 6,
-            "tests": 2
+            "tests": 3
           }
         },
         {
@@ -626,10 +613,10 @@
         },
         {
           "path": "agentplane/action_service/internal/mcpexec",
-          "role": "Supervised execution of catalogued upstream MCP tools.",
+          "role": "MCP tool execution and integration previews",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Owns upstream session/tool lifecycle, bounded waits and invocation outcomes, distinct from OAuth linkage and request dispatch.",
+          "reason": "The package owns remote integration calls, browser preview reads and upstream authentication.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/internal/mcpexec/executor.go",
@@ -638,8 +625,8 @@
           "declared_packages": ["mcpexec"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 4,
-            "tests": 6
+            "non_test": 6,
+            "tests": 7
           }
         },
         {
@@ -663,10 +650,10 @@
         },
         {
           "path": "agentplane/action_service/internal/rpc",
-          "role": "Action, operator, policy and Web Push gRPC adapters.",
+          "role": "Action Service RPC boundaries and admission-facing views",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Keep handlers together. They read the admitted principal and attribution through `internal/admission/grpcgate`'s typed API, and the real handler, Identity, policy and watch tests stay here.",
+          "reason": "The service keeps typed integration previews, Action lifecycle and policy/catalog views behind its RPC adapters.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/internal/admission/grpcgate/gate.go",
@@ -677,8 +664,8 @@
           "declared_packages": ["rpc"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 10,
-            "tests": 16
+            "non_test": 12,
+            "tests": 18
           }
         },
         {
@@ -903,7 +890,7 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 76,
+        "files": 70,
         "directories": 22
       },
       "directories": [
@@ -975,11 +962,10 @@
         },
         {
           "path": "agentplane/app/internal/httpapi",
-          "production": 4,
+          "production": 3,
           "tests": 0,
           "files": [
             "agentplane/app/internal/httpapi/appconfigapi.go",
-            "agentplane/app/internal/httpapi/errors.go",
             "agentplane/app/internal/httpapi/gateway.go",
             "agentplane/app/internal/httpapi/statusapi.go"
           ]
@@ -1014,22 +1000,20 @@
         },
         {
           "path": "agentplane/app/internal/httpapi/threads",
-          "production": 2,
+          "production": 3,
           "tests": 1,
           "files": [
             "agentplane/app/internal/httpapi/threads/handler.go",
             "agentplane/app/internal/httpapi/threads/handler_test.go",
+            "agentplane/app/internal/httpapi/threads/notices.go",
             "agentplane/app/internal/httpapi/threads/routes.go"
           ]
         },
         {
-          "path": "agentplane/app/internal/httperror",
+          "path": "agentplane/app/internal/httpresponse",
           "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/app/internal/httperror/httperror.go",
-            "agentplane/app/internal/httperror/httperror_test.go"
-          ]
+          "tests": 0,
+          "files": ["agentplane/app/internal/httpresponse/response.go"]
         },
         {
           "path": "agentplane/app/internal/migrations",
@@ -1042,20 +1026,17 @@
         },
         {
           "path": "agentplane/app/internal/sandboxes",
-          "production": 3,
-          "tests": 2,
+          "production": 1,
+          "tests": 1,
           "files": [
             "agentplane/app/internal/sandboxes/console.go",
-            "agentplane/app/internal/sandboxes/console_test.go",
-            "agentplane/app/internal/sandboxes/environments.go",
-            "agentplane/app/internal/sandboxes/environments_test.go",
-            "agentplane/app/internal/sandboxes/errors.go"
+            "agentplane/app/internal/sandboxes/console_test.go"
           ]
         },
         {
           "path": "agentplane/app/internal/server",
-          "production": 5,
-          "tests": 12,
+          "production": 4,
+          "tests": 10,
           "files": [
             "agentplane/app/internal/server/action_facade_test.go",
             "agentplane/app/internal/server/appconfigapi_test.go",
@@ -1063,12 +1044,9 @@
             "agentplane/app/internal/server/policyapi_test.go",
             "agentplane/app/internal/server/routes.go",
             "agentplane/app/internal/server/runtime.go",
-            "agentplane/app/internal/server/schema_export.go",
-            "agentplane/app/internal/server/schema_export_test.go",
             "agentplane/app/internal/server/server.go",
             "agentplane/app/internal/server/server_test.go",
             "agentplane/app/internal/server/sessionapi_test.go",
-            "agentplane/app/internal/server/staging_config_test.go",
             "agentplane/app/internal/server/statusapi_test.go",
             "agentplane/app/internal/server/streamapi_test.go",
             "agentplane/app/internal/server/threadreadapi_test.go",
@@ -1115,9 +1093,10 @@
         },
         {
           "path": "agentplane/app/internal/threads",
-          "production": 1,
+          "production": 2,
           "tests": 1,
           "files": [
+            "agentplane/app/internal/threads/notices.go",
             "agentplane/app/internal/threads/store.go",
             "agentplane/app/internal/threads/store_integration_test.go"
           ]
@@ -1135,14 +1114,11 @@
       "context_paths": [
         "agentplane/app/app_service.proto",
         "agentplane/app/frontend/actions/",
-        "agentplane/app/frontend/bindings/",
         "agentplane/app/frontend/connections/",
         "agentplane/app/frontend/identities/",
         "agentplane/app/frontend/policy/",
         "agentplane/app/frontend/sandboxes/",
-        "agentplane/app/frontend/service_worker/",
-        "agentplane/app/frontend/settings/",
-        "agentplane/app/frontend/threads/"
+        "agentplane/app/frontend/settings/"
       ],
       "pending_tracks": ["settings-single-source", "protobuf-alignment"],
       "goal_note": "Operator OIDC login, browser sessions and authenticated caller projection; App-specific Session creation and Session and Environment Runtime client composition; Browser route registration, resource views and process composition",
@@ -1169,7 +1145,7 @@
           "agentplane/app/internal/httpapi/sessions",
           "agentplane/app/internal/httpapi/streams",
           "agentplane/app/internal/httpapi/threads",
-          "agentplane/app/internal/httperror",
+          "agentplane/app/internal/httpresponse",
           "agentplane/app/internal/migrations",
           "agentplane/app/internal/sandboxes",
           "agentplane/app/internal/server",
@@ -1312,7 +1288,7 @@
           "declared_packages": ["httpapi"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 4,
+            "non_test": 3,
             "tests": 0
           }
         },
@@ -1369,10 +1345,10 @@
         },
         {
           "path": "agentplane/app/internal/httpapi/threads",
-          "role": "Thread metadata routes and watch (App-held titles and archived state) behind the generated AppService routes",
+          "role": "HTTP thread metadata and command-notice routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Resource-owned handler with its route registration and explicit store, History, Environment, runtime-status, update and drain inputs. It serves only App-held titles and archived state; the browser joins Dispatcher membership and History summaries from those services' facades.",
+          "reason": "The facade serves App-owned thread data and open operator notices. History RPCs own events and summaries.",
           "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/threads/handler.go"
@@ -1380,23 +1356,26 @@
           "declared_packages": ["threads"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 2,
+            "non_test": 3,
             "tests": 1
           }
         },
         {
-          "path": "agentplane/app/internal/httperror",
-          "role": "Browser HTTP error boundary",
+          "path": "agentplane/app/internal/httpresponse",
+          "role": "App HTTP response and facade error encoding",
           "decision": "retain",
           "target_paths": [],
-          "reason": "One app-local mapper owns HTTP error semantics; route packages depend on it instead of sharing server internals.",
+          "reason": "App-owned HTTP semantics sit beside the handlers that expose them.",
           "gate": "",
-          "evidence_paths": ["agentplane/app/internal/httperror/httperror.go"],
-          "declared_packages": ["httperror"],
+          "evidence_paths": [
+            "agentplane/app/internal/httpresponse/BUILD.bazel",
+            "agentplane/app/internal/httpresponse/response.go"
+          ],
+          "declared_packages": ["httpresponse"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
-            "tests": 1
+            "tests": 0
           }
         },
         {
@@ -1418,32 +1397,32 @@
         },
         {
           "path": "agentplane/app/internal/sandboxes",
-          "role": "App Sandbox inventory watch and serial-console read adapters",
+          "role": "App sandbox facade helpers",
           "decision": "retain",
           "target_paths": [],
-          "reason": "These are browser-facing reads; Sandbox mutation and reconciliation remain the Environments binary's responsibilities.",
+          "reason": "App composes operator-facing data. Environments owns lifecycle behavior and reports typed failures.",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/sandboxes/console.go"],
           "declared_packages": ["sandboxes"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 3,
-            "tests": 2
+            "non_test": 1,
+            "tests": 1
           }
         },
         {
           "path": "agentplane/app/internal/server",
-          "role": "Browser process composition: `Run`, the root route registrar, the trace relay and schema export",
+          "role": "App service assembly and listener wiring",
           "decision": "retain",
           "target_paths": [],
-          "reason": "`server.Run` owns construction, backend clients and lifecycle; the root registrar (`routes.go`) composes the resource owners under `app/internal/httpapi` and keeps authentication and per-route caller policy. The trace relay and schema export stay here.",
+          "reason": "The server wires App routes and service clients. The retired schema export and staging settings snapshots have no owner here.",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/httpapi/appconfigapi.go"],
           "declared_packages": ["server"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 5,
-            "tests": 12
+            "non_test": 4,
+            "tests": 10
           }
         },
         {
@@ -1514,16 +1493,16 @@
         },
         {
           "path": "agentplane/app/internal/threads",
-          "role": "App-held Session titles and archived state",
+          "role": "App-owned thread metadata and operator notices",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Thread presentation metadata belongs to the app; retained events and projections belong to History.",
+          "reason": "The App keeps per-user thread metadata and its command-notice fanout. History remains authoritative for session events and summaries.",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/threads/store.go"],
           "declared_packages": ["threads"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 1,
+            "non_test": 2,
             "tests": 1
           }
         },
@@ -1817,6 +1796,57 @@
           "counts": {
             "non_test": 2,
             "tests": 1
+          }
+        }
+      ],
+      "tree_annotations": {
+        "current": [],
+        "goal": []
+      }
+    },
+    {
+      "id": "configfile",
+      "path": "agentplane/configfile",
+      "counts": {
+        "files": 1,
+        "directories": 1
+      },
+      "directories": [
+        {
+          "path": "agentplane/configfile",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/configfile/config.go"]
+        }
+      ],
+      "context_paths": [],
+      "pending_tracks": [],
+      "goal_note": "Shared strict settings decoding and safe error formatting",
+      "decision": {
+        "state": "RETAIN",
+        "role": "Shared configuration-file decoding",
+        "goal_summary": "Services own their settings contracts and share the decode mechanics.",
+        "reason": "A common parser preserves strict input checks across services without centralizing their field semantics.",
+        "evidence_paths": ["agentplane/configfile/config.go"],
+        "reviewed_package_paths": ["agentplane/configfile"]
+      },
+      "package_decisions": [
+        {
+          "path": "agentplane/configfile",
+          "role": "Strict YAML decode and safe configuration errors",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Callers share the decoding and secret-redaction mechanics. Each service still owns its settings fields and validation.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/configfile/BUILD.bazel",
+            "agentplane/configfile/config.go"
+          ],
+          "declared_packages": ["configfile"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         }
       ],
@@ -2532,8 +2562,8 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 217,
-        "directories": 32
+        "files": 245,
+        "directories": 37
       },
       "directories": [
         {
@@ -2606,16 +2636,13 @@
           ]
         },
         {
-          "path": "agentplane/env/runtime/execution/adapter/testing",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/env/runtime/execution/adapter/testing/main.go"]
-        },
-        {
           "path": "agentplane/env/runtime/execution/cmd",
-          "production": 1,
+          "production": 2,
           "tests": 0,
-          "files": ["agentplane/env/runtime/execution/cmd/main.go"]
+          "files": [
+            "agentplane/env/runtime/execution/cmd/main.go",
+            "agentplane/env/runtime/execution/cmd/serve.go"
+          ]
         },
         {
           "path": "agentplane/env/runtime/execution/codexexecserver",
@@ -2624,6 +2651,26 @@
           "files": [
             "agentplane/env/runtime/execution/codexexecserver/server.go",
             "agentplane/env/runtime/execution/codexexecserver/server_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/env/runtime/execution/codexshim",
+          "production": 6,
+          "tests": 7,
+          "files": [
+            "agentplane/env/runtime/execution/codexshim/cli_test.go",
+            "agentplane/env/runtime/execution/codexshim/copy.go",
+            "agentplane/env/runtime/execution/codexshim/discovery.go",
+            "agentplane/env/runtime/execution/codexshim/discovery_test.go",
+            "agentplane/env/runtime/execution/codexshim/filesystem.go",
+            "agentplane/env/runtime/execution/codexshim/filesystem_test.go",
+            "agentplane/env/runtime/execution/codexshim/http.go",
+            "agentplane/env/runtime/execution/codexshim/limits_test.go",
+            "agentplane/env/runtime/execution/codexshim/nofollow.go",
+            "agentplane/env/runtime/execution/codexshim/retention_test.go",
+            "agentplane/env/runtime/execution/codexshim/shim.go",
+            "agentplane/env/runtime/execution/codexshim/shim_client_test.go",
+            "agentplane/env/runtime/execution/codexshim/shim_test.go"
           ]
         },
         {
@@ -2645,6 +2692,17 @@
           ]
         },
         {
+          "path": "agentplane/env/runtime/execution/native",
+          "production": 1,
+          "tests": 3,
+          "files": [
+            "agentplane/env/runtime/execution/native/native.go",
+            "agentplane/env/runtime/execution/native/native_managed_test.go",
+            "agentplane/env/runtime/execution/native/native_stdin_test.go",
+            "agentplane/env/runtime/execution/native/native_test.go"
+          ]
+        },
+        {
           "path": "agentplane/env/runtime/execution/service",
           "production": 2,
           "tests": 2,
@@ -2653,6 +2711,38 @@
             "agentplane/env/runtime/execution/service/launch_cancellation_test.go",
             "agentplane/env/runtime/execution/service/service.go",
             "agentplane/env/runtime/execution/service/service_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/env/runtime/execution/settings",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/env/runtime/execution/settings/settings.go",
+            "agentplane/env/runtime/execution/settings/settings_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/env/runtime/execution/testing/typedproxy",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/env/runtime/execution/testing/typedproxy/main.go"
+          ]
+        },
+        {
+          "path": "agentplane/env/runtime/execution/typedbackend",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/env/runtime/execution/typedbackend/server.go"]
+        },
+        {
+          "path": "agentplane/env/runtime/execution/typedproxy",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/env/runtime/execution/typedproxy/proxy.go",
+            "agentplane/env/runtime/execution/typedproxy/proxy_test.go"
           ]
         },
         {
@@ -2696,15 +2786,16 @@
         {
           "path": "agentplane/env/runtime/internal/coordinator",
           "production": 27,
-          "tests": 35,
+          "tests": 36,
           "files": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
             "agentplane/env/runtime/internal/coordinator/aggregate_test.go",
             "agentplane/env/runtime/internal/coordinator/bootstrap_controller_test.go",
+            "agentplane/env/runtime/internal/coordinator/close.go",
             "agentplane/env/runtime/internal/coordinator/close_intent_race_test.go",
-            "agentplane/env/runtime/internal/coordinator/close_status.go",
-            "agentplane/env/runtime/internal/coordinator/close_status_test.go",
+            "agentplane/env/runtime/internal/coordinator/close_test.go",
             "agentplane/env/runtime/internal/coordinator/codex_exec_server_test.go",
+            "agentplane/env/runtime/internal/coordinator/control_fixtures_test.go",
             "agentplane/env/runtime/internal/coordinator/coordinator_contracts.go",
             "agentplane/env/runtime/internal/coordinator/cosistate_startup_test.go",
             "agentplane/env/runtime/internal/coordinator/direct_host_test.go",
@@ -2728,7 +2819,7 @@
             "agentplane/env/runtime/internal/coordinator/host_exit_test.go",
             "agentplane/env/runtime/internal/coordinator/ingress_fixture_test.go",
             "agentplane/env/runtime/internal/coordinator/ingress_owner_test.go",
-            "agentplane/env/runtime/internal/coordinator/lifecycle_controller.go",
+            "agentplane/env/runtime/internal/coordinator/lifecycle_guard.go",
             "agentplane/env/runtime/internal/coordinator/model_config_fixture_test.go",
             "agentplane/env/runtime/internal/coordinator/operation_coordinator.go",
             "agentplane/env/runtime/internal/coordinator/protocol.go",
@@ -2910,10 +3001,14 @@
         },
         {
           "path": "agentplane/env/runtime/supervision",
-          "production": 11,
-          "tests": 9,
+          "production": 14,
+          "tests": 10,
           "files": [
             "agentplane/env/runtime/supervision/backend.go",
+            "agentplane/env/runtime/supervision/command.go",
+            "agentplane/env/runtime/supervision/command_helper.go",
+            "agentplane/env/runtime/supervision/command_socket.go",
+            "agentplane/env/runtime/supervision/command_socket_test.go",
             "agentplane/env/runtime/supervision/controller.go",
             "agentplane/env/runtime/supervision/controller_test.go",
             "agentplane/env/runtime/supervision/host.go",
@@ -3001,12 +3096,17 @@
           "agentplane/env/runtime/codexappserver",
           "agentplane/env/runtime/control",
           "agentplane/env/runtime/execution/adapter",
-          "agentplane/env/runtime/execution/adapter/testing",
           "agentplane/env/runtime/execution/cmd",
           "agentplane/env/runtime/execution/codexexecserver",
+          "agentplane/env/runtime/execution/codexshim",
           "agentplane/env/runtime/execution/companion",
           "agentplane/env/runtime/execution/companion/control",
+          "agentplane/env/runtime/execution/native",
           "agentplane/env/runtime/execution/service",
+          "agentplane/env/runtime/execution/settings",
+          "agentplane/env/runtime/execution/testing/typedproxy",
+          "agentplane/env/runtime/execution/typedbackend",
+          "agentplane/env/runtime/execution/typedproxy",
           "agentplane/env/runtime/harness",
           "agentplane/env/runtime/ingress",
           "agentplane/env/runtime/internal/bootstrap",
@@ -3146,23 +3246,6 @@
           }
         },
         {
-          "path": "agentplane/env/runtime/execution/adapter/testing",
-          "role": "Test binary serving the production adapter against an explicit test Executor.",
-          "decision": "retain",
-          "target_paths": ["agentplane/env/runtime/execution/adapter/testing"],
-          "reason": "Test binary serving the production adapter against an explicit test Executor. Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
-          "gate": "No move planned; preserve API/schema and current behavior.",
-          "evidence_paths": [
-            "agentplane/env/runtime/execution/adapter/testing/main.go"
-          ],
-          "declared_packages": ["main"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
           "path": "agentplane/env/runtime/execution/cmd",
           "role": "Executable dispatching the execution-service companion subcommand.",
           "decision": "retain",
@@ -3173,7 +3256,7 @@
           "declared_packages": ["main"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 1,
+            "non_test": 2,
             "tests": 0
           }
         },
@@ -3193,6 +3276,25 @@
           "counts": {
             "non_test": 1,
             "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/execution/codexshim",
+          "role": "Codex compatibility at the Executor boundary",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Fallback transport, filesystem and lifecycle differences stay inside the compatibility backend.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/execution/codexshim/BUILD.bazel",
+            "agentplane/env/runtime/execution/codexshim/cli_test.go",
+            "agentplane/env/runtime/execution/codexshim/copy.go"
+          ],
+          "declared_packages": ["codexshim"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 6,
+            "tests": 7
           }
         },
         {
@@ -3234,6 +3336,25 @@
           }
         },
         {
+          "path": "agentplane/env/runtime/execution/native",
+          "role": "Native Executor process, stream and file state",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Retained process ownership, output cursors, bounded stdin and teardown live with the native backend.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/execution/native/BUILD.bazel",
+            "agentplane/env/runtime/execution/native/native.go",
+            "agentplane/env/runtime/execution/native/native_managed_test.go"
+          ],
+          "declared_packages": ["native"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 3
+          }
+        },
+        {
           "path": "agentplane/env/runtime/execution/service",
           "role": "Embeds the execution adapter and native backend into Environment Runtime.",
           "decision": "retain",
@@ -3250,6 +3371,80 @@
           "counts": {
             "non_test": 2,
             "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/execution/settings",
+          "role": "Executor runtime limits and backend settings",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The execution command and tests consume one parser for runtime limits.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/execution/settings/BUILD.bazel",
+            "agentplane/env/runtime/execution/settings/settings.go",
+            "agentplane/env/runtime/execution/settings/settings_test.go"
+          ],
+          "declared_packages": ["settings"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/execution/testing/typedproxy",
+          "role": "Typed Executor proxy test process",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The helper runs the real typed proxy for process-level probes.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/execution/testing/typedproxy/BUILD.bazel",
+            "agentplane/env/runtime/execution/testing/typedproxy/main.go"
+          ],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/execution/typedbackend",
+          "role": "Generated Executor RPC to native backend translation",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The gRPC adapter translates calls and outcomes while the process and file state stays in native.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/execution/typedbackend/BUILD.bazel",
+            "agentplane/env/runtime/execution/typedbackend/server.go"
+          ],
+          "declared_packages": ["typedbackend"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/execution/typedproxy",
+          "role": "Executor proxy admission and stream forwarding",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The proxy owns session admission and forwarding for either backend.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/execution/typedproxy/BUILD.bazel",
+            "agentplane/env/runtime/execution/typedproxy/proxy.go",
+            "agentplane/env/runtime/execution/typedproxy/proxy_test.go"
+          ],
+          "declared_packages": ["typedproxy"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
           }
         },
         {
@@ -3314,10 +3509,10 @@
         },
         {
           "path": "agentplane/env/runtime/internal/coordinator",
-          "role": "Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.",
+          "role": "Runtime work admission, close and idle coordination",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Runtime stays the aggregate authority for admission, environment generations, transitions and `finishClose`/`joinClose`. The execution lifecycle reaches it through a narrow `executionParent`; private service-readiness and process-exit dependencies keep that lifecycle in this package.",
+          "reason": "Keep lifecycle admission, busy/idle state and shutdown related to the owned execution state in the coordinator.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
@@ -3329,7 +3524,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 27,
-            "tests": 35
+            "tests": 36
           }
         },
         {
@@ -3559,10 +3754,10 @@
         },
         {
           "path": "agentplane/env/runtime/supervision",
-          "role": "Runtime process lifecycle: `Supervisor`, `Process`, `Host` and their COSI controller over the systemd and PID1 backends.",
+          "role": "Runtime child-process and delegated command supervision",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner. The systemd and PID1 backends sit in `internal/systemd` and `internal/pid1` behind typed start handles, so `Process` holds only generic lifecycle and stream state. `systemd_launcher.go` stays because `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`.",
+          "reason": "Runtime owns child startup/cleanup and the command-socket handoff for native execution.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/backend.go",
@@ -3573,8 +3768,8 @@
           "declared_packages": ["supervision"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 11,
-            "tests": 9
+            "non_test": 14,
+            "tests": 10
           }
         },
         {
@@ -6103,7 +6298,7 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 215,
+        "files": 214,
         "directories": 28
       },
       "directories": [
@@ -6148,7 +6343,6 @@
             "agentplane/notification_service/internal/inbox/event_native_content_constraints_integration_test.go",
             "agentplane/notification_service/internal/inbox/golden_test.go",
             "agentplane/notification_service/internal/inbox/golden_vectors_test.go",
-            "agentplane/notification_service/internal/inbox/inbox_destination_contract_integration_test.go",
             "agentplane/notification_service/internal/inbox/inboxes.go",
             "agentplane/notification_service/internal/inbox/inboxes_integration_test.go",
             "agentplane/notification_service/internal/inbox/integration_testmain_test.go",
@@ -6158,6 +6352,7 @@
             "agentplane/notification_service/internal/inbox/notices.go",
             "agentplane/notification_service/internal/inbox/notices_integration_test.go",
             "agentplane/notification_service/internal/inbox/runner_compatibility_integration_test.go",
+            "agentplane/notification_service/internal/inbox/session_inbox_key_contract_integration_test.go",
             "agentplane/notification_service/internal/inbox/source_schedule.go",
             "agentplane/notification_service/internal/inbox/status.go",
             "agentplane/notification_service/internal/inbox/status_integration_test.go",
@@ -6189,7 +6384,7 @@
         {
           "path": "agentplane/notification_service/internal/rpc",
           "production": 10,
-          "tests": 10,
+          "tests": 9,
           "files": [
             "agentplane/notification_service/internal/rpc/errors.go",
             "agentplane/notification_service/internal/rpc/errors_test.go",
@@ -6203,7 +6398,6 @@
             "agentplane/notification_service/internal/rpc/operator_test.go",
             "agentplane/notification_service/internal/rpc/ownership.go",
             "agentplane/notification_service/internal/rpc/requests.go",
-            "agentplane/notification_service/internal/rpc/send_test.go",
             "agentplane/notification_service/internal/rpc/service.go",
             "agentplane/notification_service/internal/rpc/session_watch.go",
             "agentplane/notification_service/internal/rpc/subscribe.go",
@@ -6300,7 +6494,7 @@
             "agentplane/notification_service/internal/sources/github/client/commit_statuses.go",
             "agentplane/notification_service/internal/sources/github/client/commit_statuses_test.go",
             "agentplane/notification_service/internal/sources/github/client/errors.go",
-            "agentplane/notification_service/internal/sources/github/client/page_test_helpers_test.go",
+            "agentplane/notification_service/internal/sources/github/client/pagination_test.go",
             "agentplane/notification_service/internal/sources/github/client/pull_requests.go",
             "agentplane/notification_service/internal/sources/github/client/ratelimit.go",
             "agentplane/notification_service/internal/sources/github/client/ratelimit_test.go",
@@ -6685,7 +6879,7 @@
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 10,
-            "tests": 10
+            "tests": 9
           }
         },
         {
@@ -7082,7 +7276,10 @@
           "target_paths": [],
           "reason": "A test-only process driver beside its Python fixture, under the component's test-support tree; not a production package.",
           "gate": "",
-          "evidence_paths": [],
+          "evidence_paths": [
+            "agentplane/notification_service/testing/process_fixture/BUILD.bazel",
+            "agentplane/notification_service/testing/process_fixture/driver_test.go"
+          ],
           "declared_packages": ["main"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
@@ -7699,8 +7896,8 @@
       "id": "sampler",
       "path": "agentplane/sampler",
       "counts": {
-        "files": 187,
-        "directories": 32
+        "files": 195,
+        "directories": 34
       },
       "directories": [
         {
@@ -7780,7 +7977,7 @@
         {
           "path": "agentplane/sampler/internal/executor",
           "production": 7,
-          "tests": 5,
+          "tests": 6,
           "files": [
             "agentplane/sampler/internal/executor/bindings.go",
             "agentplane/sampler/internal/executor/executor.go",
@@ -7789,6 +7986,7 @@
             "agentplane/sampler/internal/executor/executor_test.go",
             "agentplane/sampler/internal/executor/failure.go",
             "agentplane/sampler/internal/executor/integration_testmain_test.go",
+            "agentplane/sampler/internal/executor/native_wakeup_test.go",
             "agentplane/sampler/internal/executor/processes.go",
             "agentplane/sampler/internal/executor/transport_adapter.go",
             "agentplane/sampler/internal/executor/unified_exec.go",
@@ -7886,12 +8084,13 @@
         {
           "path": "agentplane/sampler/internal/residentruntime/session",
           "production": 12,
-          "tests": 10,
+          "tests": 11,
           "files": [
             "agentplane/sampler/internal/residentruntime/session/anthropic_test.go",
             "agentplane/sampler/internal/residentruntime/session/codemode.go",
             "agentplane/sampler/internal/residentruntime/session/codemode_actions.go",
             "agentplane/sampler/internal/residentruntime/session/codemode_actions_test.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_actions_unit_test.go",
             "agentplane/sampler/internal/residentruntime/session/codemode_host.go",
             "agentplane/sampler/internal/residentruntime/session/codemode_test.go",
             "agentplane/sampler/internal/residentruntime/session/compaction.go",
@@ -8079,6 +8278,18 @@
           ]
         },
         {
+          "path": "agentplane/sampler/providers/chatcompletions",
+          "production": 4,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/providers/chatcompletions/chatcompletions_test.go",
+            "agentplane/sampler/providers/chatcompletions/compaction.go",
+            "agentplane/sampler/providers/chatcompletions/context.go",
+            "agentplane/sampler/providers/chatcompletions/stored.go",
+            "agentplane/sampler/providers/chatcompletions/stream.go"
+          ]
+        },
+        {
           "path": "agentplane/sampler/providers/responses",
           "production": 7,
           "tests": 2,
@@ -8099,6 +8310,14 @@
           "production": 1,
           "tests": 0,
           "files": ["agentplane/sampler/testing/exportfixture/source.go"]
+        },
+        {
+          "path": "agentplane/sampler/testing/providerfixture",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/sampler/testing/providerfixture/providerfixture.go"
+          ]
         },
         {
           "path": "agentplane/sampler/testing/wirefixture",
@@ -8152,8 +8371,10 @@
           "agentplane/sampler/migrations",
           "agentplane/sampler/protocol",
           "agentplane/sampler/providers/anthropic",
+          "agentplane/sampler/providers/chatcompletions",
           "agentplane/sampler/providers/responses",
           "agentplane/sampler/testing/exportfixture",
+          "agentplane/sampler/testing/providerfixture",
           "agentplane/sampler/testing/wirefixture"
         ]
       },
@@ -8298,7 +8519,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 7,
-            "tests": 5
+            "tests": 6
           }
         },
         {
@@ -8467,7 +8688,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 12,
-            "tests": 10
+            "tests": 11
           }
         },
         {
@@ -8653,6 +8874,25 @@
           }
         },
         {
+          "path": "agentplane/sampler/providers/chatcompletions",
+          "role": "Chat Completions wire streaming and stored context",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The provider owns the upstream request and response mapping, compaction and evidence translation.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/providers/chatcompletions/BUILD.bazel",
+            "agentplane/sampler/providers/chatcompletions/chatcompletions_test.go",
+            "agentplane/sampler/providers/chatcompletions/compaction.go"
+          ],
+          "declared_packages": ["chatcompletions"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 4,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/sampler/providers/responses",
           "role": "Native Responses wire/context/content codec",
           "decision": "retain",
@@ -8687,6 +8927,24 @@
           }
         },
         {
+          "path": "agentplane/sampler/testing/providerfixture",
+          "role": "Shared Sampler provider wire fixtures",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Provider-specific tests use one SSE, recording and in-memory content fixture.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/testing/providerfixture/BUILD.bazel",
+            "agentplane/sampler/testing/providerfixture/providerfixture.go"
+          ],
+          "declared_packages": ["providerfixture"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/sampler/testing/wirefixture",
           "role": "Test support: encodes provider wire payloads for tests.",
           "decision": "retain",
@@ -8701,416 +8959,6 @@
           "counts": {
             "non_test": 1,
             "tests": 0
-          }
-        }
-      ],
-      "tree_annotations": {
-        "current": [],
-        "goal": []
-      }
-    },
-    {
-      "id": "session_dispatcher",
-      "path": "agentplane/session_dispatcher",
-      "counts": {
-        "files": 80,
-        "directories": 11
-      },
-      "directories": [
-        {
-          "path": "agentplane/session_dispatcher/cmd",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/session_dispatcher/cmd/main.go"]
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher",
-          "production": 10,
-          "tests": 25,
-          "files": [
-            "agentplane/session_dispatcher/dispatcher/action_wake_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/activity_client.go",
-            "agentplane/session_dispatcher/dispatcher/activity_client_test.go",
-            "agentplane/session_dispatcher/dispatcher/activity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/activity_observer.go",
-            "agentplane/session_dispatcher/dispatcher/activity_observer_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/api.go",
-            "agentplane/session_dispatcher/dispatcher/attribution_test.go",
-            "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/central_activity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/central_delivery.go",
-            "agentplane/session_dispatcher/dispatcher/central_delivery_test.go",
-            "agentplane/session_dispatcher/dispatcher/claim_retry_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/delegated_identity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/delivery.go",
-            "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
-            "agentplane/session_dispatcher/dispatcher/environment_grants_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/execution_identity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/methods_test.go",
-            "agentplane/session_dispatcher/dispatcher/placement_contract_test.go",
-            "agentplane/session_dispatcher/dispatcher/placement_test.go",
-            "agentplane/session_dispatcher/dispatcher/runtime_client.go",
-            "agentplane/session_dispatcher/dispatcher/service_admission_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/session_activity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/session_watch.go",
-            "agentplane/session_dispatcher/dispatcher/session_watch_facade_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/session_watch_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/snapshots.go",
-            "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/store_integration_testmain_test.go",
-            "agentplane/session_dispatcher/dispatcher/svid_auth_test.go",
-            "agentplane/session_dispatcher/dispatcher/wake_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/watch.go",
-            "agentplane/session_dispatcher/dispatcher/watch_filter_test.go",
-            "agentplane/session_dispatcher/dispatcher/watch_versions_integration_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state.go",
-            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go",
-            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/wake",
-          "production": 2,
-          "tests": 0,
-          "files": [
-            "agentplane/session_dispatcher/dispatcher/wake/budget.go",
-            "agentplane/session_dispatcher/dispatcher/wake/manager.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/app",
-          "production": 2,
-          "tests": 1,
-          "files": [
-            "agentplane/session_dispatcher/internal/app/config.go",
-            "agentplane/session_dispatcher/internal/app/config_test.go",
-            "agentplane/session_dispatcher/internal/app/server.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/placement",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/session_dispatcher/internal/placement/placement.go",
-            "agentplane/session_dispatcher/internal/placement/placement_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/sandboxinventory",
-          "production": 1,
-          "tests": 2,
-          "files": [
-            "agentplane/session_dispatcher/internal/sandboxinventory/delivery_integration_test.go",
-            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
-            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/store",
-          "production": 12,
-          "tests": 13,
-          "files": [
-            "agentplane/session_dispatcher/internal/store/activity.go",
-            "agentplane/session_dispatcher/internal/store/delivery_wake_test.go",
-            "agentplane/session_dispatcher/internal/store/execution.go",
-            "agentplane/session_dispatcher/internal/store/fixtures_test.go",
-            "agentplane/session_dispatcher/internal/store/identity_change_test.go",
-            "agentplane/session_dispatcher/internal/store/placement_test.go",
-            "agentplane/session_dispatcher/internal/store/retention.go",
-            "agentplane/session_dispatcher/internal/store/service_attribution.go",
-            "agentplane/session_dispatcher/internal/store/session_lease.go",
-            "agentplane/session_dispatcher/internal/store/session_lease_integration_test.go",
-            "agentplane/session_dispatcher/internal/store/session_watch.go",
-            "agentplane/session_dispatcher/internal/store/session_watch_integration_test.go",
-            "agentplane/session_dispatcher/internal/store/snapshots.go",
-            "agentplane/session_dispatcher/internal/store/snapshots_test.go",
-            "agentplane/session_dispatcher/internal/store/store.go",
-            "agentplane/session_dispatcher/internal/store/store_integration_test.go",
-            "agentplane/session_dispatcher/internal/store/store_integration_testmain_test.go",
-            "agentplane/session_dispatcher/internal/store/terminal.go",
-            "agentplane/session_dispatcher/internal/store/versions_integration_test.go",
-            "agentplane/session_dispatcher/internal/store/wake.go",
-            "agentplane/session_dispatcher/internal/store/wake_caller.go",
-            "agentplane/session_dispatcher/internal/store/wake_fixtures_test.go",
-            "agentplane/session_dispatcher/internal/store/wake_integration_test.go",
-            "agentplane/session_dispatcher/internal/store/watch.go",
-            "agentplane/session_dispatcher/internal/store/watch_versions_integration_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/terminalnotice",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice.go",
-            "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/migrations",
-          "production": 1,
-          "tests": 2,
-          "files": [
-            "agentplane/session_dispatcher/migrations/integration_testmain_test.go",
-            "agentplane/session_dispatcher/migrations/migrations.go",
-            "agentplane/session_dispatcher/migrations/upgrade_integration_test.go"
-          ]
-        }
-      ],
-      "context_paths": [
-        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto"
-      ],
-      "pending_tracks": ["settings-single-source", "protobuf-alignment"],
-      "goal_note": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`, over its persistence in `internal/store`.",
-      "decision": {
-        "state": "REWORK",
-        "role": "The Sessions binary: Session dispatch authority",
-        "goal_summary": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`, over its persistence in `internal/store`.",
-        "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
-        "evidence_paths": [
-          "agentplane/session_dispatcher/internal/app/config.go",
-          "agentplane/session_dispatcher/internal/app/config_test.go",
-          "agentplane/session_dispatcher/internal/app/server.go",
-          "agentplane/session_dispatcher/dispatcher/api.go",
-          "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
-          "agentplane/session_dispatcher/dispatcher/central_delivery.go",
-          "agentplane/session_dispatcher/dispatcher/central_delivery_test.go"
-        ],
-        "reviewed_package_paths": [
-          "agentplane/session_dispatcher/cmd",
-          "agentplane/session_dispatcher/dispatcher",
-          "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
-          "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
-          "agentplane/session_dispatcher/dispatcher/wake",
-          "agentplane/session_dispatcher/internal/app",
-          "agentplane/session_dispatcher/internal/placement",
-          "agentplane/session_dispatcher/internal/sandboxinventory",
-          "agentplane/session_dispatcher/internal/store",
-          "agentplane/session_dispatcher/internal/terminalnotice",
-          "agentplane/session_dispatcher/migrations"
-        ]
-      },
-      "package_decisions": [
-        {
-          "path": "agentplane/session_dispatcher/cmd",
-          "role": "The Sessions binary's executable entry: process setup, then `internal/app`.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "`main` only; configuration and composition are in `internal/app`.",
-          "gate": "",
-          "evidence_paths": ["agentplane/session_dispatcher/cmd/main.go"],
-          "declared_packages": ["main"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher",
-          "role": "Durable Session dispatch API: admission, keyed delivery through `DeliveryWorker`, the central and Runtime delivery clients, method admission, dispatch and Session watches, wake requests and terminal settlement.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Keeps the Session dispatch API (`Service`), `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the dispatch and Session watches over `internal/store`, which holds all of the Dispatcher's SQL; tests that check what callers see stay here.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/dispatcher/api.go",
-            "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/central_delivery.go",
-            "agentplane/session_dispatcher/dispatcher/central_delivery_test.go"
-          ],
-          "declared_packages": ["dispatcher"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 10,
-            "tests": 25
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
-          "role": "One `NormalizeDeliveryState` for the Dispatcher's delivery-state wire enum.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state.go"
-          ],
-          "declared_packages": ["dispatchstate"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
-          "role": "Encodes watch resume tokens bound to a canonical filter digest.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "For the resumable `WatchSessions` stream; private to the Dispatcher.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go"
-          ],
-          "declared_packages": ["resumetoken"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/wake",
-          "role": "The Dispatcher's automatic wake: policy check, shared reservation budget and the guarded Sandbox patch.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Automatic wake belongs to the Dispatcher; explicit resume is the Environments binary's.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/dispatcher/wake/budget.go",
-            "agentplane/session_dispatcher/dispatcher/wake/manager.go"
-          ],
-          "declared_packages": ["wake"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 2,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/app",
-          "role": "Sessions binary (deployed as `runner-gateway`) deployment configuration, service startup and process assembly.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Configuration parsing and server composition; `main` alone is in `session_dispatcher/cmd`.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/internal/app/config.go",
-            "agentplane/session_dispatcher/internal/app/config_test.go",
-            "agentplane/session_dispatcher/internal/app/server.go"
-          ],
-          "declared_packages": ["app"],
-          "pending_tracks": ["settings-single-source"],
-          "counts": {
-            "non_test": 2,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/placement",
-          "role": "Maps dispatch/session identities to stable placement records.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Shared by `dispatcher` and `internal/store`, so it sits under the binary's `internal/`.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/internal/placement/placement.go"
-          ],
-          "declared_packages": ["placement", "placement_test"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/sandboxinventory",
-          "role": "Informer-backed Sandbox reads and the uncached Identity reader behind the Dispatcher's catalog; stays with the Sessions binary.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "It stays with the Sessions binary over its own read-only Kubernetes cache, so delivery adds no call to the Environments binary.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
-            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go"
-          ],
-          "declared_packages": ["sandboxinventory"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/store",
-          "role": "The Dispatcher's persistence: every SQL statement, the row types (`Dispatch`, `Session`), states and errors, the caller and attribution model, per-Session delivery leases, wake reservations, retention, terminal settlement, dispatch and Session watch reads, and Session activity rows.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Only the Dispatcher's own packages import it (`dispatcher`, `internal/app`, `internal/sandboxinventory`); code outside the Sessions binary goes through the Dispatcher's API.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/internal/store/activity.go",
-            "agentplane/session_dispatcher/internal/store/execution.go",
-            "agentplane/session_dispatcher/internal/store/retention.go",
-            "agentplane/session_dispatcher/internal/store/service_attribution.go",
-            "agentplane/session_dispatcher/internal/store/session_lease.go",
-            "agentplane/session_dispatcher/internal/store/session_watch.go",
-            "agentplane/session_dispatcher/internal/store/snapshots.go",
-            "agentplane/session_dispatcher/internal/store/store.go",
-            "agentplane/session_dispatcher/internal/store/terminal.go",
-            "agentplane/session_dispatcher/internal/store/wake.go",
-            "agentplane/session_dispatcher/internal/store/wake_caller.go",
-            "agentplane/session_dispatcher/internal/store/watch.go"
-          ],
-          "declared_packages": ["store"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 12,
-            "tests": 13
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/internal/terminalnotice",
-          "role": "Encodes terminal dispatch outcomes into notification records.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Shared by the Store's terminal settlement and `dispatcher`, so it sits under the binary's `internal/`.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice.go"
-          ],
-          "declared_packages": ["terminalnotice"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/migrations",
-          "role": "Goose migration set for the Dispatcher database.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The Dispatcher database's own migration set.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/migrations/integration_testmain_test.go",
-            "agentplane/session_dispatcher/migrations/migrations.go",
-            "agentplane/session_dispatcher/migrations/upgrade_integration_test.go"
-          ],
-          "declared_packages": ["migrations"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 2
           }
         }
       ],
@@ -9267,6 +9115,393 @@
       }
     },
     {
+      "id": "session_dispatcher",
+      "path": "agentplane/session_dispatcher",
+      "counts": {
+        "files": 83,
+        "directories": 10
+      },
+      "directories": [
+        {
+          "path": "agentplane/session_dispatcher/cmd",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/session_dispatcher/cmd/main.go"]
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher",
+          "production": 12,
+          "tests": 26,
+          "files": [
+            "agentplane/session_dispatcher/dispatcher/action_wake_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_client.go",
+            "agentplane/session_dispatcher/dispatcher/activity_client_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_observer.go",
+            "agentplane/session_dispatcher/dispatcher/activity_observer_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/api.go",
+            "agentplane/session_dispatcher/dispatcher/attribution_test.go",
+            "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/central_activity_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/central_delivery.go",
+            "agentplane/session_dispatcher/dispatcher/central_delivery_test.go",
+            "agentplane/session_dispatcher/dispatcher/claim_retry_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/delegated_identity_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/delivery.go",
+            "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
+            "agentplane/session_dispatcher/dispatcher/dispatch_page.go",
+            "agentplane/session_dispatcher/dispatcher/dispatch_workset.go",
+            "agentplane/session_dispatcher/dispatcher/dispatch_workset_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/environment_grants_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/execution_identity_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/methods_test.go",
+            "agentplane/session_dispatcher/dispatcher/placement_contract_test.go",
+            "agentplane/session_dispatcher/dispatcher/placement_test.go",
+            "agentplane/session_dispatcher/dispatcher/runtime_client.go",
+            "agentplane/session_dispatcher/dispatcher/service_admission_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/session_activity_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/session_watch.go",
+            "agentplane/session_dispatcher/dispatcher/session_watch_facade_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/session_watch_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/snapshots.go",
+            "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/store_integration_testmain_test.go",
+            "agentplane/session_dispatcher/dispatcher/svid_auth_test.go",
+            "agentplane/session_dispatcher/dispatcher/wake_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/watch.go",
+            "agentplane/session_dispatcher/dispatcher/watch_filter_test.go",
+            "agentplane/session_dispatcher/dispatcher/watch_versions_integration_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state.go",
+            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go",
+            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/wake",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/session_dispatcher/dispatcher/wake/budget.go",
+            "agentplane/session_dispatcher/dispatcher/wake/manager.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/app",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/internal/app/config.go",
+            "agentplane/session_dispatcher/internal/app/config_test.go",
+            "agentplane/session_dispatcher/internal/app/server.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/placement",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/internal/placement/placement.go",
+            "agentplane/session_dispatcher/internal/placement/placement_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/sandboxinventory",
+          "production": 1,
+          "tests": 2,
+          "files": [
+            "agentplane/session_dispatcher/internal/sandboxinventory/delivery_integration_test.go",
+            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
+            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/store",
+          "production": 14,
+          "tests": 13,
+          "files": [
+            "agentplane/session_dispatcher/internal/store/activity.go",
+            "agentplane/session_dispatcher/internal/store/delivery_wake_test.go",
+            "agentplane/session_dispatcher/internal/store/dispatch_page.go",
+            "agentplane/session_dispatcher/internal/store/dispatch_workset.go",
+            "agentplane/session_dispatcher/internal/store/execution.go",
+            "agentplane/session_dispatcher/internal/store/fixtures_test.go",
+            "agentplane/session_dispatcher/internal/store/identity_change_test.go",
+            "agentplane/session_dispatcher/internal/store/placement_test.go",
+            "agentplane/session_dispatcher/internal/store/retention.go",
+            "agentplane/session_dispatcher/internal/store/service_attribution.go",
+            "agentplane/session_dispatcher/internal/store/session_lease.go",
+            "agentplane/session_dispatcher/internal/store/session_lease_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/session_watch.go",
+            "agentplane/session_dispatcher/internal/store/session_watch_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/snapshots.go",
+            "agentplane/session_dispatcher/internal/store/snapshots_test.go",
+            "agentplane/session_dispatcher/internal/store/store.go",
+            "agentplane/session_dispatcher/internal/store/store_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/store_integration_testmain_test.go",
+            "agentplane/session_dispatcher/internal/store/terminal.go",
+            "agentplane/session_dispatcher/internal/store/versions_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/wake.go",
+            "agentplane/session_dispatcher/internal/store/wake_caller.go",
+            "agentplane/session_dispatcher/internal/store/wake_fixtures_test.go",
+            "agentplane/session_dispatcher/internal/store/wake_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/watch.go",
+            "agentplane/session_dispatcher/internal/store/watch_versions_integration_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/migrations",
+          "production": 1,
+          "tests": 2,
+          "files": [
+            "agentplane/session_dispatcher/migrations/integration_testmain_test.go",
+            "agentplane/session_dispatcher/migrations/migrations.go",
+            "agentplane/session_dispatcher/migrations/upgrade_integration_test.go"
+          ]
+        }
+      ],
+      "context_paths": [
+        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
+      ],
+      "pending_tracks": ["settings-single-source", "protobuf-alignment"],
+      "goal_note": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`, over its persistence in `internal/store`.",
+      "decision": {
+        "state": "REWORK",
+        "role": "The Sessions binary: Session dispatch authority",
+        "goal_summary": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`, over its persistence in `internal/store`.",
+        "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
+        "evidence_paths": [
+          "agentplane/session_dispatcher/internal/app/config.go",
+          "agentplane/session_dispatcher/internal/app/config_test.go",
+          "agentplane/session_dispatcher/internal/app/server.go",
+          "agentplane/session_dispatcher/dispatcher/api.go",
+          "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
+          "agentplane/session_dispatcher/dispatcher/central_delivery.go",
+          "agentplane/session_dispatcher/dispatcher/central_delivery_test.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/session_dispatcher/cmd",
+          "agentplane/session_dispatcher/dispatcher",
+          "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
+          "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
+          "agentplane/session_dispatcher/dispatcher/wake",
+          "agentplane/session_dispatcher/internal/app",
+          "agentplane/session_dispatcher/internal/placement",
+          "agentplane/session_dispatcher/internal/sandboxinventory",
+          "agentplane/session_dispatcher/internal/store",
+          "agentplane/session_dispatcher/migrations"
+        ]
+      },
+      "package_decisions": [
+        {
+          "path": "agentplane/session_dispatcher/cmd",
+          "role": "The Sessions binary's executable entry: process setup, then `internal/app`.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "`main` only; configuration and composition are in `internal/app`.",
+          "gate": "",
+          "evidence_paths": ["agentplane/session_dispatcher/cmd/main.go"],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher",
+          "role": "Session admission, dispatch and delivery coordination",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The package owns authenticated Session operations, durable dispatch worksets and wake/fence behavior.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/dispatcher/api.go",
+            "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/central_delivery.go",
+            "agentplane/session_dispatcher/dispatcher/central_delivery_test.go"
+          ],
+          "declared_packages": ["dispatcher"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 12,
+            "tests": 26
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
+          "role": "One `NormalizeDeliveryState` for the Dispatcher's delivery-state wire enum.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state.go"
+          ],
+          "declared_packages": ["dispatchstate"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
+          "role": "Encodes watch resume tokens bound to a canonical filter digest.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "For the resumable `WatchSessions` stream; private to the Dispatcher.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go"
+          ],
+          "declared_packages": ["resumetoken"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/wake",
+          "role": "The Dispatcher's automatic wake: policy check, shared reservation budget and the guarded Sandbox patch.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Automatic wake belongs to the Dispatcher; explicit resume is the Environments binary's.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/dispatcher/wake/budget.go",
+            "agentplane/session_dispatcher/dispatcher/wake/manager.go"
+          ],
+          "declared_packages": ["wake"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/app",
+          "role": "Sessions binary (deployed as `runner-gateway`) deployment configuration, service startup and process assembly.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Configuration parsing and server composition; `main` alone is in `session_dispatcher/cmd`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/app/config.go",
+            "agentplane/session_dispatcher/internal/app/config_test.go",
+            "agentplane/session_dispatcher/internal/app/server.go"
+          ],
+          "declared_packages": ["app"],
+          "pending_tracks": ["settings-single-source"],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/placement",
+          "role": "Maps dispatch/session identities to stable placement records.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Shared by `dispatcher` and `internal/store`, so it sits under the binary's `internal/`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/placement/placement.go"
+          ],
+          "declared_packages": ["placement", "placement_test"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/sandboxinventory",
+          "role": "Informer-backed Sandbox reads and the uncached Identity reader behind the Dispatcher's catalog; stays with the Sessions binary.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "It stays with the Sessions binary over its own read-only Kubernetes cache, so delivery adds no call to the Environments binary.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
+            "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go"
+          ],
+          "declared_packages": ["sandboxinventory"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/store",
+          "role": "Durable Session, input and dispatch workset storage",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Keep stable page and workset queries with ordered durable command state.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/store/activity.go",
+            "agentplane/session_dispatcher/internal/store/execution.go",
+            "agentplane/session_dispatcher/internal/store/retention.go",
+            "agentplane/session_dispatcher/internal/store/service_attribution.go",
+            "agentplane/session_dispatcher/internal/store/session_lease.go",
+            "agentplane/session_dispatcher/internal/store/session_watch.go",
+            "agentplane/session_dispatcher/internal/store/snapshots.go",
+            "agentplane/session_dispatcher/internal/store/store.go",
+            "agentplane/session_dispatcher/internal/store/terminal.go",
+            "agentplane/session_dispatcher/internal/store/wake.go",
+            "agentplane/session_dispatcher/internal/store/wake_caller.go",
+            "agentplane/session_dispatcher/internal/store/watch.go"
+          ],
+          "declared_packages": ["store"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 14,
+            "tests": 13
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/migrations",
+          "role": "Goose migration set for the Dispatcher database.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The Dispatcher database's own migration set.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/migrations/integration_testmain_test.go",
+            "agentplane/session_dispatcher/migrations/migrations.go",
+            "agentplane/session_dispatcher/migrations/upgrade_integration_test.go"
+          ],
+          "declared_packages": ["migrations"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 2
+          }
+        }
+      ],
+      "tree_annotations": {
+        "current": [],
+        "goal": []
+      }
+    },
+    {
       "id": "session_instructions",
       "path": "agentplane/session_instructions",
       "counts": {
@@ -9324,10 +9559,16 @@
       "id": "system_tests",
       "path": "agentplane/system_tests",
       "counts": {
-        "files": 2,
-        "directories": 1
+        "files": 3,
+        "directories": 2
       },
       "directories": [
+        {
+          "path": "agentplane/system_tests/vm/guest",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/system_tests/vm/guest/executor_probe.go"]
+        },
         {
           "path": "agentplane/system_tests/x/shared_cluster/node",
           "production": 1,
@@ -9360,10 +9601,29 @@
           "agentplane/system_tests/x/shared_cluster/node/main.go"
         ],
         "reviewed_package_paths": [
+          "agentplane/system_tests/vm/guest",
           "agentplane/system_tests/x/shared_cluster/node"
         ]
       },
       "package_decisions": [
+        {
+          "path": "agentplane/system_tests/vm/guest",
+          "role": "VM guest diagnostic binaries",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The helper executes inside the VM and gives the VM suite a guest-side observation point.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/system_tests/vm/guest/BUILD.bazel",
+            "agentplane/system_tests/vm/guest/executor_probe.go"
+          ],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
         {
           "path": "agentplane/system_tests/x/shared_cluster/node",
           "role": "Explicit experimental harness/probe executable",
@@ -9391,8 +9651,8 @@
       "id": "testing",
       "path": "agentplane/testing",
       "counts": {
-        "files": 17,
-        "directories": 12
+        "files": 18,
+        "directories": 13
       },
       "directories": [
         {
@@ -9421,9 +9681,10 @@
         },
         {
           "path": "agentplane/testing/grpcmethods",
-          "production": 2,
+          "production": 3,
           "tests": 0,
           "files": [
+            "agentplane/testing/grpcmethods/delegation.go",
             "agentplane/testing/grpcmethods/grpcmethods.go",
             "agentplane/testing/grpcmethods/tls.go"
           ]
@@ -9448,12 +9709,11 @@
         },
         {
           "path": "agentplane/testing/kubeapiserver",
-          "production": 3,
+          "production": 2,
           "tests": 0,
           "files": [
             "agentplane/testing/kubeapiserver/fixture.go",
-            "agentplane/testing/kubeapiserver/kubeapiserver.go",
-            "agentplane/testing/kubeapiserver/reviews.go"
+            "agentplane/testing/kubeapiserver/kubeapiserver.go"
           ]
         },
         {
@@ -9465,6 +9725,12 @@
             "agentplane/testing/postgres/postgres.go",
             "agentplane/testing/postgres/postgres_test.go"
           ]
+        },
+        {
+          "path": "agentplane/testing/testscheme",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/testing/testscheme/testscheme.go"]
         },
         {
           "path": "agentplane/testing/wakeups",
@@ -9517,6 +9783,7 @@
           "agentplane/testing/jsonassert",
           "agentplane/testing/kubeapiserver",
           "agentplane/testing/postgres",
+          "agentplane/testing/testscheme",
           "agentplane/testing/wakeups",
           "agentplane/testing/yamltest"
         ]
@@ -9605,7 +9872,7 @@
           "declared_packages": ["grpcmethods"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 2,
+            "non_test": 3,
             "tests": 0
           }
         },
@@ -9666,13 +9933,12 @@
           "gate": "Keep testonly, install only declared CRDs and preserve real API-server coverage.",
           "evidence_paths": [
             "agentplane/testing/kubeapiserver/BUILD.bazel",
-            "agentplane/testing/kubeapiserver/kubeapiserver.go",
-            "agentplane/testing/kubeapiserver/reviews.go"
+            "agentplane/testing/kubeapiserver/kubeapiserver.go"
           ],
           "declared_packages": ["kubeapiserver"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 3,
+            "non_test": 2,
             "tests": 0
           }
         },
@@ -9693,6 +9959,24 @@
           "counts": {
             "non_test": 2,
             "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/testing/testscheme",
+          "role": "Common Agentplane Kubernetes test scheme",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Fake clients register the same API groups through a test-only owner.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/testing/testscheme/BUILD.bazel",
+            "agentplane/testing/testscheme/testscheme.go"
+          ],
+          "declared_packages": ["testscheme"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         },
         {
@@ -9797,23 +10081,19 @@
       "id": "x",
       "path": "agentplane/x",
       "counts": {
-        "files": 2,
+        "files": 1,
         "directories": 1
       },
       "directories": [
         {
           "path": "agentplane/x/runner_layering",
-          "production": 2,
+          "production": 1,
           "tests": 0,
-          "files": [
-            "agentplane/x/runner_layering/boot_init.go",
-            "agentplane/x/runner_layering/child_exec.go"
-          ]
+          "files": ["agentplane/x/runner_layering/child_exec.go"]
         }
       ],
       "context_paths": [
         "agentplane/x/authored_conversation/",
-        "agentplane/x/firecracker_spike/",
         "agentplane/x/indexing/",
         "agentplane/x/provider_continuation/",
         "agentplane/x/runner_layering/"
@@ -9825,7 +10105,7 @@
         "role": "Explicitly experimental code",
         "goal_summary": "Explicit experimental harness/probe executable",
         "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
-        "evidence_paths": ["agentplane/x/runner_layering/boot_init.go"],
+        "evidence_paths": [],
         "reviewed_package_paths": ["agentplane/x/runner_layering"]
       },
       "package_decisions": [
@@ -9836,11 +10116,14 @@
           "target_paths": [],
           "reason": "Keep experimental code visibly under x/ with a named probe purpose. It must not become a production dependency; graduation or deletion is a separate decision.",
           "gate": "",
-          "evidence_paths": ["agentplane/x/runner_layering/boot_init.go"],
+          "evidence_paths": [
+            "agentplane/x/runner_layering/BUILD.bazel",
+            "agentplane/x/runner_layering/child_exec.go"
+          ],
           "declared_packages": ["main"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 2,
+            "non_test": 1,
             "tests": 0
           }
         }
@@ -9898,13 +10181,13 @@
       "kind": "removal behind replacements",
       "stage": 3,
       "priority": 4,
-      "summary": "Operator, 2026-11-14 direction discussion: fine with exposing the real internal Dispatcher, EnvironmentService and History interfaces for delegation and retiring orchestration_v1, if those interfaces are sane. In the Go tree this deletes `action_service/orchestration_v1` and its `contract` package; `session_delegation`, the CLI and MCP tools become thin adapters over those APIs. Some of it only orchestration_v1 can do today: its launch writes the Identity and the launcher PolicySet and PolicyBinding with the Kubernetes client (`launch.go`), the Dispatcher refuses an Identity's `CreateSession` (`dispatcher/api.go`), and explicit resume is ServiceAccount or operator only.",
+      "summary": "Sessions, Environments and History already serve the backend contracts. orchestration_v1 still creates the Identity and launcher PolicySet/Binding directly. Sessions permits native Identity creation when an explicit binding grants it and Environments authorizes named lifecycle operations. The remaining decision is how the approved launcher would mint child Identity and lifecycle rights through the owning backend APIs.",
       "how": [
         "Record the interface review's result; fix what it finds in the owning API, not in an adapter.",
         "Land the replacements: Identity resume and native `CreateSession` through the environment rule, an approval-gated launch through PolicyService and EnvironmentService instead of direct Kubernetes writes, model and effort changes, and Session and preset listing.",
         "Move callers to the replacements, then delete orchestration_v1, its contract, `binding.py`, catalog entries, docs and goldens in one PR. `environments/internal/service/service_test.go` imports its fixture, and `environments/testing/servicefixture` exists for its `fixture_test.go`; both change with it."
       ],
-      "gate": "Two operator answers are open: the interface sanity check, and the environment-rule slices (`ENVIRONMENT_RULE_TYPE_DESIGN`). Nothing here is dispatchable before both.",
+      "gate": "Review the delegate call interfaces against the remaining environment-rule creation and grant decisions. Keep effective caller, operator approval and revocation evidence on every operation.",
       "preserve": "Operator approval for launches, Identity-scoped authorization and existing Session records.",
       "validation": [
         "//agentplane/action_service/orchestration_v1:orchestration_v1_test",
@@ -9916,7 +10199,9 @@
         "agentplane/action_service/orchestration_v1/launch.go",
         "agentplane/session_dispatcher/dispatcher/api.go",
         "agentplane/action_service/session_delegation/executor.go",
-        "agentplane/action_service/internal/admission/catalog/catalog.go"
+        "agentplane/action_service/internal/admission/catalog/catalog.go",
+        "agentplane/plans/environment_rules.md",
+        "agentplane/plans/session_delegation_workflows.md"
       ],
       "review_size": "Replacements in their owners' PRs; the deletion is one PR."
     },
@@ -10025,22 +10310,22 @@
       "kind": "cross-component design",
       "stage": 5,
       "priority": 12,
-      "summary": "Twelve Python `settings.py` models beside the Go services are the cdk8s authoring schema for the settings each Go binary decodes strictly, so every setting is declared twice. They are not dead: cdk8s renderers and system-test fixtures import them, and, for example, the Sessions binary's black-box tests serialize its model into the Go loader. Making one side the source (for instance a JSON Schema generated from the Go Settings types with `invopop/jsonschema`, which STYLE.md lists, then validated or generated on the Python side) removes the duplication. Which side and how is not decided.",
+      "summary": "Go callers can share strict parsing and safe error formatting via configfile. Python authoring models and Go service fields still define corresponding settings independently. Start with the Sessions pair: compare one shared vector set covering defaults, unknown keys and credential error redaction before choosing a schema generator.",
       "how": [
         "Pick the source and the generation or validation mechanism, with one pilot service.",
         "Convert each service in its own PR, keeping agentplane/AGENTS.md's settings order: code accepts a key before manifests set it."
       ],
-      "gate": "Open: mechanism not chosen.",
+      "gate": "Keep the operator decision on schema ownership open. A prototype must preserve the service's accepted YAML and startup validation.",
       "preserve": "Strict unknown-key rejection and the rendered settings' values.",
       "validation": [
         "//agentplane/session_dispatcher/internal/app:config_test",
-        "//agentplane/app/internal/server:staging_config_test"
+        "//agentplane/session_dispatcher:test_settings"
       ],
       "evidence_paths": [
         "agentplane/session_dispatcher/settings.py",
         "agentplane/session_dispatcher/internal/app/config.go",
-        "cluster/cdk8s/agentplane/runner_gateway_workload.py",
-        "STYLE.md"
+        "agentplane/configfile/config.go",
+        "agentplane/plans/task_dag.md"
       ],
       "review_size": "Pilot PR, then one PR per service."
     },
@@ -10094,8 +10379,7 @@
         "agentplane/proto/identity.proto",
         "agentplane/proto/kubernetes.proto",
         "agentplane/proto/session.proto",
-        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto"
+        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
       ],
       "source_owner": "Owner-local and shared protobuf contracts",
       "candidate_target": null,
@@ -10138,8 +10422,7 @@
         "agentplane/proto/identity.proto",
         "agentplane/proto/kubernetes.proto",
         "agentplane/proto/session.proto",
-        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto"
+        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
       ],
       "target_paths": [],
       "dependencies": [],
@@ -10180,30 +10463,36 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 277,
-    "go_files": 1470,
+    "go_packages": 285,
+    "go_files": 1512,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "b787f656b0e6be2b7ee3285f726205ac7fbe6a64",
+    "review_source_sha": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
-        "packages": 26,
-        "go_files": 164
+        "packages": 25,
+        "go_files": 172
       },
       {
         "slice": "app",
         "components": ["app"],
         "packages": 22,
-        "go_files": 76
+        "go_files": 70
       },
       {
         "slice": "cli",
         "components": ["cli"],
         "packages": 8,
         "go_files": 42
+      },
+      {
+        "slice": "configfile",
+        "components": ["configfile"],
+        "packages": 1,
+        "go_files": 1
       },
       {
         "slice": "crds",
@@ -10232,8 +10521,8 @@
       {
         "slice": "env",
         "components": ["env"],
-        "packages": 32,
-        "go_files": 217
+        "packages": 37,
+        "go_files": 245
       },
       {
         "slice": "environments",
@@ -10311,7 +10600,7 @@
         "slice": "notification_service",
         "components": ["notification_service"],
         "packages": 28,
-        "go_files": 215
+        "go_files": 214
       },
       {
         "slice": "observability",
@@ -10352,20 +10641,20 @@
       {
         "slice": "sampler",
         "components": ["sampler"],
-        "packages": 32,
-        "go_files": 187
-      },
-      {
-        "slice": "session_dispatcher",
-        "components": ["session_dispatcher"],
-        "packages": 11,
-        "go_files": 80
+        "packages": 34,
+        "go_files": 195
       },
       {
         "slice": "sandboxes",
         "components": ["sandboxes"],
         "packages": 4,
         "go_files": 11
+      },
+      {
+        "slice": "session_dispatcher",
+        "components": ["session_dispatcher"],
+        "packages": 10,
+        "go_files": 83
       },
       {
         "slice": "session_instructions",
@@ -10376,14 +10665,14 @@
       {
         "slice": "system_tests",
         "components": ["system_tests"],
-        "packages": 1,
-        "go_files": 2
+        "packages": 2,
+        "go_files": 3
       },
       {
         "slice": "testing",
         "components": ["testing"],
-        "packages": 12,
-        "go_files": 17
+        "packages": 13,
+        "go_files": 18
       },
       {
         "slice": "watchhealth",
@@ -10395,7 +10684,7 @@
         "slice": "x",
         "components": ["x"],
         "packages": 1,
-        "go_files": 2
+        "go_files": 1
       }
     ]
   },
@@ -10409,7 +10698,7 @@
   "keep_alive": {
     "status": "PROPOSED DESIGN",
     "steer": "Operator, 2026-11-14 05:18 UTC: something like \"please keep this sandbox alive for me until time X\" would be probably reasonable; the design is left to us.",
-    "today": "Only the Runtime extends awake time. It clears `idle-since` while any Session has an active turn, pending input or a running setup, while an admission or an Executor call or session is open, and during bootstrap. The controller starts its timer when it first sees an `idle-since` and, at `spec.idleSuspendAfter`, asks the Runtime to quiesce only if it is still idle since that instant; the Runtime refuses if anything arrived in between, and a controller restart starts every timer over. Nothing outside the Sandbox extends awake time. Queued commands do not need to: a running Sandbox gets them delivered at once, which makes the Runtime busy. A central Session's executor environment is never woken: the Dispatcher skips its readiness and wake on purpose, and the sampler retries `Unavailable` until its deadline.",
+    "today": "The Runtime publishes idle state. Environments times each idle observation and fences quiesce against late work. Firecracker adds a fresh Runtime snapshot after resume and a prepare/checkpoint step. Central Session inputs still bypass executor readiness and automatic wake, as the Dispatcher integration test asserts.",
     "proposal": [
       "A hold is one record per Sandbox and holder principal, with an absolute expiry. Renewing replaces the holder's own record; releasing deletes it. Holders hold a Sandbox, not a Session, so no per-Session record reaches control-plane storage.",
       "The effective hold is the latest unexpired expiry across holders. While it is in the future the controller starts no idle suspend and reports the hold and its holders on the Sandbox's status.",
@@ -10420,7 +10709,8 @@
       "Authority. Holding a running Sandbox is weaker than resuming it, so whoever may resume a Sandbox may hold it: operators, its Identity under `resumePolicy` or the environment rule's resume operation, and configured wake brokers. The Sampler may hold the exact executor environment named in a central Session it runs. A configured maximum hold length bounds each request.",
       "First holders: the Sampler holds its executor environment while a turn runs, model time between tool calls included; people hold from the app or CLI (\"until 18:00\"). Sessions delivery needs none.",
       "Storage: Kubernetes Lease objects, one per Sandbox and holder, owned by the Sandbox so deletion removes them and written only by the Environments binary after authorization. Durable and watchable without a database for the Environments binary; writes happen per request or renewal, never per command.",
-      "Central executor wake: following the card, the Sessions binary wakes a central Session's executor environment when it delivers input to that Session, still delivering to the sampler without waiting for Ready, and the sampler then holds it."
+      "Central executor wake: following the card, the Sessions binary wakes a central Session's executor environment when it delivers input to that Session, still delivering to the sampler without waiting for Ready, and the sampler then holds it.",
+      "First test the hold versus quiesce race in the Environments owner. Exercise a hold write between idle observation and final quiesce for Pod/VM and Firecracker. An accepted hold must prevent the suspend commit or return an explicit conflict before it takes effect."
     ],
     "evidence_paths": [
       "agentplane/env/runtime/internal/coordinator/session_status.go",
@@ -10430,7 +10720,70 @@
       "agentplane/environments/internal/controller/idle.go",
       "agentplane/sandboxes/api/types.go",
       "agentplane/session_dispatcher/dispatcher/README.md",
-      "agentplane/sampler/internal/executor/transport/session.go"
+      "agentplane/sampler/internal/executor/transport/session.go",
+      "agentplane/environments/internal/controller/firecracker_suspend.go",
+      "agentplane/environments/internal/controller/firecracker_suspend_test.go",
+      "agentplane/session_dispatcher/dispatcher/store_integration_test.go"
     ]
+  },
+  "refresh": {
+    "previous_source_sha": "b787f656b0e6be2b7ee3285f726205ac7fbe6a64",
+    "added_go_files": 63,
+    "removed_go_files": 21,
+    "changed_go_blobs": 583,
+    "new_go_packages": [
+      "agentplane/app/internal/httpresponse",
+      "agentplane/configfile",
+      "agentplane/env/runtime/execution/codexshim",
+      "agentplane/env/runtime/execution/native",
+      "agentplane/env/runtime/execution/settings",
+      "agentplane/env/runtime/execution/testing/typedproxy",
+      "agentplane/env/runtime/execution/typedbackend",
+      "agentplane/env/runtime/execution/typedproxy",
+      "agentplane/sampler/providers/chatcompletions",
+      "agentplane/sampler/testing/providerfixture",
+      "agentplane/system_tests/vm/guest",
+      "agentplane/testing/testscheme"
+    ],
+    "removed_go_packages": [
+      "agentplane/action_service/callers",
+      "agentplane/app/internal/httperror",
+      "agentplane/env/runtime/execution/adapter/testing",
+      "agentplane/session_dispatcher/internal/terminalnotice"
+    ],
+    "revised_package_boundaries": [
+      "agentplane/action_service/internal/mcpexec",
+      "agentplane/action_service/internal/rpc",
+      "agentplane/app/internal/httpapi/threads",
+      "agentplane/app/internal/sandboxes",
+      "agentplane/app/internal/server",
+      "agentplane/app/internal/threads",
+      "agentplane/env/runtime/internal/coordinator",
+      "agentplane/env/runtime/supervision",
+      "agentplane/session_dispatcher/dispatcher",
+      "agentplane/session_dispatcher/internal/store"
+    ],
+    "method": "Enumerated tracked Git paths, exact blob SHA-256, declared packages and test suffixes. Reviewed new packages and updated changed ownership readouts. Existing package decisions were carried forward where the delta did not change the boundary.",
+    "focused_check": {
+      "status": "PASSED",
+      "target": "//agentplane/session_dispatcher/internal/app:config_test",
+      "invocation": "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06"
+    },
+    "source_probe": "The Sessions Python and Go declarations agree on 15 serialized top-level keys. The existing Go configuration target passed with test result caching disabled. A shared behavioral corpus is still needed."
+  },
+  "follow_on": {
+    "source_sha": "d1402061eace1ef26e4b2ce526bb010814dce398",
+    "go_files": 1514,
+    "go_packages": 285,
+    "added_go_files": [
+      "agentplane/env/runtime/execution/adapter/probe.go",
+      "agentplane/env/runtime/execution/adapter/probe_test.go"
+    ],
+    "renamed_go_package": {
+      "from": "agentplane/env/runtime/execution/codexexecserver",
+      "to": "agentplane/env/runtime/execution/backend"
+    },
+    "change_pr": "https://github.com/agentydragon/ducktape/pull/19100",
+    "finding": "Two adapter files add the Codex fallback readiness probe and its tests. The codexexecserver package moved to backend, which owns lifecycle and readiness for both native and Codex execution. The trees and ledger below retain the earlier 1,512-file census."
   }
 }
