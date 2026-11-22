@@ -68,6 +68,7 @@ py_binary(
     visibility = ["//cluster/validation:__pkg__"],
     deps = [
         ":nebula_mesh",
+        "@pypi//atomicwrites",
         "@pypi//pyyaml",
     ],
 )

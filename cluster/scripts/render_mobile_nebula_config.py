@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import stat
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import yaml
+from atomicwrites import atomic_write
 from yaml.nodes import Node
 
 from cluster.scripts import nebula_mesh
@@ -123,8 +123,8 @@ def main() -> None:
     )
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(config)
-    output.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    with atomic_write(output, overwrite=True) as stream:
+        stream.write(config)
     print(output)
 
 
