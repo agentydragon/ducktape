@@ -3500,7 +3500,7 @@ async def test_action_presentations(
 
 @pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["touch"])
 async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
-    args = {
+    args: dict[str, object] = {
         "summary": "Facilities coordination",
         "start": CALENDAR_START,
         "end": CALENDAR_END,

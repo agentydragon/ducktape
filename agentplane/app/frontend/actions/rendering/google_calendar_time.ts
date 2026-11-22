@@ -106,7 +106,7 @@ function timeWithOffset(parts: TimedParts): string {
   return parts.offset ? `${parts.time} ${parts.offset}` : parts.time;
 }
 
-export function formatEventTime(value: EventTime, viewerZone = viewerTimeZone()): string {
+export function formatEventTime(value: EventTime, viewerZone: string = viewerTimeZone()): string {
   if (value.date !== undefined) return utcDate.format(new Date(value.date));
   return value.dateTime === undefined ? "" : formatDateTime(value.dateTime, value.timeZone, viewerZone);
 }
@@ -114,7 +114,7 @@ export function formatEventTime(value: EventTime, viewerZone = viewerTimeZone())
 export function formatEventRange(
   start?: EventTime | null,
   end?: EventTime | null,
-  viewerZone = viewerTimeZone()
+  viewerZone: string = viewerTimeZone()
 ): string | undefined {
   if (start?.date && end?.date) {
     const lastDay = new Date(Date.parse(end.date) - DAY_MS);

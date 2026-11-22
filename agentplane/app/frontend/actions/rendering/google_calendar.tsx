@@ -162,7 +162,7 @@ function ExactTime({ display, exact }: { display: string; exact: string }): JSX.
 }
 
 function submittedTimeText(value: EventTime): string {
-  return value.date ?? [value.dateTime, value.timeZone].filter(Boolean).join(" · ");
+  return [value.date ?? value.dateTime, value.timeZone].filter(Boolean).join(" · ");
 }
 
 function Schedule({ start, end }: { start?: EventTime | null; end?: EventTime | null }): JSX.Element | null {
