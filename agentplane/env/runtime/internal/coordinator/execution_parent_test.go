@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 )
 
 // Pause after startup's final check but before Runtime publishes the owner.
@@ -250,7 +250,7 @@ func (p *heldExecutionWorker) registerExecutionWorker() func() {
 
 func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.T) {
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	r, err := newTestRuntime(t, config.Config, nil, runtimeDeps{
 		startExecution: func(context.Context, Config, string) (executionHandle, error) {

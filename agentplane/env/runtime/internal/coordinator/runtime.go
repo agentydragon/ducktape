@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/bootstrap"
@@ -54,7 +54,7 @@ type Config struct {
 	Launch                      configuration.SandboxLaunch
 	Supervision                 string
 	SystemdLauncher             *supervision.SystemdLauncher
-	CodexExecServer             *codexexecserver.Config
+	ExecutionBackend            *backend.Config
 	HarnessEnvironment          map[string]string
 	InitializationCwd           string
 	SessionReconcileConcurrency int
@@ -194,7 +194,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.Supervision == "pid1" && os.Getpid() != 1 && deps.prepareSupervisor == nil {
 		return nil, errors.New("PID 1 supervision requires Environment Runtime to be PID 1")
 	}
-	if config.CodexExecServer != nil && (config.HarnessEnvironment == nil) {
+	if config.ExecutionBackend != nil && (config.HarnessEnvironment == nil) {
 		return nil, errors.New("execution service requires a resolved harness environment")
 	}
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {
@@ -303,13 +303,13 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	} else {
 		r.harnessSupervisor = r.supervisor
 	}
-	if r.config.CodexExecServer != nil && r.config.CodexExecServer.Owner == codexexecserver.OwnerSystemd {
-		r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-service"))
+	if r.config.ExecutionBackend != nil && r.config.ExecutionBackend.Owner == backend.OwnerSystemd {
+		r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.ExecutionBackend.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-service"))
 		if err != nil {
 			return err
 		}
-		if r.config.CodexExecServer.Placement == codexexecserver.PlacementSystemd {
-			r.commandSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.WorkloadLauncher, filepath.Join(r.config.StateDir, "commands"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-commands"))
+		if r.config.ExecutionBackend.Placement == backend.PlacementSystemd {
+			r.commandSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.ExecutionBackend.WorkloadLauncher, filepath.Join(r.config.StateDir, "commands"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-commands"))
 			if err != nil {
 				return err
 			}
@@ -344,7 +344,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := r.bootstrapHost.Initialize(ctx); err != nil {
 		return err
 	}
-	if r.config.CodexExecServer != nil {
+	if r.config.ExecutionBackend != nil {
 		r.executionLifecycle = &executionLifecycle{parent: r, ctx: ctx, state: r.lifecycleState}
 		if err := r.executionLifecycle.initialize(ctx); err != nil {
 			return err
@@ -549,7 +549,7 @@ func (r *Runtime) changed() {
 }
 
 func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
-	if r.config.CodexExecServer == nil {
+	if r.config.ExecutionBackend == nil {
 		return nil
 	}
 	demand, err := r.executionLifecycle.request(ctx, uid)
@@ -572,7 +572,7 @@ func (r *Runtime) requestBootstrap(ctx context.Context) error {
 func (r *Runtime) stopExecution(ctx context.Context) error {
 	if r.executionLifecycle == nil {
 		r.mu.Lock()
-		unmanaged := r.executionOwner != nil || r.config.CodexExecServer != nil
+		unmanaged := r.executionOwner != nil || r.config.ExecutionBackend != nil
 		r.mu.Unlock()
 		if unmanaged {
 			return errors.New("embedded Execution owner has no lifecycle controller or fence proof")

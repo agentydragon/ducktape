@@ -125,7 +125,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		}
 		client = r.executionOwner.executor(request.GetScope().ExpectedIncarnationUid)
 		if client == nil {
-			if r.config.CodexExecServer == nil {
+			if r.config.ExecutionBackend == nil {
 				unconfigured = true
 				return nil
 			}

@@ -79,9 +79,9 @@ replays execution requests.
 
 - `native/`: process, session and file ownership.
 - `typedbackend/` and `typedproxy/`: internal typed operations and Runtime admission.
-- `adapter/`: typed Executor RPCs over the Codex exec-server protocol (the `codex` implementation).
+- `adapter/`: typed Executor RPCs and health probing over the Codex exec-server protocol (the `codex` implementation).
 - `codexshim/`: Codex WebSocket compatibility surface.
-- `codexexecserver/`: native launch/probe/fence backends.
+- `backend/`: shared backend configuration, launch, health monitoring and fencing.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
 - `service/`: environment identity and embedded adapter lifetime under Runtime ownership.
 - `settings/`: native and Codex limit overrides, parsed for Runtime and the server.

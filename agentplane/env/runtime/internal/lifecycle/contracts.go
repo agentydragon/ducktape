@@ -96,7 +96,7 @@ const (
 	SessionHaltPending
 	SessionProcessPending
 	CodexAppServerPending
-	CodexExecServerPending
+	ExecutionBackendPending
 	BootstrapPending
 	ProcessCleanupPending
 	SessionInspectionPending

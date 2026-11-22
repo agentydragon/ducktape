@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
@@ -75,7 +75,7 @@ func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Con
 	}
 	r := &Runtime{
 		state:          environment,
-		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://127.0.0.1:1"}},
+		config:         Config{ExecutionBackend: &backend.Config{URL: "ws://127.0.0.1:1"}},
 		desired:        lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "incarnation", Generation: 1},
 		lifecycleState: store, changes: make(chan struct{}), fatal: make(chan error, 1),
 		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),

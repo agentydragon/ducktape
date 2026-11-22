@@ -14,7 +14,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexshim"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
@@ -34,7 +34,7 @@ func TestSystemdExecutionRequiresReconciledRuntimeScope(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
-		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerSystemd, Placement: codexexecserver.PlacementDirect,
+		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Owner: backend.OwnerSystemd, Placement: backend.PlacementDirect,
 	}
 	if err := RunEmbedded(t.Context(), config, func(executorpb.ExecutorServer, context.Context) { t.Error("unowned execution became ready") }); err == nil {
 		t.Fatal("systemd execution accepted without Runtime scope and host")
@@ -45,23 +45,23 @@ func TestExecutionConfigResolvesCompatibleReadinessDefaultsAndRejectsInvalidWind
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
-		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
+		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Owner: backend.OwnerCompanion, Placement: backend.PlacementDirect,
 	}
 	resolved, err := config.Resolve()
 	if err != nil {
 		t.Fatalf("resolve embedded config defaults: %v", err)
 	}
-	want := codexexecserver.Readiness{Timeout: 20 * time.Second, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond}
+	want := backend.Readiness{Timeout: 20 * time.Second, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond}
 	if resolved.Readiness != want {
 		t.Fatalf("resolved readiness = %+v, want compatible defaults %+v", resolved.Readiness, want)
 	}
 	for _, test := range []struct {
 		name      string
-		readiness codexexecserver.Readiness
+		readiness backend.Readiness
 	}{
-		{name: "timeout", readiness: codexexecserver.Readiness{Timeout: -time.Millisecond}},
-		{name: "probe timeout", readiness: codexexecserver.Readiness{ProbeTimeout: -time.Millisecond}},
-		{name: "probe interval", readiness: codexexecserver.Readiness{ProbeInterval: -time.Millisecond}},
+		{name: "timeout", readiness: backend.Readiness{Timeout: -time.Millisecond}},
+		{name: "probe timeout", readiness: backend.Readiness{ProbeTimeout: -time.Millisecond}},
+		{name: "probe interval", readiness: backend.Readiness{ProbeInterval: -time.Millisecond}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			invalid := config
@@ -80,10 +80,10 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 		fenceErr   error
 		wantFenced bool
 	}{
-		{name: "owned companion loss", backendErr: errors.Join(codexexecserver.ErrExecutionBackendLost, codexexecserver.ErrContainerOwnershipLost, errors.New("EOF")), wantFenced: true},
-		{name: "systemd native backend loss", backendErr: errors.Join(codexexecserver.ErrExecutionBackendLost, errors.New("native unit stopped")), wantFenced: true},
+		{name: "owned companion loss", backendErr: errors.Join(backend.ErrExecutionBackendLost, backend.ErrContainerOwnershipLost, errors.New("EOF")), wantFenced: true},
+		{name: "systemd native backend loss", backendErr: errors.Join(backend.ErrExecutionBackendLost, errors.New("native unit stopped")), wantFenced: true},
 		{name: "generic backend loss", backendErr: errors.New("health probe failed")},
-		{name: "companion fence failure", backendErr: errors.Join(codexexecserver.ErrContainerOwnershipLost, errors.New("EOF")), fenceErr: errors.New("fresh idle generation not observed")},
+		{name: "companion fence failure", backendErr: errors.Join(backend.ErrContainerOwnershipLost, errors.New("EOF")), fenceErr: errors.New("fresh idle generation not observed")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			endpoint := testExecutorEndpoint(t)
@@ -91,7 +91,7 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 			config := Config{
 				Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 				IncarnationUID: "test-incarnation", StateDir: stateDir,
-				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
+				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Owner: backend.OwnerCompanion, Placement: backend.PlacementDirect,
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -150,7 +150,7 @@ func TestEmbeddedServicePublishesDirectAdapter(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: t.TempDir(),
-		ExecutorURL: endpoint, Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect, ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
+		ExecutorURL: endpoint, Owner: backend.OwnerCompanion, Placement: backend.PlacementDirect, ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -201,7 +201,7 @@ func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	finished := make(chan error, 1)
 	go func() {
-		finished <- runWithReady(t.Context(), Config{Implementation: codexexecserver.ImplementationCodex, ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
+		finished <- runWithReady(t.Context(), Config{Implementation: backend.ImplementationCodex, ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: backendDone, Stop: func(context.Context) error {
 				close(stopEntered)
 				<-releaseStop
@@ -216,7 +216,7 @@ func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("backend readiness probe did not start")
 	}
-	backendDone <- errors.Join(codexexecserver.ErrExecutionBackendLost, errors.New("native backend exited"))
+	backendDone <- errors.Join(backend.ErrExecutionBackendLost, errors.New("native backend exited"))
 	select {
 	case <-stopEntered:
 	case err := <-finished:
@@ -294,8 +294,8 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	t.Cleanup(server.Close)
 	endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 	config := Config{
-		ExecutorURL: endpoint, Implementation: codexexecserver.ImplementationCodex,
-		Readiness: codexexecserver.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
+		ExecutorURL: endpoint, Implementation: backend.ImplementationCodex,
+		Readiness: backend.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -359,8 +359,8 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		t.Cleanup(server.Close)
 		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 		config := Config{
-			ExecutorURL: endpoint, Implementation: codexexecserver.ImplementationCodex,
-			Readiness: codexexecserver.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
+			ExecutorURL: endpoint, Implementation: backend.ImplementationCodex,
+			Readiness: backend.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -414,8 +414,8 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		t.Cleanup(server.Close)
 		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 		config := Config{
-			ExecutorURL: endpoint, Implementation: codexexecserver.ImplementationCodex,
-			Readiness: codexexecserver.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
+			ExecutorURL: endpoint, Implementation: backend.ImplementationCodex,
+			Readiness: backend.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		ready := make(chan struct{}, 1)
@@ -492,7 +492,7 @@ func TestNativeHealthChecksDoNotConsumeExecutionSessions(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	finished := make(chan error, 1)
 	go func() {
-		finished <- runWithReady(ctx, Config{Implementation: codexexecserver.ImplementationNative, ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
+		finished <- runWithReady(ctx, Config{Implementation: backend.ImplementationNative, ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
 		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
 	}()
@@ -556,7 +556,7 @@ func TestTypedReadinessIsRequiredBeforePublishing(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	cfg := Config{ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http"), Readiness: codexexecserver.Readiness{Timeout: 200 * time.Millisecond, ProbeTimeout: 100 * time.Millisecond, ProbeInterval: 10 * time.Millisecond}}
+	cfg := Config{ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http"), Readiness: backend.Readiness{Timeout: 200 * time.Millisecond, ProbeTimeout: 100 * time.Millisecond, ProbeInterval: 10 * time.Millisecond}}
 	ready := false
 	err := runWithReady(t.Context(), cfg, func(context.Context) (*supervision.Instance, error) {
 		return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil

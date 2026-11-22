@@ -146,7 +146,7 @@ func sessionLifecycleBlocker(blocker lifecycle.Blocker) *sessionpb.EnvironmentRu
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS
 	case lifecycle.CodexAppServerPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER
-	case lifecycle.CodexExecServerPending:
+	case lifecycle.ExecutionBackendPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER
 	case lifecycle.BootstrapPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP

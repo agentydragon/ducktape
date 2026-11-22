@@ -15,7 +15,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexshim"
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
@@ -65,7 +65,7 @@ func runServer(args []string) int {
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 64
 	}
-	if err := codexexecserver.ValidateURL(*ws); err != nil {
+	if err := backend.ValidateURL(*ws); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}

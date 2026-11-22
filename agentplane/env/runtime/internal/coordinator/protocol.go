@@ -150,7 +150,7 @@ func (r *Runtime) executionReady(ctx context.Context) (bool, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.config.CodexExecServer == nil {
+	if r.config.ExecutionBackend == nil {
 		return true, nil
 	}
 	return !r.closing && !r.failed && r.executionOwner.executor(r.desired.IncarnationUID) != nil, nil

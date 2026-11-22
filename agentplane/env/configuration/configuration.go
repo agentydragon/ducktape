@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/settings"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
@@ -74,38 +74,38 @@ func durationMilliseconds(name string, value *int64) (time.Duration, error) {
 	return time.Duration(*value) * time.Millisecond, nil
 }
 
-func (c *CodexReadinessConfiguration) resolve() (codexexecserver.Readiness, codexappserver.Readiness, error) {
+func (c *CodexReadinessConfiguration) resolve() (backend.Readiness, codexappserver.Readiness, error) {
 	if c == nil {
 		c = &CodexReadinessConfiguration{}
 	}
-	execReadiness := codexexecserver.Readiness{}
+	execReadiness := backend.Readiness{}
 	appReadiness := codexappserver.Readiness{}
 	var err error
 	if execReadiness.Timeout, err = durationMilliseconds("exec_server_ready_timeout_ms", c.ExecServerReadyTimeoutMS); err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	if execReadiness.ProbeTimeout, err = durationMilliseconds("exec_server_probe_timeout_ms", c.ExecServerProbeTimeoutMS); err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	if execReadiness.ProbeInterval, err = durationMilliseconds("exec_server_probe_interval_ms", c.ExecServerProbeIntervalMS); err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	if appReadiness.ExecServerDependencyTimeout, err = durationMilliseconds("exec_server_dependency_timeout_ms", c.ExecServerDependencyTimeoutMS); err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	if appReadiness.StartupTimeout, err = durationMilliseconds("app_server_start_timeout_ms", c.AppServerStartTimeoutMS); err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	if appReadiness.InitializeTimeout, err = durationMilliseconds("app_server_initialize_timeout_ms", c.AppServerInitializeTimeoutMS); err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	execReadiness, err = execReadiness.Resolve()
 	if err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	appReadiness, err = appReadiness.Resolve()
 	if err != nil {
-		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+		return backend.Readiness{}, codexappserver.Readiness{}, err
 	}
 	return execReadiness, appReadiness, nil
 }
@@ -196,8 +196,8 @@ type ExecutorConfiguration struct {
 }
 
 type executorOwnerConfiguration struct {
-	Kind   codexexecserver.Owner `json:"kind"`
-	Socket json.RawMessage       `json:"socket"`
+	Kind   backend.Owner   `json:"kind"`
+	Socket json.RawMessage `json:"socket"`
 }
 
 type PID1EnvironmentConfiguration struct {
@@ -219,7 +219,7 @@ func (v SystemdEnvironmentConfiguration) launcher(slice string, aggregate, proce
 	return &supervision.SystemdLauncher{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
 }
 
-func configureExecutionLimits(executor *codexexecserver.Config, raw json.RawMessage) error {
+func configureExecutionLimits(executor *backend.Config, raw json.RawMessage) error {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
@@ -233,22 +233,22 @@ func configureExecutionLimits(executor *codexexecserver.Config, raw json.RawMess
 	return nil
 }
 
-func (config *ExecutorConfiguration) resolve(vm *SystemdEnvironmentConfiguration) (*codexexecserver.Config, error) {
+func (config *ExecutorConfiguration) resolve(vm *SystemdEnvironmentConfiguration) (*backend.Config, error) {
 	if config == nil {
 		return nil, nil
 	}
-	out := &codexexecserver.Config{
+	out := &backend.Config{
 		URL: config.URL, Owner: config.Owner.Kind, Implementation: config.Implementation, Placement: config.Placement,
 	}
 	switch out.Owner {
-	case codexexecserver.OwnerCompanion:
+	case backend.OwnerCompanion:
 		if vm != nil {
 			return nil, errors.New("systemd environment supervision requires a systemd executor owner")
 		}
 		if err := json.Unmarshal(config.Owner.Socket, &out.ContainerSocket); err != nil || !filepath.IsAbs(out.ContainerSocket) {
 			return nil, errors.New("companion executor owner requires an absolute ownership socket")
 		}
-	case codexexecserver.OwnerSystemd:
+	case backend.OwnerSystemd:
 		if vm == nil {
 			return nil, errors.New("PID 1 environment supervision requires a companion executor owner")
 		}
@@ -260,9 +260,9 @@ func (config *ExecutorConfiguration) resolve(vm *SystemdEnvironmentConfiguration
 		return nil, errors.New("executor owner must explicitly select companion or systemd")
 	}
 	switch out.Placement {
-	case codexexecserver.PlacementDirect:
-	case codexexecserver.PlacementSystemd:
-		if out.Owner != codexexecserver.OwnerSystemd || out.Implementation == codexexecserver.ImplementationCodex {
+	case backend.PlacementDirect:
+	case backend.PlacementSystemd:
+		if out.Owner != backend.OwnerSystemd || out.Implementation == backend.ImplementationCodex {
 			return nil, errors.New("systemd executor placement requires a native executor with a systemd owner")
 		}
 		out.WorkloadLauncher = vm.launcher(supervision.CommandSlice, *vm.Resources.ExecutorWorkload, supervision.ResourceLimits{})
@@ -276,7 +276,7 @@ func (config *ExecutorConfiguration) resolve(vm *SystemdEnvironmentConfiguration
 }
 
 // The environment selects supervision and supplies the resources an executor owner can use.
-func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *codexexecserver.Config, *SystemdEnvironmentConfiguration, string, error) {
+func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *backend.Config, *SystemdEnvironmentConfiguration, string, error) {
 	var tag struct {
 		Supervision string `json:"supervision"`
 	}
@@ -313,7 +313,7 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
 			return nil, nil, nil, "", errors.New("executor endpoint and resource budget must be supplied together")
 		}
-		systemdPlacement := vm.Executor != nil && vm.Executor.Placement == codexexecserver.PlacementSystemd
+		systemdPlacement := vm.Executor != nil && vm.Executor.Placement == backend.PlacementSystemd
 		if systemdPlacement != (vm.Resources.ExecutorWorkload != nil) {
 			return nil, nil, nil, "", errors.New("systemd executor placement and executor workload budget must be supplied together")
 		}
@@ -515,7 +515,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		CodexTurnDiffNotifications:  turnDiffNotifications,
 		SystemdLauncher:             launcher,
 		Supervision:                 supervisionMode,
-		CodexExecServer:             executor,
+		ExecutionBackend:            executor,
 		CodexAppServerReadiness:     appReadiness,
 	}
 	if f.WorkspaceRoot != nil {

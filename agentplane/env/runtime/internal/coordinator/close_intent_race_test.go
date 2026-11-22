@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -119,7 +119,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	successor := &heldCloseExecution{started: make(chan struct{}), release: make(chan struct{})}
 	config.deps.startExecution = func(_ context.Context, _ Config, uid string) (executionHandle, error) {
@@ -197,7 +197,7 @@ func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blocke
 	}
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	config.expectCloseError = true
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
