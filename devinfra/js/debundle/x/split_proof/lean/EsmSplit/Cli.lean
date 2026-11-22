@@ -35,9 +35,13 @@ def report (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
   return rs.all id
 
 def writeModules (B : Bundle) (P : Plan) (dir : System.FilePath) (render : Module → String := (·.render B P)) : IO Unit := do
+  IO.ofExcept (validateModulePaths (P.mods.map (·.name)))
   IO.FS.createDirAll dir
   for m in P.mods do
-    IO.FS.writeFile (dir / m.name) (render m)
+    let output := dir / m.name
+    let parent := "/".intercalate ((m.name.splitOn "/").dropLast)
+    if !parent.isEmpty then IO.FS.createDirAll (dir / parent)
+    IO.FS.writeFile output (render m)
   IO.println s!"  wrote {P.mods.length} modules to {dir}"
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
@@ -47,6 +51,7 @@ def loadSpec (path : System.FilePath) : IO Spec := do
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
   let entry ← IO.ofExcept (j.getObjVal? "entry" >>= Json.getStr?)
   let mods ← IO.ofExcept (j.getObjVal? "modules" >>= Json.getObj?)
+  IO.ofExcept (validateModulePaths (entry :: mods.toList.map (·.1)))
   let modules ← mods.toList.mapM fun (name, v) => do
     let sels ← (← IO.ofExcept v.getArr?).toList.mapM fun x => do
       let s ← IO.ofExcept x.getStr?
