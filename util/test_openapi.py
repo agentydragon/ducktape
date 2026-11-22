@@ -1,17 +1,14 @@
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel
 
 from util.openapi import add_model_schema
 
 
 class Item(BaseModel):
-    count: int
-
-    @computed_field
-    @property
-    def doubled(self) -> int:
-        return 2 * self.count
+    amount: Decimal
 
 
 class Frame(BaseModel):
@@ -23,7 +20,7 @@ def test_nested_frame_points_to_the_emitted_output_component() -> None:
     add_model_schema(document, Frame, mode="serialization")
     schemas = document["components"]["schemas"]
     assert schemas["Frame"]["properties"]["item"]["$ref"] == "#/components/schemas/Item"
-    assert "doubled" in schemas["Item"]["properties"]
+    assert schemas["Item"]["properties"]["amount"]["type"] == "string"
     add_model_schema(document, Item, mode="serialization")
     with pytest.raises(ValueError, match="conflicting OpenAPI component: Item"):
         add_model_schema(document, Item, mode="validation")
