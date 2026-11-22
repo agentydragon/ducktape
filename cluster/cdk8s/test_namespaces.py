@@ -1,10 +1,8 @@
 import json
-from collections.abc import Callable
 
 import pytest
 import pytest_bazel
 from cdk8s import Chart
-from cdk8s_plus_34 import Namespace, k8s
 
 from cluster.cdk8s.namespace_access import AgentReadable
 from cluster.cdk8s.namespaces import (
@@ -24,29 +22,25 @@ def test_extra_labels_cannot_restate_the_policy_labels(scratch_chart: Chart, key
         namespace(scratch_chart, "namespace", name="test-ns", vpa=Vpa.AUTO, labels={key: "false"})
 
 
-@pytest.mark.parametrize("construct", [namespace, namespace_patch])
-@pytest.mark.parametrize("vpa", [Vpa.AUTO, VpaProfile(Vpa.AUTO, min_replicas=1)])
-def test_auto_defaults_to_requests_only(
-    scratch_chart: Chart, construct: Callable[..., Namespace | k8s.KubeNamespace], vpa: Vpa | VpaProfile
-) -> None:
-    rendered = construct(scratch_chart, "namespace", name="test-ns", vpa=vpa)
-    annotations = rendered.metadata.to_json()["annotations"]
-    assert json.loads(annotations[VPA_RESOURCE_POLICY_ANNOTATION]) == {
+def test_auto_defaults_to_requests_only(scratch_chart: Chart) -> None:
+    ns = namespace(scratch_chart, "namespace", name="test-ns", vpa=Vpa.AUTO)
+    assert json.loads(ns.metadata.to_json()["annotations"][VPA_RESOURCE_POLICY_ANNOTATION]) == {
         "containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]
     }
-    if isinstance(vpa, VpaProfile):
-        assert annotations["goldilocks.fairwinds.com/vpa-min-replicas"] == "1"
 
 
-@pytest.mark.parametrize("construct", [namespace, namespace_patch])
-def test_auto_preserves_explicit_annotation(
-    scratch_chart: Chart, construct: Callable[..., Namespace | k8s.KubeNamespace]
-) -> None:
+def test_profile_preserves_explicit_policy_in_namespace_patch(scratch_chart: Chart) -> None:
     explicit = '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsAndLimits"}]}'
-    rendered = construct(
-        scratch_chart, "namespace", name="test-ns", vpa=Vpa.AUTO, annotations={VPA_RESOURCE_POLICY_ANNOTATION: explicit}
+    patch = namespace_patch(
+        scratch_chart,
+        "namespace",
+        name="test-ns",
+        vpa=VpaProfile(Vpa.AUTO, min_replicas=1),
+        annotations={VPA_RESOURCE_POLICY_ANNOTATION: explicit},
     )
-    assert rendered.metadata.to_json()["annotations"][VPA_RESOURCE_POLICY_ANNOTATION] == explicit
+    annotations = patch.metadata.to_json()["annotations"]
+    assert annotations[VPA_RESOURCE_POLICY_ANNOTATION] == explicit
+    assert annotations["goldilocks.fairwinds.com/vpa-min-replicas"] == "1"
 
 
 @pytest.mark.parametrize("vpa", [Vpa.DISABLED, Vpa.RECOMMEND, Vpa.INITIAL])

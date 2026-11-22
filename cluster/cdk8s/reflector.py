@@ -35,7 +35,7 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         # Allow the updater to restart Reflector's single replica when its recommendation changes.
-        vpa=VpaProfile.requests_only(Vpa.AUTO, min_replicas=1),
+        vpa=VpaProfile(Vpa.AUTO, min_replicas=1),
     )
     helm_release(
         chart,
