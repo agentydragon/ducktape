@@ -710,18 +710,17 @@ def environment(*, identity_catalog: bool) -> Environment:
 ENV = environment(identity_catalog=False)
 
 
-def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
-    """The assignable sets' Kubernetes grants, by set: PolicySet rules, or in the identity catalog
-    the KubernetesRoleSets of the same names."""
-    return {**agent_access_profiles.policy_set_grants(), TOOL_CONFIG_GRANT: (tool_config_grant(ENV.namespace),)}
+_ASSIGNABLE_POLICY_SETS = {
+    **agent_access_profiles.policy_set_grants(),
+    TOOL_CONFIG_GRANT: (tool_config_grant(STAGING_NAMESPACE),),
+}
 
-
-def assignable_grants() -> tuple[KubernetesGrant, ...]:
-    """Role grants the controller may bind for presets and the standing Claude account."""
-    return (
-        *(grant for grants in assignable_policy_sets().values() for grant in grants),
-        *agent_access_profiles.claude_ai_static_grants(),
-    )
+# Both the controller's own bind permissions and its delegation in other namespaces
+# cover the preset role sets and the standing Claude account's additional static roles.
+ASSIGNABLE_GRANTS: tuple[KubernetesGrant, ...] = (
+    *(grant for grants in _ASSIGNABLE_POLICY_SETS.values() for grant in grants),
+    *agent_access_profiles.CLAUDE_AI_STATIC_GRANTS,
+)
 
 
 def chart(app: App, env: Environment = ENV) -> Chart:
@@ -788,9 +787,8 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     ).add_platform_resources()
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
-    assignable_sets = assignable_policy_sets()
     role_sets: dict[str, KubernetesRoleSet] = {}
-    for name, grants in sorted(assignable_sets.items()):
+    for name, grants in sorted(_ASSIGNABLE_POLICY_SETS.items()):
         # Sandboxes and standing callers act as Identities and reach the API server only as accounts,
         # which the role sets grant. Mixed-mode PolicySets keep their Kubernetes rules for any
         # remaining ServiceAccount-subject bindings; Identity bindings use pure-egress siblings.
@@ -817,12 +815,13 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 metadata=ApiObjectMetadata(name=policy_name, namespace=env.namespace),
                 spec=PolicySetSpec(rules=ASSIGNABLE_EGRESS_RULES[name]),
             )
-    claude_ai_static_grants = agent_access_profiles.claude_ai_static_grants()
     role_sets[agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] = KubernetesRoleSet(
         chart,
         "kubernetes-role-set-claude-ai-static",
         metadata=ApiObjectMetadata(name=agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET, namespace=env.namespace),
-        spec=KubernetesRoleSetSpec(rules=agent_access_profiles.role_set_rules_for_grants(claude_ai_static_grants)),
+        spec=KubernetesRoleSetSpec(
+            rules=agent_access_profiles.role_set_rules_for_grants(agent_access_profiles.CLAUDE_AI_STATIC_GRANTS)
+        ),
     )
     _add_launch_accounts(chart, env, role_sets=role_sets)
     _add_standing_identity_access(chart, env, role_sets=role_sets)
@@ -850,10 +849,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         "policy-controller-rbac",
         env,
         account=controller.account,
-        assignable_grants=[
-            *(grant for grants in assignable_sets.values() for grant in grants),
-            *claude_ai_static_grants,
-        ],
+        assignable_grants=ASSIGNABLE_GRANTS,
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
         workload_namespaces=workload_namespaces,
     )

@@ -278,18 +278,13 @@ STATIC_GRANTS = {
 }
 
 
-def claude_ai_static_grants() -> tuple[KubernetesGrant, ...]:
-    """The grants on the old Claude caller ServiceAccount, excluding its PolicySet grants.
-
-    The standing Identity's Kubernetes account uses these to preserve the old caller's direct
-    diagnostic footprint. Its `coinbase` and `plaid-diagnostics` PolicySet grants are represented
-    separately by their same-named role sets.
-    """
-    return (
-        _GRANTS[CLUSTER_DIAGNOSTICS_POLICY],
-        *_NAMESPACE_READ_GRANTS.values(),
-        *(_GRANTS[name] for name in STATIC_GRANTS["claude-ai"]),
-    )
+# Direct grants on the old Claude caller ServiceAccount. Its standing Identity account
+# receives Coinbase and Plaid access separately through the same-named role sets.
+CLAUDE_AI_STATIC_GRANTS = (
+    _GRANTS[CLUSTER_DIAGNOSTICS_POLICY],
+    *_NAMESPACE_READ_GRANTS.values(),
+    *(_GRANTS[name] for name in STATIC_GRANTS["claude-ai"]),
+)
 
 
 def profile_subjects(grant: str) -> tuple[Subject, ...]:
