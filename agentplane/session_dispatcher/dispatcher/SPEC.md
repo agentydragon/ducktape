@@ -312,12 +312,17 @@ restart on that status. An empty `next_page_token` completes the retained-row en
 `WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
 Older servers return `UNIMPLEMENTED` for the RPC.
 
-To verify durable membership for known commands, pass up to 16 distinct
-`verify_retained_command_ids` without pagination options. This reads the same exact Session
-rows as paged discovery and checks migration 29's enabled deletion-protection trigger in
-the same database snapshot. Only a returned row with `retains_commands_after_environment_deletion=true`
-establishes this coverage for that command. Older responses omit the capability. Callers can compare
-the separately fetched stored command with their authored bytes before releasing local storage.
+`BatchGetDispatches` reads up to 16 distinct command IDs from one authorized Session. Each
+result corresponds to the requested ID at the same position. A hit includes the original command,
+current receipt and positive receipt version from the same retained rows as paginated history.
+A missing result covers every ID outside the Session's current rows, including legacy deletions.
+Missing results do not establish delivery outcome or authorize replay. An unauthorized Session
+returns `NOT_FOUND` for the whole batch. Batches larger than 4 MiB return `RESOURCE_EXHAUSTED`.
+
+Returned originals stay available after Environment deletion for the lifetime of the retained
+Session. Dispatcher checks the database protection before returning batch results. An older
+server returns `UNIMPLEMENTED` for this RPC. In either case, a client holding the sole authored copy
+can release it only after a successful read that matches that copy and its destination.
 
 ## Versioned dispatch watches
 

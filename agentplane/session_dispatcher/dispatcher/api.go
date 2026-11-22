@@ -137,6 +137,7 @@ func Methods(rule auth.Rule) auth.Methods {
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
+		dispatcherpb.SessionDispatcher_BatchGetDispatches_FullMethodName:    rule,
 		dispatcherpb.SessionDispatcher_ListSessionDispatches_FullMethodName: rule,
 		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:        rule,
 	}

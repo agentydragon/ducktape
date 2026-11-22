@@ -6,6 +6,9 @@ import (
 	"errors"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/lib/pq"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -21,8 +24,8 @@ type DispatchPageCursor struct {
 	Before, Frontier int64
 }
 
-func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller Caller, limit int, cursor DispatchPageCursor, verifyIDs []string) (*dispatcherpb.ListSessionDispatchesResponse, DispatchPageCursor, error) {
-	if cursor.Before == 0 && len(verifyIDs) == 0 {
+func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller Caller, limit int, cursor DispatchPageCursor) (*dispatcherpb.ListSessionDispatchesResponse, DispatchPageCursor, error) {
+	if cursor.Before == 0 {
 		// Drain writers that may already have allocated an earlier deletion version.
 		// Subsequent physical deletions must advance the tombstone maximum or prune floor.
 		var err error
@@ -34,13 +37,7 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 	result := &dispatcherpb.ListSessionDispatchesResponse{Coverage: dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS}
 	var next DispatchPageCursor
 	err := postgres.ReadTransaction(ctx, s.DB, sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
-		scope, args := OwnerScope(caller, "", 2)
-		var name, uid string
-		err := tx.QueryRowContext(ctx, "SELECT sandbox_name,sandbox_uid::text FROM session WHERE session_id=$1 AND "+scope,
-			append([]any{sessionID}, args...)...).Scan(&name, &uid)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
+		name, uid, err := dispatchSessionAddress(ctx, tx, sessionID, caller)
 		if err != nil {
 			return err
 		}
@@ -48,29 +45,13 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 			FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
 			AND ($4::bigint=0 OR position<$4)`
 		params := []any{sessionID, name, uid, cursor.Before, limit + 1}
-		if len(verifyIDs) > 0 {
-			// A mixed-version replica can still issue its old DELETE. The database trigger from
-			// migration 29 must protect the exact rows this transaction can enumerate.
-			var protected bool
-			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-				SELECT FROM pg_trigger WHERE tgrelid='dispatch'::regclass
-				AND tgname='keep_session_command_on_environment_deletion'
-				AND tgfoid=to_regprocedure('keep_session_command_on_environment_deletion()')
-				AND tgenabled IN ('O','A'))`).Scan(&protected); err != nil {
-				return err
-			}
-			result.RetainsCommandsAfterEnvironmentDeletion = &protected
-			query += " AND command_id=ANY($6)"
-			params = append(params, pq.Array(verifyIDs))
-		} else {
-			var deleted bool
-			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM dispatch_tombstone WHERE version>$1)
+		var deleted bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM dispatch_tombstone WHERE version>$1)
 				OR (SELECT pruned_through>$1 FROM dispatch_watch_retention WHERE singleton)`, cursor.Frontier).Scan(&deleted); err != nil {
-				return err
-			}
-			if deleted {
-				return status.Error(codes.OutOfRange, "dispatch rows were deleted; restart without a page token")
-			}
+			return err
+		}
+		if deleted {
+			return status.Error(codes.OutOfRange, "dispatch rows were deleted; restart without a page token")
 		}
 		rows, err := tx.QueryContext(ctx, query+" ORDER BY position DESC LIMIT $5", params...)
 		if err != nil {
@@ -100,4 +81,70 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 		return rows.Err()
 	})
 	return result, next, err
+}
+
+func dispatchSessionAddress(ctx context.Context, tx *sql.Tx, sessionID string, caller Caller) (name, uid string, err error) {
+	scope, args := OwnerScope(caller, "", 2)
+	err = tx.QueryRowContext(ctx, "SELECT sandbox_name,sandbox_uid::text FROM session WHERE session_id=$1 AND "+scope,
+		append([]any{sessionID}, args...)...).Scan(&name, &uid)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return name, uid, err
+}
+
+func (s *Store) BatchGetDispatches(ctx context.Context, sessionID string, caller Caller, ids []string) (*dispatcherpb.BatchGetDispatchesResponse, error) {
+	response := &dispatcherpb.BatchGetDispatchesResponse{}
+	err := postgres.ReadTransaction(ctx, s.DB, sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
+		name, uid, err := dispatchSessionAddress(ctx, tx, sessionID, caller)
+		if err != nil {
+			return err
+		}
+		// Mixed-version writers may still issue DELETE. Require migration 29's protection
+		// before serving this method's retained-record contract.
+		var protected bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+                SELECT FROM pg_trigger WHERE tgrelid='dispatch'::regclass
+                AND tgname='keep_session_command_on_environment_deletion'
+                AND tgfoid=to_regprocedure('keep_session_command_on_environment_deletion()')
+                AND tgenabled IN ('O','A'))`).Scan(&protected); err != nil {
+			return err
+		}
+		if !protected {
+			return status.Error(codes.FailedPrecondition, "retained Dispatch reads are unavailable")
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,
+            operation,state,reason,admission,delivery_blocker,wake_assessment,created_at,updated_at,command
+            FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3 AND command_id=ANY($4)`, sessionID, name, uid, pq.Array(ids))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		byID := make(map[string]*dispatcherpb.BatchGetDispatchesResponse_Result, len(ids))
+		for _, id := range ids {
+			result := &dispatcherpb.BatchGetDispatchesResponse_Result{CommandId: id, Result: &dispatcherpb.BatchGetDispatchesResponse_Result_NotFound{NotFound: &emptypb.Empty{}}}
+			byID[id] = result
+			response.Results = append(response.Results, result)
+		}
+		for rows.Next() {
+			change, err := scanDispatchChange(rows)
+			if err != nil {
+				return err
+			}
+			if change.Dispatch.Command == nil || change.Dispatch.Command.GetCommandId() != change.Dispatch.CommandId {
+				return status.Error(codes.DataLoss, "stored Dispatch has no matching original command")
+			}
+			change.Dispatch.ReceiptVersion = &change.Version
+			byID[change.Dispatch.CommandId].Result = &dispatcherpb.BatchGetDispatchesResponse_Result_Dispatch{Dispatch: change.Dispatch}
+			// Stop materializing originals when the response reaches the gRPC receiver limit.
+			if proto.Size(response) > 4<<20 {
+				return status.Error(codes.ResourceExhausted, "Dispatch batch exceeds 4 MiB")
+			}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }

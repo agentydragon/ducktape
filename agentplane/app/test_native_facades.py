@@ -77,6 +77,15 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             self.inventory_cancelled.set()
 
     @override
+    async def BatchGetDispatches(self, request, context):
+        return session_dispatcher_pb2.BatchGetDispatchesResponse(
+            results=[
+                session_dispatcher_pb2.BatchGetDispatchesResponse.Result(command_id=key, not_found={})
+                for key in request.command_ids
+            ]
+        )
+
+    @override
     async def ListSessionDispatches(self, request, context):
         self.receipt_pages.append(request)
         return session_dispatcher_pb2.ListSessionDispatchesResponse(
@@ -177,6 +186,12 @@ async def test_session_receipt_page_preserves_scope_and_cursor(http: httpx.Async
     assert peer.service.receipt_pages == [
         session_dispatcher_pb2.ListSessionDispatchesRequest(session_id="test-session", limit=4, page_token="test-page")
     ]
+    batch = await http.get(
+        "/upstream/dispatcher/v1/sessions/test-session/dispatches:batchGet",
+        params=[("commandIds", "two"), ("commandIds", "one")],
+    )
+    assert batch.status_code == 200
+    assert batch.json()["results"] == [{"commandId": key, "notFound": {}} for key in ("two", "one")]
 
 
 @pytest.mark.parametrize("ending", ["logout", "expiry", "disconnect", "sigterm"])
