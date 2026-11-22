@@ -41,8 +41,8 @@ NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
 KUBECONFIG_DIRECTORY = "/etc/opentofu/kubernetes"
 _WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
-    api_version="opentofu.upbound.io/v1beta1",
-    kind="Workspace",
+    api_version=Workspace.GVK.api_version,
+    kind=Workspace.GVK.kind,
     current=(
         "has(status.conditions) && "
         "status.conditions.exists(c, has(c.type) && c.type == 'Synced' && "

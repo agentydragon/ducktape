@@ -116,8 +116,8 @@ def kubevirt(chart: Chart, directory: RenderedDirectory, kubevirt_operator: Kust
         # UpdateConditionsAvailable).
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
-                api_version="kubevirt.io/v1",
-                kind="KubeVirt",
+                api_version=KubeVirt.GVK.api_version,
+                kind=KubeVirt.GVK.kind,
                 current=(
                     "has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && "
                     "status.conditions.exists(c, c.type == 'Available' && c.status == 'True')"

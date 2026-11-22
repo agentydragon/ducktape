@@ -129,8 +129,8 @@ def cdi(chart: Chart, directory: RenderedDirectory, cdi_operator: Kustomization)
         # pkg/sdk/cr-status.go MarkCrHealthyMessage; CDI v1.65.0 embeds its api.Status).
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
-                api_version="cdi.kubevirt.io/v1beta1",
-                kind="CDI",
+                api_version=Cdi.GVK.api_version,
+                kind=Cdi.GVK.kind,
                 current=(
                     "has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && "
                     "status.conditions.exists(c, c.type == 'Available' && c.status == 'True')"
