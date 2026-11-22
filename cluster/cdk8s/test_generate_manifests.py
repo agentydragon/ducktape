@@ -72,6 +72,15 @@ def active_api_objects(active_yaml_documents: YamlDocuments) -> list[dict[str, A
     return [doc for path, docs in active_yaml_documents.items() if path.name.endswith(".k8s.yaml") for doc in docs]
 
 
+def test_gaffer_archive_reads_app_ids_and_signing_key_from_same_secret(documents: list[dict[str, Any]]) -> None:
+    name = "gaffer-private-archive"
+    generator = find_resource(documents, "GithubAccessToken", name)
+    reconciler = find_resource(documents, "Kustomization", name)
+    key = generator["spec"]["auth"]["privateKey"]["secretRef"]
+    assert reconciler["metadata"]["namespace"] == generator["metadata"]["namespace"]
+    assert reconciler["spec"]["postBuild"]["substituteFrom"] == [{"kind": "Secret", "name": key["name"]}]
+
+
 def test_auto_vpa_namespaces_declare_a_resource_policy(documents: list[dict[str, Any]], checkout: Path) -> None:
     # Parked third-party applications keep their hand-written manifests. Check those too,
     # so reviving one does not silently lose the default when the admission rule is retired.

@@ -91,6 +91,31 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
         key="token",
         store=EXTERNAL_CREDS_STORE,
     )
+    archive = "gaffer-private-archive"
+    _present(
+        construct,
+        archive,
+        namespace=namespace,
+        credential=archive,
+        description="Read source archives of agentydragon/gaffer-private with a repository-scoped GitHub App token.",
+        secret=archive,
+        key="token",
+        target=_BEARER,
+        rules=[
+            _rule(
+                archive,
+                "api.github.com",
+                method=PolicySetSpecRulesMethods.GET,
+                paths=["/repos/agentydragon/gaffer-private/tarball/*"],
+            ),
+            # GitHub redirects private archives to a signed URL on codeload.
+            Rule.egress(
+                hosts=["codeload.github.com"],
+                methods=[PolicySetSpecRulesMethods.GET],
+                paths=["/agentydragon/gaffer-private/legacy.tar.gz/*"],
+            ),
+        ],
+    )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _forgejo_finance_agent(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)

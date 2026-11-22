@@ -85,6 +85,7 @@ from cluster.cdk8s.activitywatch import app as activitywatch_app
 from cluster.cdk8s.agentplane import (
     binding_delegation,
     db_backups as agentplane_staging_db_backups,
+    gaffer_archive,
     generation as agentplane_generation,
     staging,
     staging_vpa,
@@ -2410,6 +2411,17 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         litellm_crossplane_keys_kustomization,
     )
+    archive_artifact = artifact(gaffer_archive.NAME, gaffer_archive.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        gaffer_archive.NAME,
+        write_directory(root, archive_artifact, gaffer_archive.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(
+            agentplane_staging_kustomization, external_secrets_operator_kustomization
+        ),
+        namespace=gaffer_archive.GITHUB_APP_NAMESPACE,
+        post_build=gaffer_archive.github_app_ids(),
+    )
     agentplane_staging_vpa_artifact = artifact(staging_vpa.NAME, staging_vpa.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
@@ -2488,6 +2500,7 @@ def generate_manifests(root: Path) -> None:
         root,
         ducktape=[
             agentplane_staging_artifact,
+            archive_artifact,
             agentplane_staging_delivery_artifact,
             agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,

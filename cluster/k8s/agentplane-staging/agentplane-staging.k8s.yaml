@@ -14092,6 +14092,46 @@ spec:
     deletionPolicy: Retain
     name: agentplane-github-pat
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: gaffer-private-archive
+  namespace: agentplane-staging
+spec:
+  description: Read source archives of agentydragon/gaffer-private with a repository-scoped GitHub App token.
+  source:
+    secretRef:
+      key: token
+      name: gaffer-private-archive
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: gaffer-private-archive
+  namespace: agentplane-staging
+spec:
+  rules:
+    - credentialRef:
+        name: gaffer-private-archive
+      hosts:
+        - api.github.com
+      methods:
+        - GET
+      paths:
+        - /repos/agentydragon/gaffer-private/tarball/*
+      type: egress
+    - hosts:
+        - codeload.github.com
+      methods:
+        - GET
+      paths:
+        - /agentydragon/gaffer-private/legacy.tar.gz/*
+      type: egress
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

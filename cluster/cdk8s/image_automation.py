@@ -44,8 +44,8 @@ from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 _CI_TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
 # The ducktape-automation GitHub App's credentials: a SOPS Secret Flux decrypts into flux-system
 # (cluster/k8s/flux/flux-system). A GitRepository's secretRef resolves in its own namespace.
-_GITHUB_APP_NAMESPACE = "flux-system"
-_GITHUB_APP_SECRET = "ducktape-automation-github-app"
+GITHUB_APP_NAMESPACE = "flux-system"
+GITHUB_APP_SECRET = "ducktape-automation-github-app"
 _COMMIT_MESSAGE = (
     "chore: update images [skip ci]\n"
     "\n"
@@ -102,13 +102,13 @@ class ImageUpdatePush(Construct):
             self,
             "source",
             metadata=ApiObjectMetadata(
-                name=source_name, namespace=_GITHUB_APP_NAMESPACE, annotations={"description": source_description}
+                name=source_name, namespace=GITHUB_APP_NAMESPACE, annotations={"description": source_description}
             ),
             spec=GitRepositorySpec(
                 interval=source_interval,
                 provider=GitRepositorySpecProvider.GITHUB,
                 ref=GitRepositorySpecRef(branch=branch),
-                secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),
+                secret_ref=GitRepositorySpecSecretRef(name=GITHUB_APP_SECRET),
                 sparse_checkout=sparse_checkout,
                 timeout=source_timeout,
                 url=url,
@@ -119,7 +119,7 @@ class ImageUpdatePush(Construct):
             "automation",
             metadata=ApiObjectMetadata(
                 name=name,
-                namespace=_GITHUB_APP_NAMESPACE,
+                namespace=GITHUB_APP_NAMESPACE,
                 annotations=None if description is None else {"description": description},
             ),
             spec=ImageUpdateAutomationSpec(
