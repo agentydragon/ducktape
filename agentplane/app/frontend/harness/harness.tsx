@@ -2573,14 +2573,14 @@ const recentDispatchIssues = new Map<string, readonly Record<string, string>[]>(
 function showRecentDispatchIssues(): void {
   recentDispatchIssues.set(RUNNING_THREAD, [
     {
-      commandId: "visual-model-delivery-unknown",
+      commandId: "5034baaf-0000-4000-8000-000000000001",
       sessionId: RUNNING_THREAD,
       operation: "OPERATION_CHANGE_MODEL",
       state: "DELIVERY_STATE_UNKNOWN",
       reason: "The current sampler policy does not allow this model switch.",
     },
     {
-      commandId: "visual-message-delivery-failed",
+      commandId: "7988d401-0000-4000-8000-000000000002",
       sessionId: RUNNING_THREAD,
       operation: "OPERATION_SUBMIT_INPUT",
       state: "DELIVERY_STATE_FAILED",

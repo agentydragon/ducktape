@@ -649,6 +649,7 @@ async def test_recent_delivery_issues(view: VisualPage, app: AgentplaneFixture) 
     issues = view.page.get_by_role("region", name="Recent delivery issues")
     await expect(issues.get_by_text("Model change · Outcome unknown")).to_be_visible()
     await expect(issues.get_by_text("Send message · Delivery failed")).to_be_visible()
+    await expect(issues.get_by_text("5034baaf")).to_be_visible()
     await issues.scroll_into_view_if_needed()
     await view.capture()
 

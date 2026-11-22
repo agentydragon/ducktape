@@ -401,10 +401,15 @@ export function RecentDeliveryIssues({
         )}
         {visible.map((row) => (
           <Stack key={row.commandId} gap={0} data-command-id={row.commandId} style={{ overflowWrap: "anywhere" }}>
-            <Text size="sm">
-              {operationLabel(row.operation)} ·{" "}
-              {row.state === DeliveryState.FAILED ? "Delivery failed" : "Outcome unknown"}
-            </Text>
+            <Group justify="space-between" align="baseline" gap={4}>
+              <Text size="sm">
+                {operationLabel(row.operation)} ·{" "}
+                {row.state === DeliveryState.FAILED ? "Delivery failed" : "Outcome unknown"}
+              </Text>
+              <Text size="xs" c="dimmed" ff="monospace" title={row.commandId} aria-label={`Command ${row.commandId}`}>
+                {row.commandId.slice(0, 8)}
+              </Text>
+            </Group>
             {row.reason && (
               <Text size="xs" c="dimmed">
                 {row.reason === "sandbox_deleted" ? "Sandbox was deleted" : dispatchReasonLabel(row.reason)}
