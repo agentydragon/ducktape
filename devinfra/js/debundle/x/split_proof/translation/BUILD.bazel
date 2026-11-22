@@ -398,6 +398,7 @@ js_test(
     data = _EFFECTS_CASES_DATA,
     entry_point = _EFFECTS + ":run",
     env = _EFFECTS_CASES_ENV,
+    shard_count = 4,
 )
 
 js_test(

@@ -9,6 +9,7 @@ export const premises = {};
 
 const c = (name, source, order) => ({ name, source: source.trim() + "\n", reorders: [{ order, behavior: "differs" }] });
 const p3 = (name, source, order) => ({ ...c(name, source, order), premises: { noWorldHooks: true } });
+const throwingP3 = (name, source, order) => ({ ...p3(name, source, order), throwsInNode: true });
 const chain = (n) => Array.from({ length: n }, (_, i) => `const p${i + 1} = Object.create(p${i});`).join("\n");
 const getTrap = "get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); }";
 const proxy = (traps) => `const px = new Proxy(t, { ${traps} });`;
@@ -1939,7 +1940,7 @@ console.log(seen);
   ),
   // a `throw` that is reached may end the evaluation: it is unknown code, so it keeps its place among the effects and
   // among the declarations that the world can still see afterwards
-  p3(
+  throwingP3(
     "a guard that throws stays after the effect before it",
     `
 const root = 0;
@@ -1948,7 +1949,7 @@ if (!root) throw new Error("no root");
 `,
     [0, 2, 1]
   ),
-  p3(
+  throwingP3(
     "a call of a function that throws stays after the effect before it",
     `
 function invariant(c) { if (!c) throw new Error("stop"); }
@@ -1958,7 +1959,7 @@ invariant(root);
 `,
     [0, 1, 3, 2]
   ),
-  p3(
+  throwingP3(
     "a declaration that an escaped callback reads does not cross a throw",
     `
 const hold = { f: null };
@@ -1969,7 +1970,7 @@ const late = 1;
     [0, 1, 3, 2]
   ),
   // the same call is caught in one place and not in another
-  p3(
+  throwingP3(
     "a call that throws, first under a try and then outside one",
     `
 function fail(c) { if (!c) throw new Error("stop"); }
