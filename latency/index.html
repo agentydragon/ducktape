@@ -65,7 +65,7 @@
       import { BarChart } from "@mantine/charts";
       import { html, mount } from "../report.js";
       const evidenceSha =
-        "3fb83c15b7ad399eab5e4b8f93f4f2e6e346848d3e15073d598d0cbdd026449e";
+        "ab50921cef71126bfc0016f1e0da1d74553ad59766dc95a3313dba93fb199aa9";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -77,8 +77,7 @@
         throw new Error("Evidence does not match this report");
       const e = JSON.parse(new TextDecoder().decode(bytes));
       const gh = "https://github.com/agentydragon/ducktape";
-      const archive =
-        gh + "/blob/" + e.previous_report_commit + "/latency/index.html";
+      const archive = gh + "/blob/" + e.archive_commit + "/latency/index.html";
       const link = (href, label) => html`<${Anchor} href=${href}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
       const source = (path, label) =>
@@ -133,7 +132,8 @@
           <${Group} gap="md">
             ${link("./evidence.json", "Reviewed evidence")}
             ${link("./manifest.json", "Manifest")}
-            ${link(archive, "Previous snapshot")} ${link("../", "All reports")}
+            ${link(gh + "/blob/" + e.previous_report_commit + "/latency/index.html", "Previous snapshot")}
+            ${link("../", "All reports")}
           <//>
         </footer>`;
 
@@ -147,14 +147,14 @@
           style=${{ overflowWrap: "anywhere" }}
         >
           <${Stack} gap="xl">
-            ${header("CI latency", html`Over 15–21 November UTC, ${f.n} of 168 sampled PR heads reached required green. Median ${minutes(f.median_s)} · p90 ${minutes(f.p90_s)}. On 22 November through 10:00 UTC, ${p.n} of 24 reached green at a median of ${minutes(p.median_s)} and p90 of ${minutes(p.p90_s)}.`)}
+            ${header("CI latency", html`Over 15–21 November UTC, ${f.n} of 168 sampled PR heads reached required green. Median ${minutes(f.median_s)} · p90 ${minutes(f.p90_s)}. On 22 November through 11:40 UTC, ${p.n} of 24 reached green at a median of ${minutes(p.median_s)} and p90 of ${minutes(p.p90_s)}.`)}
             <section id="weekly-trend">
               <${Title} order=${2}>Time to required checks passing<//>
               <${Text} my="sm"
                 >The clock starts when GitHub creates the CI workflow and stops
                 when its head has three passing required checks. Each day
                 contributes 24 sampled same-repository heads. The first seven
-                days are complete. The 22 November sample ends at 10:00 UTC.<//
+                days are complete. The 22 November sample ends at 11:40 UTC.<//
               >
               <${Box}
                 role="img"
@@ -227,23 +227,72 @@
                 ${source(".github/workflows/bazel-ci.yml", "Bazel gate and live status")}<//
               >
             </section>
+            <section id="kvm-capacity">
+              <${Title} order=${2}>Keep the KVM pool at two to eight workers<//>
+              <${Text} my="sm"
+                >On 22 November, 05:40–11:40 UTC, the pool had room for another
+                VM-sized test in 208 of 254 fully observed samples with queued
+                reservations. Only four samples, in bursts near 09:03 and 10:14
+                UTC, had a queue with both minimum workers busy. That gives
+                little reason to hold a third 8 GiB VM idle.<//
+              >
+              ${table(
+                ["Pool state during queued reservations", "30-second samples"],
+                [
+                  [
+                    "At least one healthy worker could fit the suite",
+                    e.kvm_pool_capacity.counts.queued_with_fit,
+                  ],
+                  [
+                    "Eight workers at the ceiling, none could fit the suite",
+                    e.kvm_pool_capacity.counts.queued_full_at_8,
+                  ],
+                  [
+                    "Both workers busy at the minimum",
+                    e.kvm_pool_capacity.counts.queued_full_at_2,
+                  ],
+                ],
+                300,
+              )}
+              <${Text} size="sm" my="sm"
+                >636 of 720 samples had full coverage. At the ceiling, all eight
+                workers had CPU assigned in 34 of the 42 no-fit samples.
+                Multiple executors can hold reservations for one task. Before
+                raising the ceiling, match a required PR test to a wait during
+                one of the eight-worker bursts and check whether it delayed
+                required green.
+                ${link(e.kvm_pool_capacity.dashboard, "Grafana · six-hour window")}<//
+              >
+              ${disclosure(
+                "Capacity measurement and clock rollout",
+                html`<${Stack} gap="sm">
+                  <${Text}
+                    >The worker-fit rule checks scheduler registration, health,
+                    unassigned CPU and RAM, and free work-disk space. Coverage
+                    requires one fit observation per desired worker. The table
+                    excludes 84 samples with incomplete coverage, which can
+                    occur during scaling or replacement. It counts sampled pool
+                    states. Unique waiting tests and PR seconds saved remain
+                    unmeasured.
+                    ${source("cluster/cdk8s/buildbuddy_kvm_worker.py", "Worker-fit rule")}<//
+                  >
+                  <${Text}
+                    >At 11:37 UTC all six desired production VMs were ready on
+                    the qualified image. Each guest reported synchronized time
+                    from time.cloudflare.com. Most pool samples predate the
+                    rollout. Use post-rollout executions when comparing
+                    scheduler and guest timestamps. ${pr(19123)} ·
+                    ${inv(e.kvm_ntp.qualification_invocation, "Image qualification")}<//
+                  >
+                <//>`,
+              )}
+            </section>
             <section id="actions">
               <${Title} order=${2}>Next measurements<//>
               <${Stack} gap="sm" mt="sm">
                 <${Text}
-                  ><strong>1. Qualify the synchronized KVM guest image.</strong>
-                  #19089 landed and the live worker policy allows UDP/123 to
-                  Cloudflare. The isolated guest test reduced measured offset
-                  from 609 ms to 1.3 ms. The production pool still uses the
-                  previous image pin. Run the new image through fresh boot and
-                  both required KVM targets before promotion. Then count
-                  comparable queue timestamps and native queue delays before
-                  using them to size the pool. ${pr(19089)} ·
-                  ${source("cluster/cdk8s/buildbuddy_kvm_worker.py#L117-L119", "Production image pin")}<//
-                >
-                <${Text}
                   ><strong
-                    >2. Measure browser dependency isolation on selected
+                    >1. Measure browser dependency isolation on selected
                     PRs.</strong
                   >
                   The fresh cost sample points to Action and Thread browsers for
@@ -256,7 +305,7 @@
                 >
                 <${Text}
                   ><strong
-                    >3. Resolve failure signatures before changing retry
+                    >2. Resolve failure signatures before changing retry
                     policy.</strong
                   >
                   One sampled frontend timeout recovered on an identical tested
@@ -268,7 +317,18 @@
             </section>
             <section id="kvm-pilot-results">
               <${Title} order=${2}
-                >Keep serial Firecracker cleanup and cold K3s image import<//
+                >Firecracker packing, cleanup and K3s image seeding<//
+              >
+              <${Text} my="sm"
+                >Keep one Firecracker test per 8 GiB worker. Two cold runs on
+                the same VM finished in 16m 54s serially and 16m 50s
+                concurrently, measured from first test-process start to last
+                finish. Packing delayed the first result from 8m 18s to 16m 27s.
+                The passing packed run had at least 3.28 GiB available and zero
+                OOM kills. One live-guest case failed on the packed repeat.
+                ${inv(e.kvm_packing.serial1.invocation, "Serial")} ·
+                ${inv(e.kvm_packing.pair2.invocation, "Packed")} ·
+                ${inv(e.kvm_packing.pair3.invocation, "Packed repeat")}<//
               >
               <${Text} my="sm"
                 >The overlap pilot started proxy trust during cleanup of the

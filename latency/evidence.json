@@ -1,7 +1,7 @@
 {
-  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
-  "window_utc": ["2026-11-15T00:00:00Z", "2026-11-22T10:00:00Z"],
-  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "source_devel_commit": "0e01c263631747272c38ebb2792651914d02884d",
+  "window_utc": ["2026-11-15T00:00:00Z", "2026-11-22T11:40:00Z"],
+  "previous_report_commit": "a274f390bd49894f2f57b9d075193953560cece2",
   "daily": [
     {
       "day": "2026-11-15",
@@ -109,18 +109,18 @@
     },
     {
       "day": "2026-11-22",
-      "workflow_runs": 547,
-      "eligible_heads": 236,
+      "workflow_runs": 615,
+      "eligible_heads": 270,
       "sampled": 24,
       "outcomes": {
-        "cancelled": 8,
-        "green": 15,
-        "red": 1
+        "cancelled": 7,
+        "green": 14,
+        "red": 3
       },
-      "n": 15,
-      "median_s": 351,
+      "n": 14,
+      "median_s": 314.0,
       "p90_s": 698,
-      "mean_s": 395.3
+      "mean_s": 362.6
     }
   ],
   "rows": [
@@ -6989,6 +6989,42 @@
       "saving_60s_replay": 60
     },
     {
+      "head": "176666497514596aa4a32faf1b8bbe8cd27eb27a",
+      "day": "2026-11-22",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/45011262956",
+      "run_id": 45011262956,
+      "run_attempt": 1,
+      "created_at": "2026-11-22T10:12:09Z",
+      "outcome": "red",
+      "gates": [
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:12:21Z",
+          "completed_at": "2026-11-22T10:13:40Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45011262852/job/137173931367"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:12:12Z",
+          "completed_at": "2026-11-22T10:13:17Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45011262880/job/137173886712"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "failure",
+          "started_at": "2026-11-22T10:12:11Z",
+          "completed_at": "2026-11-22T10:16:51Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45011262956/job/137173885989"
+        }
+      ],
+      "earlier_bazel_red": true
+    },
+    {
       "head": "96c1a4579f95ebe665ecac1e453d449b756640d3",
       "day": "2026-11-22",
       "url": "https://github.com/agentydragon/ducktape/actions/runs/44966184189",
@@ -7213,6 +7249,82 @@
       "earlier_bazel_red": false
     },
     {
+      "head": "01820dff08072ed4a127b247cd3c8cdd261204a9",
+      "day": "2026-11-22",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/45010687483",
+      "run_id": 45010687483,
+      "run_attempt": 1,
+      "created_at": "2026-11-22T10:05:16Z",
+      "outcome": "red",
+      "gates": [
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:05:18Z",
+          "completed_at": "2026-11-22T10:06:46Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45010687465/job/137172126392"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:05:18Z",
+          "completed_at": "2026-11-22T10:06:21Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45010687401/job/137172126191"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "failure",
+          "started_at": "2026-11-22T10:05:18Z",
+          "completed_at": "2026-11-22T10:08:04Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45010687483/job/137172126525"
+        }
+      ],
+      "earlier_bazel_red": true
+    },
+    {
+      "head": "4f70f531405055434206b2ce5ef3fa6b8ed4dd91",
+      "day": "2026-11-22",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/45013373399",
+      "run_id": 45013373399,
+      "run_attempt": 1,
+      "created_at": "2026-11-22T10:37:47Z",
+      "outcome": "green",
+      "gates": [
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:37:49Z",
+          "completed_at": "2026-11-22T10:38:57Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45013373382/job/137180345538"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:37:50Z",
+          "completed_at": "2026-11-22T10:38:41Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45013373504/job/137180345842"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:37:49Z",
+          "completed_at": "2026-11-22T10:40:59Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45013373399/job/137180345386"
+        }
+      ],
+      "earlier_bazel_red": false,
+      "elapsed_s": 192,
+      "last_gate": "bazel-ci / Test & Build",
+      "bazel_headroom_s": 122,
+      "saving_60s_replay": 60
+    },
+    {
       "head": "15ae4c6117c5744a26e77d07e967283f07e3840f",
       "day": "2026-11-22",
       "url": "https://github.com/agentydragon/ducktape/actions/runs/44991920427",
@@ -7291,6 +7403,46 @@
       "last_gate": "bazel-ci / Test & Build",
       "bazel_headroom_s": 612,
       "saving_60s_replay": 60
+    },
+    {
+      "head": "e9224b2c600e493d2934a6a3201b18689e0fd673",
+      "day": "2026-11-22",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/45017719027",
+      "run_id": 45017719027,
+      "run_attempt": 1,
+      "created_at": "2026-11-22T11:31:09Z",
+      "outcome": "green",
+      "gates": [
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T11:31:11Z",
+          "completed_at": "2026-11-22T11:32:33Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45017719023/job/137193535230"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T11:31:12Z",
+          "completed_at": "2026-11-22T11:32:18Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45017719025/job/137193535348"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T11:31:12Z",
+          "completed_at": "2026-11-22T11:32:46Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45017719027/job/137193535410"
+        }
+      ],
+      "earlier_bazel_red": false,
+      "elapsed_s": 97,
+      "last_gate": "bazel-ci / Test & Build",
+      "bazel_headroom_s": 13,
+      "saving_60s_replay": 13
     },
     {
       "head": "dc0051d19cfe6ae21728bd669a85985f8138f7c2",
@@ -7373,6 +7525,42 @@
       "saving_60s_replay": 60
     },
     {
+      "head": "e6b5ff98f44e3e0ba55319e3121bec296ca2e40e",
+      "day": "2026-11-22",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/45011165809",
+      "run_id": 45011165809,
+      "run_attempt": 1,
+      "created_at": "2026-11-22T10:10:59Z",
+      "outcome": "cancelled",
+      "gates": [
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "started_at": "2026-11-22T10:11:17Z",
+          "completed_at": "2026-11-22T10:12:19Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45011165778/job/137173656196"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-22T10:11:01Z",
+          "completed_at": "2026-11-22T10:11:52Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45011165732/job/137173589413"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "started_at": "2026-11-22T10:11:01Z",
+          "completed_at": "2026-11-22T10:12:27Z",
+          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45011165809/job/137173589810"
+        }
+      ],
+      "earlier_bazel_red": false
+    },
+    {
       "head": "f322c51370b1b3302e14fd3329b6482b81f009c5",
       "day": "2026-11-22",
       "url": "https://github.com/agentydragon/ducktape/actions/runs/44987647625",
@@ -7407,198 +7595,6 @@
         }
       ],
       "earlier_bazel_red": false
-    },
-    {
-      "head": "ae6a2df453e61a6465832668f42fab08d833f7d4",
-      "day": "2026-11-22",
-      "url": "https://github.com/agentydragon/ducktape/actions/runs/44976496591",
-      "run_id": 44976496591,
-      "run_attempt": 2,
-      "created_at": "2026-11-22T02:31:27Z",
-      "outcome": "green",
-      "gates": [
-        {
-          "name": "Build artifacts + imports check",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T02:31:30Z",
-          "completed_at": "2026-11-22T02:32:56Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496610/job/137067466225"
-        },
-        {
-          "name": "Pre-commit checks",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T02:31:30Z",
-          "completed_at": "2026-11-22T02:32:34Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496669/job/137067466478"
-        },
-        {
-          "name": "bazel-ci / Test & Build",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T02:39:17Z",
-          "completed_at": "2026-11-22T02:41:36Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44976496591/job/137069287776"
-        }
-      ],
-      "earlier_bazel_red": true,
-      "elapsed_s": 609,
-      "last_gate": "bazel-ci / Test & Build",
-      "bazel_headroom_s": 520,
-      "saving_60s_replay": 60
-    },
-    {
-      "head": "86a8523e3e98c0639d3479f6dcf9751a50acf119",
-      "day": "2026-11-22",
-      "url": "https://github.com/agentydragon/ducktape/actions/runs/44978558766",
-      "run_id": 44978558766,
-      "run_attempt": 1,
-      "created_at": "2026-11-22T02:59:42Z",
-      "outcome": "green",
-      "gates": [
-        {
-          "name": "Build artifacts + imports check",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T02:59:45Z",
-          "completed_at": "2026-11-22T03:00:54Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44978558797/job/137073819682"
-        },
-        {
-          "name": "Pre-commit checks",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T02:59:44Z",
-          "completed_at": "2026-11-22T03:00:45Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44978558752/job/137073819450"
-        },
-        {
-          "name": "bazel-ci / Test & Build",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T02:59:44Z",
-          "completed_at": "2026-11-22T03:05:33Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44978558766/job/137073819628"
-        }
-      ],
-      "earlier_bazel_red": false,
-      "elapsed_s": 351,
-      "last_gate": "bazel-ci / Test & Build",
-      "bazel_headroom_s": 279,
-      "saving_60s_replay": 60
-    },
-    {
-      "head": "c3cbb555d63c98d6f8c94031b40b16966a7f896d",
-      "day": "2026-11-22",
-      "url": "https://github.com/agentydragon/ducktape/actions/runs/44991849770",
-      "run_id": 44991849770,
-      "run_attempt": 1,
-      "created_at": "2026-11-22T06:01:08Z",
-      "outcome": "cancelled",
-      "gates": [
-        {
-          "name": "Build artifacts + imports check",
-          "status": "completed",
-          "conclusion": "cancelled",
-          "started_at": "2026-11-22T06:01:10Z",
-          "completed_at": "2026-11-22T06:01:41Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44991849734/job/137114404923"
-        },
-        {
-          "name": "Pre-commit checks",
-          "status": "completed",
-          "conclusion": "cancelled",
-          "started_at": "2026-11-22T06:01:10Z",
-          "completed_at": "2026-11-22T06:01:28Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44991849727/job/137114405080"
-        },
-        {
-          "name": "bazel-ci / Test & Build",
-          "status": "completed",
-          "conclusion": "cancelled",
-          "started_at": "2026-11-22T06:01:11Z",
-          "completed_at": "2026-11-22T06:01:46Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/44991849770/job/137114405336"
-        }
-      ],
-      "earlier_bazel_red": false
-    },
-    {
-      "head": "4470122a40db8941b93914ecf2264964c4ea65b6",
-      "day": "2026-11-22",
-      "url": "https://github.com/agentydragon/ducktape/actions/runs/45009213824",
-      "run_id": 45009213824,
-      "run_attempt": 1,
-      "created_at": "2026-11-22T09:47:03Z",
-      "outcome": "green",
-      "gates": [
-        {
-          "name": "Build artifacts + imports check",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T09:47:06Z",
-          "completed_at": "2026-11-22T09:48:34Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45009213867/job/137167548336"
-        },
-        {
-          "name": "Pre-commit checks",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T09:47:06Z",
-          "completed_at": "2026-11-22T09:48:07Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45009213911/job/137167548509"
-        },
-        {
-          "name": "bazel-ci / Test & Build",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T09:47:05Z",
-          "completed_at": "2026-11-22T09:50:05Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45009213824/job/137167548230"
-        }
-      ],
-      "earlier_bazel_red": false,
-      "elapsed_s": 182,
-      "last_gate": "bazel-ci / Test & Build",
-      "bazel_headroom_s": 91,
-      "saving_60s_replay": 60
-    },
-    {
-      "head": "2055f300b08a71a0d78cdaad911e3ed59b3e2aeb",
-      "day": "2026-11-22",
-      "url": "https://github.com/agentydragon/ducktape/actions/runs/45008125325",
-      "run_id": 45008125325,
-      "run_attempt": 1,
-      "created_at": "2026-11-22T09:33:28Z",
-      "outcome": "cancelled",
-      "gates": [
-        {
-          "name": "Build artifacts + imports check",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T09:33:30Z",
-          "completed_at": "2026-11-22T09:34:58Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45008125327/job/137164174481"
-        },
-        {
-          "name": "Pre-commit checks",
-          "status": "completed",
-          "conclusion": "success",
-          "started_at": "2026-11-22T09:33:30Z",
-          "completed_at": "2026-11-22T09:34:33Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45008125332/job/137164174412"
-        },
-        {
-          "name": "bazel-ci / Test & Build",
-          "status": "completed",
-          "conclusion": "cancelled",
-          "started_at": "2026-11-22T09:33:30Z",
-          "completed_at": "2026-11-22T09:36:45Z",
-          "details_url": "https://github.com/agentydragon/ducktape/actions/runs/45008125325/job/137164174517"
-        }
-      ],
-      "earlier_bazel_red": false
     }
   ],
   "full_days": {
@@ -7608,10 +7604,10 @@
     "mean_s": 278.2
   },
   "partial_day": {
-    "n": 15,
-    "median_s": 351,
+    "n": 14,
+    "median_s": 314.0,
     "p90_s": 698,
-    "mean_s": 395.3
+    "mean_s": 362.6
   },
   "last_gates": {
     "bazel-ci / Test & Build": 118,
@@ -7637,7 +7633,7 @@
     "p90_s": 478,
     "mean_s": 184.1
   },
-  "collected_at_utc": "2026-11-22T10:57:33+00:00",
+  "collected_at_utc": "2026-11-22T11:45:28+00:00",
   "branch_rules": {
     "type": "required_status_checks",
     "parameters": {
@@ -7661,12 +7657,73 @@
   },
   "pilot_archive": "https://github.com/agentydragon/ducktape/blob/62929b186a1d70565121638ad2ad4aa187bd2ba2/latency/index.html#kvm-pilot-results",
   "kvm_ntp": {
-    "pr": 19089,
-    "ready_workers_at_first_read": 4,
-    "observed_worker_image_count_at_second_read": 8,
-    "observed_image_digest": "8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-    "promoted": false,
-    "live_ntp_rule": true
+    "policy_pr": 19089,
+    "image_pr": 19123,
+    "production_digest": "sha256:21df8d193ec6d68d5b1a596b49ef18318cc26019560694ed16462aa6e64a87ff",
+    "rollout_utc": "2026-11-22T11:37:37Z",
+    "desired_and_ready": 6,
+    "guests_checked": 6,
+    "synchronized_to": "time.cloudflare.com",
+    "qualification_invocation": "e5d038dc-005a-42b8-ba20-045c62b28aa8"
   },
-  "sampling": "24 lowest SHA-256-scored same-repo CI workflow head SHAs per UTC day. First seven days completed. The partial sample ends at 10:00 UTC."
+  "sampling": "24 lowest SHA-256-scored same-repo CI workflow head SHAs per UTC day. First seven days completed. The partial sample ends at 11:40 UTC.",
+  "archive_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "kvm_pool_capacity": {
+    "window_utc": ["2026-11-22T05:40:00Z", "2026-11-22T11:40:00Z"],
+    "sampling": "30-second steps, excluding the left endpoint. Fresh samples under 180 seconds. Complete when the count of workers reporting fit equals desired replicas. Missing queue series counted as zero.",
+    "counts": {
+      "total": 720,
+      "complete": 636,
+      "queued": 254,
+      "ceiling_all_assigned": 34,
+      "queued_full_at_8": 42,
+      "queued_with_fit": 208,
+      "incomplete": 84,
+      "queued_full_at_2": 4
+    },
+    "minimum_full_samples_utc": [
+      "2026-11-22T09:02:30+00:00",
+      "2026-11-22T09:03:00+00:00",
+      "2026-11-22T10:13:30+00:00",
+      "2026-11-22T10:14:00+00:00"
+    ],
+    "query": {
+      "fit": "sum((buildbuddy_kvm_worker:fits_vm_suite and (time()-timestamp(buildbuddy_kvm_worker:fits_vm_suite)<180)))",
+      "seen": "count((buildbuddy_kvm_worker:fits_vm_suite and (time()-timestamp(buildbuddy_kvm_worker:fits_vm_suite)<180)))",
+      "desired": "max((kube_customresource_kubevirt_vmpool_desired_replicas{namespace=\"buildbuddy-executor\",name=\"buildbuddy-kvm-worker\"} and (time()-timestamp(kube_customresource_kubevirt_vmpool_desired_replicas{namespace=\"buildbuddy-executor\",name=\"buildbuddy-kvm-worker\"})<180)))",
+      "q": "sum((buildbuddy_remote_execution_queue_length{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} and (time()-timestamp(buildbuddy_remote_execution_queue_length{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"})<180)) and on(namespace,pod) (buildbuddy_kvm_worker:fits_vm_suite and (time()-timestamp(buildbuddy_kvm_worker:fits_vm_suite)<180)))",
+      "busy": "sum((max by(namespace,pod) ((buildbuddy_remote_execution_assigned_milli_cpu{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} and (time()-timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"})<180))) > bool 0) and on(namespace,pod) (buildbuddy_kvm_worker:fits_vm_suite and (time()-timestamp(buildbuddy_kvm_worker:fits_vm_suite)<180)))"
+    },
+    "dashboard": "https://grafana.allegedly.works/d/buildbuddy-executor-pool/buildbuddy-executor-pool?orgId=1&from=1795326000000&to=1795347600000&timezone=utc",
+    "limit": "Local reservation counts can include multiple reservations of one task. Required-check delay and distinct queued tasks were not attributed."
+  },
+  "kvm_packing": {
+    "pair2": {
+      "invocation": "cce3d59c-ca53-4a2a-9e76-3bace83dfb58",
+      "test_process_span_s": 1010.01,
+      "first_completion_from_first_process_start_s": 987.02,
+      "fixture_warmth": ["cold", "cold"],
+      "action_exit_codes": [0, 0],
+      "oom_kills": 0.0,
+      "minimum_mem_available_bytes": 3520888832
+    },
+    "serial1": {
+      "invocation": "f41e99b4-482d-4151-a46a-bffe9bbf1964",
+      "test_process_span_s": 1013.91,
+      "first_completion_from_first_process_start_s": 497.73,
+      "fixture_warmth": ["cold", "cold"],
+      "action_exit_codes": [0, 0],
+      "oom_kills": 0.0,
+      "minimum_mem_available_bytes": 5578924032
+    },
+    "pair3": {
+      "invocation": "9116d622-4939-402a-8deb-93b4cb83453e",
+      "test_process_span_s": 815.52,
+      "first_completion_from_first_process_start_s": 811.62,
+      "fixture_warmth": ["cold", "cold"],
+      "action_exit_codes": [0, 1],
+      "oom_kills": 0.0,
+      "minimum_mem_available_bytes": 3560972288
+    }
+  }
 }

@@ -10,7 +10,7 @@ report snapshots. The [report index](index.html) links each review and its obser
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with fresh Action and Thread browser costs, devel push controls, and a current dependency graph probe. [Evidence](ci-test-cost/evidence.json) · [Manifest](ci-test-cost/manifest.json)
 
-- **Latency (15–21 November UTC; partial 22 November):** [report](latency/index.html). 126 of 168 sampled heads reached required green. Median 3m 06s, p90 9m 36s. The report covers the Bazel gate replay, KVM clock rollout and closed KVM pilots. [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
+- **Latency (15–21 November UTC; partial 22 November):** [report](latency/index.html). 126 of 168 sampled heads reached required green. Median 3m 06s, p90 9m 36s. The report covers the Bazel gate replay, worker headroom during queued reservations and the Firecracker packing trial. [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
 
 - **Reliability (15–21 November UTC; partial 22 November):** [report](reliability/index.html). Thirteen of 168 sampled heads remained red. The separate 22 November sample includes one verified fresh sandbox frontend recovery and four fresh first-attempt VM passes. [Evidence](reliability/evidence.json) · [Manifest](reliability/manifest.json)
 
