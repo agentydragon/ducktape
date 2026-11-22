@@ -563,7 +563,7 @@ def test_haku_ci_vpa_targets_only_egress(documents: list[dict[str, Any]]) -> Non
     deployment = find_resource(documents, "Deployment", name, namespace=namespace)
     [container] = deployment["spec"]["template"]["spec"]["containers"]
     assert vpa["spec"]["targetRef"] == {"apiVersion": "apps/v1", "kind": "Deployment", "name": name}
-    assert vpa["spec"]["updatePolicy"] == {"updateMode": "Initial"}
+    assert vpa["spec"]["updatePolicy"] == {"updateMode": "Recreate"}
     assert vpa["spec"]["resourcePolicy"]["containerPolicies"] == [
         {
             "containerName": container["name"],

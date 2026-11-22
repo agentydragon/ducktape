@@ -342,4 +342,4 @@ spec:
     kind: Deployment
     name: haku-ci-egress
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
