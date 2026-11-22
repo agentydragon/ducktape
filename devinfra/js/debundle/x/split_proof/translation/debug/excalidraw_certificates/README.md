@@ -68,6 +68,17 @@ question is which possible writes the checker can soundly exclude for that call.
 Both replays stop at structural checks before reaching the module URL guard.
 [Exact schedules, checker logs, and move reports](https://app.buildbuddy.io/invocation/03ee0f61-d9eb-48d8-b30e-63e9cf62e0b8)
 
+### Direct AST lowering for negated initializers
+
+On the same authored placement, adding logical negation and negated number literals to Lean's ESTree lowerer gave these counts. Each row counts source units after static imports are removed. In each replay's `moves.json`, subtract `externallyLowered` from `statements.length` to get the number Lean lowered directly.
+
+| Chunk  | Non-import units | Directly lowered before | Directly lowered after | Still externally lowered |
+| ------ | ---------------: | ----------------------: | ---------------------: | -----------------------: |
+| Editor |            1,782 |                     469 |                    472 |                    1,310 |
+| Main   |            1,620 |                     169 |                    179 |                    1,441 |
+
+Both placements still fail `OrderOk`. The editor still has 70,439 inverted pairs without a move proof. These operators were already available to the move checker through the external lowering. [Baseline replay](https://app.buildbuddy.io/invocation/2f60d14e-bc44-4045-80f7-59d6c223643b) · [Unary lowering replay](https://app.buildbuddy.io/invocation/2151901a-bb18-401a-b5b7-e7fe709aaddb)
+
 ### Proved moves for negated initializers
 
 The editor replay has 294,024 inverted pairs after excluding imports. On the

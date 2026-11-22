@@ -31,6 +31,38 @@ private def literal (key : String) : Except String Expr := do
       return .num n
     throw "unsupported literal"
 
+/- A JSON object stores its children in a tree map. A successful field lookup therefore
+   gives a smaller JSON value for recursive expression lowering. -/
+private theorem treeGetSizeOfLt
+    (t : Std.DTreeMap.Internal.Impl String (fun _ => Json)) (key : String)
+    {v : Json} (h : Std.DTreeMap.Internal.Impl.Const.get? t key = some v) :
+    sizeOf v < sizeOf t := by
+  induction t with
+  | leaf => simp [Std.DTreeMap.Internal.Impl.Const.get?] at h
+  | inner sz k value l r ihl ihr =>
+    dsimp [Std.DTreeMap.Internal.Impl.Const.get?] at h
+    split at h
+    · exact Nat.lt_of_lt_of_le (ihl h) (by simp +arith)
+    · exact Nat.lt_of_lt_of_le (ihr h) (by simp +arith)
+    · injection h with hv
+      subst v
+      simp +arith
+
+private theorem objValSizeOfLt {j v : Json} {key : String}
+    (h : j.getObjVal? key = .ok v) : sizeOf v < sizeOf j := by
+  cases j <;> try contradiction
+  rename_i kvs
+  cases hget : kvs.get? key with
+  | none => simp [Json.getObjVal?, hget] at h
+  | some w =>
+    simp [Json.getObjVal?, hget] at h
+    injection h with heq
+    subst v
+    obtain ⟨⟨tree⟩⟩ := kvs
+    have smaller := treeGetSizeOfLt tree key hget
+    simp +arith
+    omega
+
 def expr (j : Json) : Except String Expr := do
   match ← field j "type" with
   | "Literal" => literal (← field j "lit")
@@ -45,7 +77,21 @@ def expr (j : Json) : Except String Expr := do
       | "NaN" => return .num Num.nan
       | _ => throw s!"unsupported global {x}"
     | k => throw s!"unsupported binding class {k}"
+  | "UnaryExpression" =>
+    match _lookup : j.getObjVal? "argument" with
+    | .error err => throw err
+    | .ok argument =>
+      match ← field j "operator" with
+      | "!" => return .unary .not (← expr argument)
+      | "-" =>
+        unless (← field argument "type") == "Literal" do throw "expected a numeric literal after unary minus"
+        let .num n ← literal (← field argument "lit") | throw "expected a numeric literal after unary minus"
+        return .unary .neg (.num n)
+      | op => throw s!"unsupported unary operator {op}"
   | kind => throw s!"unsupported expression {kind}"
+termination_by sizeOf j
+decreasing_by
+  exact objValSizeOfLt _lookup
 
 def moduleBinding (id : Json) : Except String Name := do
   let x ← identifier id
