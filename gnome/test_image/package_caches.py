@@ -21,7 +21,7 @@ def main() -> None:
         root = Path(tmp)
         subprocess.run(["tar", "-xf", closure, "-C", root], check=True)
         libdir = root / "usr/lib/x86_64-linux-gnu"
-        loader = [libdir / "ld-linux-x86-64.so.2", "--library-path", libdir]
+        loader = (libdir / "ld-linux-x86-64.so.2", "--library-path", libdir)
         share = root / "usr/share"
         schemas = share / "glib-2.0/schemas"
         mime = share / "mime"
