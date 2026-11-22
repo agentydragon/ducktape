@@ -151,8 +151,11 @@ describe("GitHub issue writes", () => {
     expect(shownText(await mount(appActionRendering.renderActionLabel(ISSUE_WRITE, input)))).toBe(
       "Change GitHub issue"
     );
-    for (const render of [renderPaneOpened, renderDetailsArguments]) {
-      const view = await mount(render(ISSUE_WRITE, input));
+    for (const node of [
+      appActionRendering.renderPaneOpened(ISSUE_WRITE, input),
+      appActionRendering.renderDetailsArguments(ISSUE_WRITE, input),
+    ]) {
+      const view = await mount(node);
       expect(shownText(view)).toContain("Details shown as recorded data");
       expect(shownText(view)).toContain('"future_field": true');
     }
@@ -363,8 +366,11 @@ describe("GitHub create_pull_request", () => {
 
   it("shows the description's first lines on the compact card and all of it when opened", async () => {
     const withBody = { ...args, body: "Test description." };
-    for (const view of [renderPaneOpened, renderDetailsArguments]) {
-      const container = await mount(view(CREATE_PULL_REQUEST, withBody));
+    for (const node of [
+      appActionRendering.renderPaneOpened(CREATE_PULL_REQUEST, withBody),
+      appActionRendering.renderDetailsArguments(CREATE_PULL_REQUEST, withBody),
+    ]) {
+      const container = await mount(node);
       expect(container.querySelector("[data-operation-heading]")?.textContent).toBe("Description");
       expect(container.textContent).toContain("Test description.");
     }

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { env } from "node:process";
 import { describe, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { act, useState } from "react";
@@ -32,7 +33,7 @@ function stored(returned: Record<string, unknown> = {}): CallToolResult {
 
 describe("Action presentation slots", () => {
   it("has a visual suite for each registered Action group", () => {
-    expect(process.env.VISUAL_ACTION_GROUPS?.split(",").sort()).toEqual([...ACTION_RENDERERS.keys()].sort());
+    expect(env.VISUAL_ACTION_GROUPS?.split(",").sort()).toEqual([...ACTION_RENDERERS.keys()].sort());
   });
 
   it("gives every custom browser Action a push notification format", () => {
