@@ -20,6 +20,7 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE
+from cluster.cdk8s.pod_policy import harden
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -48,7 +49,7 @@ _QUERY_TIMEOUT_SECONDS = 60
 
 def _deployment(chart: Chart) -> None:
     port = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(SERVICE.pod_port))
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -70,7 +71,6 @@ def _deployment(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
                             name="pgweb",
@@ -95,8 +95,6 @@ def _deployment(chart: Chart) -> None:
                             ports=[SERVICE.k8s_container_port()],
                             resources=container_resources(cpu=_CPU_REQUEST, memory="64Mi", memory_limit=_MEMORY_LIMIT),
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
                                 read_only_root_filesystem=True,
                                 run_as_non_root=True,
                                 # The image's `pgweb` user, named rather than numbered there.
@@ -111,6 +109,7 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    harden(deployment)
 
 
 def chart(app: App) -> Chart:

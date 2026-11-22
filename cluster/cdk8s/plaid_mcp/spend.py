@@ -14,6 +14,7 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.plaid_mcp.secret_copy import copy_secret
+from cluster.cdk8s.pod_policy import harden
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
@@ -57,16 +58,6 @@ _CONFIG = {
 }
 
 
-def _container_security_context() -> k8s.SecurityContext:
-    return k8s.SecurityContext(
-        allow_privilege_escalation=False,
-        capabilities=k8s.Capabilities(drop=["ALL"]),
-        run_as_group=1000,
-        run_as_non_root=True,
-        run_as_user=1000,
-    )
-
-
 def _coinbase_credentials(chart: Chart) -> None:
     ServiceAccount(
         chart,
@@ -97,7 +88,7 @@ def _deployment(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
         automount_service_account_token=False,
     )
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -124,14 +115,15 @@ def _deployment(chart: Chart) -> None:
                     service_account_name=_NAME,
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_POLICY.name))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
                             image="git.allegedly.works/ducktape-ci/plaid-spend:unset",
                             image_pull_policy="Always",
-                            security_context=_container_security_context(),
+                            security_context=k8s.SecurityContext(
+                                run_as_user=1000, run_as_group=1000, run_as_non_root=True
+                            ),
                             ports=[_WEB.k8s_container_port()],
                             env=[
                                 *(
@@ -174,6 +166,7 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    harden(deployment)
 
 
 def chart(app: App) -> Chart:
