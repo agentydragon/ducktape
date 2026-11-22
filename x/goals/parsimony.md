@@ -4,14 +4,14 @@ Keep Ducktape correct, understandable, and easy to change. A future maintainer s
 
 The target is less complexity: fewer mechanisms, libraries, representations, special cases, and parts a maintainer must hold in mind. Line count is one measure of that, not the goal. Complexity that only shows across packages counts as much as complexity inside one.
 
-Preserve important user flows, security properties, access to stored data, and the ability to deploy, diagnose, and recover the system. Follow [the consumer scope in AGENTS.md](../../AGENTS.md#changes). An internal protocol can change if the result is easier to understand and maintain. Check the actual consumers, including configuration, jobs, and deployed components. Review feature retirement and reductions in supported behavior explicitly. Keep tools, surveys, and reference material the owner may return to; condense them when they are bulky. Code that records an external contract can stay without a caller.
+Preserve important user flows, security properties, access to stored data, and the ability to deploy, diagnose, and recover the system. Follow [the consumer scope in AGENTS.md](../../AGENTS.md#changes). An internal protocol can change if the result is easier to understand and maintain. Check actual consumers, including configuration, jobs, deployed components, and manual workflows such as exporting cluster credentials. Review feature retirement and reductions in supported behavior explicitly. Keep tools, surveys, and reference material the owner may return to; condense them when they are bulky. Code that records an external contract can stay without a caller.
 
 Follow the [parsimony levels in STYLE.md](../../STYLE.md#parsimony-levels).
 
 ## Keep knowledge findable
 
 - Give each durable fact, decision, or procedure one authoritative home. Put it where the people changing the affected system will look. Link to it from relevant entry points with enough context for the reader to act. Derive repeated machine-readable data from its source wherever practical, including a schema, version pin, or roster written in two languages or two files.
-- Retire stale plans, resolved investigations, and redundant explanations. Before removing them, carry forward any still-relevant constraint, diagnostic clue, workaround, or pointer to an open issue. Keep the history in Git or the original PR. [Repository documentation conventions](../../README.md#conventions)
+- Retire stale plans, resolved investigations, and redundant explanations. Keep reproduction steps and diagnostic evidence while the reported failure is unresolved. Before removing a note, carry forward any still-relevant constraint, diagnostic clue, workaround, or pointer to an open issue. Keep the history in Git or the original PR. [Repository documentation conventions](../../README.md#conventions)
 - Specify observable outcomes and the constraints callers rely on. For example, specify that a user can open the app, create a widget, and see its actual current statistics. Pin a lease mechanism, signal, response shape, or error code only when another system depends on it or an invariant requires it.
 
 ## Keep the codebase small and consistent
@@ -19,7 +19,7 @@ Follow the [parsimony levels in STYLE.md](../../STYLE.md#parsimony-levels).
 - Use as much code as correctness, readability, maintainability, and coverage of important flows require. Remove dead paths, redundant layers, and repeated logic when doing so preserves those qualities. Share rules that need to change together. Keep independent policies local when a common abstraction would tie them together. Judge a simplification by how much easier it makes the next correct change.
 - Reuse established repository mechanisms and well-suited libraries for common work. Follow the existing framework for an HTTP service, such as FastAPI or Huma in the appropriate language, and use established libraries for currency, date and time, and RPC.
 - Give each job one mechanism across the repository: one library, framework, runtime, or helper. A second one for a job the repository already does is complexity, even where each use is tidy. Where a shared helper exists, every site that does its job uses it.
-- A retired or parked component leaves nothing built, published, provisioned, or tested on its behalf.
+- Remove routine builds, publishing, provisioning, and tests for retired or parked components. Keep the source and on-demand targets the owner needs for revival.
 - Keep each function and file small enough to understand and change by itself. A very large one is a sign that several responsibilities need separating.
 - Converge on one set of conventions for each language or area. Weigh the recurring savings against the cost of migration and added dependencies. Let a concrete requirement justify an exception, and document it where future maintainers will encounter it. [Code style guide](../../STYLE.md)
 
