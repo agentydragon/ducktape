@@ -296,6 +296,12 @@ class SecretResource(K8sResource):
     sops: SopsMetadata | None = None
 
 
+class FluxControllerResource(K8sResource):
+    """A HelmRelease or Terraform object whose readiness gates its Flux owner."""
+
+    suspended: bool = Field(default=False, validation_alias=AliasPath("spec", "suspend"))
+
+
 class CiliumPolicyResource(K8sResource):
     """A `CiliumNetworkPolicy` or `CiliumClusterwideNetworkPolicy`; its rules stay raw for
     `cluster.cdk8s.cilium_rule_sections`, which reads them as the fleet rules do."""
@@ -334,6 +340,8 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
 
 
 _GROUP_KIND_MODELS: dict[tuple[str, str], type[K8sResource]] = {
+    ("helm.toolkit.fluxcd.io", "HelmRelease"): FluxControllerResource,
+    ("infra.contrib.fluxcd.io", "Terraform"): FluxControllerResource,
     ("agentplane.allegedly.works", "SandboxTemplate"): AgentplaneSandboxTemplateResource,
     ("extensions.agents.x-k8s.io", "SandboxTemplate"): SandboxTemplateResource,
 }
