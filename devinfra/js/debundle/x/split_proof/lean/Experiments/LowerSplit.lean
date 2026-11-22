@@ -1,5 +1,6 @@
 import EsmSplit.Cli
 import Experiments.Effects
+import Experiments.CoreJS.FromESTree
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Split
 import Experiments.CoreJS.Move
@@ -19,8 +20,8 @@ The bundle may import from outside modules; those are loaded first, in their ord
 `--force` writes the modules even when a check rejects the split, to see what Node does with them.
 `--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
-`--corejs` reads the bundle in the CoreJS model (`experiments/translation/core_program.mjs`), so that the verdict can
-name the proved slice that covers the split (`sliceLines`): order kept, or moves.
+Lean lowers supported annotated ASTs directly to CoreJS. For bundles outside that subset,
+`--corejs` supplies the external lowering. The verdict reports which input it used.
 `--move-report` writes diagnostic statement categories and up to 64 failing inverted pairs in original unit IDs.
 It does not certify a split: the verdict still requires all frontend and plan premises.
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
@@ -239,25 +240,46 @@ def importsMatter (P : Plan) (w : WithoutImports) : Option String :=
     else if m.exports != m'.exports then some s!"the exports of {m.name}"
     else none
 
-/-- The bundle in the model, `ss` of `CoreJS.Program.single ss`, from the front end's program
-(`experiments/translation/core_program.mjs`): statement `k` is the one the front end gave the identity of the `k`-th
-statement that is not an outside `import`. Where the front end gave no statement of the model, the bundle's statement
-does nothing when it runs (an `export { … }` list, `;`, `debugger`), and the model has an empty block in its place:
-`FootprintsOfSyntax` then asks that its footprint declare nothing. -/
-def modelBundle (asts : Array Json) (rank : Array (Option Nat)) (prog : CoreJS.Program) :
-    Except String (List CoreJS.Stmt × Nat) := do
-  let [m] := prog.modules | throw s!"it has {prog.modules.length} modules, and the bundle is one"
-  unless m.imports.isEmpty do throw "its module imports: an outside module has to be part of the world"
-  let mut byId : Std.HashMap Nat CoreJS.Stmt := {}
+/-- Body of the modeled bundle after external imports have been removed, in source order.
+Only syntactic no-ops contribute an empty block. -/
+structure ModelBody where
+  stmts : List CoreJS.Stmt
+  empty : Nat
+  external : Nat
+
+/-- Index a legacy frontend's statements by their original (pre-import-removal) identities. -/
+def externalStatements (asts : Array Json) (prog : CoreJS.Program) : Except String (Std.HashMap Nat CoreJS.Stmt) := do
+  let [m] := prog.modules | throw s!"expected one module, found {prog.modules.length}"
+  unless m.imports.isEmpty do throw "outside imports must be represented by the world"
+  let mut byId := {}
   for (i, s) in m.body do
-    if i ≥ asts.size then throw s!"it has a statement {i}, and the bundle has {asts.size}"
-    if byId.contains i then throw s!"it has two statements {i}"
-    if (rank.getD i none).isNone then throw s!"it has a statement {i}, an `import` of the bundle"
+    let some ast := asts[i]? | throw s!"statement {i} outside the bundle"
+    if byId.contains i then throw s!"duplicate statement {i}"
+    if Lower.typ ast == "ImportDeclaration" then throw s!"unexpected model for import {i}"
     byId := byId.insert i s
-  let kept := (List.range asts.size).filter fun i => (rank.getD i none).isSome
-  let ss ← kept.mapM fun i =>
-    pure ((byId[i]?).getD (.block []))
-  pure (ss, kept.length - (kept.filter byId.contains).length)
+  return byId
+
+/-- Prefer the AST for every unit. Load the external program only on the first unsupported unit. -/
+def modelBody (asts : Array Json) (path : Option String) : IO (Except String ModelBody) := do
+  let mut byId : Option (Std.HashMap Nat CoreJS.Stmt) := none
+  let mut stmts := #[]
+  let mut empty := 0
+  let mut external := 0
+  for (ast, i) in asts.zipIdx do
+    if Lower.typ ast == "ImportDeclaration" then continue
+    match CoreJS.FromESTree.unit ast with
+    | .ok (some s, _) => stmts := stmts.push s
+    | .ok (none, _) => stmts := stmts.push (.block []); empty := empty + 1
+    | .error why =>
+      let some file := path | return .error s!"statement {i}: {why}"
+      if byId.isNone then
+        match Json.parse (← IO.FS.readFile file) >>= CoreJS.Decode.program >>= externalStatements asts with
+        | .error e => return .error s!"invalid external lowering {file}: {e}"
+        | .ok t => byId := some t
+      let some s := byId.bind (·[i]?) | return .error s!"external lowering omits statement {i}: {why}"
+      stmts := stmts.push s
+      external := external + 1
+  return .ok ⟨stmts.toList, empty, external⟩
 
 /-- The first statement whose footprint does not say what its text says, to explain a failed `FootprintsOfSyntax`. -/
 def footprintProblem (B : Bundle) (kept : Array Nat) (ss : List CoreJS.Stmt) : Option String :=
@@ -294,10 +316,10 @@ inside the counts below, and the verdict did not finish in 10 minutes. -/
 
 /-- Diagnostic evidence only: pair permissions do not establish the frontend and plan premises. -/
 def moveReport (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan)
-    (prog : CoreJS.Program) : Except String Json := do
+    (body : ModelBody) : Except String Json := do
   let w := if asts.any (Lower.typ · == "ImportDeclaration") then withoutImports asts B S
     else { rank := (Array.range asts.size).map some, kept := Array.range asts.size, B, S, P }
-  let (ss, _) ← modelBundle asts w.rank prog
+  let ss := body.stmts
   let certs := CoreJS.bindingCertificateTab ss w.B
   let allows := CoreJS.certifiedMayMoveAt ss.toArray w.B.toArray w.B.readsTab certs
   let order := w.P.execOrder.toArray
@@ -316,7 +338,7 @@ def moveReport (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan)
     ("bindingSummary", toJson s.bindingSummary.isSome),
     ("bindingCertificate", toJson (certs.getD i false))]
   let heritage := failed > 0 && CoreJS.heritageMovesOk ss w.B w.P.execOrder
-  return Json.mkObj [("footprintsOfSyntax", toJson (footprintsOk ss w.B)),
+  return Json.mkObj [("externallyLowered", toJson body.external), ("footprintsOfSyntax", toJson (footprintsOk ss w.B)),
     ("statements", toJson rows), ("invertedPairs", toJson inverted),
     ("pairwiseFailedPairs", toJson failed), ("pairwiseFailedPairExamples", toJson examples),
     ("certifiedClassHeritage", toJson heritage), ("failedPairs", toJson (if heritage then 0 else failed)),
@@ -339,7 +361,7 @@ checker decides each slice as its theorem states it, of the bundle without its o
 - `CoreJS.moves_preserve_of_heritageMovesOk` moves a derived class across a block after checking an earlier
   class declaration establishes its superclass and intervening steps preserve it. -/
 def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
-    (model? : Option (String × Except String CoreJS.Program)) : List String :=
+    (model : Except String ModelBody) : List String :=
   let kept := "order kept (`CoreJS.valid_order_kept_preserves`)"
   let moves := "moves (`CoreJS.moves_preserve`)"
   let dynamicImport := asts.any (anyNode (Lower.typ · == "ImportExpression"))
@@ -358,10 +380,11 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
       if let some what := importsMatter P w then
         throw s!"the outside `import`s to change nothing else when left out, and they change {what}"
       unless decide (Valid w.B w.S w.P) do throw "the split without the outside `import`s to pass the checks"
-    let some (path, prog) := model? | throw "the bundle in the model, to check FootprintsOfSyntax: `--corejs <program.json>`"
-    let (ss, nothing) ← match prog >>= modelBundle asts w.rank with
-      | .ok r => pure r
-      | .error e => throw s!"the bundle in the model, and {path} is not: {e}"
+    let body ← model.mapError fun why => s!"a CoreJS model: {why}"
+    let ss := body.stmts
+    let nothing := body.empty
+    let modelSource := if body.external == 0 then "Lean ESTree lowering"
+      else s!"Lean ESTree lowering (externally lowered statements: {body.external})"
     unless footprintsOk ss w.B do
       throw s!"FootprintsOfSyntax: {(footprintProblem w.B w.kept ss).getD "it fails"}"
     let (nOpaque, inertN, allocN) := modelCounts ss
@@ -393,7 +416,7 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
         else if certifiedMoves then
           [s!"    Certified moves: all {inverted} inverted pairs pass MayMove or have checked binding summaries with no footprint conflict"]
         else [s!"    MayMove: the modules run {inverted} pairs of the {ss.length} statements out of the bundle's order, and each passes ({inertN} statements are inert, {allocN} more only allocate)"])
-      ++ [s!"    FootprintsOfSyntax: against {path}: {ss.length - nOpaque - nothing} statements in the model's syntax, {nOpaque} opaque, {nothing} that do nothing (an `export` list, `;`, `debugger`)",
+      ++ [s!"    FootprintsOfSyntax: against {modelSource}: {ss.length - nOpaque - nothing} statements in the model's syntax, {nOpaque} opaque, {nothing} that do nothing (an `export` list, `;`, `debugger`)",
       s!"    trusted: the model; the front end's reading of the scope; outside modules are part of the world{if dynamicImport then "; `import()` is opaque, faithful since every module is in one directory" else ""}{if metaUrl then "; `new URL(\"/absolute\", import.meta.url)` resolves against the origin" else ""}"]
       ++ (if orderKept then [] else ["    not covered: a run that throws, runs out of fuel or does not end (premise P4); the split may end otherwise then"])
       ++ [if certifiedMoves || heritage then
@@ -427,7 +450,7 @@ def main (args : List String) : IO UInt32 := do
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile bundlePath))
   let t1 ← lap "read + parse JSON" tStart
   let stmts := Lower.items (Lower.fld j "statements")
-  let asts := stmts.map (Lower.fld · "ast")
+  let asts ← IO.ofExcept (CoreJS.FromESTree.statements j)
   for s in asts do
     -- `export * from` publishes names that only the other module knows: a glue export could shadow one
     if Lower.typ s == "ExportAllDeclaration" then
@@ -470,16 +493,13 @@ def main (args : List String) : IO UInt32 := do
   let t4 ← lap "mkPlan" t3
   let ok ← report B S P
   let t5 ← lap "all checks" t4
-  let model? ← corejsPath?.mapM fun (p : String) => do
-    pure (p, Json.parse (← IO.FS.readFile p) >>= CoreJS.Decode.program)
+  let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then
-    let report := match model? with
-      | none => Except.error "--move-report needs --corejs"
-      | some (_, decoded) => decoded >>= moveReport asts B S P
+    let report := model >>= moveReport asts B S P
     IO.FS.writeFile path ((match report with
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
-  for line in sliceLines asts B S P (ok && !bad) replicate?.isSome model? do IO.println line
+  for line in sliceLines asts B S P (ok && !bad) replicate?.isSome model do IO.println line
   if let some l := leanOut? then
     if bad then
       IO.println "  no kernel certificate: the front-end rule above failed, and Lean does not check it"

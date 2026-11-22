@@ -613,6 +613,26 @@ _COREJS_DIFFERENTIAL_ENV = {
 }
 
 js_test(
+    name = "corejs_ast_lowering_test",
+    data = [
+        "scope_metadata.mjs",
+        "split_dump.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        _MODEL + ":sources",
+        "//:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:corejs",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "corejs_ast_lowering_test.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+)
+
+js_test(
     name = "corejs_differential_test",
     size = "medium",
     args = [

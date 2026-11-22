@@ -1,3 +1,4 @@
+import Experiments.CoreJS.FromESTree
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Eval
 import Experiments.CoreJS.Fragment
@@ -11,6 +12,9 @@ import Experiments.CoreJS.Fragment
 `differential.mjs` describes Node's, or says which unknown code the run reached; `region` is 1 + the identity of the
 statement it ended in; `order` is the order in which the modules run; `state` is a hash of every object and binding
 of the final state, with its address.
+
+`corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps, one module per line.
+An unsupported AST produces a `malformed` result with its statement index and reason.
 
 **The world of a run** is a recording. A program may come with `"world": [call, …]`, the calls of host functions that
 a run of the program in Node made, in order, each with how it ended. The model runs in the world that answers exactly
@@ -301,8 +305,8 @@ def report {calls : List Recorded} {scripts : Scripts} (order : List String) (s 
     ("left", s.world.state.left.length), ("handed", s.world.handed.size),
     ("state", toString (hash (showState s)))]).compress
 
-def runLine (fuel : Nat) (line : String) : String :=
-  match Json.parse line >>= fun j => do pure (← Decode.program j, ← Decode.world j, ← Decode.scripts j) with
+def runLine (fuel : Nat) (line : String) (decode := Decode.program) : String :=
+  match Json.parse line >>= fun j => do pure (← decode j, ← Decode.world j, ← Decode.scripts j) with
   | .error msg => report [] (initialState (replay [] []) 0) "malformed" msg
   | .ok (program, calls, scripts) =>
     let order := program.evalOrder
@@ -416,13 +420,17 @@ def main (args : List String) : IO UInt32 := do
     match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (moveCensus · lines) with
     | .ok report => IO.println report; pure 0
     | .error msg => IO.eprintln msg; pure 1
+  | ["--ast", file] =>
+    for line in (← IO.FS.lines file) do
+      IO.println (runLine 100000 line fun j => FromESTree.statements j >>= FromESTree.program)
+    pure 0
   | [file] | [file, "--fuel", _] =>
     let fuel := (args[2]?.bind String.toNat?).getD 100000
     for line in (← IO.FS.lines file) do
       IO.println (runLine fuel line)
     pure 0
   | _ =>
-    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
+    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --ast dumps.jsonl | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
     pure 2
 
 end CoreJS
