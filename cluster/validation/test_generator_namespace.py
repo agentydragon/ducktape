@@ -1,75 +1,35 @@
-"""A kustomization with a generator must declare a namespace.
+"""Flux must supply a namespace for generated ConfigMaps and Secrets.
 
-`configMapGenerator` and `secretGenerator` produce resources with no namespace of
-their own. Hand-written manifests in these directories carry an explicit
-`metadata.namespace`, so the omission is invisible until apply time, when the
-server rejects the generated object with
-
-    ConfigMap/<name> namespace not specified:
-      the server could not find the requested resource
-
-Flux then applies *nothing* from that directory. That is the failure mode this
-guards: on 2026-07-29 it left the public-coder-agent instance serving 502s for
-three hours on a stale Deployment, and it was invisible from the manifests --
-every file that had a namespace had the right one, and the one that needed the
-kustomization to supply it was generated.
-
-The fix in every case is `namespace: <ns>` at the top of the kustomization.
-Kustomize then stamps it onto generated and hand-written resources alike, and
-`kubeconform` cannot catch the omission because the generated object does not
-exist as a file to lint.
-
-The cdk8s generator refuses to write such a kustomization
-(`cluster.cdk8s.flux.kustomize_kustomization`), so `GENERATED_ROOT` is skipped; this
-holds the hand-written ones, which live in the other manifest roots.
+A missing namespace prevented the public-coder Deployment from reconciling in July 2026.
+Check hand-written Kustomizations directly applied by Flux. Base fragments inherit their
+owner's namespace, and cdk8s checks the Kustomizations it generates.
 """
 
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import pytest_bazel
 import yaml
 
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, MANIFEST_ROOTS
 from cluster.validation.flux import parse_flux_kustomizations
 
 GENERATOR_FIELDS = ("configMapGenerator", "secretGenerator")
 
 
-def _flux_target_namespaces(repo_root: Path) -> dict[str, str | None]:
-    flux = repo_root / HAND_WRITTEN_ROOT / "flux/kustomizations.k8s.yaml"
-    return {spec.path: spec.target_namespace for spec in parse_flux_kustomizations(flux).values()}
-
-
 def test_generators_declare_a_namespace(repo_root: Path) -> None:
     offenders: list[str] = []
-    flux_target_namespaces = _flux_target_namespaces(repo_root)
-    hand_written_root = PurePosixPath(HAND_WRITTEN_ROOT)
-    missing_flux_dirs = sorted(
-        flux_path
-        for flux_path in flux_target_namespaces
-        if (path := PurePosixPath(flux_path)).is_relative_to(hand_written_root)
-        and not repo_root.joinpath(*path.parts).is_dir()
-    )
-    assert not missing_flux_dirs, (
-        "Direct hand-written Flux paths are missing from this test's materialized runfiles; "
-        "add their package filegroups to `cluster_k8s_inputs`:\n" + "\n".join(missing_flux_dirs)
-    )
-
-    for kust in manifest_files(repo_root, "kustomization.yaml"):
-        if kust.is_relative_to(repo_root / GENERATED_ROOT):
+    flux = repo_root / HAND_WRITTEN_ROOT / "flux/kustomizations.k8s.yaml"
+    for owner, spec in parse_flux_kustomizations(flux).items():
+        path = Path(spec.path)
+        if not any(path.is_relative_to(root) for root in MANIFEST_ROOTS) or path.is_relative_to(GENERATED_ROOT):
+            continue
+        directory = repo_root / path
+        assert directory.is_dir(), f"{owner}: {path} missing from cluster validation runfiles"
+        kust = directory / "kustomization.yaml"
+        if spec.target_namespace or not kust.is_file():
             continue
         doc = yaml.safe_load(kust.read_text())
-        if not isinstance(doc, dict):
-            continue
-        # Only directories Flux applies directly are checked. Base or overlay
-        # fragments have no entry in the central Flux chart and inherit their
-        # namespace from whichever parent includes them.
-        flux_path = f"./{kust.parent.relative_to(repo_root).as_posix()}"
-        if flux_path not in flux_target_namespaces:
-            continue
-        # A namespace supplied for the whole kustomization, by either mechanism,
-        # covers every generated resource in it.
-        if doc.get("namespace") or flux_target_namespaces.get(flux_path):
+        if not isinstance(doc, dict) or doc.get("namespace"):
             continue
         # A generator used purely as a `replacements` source is never applied, so
         # it needs no namespace -- e.g. seaweedfs/cluster's filer.toml, which is
@@ -81,7 +41,7 @@ def test_generators_declare_a_namespace(repo_root: Path) -> None:
                     continue
                 if not entry.get("namespace"):
                     offenders.append(
-                        f"{kust.relative_to(repo_root)}: {field} entry "
+                        f"{owner} ({kust.relative_to(repo_root)}): {field} entry "
                         f"{entry.get('name', '<unnamed>')!r} has no `namespace:`"
                     )
 
