@@ -3545,7 +3545,7 @@ async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixtu
 @DESKTOP_AND_MOBILE
 async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
-    args = {
+    args: dict[str, object] = {
         "owner": "example",
         "repo": "service",
         "branch": "docs",
