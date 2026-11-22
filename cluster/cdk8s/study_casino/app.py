@@ -131,8 +131,15 @@ def _database(scope: Construct) -> None:
         ),
         initdb=cluster.same_owner_initdb(_DATABASE),
         wal_archive=True,
+        resources=cluster.resource_requests(cpu_millis=250, memory_mib=160),
     )
-    backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, retention="30d")
+    backup.CnpgBackup(
+        scope,
+        "db-backup",
+        ref=POSTGRES,
+        retention="30d",
+        instance_sidecar_configuration=backup.sidecar_resource_requests(cpu_millis=75, memory_mib=192),
+    )
 
 
 def _readonly_credentials(scope: Construct) -> None:

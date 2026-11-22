@@ -67,8 +67,15 @@ def _databases(chart: Chart) -> None:
             ]
         ),
         wal_archive=True,
+        resources=cluster.resource_requests(cpu_millis=750, memory_mib=1280),
     )
-    backup.CnpgBackup(chart, "gitlab-backup", ref=app.GITLAB_DB, retention="30d")
+    backup.CnpgBackup(
+        chart,
+        "gitlab-backup",
+        ref=app.GITLAB_DB,
+        retention="30d",
+        instance_sidecar_configuration=backup.sidecar_resource_requests(cpu_millis=250, memory_mib=160),
+    )
     cluster.Database(
         chart,
         "praefect-database",
