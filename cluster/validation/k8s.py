@@ -72,10 +72,15 @@ class ContainerDisk(BaseModel):
     image: str | None = None
 
 
+class ImageVolumeSource(BaseModel):
+    reference: str
+
+
 class PodVolume(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     container_disk: ContainerDisk | None = None
+    image: ImageVolumeSource | None = None
 
 
 class PodSpec(BaseModel):
@@ -93,6 +98,7 @@ class PodSpec(BaseModel):
             for volume in self.volumes
             if volume.container_disk and volume.container_disk.image
         )
+        images.extend(volume.image.reference for volume in self.volumes if volume.image)
         return images
 
 
