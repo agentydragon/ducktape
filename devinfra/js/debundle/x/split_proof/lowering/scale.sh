@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Real bundles through the whole check, compiled. One markdown row per run, every stage in ms.
 # The specs are contiguous blocks, a timing workload: most such splits are not valid reshuffles (see § 7 of ../experiments/README.md).
-# `lowering/bundles/*.json` come from `./run.sh --lowering`. Each run is capped at 240 s. T = scratch directory.
+# `lowering/bundles/*.json` can be staged with `prepare_real_bundles`. Each run is capped at 240 s. T = scratch directory.
 #
 #   ./scale.sh                 six real bundles and prefixes of lodash
 #   ./scale.sh replicate       K renamed copies of lodash, K = 1 … 64 (timing only; the text of the modules is meaningless)

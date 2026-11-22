@@ -1,4 +1,4 @@
-# Build and run artifacts; `./run.sh` regenerates all of them.
+# Local build and experiment artifacts.
 /lean/.lake/
 /example/output/
 /lowering/bundles/

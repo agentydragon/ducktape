@@ -20,7 +20,7 @@ The design is "untrusted search, trusted check": a planner proposes a split, and
 
 ## Picking this up
 
-- **Build and test.** `./run.sh` and its flags ([`README.md`](README.md)); CI runs `bbr test //devinfra/js/debundle/x/split_proof/...`. By hand, in `lean/`: `nix shell nixpkgs#lean4 nixpkgs#gcc --command lake build EsmSplit render Experiments lower lowersplit evalorder translate corejs` (about 2 minutes clean). The golden cases: `node ../effects/run.mjs` in `translation` (90 s). The model: `node differential.mjs --count 40 --seed 1` in `model` (20 s). Each JavaScript tool package’s `package.json.in` is copied to `package.json` before `npm ci`; never commit a `package.json`.
+- **Build and test.** Use the [Bazel commands](README.md); CI runs `bbr test //devinfra/js/debundle/x/split_proof/...`. By hand, in `lean/`: `nix shell nixpkgs#lean4 nixpkgs#gcc --command lake build EsmSplit render Experiments lower lowersplit evalorder translate corejs` (about 2 minutes clean). The golden cases: `node ../effects/run.mjs` in `translation` (90 s). The model: `node differential.mjs --count 40 --seed 1` in `model` (20 s). Each JavaScript tool package’s `package.json.in` is copied to `package.json` before `npm ci`; never commit a `package.json`.
 - **Generated coverage for supported features.** When adding a language feature or a proved move rule, teach a program generator to compose it with varied operands or surrounding statements. Include a CI seed sample that executes it through the relevant checker or interpreter and asserts the observed behavior. For a move rule, require a reordered plan that uses the rule and a dependency-bearing refusal. Track remaining gaps in the [CoreJS differential inventory](model/README.md) and the [translation coverage audit](translation/COVERAGE.md).
 - **After any change to `Effects.lean`**: the golden cases, `node test.mjs`, `node fuzz.mjs --count 150 --seed <new>`, `footprint_oracle_sweep.mjs --samples 40 --seed <new>`, `debundle_cases` (its committed results must be regenerated if they change), and `fuzz_mutate.py` (about an hour; say so if it is skipped). Then measure the large bundle: the count of units that touch the world must be reported with the change.
 - **The private evidence** is in the private repository `gaffer-private`, under the large bundle's `debug/translation-validation/`: `peel-probe/` (what peels, the bundle-order split, the browser load, the counts after the rule fixes), `startup-coverage/` (what runs at start-up) and the host inventory under `devinfra/debundle/host_inventory/`. Its scripts rebuild the inputs: the statement dump comes from [`lowering/dump.mjs`](lowering/dump.mjs) on the chunk, the footprints from `lower <dump> --premises <file>` (3 minutes, 1.5 GB), the partition from `scripts/peel_all.mjs`. The scratch copies of these inputs did not outlive the session that made them.
@@ -209,11 +209,11 @@ What is owed beyond the steps above. Each is a known gap, not a plan.
 State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 84 agree with debundle (69 accepts, 15 rejects), 7 disagree, 109 are not run. Six of the 109 are bundles `lowersplit` refuses for a direct `eval` or a top-level `await`; debundle rejects them too.
 Causes: [`debundle_cases/README.md`](debundle_cases/README.md); numbers: [`results/summary.md`](debundle_cases/results/summary.md).
 
-Acceptance for every step, after `./run.sh --debundle-cases`:
+Acceptance for every step, after running the [debundle case corpus](experiments/debundle_cases/README.md#run-it):
 
 - `unsound-accept` stays at 0. A step that unlocks entries is also a soundness test: the first run of the corpus found two accepted splits that fail to load.
 - The step's entries leave `unsupported` and `strict-*`, or the PR says why one stays.
-- `./run.sh --controls --fuzz` and the mutation test still pass.
+- `lean:example_test`, `:render_fuzz`, and the mutation test still pass.
 
 Steps are independent PRs. Steps 2–5 touch different Lean files and can run in parallel. Order by entries unlocked per effort:
 

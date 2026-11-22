@@ -13,3 +13,22 @@ genrule(
     cmd = "cp $(location //devinfra/js/debundle/x/split_proof:proof_fixture_instance) $@",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
+
+genrule(
+    name = "generate_lowered_example_certificate",
+    srcs = [
+        "//devinfra/js/debundle/x/split_proof:example/spec.json",
+        "//devinfra/js/debundle/x/split_proof:example_ast",
+    ],
+    outs = ["Experiments/Generated.lean"],
+    cmd = """
+work=$$(mktemp -d "$(@D)/split.XXXXXX")
+export BAZEL_BINDIR="$(BINDIR)"
+trap 'rm -rf "$$work"' EXIT
+$(execpath //devinfra/js/debundle/x/split_proof/lean:lowersplit) \
+    $(location //devinfra/js/debundle/x/split_proof:example_ast) \
+    $(location //devinfra/js/debundle/x/split_proof:example/spec.json) "$$work" --lean "$@"
+""",
+    tools = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)

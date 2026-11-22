@@ -1,6 +1,6 @@
 # Experiments: what it costs to go further
 
-Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts. The [ESMeta spike](esmeta/README.md) investigates a fuller JavaScript semantics.
+Start with the [Bazel commands](../README.md). The sections below describe the proof and workload experiments.
 Line counts are Lean code lines (no comments, no blank lines).
 
 ## 1. Sound plans without a spec
@@ -211,12 +211,31 @@ The generated certificate is accepted by the kernel; its axioms are `propext`, `
 - A semantics. The frame assumption is unchanged. Only its _footprint side_ moved into Lean.
 - Imports from outside modules, top-level reassignment, and `import.meta`: rejected or guarded, not modeled. `lowersplit` keeps a bundle's `import` statements in the entry and writes them first; that this keeps the order of evaluation is argued in the [README](../README.md#what-is-not-proved), not proved.
 
-Run it: `./run.sh --lowering` (installs esbuild, lodash-es, acorn, zod, semver, eslint-scope into `lowering/`).
+The Bazel `lean:lowered_example_certificate_test` builds a certificate from the example’s ESTree dump and checks it in Lean. For footprint comparisons on public libraries, set `out` to an absolute output directory and run:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bb run "$p/translation:prepare_real_bundles" -- "$out"
+bb run "$p:compare_footprints" -- "$out/"*.json
+```
 
 ## 7. Real splits: halves, cuts, blocks, random placements
 
 A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
-Run it with [`splits/run_all.sh`](splits/run_all.sh) (about 10 minutes, most of it the footprint analysis of `zod`, which runs once per bundle; after `./run.sh --lowering`).
+Each bundle has an opt-in Bazel test, with the same strategies as the full sweep.
+Run one library variant or the whole corpus from the repository root:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p:real_split_zod_test"
+bbr test "$p:real_split_zod_min_test" --test_arg=--sample
+bbr test "$p:real_split_sweep"
+```
+
+The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
+`real_split_lodash_test`, and `real_split_semver_test`. Each test builds only its own
+bundle, computes its footprints once, and publishes JSONL and a summary as Bazel
+test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
 
 For every split, `lowersplit --force` checks it and writes the modules even when a check rejects it. Then [`splits/smoke.mjs`](splits/smoke.mjs) calls the
 entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
@@ -364,7 +383,7 @@ bbr test //devinfra/js/debundle/x/split_proof/es_order:es_order_sweep_test  # 50
 
 debundle does the same job without Lean. Its corpus ([`e2e/cases`](../../../e2e/cases)) has 207 entries: a bundle, a spec, and the verdict debundle must give.
 [`debundle_cases/run_cases.mjs`](../debundle_cases/run_cases.mjs) translates each spec, runs `lowersplit --force`, runs the original and the emitted entry in Node, and compares.
-Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the plan: [`debundle_cases/README.md`](../debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
+Run it with the [Bazel corpus commands](../debundle_cases/README.md#run-it). Details, causes and the plan: [`debundle_cases/README.md`](../debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
 
 | Outcome                                                                                    | Entries |
 | ------------------------------------------------------------------------------------------ | ------- |
@@ -386,7 +405,7 @@ A front end annotates every identifier with what it means (`eslint-scope`). A pa
 that every reference resolves, through the imports and exports, to the right declaration, that the entry exports what the bundle exports, that a unit assigning a module-scope name sits with its declaration (ES imports are read-only), and that the plan the tree describes is `Sound`.
 Three rewrites besides renaming are accepted as listed premises (an outside import swapped for a member chain, a moved dynamic-import path, a worker URL made relative to the module). Anything else is a rejection.
 
-Run it with `./run.sh --translation`. The fixtures' tampered trees (a changed literal, a reference to the wrong declaration, a parameter that captures a module-scope name, a missing import, an assignment moved away from its declaration, …) and a mutation test are all rejected.
+Run it with `translation:fixtures_test`. The fixtures' tampered trees (a changed literal, a reference to the wrong declaration, a parameter that captures a module-scope name, a missing import, an assignment moved away from its declaration, …) and a mutation test are all rejected.
 A tree with renamed locals is accepted. Two effects run in the other order give obligations instead of a verdict of "invalid".
 
 [`translation/fuzz.mjs`](../translation/README.md#fuzzer) asks the converse: does the checker ever accept a tree that behaves differently from its bundle? It generates random bundles and random splits of them, runs both in Node and compares with the verdict. It found two holes that the fixtures missed (a pure read of a reassigned variable moving across the assignment, and a unit using `import.meta` moving to another module), and both are fixed with a fixture.
@@ -483,7 +502,7 @@ structure World where
 - A closure keeps only the bindings of the names its code can mean (`Env.capture` of `Func.closes`, the free names of the function). So two scopes that give those names the same bindings give the same closure, and a function made in a module of a split is the object it is in the bundle.
 - Linking visits the statements of all modules in the order of their identities, not module by module. No program code runs while a program is linked, so that order cannot be observed, and it makes the state after linking independent of how the statements are divided into modules.
 
-**Checked against Node** by `./run.sh --model`, and in CI by `corejs_differential_test`. Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind). [`model/README.md`](../model/README.md) maps the landed features to manual and generated execution, required reordered splits, and remaining gaps.
+**Checked against Node** by `corejs_differential_test` in CI and `corejs_differential_sweep_test` on demand. Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind). [`model/README.md`](../model/README.md) maps the landed features to manual and generated execution, required reordered splits, and remaining gaps.
 
 **The world of the test is Node, as a recording.** Every program runs in Node first, with the 88 functions wrapped; each call that a file of the program makes with a primitive receiver and primitive arguments is written down with how it ended. The model then runs in the world that answers exactly those calls in that order (`replay` in [`Run.lean`](../lean/EsmSplit/CoreJS/Run.lean)). So the model has to make the calls Node made, the same function with the same receiver and arguments in the same order, and it gets Node's answers. A call that is not the next recorded one fails the test; so does a recorded call the model did not make before it ended, and a listed function that returns an object. `Math.random` needs nothing special: its answers are in the recording.
 

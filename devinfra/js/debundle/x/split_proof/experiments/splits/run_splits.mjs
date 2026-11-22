@@ -1,8 +1,8 @@
 // Many splits of one real bundle: what the Lean checker says, and what Node does with the split program.
 //
-//   node run_splits.mjs <bundle> <strategy> [--step N] [--seeds N] [--jobs N] [--footprints f.jsonl] [--out results.jsonl]
+//   node run_splits.mjs <bundle> <strategy> [--bundles DIR] [--step N] [--seeds N] [--jobs N] [--footprints f.jsonl] [--out results.jsonl]
 //
-//   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (../../lowering/bundles/<bundle>.{json,mjs})
+//   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (../../../lowering/bundles/<bundle>.{json,mjs})
 //   strategy  halves | cuts | cuts_entry_first | blocks | random
 //             cuts:   every single cut point c = step, 2*step, … (two modules [0, c) and [c, n))
 //             cuts_entry_first: the same cuts, but the first module is the entry
@@ -24,15 +24,15 @@ import { spec as makeSpec } from "./gen_spec.mjs";
 import { smoke } from "./smoke.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const lowering = path.join(here, "../../lowering/bundles");
-const lowersplit = path.join(here, "../../lean/.lake/build/bin/lowersplit");
-const lower = path.join(here, "../../lean/.lake/build/bin/lower");
+const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../../lean/.lake/build/bin/lowersplit"));
+const lower = path.resolve(process.env.LOWER ?? path.join(here, "../../lean/.lake/build/bin/lower"));
 
 const [bundle, strategy, ...rest] = process.argv.slice(2);
 const option = (name, fallback) => {
   const at = rest.indexOf(`--${name}`);
   return at < 0 ? fallback : rest[at + 1];
 };
+const lowering = path.resolve(option("bundles", path.join(here, "../../lowering/bundles")));
 const step = Number(option("step", 1));
 const seeds = Number(option("seeds", 20));
 const jobs = Number(option("jobs", 4));
@@ -40,10 +40,11 @@ const out = option("out", `${bundle}_${strategy}.jsonl`);
 const family = bundle.replace(/\.min$/, "");
 
 const run = (cmd, args) =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     const child = spawn(cmd, args);
     let stdout = "";
     let stderr = "";
+    child.on("error", reject);
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     child.on("close", (code) => resolve({ code, stdout, stderr }));
@@ -98,14 +99,12 @@ async function worker() {
         ([, what]) =>
           what.match(/^statement \d+ is an `(Import|Export)/)?.[1].concat("OutsideEntry") ?? what.split(/\s+/)[0]
       );
+      if (checked.code !== 0 && checked.code !== 1)
+        throw new Error(`lowersplit exit ${checked.code}: ${checked.stderr.trim()}`);
       const verdict = checked.code === 0 ? "accept" : "reject";
-      let node = "error";
-      let detail = "";
-      if (checked.code === 0 || checked.code === 1) {
-        const got = await smoke(family, path.join(dir, "out", spec.entry));
-        node = JSON.stringify(got) === baseline ? "same" : "different";
-        if (node === "different") detail = got.ok ? "returned a different value" : got.error;
-      } else detail = `lowersplit exit ${checked.code}: ${checked.stderr.trim().split("\n").pop()}`;
+      const got = await smoke(family, path.join(dir, "out", spec.entry));
+      const node = JSON.stringify(got) === baseline ? "same" : "different";
+      const detail = node === "same" ? "" : got.ok ? "returned a different value" : got.error;
       const line = {
         bundle,
         strategy: plan.label ?? plan.strategy,

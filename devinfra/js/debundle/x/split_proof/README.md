@@ -7,20 +7,37 @@ This is an experiment. It does not use the `debundle` code; nothing here imports
 
 [`SUPPORT.md`](SUPPORT.md) lists what a debundler built on this has to support (the syntax and the standard and host features that the real inputs use) and what it does not (a top-level `await`, a name declared twice in one list, and what the tools refuse today). It is a requirement, not a claim that the experiment meets it.
 
-Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order`, `--splits` or `--model`).
-It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
-`run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
-
-Bazel generates the example's Lean instance from the bundle and spec, checks the proof and the
-axioms in `EsmSplit/Audit.lean`, checks that the committed instance is up to date, and runs the
-rendered modules and controls in Node:
+From the repository root, run the same checks as CI:
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/debundle/x/split_proof/lean:example_test //devinfra/js/debundle/x/split_proof/lean:instance_freshness_test
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/..." --config=ci
 ```
 
-Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other experiments in
-`run.sh` are not yet Bazel targets.
+Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused checks and longer experiments, use the following commands with the same `p` (`out` is an absolute output path):
+
+| Task                                                         | Command                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                     |
+| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                   |
+| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
+| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
+| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
+| Fuzz the example renderer                                    | `bb run "$p:render_fuzz" -- 600 1`                                                    |
+| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/translation:effects_cases_test"`         |
+| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
+| Run the extended CoreJS comparison                           | `bbr test "$p/translation:corejs_differential_sweep_test"`                            |
+| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
+| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
+
+To refresh the checked-in example instance after changing the inputs:
+
+```sh
+dir=devinfra/js/debundle/x/split_proof
+bb build "//$dir:generated_instance" --remote_download_outputs=toplevel
+cp "bazel-bin/$dir/generated/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
+bbr test "//$dir/lean:instance_freshness_test"
+```
 
 `lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The `orderConflicts` field counts conflicting pairs that the plan reverses and gives up to five examples. Each example names the earlier and later source ordinals. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
 
@@ -97,7 +114,7 @@ Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, o
 
 Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
 
-Output, `example/output/` (written by `./run.sh`, not committed). Lean writes the files. Statements are copied verbatim.
+The `render` target writes these files to the output directory you pass it. Statements are copied verbatim.
 
 ```js
 // main.mjs
@@ -237,7 +254,7 @@ The main development does not use `native_decide`, so the compiler is not truste
 ## Controls
 
 Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`, checked by the kernel) and a real failure in Node.
-`./run.sh --controls` shows the Node side.
+`lean:example_test` checks the Node behavior.
 
 | Control                                                                                                      | Failing check | Node, when written anyway                                          |
 | ------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------------------------------------------------ |
@@ -254,7 +271,7 @@ Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`
 
 ## Checking the trusted parts
 
-These are tests, not proofs. `./run.sh --fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
+These are tests, not proofs. The Bazel target `:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
 510 random placements of the 12 statements, each rendered and run in Node.
 
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
@@ -329,7 +346,6 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 | `extract/`                                  | JavaScript front end for the example (`extract.mjs`)                                                                                                                                       |
 | `example/`                                  | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                               |
 | `fuzz/`                                     | fuzzer and mutation test                                                                                                                                                                   |
-| `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by `run.sh` and Bazel tests                                                                                                               |
+| `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by the Bazel commands above                                                                                                               |
 | `translation/`, `effects/`, `model/`        | Translation validator, footprint analysis cases, and the CoreJS differential harness                                                                                                       |
 | `experiments/`                              | [research notes](experiments/README.md) and [timings](experiments/TIMINGS.md); research scripts in `scaling/`, `splits/`, `proof_search/`, and `esmeta/`; raw timing records in `records/` |
-| `run.sh`                                    | everything, end to end                                                                                                                                                                     |

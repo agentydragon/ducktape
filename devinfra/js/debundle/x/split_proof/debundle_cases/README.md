@@ -10,14 +10,15 @@ The outcomes and limitations below describe the initial corpus run, before the a
 
 ## Run it
 
-From the project root: `./run.sh --debundle-cases` (builds `lowersplit`, installs its adapter dependencies, runs the corpus, writes the summary).
-By hand, in this directory:
+From the repository root, set `out` to an absolute output directory:
 
-```bash
-cp package.json.in package.json && npm ci --no-audit --no-fund
-node run_cases.mjs [--filter <substring>] [--keep <dir>]   # writes results/cases.jsonl
-node summarize.mjs results/cases.jsonl > results/summary.md
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bb run "$p:debundle_cases" -- --out "$out/cases.jsonl"
+bb run "$p:summarize_debundle_cases" -- "$out/cases.jsonl" > "$out/summary.md"
 ```
+
+Use `--filter <substring>` for a smaller run.
 
 `--keep <dir>` copies each translated entry (bundle, translated spec, emitted modules, checker output) to `<dir>/<id>`.
 

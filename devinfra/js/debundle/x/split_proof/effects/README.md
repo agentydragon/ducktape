@@ -16,7 +16,7 @@ node frontend.mjs bundle <bundle.js> --out bundle.json
 ../lean/.lake/build/bin/lowersplit ast.json spec.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
 ```
 
-`./run.sh --translation` runs the golden cases and the fixtures. `lowersplit --footprints` reads what `lower` printed instead of analyzing again: the analysis does not depend on the split, so a run of many splits of one big bundle computes it once.
+`translation:effects_cases_test` and `translation:fixtures_test` run the golden cases and fixtures in Bazel. `lowersplit --footprints` reads what `lower` printed instead of analyzing again: the analysis does not depend on the split, so a run of many splits of one big bundle computes it once.
 
 Run the generated Effects matrix with `bbr test //devinfra/js/debundle/x/split_proof/translation:effects_targeted_fuzz_test`. It fixes seed `20261121` and adds three unit permutations per normally completing case; uncaught-throw cases run their named stdout-changing reorders. To rerun with another seed, append `--test_arg=--seed --test_arg=77`. When `CASES` is relative, `run.mjs` resolves it from its own directory.
 
