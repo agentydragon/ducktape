@@ -250,16 +250,19 @@ func TestSelectedDispatchReceiptVersions(t *testing.T) {
 	if got := watch.next(t).GetDispatch(); !proto.Equal(got, row) {
 		t.Fatalf("selected versioned watch differs from List: %v", got)
 	}
-	if watch.next(t).GetCaughtUp() == nil {
+	checkpoint := watch.next(t)
+	if checkpoint.GetCaughtUp() == nil {
 		t.Fatal("selected snapshot did not establish coverage")
 	}
+	watch.stop(t)
 	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {
 		t.Fatal(err)
 	}
-	if got := watch.next(t).GetDispatch(); got.GetCommandId() != commandID || got.GetReceiptVersion() <= version || got.GetCommand() != nil {
+	resumed := startVersionWatch(t, ctx, queueStore, hub, detailed, checkpoint.GetResumeToken())
+	if got := resumed.next(t).GetDispatch(); got.GetCommandId() != commandID || got.GetReceiptVersion() <= version || got.GetCommand() != nil {
 		t.Fatalf("selected watch legacy revision: %v", got)
 	}
-	watch.stop(t)
+	resumed.stop(t)
 	if got := list(detailed); len(got) != 0 {
 		t.Fatalf("List includes legacy watch-only receipts: %v", got)
 	}
