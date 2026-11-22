@@ -927,7 +927,7 @@ for (const job of jobs.filter((j) => j.focused)) {
   covered.generated++;
   if (job.focused.family === "expressions") {
     for (const [kind, table] of Object.entries({ unary: UNARY, binary: BINARY, logical: LOGICAL }))
-      for (const op of Object.keys(table))
+      for (const op of Object.values(table))
         assert(
           job.result.out.some((line) => line.startsWith(`${kind} ${op} `)),
           `${job.label}: missing ${kind} ${op}`

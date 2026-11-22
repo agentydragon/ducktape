@@ -33,14 +33,14 @@ export function generatedCases(seed) {
       let value = ${expression(3)};
       {
         const right = ${expression(2)};
-        ${Object.keys(UNARY)
-          .map((op) => `console.log("unary ${op}", ${op} value);`)
+        ${Object.entries(UNARY)
+          .map(([op, name]) => `console.log("unary ${name}", ${op} value);`)
           .join("\n")}
-        ${Object.keys(BINARY)
-          .map((op) => `console.log("binary ${op}", value ${op} right);`)
+        ${Object.entries(BINARY)
+          .map(([op, name]) => `console.log("binary ${name}", value ${op} right);`)
           .join("\n")}
-        ${Object.keys(LOGICAL)
-          .map((op) => `console.log("logical ${op}", value ${op} right);`)
+        ${Object.entries(LOGICAL)
+          .map(([op, name]) => `console.log("logical ${name}", value ${op} right);`)
           .join("\n")}
       }
       value += ${num()}; value ^= ${num()};
