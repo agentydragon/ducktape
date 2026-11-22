@@ -208,6 +208,27 @@ func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 	}
 }
 
+func TestSourceEntryPreservesDeliveryBackoff(t *testing.T) {
+	f := newIsolatedFixture(t, defaultQuotas())
+	creation := f.body("first")
+	subscription := f.subscribe(t, creation)
+	deadline := now().Add(time.Hour)
+	f.exec(t, `UPDATE inbox SET delivery_error = 'DispatcherNotFoundError', next_attempt = $2 WHERE id = $1`,
+		subscription.InboxID, deadline)
+
+	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: creation.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
+
+	next, err := f.NextWorkAt(t.Context())
+	if err != nil || next == nil || !next.Equal(deadline) {
+		t.Fatalf("delivery due at %v, error %v, want %v", next, err, deadline)
+	}
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != 1 || page.Entries[0].Cursor != 1 || !slices.Equal(page.Entries[0].SubscriptionIDs, []uuid.UUID{subscription.ID}) {
+		t.Fatalf("entries = %+v, want one entry matched to %v", page.Entries, subscription.ID)
+	}
+}
+
 func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := f.body("first")
