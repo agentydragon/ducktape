@@ -295,7 +295,7 @@ def _element(scope: Construct) -> None:
                         k8s.Container(
                             name=_ELEMENT,
                             image="vectorim/element-web:v1.12.27",
-                            ports=[_ELEMENT_HTTP.port.k8s_container_port()],
+                            ports=[_ELEMENT_HTTP.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.json", sub_path="config.json", read_only=True

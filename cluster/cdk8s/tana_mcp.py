@@ -107,7 +107,7 @@ def _tana_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="tana-desktop",
                             image="git.allegedly.works/ducktape-ci/tana-desktop:unset",
-                            ports=[_TANA.k8s_container_port(), _NOVNC.port.k8s_container_port()],
+                            ports=[_TANA.k8s_container_port(), _NOVNC.k8s_container_port()],
                             env=[k8s.EnvVar(name="RESOLUTION", value="1280x800x24")],
                             volume_mounts=[k8s.VolumeMount(name="tana-config", mount_path="/home/tana/.config/tana")],
                             resources=container_resources(cpu="200m", memory="1Gi", memory_limit="4Gi"),
@@ -128,7 +128,7 @@ def _tana_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="proxy",
                             image="nginx:alpine",
-                            ports=[MCP_PROXY.port.k8s_container_port()],
+                            ports=[MCP_PROXY.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="nginx-config", mount_path="/etc/nginx/conf.d", read_only=True)
                             ],
@@ -289,9 +289,9 @@ def _facade(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset",
                             image_pull_policy="Always",
                             ports=[
-                                _FACADE_HTTP.port.k8s_container_port(),
+                                _FACADE_HTTP.k8s_container_port(),
                                 # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
-                                _FACADE_METRICS.port.k8s_container_port(),
+                                _FACADE_METRICS.k8s_container_port(),
                             ],
                             env_from=[
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_FACADE_CONFIG_MAP))

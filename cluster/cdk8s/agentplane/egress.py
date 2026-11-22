@@ -606,7 +606,7 @@ class Egress(Construct):
             "service-admin",
             metadata=ApiObjectMetadata(name=self.admin.name, namespace=env.namespace),
             selector=workload.deployment,
-            ports=[self.admin.port.service_port()],
+            ports=[self.admin.service_port()],
         )
         _egress_credentials(self, namespace=env.namespace)
         _egress_policies(

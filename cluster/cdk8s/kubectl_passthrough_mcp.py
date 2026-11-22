@@ -82,7 +82,7 @@ def _deployment(chart: Chart) -> None:
                             # Config is public-only — the OAuth2 provider is public (PKCE),
                             # and passthrough mode does no token exchange, so no secrets needed.
                             args=[f"--config={_CONFIG_DIR}/{_CONFIG_FILE}"],
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="public",

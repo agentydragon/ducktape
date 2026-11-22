@@ -158,7 +158,7 @@ def _auth_proxy_container() -> k8s.Container:
         image="nginx:1.31-alpine",
         # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
         resources=container_resources(cpu="10m", memory="32Mi", memory_limit="256Mi"),
-        ports=[AUTH_PROXY.port.k8s_container_port()],
+        ports=[AUTH_PROXY.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
             DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),

@@ -152,7 +152,7 @@ def _web(chart: Chart) -> None:
         image=_WEB_IMAGE,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         env_variables=_web_environment(chart),
-        ports=[_WEB.port.container_port()],
+        ports=[_WEB.container_port()],
         readiness=Probe.from_http_get("/healthz", port=_WEB_PORT, period_seconds=Duration.seconds(10)),
         liveness=probes.http_probe("/healthz", port=_WEB_PORT, initial_delay_seconds=30, period_seconds=20),
         resources=ContainerResources(

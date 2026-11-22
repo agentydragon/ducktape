@@ -92,11 +92,7 @@ def _deployment(chart: Chart) -> None:
                                 k8s.EnvVar(name="PGWEB_AUTH_USER", value=AUTH_USER),
                                 AUTH.key(AUTH_KEY).env_var("PGWEB_AUTH_PASS"),
                             ],
-                            ports=[
-                                k8s.ContainerPort(
-                                    name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
-                                )
-                            ],
+                            ports=[SERVICE.k8s_container_port()],
                             resources=container_resources(cpu=_CPU_REQUEST, memory="64Mi", memory_limit=_MEMORY_LIMIT),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
