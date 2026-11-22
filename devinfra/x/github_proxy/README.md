@@ -17,7 +17,8 @@ Layout:
 - `debug/github_graphql_exhaustion/`: the #5213 investigation.
 - `../github_api_capture/`: capture reporting scripts.
 
-Builds and tests are opt-in while the proxy is parked:
+The proxy and chart tests run in routine CI, including the test that starts the proxy image.
+To build the image or run the tests directly:
 
 ```sh
 bbr build //devinfra/x/github_proxy/central:image

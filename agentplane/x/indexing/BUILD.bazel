@@ -5,16 +5,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-test_suite(
-    name = "tests",
-    tags = ["manual"],
-    tests = [
-        ":test_app",
-        ":test_chunking",
-        ":test_source",
-        ":test_store",
-    ],
-)
+test_suite(name = "tests")
 
 py_binary(
     name = "main_bin",
@@ -126,7 +117,6 @@ py_library(
 py_test(
     name = "test_source",
     srcs = ["test_source.py"],
-    tags = ["manual"],
     deps = [
         ":conftest",
         ":settings",
@@ -165,7 +155,6 @@ py_test(
     size = "medium",
     srcs = ["test_app.py"],
     requires_docker = True,
-    tags = ["manual"],
     deps = [
         ":app",
         ":conftest",
@@ -187,7 +176,6 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     requires_docker = True,
-    tags = ["manual"],
     deps = [
         ":chunking",
         ":conftest",
@@ -243,7 +231,6 @@ py_library(
 py_test(
     name = "test_chunking",
     srcs = ["test_chunking.py"],
-    tags = ["manual"],
     deps = [
         ":chunking",
         ":conftest",
