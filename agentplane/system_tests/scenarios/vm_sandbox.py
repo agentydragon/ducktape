@@ -246,12 +246,9 @@ async def vm_sandbox_turn(
     )
     assert systemctl_denial is not None, turn.transcript
     assert "PING" in turn.answer, turn.transcript
-    rules_turn = await agent.run_shell(model, "agentplane --json egress rules")
-    rules_output = rules_turn.tool_outputs[-1]
-    start = rules_output.find("{")
-    assert start >= 0, rules_turn.transcript
-    rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
-    assert rules["identity"] == {"name": view.identity_name}, rules_turn.transcript
+    rules_command = "agentplane --json egress rules"
+    rules_turn = await agent.run_shell(model, rules_command)
+    assert rules_turn.shell_json(rules_command).get("identity") == {"name": view.identity_name}, rules_turn.transcript
     platform_turn = await agent.run_shell(
         model,
         "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK && "

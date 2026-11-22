@@ -163,12 +163,9 @@ async def the_model_call_itself_goes_through_the_proxy(
         await model.reply(await model.request(), Text("ok"))
     turn = answered.result()
 
-    rules_turn = await agent.run_shell(model, "agentplane --json egress rules")
-    rules_output = rules_turn.tool_outputs[-1]
-    start = rules_output.find("{")
-    assert start >= 0, rules_turn.transcript
-    rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
-    assert rules["identity"] == {"name": view.identity_name}, rules_turn.transcript
+    rules_command = "agentplane --json egress rules"
+    rules_turn = await agent.run_shell(model, rules_command)
+    assert rules_turn.shell_json(rules_command).get("identity") == {"name": view.identity_name}, rules_turn.transcript
     notifications_turn = await agent.run_shell(
         model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
     )
