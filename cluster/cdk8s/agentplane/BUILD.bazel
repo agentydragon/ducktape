@@ -322,7 +322,6 @@ py_library(
         "//agentplane:crd_group",
         "//agentplane:subjects",
         "//agentplane/environments:settings",
-        "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
@@ -1442,7 +1441,6 @@ py_library(
         ":workload_tls",
         "//agentplane:crd_group",
         "//agentplane:subjects",
-        "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//agentplane/session_dispatcher:settings",
         "//cluster/cdk8s:api_resource",
@@ -1704,6 +1702,7 @@ py_library(
     srcs = ["workload_tls.py"],
     deps = [
         ":environment",
+        "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/providers/cert_manager:certificate",

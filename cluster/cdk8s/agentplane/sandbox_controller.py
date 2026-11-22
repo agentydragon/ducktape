@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -31,7 +30,6 @@ from agentplane.environments.settings import (
     ServiceDelegator,
     Settings,
 )
-from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -41,7 +39,6 @@ from agentplane.net.peertls.config import (
     MTLS,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
-    ClientTLS,
     ServiceSPIFFEID,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -267,15 +264,8 @@ class SandboxController(Construct):
             environments_scope, container=environments_workload.container, name="environments-runtime-proxy"
         )
         workload_tls.mount_trust_bundle(environments_scope, environments_workload.container)
-        assert client.cert_file is not None
-        assert client.key_file is not None
-        assert client.ca_file is not None
         serving = EnvironmentService(
-            rpc=workload_listener.Listener(
-                listen_address=f"0.0.0.0:{environments.port.number}",
-                tls=workload_listener.TLS(cert_file=Path(client.cert_file), key_file=Path(client.key_file)),
-                auth=[workload_listener.SPIFFEAuth(ca_file=Path(client.ca_file))],
-            ),
+            rpc=client.spiffe_listener(environments.port.number),
             policy_namespace=namespace,
             service_readers=tuple(sorted(authority.service_readers)),
             service_managers=tuple(sorted(authority.service_managers)),
@@ -301,13 +291,7 @@ class SandboxController(Construct):
         )
         environments_settings = Settings(
             environment_service=serving,
-            runner_gateway_tls=ClientTLS(
-                ca_file=Path(client.ca_file),
-                server_uri=SANDBOX_CONTROLLER_URI,
-                cert_file=Path(client.cert_file),
-                key_file=Path(client.key_file),
-                client_uri=SANDBOX_CONTROLLER_URI,
-            ),
+            runner_gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=SANDBOX_CONTROLLER_URI),
             runner_security=MTLS(tls=client),
             namespace=namespace,
             metrics_bind_address=f":{_METRICS_PORT.number}",

@@ -25,7 +25,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from agentplane.crd_group import GROUP
 from agentplane.mcp_edge.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ClientTLS, ServerTLSListener
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ServerTLSListener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -115,9 +115,6 @@ class McpEdge(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=MCP_EDGE_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         settings_contract = Settings(
             rpc_tls=ServerTLSListener(
                 listen=f"0.0.0.0:{self.tls.pod_port}",
@@ -126,13 +123,7 @@ class McpEdge(Construct):
                 client_ca_file=Path(serving_tls.ca_file),
             ),
             operator_services=[APP_URI],
-            actions_tls=ClientTLS(
-                ca_file=Path(serving_tls.ca_file),
-                server_uri=ACTIONS_URI,
-                cert_file=Path(serving_tls.cert_file),
-                key_file=Path(serving_tls.key_file),
-                client_uri=MCP_EDGE_URI,
-            ),
+            actions_tls=serving_tls.client_tls(ACTIONS_URI, client_uri=MCP_EDGE_URI),
             actions_target=actions.service(env.namespace).authority,
             policy_namespace=env.namespace,
             actions_token_file=None,

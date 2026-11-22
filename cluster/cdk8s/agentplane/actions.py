@@ -5,8 +5,6 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -33,7 +31,6 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -359,14 +356,7 @@ class Actions(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=ACTIONS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
-        rpc = listener.Listener(
-            listen_address=f"0.0.0.0:{self.service.pod_port}",
-            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-        )
+        rpc = serving_tls.spiffe_listener(self.service.pod_port)
         settings = SettingsFile(
             self,
             "settings",
