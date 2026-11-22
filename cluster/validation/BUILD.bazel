@@ -213,7 +213,6 @@ py_test(
         ":flux",
         ":health_checks",
         ":k8s",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

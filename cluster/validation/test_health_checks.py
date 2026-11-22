@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
@@ -42,29 +41,21 @@ def test_health_checks_cover_each_applied_controller() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("health_checks", "wait", "retry_interval", "flags_missing_retry"),
-    [
-        pytest.param([HealthCheck(kind="HelmRelease")], False, "1m", False, id="async-with-retry"),
-        pytest.param([HealthCheck(kind="HelmRelease")], False, None, True, id="async-without-retry"),
-        pytest.param([], True, "1m", False, id="wait-with-retry"),
-        pytest.param([], True, None, True, id="wait-without-retry"),
-        pytest.param([HealthCheck(kind="Namespace")], False, None, False, id="sync-without-retry"),
-    ],
-)
-def test_retry_policy(
-    health_checks: list[HealthCheck], wait: bool, retry_interval: str | None, flags_missing_retry: bool
-) -> None:
-    spec = FluxKustomizationSpec(
-        path="./cluster/k8s/test-app", health_checks=health_checks, retry_interval=retry_interval, wait=wait
+def test_retry_policy_reports_all_async_kustomizations_missing_a_retry_interval() -> None:
+    release = HealthCheck(kind="HelmRelease")
+    cluster = ParsedCluster(
+        flux_kustomizations={
+            "checked": FluxKustomizationSpec(health_checks=[release]),
+            "waiting": FluxKustomizationSpec(wait=True),
+            "checked-with-retry": FluxKustomizationSpec(health_checks=[release], retry_interval="1m"),
+            "waiting-with-retry": FluxKustomizationSpec(wait=True, retry_interval="1m"),
+            "sync": FluxKustomizationSpec(health_checks=[HealthCheck(kind="Namespace")]),
+            "suspended": FluxKustomizationSpec(wait=True, suspend=True),
+        }
     )
-    errors = check_retry_policy(ParsedCluster(flux_kustomizations={"test-app": spec}))
-    if flags_missing_retry:
-        assert len(errors) == 1
-        assert "test-app" in errors[0]
-        assert "no retryInterval" in errors[0]
-    else:
-        assert errors == []
+    errors = check_retry_policy(cluster)
+    assert sorted(error.partition(":")[0] for error in errors) == ["checked", "waiting"]
+    assert all("no retryInterval" in error for error in errors)
 
 
 if __name__ == "__main__":
