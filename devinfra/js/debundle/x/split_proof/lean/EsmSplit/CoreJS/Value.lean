@@ -169,6 +169,14 @@ structure World where
   next request. It sees the program's objects only through what it was handed, and its own state. -/
   talk : Told → σ → Request × σ
 
+/-- A concrete world for linker checks and fuel selection. The linked certificate
+still proves execution and exports for every world. -/
+def World.probe : World where
+  σ := Unit
+  init := ()
+  step := fun _ _ _ st => (.ret .undef, st)
+  talk := fun _ st => (.unknown "unexpected opaque code in a closed linked program", st)
+
 /-- The world's side of the state: its own state, and the objects it was handed, in the order it got them. -/
 structure Host (W : World) where
   state : W.σ

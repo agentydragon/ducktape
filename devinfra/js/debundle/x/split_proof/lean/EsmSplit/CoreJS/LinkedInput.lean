@@ -105,19 +105,13 @@ private def readSplit (files : Json) (P : EsmSplit.Plan) (providers : List Strin
     return (id, actual)
   return { name := m.name, imports := p.imports, body, exports := p.exports }
 
-private def linkingWorld : World where
-  σ := Unit
-  init := ()
-  step := fun _ _ _ st => (.ret .undef, st)
-  talk := fun _ st => (.unknown "unexpected code evaluation during linking", st)
-
 private def explain : Abort → String
   | .error _ why | .unknown why => why
 
 private def scopes (p : Program) : Except String (List (Module × Env)) := do
   unless p.evalOrder.Perm (p.modules.map (·.name)) do
     throw "linked files are missing or unreachable from the entry"
-  let .ok frames _ := declareTops (W := linkingWorld) p.tops (initialState linkingWorld p.regions)
+  let .ok frames _ := declareTops (W := World.probe) p.tops (initialState World.probe p.regions)
     | throw "the linked linker could not allocate declaration cells"
   for m in p.modules do
     let locals := (m.scope frames).map Prod.fst

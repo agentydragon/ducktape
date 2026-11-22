@@ -215,9 +215,27 @@ elab "#audit_linked_programs " thm:ident : command => do
   for ax in axioms do
     unless allowed.contains ax do throwError "linked program certificate depends on {ax}"
 
+/-- Only fuel exhaustion can be resolved by a larger witness. A normal probe
+selects a witness for the kernel proof; it does not check state equality. -/
+private def completesAt (label : String) (p : Program) (fuel : Nat) : Except String Bool :=
+  match runProgram World.probe fuel p with
+  | .ok .. => .ok true
+  | .fuel => .ok false
+  | .throw .. => .error s!"{label} threw during linked initialization"
+  | .unknown why _ => .error s!"{label} reached an unknown result during linked initialization: {why}"
+
+private def witnessFuel (source candidate : Program) : Except String Nat := do
+  let maxFuel := 64
+  for fuel in [16, 32, maxFuel] do
+    let before ← completesAt "original" source fuel
+    let after ← completesAt "split" candidate fuel
+    if before && after then return fuel
+  throw s!"linked initialization exhausted the fuel search budget ({maxFuel})"
+
 /-- The generated module proves an all-world, fuel-independent claim for these two programs.
 The caller accepts only successful elaboration and kernel checking of the complete file. -/
 def certificate (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String String := do
+  let fuel ← witnessFuel source candidate
   let s ← programLiteral source
   let c ← programLiteral candidate
   let p ← term (Lean.toExpr plan)
@@ -230,7 +248,7 @@ def certificate (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (
     "private def source : Program := " ++ s ++ "\n" ++
     "private def candidate : Program := " ++ c ++ "\n" ++
     "private theorem executions : LinkedBehavior.Equivalent source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
-    "  verify_linked_programs 16\n" ++
+    s!"  verify_linked_programs {fuel}\n" ++
     "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent sourceAST providers files plan)) :=\n" ++
     "  LinkedBehavior.certifyASTs sourceAST providers files plan source candidate executions\n" ++
     "#audit_linked_programs verified\n" ++
