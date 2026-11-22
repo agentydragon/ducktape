@@ -54,6 +54,19 @@ describe("Action presentation slots", () => {
     }
   });
 
+  it("summarizes supported Home Assistant service calls using the target and effect", async () => {
+    const action = identity("home_assistant", "ha_call_service");
+    const fan = { domain: "fan", service: "set_percentage", entity_id: "fan.greenhouse", data: { percentage: 35 } };
+    expect((await mount(renderActionLabel(action, fan))).textContent).toContain("Set fan.greenhouse to 35%");
+    expect((await mount(renderPaneOpened(action, fan))).textContent).toContain("fan.greenhouse");
+    expect(actionOffersCardDecisionButtons(action, fan)).toBe(false);
+    const generic = { domain: "fan", service: "set_percentage", entity_id: ["fan.greenhouse", "fan.study"] };
+    expect((await mount(renderActionLabel(action, generic))).textContent).toContain("Call fan · set percentage");
+    expect((await mount(renderActionLabel(action, { ...fan, future: true }))).textContent).toContain(
+      "Call Home Assistant service"
+    );
+  });
+
   it("shows pod filters without repeating the operation or namespace", async () => {
     const args = {
       namespace: "prod",
