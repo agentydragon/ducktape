@@ -345,6 +345,7 @@ py_test(
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",
         "testdata/roaming_node_rules.yaml",
+        "//cluster:generated/platform-monitoring/platform-monitoring.k8s.yaml",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -353,13 +354,13 @@ py_test(
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":rules",
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
