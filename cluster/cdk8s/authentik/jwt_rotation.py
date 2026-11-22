@@ -81,9 +81,10 @@ def _cronjob(chart: Chart) -> None:
         service_account_name=NAME,
         automount_service_account_token=True,
         image_pull_secrets=None,
-        credential_mounts=tuple(
-            secret_mount(c.volume, c.secret, str(c.directory)) for c in jwt_roster.client_credentials()
-        ),
+        credential_mounts=[
+            secret_mount(f"{directory.name}-creds", secret, str(directory))
+            for directory, secret in jwt_roster.client_credentials().items()
+        ],
     )
 
 

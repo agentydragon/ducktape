@@ -1,6 +1,5 @@
 """The Authentik JWT rotation roster and the client credentials its entries mount."""
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from cluster.cdk8s.haku import mailbox_endpoint
@@ -8,30 +7,18 @@ from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutp
 
 PUBLISHED_SECRET_NAMESPACE = "flux-system"
 
+_CREDENTIALS_ROOT = Path("/var/run/secrets/authentik")
+_KUBECTL_SANDBOX = _CREDENTIALS_ROOT / "claude-web-k8s"
+_HAKU = _CREDENTIALS_ROOT / "haku-k8s"
+_HAKU_MAIL = _CREDENTIALS_ROOT / "haku-mail"
+_ALLOY_OTLP = _CREDENTIALS_ROOT / "alloy-otlp"
 
-@dataclass(frozen=True)
-class _ClientCredentials:
-    """A client-credentials Secret tf/gitops/agent-machine-access writes into agents-infra, and the
-    directory the job mounts it at: the `credentials_dir` of the rotations authenticating with it."""
-
-    name: str
-    secret: str
-
-    @property
-    def volume(self) -> str:
-        return f"{self.name}-creds"
-
-    @property
-    def directory(self) -> Path:
-        return Path("/var/run/secrets/authentik") / self.name
-
-
-_KUBECTL_SANDBOX = _ClientCredentials(name="claude-web-k8s", secret="kubectl-sandbox-client-credentials")
-_HAKU = _ClientCredentials(name="haku-k8s", secret="haku-client-credentials")
-_HAKU_MAIL = _ClientCredentials(name="haku-mail", secret="haku-mail-client-credentials")
-_ALLOY_OTLP = _ClientCredentials(name="alloy-otlp", secret="alloy-otlp-client-credentials")
-_CLIENT_CREDENTIALS_BY_DIRECTORY = {
-    credential.directory: credential for credential in (_KUBECTL_SANDBOX, _HAKU, _HAKU_MAIL, _ALLOY_OTLP)
+# Source Secrets provisioned by tf/gitops/agent-machine-access in agents-infra.
+_SECRET_BY_DIRECTORY = {
+    _KUBECTL_SANDBOX: "kubectl-sandbox-client-credentials",
+    _HAKU: "haku-client-credentials",
+    _HAKU_MAIL: "haku-mail-client-credentials",
+    _ALLOY_OTLP: "alloy-otlp-client-credentials",
 }
 
 # Each entry mints (and for proxy consumers, exchanges) an Authentik client_credentials JWT and
@@ -43,7 +30,7 @@ ROTATIONS = Config(
             provider_slug="kubectl-sandbox-client-credentials",
             scopes="openid profile email groups",
             expected_group="kubectl-sandbox-users",
-            credentials_dir=_KUBECTL_SANDBOX.directory,
+            credentials_dir=_KUBECTL_SANDBOX,
             sops_file=Path("secrets/claude-web-k8s-jwt.yaml"),
             token_field="jwt",
         ),
@@ -56,7 +43,7 @@ ROTATIONS = Config(
             # Assert the provider-default audience (its client_id), which keeps the direct
             # kubeapi.allegedly.works path working.
             expected_audiences=["kubectl-sandbox-client-credentials"],
-            credentials_dir=_HAKU.directory,
+            credentials_dir=_HAKU,
             sops_file=Path("secrets/haku-k8s-jwt.yaml"),
             token_field="jwt",
             # This JWT remains available to the CLI/write_kubeconfig path. The parked
@@ -81,7 +68,7 @@ ROTATIONS = Config(
             # claim ever stops matching (e.g. if the Authentik user's email attribute is unset
             # again).
             expected_claims={"email": "haku@allegedly.works"},
-            credentials_dir=_HAKU_MAIL.directory,
+            credentials_dir=_HAKU_MAIL,
             sops_file=Path("secrets/haku-mail-jwt.yaml"),
             token_field="jwt",
             # Publish as an in-cluster Secret; the haku-mail-token ClusterExternalSecret
@@ -101,7 +88,7 @@ ROTATIONS = Config(
             provider_slug="alloy-otlp-client-credentials",
             scopes="openid profile email",
             exchange_scopes="openid profile email ak_proxy",
-            credentials_dir=_ALLOY_OTLP.directory,
+            credentials_dir=_ALLOY_OTLP,
             sops_file=Path("secrets/alloy-otlp-bearer-token.yaml"),
             token_field="token",
             # Also publish in-cluster; the alloy-otlp-bearer ClusterExternalSecret
@@ -125,12 +112,8 @@ ROTATIONS = Config(
 )
 
 
-def client_credentials() -> tuple[_ClientCredentials, ...]:
-    """Return the distinct credential Secrets used by ROTATIONS, in roster order."""
-    credentials: dict[Path, _ClientCredentials] = {}
-    for rotation in ROTATIONS.rotations:
-        credential = _CLIENT_CREDENTIALS_BY_DIRECTORY.get(rotation.credentials_dir)
-        if credential is None:
-            raise ValueError(f"no Kubernetes client-credential Secret is mapped for {rotation.credentials_dir}")
-        credentials.setdefault(rotation.credentials_dir, credential)
-    return tuple(credentials.values())
+def client_credentials() -> dict[Path, str]:
+    """Map each directory used by a rotation to the Secret the CronJob mounts there."""
+    return {
+        rotation.credentials_dir: _SECRET_BY_DIRECTORY[rotation.credentials_dir] for rotation in ROTATIONS.rotations
+    }
