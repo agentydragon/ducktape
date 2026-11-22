@@ -118,9 +118,12 @@ private def scopes (p : Program) : Except String (List (Module × Env)) := do
     unless (locals ++ m.imports.flatMap (fun i => i.names.map Prod.snd)).Nodup do
       throw s!"{m.name}: repeated local or imported binding"
     unless (m.exports.map Prod.fst).Nodup do throw s!"{m.name}: repeated exported name"
-    for (publicName, _) in m.exports do
-      let _ ← (p.importCell frames m.name publicName).mapError fun why => s!"{m.name}: {explain why}"
-  (p.scopes frames p.loaded).mapError explain
+  let linked ← (p.scopes frames p.loaded).mapError explain
+  for (m, env) in linked do
+    for (publicName, localName) in m.exports do
+      unless (env.vars.lookup localName).isSome do
+        throw s!"{m.name}: unbound export {publicName}"
+  return linked
 
 private def entryExports (entry : String) (linked : List (Module × Env)) : Except String (List (Name × Addr)) := do
   let some (m, env) := linked.find? (fun (m, _) => m.name == entry) | throw "missing linked entry"
