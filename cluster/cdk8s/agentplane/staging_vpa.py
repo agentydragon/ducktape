@@ -30,8 +30,13 @@ _WORKLOADS = (
     ("policy-controller", "policy-controller", 64, 112),
     ("sessions", "sessions", 256, 320),
 )
-# History writers replay from the committed cursor, and followers resume on another replica.
-_UPDATE_MODES = {"frontend": "Recreate", "history-service": "Recreate"}
+_UPDATE_MODES = {
+    "frontend": "Recreate",
+    # History writers replay from the committed cursor, and followers resume on another replica.
+    "history-service": "Recreate",
+    # Webhook commits and inbox delivery leases survive a Notifications replica replacement.
+    "notifications": "Recreate",
+}
 
 
 def chart(app: App) -> Chart:
