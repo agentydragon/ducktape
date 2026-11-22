@@ -1,15 +1,15 @@
 # Build and run artifacts; `./run.sh` regenerates all of them.
 /lean/.lake/
 /example/output/
-/experiments/lowering/bundles/
-/experiments/lowering/example.json
-/experiments/lowering/torture.json
+/lowering/bundles/
+/lowering/example.json
+/lowering/torture.json
 # Generated from `package.json.in` by run.sh. The repository's CI treats any committed `package.json` as a change to the whole build graph.
 /extract/package.json
-/experiments/lowering/package.json
-/experiments/debundle_cases/package.json
-/experiments/translation/package.json
-/experiments/model/package.json
+/lowering/package.json
+/debundle_cases/package.json
+/translation/package.json
+/model/package.json
 # Scratch directories used by the scripts.
 /.tmp*/
 __pycache__/

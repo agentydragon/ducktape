@@ -4,12 +4,12 @@
 #   ./run.sh              build, check, render, compare output
 #   ./run.sh --controls   also write each rejected split and show how it fails in Node
 #   ./run.sh --fuzz       also run the differential fuzzer (about a minute)
-#   ./run.sh --experiments  also build experiments/ (mini-JS semantics, two-tier proofs)
+#   ./run.sh --experiments  also build lean/Experiments (mini-JS semantics, two-tier proofs)
 #   ./run.sh --lowering   also lower real bundles to ESTree, compute footprints in Lean, compare with eslint-scope
 #   ./run.sh --es-order   also compare the model's module evaluation order with Node on 500 random import graphs
 #   ./run.sh --splits     also check 2,892 splits of six real bundles and run each in Node (needs --lowering first; about 10 minutes)
-#   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write experiments/debundle_cases/results (about 10 seconds)
-#   ./run.sh --translation  also run the golden cases of the effect analysis (experiments/effects), then check that tampered output trees are rejected and renamed, reshuffled ones accepted (experiments/translation fixtures)
+#   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write debundle_cases/results (about 10 seconds)
+#   ./run.sh --translation  also run the golden cases of the effect analysis (effects), then check that tampered output trees are rejected and renamed, reshuffled ones accepted (translation fixtures)
 #   ./run.sh --model      also run the CoreJS model (lean/Experiments/CoreJS) against Node: hand-written cases, programs of several modules, 240 generated programs cut down to its fragment, and splits of them by lowersplit (about a minute)
 #   ./run.sh --translation-fuzz  also fuzz the translation checker: every tree it accepts must behave like its bundle in Node (about 20 seconds; FUZZ_COUNT=N sets the bundles, default 150)
 set -euo pipefail
@@ -80,14 +80,14 @@ fi
 
 if [[ " $* " == *" --lowering "* ]]; then
   step "Lowering: real bundles -> ESTree JSON -> footprints in Lean, checked against eslint-scope"
-  (cd experiments/lowering && cp package.json.in package.json && npm ci --no-audit --no-fund --silent && node bundle.mjs \
-    && node dump.mjs ../../example/input/bundle.mjs >example.json && node dump.mjs torture.mjs >torture.json \
+  (cd lowering && cp package.json.in package.json && npm ci --no-audit --no-fund --silent && node bundle.mjs \
+    && node dump.mjs ../example/input/bundle.mjs >example.json && node dump.mjs torture.mjs >torture.json \
     && for f in lodash acorn semver zod acorn.min zod.min; do node dump.mjs bundles/$f.mjs >bundles/$f.json; done)
   (cd lean && lake build lower lowersplit)
-  (cd experiments/lowering && node compare.mjs example.json --example && node compare.mjs torture.json bundles/*.json)
+  (cd lowering && node compare.mjs example.json --example && node compare.mjs torture.json bundles/*.json)
   step "Lowering: one Lean program, JSON AST + spec -> modules + kernel certificate (no extract.mjs)"
   out=$(mktemp -d)
-  lean/.lake/build/bin/lowersplit experiments/lowering/example.json example/spec.json "$out" --lean lean/Experiments/Generated.lean
+  lean/.lake/build/bin/lowersplit lowering/example.json example/spec.json "$out" --lean lean/Experiments/Generated.lean
   rm -rf "$out"
   (cd lean && lake env lean Experiments/Generated.lean)
 fi
@@ -95,7 +95,7 @@ fi
 if [[ " $* " == *" --es-order "* ]]; then
   step "Module order: the model against Node, on random import graphs"
   (cd lean && lake build evalorder)
-  EVALORDER=lean/.lake/build/bin/evalorder node experiments/es_order/check.mjs 500 1
+  EVALORDER=lean/.lake/build/bin/evalorder node es_order/check.mjs 500 1
 fi
 
 if [[ " $* " == *" --splits "* ]]; then
@@ -107,28 +107,28 @@ fi
 if [[ " $* " == *" --debundle-cases "* ]]; then
   step "debundle's e2e cases: each spec translated, checked by Lean, the emitted modules run in Node"
   (cd lean && lake build lowersplit)
-  (cd experiments/debundle_cases && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
+  (cd debundle_cases && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node run_cases.mjs && node summarize.mjs results/cases.jsonl >results/summary.md)
 fi
 
 if [[ " $* " == *" --translation-fuzz "* ]]; then
   step "Translation fuzzer: random bundles split at random; a tree the checker accepts must behave like its bundle in Node"
   (cd lean && lake build translate)
-  (cd experiments/translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
+  (cd translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node fuzz.mjs --count "${FUZZ_COUNT:-150}" --seed 1)
 fi
 
 if [[ " $* " == *" --translation "* ]]; then
   step "Effect analysis: golden cases; translation validation: an output tree is accepted only if it is the bundle, renamed and reshuffled"
   (cd lean && lake build translate lower)
-  (cd experiments/translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
+  (cd translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node ../effects/run.mjs && node test.mjs)
 fi
 
 if [[ " $* " == *" --model "* ]]; then
   step "CoreJS: the executable model of a core of JavaScript, against Node"
   (cd lean && lake build corejs lowersplit evalorder Experiments.CoreJS.Frame Experiments.CoreJS.Split)
-  (cd experiments/translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent)
-  (cd experiments/model && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
+  (cd translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent)
+  (cd model && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node differential.mjs --count 40 --seed 1 --splits 150)
 fi

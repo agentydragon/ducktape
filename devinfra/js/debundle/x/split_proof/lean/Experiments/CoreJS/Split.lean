@@ -186,7 +186,7 @@ Two facts connect `order_kept_preserves` to a plan that `Valid` accepts.
 `AssignsHome` is not among the hypotheses, and has to hold all the same: `splitProgram` moves a statement as it is,
 and the front end reads an assignment to an imported name as another statement (`Target.frozen`). With `AssignsHome`
 no statement assigns a name its module imports, so the files the tool writes are read as `splitProgram`. The test
-checks that on every split (`experiments/model/differential.mjs`).
+checks that on every split (`model/differential.mjs`).
 -/
 
 /-- A module of a plan as a module of the model. -/

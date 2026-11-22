@@ -6,7 +6,7 @@ import EsmSplit.Plan
 
     evalorder <graph.json>     {"entry": "a.mjs", "modules": {"a.mjs": ["b.mjs", "c.mjs"], "b.mjs": [], …}}
 
-Prints `Plan.evalOrder`, one module per line. `experiments/es_order/check.mjs` compares it with the order
+Prints `Plan.evalOrder`, one module per line. `es_order/check.mjs` compares it with the order
 in which Node runs the module bodies of random import graphs, cycles included.
 -/
 

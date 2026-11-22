@@ -1,0 +1,22 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+# The CoreJS model against Node. The test that runs it is `corejs_differential_test` in
+# //devinfra/js/debundle/x/split_proof/translation, beside the generator it takes programs from.
+js_library(
+    name = "differential",
+    srcs = ["differential.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+js_library(
+    name = "sources",
+    srcs = [
+        "cases.mjs",
+        "generate.mjs",
+        "module_cases.mjs",
+        "opaque_cases.mjs",
+        "to_core.mjs",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
+)

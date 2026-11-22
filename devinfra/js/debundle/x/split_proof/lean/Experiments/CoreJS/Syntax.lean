@@ -2,7 +2,7 @@
 # CoreJS: the syntax of a core fragment of JavaScript
 
 Strict-mode module code: closures, objects with prototypes and accessors, plain/default-derived classes, exceptions.
-`experiments/model/to_core.mjs` produces these trees from acorn's ESTree and refuses the rest of the language.
+`model/to_core.mjs` produces these trees from acorn's ESTree and refuses the rest of the language.
 What the front end rewrites, so that one construct here has one rule:
 
 - `while (c) s` is `for (; c; ) s`;

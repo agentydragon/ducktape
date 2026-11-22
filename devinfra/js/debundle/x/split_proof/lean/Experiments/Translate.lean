@@ -11,7 +11,7 @@ import Experiments.TranslateInput
 
     translate <bundle.json> <output.json> <cert.json> [--table <file>]
 
-`bundle.json` and `output.json` come from `experiments/translation/frontend.mjs`: the bundle's ESTree Program and
+`bundle.json` and `output.json` come from `translation/frontend.mjs`: the bundle's ESTree Program and
 one Program per output module, with identifier scope annotations (`k`: local, module scope, import from outside
 the tree, global). Lean derives the units and the module linkage from these Programs.
 `cert.json` pairs every output unit with a bundle unit. It is untrusted: a wrong pairing is rejected here.

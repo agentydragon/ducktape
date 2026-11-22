@@ -8,7 +8,7 @@ mkdir -p results
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 status=0
-analyze() { ../../lean/.lake/build/bin/lower "../lowering/bundles/$1.json" >"$work/$1.jsonl" 2>/dev/null; }
+analyze() { ../../lean/.lake/build/bin/lower "../../lowering/bundles/$1.json" >"$work/$1.jsonl" 2>/dev/null; }
 run() { node run_splits.mjs "$1" "${@:2}" --footprints "$work/$1.jsonl" || status=$?; }
 for b in semver lodash acorn acorn.min; do
   analyze "$b"

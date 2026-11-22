@@ -101,7 +101,7 @@ lean_binary(
     # `lean_binary` runs the entry with `lean --run` on each call: it elaborates the entry and interprets the checker,
     # about ten times slower than the native build of `lake build`. The tests that call it are `medium` or larger.
     entry = "Experiments/TranslateMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
 lean_binary(
@@ -115,7 +115,7 @@ lean_binary(
         "Experiments/TranslateInput.lean",
     ] + _ESTREE_SOURCES,
     entry = "Experiments/LowerMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
 # Source groups used only to compile the deliberately unsound `no_writes` checker.
@@ -177,10 +177,10 @@ lean_binary(
         "Experiments/LowerSplit.lean",
     ] + _ESTREE_SOURCES,
     entry = "Experiments/LowerSplit.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
-# The order in which the modules of a plan run. `experiments/model/differential.mjs` compares the CoreJS model's with it.
+# The order in which the modules of a plan run. `model/differential.mjs` compares the CoreJS model's with it.
 lean_binary(
     name = "evalorder",
     srcs = [
@@ -190,12 +190,12 @@ lean_binary(
     ],
     entry = "Experiments/EvalOrder.lean",
     visibility = [
-        "//devinfra/js/debundle/x/split_proof/experiments/es_order:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/es_order:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
 )
 
-# The CoreJS model. `experiments/model/differential.mjs` runs it against Node.
+# The CoreJS model. `model/differential.mjs` runs it against Node.
 lean_binary(
     name = "corejs",
     srcs = glob(
@@ -231,7 +231,7 @@ lean_binary(
         ],
     ) + ["Experiments/CoreJSMain.lean"] + _ESTREE_SOURCES,
     entry = "Experiments/CoreJSMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
 lean_axiom_test(
