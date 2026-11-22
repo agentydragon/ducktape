@@ -130,6 +130,11 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded execution Identity.
   These reads do not require a live Sandbox or Identity. Old rows without a trustworthy owner are hidden
   from Identity callers but remain visible to service callers.
+- GetDispatch includes the full typed command as stored by Dispatcher. Command mutation responses omit the
+  field so older ProtoJSON clients can still decode their receipts.
+  ListDispatches and WatchDispatches include it when the filter sets `include_command` and names 1–16 distinct
+  command IDs. Other filters return receipt metadata and any existing admission evidence. A legacy deletion receipt
+  has no stored command. Presence of a command says nothing about Runner admission.
 - WatchDispatches applies the retained Session read scope to live rows and deletion receipts, authorizes
   every request, and resumes from an opaque filter-bound version token. The token carries no caller identity;
   a filter mismatch returns `INVALID_ARGUMENT`, and a cursor behind retained coverage returns `OUT_OF_RANGE`.

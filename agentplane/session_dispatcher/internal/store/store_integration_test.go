@@ -14,6 +14,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -49,12 +50,12 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	rows, err := store.ListDispatchesForCaller(ctx, "session-a", "", nil, ServiceAccountCaller{Privileged: true})
+	rows, err := store.ListDispatchesForCaller(ctx, storeDispatchFilter("session-a"), ServiceAccountCaller{Privileged: true})
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}
 	for _, row := range rows {
-		if row.State != QueueState {
+		if row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 			t.Fatalf("accepted command was unexpectedly cancelled: %+v", row)
 		}
 	}

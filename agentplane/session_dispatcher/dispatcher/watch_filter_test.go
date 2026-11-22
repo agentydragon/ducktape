@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -10,14 +11,20 @@ import (
 )
 
 func TestDispatchWatchRejectsInvalidFilters(t *testing.T) {
+	tooMany := make([]string, 17)
+	for i := range tooMany {
+		tooMany[i] = strconv.Itoa(i)
+	}
 	for _, filter := range []*dispatcherpb.DispatchFilter{
 		nil,
 		{},
+		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeCommand: true},
+		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, IncludeCommand: true, CommandIds: tooMany},
 		{Scope: &dispatcherpb.DispatchFilter_SessionId{}},
 		{Scope: &dispatcherpb.DispatchFilter_Sandbox{}},
 		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, CommandIds: make([]string, maxFilterCommands+1)},
 	} {
-		if _, err := dispatchWatchFilter(filter); status.Code(err) != codes.InvalidArgument {
+		if _, err := dispatchFilter(filter); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("filter %v returned %v", filter, err)
 		}
 	}
@@ -25,7 +32,7 @@ func TestDispatchWatchRejectsInvalidFilters(t *testing.T) {
 
 func TestDispatchWatchCanonicalizesCommandSetWithoutChangingRequest(t *testing.T) {
 	filter := &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, CommandIds: []string{"test-b", "test-a", "test-a"}}
-	canonical, err := dispatchWatchFilter(filter)
+	canonical, err := dispatchFilter(filter)
 	if err != nil {
 		t.Fatal(err)
 	}

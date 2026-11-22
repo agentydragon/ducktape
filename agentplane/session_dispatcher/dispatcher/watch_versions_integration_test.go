@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -151,6 +152,38 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 		t.Fatal("fresh deletion snapshot missing checkpoint")
 	}
 	fresh.stop(t)
+}
+
+func TestWatchRequestedCommandAndLegacyDeletionReceipt(t *testing.T) {
+	ctx := admitted(t)
+	queueStore := testStore(t, 5)
+	cmd := input("test-filtered-command", "stored before delivery")
+	filter := testSessionDispatchFilter("test-filtered-session", cmd.GetCommandId())
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-filtered-sandbox", sandboxUID, cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	hub := testWatchHub(t, queueStore)
+	summary := startVersionWatch(t, ctx, queueStore, hub, filter, "")
+	if got := summary.next(t).GetDispatch(); got.GetCommandId() != cmd.GetCommandId() || got.GetCommand() != nil {
+		t.Fatalf("summary watch: %v", got)
+	}
+	summary.stop(t)
+	filter.IncludeCommand = true
+	detailed := startVersionWatch(t, ctx, queueStore, hub, filter, "")
+	if got := detailed.next(t).GetDispatch(); !proto.Equal(got.GetCommand(), cmd) {
+		t.Fatalf("command watch: %v", got)
+	}
+	token := detailed.next(t).GetResumeToken()
+	detailed.stop(t)
+	// The legacy deletion trigger retained only receipt evidence.
+	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", cmd.GetCommandId()); err != nil {
+		t.Fatal(err)
+	}
+	resumed := startVersionWatch(t, ctx, queueStore, hub, filter, token)
+	if got := resumed.next(t).GetDispatch(); got.GetCommandId() != cmd.GetCommandId() || got.GetCommand() != nil {
+		t.Fatalf("legacy deletion: %v", got)
+	}
+	resumed.stop(t)
 }
 
 func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.T) {
