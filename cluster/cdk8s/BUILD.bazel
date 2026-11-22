@@ -1246,6 +1246,7 @@ py_library(
     srcs = ["agent_rbac_base.py"],
     visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
+        ":container_resources",
         ":flux",
         ":manifest_roots",
         ":namespaces",
