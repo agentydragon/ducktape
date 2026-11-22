@@ -1,20 +1,23 @@
 {
   "report": "fixture-model-audit",
-  "source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
-  "audited_at_utc": "2026-11-09T08:07:23Z",
-  "previous_report_commit": "552b8b2af66bc6cd94c30777f4594988a92bc5ca",
-  "evidence_file": "evidence.json",
-  "summary": "Seven current source-backed coverage or maintenance opportunities; no behavior failure or recurrence claim.",
-  "limits": [
-    "Selected static source inspection only.",
-    "No focused tests or live runtime checks were run on audited source.",
-    "Hosted checks are attached to their listed PR heads."
-  ],
-  "report_html_sha256": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
-  "evidence_sha256": "12e704952cae596eba5a3ba44176bbcd48e384ae6b8053d3c86fb5c3fe080deb",
-  "presentation_validation": "../presentation-validation.json",
-  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
-  "source_paths_rechecked_unchanged_through_devel": "241be9c2ca430e69325ccca2ba22f8fc5bb2ae10",
-  "presentation_updated_at_utc": "2026-11-09",
-  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements."
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "audited_at_utc": "2026-11-22T10:58:33Z",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "previous_report": "https://github.com/agentydragon/ducktape/tree/62929b186a1d70565121638ad2ad4aa187bd2ba2/fixture-model-audit",
+  "summary": "Six maintenance and coverage findings, one retired App configuration projection finding, and a generated-decoder prototype.",
+  "files": {
+    "index.html": {
+      "sha256": "78a820199926b738220162b451159e80278e03b2487ada722095bcb8d91a9a44"
+    },
+    "evidence.json": {
+      "sha256": "a813ad126c0f3b018c34d7f1574b8614c5dc55d4027af86293eec9e0127171b3"
+    },
+    "generated-model-catalog-probe.patch": {
+      "sha256": "7d8c530d107854f410c39ed61b7ade35714c45533c56e2b7b4b89390be4dba28"
+    }
+  },
+  "validation_invocations": [
+    "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06",
+    "https://app.buildbuddy.io/invocation/c7d6a31a-e8a9-46cf-be14-92643d8b833d"
+  ]
 }

@@ -1,0 +1,68 @@
+diff --git a/agentplane/app/testing/client.py b/agentplane/app/testing/client.py
+index f62f48b54d..7804a317ce 100644
+--- a/agentplane/app/testing/client.py
++++ b/agentplane/app/testing/client.py
+@@ -97,17 +97,21 @@ class Client:
+     async def models(self) -> ModelCatalog:
+         """Which models each harness may be opened with, as this deployment is configured."""
+         response = await self._json("GET", "/upstream/app-config/v1/models")
++        parsed = ParseDict(response, app_service_pb2.ListModelsResponse())
+         return ModelCatalog.model_validate(
+             {
+                 "models": [
+                     {
+-                        "model": model["model"],
+-                        "display_name": model["displayName"],
+-                        "reasoning_efforts": model["reasoningEfforts"],
++                        "model": model.model,
++                        "display_name": model.display_name,
++                        "reasoning_efforts": list(model.reasoning_efforts),
+                     }
+-                    for model in response["models"]
++                    for model in parsed.models
+                 ],
+-                "harnesses": {offer["harness"]: offer["models"] for offer in response["harnesses"]},
++                "harnesses": {
++                    session_pb2.Harness.Name(offer.harness): list(offer.models)
++                    for offer in parsed.harnesses
++                },
+             }
+         )
+
+diff --git a/agentplane/app/testing/test_client.py b/agentplane/app/testing/test_client.py
+index 194a2af5b1..800381b7c5 100644
+--- a/agentplane/app/testing/test_client.py
++++ b/agentplane/app/testing/test_client.py
+@@ -364,6 +364,32 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
+     assert not preset.session_defaults.HasField("reasoning_effort")
+
+
++@pytest.mark.parametrize(
++    ("body", "expected_error"),
++    [
++        ({"models": [{"model": "route", "displayName": "Route"}]}, None),
++        ({"models": [{"model": "route"}, {"model": "route"}]}, "duplicate model ids"),
++        ({"harnesses": [{"harness": 9999}]}, "9999"),
++        (
++            {"harnesses": [{"harness": "HARNESS_CODEX", "models": ["missing"]}]},
++            "outside ModelCatalog.models",
++        ),
++    ],
++)
++async def test_generated_model_catalog_probe(body: dict[str, object], expected_error: str | None) -> None:
++    async def models(_after: int, writer: asyncio.StreamWriter) -> None:
++        await _respond(writer, "200 OK", json.dumps(body).encode(), "application/json")
++
++    async with _app(models) as (client, _):
++        if expected_error is not None:
++            with pytest.raises(ValueError, match=expected_error):
++                await client.models()
++        else:
++            catalog = await client.models()
++            assert catalog.models[0].reasoning_efforts == []
++            assert catalog.harnesses == {}
++
++
+ async def test_runtime_diagnostics_decodes_proto_json_and_preserves_optional_and_64_bit_fields() -> None:
+     async def status(_after: int, writer: asyncio.StreamWriter) -> None:
+         await _respond(

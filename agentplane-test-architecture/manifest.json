@@ -1,142 +1,22 @@
 {
-  "source_devel_commit": "a4c8ee98430d365c237954bde3ca3767dfa844bd",
-  "implementation_head_commit": "82cac3a7dc4b6324565f8a59568455d3a59598dc",
-  "measured_implementation_commit": "49d109ff43eee720bfd84548330131bbbea0bd8d",
-  "audited_at_utc": "2026-11-15T13:35:35.634811+00:00",
-  "published_at_utc": null,
-  "scope": "Current experimental branch after all four native architecture ports merged. Remaining manual harness and records only; historical cohorts retained with original sources. No new performance trial or fleet window.",
-  "publication_status": "Prepared for a gh-pages PR; deployment follows merge.",
-  "source_pr": "https://github.com/agentydragon/ducktape/pull/16489",
-  "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-  "performance_goal_qualified": false,
-  "publication_base_gh_pages_commit": "924d44650a70a6a80171109f17373d32176fc135",
-  "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/924d44650a70a6a80171109f17373d32176fc135/agentplane-test-architecture/index.html",
-    "experiments": "https://github.com/agentydragon/ducktape/blob/82cac3a7dc4b6324565f8a59568455d3a59598dc/agentplane/debug/2026_11_15_after_native_ports.md"
-  },
-  "required_checks_passed": true,
-  "report_sha256": "ee0866918e6835ed134a7b77995f327d1aa3dbd2bd51f307ad0220ecccfc4315",
-  "evidence_sha256": "ea37a99140ee4e6c8fb9c867c7f77e4b3d660a619efcef83d6f95419182f31d4",
-  "root_navigation_sha256": "5149dcb282c14cc76046f5c1f7205f331b6b7ca573321e350cb6e266f0714ff2",
-  "shared_assets_sha256": {
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
-  },
-  "measured_source_archive_tag": "https://github.com/agentydragon/ducktape/tree/agentplane-pod-concurrency-20261115",
-  "final_head_ci": {
-    "source_head": "82cac3a7dc4b6324565f8a59568455d3a59598dc",
-    "status": "SUCCESS",
-    "observed_at_utc": "2026-11-15T13:35:35.634811+00:00",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43719272041",
-    "ordinary_selection": "No targets affected; Bazel test/build skipped",
-    "precommit_status": "SUCCESS",
-    "artifact_import_status": "SUCCESS",
-    "visual_review": "NEUTRAL"
-  },
-  "devel_port_source_commit": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
-  "devel_port_base_commit": "4cf5c0fc70082586047be40bc574ba6c755b0999",
-  "devel_port_window": {
-    "start": "2026-11-15T10:32:34.304589Z",
-    "end": "2026-11-15T10:56:28.445669Z"
-  },
-  "devel_port_ci": {
-    "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
-    "tested_merge": "b65c1647f53e3629d0e0b40c1cbab3dacaa70914",
-    "merge_parents": [
-      "1ac357923030bb5c2e38d5f92f3541c23a0a61e6",
-      "d46827cb676f6e2c09044f6a3fce4a465440df0f"
-    ],
-    "status": "SUCCESS",
-    "verified_at_utc": "2026-11-15T10:45:01.119562+00:00",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43704519240",
-    "invocation": "a0a9e4a0-7739-5260-80eb-02ccaf8f9183",
-    "fresh_junit_cases": 22,
-    "failures": 0,
-    "errors": 0,
-    "skipped": 0,
-    "observed_peak_cases": 4,
-    "cleanup": "complete",
-    "observed_case_limit_env": null,
-    "default_used": 4,
-    "precommit": "https://github.com/agentydragon/ducktape/actions/runs/43704519215",
-    "artifact_import": "https://github.com/agentydragon/ducktape/actions/runs/43704519202",
-    "scope": "Independent exact-head PR acceptance, not one of the four matched performance actions."
-  },
-  "devel_port_status": {
-    "pr": 16659,
-    "commit": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
-    "merged_at_utc": "2026-11-15T11:01:01Z"
-  },
-  "merged_architecture_ports": [
-    {
-      "pr": 16675,
-      "label": "Explicit App fixtures",
-      "head": "e874dc89e2fbc0b4a17614123a316d23e68270d6",
-      "merge": "ffdb0b275b1ce465d25732b2b2948c315150b603",
-      "invocation": "8d7d28e3-d13a-5de8-9285-7acebb5da064",
-      "result": "Required CI passed; merged."
+  "report": "agentplane-test-architecture",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "audited_at_utc": "2026-11-22T10:58:33Z",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "previous_report": "https://github.com/agentydragon/ducktape/tree/62929b186a1d70565121638ad2ad4aa187bd2ba2/agentplane-test-architecture",
+  "summary": "Current required suite and fixture architecture, scoped Bazel dependency query, and historical timing cohorts at original source pins.",
+  "files": {
+    "index.html": {
+      "sha256": "7fe5d222d5b3a7162e30f8704b98f7c4ae99efcb65e1e09626bc77321a0d7ff1"
     },
-    {
-      "pr": 16689,
-      "label": "SVID native clients and ownership",
-      "head": "1183f536f75b93de8fa123adc34dc28f2fa2b37c",
-      "merge": "bb449861d8ef2f4fb6bb57569631dceaa78ece2a",
-      "invocation": "bada925e-ab64-5e59-9778-73078ff2b8f8",
-      "result": "Required CI passed, including VM and all four Bridge shards; merged."
-    },
-    {
-      "pr": 16695,
-      "label": "Dependency-based suite partitions",
-      "head": "33dd5b631759b50f1c7f99ff1b952f4ffc9f3646",
-      "merge": "94791bfbb9f0bb8b30d1552621e5423c58ea2976",
-      "invocation": "8dc2680b-c7af-5fbd-abff-e37be13f988b",
-      "result": "All 14 selected test targets passed. JUnit inventories: Pod 16+7; MCP/central 1+3+4. Merged."
-    },
-    {
-      "pr": 16700,
-      "label": "Validated shared trust Pod",
-      "head": "e159531320921ae562ce76d0c3513437cf90c669",
-      "merge": "a4c8ee98430d365c237954bde3ca3767dfa844bd",
-      "invocation": "f86aeaa8-7807-56c6-97b2-8333148298bf",
-      "result": "Seven native Pod cases executed remotely, all passed with no errors/failures/skips. Pool unit check passed from remote cache; merged."
+    "evidence.json": {
+      "sha256": "09cdf8b87830acd1eb8d68d216ae03b6a87be4cf5b56caa66762d44cbbf5a273"
     }
-  ],
-  "visual_validation": {
-    "invocation": "https://app.buildbuddy.io/invocation/9d4428d8-615b-4595-87ac-4e1e8548249d",
-    "result": "PASSED; two real-browser cases; all eight captures manually reviewed",
-    "viewport_widths_css_px": [1440, 390],
-    "coverage": "Real pinned CDN assets, desktop/mobile initial light/dark themes and live preference changes, navigation, source pins and green validation badge, merged-port and remaining-diff tables, retained benchmark tables, and root card. No document horizontal overflow.",
-    "browser_harness_source_commit": "82cac3a7dc4b6324565f8a59568455d3a59598dc",
-    "source_overlay": "Temporary report preview package and frozen reviewed site archive only; no runtime or performance changes.",
-    "preview_archive_sha256": "5fc88e03fe50dabccab76c3ca282795c0a8816633c0b22313903f9dfa186250a",
-    "capture_sha256": [
-      "bde650f8c6f68926cef4787c2924c189feba81914105c0d1148c02c3f8eb63fa",
-      "a900e4e4c7c1a0a5fca0a26fd8486e93b8091c5151236d3976b2002c5f1c8357",
-      "017d138686c9dad4948c530af2d6eb4bc57b0864267dff6c59c36c00256263e6",
-      "f3bde102ba19d6038c5dbc462f22385c20da46638006ed135a7fcb155752edad",
-      "78569b9103a56efd3de454a25364f45332d484922993f0a9cc2c187e8fa3537a",
-      "733ce15bc2c8e365c9729c6241b4826522912efb41bbc332a2b685332e52e93c",
-      "84208d647f6c61fb90130ad8fee464d84ee04ecc807e7790e5b5ea612e056542",
-      "78a7652d6e0bcbc72f9ce170b609f8bc403f8c9dbab8b1da5f787ba68dd52c81"
-    ],
-    "rendered_assets_sha256": {
-      "agentplane-test-architecture/index.html": "ee0866918e6835ed134a7b77995f327d1aa3dbd2bd51f307ad0220ecccfc4315",
-      "agentplane-test-architecture/evidence.json": "ea37a99140ee4e6c8fb9c867c7f77e4b3d660a619efcef83d6f95419182f31d4",
-      "index.html": "5149dcb282c14cc76046f5c1f7205f331b6b7ca573321e350cb6e266f0714ff2",
-      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
-    },
-    "manifest_post_capture_changes": "Visual proof metadata only; rendered audit stamp, source pins and status are unchanged."
   },
-  "manual_collection": {
-    "invocation": "b0393be4-339e-49d0-8efe-5d9f470bdc44",
-    "source_head": "82cac3a7dc4b6324565f8a59568455d3a59598dc",
-    "unsharded": 16,
-    "a": 7,
-    "b": 9,
-    "union_matches": true,
-    "disjoint": true,
-    "runtime_proxy_witness_in_b": true,
-    "mode": "collection only; acceptance bodies not executed"
-  }
+  "validation_invocations": [
+    "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06",
+    "https://app.buildbuddy.io/invocation/c3dc140a-6837-4b59-80f0-030b9229c7a5"
+  ],
+  "historical_manifest": "https://github.com/agentydragon/ducktape/blob/62929b186a1d70565121638ad2ad4aa187bd2ba2/agentplane-test-architecture/manifest.json",
+  "performance_goal_qualified": false
 }

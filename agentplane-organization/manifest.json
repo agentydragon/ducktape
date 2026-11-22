@@ -1,0 +1,22 @@
+{
+  "report": "agentplane-organization",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "audited_at_utc": "2026-11-22T10:58:33Z",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "previous_report": "https://github.com/agentydragon/ducktape/tree/62929b186a1d70565121638ad2ad4aa187bd2ba2/agentplane-organization",
+  "summary": "Complete tracked Go inventory and remaining ownership decisions. The Sessions configuration loader passed a fresh focused check.",
+  "files": {
+    "index.html": {
+      "sha256": "a6acd8e8dd5ed61e1737fbad5e70c46196816d798eb4ede4d725a6300cd1daa3"
+    },
+    "go-files.json": {
+      "sha256": "73f4581cf9b9710b48449374228c64c6e23a2f08cbccfa51113f99b9e93b02ae"
+    },
+    "go-plan.json": {
+      "sha256": "ca8314ac2fb3e1d541ade9205ad37df870a709b7c2824a221e4e8afeb4a75fff"
+    }
+  },
+  "validation_invocations": [
+    "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06"
+  ]
+}

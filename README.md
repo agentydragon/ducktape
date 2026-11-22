@@ -4,10 +4,7 @@
 <https://agentydragon.github.io/ducktape/>. It holds independent, latest-only
 report snapshots. The CI reports are:
 
-- **Agentplane test architecture:** [current branch plan](agentplane-test-architecture/index.html),
-  [fixture ownership](agentplane-test-architecture/index.html#pytest-fixtures),
-  [current evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). All four native architecture ports are merged: explicit App fixtures (#16675), SVID clients (#16689), dependency-based suite partitions (#16695) and validated trust-Pod reuse (#16700). Compares the rebased draft #16489 with devel: only manual comparison targets and experiment records remain. Runtime JUnit confirms Pod 16+7 and MCP/central 1+3+4 case inventories. Historical selector, rejected shard and two/three/four-worker cohorts retain their original source pins. The separate four-worker port #16659 measured 289.2s versus 363.3s at two workers in four matched warm 22-case actions; a 30% complete-feedback improvement remains unqualified.
+- **Agentplane test architecture:** [current required suites](agentplane-test-architecture/index.html), [fixture ownership](agentplane-test-architecture/index.html#pytest-fixtures), [case inventory and evidence](agentplane-test-architecture/evidence.json), [manifest](agentplane-test-architecture/manifest.json). Current Pod coverage spans 15 App scenarios, eight native platform checks and one native workspace replacement. Earlier benchmarks retain their original test inventories and revisions.
 
 - **Bazel target and wiring audit:** [source review](bazel-audit/) and [query results](bazel-audit/evidence.json). All 328 tracked frontend TypeScript files reach the typed-lint group. A simulated package omission drops six.
 
@@ -23,9 +20,9 @@ report snapshots. The CI reports are:
 
 - **Cluster storage (22 November UTC):** [HDD capacity and interventions](storage/index.html). Three OVH HDD pools gained 477 GB of physical allocation in a week. Declared limits exceed physical capacity on two pools. Current interventions cover the ClickHouse and SeaweedFS sizing model, cache discard and Langfuse archiving. [Current evidence](storage/current-evidence.json) · [Earlier analysis](storage/index.html#historical-analysis) · [Manifest](storage/manifest.json).
 - **Cluster VPA (22 November UTC):** [Coverage and rollout checks](vpa/index.html). 215 of 231 active controllers have a direct VPA. KubeVirt reconciled a new VMI after leadership changed, Notifications now uses Recreate, and the GitLab Rails capacity gate remains open. [Inventory](vpa/inventory.json) · [Rollout evidence](vpa/rollout-evidence.json) · [Manifest](vpa/manifest.json).
-- **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
-- **Agentplane organization:** [whole-Agentplane current and goal trees](agentplane-organization/index.html#trees) with every tracked Go file's disposition and every package's responsibility, goal owner and rationale. Remaining work only, ordered by certainty: agreed service moves, moves waiting on open service decisions, and deferred contracts; plus the [keep-alive hold design](agentplane-organization/index.html#keep-alive). [Remaining plan](agentplane-organization/go-plan.json); [file ledger](agentplane-organization/go-files.json).
-- **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
+- **Fixture and model audit:** [current findings](fixture-model-audit/index.html), [evidence](fixture-model-audit/evidence.json), [manifest](fixture-model-audit/manifest.json). Priorities are the Python App adapters and a small shared Egress Relay settings corpus.
+- **Agentplane organization:** [current and goal trees](agentplane-organization/index.html#trees), [remaining plan](agentplane-organization/go-plan.json), [complete Go file ledger](agentplane-organization/go-files.json), [manifest](agentplane-organization/manifest.json). Includes the [keep-alive hold proposal](agentplane-organization/index.html#keep-alive).
+- **Agentplane protocol shapes:** [current findings](agentplane-protocol-shapes/index.html), [evidence](agentplane-protocol-shapes/evidence.json), [manifest](agentplane-protocol-shapes/manifest.json). Session override presence and a focused settings comparison are the priority.
 
 Each CI refresh replaces its own directory's `index.html`, `evidence.json`,
 `manifest.json`, and optional `attribution.json`, through a PR against `gh-pages`.

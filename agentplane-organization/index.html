@@ -364,11 +364,14 @@
             <${Anchor} href="../">${"All reports"}<//>
             <${Title} order=${1}>${"Agentplane: current → goal"}<//>
             <${Text}
-              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. Only remaining work is listed, ordered by certainty: moves following agreed service directions, then the moves that wait on open service decisions, and last deferred contracts, so each file moves once."}<//
+              >${"Review the current and planned owners of every tracked Agentplane Go package. Orchestration retirement depends on child Identity and lifecycle grants. Settings would benefit from a small parity trial. The Notification, Journal and protobuf decisions still gate their moves."}<//
             >
             <${Text} size="sm" c="dimmed"
               >${`${plan.counts.files.toLocaleString()} tracked Go files · ${plan.counts.directories} Go packages · ${plan.components.length} top-level areas · source ${plan.source_sha.slice(0, 10)} · observed ${plan.observed_at_utc}. Counts include every tracked Agentplane Go file, including tests and experiments. Trees also show protocol/browser context; generated Go bindings are not tracked files.`}<//
             >
+            <${Text} size="sm">
+              ${`Since the previous source pin, ${plan.refresh.added_go_files} Go paths were added, ${plan.refresh.removed_go_files} were removed and ${plan.refresh.changed_go_blobs} had changed contents. Native Executor, its compatibility backend and shared configuration decoding now have explicit package owners.`}
+            <//>
             <${Group} component="nav" gap="md"
               ><${Anchor} href="#trees">${"Current and goal trees"}<//
               ><${Anchor} href="#coverage">${"Component decisions"}<//
@@ -494,7 +497,7 @@
                   >${plan.keep_alive.status}<//
                 ><${Text} size="sm" c="dimmed">${plan.keep_alive.steer}<//><//
               >
-              <${Text} size="sm">${"Today: " + plan.keep_alive.today}<//>
+              <${Text} size="sm">${plan.keep_alive.today}<//>
               <${List} spacing="xs" size="sm"
                 >${plan.keep_alive.proposal.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//
               >

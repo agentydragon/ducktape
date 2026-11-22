@@ -1,0 +1,19 @@
+{
+  "report": "agentplane-protocol-shapes",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "audited_at_utc": "2026-11-22T10:58:33Z",
+  "previous_report_commit": "62929b186a1d70565121638ad2ad4aa187bd2ba2",
+  "previous_report": "https://github.com/agentydragon/ducktape/tree/62929b186a1d70565121638ad2ad4aa187bd2ba2/agentplane-protocol-shapes",
+  "summary": "Five contracts rechecked. Includes the Sessions settings key comparison and browser diagnostic union parity screen.",
+  "files": {
+    "index.html": {
+      "sha256": "d606afb053098df337a4a29d70285f6b1b8701362b894957c4b823aa29a46f16"
+    },
+    "evidence.json": {
+      "sha256": "2f84eda85b7a7067d13611482b5443bd7132b9069ee5e273825ed7061c45a957"
+    }
+  },
+  "validation_invocations": [
+    "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06"
+  ]
+}
