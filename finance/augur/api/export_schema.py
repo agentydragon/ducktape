@@ -12,16 +12,13 @@ import json
 
 from finance.augur.api.server import build_app
 from finance.budget.wire import BudgetSummaryCsvRequest
+from util.openapi_schema import register_openapi_model
 
 
 def main() -> None:
     document = build_app(lifespan=None).openapi()
     # The CSV route stays out of path docs; its existing request model still drives frontend types.
-    csv_request_schema = BudgetSummaryCsvRequest.model_json_schema(ref_template="#/components/schemas/{model}")
-    schemas = document["components"]["schemas"]
-    for name, schema in csv_request_schema.pop("$defs", {}).items():
-        schemas.setdefault(name, schema)
-    schemas["BudgetSummaryCsvRequest"] = csv_request_schema
+    register_openapi_model(document, BudgetSummaryCsvRequest)
     print(json.dumps(document, indent=2))
 
 

@@ -6,14 +6,6 @@
       repo-wide) with a ruff rule. The owner prefers agent-instruction text over new lint code,
       so the existing `AGENTS.md` rule may suffice.
 
-## Pydantic definition registration (schema audit C)
-
-Register the supplemental CSV request and WebSocket frame schemas in
-`finance/augur/api/export_schema.py` and `study_casino/export_schema.py` without
-silently keeping or replacing incompatible names in FastAPI's component registry.
-Preserve each owner's schema mode. Verify that emitted references resolve, conflicts
-fail clearly, and frontend typechecks and representative wire payloads pass.
-
 ## Generated Python import indexing (schema audit F)
 
 Derive Gazelle import-to-target mappings from `cdk8s_import` declarations instead of maintaining a
