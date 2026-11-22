@@ -94,16 +94,15 @@ Defer modeling or rewriting `import.meta.url`. Start with the editor prefix spli
 
 Run the structural checks and the CoreJS checker on each complete candidate split. Record how many units move, which splits pass the structural checks, and which receive a CoreJS equivalence certificate under the stated premises. If the retained factory still blocks a whole-split certificate, record that verdict and try other placements or chunks whose certification does not depend on module URLs. Report the first blocker for each unsuccessful probe.
 
-For the next proof milestone use the one-arrow reduction of the authored scroll placement.
-Moving unit 1337 (`Jb`) keeps the editor's 611 public names. Moving 1338 with it adds five.
-The one-arrow placement still has 259 inverted conflicts. Start with the earliest pair,
-unit 5's `Ve(callback)` and unit 1337's closure creation. Resolve the named import and alias
-against the supplied provider AST and prove what executing the wrapper factory does at creation
-time, including which cells it can access. Use the checked result to justify the swap in a
-small linked reproduction. An altered provider that calls the callback eagerly must fail this
-rule even when its filename and export names are identical. Generate both provider bodies,
-import aliases and callback effects in the differential tests. Replay the editor to measure
-which conflicts remain before expanding the rule. [Scroll trial](translation/debug/excalidraw_certificates/README.md#strict-certification-of-the-scroll-module)
+The one-arrow scroll placement moves unit 1337 (`Jb`) and preserves all 611 public editor names.
+Of its 259 structural conflicts, 14 match the linked wrapper creation theorem under its
+runtime premises. These are units 5–18 calling `Ve(callback)`. The linked two-module
+reproduction proves normal-completion equivalence from the actual CoreJS linker for every
+world and fuel bound. In the full editor, establishing the linked factory and its region
+at each crossing remains open. The first of the other 245 pairs is unit 19,
+`Ml = ra(yo())`, crossing `Jb`. This evaluates a loader before calling a second provider
+export. Isolate that loader's initialization effects before extending the checker.
+[Scroll replay and proof scope](translation/debug/excalidraw_certificates/README.md#strict-certification-of-the-scroll-module)
 
 Seven of the editor's eight flat destructuring declarations read keys present in
 four allocation-only object literals. Units 95 (`s6`), 103 (`Ui`), 201 (`I2`)

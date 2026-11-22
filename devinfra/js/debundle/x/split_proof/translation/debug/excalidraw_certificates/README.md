@@ -106,6 +106,24 @@ The import resolves to export `b` of `./chunk-BLPUKQJE.js`. The probe calls that
 provider export with a counting callback. Creating the wrapper calls the callback zero times.
 Loading it twice calls the callback once and returns the same exports object both times.
 The probe runs the provider in Node. It does not execute the complete editor.
+
+The pair checker reads the consumer and provider source through the shared Acorn frontend.
+It resolves `Ve` through export `b` to the provider's local `n`. Calling this factory creates
+a closure over its parameters. A callback can read editor bindings when eventually invoked.
+The CoreJS proof covers wrapper creation and the independent arrow declaration from a common
+linked environment. Both orders reach exactly the same successful final states. A separate
+two-module reproduction discharges the alias and allocation-region premises with the CoreJS
+linker. [Linked reproduction](../../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
+
+The single-arrow replay passes the plan's full list of 259 structural conflicts to
+`lowersplit --check-wrapper-swaps`. Units 5–18 match the rule, leaving 245 outside it.
+The first is `Ml = ra(yo())` at unit 19. Its argument invokes a loader, and `ra` resolves to
+export `c`, a namespace conversion helper. In the complete editor the 14 matches are
+conditional on the linked factory still occupying the provider cell at the crossing, the
+declarations owning their respective regions, and the two orders preserving the captured
+environment. The structural count remains 259 and strict certification still rejects the
+first import. The replay writes the pair results to `wrapper-conflicts.json`.
+[Pinned replay](https://app.buildbuddy.io/invocation/49f85945-5d0b-4063-b152-3c3cafb78d14)
 The test publishes `import-boundary.json` and `entry-exports.json`.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 

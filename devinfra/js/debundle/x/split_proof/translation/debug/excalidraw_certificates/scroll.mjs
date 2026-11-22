@@ -84,10 +84,7 @@ assert.equal(loaded.count, 1);
 assert.equal(load(), loaded);
 assert.equal(calls, 1);
 report.wrapper = { local: firstInit.callee.name, provider, exported, callsOnCreation: 0, callsAfterTwoLoads: calls };
-writeFileSync(
-  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "import-boundary.json"),
-  JSON.stringify(report, null, 2)
-);
+
 const ast = path.join(process.env.TEST_TMPDIR, "editor.json");
 writeFileSync(ast, JSON.stringify(program));
 const spec = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-spec.json");
@@ -143,9 +140,9 @@ for (const moved of [selected, selected.slice(0, 1)]) {
   const candidate = path.join(process.env.TEST_TMPDIR, "candidate-" + tag + ".json");
   writeFileSync(candidate, JSON.stringify(placement(moved)));
   const plan = path.join(process.env.TEST_TMPDIR, "plan-" + tag + ".json");
-  const render = spawnSync(process.env.LOWERSPLIT, [ast, candidate, diagnostic, "--force", "--plan", plan], {
-    encoding: "utf8",
-  });
+  const args = [ast, candidate, diagnostic, "--force", "--plan", plan];
+  if (moved.length === 1) args.push("--all-conflicts");
+  const render = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
   if (render.error) throw render.error;
   assert([0, 1].includes(render.status), render.stdout + render.stderr);
   const output = parseModule(readFileSync(path.join(diagnostic, entry), "utf8"), acorn.parse);
@@ -170,4 +167,73 @@ writeFileSync(
 const single = surfaces[1];
 assert.deepEqual(single.extra, []);
 assert.deepEqual(single.missing, []);
-console.log(JSON.stringify({ firstBody: report.firstBody, selectedUnits: report.selectedUnits, surfaces }));
+const conflicts = single.orderConflicts.pairs;
+assert(Array.isArray(conflicts), "single-arrow plan must include all structural conflicts");
+assert.equal(conflicts.length, single.orderConflicts.count);
+assert.equal(conflicts.length, 259, "reinspect the single-arrow conflict set after an Excalidraw bundle update");
+assert(
+  conflicts.every((pair) => pair[1] === 1337),
+  "every inversion should cross moved statement #1337"
+);
+assert(conflicts.some(([earlier, later]) => earlier === firstUnit && later === 1337));
+
+// Check the exact inversion set emitted by the real placement plan, rather than
+// a guessed ordinal range. The report identifies which conflicts the wrapper
+// theorem recognizes and the first one that needs a different rule.
+const pairsFile = path.join(process.env.TEST_TMPDIR, "wrapper-conflicts.json");
+const wrapperPairs = [...conflicts, [firstUnit, 1338]];
+writeFileSync(pairsFile, JSON.stringify(wrapperPairs));
+const wrapperCheck = spawnSync(
+  process.env.LOWERSPLIT,
+  ["--check-wrapper-swaps", path.join(chunks, "editor.js"), path.join(chunks, provider), pairsFile],
+  { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+);
+if (wrapperCheck.error) throw wrapperCheck.error;
+assert.equal(wrapperCheck.status, 0, wrapperCheck.stdout + wrapperCheck.stderr);
+const wrapperReport = JSON.parse(wrapperCheck.stdout.trim());
+assert.equal(wrapperReport.checked.length, wrapperPairs.length);
+assert.deepEqual(
+  wrapperReport.checked.map(({ earlier, later }) => [earlier, later]),
+  wrapperPairs,
+  "the batch checker must report exactly the plan's structural inversion pairs"
+);
+const checkedConflicts = wrapperReport.checked.slice(0, conflicts.length);
+const recognized = checkedConflicts.filter(({ status }) => status === "conditional-normal");
+const unsupportedPairs = checkedConflicts.filter(({ status }) => status === "unsupported");
+const positiveControl = checkedConflicts.find(({ earlier, later }) => earlier === firstUnit && later === 1337);
+const negativeControl = wrapperReport.checked.at(-1);
+assert.equal(positiveControl?.status, "conditional-normal");
+assert.equal(negativeControl.status, "unsupported");
+assert.equal(recognized.length + unsupportedPairs.length, conflicts.length);
+assert.deepEqual(
+  recognized.map(({ earlier, later }) => [earlier, later]),
+  Array.from({ length: 14 }, (_, offset) => [offset + 5, 1337]),
+  "the rule should cover the fourteen lazy-wrapper declarations at units 5–18"
+);
+assert.equal(unsupportedPairs.length, 245);
+assert.deepEqual(
+  [unsupportedPairs[0]?.earlier, unsupportedPairs[0]?.later],
+  [19, 1337],
+  "unit 19 should be the first conflict the wrapper rule cannot justify"
+);
+report.wrapper.structuralConflictPairs = conflicts.length;
+report.wrapper.conditionalNormalPairs = recognized.length;
+report.wrapper.unsupportedPairs = unsupportedPairs.length;
+report.wrapper.firstRecognizedPair = recognized[0] ?? null;
+report.wrapper.firstUnsupportedPair = unsupportedPairs[0] ?? null;
+writeFileSync(
+  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "wrapper-conflicts.json"),
+  JSON.stringify({ summary: report.wrapper, checkedConflicts, negativeControl }, null, 2)
+);
+writeFileSync(
+  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "import-boundary.json"),
+  JSON.stringify(report, null, 2)
+);
+console.log(
+  JSON.stringify({
+    firstBody: report.firstBody,
+    selectedUnits: report.selectedUnits,
+    wrapper: report.wrapper,
+    surfaces,
+  })
+);

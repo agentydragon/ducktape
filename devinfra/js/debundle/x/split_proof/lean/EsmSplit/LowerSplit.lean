@@ -7,6 +7,7 @@ import EsmSplit.CoreJS.DeclarationArtifacts
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.Move
+import EsmSplit.CoreJS.WrapperInput
 import EsmSplit.CoreJS.HeritageCertificate
 import Std.Data.HashMap
 import Std.Data.HashSet
@@ -14,7 +15,7 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--move-report <file>] [--force]
+    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 `bundle.json` is acorn's ESTree with trusted scope/literal metadata (`lowering/dump.mjs`). Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
@@ -23,6 +24,9 @@ The bundle may import from outside modules; those are loaded first, in their ord
 `--force` writes the modules even when a check rejects the split, to see what Node does with them.
 `--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
+With `--all-conflicts`, the plan includes every inverted structural conflict as an [earlier, later] pair.
+`lowersplit --check-wrapper-swaps consumer.js provider.js pairs.json` reparses both modules and
+reports conditional normal-completion evidence for individual pairs and the remaining premises.
 Lean lowers supported annotated ASTs directly to CoreJS. For bundles outside that subset,
 `--corejs` supplies the external lowering. The verdict reports which input it used.
 `--move-report` writes diagnostic statement categories and up to 64 failing inverted pairs in original unit IDs.
@@ -110,31 +114,6 @@ def replicateBundle (K : Nat) (B : Bundle) : Bundle :=
     let r (n : String) := if declared.contains n then s!"{n}${k}" else n
     B.map fun s => { s with defs := s.defs.map r, eager := s.eager.map r, lazy := s.lazy.map r,
                             exports := s.exports.map fun (p, l) => (s!"{p}${k}", l.map r) }
-
-/-- Why a statement is outside what the model covers, if it is.
-
-- A top-level `await` (an `await`, a `for await` or an `await using` outside every function): module evaluation is no
-  longer one sequence, since a module that is imported later can run before the awaiting one finishes. `Plan.visit`
-  does not model that.
-- A top-level `using`: its disposal runs when the module ends, which no statement stands for.
-- A direct `eval`, anywhere: the code it runs reaches the bindings around it by their spelling, so a split can part it
-  from a name that no statement mentions. An `eval` that is shadowed or optional is refused with it. -/
-partial def outsideModel (inFn : Bool) (j : Json) : Option String :=
-  let below (inFn : Bool) := (Lower.children j).findSome? (outsideModel inFn)
-  match Lower.typ j with
-  | "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression" => below true
-  | "AwaitExpression" => if inFn then below inFn else some "a top-level `await`"
-  | "ForOfStatement" => if Lower.flag j "await" && !inFn then some "a top-level `await`" else below inFn
-  | "VariableDeclaration" =>
-    let kind := Lower.str (Lower.fld j "kind")
-    if kind == "await using" && !inFn then some "a top-level `await`"
-    else if kind == "using" && !inFn then some "a top-level `using`"
-    else below inFn
-  | "CallExpression" =>
-    let callee := Lower.fld j "callee"
-    if Lower.typ callee == "Identifier" && Lower.str (Lower.fld callee "name") == "eval" then some "a direct `eval`"
-    else below inFn
-  | _ => below inFn
 
 /-- The footprints `lower` printed for this bundle (one JSON object per statement). The analysis takes minutes on a
 large bundle and does not depend on the split, so a run of many splits computes it once. The scan of the statements is
@@ -485,11 +464,13 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath?
   let force := args.contains "--force"
-  let args := args.filter (· != "--force")
+  let allConflicts := args.contains "--all-conflicts"
+  if allConflicts && planPath?.isNone then throw (IO.userError "--all-conflicts requires --plan")
+  let args := args.filter fun a => a != "--force" && a != "--all-conflicts"
   let (bundlePath, specPath, out, leanOut?) ← match args with
     | [b, s, o] => pure (b, s, o, none)
     | [b, s, o, "--lean", l] => pure (b, s, o, some l)
-    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
+    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
   let tStart ← IO.monoMsNow
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
@@ -509,7 +490,7 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
       IO.eprintln "unsupported top-level statement: ExportAllDeclaration"; return 3
     if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
       IO.eprintln "unsupported top-level statement: an ImportDeclaration whose source has no `lit` (not a dump of `dump.mjs`)"; return 3
-    if let some what := outsideModel false s then
+    if let some what := Lower.outsideModel false s then
       IO.eprintln s!"unsupported: {what}"; return 3
   let units := Effects.footprintUnits asts
   let exported := units.toList.flatMap Lower.exportedBindings
@@ -588,12 +569,15 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
     | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
     | .ok programs => printModules programs out work input
     if let some planPath := planPath? then
-      let (count, sample, _) := if ok then (0, #[], #[]) else conflictInversions B P
+      let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P allConflicts
+      let pairs := if allConflicts then
+          [("pairs", toJson (every.map fun (later, earlier, _) => #[earlier, later]))]
+        else []
       let examples := sample.map fun (later, earlier) =>
         Json.mkObj [("earlier", toJson earlier), ("later", toJson later)]
       IO.FS.writeFile planPath (Json.mkObj [
         ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
-        ("orderConflicts", Json.mkObj [("count", toJson count), ("examples", Json.arr examples)]),
+        ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
         ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
     let _ ← lap "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
@@ -603,7 +587,39 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
 private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
   IO.FS.withTempDir fun work => runInDir work required checkOnly args
 
+/-- Check selected source-order inversions against the linked wrapper rule. Each entry
+reports the scope of the pair theorem independently of the ordinary split verdict. -/
+private def checkWrapperSwaps (consumer provider pairs : System.FilePath) : IO UInt32 :=
+  IO.FS.withTempDir fun work => do
+    let input := work / "linked.json"
+    javascript #["--linked-input"] #[consumer, provider, input]
+    let modules ← readJson input
+    let importer ← IO.ofExcept (modules.getObjVal? "consumer")
+    let exporter ← IO.ofExcept (modules.getObjVal? "provider")
+    let specifier ← IO.ofExcept (modules.getObjValAs? String "specifier")
+    let indices : Array (Array Nat) ← IO.ofExcept (fromJson? (← readJson pairs))
+    let rule := EsmSplit.prepareWrapperSwaps importer exporter specifier
+    let mut checked := #[]
+    for pair in indices do
+      let #[earlier, later] := pair | throw (IO.userError "expected [earlier,later] unit indices")
+      let result := rule >>= fun check => check earlier later
+      let fields := match result with
+        | .ok shape => [("status", toJson "conditional-normal"), ("import", toJson shape.importAlias),
+          ("export", toJson shape.providerExport), ("providerBinding", toJson shape.providerBinding),
+          ("resultBinding", toJson shape.resultBinding), ("movedBinding", toJson shape.movedBinding)]
+        | .error why => [("status", toJson "unsupported"), ("reason", toJson why)]
+      checked := checked.push (Json.mkObj ([("earlier", toJson earlier), ("later", toJson later)] ++ fields))
+    IO.println (Json.mkObj [("checked", Json.arr checked), ("scope", toJson "source-pairs"),
+      ("provider", toJson specifier), ("premises", toJson [
+        "The named import resolves to the initialized provider cell and factory closure at this crossing.",
+        "Each declaration writes its own unit region, separate from the provider cell and object.",
+        "Both orders use the same binding environment and deferred code."
+      ])]).compress
+    return 0
+
 def main (args : List String) : IO UInt32 := do
+  if let ["--check-wrapper-swaps", consumer, provider, pairs] := args then
+    return ← checkWrapperSwaps consumer provider pairs
   if !args.contains "--require" then
     return ← runSplitter none false args
   let (level?, args) := Effects.takeFlag "--require" args
