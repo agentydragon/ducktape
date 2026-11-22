@@ -2493,6 +2493,7 @@ flowchart LR
     SESSION_LIFETIME_IMPLEMENTATION[Blocked: implement reviewed Session and inbox lifetimes]
     CENTRAL_SESSION_NOTIFICATIONS[Blocked: environment-independent Session inbox delivery]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
+    COMMAND_ADMISSION_REFUSAL_DESIGN[Decision: authoritative command admission refusals]
     SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
@@ -3107,6 +3108,36 @@ boundary; central-Session authority remains separate. The
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
 fencing questions remain applicable. Exit: a reviewed authority and race contract for
 `DELIVERY_DESTINATION_CONTRACT`; no new principal model is selected by this node.
+
+### `COMMAND_ADMISSION_REFUSAL_DESIGN` — distinguish refusal from unknown admission
+
+**Decision; unscheduled.** Dispatcher currently treats a terminal error from a delivery attempt as
+`UNKNOWN`: the error may describe that attempt while an earlier attempt with the same command ID
+could still be admitted. The November 2026 staging model-switch incident produced ten such receipts;
+the sampler journal and traces showed those particular commands were refused before admission, but
+the stored RPC errors alone do not establish that for arbitrary commands.
+
+**Recommendation for review:** let the admission authority durably decide admission or refusal for
+the exact Session, command ID and original command. Under its admission lock, return an existing
+admission or refusal before evaluating current policy; reject the same ID with different content.
+Persist a terminal refusal before returning a typed non-OK RPC detail, so old Dispatcher clients
+remain conservative. A retry after configuration repair uses a new command ID. Start with selected
+central-sampler validation failures; decide separately which native Runtime refusals have equivalent
+journal authority. Keep transient errors, ambiguous commits and bare RPC failures unknown.
+
+The decision must fence delayed and mixed-version writers: a refusal is not proof if an earlier
+request can later admit the ID. Review storage enforcement and rollback, decision retention, and how
+Dispatcher establishes continuity of the original admission ledger across placement changes or
+restores. Preserve an existing admission and distinguish journal acceptance from completed effects.
+For historical `UNKNOWN` receipts, review reconciliation using exact positive evidence and, if
+appropriate, an atomic no-delivery closure against late arrivals; a missing record or error string
+alone is not proof. Preserve the original reason and condition any receipt update on its revision.
+
+**Question for review:** adopt durable per-command refusals and the proposed typed error contract,
+or choose another receiver-owned mechanism that provides the same late-arrival and rollback proof?
+**Exit:** a reviewed contract and implementation/rollout boundaries; cover the race where a refusal
+wins before a delayed earlier attempt, the reverse admission-wins case, lost replies, conflicting
+payloads, ambiguous commits, mixed writers and changed admission authority.
 
 ### `SESSION_DELETION_FENCE` — prove and enforce the Session deletion fence
 
