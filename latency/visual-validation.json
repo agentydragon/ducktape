@@ -1,36 +1,36 @@
 {
-  "invocation": "b3aaed49-f260-497c-b72b-6427cd50200a",
-  "invocation_url": "https://app.buildbuddy.io/invocation/b3aaed49-f260-497c-b72b-6427cd50200a",
-  "validated_at_utc": "2026-11-22T04:07:55.715118+00:00",
+  "invocation": "48a68b41-3abb-4c94-8f5e-6ea067291e3d",
+  "invocation_url": "https://app.buildbuddy.io/invocation/48a68b41-3abb-4c94-8f5e-6ea067291e3d",
+  "validated_at_utc": "2026-11-22T04:20:10.135329+00:00",
   "target": "//debug/ci_feedback_preview:preview_test",
   "checks": [
-    "RBE Chromium at 1440 and 390 CSS pixels, light and dark, live color preference switching, actual CDN response, no page or request errors, both worker timelines and their evidence links, daily disclosure and root navigation."
+    "RBE Chromium at 1440 and 390 CSS pixels, light and dark, live color preference switching, actual CDN response, no page or request errors, both worker timelines, the retention estimate and their evidence links, daily disclosure and root navigation."
   ],
   "screenshot_sha256": {
-    "light-1440-kvm-runner-dispatch.png": "0df7b1aa29d079633ef061072a6c0b99ac00d6102c03661ff74dfca5faf213e0",
+    "light-1440-kvm-runner-dispatch.png": "70e6b9f97c1e01edb711f00cd5183161978ebd72b5923674fe6d3b143fff88d5",
     "light-1440-change-class.png": "44f7adeb05cfc7cb4839e33953b1334ac03b4beb658ab572bcc7edfd07ce2c22",
-    "dark-390-kvm-runner-dispatch.png": "9764852edcc3910584a0708a089983d53448d14066b7fc8fbb82fb998b0fc396",
+    "dark-390-kvm-runner-dispatch.png": "59635cc689ef46a87ffbdecd058f4dcdac4f20e0566eecbdce9e2124fc851a4b",
     "light-1440-weekly.png": "d5b1aa22102fa526f393810b6cda0b6ec333463598e4151e6f727b7e800b7d84",
-    "dark-390-shard-replay.png": "fa1080015ffe2442a2c22b2a8a7af976d1a4a12abfba8c9d67392eb6bd858020",
+    "dark-390-shard-replay.png": "796ad494fb4edce811d0b969d4509c43ca2f3f484ac33ca526fe06aabf4d7949",
     "dark-390-weekly.png": "7a04388a0245d4351eb03e3bd4009e95f7f546e31e397b8c2d970a4923031704",
-    "dark-1440-kvm-runner-dispatch.png": "de3bb92d821c45f6d6f0b6eac246b71a4f45c1da146d8f2ee2a41a7ab271bc31",
+    "dark-1440-kvm-runner-dispatch.png": "978d54dd00aaf2a6f952e63ce6f798cc1714938f6e05147116c066f23423191c",
     "dark-1440-change-class.png": "00732b72d87724620889b71f11eedc51bde3e0f681a9896199ce8ef2a21a8848",
     "light-1440-shard-replay.png": "65c0fb4f82f19fd390e123cff18614d76e7ccfbf8f1aa64cae3951aff1df1092",
     "dark-1440-shard-replay.png": "76a524d509cf7315674fc07eaaeda636774daf4fd1fb6140582b9eb14e047639",
-    "light-390-kvm-runner-dispatch.png": "222ede9e101ce35702d853bcbe5d02562e6a144e843488e424fb29bc2ed687b5",
+    "light-390-kvm-runner-dispatch.png": "bfa16b4c540b4829c2aa10c8b104bbf5e56827f9631061c385a107cde85f72c1",
     "dark-390-change-class.png": "a68d47c2317ca20bfdcd402a3e0a39b8ad14c3a5a9e04b7b9341889d29c6b4b1",
     "light-390-weekly.png": "0432aedb5338d0c4c04845ae3b0c64b5867b7722351cba5f751ea1eac753760f",
     "dark-1440-runner-bootstrap.png": "3f93e2f5a7974c89886b91f60bbe05806b1e09deee3e49307fd2ef16ad6fb0a1",
     "dark-1440-weekly.png": "ffc48e48e000e9589d4e867d9dfdf0552f3acb2a8a9dda6cf51bbb1062c57da5",
     "light-1440-runner-bootstrap.png": "a5ffc1851e288d64855335327c8213bd62ae821769eb9f0a8400e5c77eaedaea",
-    "light-390-shard-replay.png": "e71d8548312a7444d4db45b03e5a26d8bf3c2aef92251b7390d9f124858a1522",
-    "light-390-runner-bootstrap.png": "dff81b20829c01c1a19aa6336a3086618e37ad1c3be1562f41cc88be0235d2af",
+    "light-390-shard-replay.png": "2c905c6ccd5bda252103935dffdf21db1206294a925eb92eda5de6a66bc795f0",
+    "light-390-runner-bootstrap.png": "ac5e80390aceaf3fbd387b28ed26e599c530ef6f66d48fbdcc3924ec82643143",
     "light-390-change-class.png": "b865511b55e53c6ea730ca8cad6361ab9c286a8f7a1b59ea2ae836c35845b51e",
-    "dark-390-runner-bootstrap.png": "ea26c1f658ebb558cf2b74f855ec28bb41da03e80598f492dfb45b9b222604f4"
+    "dark-390-runner-bootstrap.png": "a974c647d34abd737c7b4f747a46a88d57f30dabfedfd23ccd6b91dbbe35608f"
   },
   "rendered_sha256": {
-    "latency/index.html": "66346c428c572c2d89fd2b4f344d39eb464e8a17c2ff736906a090fb8a3c70de",
-    "latency/evidence.json": "99c6e70760e96a0a63a5e63c58bde2e2ec1f58b9c40c9831fdac58f35130e3e5",
+    "latency/index.html": "6d5887bd7aeed75312b050cb69d55f472f0ddef9df7dbf82960be31d81ed0af5",
+    "latency/evidence.json": "102db93a4ea8e3f8971f88c15faa2d7e5029a12c9afca62facef837131f0968c",
     "index.html": "9f3b5eea5f9cbfb233038254a44e2009834aa335e819b275c4cab0802a8da967",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
