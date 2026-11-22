@@ -19,12 +19,17 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderersKustomizePatches,
     HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import flux, namespaces, node_scheduling, opentofu_runtime
+from cluster.cdk8s import namespaces, node_scheduling, opentofu_runtime
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     SECRET_NAME as FORGEJO_PULL_SECRET,
     forgejo_images_creds_external_secret,
@@ -227,7 +232,11 @@ def litellm_provider_chart(app: App) -> Chart:
 
 
 def litellm_provider(
-    chart: Chart, directory: RenderedDirectory, crossplane: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    crossplane: Kustomization,
+    external_secrets_operator: Kustomization,
+    forgejo_images: Kustomization,
 ) -> Kustomization:
     """Wait for the LiteLLM provider CRDs and controller before applying managed resources."""
     return flux_kustomization(
@@ -238,11 +247,7 @@ def litellm_provider(
         prune=False,
         wait=True,
         health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, PROVIDER_HEALTH],
-        depends_on=[
-            flux_kustomization_depends_on(crossplane),
-            flux_kustomization_depends_on(external_secrets_operator),
-            KustomizationSpecDependsOn(name=FORGEJO_IMAGES_KUSTOMIZATION_NAME, namespace=flux.NAMESPACE),
-        ],
+        depends_on=flux_kustomization_depends_on_many(crossplane, external_secrets_operator, forgejo_images),
         description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
     )
 

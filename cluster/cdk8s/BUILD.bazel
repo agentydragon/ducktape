@@ -1400,7 +1400,6 @@ py_library(
         ":opentofu_runtime",
         ":vpa_policy",
         "//cluster/cdk8s/external_secrets:single_secret_store",
-        "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/crossplane:provider",
         "//cluster/cdk8s/providers/flux:helmrelease",
