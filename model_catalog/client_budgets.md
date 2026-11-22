@@ -209,7 +209,6 @@ SHA-256 in `devinfra/bazel/artifacts.MODULE.bazel`. By default, select the same 
 as `agentplane_codex_cli_linux_x64`. Divergence is allowed when newer model metadata
 is needed without an app-server protocol upgrade; document the reason beside the pin
 and run `//cluster/cdk8s/agentplane:test_codex_models` against the native CLI.
-Currently the catalog is from 0.171.0 for GPT-6.2, while the native CLI stays at 0.166.0.
 The source JSON is not the CLI-normalized `debug models --bundled` output: the CLI
 adds defaults and transforms fields. Regenerate manifests when changing the source;
 the compatibility test verifies that the pinned runtime accepts the served entries.

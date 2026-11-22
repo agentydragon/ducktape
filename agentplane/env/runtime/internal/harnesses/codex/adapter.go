@@ -352,7 +352,7 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	if err := a.send(ctx, jsonrpc.Request[any]{
 		ID: requestID, Method: "turn/start",
 		Params: protocol.TurnStartParams{
-			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
+			ThreadID: threadID, Input: []protocol.UserInputElement{{Type: "text", Text: &text}},
 			ClientUserMessageID: &commandID, Model: &model, Effort: effort,
 		},
 	}); err != nil {
