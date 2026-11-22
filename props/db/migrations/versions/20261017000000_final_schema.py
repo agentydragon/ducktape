@@ -1,4 +1,4 @@
-"""Create the final Props schema, retaining deployed revision 20260926000000.
+"""Create the final Props schema, retaining deployed revision 20261017000000.
 
 Already-at-head databases apply nothing. Older databases must first reach this
 revision with the pre-squash image. These definitions are independent of live ORM
@@ -11,13 +11,13 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260926000000"
+revision: str = "20261017000000"
 down_revision: str | None = None
 branch_labels: str | None = None
 depends_on: str | None = None
 
 _AGENT_RUN_STATUS_ENUM = postgresql.ENUM(
-    "in_progress", "exited", "timed_out", "cancelled", name="agent_run_status_enum", create_type=False
+    "in_progress", "exited", "timed_out", "cancelled", "startup_failed", name="agent_run_status_enum", create_type=False
 )
 _AGENT_TYPE_ENUM = postgresql.ENUM(
     "critic",
