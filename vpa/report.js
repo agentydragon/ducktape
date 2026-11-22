@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611221107`);
+      const response = await fetch(`${path}?v=202611221125`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
