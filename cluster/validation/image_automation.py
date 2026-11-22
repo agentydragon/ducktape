@@ -63,16 +63,9 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
 
 
 def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
-    """Every `$imagepolicy` setter marker names an ImagePolicy that exists.
-
-    The marker is a YAML *comment*, so it survives into none of the parsed resources and
-    nothing else here can see it: a typo'd or renamed policy name leaves the marker inert,
-    Flux silently stops updating that image, and the deployment freezes on whatever tag it
-    last had. That reads as "this image just isn't being rebuilt" — which is how
-    `claude-iron-deployment.yaml` sat un-updated (PR #3882).
-
-    Matched by regex over the source text rather than by parsing, deliberately: the
-    Authentik blueprints' custom `!Find`/`!Env` tags choke a YAML walk of this tree.
+    """Validate files Flux rewrites. A stale setter silently freezes the image (#3882).
+    A nonempty flow mapping anywhere in the file makes Flux and Prettier alternate its
+    spacing, breaking CI after image automation commits directly to devel.
     """
     policies = {
         f"{resource.namespace}:{resource.name}"
@@ -81,39 +74,25 @@ def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[st
         if isinstance(resource, ImagePolicyResource)
     }
 
-    return [
-        f"{path.relative_to(k8s_dir)} has an $imagepolicy marker for '{ref}', but no such "
-        "ImagePolicy is defined under cluster/k8s. Flux will silently never update this image."
-        for path in sorted(k8s_dir.rglob("*.yaml"))
-        for ref in _IMAGE_POLICY_MARKER.findall(path.read_text())
-        # A marker may name a field (`namespace:name:tag`); the policy is the first two parts.
-        if ":".join(ref.split(":")[:2]) not in policies
-    ]
-
-
-def check_no_flow_mappings_where_flux_writes(k8s_dir: Path) -> list[str]:
-    """A file Flux rewrites must not contain a flow mapping, because Flux will reformat it.
-
-    `ImageUpdateAutomation` re-serialises the **whole document** when it sets a tag, and its
-    emitter writes `{a: 1}` where prettier writes `{ a: 1 }`. So a flow mapping anywhere in a
-    marked file is a delayed-action formatting failure: the rewrite lands on `devel` as
-    `chore: update images [skip ci]` — no PR, no CI — and the next thing to run prettier over
-    the tree fails. That is the whole-tree `Pre-commit checks` job, so it fails on **every open
-    PR at once**, none of which touched the file.
-
-    Reformatting it back is not a fix; the next image update strips the spaces again. This
-    caught `public-coder-agent` three times on 2026-08-16 before the rule was enforced rather
-    than written down (`cluster/AGENTS.md` § Container Images).
-
-    Source text rather than parsed resources, for the same reason as
-    `check_image_policy_markers`: the marker is a comment, so only the file can be asked.
-    """
-    return [
-        f"{path.relative_to(k8s_dir)}:{opening.start_mark.line + 1} has a YAML flow mapping and an $imagepolicy "
-        "marker. Flux re-serialises the whole file when it updates the tag and will write it "
-        "without prettier's inner spaces, failing pre-commit on every open PR. Use block style."
-        for path in sorted(k8s_dir.rglob("*.yaml"))
-        if _IMAGE_POLICY_MARKER.search(text := path.read_text())
-        for opening, following in pairwise(yaml.scan(text, Loader=yaml.CSafeLoader))
-        if isinstance(opening, FlowMappingStartToken) and not isinstance(following, FlowMappingEndToken)
-    ]
+    errors = []
+    for path in sorted(k8s_dir.rglob("*.yaml")):
+        text = path.read_text()
+        # Setters are YAML comments. Only scan YAML tokens in files containing a setter.
+        if not (refs := _IMAGE_POLICY_MARKER.findall(text)):
+            continue
+        relative = path.relative_to(k8s_dir)
+        errors.extend(
+            f"{relative} has an $imagepolicy marker for '{ref}', but no such "
+            "ImagePolicy is defined under cluster/k8s. Flux will silently never update this image."
+            for ref in refs
+            # A field-scoped setter has a third component such as ":tag".
+            if ":".join(ref.split(":")[:2]) not in policies
+        )
+        for opening, following in pairwise(yaml.scan(text, Loader=yaml.CSafeLoader)):
+            if isinstance(opening, FlowMappingStartToken) and not isinstance(following, FlowMappingEndToken):
+                errors.append(
+                    f"{relative}:{opening.start_mark.line + 1} has a YAML flow mapping and an $imagepolicy "
+                    "marker. Flux re-serialises the whole file when it updates the tag and will write it "
+                    "without prettier's inner spaces, failing pre-commit on every open PR. Use block style."
+                )
+    return errors
