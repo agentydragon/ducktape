@@ -9,7 +9,7 @@ export interface ActionOutcome {
   failed: boolean;
 }
 
-export interface ExpandedCardDecisionProps {
+export interface CardDecisionProps {
   args: unknown;
   requestId: string;
   buttons: ReactNode;
@@ -44,8 +44,8 @@ export interface ActionPresentation {
   };
   /** A custom view does not grant decision buttons. The Action checks whether the current card shows enough to decide. */
   offersCardDecisionButtons?: (args: unknown) => boolean;
-  /** When the opened preview depends on live data, use that same lookup to gate the decisions. */
-  expandedCardDecision?: ComponentType<ExpandedCardDecisionProps>;
+  /** When a preview depends on live data, use that same lookup to gate the decisions. */
+  liveCardDecision?: { component: ComponentType<CardDecisionProps>; collapsed?: boolean };
   /** Whether this invocation's compact card has an expanded version; omitted, it does. Return false only when the
       closed card already shows everything the opened one would, so arguments the schemas reject keep it for their
       recorded-data view. */

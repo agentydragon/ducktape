@@ -20,7 +20,7 @@ import { draftResult, mailReadRenderers, DraftTarget, messageHeader } from "./gm
 import { labelRenderers } from "./gmail/labels";
 import { filterRenderers } from "./gmail/filters";
 import { useIntegrationPreviewNames } from "./integration_previews";
-import type { ActionPresentation, ExpandedCardDecisionProps } from "./presentation";
+import type { ActionPresentation, CardDecisionProps } from "./presentation";
 import { defineResultPreview, type ResultPreviewProps } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -248,7 +248,7 @@ const relabelResult = z.object({
 });
 const relabelPreview = definePreview(modifyThreadLabelsArguments, ThreadsRelabel);
 
-function RelabelDecision({ args, requestId, buttons, fallback }: ExpandedCardDecisionProps): ReactNode {
+function RelabelDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
   const parsed = modifyThreadLabelsArguments.safeParse(args);
   const thread = parsed.success && parsed.data.thread_ids.length === 1 ? parsed.data.thread_ids[0] : undefined;
   const names = useIntegrationPreviewNames("gmail", thread === undefined ? undefined : requestId);
@@ -264,7 +264,7 @@ function RelabelDecision({ args, requestId, buttons, fallback }: ExpandedCardDec
 
 const relabelPresentation: ActionPresentation = {
   fallbackLabel: "Change Gmail thread labels",
-  expandedCardDecision: RelabelDecision,
+  liveCardDecision: { component: RelabelDecision },
   pane: {
     collapsed: definePreview(modifyThreadLabelsArguments, function RelabelSummary(props) {
       const { args } = props;

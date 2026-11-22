@@ -167,9 +167,9 @@
   font-size: inherit;
 }
 
-/* Card decision buttons promise the card shows the whole call, so their label is never cut off. */
+/* A card with inline decisions always shows the full operation label. */
 .agentplane-actions-sidebar-request-label.is-unclamped .agentplane-actions-sidebar-name,
-.agentplane-actions-sidebar-request-label.offers-card-decision .agentplane-actions-sidebar-name {
+.agentplane-actions-sidebar-request:has(> .agentplane-actions-sidebar-decision) .agentplane-actions-sidebar-name {
   display: block;
   overflow: visible;
   -webkit-line-clamp: unset;

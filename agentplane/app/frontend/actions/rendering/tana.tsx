@@ -9,7 +9,7 @@ import { TextBlock } from "../../ui/text_block";
 import { tanaTitles } from "../schemas/tana_titles";
 import { definePreview, type PreviewProps } from "./entry";
 import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
-import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
+import { type ActionPresentation, type CardDecisionProps, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview, type ResultPreviewContext } from "./result_entry";
 
 const calendarNodeArguments = z.strictObject({
@@ -222,7 +222,7 @@ function requestView<S extends z.ZodType>(
 }
 
 function nodeLink(nodeId: string, names: ReadonlyMap<string, string> | undefined): JSX.Element {
-  return <TanaNodeLink id={nodeId} name={names?.get(nodeId)} />;
+  return <TanaNodeLink id={nodeId} name={names?.get(nodeId)?.trim()} />;
 }
 
 function nodeLinks(ids: string[], names: ReadonlyMap<string, string> | undefined): ReactNode {
@@ -232,6 +232,48 @@ function nodeLinks(ids: string[], names: ReadonlyMap<string, string> | undefined
       {nodeLink(nodeId, names)}
     </span>
   ));
+}
+
+function tanaDecision<S extends z.ZodType>(schema: S, targets: (args: z.infer<S>) => string[] | undefined) {
+  return function TanaDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
+    const parsed = schema.safeParse(args);
+    const ids = parsed.success ? targets(parsed.data) : undefined;
+    const names = useIntegrationPreviewNames("tana", ids ? requestId : undefined);
+    return ids?.every((id) => names?.get(id)?.trim()) ? buttons : fallback;
+  };
+}
+
+const checkDecision = tanaDecision(nodeArguments, ({ nodeId }) => [nodeId]);
+const tagDecision = tanaDecision(tagArguments, ({ nodeId, tagIds }) => {
+  const [tagId] = tagIds;
+  return tagIds.length === 1 && tagId !== undefined && tagId !== nodeId ? [nodeId, tagId] : undefined;
+});
+
+function checkPresentation(name: "check_node" | "uncheck_node", result: ResultPreview): ActionPresentation {
+  return {
+    ...requestView(
+      name,
+      nodeArguments,
+      (args, names) => <Line>{nodeLink(args.nodeId, names)} · Syncs the mapped field if configured</Line>,
+      result
+    ),
+    liveCardDecision: { component: checkDecision, collapsed: true },
+  };
+}
+
+function tagChange(
+  args: z.infer<typeof tagArguments>,
+  names: ReadonlyMap<string, string> | undefined,
+  compact = false
+): JSX.Element {
+  const tags = compact ? args.tagIds.slice(0, 2) : args.tagIds;
+  return (
+    <Line>
+      {args.action === "add" ? "Add" : "Remove"} {nodeLinks(tags, names)}
+      {tags.length < args.tagIds.length && ` and ${args.tagIds.length - tags.length} more`}{" "}
+      {args.action === "add" ? "to" : "from"} {nodeLink(args.nodeId, names)}
+    </Line>
+  );
 }
 
 function workspaceName(workspaceId: string, names: ReadonlyMap<string, string> | undefined): ReactNode {
@@ -721,38 +763,13 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
       trashReceipt
     ),
   ],
-  [
-    "check_node",
-    requestView(
-      "check_node",
-      nodeArguments,
-      (args, names) => <Line>{nodeLink(args.nodeId, names)} · Syncs the mapped field if configured</Line>,
-      checkedReceipt
-    ),
-  ],
-  [
-    "uncheck_node",
-    requestView(
-      "uncheck_node",
-      nodeArguments,
-      (args, names) => <Line>{nodeLink(args.nodeId, names)} · Syncs the mapped field if configured</Line>,
-      uncheckedReceipt
-    ),
-  ],
+  ["check_node", checkPresentation("check_node", checkedReceipt)],
+  ["uncheck_node", checkPresentation("uncheck_node", uncheckedReceipt)],
   [
     "tag",
     {
-      ...requestView(
-        "tag",
-        tagArguments,
-        (args, names) => (
-          <Line>
-            {args.action === "add" ? "Add" : "Remove"} {nodeLinks(args.tagIds, names)}{" "}
-            {args.action === "add" ? "on" : "from"} {nodeLink(args.nodeId, names)}
-          </Line>
-        ),
-        taggingReceipt
-      ),
+      ...requestView("tag", tagArguments, tagChange, taggingReceipt, (args, names) => tagChange(args, names, true)),
+      liveCardDecision: { component: tagDecision, collapsed: true },
       outcome: (value) => {
         const parsed = taggingResult.safeParse(value);
         if (!parsed.success) return undefined;
