@@ -186,7 +186,7 @@ function Report() {
   const [filingOnly, setFilingOnly] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("./evidence.json", { signal: controller.signal })
+    fetch("./evidence.json", { signal: controller.signal, cache: "no-cache" })
       .then((response) => {
         if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
         return response.json();
@@ -198,6 +198,7 @@ function Report() {
     return () => controller.abort();
   }, []);
   const entries = data?.entries ?? [];
+  const gazelle = data?.gazelle_adoption;
   const options = (key, all) =>
     [all, ...new Set(entries.map((item) => item[key]))].sort((a, b) =>
       a === all ? -1 : b === all ? 1 : a.localeCompare(b),
@@ -256,31 +257,37 @@ function Report() {
     >
     <${Title} order=${1} mt="xs">Upstream patches & issues<//>
     <${Text} c="dimmed" size="lg" mt="sm" maw="55rem">
-      Try the stable Gazelle modules. Keep the Grocy schema and Ruff
-      workarounds. Each has a fresh result from this source review.
+      Stable Gazelle is on devel. The Grocy schema and Ruff workarounds remain
+      active.
     <//>
-    <${Alert}
-      color="blue"
-      variant="light"
-      mt="lg"
-      title="Gazelle 2.5.1 generated zero BUILD drift"
-    >
-      Both stable registry modules built with the existing behavioral patches.
-      The full diff-mode run exited successfully and retained one parser
-      warning.
-      <${Anchor} href="./stable-gazelle.patch"> Candidate diff<//> ·
-      <${Anchor}
-        href="https://app.buildbuddy.io/invocation/bc1ed77a-e71e-448a-89c2-b4bc9829b84a"
-      >
-        Build invocation<//
-      >
-      ·
-      <${Anchor}
-        href="https://github.com/agentydragon/ducktape/tree/bfa209746f112ed329ea7ab1f1f3b28ba5f48404"
-      >
-        devel bfa209746f<//
-      >
-    <//>
+    ${
+      gazelle
+        ? html`
+            <${Alert}
+              id="gazelle-adoption"
+              color="teal"
+              variant="light"
+              mt="lg"
+              title="Gazelle 2.5.1 pins merged"
+            >
+              Both stable registry modules landed on 22 November at 11:38 UTC.
+              The upgraded generator produced zero BUILD changes and retained
+              the Grocy PEP 696 parser warning. The full PR Bazel build and test
+              passed.
+              <${Group} gap="sm" mt="xs">
+                <${Anchor} href=${gazelle.pr}>Adoption PR<//>
+                <${Anchor} href=${gazelle.github_ci}>Full PR CI<//>
+                <${Anchor} href=${gazelle.focused_tests}
+                  >Fresh targeted tests<//
+                >
+                <${Anchor} href="./stable-gazelle.patch"
+                  >Original candidate diff<//
+                >
+              <//>
+            <//>
+          `
+        : null
+    }
     ${
       error
         ? html`<${Alert} color="red" mt="lg" title="Unable to load inventory"

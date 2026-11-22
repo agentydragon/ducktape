@@ -553,14 +553,22 @@
     {
       "id": "gazelle-parser",
       "project": "rules_python / tree-sitter",
-      "title": "Move Gazelle from RC archives to stable registry modules",
+      "title": "Gazelle warning for PEP 696 type-parameter defaults",
       "kind": "Issue",
-      "status": "Released",
-      "priority": "High",
-      "impact": "Older Gazelle parser warns on PEP 758 and PEP 696 syntax.",
-      "upstream": "PR #15300 merged on 11 November. The Bazel Central Registry now publishes rules_python and rules_python_gazelle_plugin 2.5.1. The PEP 696 grammar issue remains open.",
-      "next_step": "Adopt 2.5.1 for both modules, keep the lock-copier and per-file Gazelle patches, and drop both RC version patches. In a disposable devel checkout this built Gazelle and ran it across the repository in diff mode. It exited 0 with zero BUILD drift and one parser warning in grocy_mcp/request_scoped_openapi.py. Run normal PR CI before switching pins.",
+      "status": "Open upstream",
+      "priority": "Medium",
+      "impact": "The upgraded parser warns on grocy_mcp/request_scoped_openapi.py. The checked-in BUILD target still passed its fresh OpenAPI test.",
+      "upstream": "The standalone tree-sitter Python grammar issue remains open. Ducktape adopted both stable 2.5.1 modules in PR #19131.",
+      "next_step": "Recheck the whole-tree Gazelle diff when the Python grammar supports type-parameter defaults.",
       "links": [
+        {
+          "label": "Stable adoption PR",
+          "url": "https://github.com/agentydragon/ducktape/pull/19131"
+        },
+        {
+          "label": "Fresh Grocy OpenAPI test",
+          "url": "https://app.buildbuddy.io/invocation/53bad0cf-4167-4324-8a13-998615a6c7a3"
+        },
         {
           "label": "Our issue",
           "url": "https://github.com/agentydragon/ducktape/issues/9138"
@@ -590,11 +598,11 @@
           "url": "https://registry.bazel.build/modules/rules_python_gazelle_plugin/2.5.1"
         },
         {
-          "label": "Gazelle build and diff-mode launch",
+          "label": "Original Gazelle trial build",
           "url": "https://app.buildbuddy.io/invocation/bc1ed77a-e71e-448a-89c2-b4bc9829b84a"
         },
         {
-          "label": "Candidate module diff",
+          "label": "Original candidate diff",
           "url": "./stable-gazelle.patch"
         }
       ],
@@ -618,6 +626,12 @@
           "state": "closed",
           "closed_at": "2026-11-11T02:25:36Z",
           "merged_at": "2026-11-11T02:25:36Z"
+        },
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/pull/19131",
+          "state": "closed",
+          "closed_at": "2026-11-22T11:38:56Z",
+          "merged_at": "2026-11-22T11:38:56Z"
         }
       ]
     },
@@ -691,16 +705,16 @@
       "status": "Present upstream",
       "priority": "Medium",
       "impact": "Generating a binary for a main module removes the corresponding per-file library.",
-      "upstream": "The release-candidate trial is merged. A 2.5.1 stable-module trial with the local per-file and macro-wiring patch generated zero repository BUILD drift.",
-      "next_step": "Keep the patch on 2.5.1. Evaluate the per-file hunk independently before upstreaming. The local macro-wiring hunk belongs to Ducktape.",
+      "upstream": "Ducktape's 2.5.1 pins keep the per-file main-module and generated load-path patch. The upgraded Gazelle produced zero BUILD changes.",
+      "next_step": "Test the per-file behavior in a standalone reproduction before proposing it upstream. Keep the generated load path with Ducktape's macros.",
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/rules_python_gazelle_ducktape.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/c5ef0bd95b64fddf1fa444c6206e5898ded7841e/patches/rules_python_gazelle_ducktape.patch"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/bazel-contrib/rules_python/blob/2.5.0-rc4/gazelle/python/generate.go"
+          "url": "https://github.com/bazel-contrib/rules_python/blob/2.5.1/gazelle/python/generate.go"
         }
       ],
       "drafts": [
@@ -870,16 +884,20 @@
       "status": "Present upstream",
       "priority": "Low",
       "impact": "The generated helper reuses names for incompatible types under our checks.",
-      "upstream": "The upstream main template still changes the types of src and dst. The retained patch applied in the successful stable 2.5.1 Gazelle build.",
-      "next_step": "Preserve this patch during the 2.5.1 upgrade. Retire it after mypy accepts a generated lock target on a release without the patch.",
+      "upstream": "The upstream template reuses variables across types. The local patch remains on the 2.5.1 pin and the requirements lock test passed fresh.",
+      "next_step": "Retire the patch after mypy accepts a generated lock target on an unpatched release.",
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/rules_python_lock_copier_mypy.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/c5ef0bd95b64fddf1fa444c6206e5898ded7841e/patches/rules_python_lock_copier_mypy.patch"
         },
         {
           "label": "Upstream template",
           "url": "https://github.com/bazel-contrib/rules_python/blob/3896dbd05bd3a210e27a5b428eb90058be820353/python/uv/private/template/lock_copier.py"
+        },
+        {
+          "label": "Fresh requirements lock test",
+          "url": "https://app.buildbuddy.io/invocation/53bad0cf-4167-4324-8a13-998615a6c7a3"
         }
       ],
       "drafts": [
@@ -1141,5 +1159,17 @@
         }
       ]
     }
-  ]
+  ],
+  "gazelle_adoption": {
+    "version": "2.5.1",
+    "pr": "https://github.com/agentydragon/ducktape/pull/19131",
+    "merge_commit": "c5ef0bd95b64fddf1fa444c6206e5898ded7841e",
+    "merged_at_utc": "2026-11-22T11:38:56Z",
+    "verified_head": "b95427c863ec3e6d539db808b21dd298e9ee7d8b",
+    "github_ci": "https://github.com/agentydragon/ducktape/actions/runs/45018030981/job/137194489185",
+    "bazel_test": "https://app.buildbuddy.io/invocation/b2cb4ffd-256b-57b2-b4bd-5a5ea407c3b8",
+    "bazel_build": "https://app.buildbuddy.io/invocation/c999f97c-353a-5564-8d2b-a0fdabf5c46b",
+    "focused_tests": "https://app.buildbuddy.io/invocation/53bad0cf-4167-4324-8a13-998615a6c7a3",
+    "candidate_gazelle": "https://app.buildbuddy.io/invocation/baa370c3-3e8e-430e-9802-2bf90c537919"
+  }
 }

@@ -2,5 +2,10 @@
   "audited_at_utc": "2026-11-22T11:04:32+00:00",
   "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
   "entry_count": 33,
-  "scope": "Rechecked the 29 previous cards, local patch paths, linked GitHub issue and PR states, the open upstream and upstream-waiting issue lists, and selected current dependency pins. Dates on incident reports identify observations. Source inspection does not establish a deployed fix."
+  "scope": "Rechecked the 29 previous cards, local patch paths, linked GitHub issue and PR states, the open upstream and upstream-waiting issue lists, and selected current dependency pins. Dates on incident reports identify observations. Source inspection does not establish a deployed fix.",
+  "gazelle_adoption": {
+    "merged_at_utc": "2026-11-22T11:38:56Z",
+    "source_devel_commit": "c5ef0bd95b64fddf1fa444c6206e5898ded7841e",
+    "pr": "https://github.com/agentydragon/ducktape/pull/19131"
+  }
 }
