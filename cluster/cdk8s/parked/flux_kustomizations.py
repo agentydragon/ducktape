@@ -19,7 +19,6 @@ def agent_box(
         chart,
         "agent-box",
         artifact,
-        annotations={"ducktape.org/parked": "true"},
         # Keep this controller inactive while the unschedulable legacy VM is retired.
         # Its VM and local disk remain untouched until explicitly deleted.
         suspend=True,
@@ -45,7 +44,6 @@ def docker_ci(
         chart,
         "docker-ci",
         artifact,
-        annotations={"ducktape.org/parked": "true"},
         suspend=True,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
@@ -69,7 +67,6 @@ def gecko(
         chart,
         "gecko",
         artifact,
-        annotations={"ducktape.org/parked": "true"},
         # Keep this controller inactive while the unschedulable legacy VM is retired.
         # Its VM and local disk remain untouched until explicitly deleted.
         suspend=True,
@@ -84,7 +81,6 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
         chart,
         "gecko-namespace",
         artifact,
-        annotations={"ducktape.org/parked": "true"},
         # The retired VM stack and its namespace were intentionally deleted.
         # Keep this controller paused so Flux does not recreate the empty namespace.
         suspend=True,
@@ -99,7 +95,6 @@ def sdr(
         chart,
         "sdr",
         artifact,
-        annotations={"ducktape.org/parked": "true"},
         # Temporarily disabled until the radio is set up again after relocation.
         suspend=True,
         timeout="5m",

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Annotated, cast
 
 import jsii
@@ -43,6 +44,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 SOPS_DECRYPTION = KustomizationSpecDecryption(
@@ -201,6 +204,7 @@ def flux_kustomization(
             raise ValueError(f"{name=}: a rendered directory derives its decryption; got {decryption=}")
         decryption = source.decryption
         source = source.artifact
+    metadata_annotations = dict(annotations or {})
     match source:
         case ArtifactGeneratorSpecArtifacts():
             if path is not None:
@@ -208,13 +212,15 @@ def flux_kustomization(
             source_ref = KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=NAMESPACE
             )
-            path = f"./{artifact_directory(source)}"
+            directory = artifact_directory(source)
+            path = f"./{directory}"
+            if PurePosixPath(directory).is_relative_to(PARKED_ROOT):
+                metadata_annotations["ducktape.org/parked"] = "true"
         case KustomizationSpecSourceRef():
             if path is None:
                 raise ValueError(f"{name=}: a direct sourceRef needs an explicit path")
             source_ref = source
 
-    metadata_annotations = dict(annotations or {})
     if description is not None:
         metadata_annotations["description"] = description
 

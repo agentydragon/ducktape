@@ -745,7 +745,6 @@ def public_coder_agent_app(
         "public-coder-agent-app",
         artifact,
         wait=None,
-        annotations={"ducktape.org/parked": "true"},
         # The parked app artifact is intentionally omitted. Keep its inventory orphanable so
         # the retained OpenClaw PVCs and state survive while the app is offline.
         suspend=True,
