@@ -2318,7 +2318,6 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":namespace_access",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

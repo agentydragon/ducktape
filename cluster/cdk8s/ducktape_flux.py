@@ -23,7 +23,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_access_profiles as access, namespaces
-from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization
+from cluster.cdk8s.flux import DUCKTAPE_SOURCE, NAMESPACE, Kustomization, flux_kustomization
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
@@ -31,7 +31,6 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.plaid_mcp import spend
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
-SOURCE_NAME = "ducktape"
 # This repository and the branch Flux deploys, for every GitRepository that checks it out.
 REPOSITORY_URL = "https://github.com/agentydragon/ducktape.git"
 BRANCH = "devel"
@@ -145,7 +144,7 @@ def chart(app: App) -> Chart:
     GitRepository(
         chart,
         "source",
-        metadata=ApiObjectMetadata(name=SOURCE_NAME, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=DUCKTAPE_SOURCE.name, namespace=DUCKTAPE_SOURCE.namespace),
         # The `github` Receiver (cluster/generated/flux-webhook) reconciles this source within seconds of
         # every push, so polling is only the net for a lost delivery. flux-system's source carries the
         # same interval (cluster/k8s/flux/flux-system/gotk-sync.yaml); keep the two in step.

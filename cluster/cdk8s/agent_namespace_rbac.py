@@ -8,10 +8,15 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_access_profiles as access
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    DUCKTAPE_SOURCE,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
@@ -47,14 +52,11 @@ def add_flux_kustomizations(flux_chart: Chart, roles: Kustomization) -> None:
     # On bootstrap Flux retries until the namespace exists; application readiness
     # must never gate the diagnostic access needed to investigate an unhealthy app.
     # Do not emit Namespaces here: their existing owners retain lifecycle control.
-    source = KustomizationSpecSourceRef(
-        kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-    )
     for namespace in NAMESPACE_DIAGNOSTICS:
         flux_kustomization(
             flux_chart,
             f"agent-namespace-rbac-{namespace}",
-            source,
+            DUCKTAPE_SOURCE,
             path=f"./{directory(namespace)}",
             depends_on=[flux_kustomization_depends_on(roles)],
             description=f"Static agent diagnostics in {namespace}; policy shared with managed agents.",
