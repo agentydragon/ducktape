@@ -9,7 +9,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
-from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
+from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, add_staging_egress_credentials
 from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.testing.manifests import find_resource
 
@@ -59,6 +59,25 @@ def test_credential_copy_uses_a_scoped_source_reader(
             assert grant == read
             readers.update((s["kind"], s.get("namespace"), s["name"]) for s in binding["subjects"])
     assert readers == {("ServiceAccount", STAGING_CREDENTIALS_NAMESPACE, provider["auth"]["serviceAccount"]["name"])}
+
+
+def test_aiquota_read_limits_egress_and_the_history_credential(credentials: list[dict[str, Any]]) -> None:
+    rules = find_resource(credentials, "PolicySet", AIQUOTA_READ_POLICY)["spec"]["rules"]
+    history = clickhouse.AIQUOTA_HISTORY_CREDENTIALS
+    [history_rule] = [rule for rule in rules if rule.get("credentialRef") == {"name": history}]
+    assert history_rule["type"] == "egress"
+    assert history_rule["hosts"] == [clickhouse.HTTP.fqdn]
+    assert history_rule["clusterInternal"]
+    assert history_rule["methods"] == ["GET"]
+    assert history_rule["paths"] == ["/"]
+    credential = find_resource(credentials, "EgressCredential", history)
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
+
+    [api_rule] = [rule for rule in rules if rule["hosts"] == ["aiquota-api.cli-proxy-api.svc.cluster.local"]]
+    assert api_rule["clusterInternal"]
+    assert api_rule["credentialRef"] == {"name": "aiquota-read"}
+    assert api_rule["methods"] == ["GET"]
+    assert set(api_rule["paths"]) == {"/v1/quotas", "/v1/providers/*/raw"}
 
 
 def test_thrive_read_has_scoped_bearer_and_get_rules(credentials: list[dict[str, Any]]) -> None:

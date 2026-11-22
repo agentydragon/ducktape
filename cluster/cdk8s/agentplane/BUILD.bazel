@@ -1082,7 +1082,6 @@ py_test(
     deps = [
         ":conftest",
         ":egress",
-        ":egress_staging_credentials",
         ":environment_service",
         ":history_service",
         ":kubernetes_account_ref",
@@ -1095,7 +1094,6 @@ py_test(
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
