@@ -6,9 +6,10 @@ from cdk8s import Size
 from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
 
+from cluster.cdk8s import public_web_pki
+
 _CONFIG_DIR = "/config"
 GITHUB_PAT_SECRET_NAME = "github-secrets-sync-pat"
-_PUBLIC_WEB_PKI = "/var/run/public-web-pki"
 
 
 def secret_mount(name: str, secret_name: str, mount_path: str) -> tuple[k8s.Volume, k8s.VolumeMount]:
@@ -47,7 +48,7 @@ class RotatorCronJob(k8s.KubeCronJob):
             image_pull_secrets=image_pull_secrets,
             restart_policy="OnFailure",
             volumes=[
-                k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                public_web_pki.VOLUME,
                 k8s.Volume(name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=config_map_name)),
                 k8s.Volume(name="github-pat", secret=k8s.SecretVolumeSource(secret_name=GITHUB_PAT_SECRET_NAME)),
                 *(volume for volume, _ in credential_mounts),
@@ -60,15 +61,12 @@ class RotatorCronJob(k8s.KubeCronJob):
                     name="rotate",
                     image=image,
                     args=["--config", f"{_CONFIG_DIR}/{config_file}"],
-                    env=[
-                        k8s.EnvVar(name="SSL_CERT_FILE", value=f"{_PUBLIC_WEB_PKI}/ca-certificates.crt"),
-                        k8s.EnvVar(name="GIT_SSL_CAINFO", value=f"{_PUBLIC_WEB_PKI}/ca-certificates.crt"),
-                    ],
+                    env=[public_web_pki.SSL_CERT_FILE, k8s.EnvVar(name="GIT_SSL_CAINFO", value=public_web_pki.CA_FILE)],
                     security_context=k8s.SecurityContext(
                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                     ),
                     volume_mounts=[
-                        k8s.VolumeMount(name="public-web-pki", mount_path=_PUBLIC_WEB_PKI, read_only=True),
+                        public_web_pki.VOLUME_MOUNT,
                         k8s.VolumeMount(name="rotations-config", mount_path=_CONFIG_DIR, read_only=True),
                         k8s.VolumeMount(name="github-pat", mount_path="/var/run/secrets/github-pat", read_only=True),
                         *(mount for _, mount in credential_mounts),

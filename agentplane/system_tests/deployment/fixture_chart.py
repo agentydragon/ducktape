@@ -106,7 +106,7 @@ from agentplane.system_tests.driver.native_auth import (
 )
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
-from cluster.cdk8s import agent_access_profiles as access
+from cluster.cdk8s import agent_access_profiles as access, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -603,8 +603,8 @@ def add_fixture_pki(
     ConfigMap(
         chart,
         "fixture-public-web-pki",
-        metadata=ApiObjectMetadata(name="public-web-pki", namespace=NAMESPACE),
-        data={"ca-certificates.crt": system_roots},
+        metadata=ApiObjectMetadata(name=public_web_pki.NAME, namespace=NAMESPACE),
+        data={public_web_pki.KEY: system_roots},
     )
     ConfigMap(
         chart,

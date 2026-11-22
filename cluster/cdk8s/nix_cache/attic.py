@@ -22,7 +22,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling, piraeus_storage
+from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling, piraeus_storage, public_web_pki
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
@@ -368,17 +368,15 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
                             resources=container_resources(cpu="100m", memory="128Mi", memory_limit="256Mi"),
-                            env=[k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt")],
+                            env=[public_web_pki.SSL_CERT_FILE],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cache-keys", mount_path="/secrets/cache-keys", read_only=True),
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                ),
+                                public_web_pki.VOLUME_MOUNT,
                             ],
                         )
                     ],
                     volumes=[
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                        public_web_pki.VOLUME,
                         k8s.Volume(
                             name="cache-keys",
                             secret=k8s.SecretVolumeSource(
@@ -516,9 +514,7 @@ def _rotation(scope: Construct) -> None:
                             automount_service_account_token=True,
                             restart_policy="OnFailure",
                             volumes=[
-                                k8s.Volume(
-                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
-                                ),
+                                public_web_pki.VOLUME,
                                 k8s.Volume(
                                     name="rotators-config",
                                     config_map=k8s.ConfigMapVolumeSource(name=_ROTATORS_CONFIG_MAP),
@@ -534,20 +530,13 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[
-                                        _GITHUB_PAT.key("token").env_var("GIT_TOKEN"),
-                                        k8s.EnvVar(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                    ],
+                                    env=[_GITHUB_PAT.key("token").env_var("GIT_TOKEN"), public_web_pki.SSL_CERT_FILE],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(name="rotators-config", mount_path="/config", read_only=True),
-                                        k8s.VolumeMount(
-                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                        ),
+                                        public_web_pki.VOLUME_MOUNT,
                                     ],
                                     resources=container_resources(cpu="100m", memory="256Mi", memory_limit="512Mi"),
                                 )

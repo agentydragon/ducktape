@@ -59,7 +59,7 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.settings import APIServer, Settings
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     database,
@@ -767,7 +767,7 @@ class Egress(Construct):
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={
                 Settings.database_url_env: self.database_url,
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
                 **self.container_env,
             },
             extra_ports=extra_ports,
@@ -803,12 +803,7 @@ class Egress(Construct):
             )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
         workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)

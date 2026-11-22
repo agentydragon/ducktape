@@ -37,7 +37,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry import pull_credentials
@@ -183,9 +183,7 @@ def chart(app: App) -> Chart:
                             automount_service_account_token=False,
                             volumes=[
                                 k8s.Volume(name="workdir", empty_dir=k8s.EmptyDirVolumeSource()),
-                                k8s.Volume(
-                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
-                                ),
+                                public_web_pki.VOLUME,
                             ],
                             containers=[
                                 k8s.Container(
@@ -204,21 +202,15 @@ def chart(app: App) -> Chart:
                                         # The clone (initial re-seed: the card's full history) lands in
                                         # TMPDIR — keep it on the emptyDir, not the container layer.
                                         k8s.EnvVar(name="TMPDIR", value=_WORKDIR),
-                                        k8s.EnvVar(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                        k8s.EnvVar(
-                                            name="GIT_SSL_CAINFO", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
+                                        public_web_pki.SSL_CERT_FILE,
+                                        k8s.EnvVar(name="GIT_SSL_CAINFO", value=public_web_pki.CA_FILE),
                                         _GIT_CREDENTIALS.key("repo_url").env_var("GIT_REPO_URL"),
                                         _GIT_CREDENTIALS.key("username").env_var("GIT_USERNAME"),
                                         _GIT_CREDENTIALS.key("password").env_var("GIT_PASSWORD"),
                                     ],
                                     volume_mounts=[
                                         k8s.VolumeMount(name="workdir", mount_path=_WORKDIR),
-                                        k8s.VolumeMount(
-                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                        ),
+                                        public_web_pki.VOLUME_MOUNT,
                                     ],
                                     # git pack-objects on the initial ~0.5-1GB seed push.
                                     resources=container_resources(cpu="100m", memory="128Mi", memory_limit="512Mi"),

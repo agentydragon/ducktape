@@ -10,7 +10,6 @@ from urllib.parse import urlsplit
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ConfigMap,
     ContainerResources,
     Cpu,
     CpuResources,
@@ -21,7 +20,6 @@ from cdk8s_plus_34 import (
     RoleBinding,
     RolePolicyRule,
     ServiceAccount,
-    Volume,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -29,7 +27,7 @@ from constructs import Construct
 from agentplane.app.settings import EnvironmentServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, SANDBOX_CONTROLLER_URI
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     database,
@@ -176,7 +174,7 @@ class App(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
         return {
-            "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+            "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             "AGENTPLANE_DATABASE_URL": self.database_url,
             "AGENTPLANE_OIDC_CLIENT_ID": self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
             "AGENTPLANE_OIDC_CLIENT_SECRET": self.oidc.key("client-secret").env_value(self, "oidc-client-secret-ref"),
@@ -218,12 +216,7 @@ class App(Construct):
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.service_certificate(self, self.env, container=workload.container, name=NAME, uri=APP_URI)
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         return workload
 
     def _add_http_route(self) -> None:
