@@ -10,8 +10,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager, AsyncExitStack
 from dataclasses import dataclass
 from functools import partial
-from typing import Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s
 from opentelemetry.trace import Span
@@ -22,8 +21,10 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.native_platform import NativePlatformClients, native_platform_clients
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
+from agentplane.system_tests.driver.session import run_session_setup_script
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -31,20 +32,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300
 RECORD = "agentplane.allegedly.works/workspace-record"
-
-
-class SetupRunner(Protocol):
-    async def __call__(
-        self,
-        *,
-        sandbox_name: str,
-        sandbox_uid: str,
-        session_id: UUID,
-        harness: session_pb2.Harness,
-        model: str,
-        cwd: str,
-        setup_script: str,
-    ) -> tuple[str, str]: ...
 
 
 @dataclass(frozen=True)
@@ -294,7 +281,7 @@ async def _volumes(cluster: Cluster, name: str, uid: str) -> dict:
 
 
 async def _probe(
-    run_setup: SetupRunner, name: str, sandbox_uid: str, cwd: str, workspace_dir: str, marker: str
+    platform: NativePlatformClients, name: str, sandbox_uid: str, cwd: str, workspace_dir: str, marker: str
 ) -> dict:
     state = "/state/storage-systest-state"
     workspace = f"{workspace_dir}/storage-systest-workspace"
@@ -311,7 +298,9 @@ async def _probe(
         source += f'test "$(cat {home_marker})" = {shlex.quote(marker)}\nsha256sum {home_marker}\n'
     source += "printf 'STORAGE_PROBE_OK\\n'\n"
     session = uuid4()
-    stdout, _ = await run_setup(
+    stdout, _ = await run_session_setup_script(
+        platform.dispatcher,
+        platform.history,
         sandbox_name=name,
         sandbox_uid=sandbox_uid,
         session_id=session,
@@ -325,7 +314,7 @@ async def _probe(
 
 
 async def fresh_workspace_storage_survives_replacement(
-    cluster: Cluster, run_setup: SetupRunner, executor: Executor, *, vm_storage: VmStorage | None
+    cluster: Cluster, executor: Executor, *, vm_storage: VmStorage | None
 ) -> None:
     vm = vm_storage is not None
     check_boot = vm_storage.check_boot if vm_storage is not None else None
@@ -370,7 +359,7 @@ async def fresh_workspace_storage_survives_replacement(
         path.write_text(json.dumps(evidence, indent=2) + "\n")
 
     save()
-    async with AsyncExitStack() as stack:
+    async with native_platform_clients(cluster) as platform, AsyncExitStack() as stack:
         with stage("create_template"):
             created_template = json.loads(
                 await cluster.kubectl(
@@ -464,7 +453,7 @@ async def fresh_workspace_storage_survives_replacement(
             original_workload_uid=workload_uid,
         )
         with stage("first_probe"):
-            evidence["first_probe"] = await _probe(run_setup, name, sandbox_uid, cwd, workspace_dir, marker)
+            evidence["first_probe"] = await _probe(platform, name, sandbox_uid, cwd, workspace_dir, marker)
         if vm:
             assert "\next4 " in evidence["first_probe"]["stdout"]
         save()
@@ -517,7 +506,7 @@ async def fresh_workspace_storage_survives_replacement(
             assert (await _object(cluster, "virtualmachine", name))["metadata"]["uid"] == workload_uid
         evidence.update(after=after, new_incarnation=new_incarnation)
         with stage("resumed_probe"):
-            evidence["resumed_probe"] = await _probe(run_setup, name, sandbox_uid, cwd, workspace_dir, marker)
+            evidence["resumed_probe"] = await _probe(platform, name, sandbox_uid, cwd, workspace_dir, marker)
         save()
         if vm:
             await _suspend(cluster, name, uid)
@@ -547,7 +536,7 @@ async def fresh_workspace_storage_survives_replacement(
                 "workload_uid": replacement["metadata"]["uid"],
                 "incarnation": replacement_incarnation,
                 "volumes": replacement_volumes,
-                "probe": await _probe(run_setup, name, sandbox_uid, cwd, workspace_dir, marker),
+                "probe": await _probe(platform, name, sandbox_uid, cwd, workspace_dir, marker),
             }
         evidence["passed"] = True
         save()

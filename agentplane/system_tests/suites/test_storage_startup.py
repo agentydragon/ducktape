@@ -4,23 +4,18 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from functools import partial
 from typing import Any
 
 import pytest
 import pytest_bazel
 
-from agentplane.app.testing.client import Client
-from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
-from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.scenarios import storage
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-# gazelle:include_dep //agentplane/system_tests:app_fixtures
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 
 
 @asynccontextmanager
@@ -54,7 +49,7 @@ async def test_storage_refuses_a_controller_that_never_recovers(cluster: Cluster
 
 @pytest.mark.timeout(300)
 async def test_storage_keeps_all_probes_after_controller_recovery(
-    cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, monkeypatch: pytest.MonkeyPatch
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     wait_started = asyncio.Event()
     original_kubectl = Cluster.kubectl
@@ -68,10 +63,7 @@ async def test_storage_keeps_all_probes_after_controller_recovery(
         monkeypatch.setattr(Cluster, "kubectl", observe_wait)
         scenario = tasks.create_task(
             storage.fresh_workspace_storage_survives_replacement(
-                cluster,
-                partial(run_setup, client, dispatcher),
-                Executor(template=POD_TEMPLATE, cwd="/state/work"),
-                vm_storage=None,
+                cluster, Executor(template=POD_TEMPLATE, cwd="/state/work"), vm_storage=None
             )
         )
         async with asyncio.timeout(10):

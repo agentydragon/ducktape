@@ -176,3 +176,35 @@ class Session:
 
 
 # gazelle:include_dep @pypi//protobuf
+
+
+async def run_session_setup_script(
+    dispatcher: SessionDispatcherClient,
+    history: HistoryServiceClient,
+    *,
+    sandbox_name: str,
+    sandbox_uid: str,
+    session_id: UUID,
+    harness: session_pb2.Harness,
+    model: str,
+    cwd: str,
+    setup_script: str,
+) -> tuple[str, str]:
+    """Create a Session on an existing Sandbox and return its successful setup script output."""
+    session = await Session.create(
+        dispatcher,
+        history,
+        session_id=session_id,
+        setup_script=setup_script,
+        spec=session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
+                )
+            ),
+            cwd=cwd,
+            model=model,
+            reasoning_effort="low",
+        ),
+    )
+    return await session.setup_output()

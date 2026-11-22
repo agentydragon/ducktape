@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from functools import partial
-
 import pytest
 import pytest_bazel
 
@@ -14,7 +12,6 @@ from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.native_platform import sandbox_harness_host
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
 from agentplane.system_tests.vm import guest_logs
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
@@ -26,14 +23,9 @@ pytest_plugins = ("agentplane.system_tests.vm.pytest_plugin", "agentplane.system
 pytestmark = pytest.mark.vm_sandboxes
 
 
-async def test_fresh_workspace_storage_survives_replacement(
-    cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, executor: Executor
-) -> None:
+async def test_fresh_workspace_storage_survives_replacement(cluster: Cluster, executor: Executor) -> None:
     await storage.fresh_workspace_storage_survives_replacement(
-        cluster,
-        partial(run_setup, client, dispatcher),
-        executor,
-        vm_storage=storage.VmStorage(storage_class=STORAGE_CLASS, check_boot=guest_logs.check_boot),
+        cluster, executor, vm_storage=storage.VmStorage(storage_class=STORAGE_CLASS, check_boot=guest_logs.check_boot)
     )
 
 
