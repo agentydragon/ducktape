@@ -288,6 +288,56 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
             await peer.service.cancelled.wait()
 
 
+async def test_operator_notice_acknowledgements_are_shared_across_replicas(
+    http: httpx.AsyncClient,
+    peer: Peer,
+    db_url: str,
+    history_service: GoHistoryService,
+    sandbox: SandboxCluster,
+    gateway_access: GatewayAccess,
+    app_config: dict[str, object],
+) -> None:
+    session_id = "10000000-0000-4000-8000-000000000042"
+    other_id = "10000000-0000-4000-8000-000000000043"
+    peer.service.sessions[session_id] = session_dispatcher_pb2.Session(session_id=session_id)
+    peer.service.sessions[other_id] = session_dispatcher_pb2.Session(session_id=other_id)
+    path = f"/upstream/app/v1/threads/{session_id}/notice-acknowledgements"
+    other_path = f"/upstream/app/v1/threads/{other_id}/notice-acknowledgements"
+    # Adjacent int64 values past JavaScript's maximum exact integer must stay distinct.
+    older = {"commandId": "shared-command", "receiptVersion": "40000000000000001"}
+    newer = {"commandId": "shared-command", "receiptVersion": "40000000000000002"}
+    assert (await http.post(path, json={"notice": older})).status_code == 200
+    async with (
+        app_process(
+            db_url,
+            history_service,
+            sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
+            gateway=gateway_access,
+            config=app_config,
+        ) as replica,
+        httpx.AsyncClient(base_url=replica.url, cookies=replica.cookies, headers={"Origin": replica.url}) as other,
+    ):
+        response = await other.post(path + ":batchGet", json={"notices": [older, newer]})
+        response.raise_for_status()
+        (first_ack,) = response.json()["acknowledgements"]
+        assert first_ack["notice"] == older
+        assert first_ack["acknowledgedAt"]
+        unrelated = await other.post(other_path + ":batchGet", json={"notices": [older]})
+        assert unrelated.json()["acknowledgements"] == []
+        assert (await other.post(path, json={"notice": newer})).status_code == 200
+        # Replaying the old click cannot suppress the new revision or reorder acknowledgement history.
+        assert (await other.post(path, json={"notice": older})).status_code == 200
+        history = (await http.get(path, params={"pageSize": 1})).json()
+        assert [item["notice"] for item in history["acknowledgements"]] == [newer]
+        next_page = (await http.get(path, params={"pageSize": 1, "pageToken": history["nextPageToken"]})).json()
+        assert next_page["acknowledgements"] == [first_ack]
+        assert "nextPageToken" not in next_page
+        assert (await other.get(other_path, params={"pageToken": history["nextPageToken"]})).status_code == 400
+        assert (await http.get(path, params={"pageSize": 101})).status_code == 400
+        for notices in ([], [newer] * 101, [{"commandId": "shared-command"}]):
+            assert (await other.post(path + ":batchGet", json={"notices": notices})).status_code == 400
+
+
 async def test_unknown_facade_paths_are_not_forwarded(http: httpx.AsyncClient, peer: Peer) -> None:
     assert (await http.get("/upstream/dispatcher/v2/dispatches")).status_code == 404
     assert (await http.get("/upstream/dispatcher/v1/not-a-route")).status_code == 404
