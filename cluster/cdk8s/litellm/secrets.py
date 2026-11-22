@@ -90,7 +90,6 @@ def _chart(app: App) -> Chart:
         reader=reader,
         source_namespace="langfuse",
         source_secret="langfuse-secrets",
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
@@ -174,7 +173,6 @@ def _chart(app: App) -> Chart:
                 reader=reader,
                 source_namespace="tana-mcp",
                 source_secret=_TANA_REFRESH_TOKEN,
-                consumer_namespace=NAMESPACE,
             )
         ),
         data=[remote_data(_TANA_REFRESH_TOKEN, "refresh_token")],

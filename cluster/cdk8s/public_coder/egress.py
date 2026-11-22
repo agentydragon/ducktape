@@ -286,12 +286,7 @@ def _copied_credential(
     target: EgressCredentialSpecTargets,
 ) -> None:
     store = single_secret_store(
-        scope,
-        f"agentplane-{credential}",
-        reader=reader,
-        source_namespace=source_namespace,
-        source_secret=secret,
-        consumer_namespace=credentials_namespace,
+        scope, f"agentplane-{credential}", reader=reader, source_namespace=source_namespace, source_secret=secret
     )
     credential_external_secret(
         scope, namespace=credentials_namespace, target=credential, source=secret, key=key, store=store

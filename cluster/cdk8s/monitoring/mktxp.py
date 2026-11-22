@@ -200,7 +200,6 @@ def _credentials(chart: Chart) -> None:
         reader=reader,
         source_namespace=MONITORING_PASSWORD.secret.namespace,
         source_secret=MONITORING_PASSWORD.secret.name,
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,

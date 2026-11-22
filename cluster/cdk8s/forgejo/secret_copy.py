@@ -52,9 +52,7 @@ def secret_copy(
     if namespace is None:
         raise ValueError(f"{reader.name=} has no namespace to copy into")
     store_name = name if name.startswith(f"{namespace}-") else f"{namespace}-{name}"
-    store = single_secret_store(
-        scope, store_name, reader=reader, source_namespace=NAMESPACE, source_secret=name, consumer_namespace=namespace
-    )
+    store = single_secret_store(scope, store_name, reader=reader, source_namespace=NAMESPACE, source_secret=name)
     return ExternalSecret(
         scope,
         store_name,

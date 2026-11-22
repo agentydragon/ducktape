@@ -896,7 +896,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace="litellm",
                 source_secret=_LITELLM_KEY_SECRET,
-                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
@@ -920,7 +919,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace=ANTHROPIC_API_KEY.secret.namespace,
                 source_secret=ANTHROPIC_API_KEY.secret.name,
-                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(ANTHROPIC_API_KEY.secret.name, ANTHROPIC_API_KEY.key, secret_key=ANTHROPIC_API_KEY.key)],
@@ -958,7 +956,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace=source.secret.namespace,
                 source_secret=source.secret.name,
-                consumer_namespace=STAGING_NAMESPACE,
             ),
         )
     # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
@@ -975,7 +972,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace="haku-console",
                 source_secret=_GITHUB_MCP_CLIENT_SECRET,
-                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(_GITHUB_MCP_CLIENT_SECRET, key) for key in ("client_id", "client_secret")],

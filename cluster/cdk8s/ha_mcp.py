@@ -103,7 +103,6 @@ def _home_assistant_token(scope: Construct) -> None:
                 reader=reader,
                 source_namespace=home_assistant.HA_MCP_TOKEN.secret_namespace,
                 source_secret=home_assistant.HA_MCP_TOKEN.secret_name,
-                consumer_namespace=_NAMESPACE,
             )
         ),
         data=[remote_data(home_assistant.HA_MCP_TOKEN.secret_name, "token", secret_key=_HOME_ASSISTANT_TOKEN.key)],

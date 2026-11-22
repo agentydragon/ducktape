@@ -152,12 +152,7 @@ def _copy_secret(
         source=source,
         key=key,
         store=single_secret_store(
-            scope,
-            f"agentplane-staging-{store}",
-            reader=reader,
-            source_namespace=source_namespace,
-            source_secret=source,
-            consumer_namespace=credentials_namespace,
+            scope, f"agentplane-staging-{store}", reader=reader, source_namespace=source_namespace, source_secret=source
         ),
     )
 

@@ -35,7 +35,6 @@ def chart(app: App) -> Chart:
         reader=reader,
         source_namespace=config.NAMESPACE,
         source_secret=config.GRAFANA_PASSWORD.name,
-        consumer_namespace=_NAMESPACE,
     )
     ExternalSecret(
         chart,
