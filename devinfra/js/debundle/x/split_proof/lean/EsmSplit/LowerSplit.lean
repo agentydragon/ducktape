@@ -593,8 +593,12 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
       if Lower.typ s == "ImportDeclaration" then some (i, s) else none
     writeModules B P out (renderModule asts imports B P)
     if let some planPath := planPath? then
+      let (count, sample, _) := if ok then (0, #[], #[]) else conflictInversions B P
+      let examples := sample.map fun (later, earlier) =>
+        Json.mkObj [("earlier", toJson earlier), ("later", toJson later)]
       IO.FS.writeFile planPath (Json.mkObj [
         ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
+        ("orderConflicts", Json.mkObj [("count", toJson count), ("examples", Json.arr examples)]),
         ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
     let _ ← lap "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"

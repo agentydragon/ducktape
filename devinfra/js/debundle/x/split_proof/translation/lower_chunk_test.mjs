@@ -37,7 +37,14 @@ function split(name, { code, outside = {}, modules, force = false, spec = {} }) 
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, ...spec }));
   const checked = spawnSync(
     process.env.LOWERSPLIT,
-    [path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir, ...(force ? ["--force"] : [])],
+    [
+      path.join(dir, "ast.json"),
+      path.join(dir, "spec.json"),
+      dir,
+      "--plan",
+      path.join(dir, "plan.json"),
+      ...(force ? ["--force"] : []),
+    ],
     { encoding: "utf8" }
   );
   const text = (file) => readFileSync(path.join(dir, file), "utf8");
@@ -52,6 +59,20 @@ function same(name, fixture, names) {
   assert.doesNotMatch(original, /Error/, `${name}: the bundle itself fails`);
   assert.equal(observe(result.dir, "entry.mjs", names), original, name);
   return result;
+}
+
+// A forced split reverses two visible effects. Report the pair in source ordinals.
+{
+  const { checked, text, log } = split("inverted-effects", {
+    code: 'console.log("first"); console.log("second");',
+    modules: { "entry.mjs": ["#0"], "other.mjs": ["#1"] },
+    force: true,
+  });
+  assert.equal(checked.status, 1, log);
+  assert.deepEqual(JSON.parse(text("plan.json")).orderConflicts, {
+    count: 1,
+    examples: [{ earlier: 0, later: 1 }],
+  });
 }
 
 // A glue name meets a name the entry publishes for another binding: `peel.mjs` needs the entry's local `m`, and the
