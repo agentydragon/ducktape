@@ -9,11 +9,12 @@ from uuid import uuid4
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import session_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import VM_TEMPLATE, Sandboxes
-from agentplane.system_tests.driver.session_setup import run_setup
+from agentplane.system_tests.driver.session import run_session_setup_script
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKSPACE_ROOT = "/state/workspaces"
@@ -23,7 +24,7 @@ AGENT_GID = 107
 
 
 async def fresh_vm_session_workspace_is_created_for_harness_identity(
-    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes
+    client: Client, dispatcher: SessionDispatcherClient, history: HistoryServiceClient, sandbox: Sandboxes
 ) -> None:
     """Check absence before Session creation, then use the ordinary setup and Git paths."""
     view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
@@ -35,9 +36,9 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(
     preflight_session_id = uuid4()
     workspace = f"{WORKSPACE_ROOT}/{session_id}"
     preflight_workspace = f"{WORKSPACE_ROOT}/{preflight_session_id}"
-    absent, _ = await run_setup(
-        client,
+    absent, _ = await run_session_setup_script(
         dispatcher,
+        history,
         sandbox_name=view.target.name,
         sandbox_uid=view.target.uid,
         session_id=preflight_session_id,
@@ -81,9 +82,9 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(
             ),
         ]
     )
-    output, stderr = await run_setup(
-        client,
+    output, stderr = await run_session_setup_script(
         dispatcher,
+        history,
         sandbox_name=view.target.name,
         sandbox_uid=view.target.uid,
         session_id=session_id,

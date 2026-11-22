@@ -214,7 +214,7 @@ async def vm_sandbox_turn(
         attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
     ):
         agent = await session_setup_is_supervised(
-            client, dispatcher, view.target.name, view.target.uid, harness, offered_model
+            cluster, client, dispatcher, view.target.name, view.target.uid, harness, offered_model
         )
     with (
         tracer.start_as_current_span("system_test.turn"),
