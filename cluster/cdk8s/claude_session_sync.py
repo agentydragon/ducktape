@@ -48,24 +48,21 @@ _DATA_CLAIM = "claude-session-sync-state"
 _DATA_DIR = "/data"
 _CREDENTIALS_FILE = f"{_DATA_DIR}/credentials.json"
 _CONTROL_NAME = f"{NAME}-control"  # the control Pods' label value and container name
-_CONTROL_OBJECT_NAME = "control"  # the control Deployment and Service
 # The hosts the OAuth token is refreshed at and the sessions API is read from.
 _ANTHROPIC_HOSTS = ("api.anthropic.com", "platform.claude.com")
 _UID = 1000
-_WEB_LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "web"}
-_CONTROL_LABELS = {"app.kubernetes.io/name": _CONTROL_NAME, "app.kubernetes.io/component": "control"}
-_WEB_ENDPOINT_LABELS = {**cilium.endpoint_labels(NAMESPACE, NAME), "app.kubernetes.io/component": "web"}
-_CONTROL_ENDPOINT_LABELS = {
-    **cilium.endpoint_labels(NAMESPACE, _CONTROL_NAME),
-    "app.kubernetes.io/component": "control",
-}
 WEB_SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(_WEB_LABELS.items()))
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "web"))),
 )
 CONTROL_SERVICE = ServiceRef(
-    name=_CONTROL_OBJECT_NAME,
+    name="control",
     port=Port(name="http", number=8080),
-    pods=Pods(namespace=NAMESPACE, labels=tuple(_CONTROL_LABELS.items())),
+    pods=Pods(
+        namespace=NAMESPACE,
+        labels=(("app.kubernetes.io/name", _CONTROL_NAME), ("app.kubernetes.io/component", "control")),
+    ),
 )
 
 
@@ -115,9 +112,7 @@ def _deployment(
     chart: Chart,
     *,
     workload_id: str,
-    name: str,
     container: str,
-    labels: dict[str, str],
     selector_labels: dict[str, str] | None = None,
     args: list[str],
     env: list[k8s.EnvVar],
@@ -129,11 +124,12 @@ def _deployment(
     volume_mounts: list[k8s.VolumeMount] | None = None,
     tolerate_control_plane: bool = False,
 ) -> None:
+    labels = service.pods.selector
     deployment = k8s.KubeDeployment(
         chart,
         workload_id,
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=service.name,
             namespace=NAMESPACE,
             labels=labels,
             annotations={
@@ -185,9 +181,7 @@ def _web_deployment(chart: Chart) -> None:
     _deployment(
         chart,
         workload_id="web-deployment",
-        name=NAME,
         container=NAME,
-        labels=_WEB_LABELS,
         selector_labels={"app.kubernetes.io/name": NAME},  # preserve the existing Deployment's immutable selector
         args=["web"],
         service=WEB_SERVICE,
@@ -212,9 +206,7 @@ def _control_deployment(chart: Chart) -> None:
     _deployment(
         chart,
         workload_id="control-deployment",
-        name=_CONTROL_OBJECT_NAME,
         container=_CONTROL_NAME,
-        labels=_CONTROL_LABELS,
         args=["control"],
         service=CONTROL_SERVICE,
         replicas=1,
@@ -236,18 +228,13 @@ def _control_deployment(chart: Chart) -> None:
 
 
 def _service_and_route(chart: Chart) -> None:
-    k8s.KubeService(
-        chart,
-        "web-service",
-        metadata=k8s.ObjectMeta(name=WEB_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_WEB_LABELS, ports=[WEB_SERVICE.k8s_service_port()], type="ClusterIP"),
-    )
-    k8s.KubeService(
-        chart,
-        "control-service",
-        metadata=k8s.ObjectMeta(name=CONTROL_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_CONTROL_LABELS, ports=[CONTROL_SERVICE.k8s_service_port()], type="ClusterIP"),
-    )
+    for construct_id, service in (("web-service", WEB_SERVICE), ("control-service", CONTROL_SERVICE)):
+        k8s.KubeService(
+            chart,
+            construct_id,
+            metadata=k8s.ObjectMeta(name=service.name, namespace=NAMESPACE),
+            spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.k8s_service_port()], type="ClusterIP"),
+        )
     https_route(
         chart,
         "route",
@@ -273,7 +260,7 @@ def _network_policies(chart: Chart) -> None:
                 )
             },
         ),
-        endpoint_selector=_WEB_ENDPOINT_LABELS,
+        endpoint_selector=WEB_SERVICE.pods.cilium,
         ingress=[IngressRule.from_gateway(WEB_SERVICE.pod_port)],
         egress=[
             cilium.dns_egress(resolves=["*"]),
@@ -293,7 +280,7 @@ def _network_policies(chart: Chart) -> None:
                 "description": "Only web Pods may call the single Claude credential and sync control process."
             },
         ),
-        endpoint_selector=_CONTROL_ENDPOINT_LABELS,
+        endpoint_selector=CONTROL_SERVICE.pods.cilium,
         ingress=[WEB_SERVICE.pods.admit(CONTROL_SERVICE.pod_port)],
         egress=[
             cilium.dns_egress(resolves=["*"]),
