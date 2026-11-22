@@ -687,10 +687,10 @@ py_library(
 )
 
 py_test(
-    name = "test_prompt_instructions",
+    name = "test_preset_policy_sets",
     # Reads the staging_manifests fixture, which synthesizes the chart.
     size = "medium",
-    srcs = ["test_prompt_instructions.py"],
+    srcs = ["test_preset_policy_sets.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
@@ -698,7 +698,6 @@ py_test(
         ":conftest",
         ":egress",
         ":staging",
-        ":staging_config",
         "//:conftest",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//pytest",

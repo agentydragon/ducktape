@@ -61,12 +61,6 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
     ]
 )
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
-# What the Haku preset binds: the reviewed read-only bundle the haku-agent and claude-ai
-# bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH, Kubernetes
-# inspection) plus sandbox use and the GitHub identity read, and Haku's one write: rerunning failed
-# jobs on a ducktape CI run. Nothing here is a new grant -- each set's own auto-approval rule was
-# reviewed for the connector principals, and every other write stays on the human path.
-HAKU_ACTION_POLICY_SETS = (*HAKU_SHARED_ACTION_SETS, DUCKTAPE_PR_FAILED_JOBS_SET)
 
 # Inbox groups and the presets that launch into them (operator, 2026-10-21 07:51 UTC). A group's Sandboxes carry
 # its inbox tag and hold its `send_to` PolicySet, so they may message one another.
@@ -215,9 +209,9 @@ def config(
             basic_policy_set,
             *HAKU_SHARED_CORE_POLICIES,
             *HAKU_SHARED_GITHUB_POLICIES,
-            # Bound at launch on the Sandbox Identity rather than through the standing `haku-agent`
-            # binding; this preset determines what a managed Haku may do without the operator.
-            *HAKU_ACTION_POLICY_SETS,
+            *HAKU_SHARED_ACTION_SETS,
+            # Only the launched Sandbox gets to rerun failed ducktape CI jobs.
+            DUCKTAPE_PR_FAILED_JOBS_SET,
             *_launch_sets("haku", namespace=namespace, identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_HAKU_CODEX,

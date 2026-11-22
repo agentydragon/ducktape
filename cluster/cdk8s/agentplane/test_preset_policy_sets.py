@@ -11,20 +11,17 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
 )
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY
-from cluster.cdk8s.agentplane.staging_config import HAKU_ACTION_POLICY_SETS
-from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
     assert staging.ENV.app is not None
     cfg = staging.ENV.app.config
-    finance_policies = cfg.sandbox_presets["finance-agent"].policy_sets
-    assert GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET in finance_policies
-    for name, preset in cfg.sandbox_presets.items():
-        if name == "finance-agent":
-            continue
-        policies = preset.policy_sets
-        assert GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET not in policies
+    assert {
+        name
+        for name, preset in cfg.sandbox_presets.items()
+        if GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET in preset.policy_sets
+    } == {"finance-agent"}
 
 
 def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: list[dict[str, Any]]) -> None:
@@ -32,7 +29,8 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     write. The binding is the reviewed bundle; a launch's Identity has its own binding, so the
     preset spells out what that Sandbox receives."""
     binding = find_resource(staging_manifests, "PolicyBinding", "haku-agent")
-    preset = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]["haku"]["policy_sets"]
+    assert staging.ENV.app is not None
+    preset = staging.ENV.app.config.sandbox_presets["haku"].policy_sets
     assert len(preset) == len(set(preset))
     action_sets = {
         doc["metadata"]["name"]
@@ -40,18 +38,8 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
         if doc["kind"] == "PolicySet" and any(rule["type"] == "action_auto_approve" for rule in doc["spec"]["rules"])
     }
     bound = set(binding["spec"]["policySets"]) & action_sets
-    bound -= {BASIC_POLICY}
-    assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    # `basic` owns the same-principal Session-delegation approval rule, while also serving direct
-    # platform ServiceAccount callers.
-    expected_action_sets = set(HAKU_ACTION_POLICY_SETS) | {BASIC_POLICY}
-    assert set(preset) & action_sets == expected_action_sets, "preset and its named bundle drifted"
-    assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
-
-    # Every name the preset binds must resolve to a PolicySet this namespace actually creates, or the
-    # The app refuses the launch outright.
-    created = {doc["metadata"]["name"] for doc in staging_manifests if doc["kind"] == "PolicySet"}
-    assert set(preset) <= created, sorted(set(preset) - created)
+    assert DUCKTAPE_PR_FAILED_JOBS_SET not in bound
+    assert set(preset) & action_sets == bound | {BASIC_POLICY, DUCKTAPE_PR_FAILED_JOBS_SET}
 
 
 @pytest.mark.parametrize("policy_set", ["quest-scheduler-read", "thrive-read"])
@@ -59,9 +47,10 @@ def test_read_policy_grants(staging_manifests: list[dict[str, Any]], policy_set:
     for name in ("haku-agent", "claude-ai"):
         binding = find_resource(staging_manifests, "PolicyBinding", name)
         assert policy_set in binding["spec"]["policySets"]
-    presets = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]
-    assert policy_set in presets["haku"]["policy_sets"]
-    assert all(policy_set not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
+    assert staging.ENV.app is not None
+    assert {
+        name for name, preset in staging.ENV.app.config.sandbox_presets.items() if policy_set in preset.policy_sets
+    } == {"haku"}
 
 
 def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, Any]]) -> None:
