@@ -16,9 +16,9 @@ from agentplane.system_tests.scenarios import storage, suspend_resume, vm_worksp
 from agentplane.system_tests.vm import guest_logs
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+# gazelle:include_dep //agentplane/system_tests/vm:pytest_plugin
 # gazelle:include_dep //agentplane/system_tests:app_fixtures
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
+pytest_plugins = ("agentplane.system_tests.vm.pytest_plugin", "agentplane.system_tests.app_fixtures")
 
 pytestmark = pytest.mark.vm_sandboxes
 
