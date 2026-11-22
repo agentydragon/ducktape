@@ -33,7 +33,7 @@ because it scales the app to zero after OAuth consent.
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
 | `//agentplane/system_tests/suites:test_pod`                            | App-backed Pod Sandbox scenarios                      |
 | `//agentplane/system_tests/suites:test_pod_platform`                   | Native Pod workload trust and Egress credentials      |
-| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
+| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and native CLI History reads         |
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
 | `//agentplane/system_tests/suites/mcp:test_services`                   | App-backed delegated Action admission                 |
