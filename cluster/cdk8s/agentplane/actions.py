@@ -355,8 +355,7 @@ class Actions(Construct):
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
             )
-        settings_name = "actions-settings"
-        workload = self._add_workload(settings_name)
+        workload = self._add_workload()
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=ACTIONS_URI
         )
@@ -371,7 +370,7 @@ class Actions(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
             content=yaml_config(
                 Settings(
                     rpc=rpc,
@@ -558,20 +557,7 @@ class Actions(Construct):
             )
         return env
 
-    def _reload_secrets(self) -> list[str]:
-        """The Secrets `_container_env` and `_add_workload` wire in, so rotating any rolls the Deployment."""
-        props = self.env.actions
-        names = {mount.secret_name for mount in props.bearer_mcp_mounts}
-        if props.web_push is not None:
-            names.add(props.web_push.secret_name)
-        if props.github_mcp_client_secret_name is not None:
-            names.add(props.github_mcp_client_secret_name)
-        if props.oauth_secret_items:
-            names.add(self.mcp_oauth.name)
-        return sorted(names)
-
-    def _add_workload(self, settings_name: str) -> ServiceWorkload:
-        reload_secrets = self._reload_secrets()
+    def _add_workload(self) -> ServiceWorkload:
         health = TlsGrpcHealth(
             port=self.service.pod_port,
             ca_file=workload_tls.TRUST_BUNDLE_FILE,
@@ -599,12 +585,6 @@ class Actions(Construct):
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
-            annotations={
-                **({"secret.reloader.stakater.com/reload": ",".join(reload_secrets)} if reload_secrets else {}),
-                # No configMapGenerator hash rolls the Deployment on settings changes
-                # (cluster/docs/cdk8s.md); reloader does.
-                "configmap.reloader.stakater.com/reload": settings_name,
-            },
         )
         container = workload.container
 

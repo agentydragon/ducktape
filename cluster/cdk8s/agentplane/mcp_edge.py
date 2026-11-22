@@ -78,7 +78,6 @@ class McpEdge(Construct):
         self.tls = tls_service(env.namespace)
         props = env.mcp_edge
 
-        settings_name = f"{NAME}-settings"
         variables = {DATABASE_URL_ENV: database_url}
         workload = add_service_workload(
             self,
@@ -102,14 +101,6 @@ class McpEdge(Construct):
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
-            annotations={
-                "configmap.reloader.stakater.com/reload": settings_name,
-                **(
-                    {"secret.reloader.stakater.com/reload": props.oauth_secret_name}
-                    if props.oauth_secret_name is not None
-                    else {}
-                ),
-            },
         )
         if props.oauth_secret_name is not None:
             oauth_secret = Secret.from_secret_name(self, "oauth-secret", props.oauth_secret_name)
@@ -153,7 +144,7 @@ class McpEdge(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             content=yaml_config(settings_contract),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )

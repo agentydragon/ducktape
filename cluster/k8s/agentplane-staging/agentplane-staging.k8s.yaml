@@ -1464,9 +1464,6 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: llm-ingress-settings,public-web-pki,llm-ingress-codex-models
-    secret.reloader.stakater.com/reload: litellm-key-agentplane-staging
   labels:
     app.kubernetes.io/name: llm-ingress
   name: llm-ingress
@@ -1917,8 +1914,6 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: agentplane-staging-egress-upstream-ca,public-web-pki
   labels:
     app.kubernetes.io/name: egress
   name: egress
@@ -3703,8 +3698,6 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: central-sampler-settings,public-web-pki
   labels:
     app.kubernetes.io/name: central-sampler
   name: central-sampler
@@ -4642,9 +4635,6 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: app-config,public-web-pki
-    secret.reloader.stakater.com/reload: agentplane-oidc,agentplane-staging-session-secret
   labels:
     app.kubernetes.io/name: app
   name: app
@@ -7565,9 +7555,6 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: actions-settings
-    secret.reloader.stakater.com/reload: agentplane-staging-web-push-vapid,google-mcp-bearer,ha-mcp-client-bearer,haku-console-github-mcp-client-credentials,ssh-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat
   labels:
     app.kubernetes.io/name: actions
   name: actions
@@ -8989,9 +8976,6 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: mcp-edge-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth
   labels:
     app.kubernetes.io/name: mcp-edge
   name: mcp-edge
