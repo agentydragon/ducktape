@@ -8,8 +8,8 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting  # not collected by pytest
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart
+from cdk8s_plus_34 import ConfigMap, k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
@@ -27,6 +27,12 @@ def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [doc for doc in docs if workload_kind(doc) == (GROUP, "SandboxTemplate") and "pod" in doc["spec"]]
 
 
+@pytest.fixture(scope="module")
+def staging_runner_pod(staging_manifests: list[dict[str, Any]]) -> dict[str, Any]:
+    template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
+    return cast(dict[str, Any], template["spec"]["pod"]["spec"])
+
+
 def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> dict[str, Any]:
     volume = one(volume for volume in pod["volumes"] if volume["name"] == "environment-runtime-config")
     config_map = find_resource(docs, "ConfigMap", volume["configMap"]["name"])
@@ -41,7 +47,7 @@ def _runner_pod(
     executor_resources: k8s.ResourceRequirements | None,
 ) -> dict[str, Any]:
     chart = Chart(app, "runner-template-test")
-    EnvironmentSandboxTemplate(
+    template = EnvironmentSandboxTemplate(
         chart,
         "runner-template",
         replace(staging.ENV, isolated_codex_executor=isolated_executor),
@@ -50,8 +56,7 @@ def _runner_pod(
         environment_runtime_resources=environment_runtime_resources,
         executor_resources=executor_resources,
     )
-    template = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "SandboxTemplate")
-    return cast(dict[str, Any], template["spec"]["pod"]["spec"])
+    return cast(dict[str, Any], template.spec["pod"]["spec"])
 
 
 def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict[str, Any]]) -> None:
@@ -179,7 +184,7 @@ def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App
 
 def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
     chart = Chart(scratch_app, "runner-runtime-overrides-test")
-    EnvironmentSandboxTemplate(
+    template = EnvironmentSandboxTemplate(
         chart,
         "runner-template",
         staging.ENV,
@@ -192,9 +197,12 @@ def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
             exec_server_dependency_timeout_ms=120_000,
         ),
     )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
+    runtime_config = one(
+        construct
+        for construct in chart.node.find_all()
+        if isinstance(construct, ConfigMap) and construct.name == template.config_map_name
+    ).data
+    config = json.loads(runtime_config["environment-runtime.json"])
 
     assert config["session_reconcile_concurrency"] == 2048
     assert config["codex_readiness"] == {
@@ -215,16 +223,12 @@ def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_
         )
 
 
-def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-template-test")
-    EnvironmentSandboxTemplate(
-        chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner"
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    pod = template["spec"]["pod"]["spec"]
+def test_runner_template_renders_mtls_server_listener(
+    staging_manifests: list[dict[str, Any]], staging_runner_pod: dict[str, Any]
+) -> None:
+    pod = staging_runner_pod
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
-    config = _runner_configuration(docs, pod)
+    config = _runner_configuration(staging_manifests, pod)
 
     assert len(runner["ports"]) == 1
     assert len(runner["ports"][0]["name"]) <= 15  # Kubernetes port names are limited to 15 characters.
@@ -244,7 +248,7 @@ def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
 
 
 def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
-    staging_manifests: list[dict[str, Any]],
+    staging_manifests: list[dict[str, Any]], staging_runner_pod: dict[str, Any]
 ) -> None:
     """The canonical key reaches the runner container and its isolated executor, and by name the harness
     children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
@@ -265,7 +269,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     ]
     assert copy["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store"
 
-    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
+    pod = staging_runner_pod
     containers = {container["name"]: container for container in pod["containers"]}
     secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
     assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
@@ -282,7 +286,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
 
 
 def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(
-    staging_manifests: list[dict[str, Any]],
+    staging_manifests: list[dict[str, Any]], staging_runner_pod: dict[str, Any]
 ) -> None:
     runner_settings = config_map_yaml(staging_manifests, f"{staging.POD_TEMPLATE}-egress-sidecar", "settings.yaml")
     launcher_settings = config_map_yaml(staging_manifests, "launcher-relay-egress-sidecar", "settings.yaml")
@@ -299,8 +303,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
         assert rendered["service_prefixes"] == list(route.service_prefixes)
         assert rendered["upstream"] == f"{route.service.fqdn}:{route.service.pod_port}"
         assert rendered["transport"] == route.transport.model_dump(mode="json", exclude_none=True)
-    template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
-    pod = template["spec"]["pod"]["spec"]
+    pod = staging_runner_pod
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://127.0.0.1:{PLATFORM_ROUTES_PORT}"
@@ -325,8 +328,10 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     assert {mount["name"] for mount in template_relay["volumeMounts"]} <= {volume["name"] for volume in pod["volumes"]}
 
 
-def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
-    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
+def test_llm_sidecar_route_uses_the_svid_listener(
+    staging_manifests: list[dict[str, Any]], staging_runner_pod: dict[str, Any]
+) -> None:
+    pod = staging_runner_pod
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
     settings = config_map_yaml(staging_manifests, settings_volume["configMap"]["name"], "settings.yaml")
     service = llm_ingress.service(staging.ENV.namespace)
@@ -335,7 +340,9 @@ def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[s
     assert route["server_uri"] == LLM_INGRESS_URI
 
 
-def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:
+def test_runner_tool_config_role_is_scoped_to_the_canonical_map(
+    staging_manifests: list[dict[str, Any]], staging_runner_pod: dict[str, Any]
+) -> None:
     tool_config = find_resource(staging_manifests, "ConfigMap", "sandbox-tool-config")
     assert set(tool_config["data"]) == {"bazel.bazelrc"}
     role = find_resource(staging_manifests, "Role", "agentplane-sandbox-tool-config-reader")
@@ -343,13 +350,12 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
         {"apiGroups": [""], "resourceNames": ["sandbox-tool-config"], "resources": ["configmaps"], "verbs": ["get"]}
     ]
 
-    volumes = one(_templates(staging_manifests))["spec"]["pod"]["spec"]["volumes"]
+    volumes = staging_runner_pod["volumes"]
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
     assert config_maps["environment-runtime-config"] == f"{staging.POD_TEMPLATE}-config"
     assert config_maps["tool-config"] == "sandbox-tool-config"
 
-    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
-    for container in [*pod["containers"], *pod.get("initContainers", [])]:
+    for container in [*staging_runner_pod["containers"], *staging_runner_pod.get("initContainers", [])]:
         env_names = {item["name"] for item in container.get("env", [])}
         mount_paths = {item["mountPath"] for item in container.get("volumeMounts", [])}
         assert "KUBECONFIG" not in env_names
