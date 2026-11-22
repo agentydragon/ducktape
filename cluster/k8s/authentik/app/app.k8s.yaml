@@ -535,10 +535,6 @@ spec:
     blueprints:
       configMaps:
         - sso-blueprints
-    global:
-      deploymentAnnotations:
-        configmap.reloader.stakater.com/reload: sso-blueprints
-        secret.reloader.stakater.com/reload: authentik-db-app,authentik-user-password
     postgresql:
       enabled: false
     server:

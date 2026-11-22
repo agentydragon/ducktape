@@ -175,12 +175,7 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(
-                name=NAME,
-                namespace=NAMESPACE,
-                labels=SERVICE.pods.selector,
-                annotations={"secret.reloader.stakater.com/reload": _LANGFUSE_OTEL_CONFIG.name},
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=2,
             strategy=DeploymentStrategy.rolling_update(
