@@ -6,7 +6,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "networking",
     srcs = ["networking.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pyroute2"],
 )
@@ -14,14 +13,12 @@ py_library(
 py_library(
     name = "firecracker_process",
     srcs = ["firecracker_process.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "config",
     srcs = ["config.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
@@ -32,14 +29,12 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "entrypoint",
     srcs = ["entrypoint.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -52,7 +47,6 @@ py_library(
 py_binary(
     name = "entrypoint_bin",
     main_module = "devinfra.x.firecracker.vm_pod.entrypoint",
-    tags = ["manual"],
     deps = [":entrypoint"],
 )
 
@@ -61,14 +55,12 @@ py_binary(
 aspect_py_binary(
     name = "entrypoint_image_bin",
     main = "entrypoint.py",
-    tags = ["manual"],
     deps = [":entrypoint"],
 )
 
 py_image_layer(
     name = "layers",
     binary = ":entrypoint_image_bin",
-    tags = ["manual"],
 )
 
 oci_image(
@@ -77,7 +69,6 @@ oci_image(
     entrypoint = py_image_entrypoint("entrypoint_image_bin"),
     env = py_image_env(binary_name = "entrypoint_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tags = ["manual"],
     tars = [
         "@trixie_fc_vm_pod//:flat",
         ":layers",

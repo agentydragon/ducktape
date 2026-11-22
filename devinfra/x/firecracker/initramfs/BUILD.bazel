@@ -6,7 +6,6 @@ pkg_files(
     name = "init",
     srcs = ["//devinfra/claude/web_env/re/process_api:process_api_re"],
     renames = {"//devinfra/claude/web_env/re/process_api:process_api_re": "init"},
-    tags = ["manual"],
 )
 
 # Build a cpio initramfs containing the RE process_api as /init.
@@ -17,7 +16,6 @@ cpio_archive(
     name = "initramfs",
     srcs = [":init"],
     out = "initramfs.cpio",
-    tags = ["manual"],
     visibility = ["//devinfra/x/firecracker:__subpackages__"],
 )
 
@@ -26,6 +24,5 @@ pkg_tar(
     name = "initramfs_layer",
     srcs = [":initramfs"],
     package_dir = "/opt/firecracker",
-    tags = ["manual"],
     visibility = ["//devinfra/x/firecracker:__subpackages__"],
 )

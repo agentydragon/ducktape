@@ -25,13 +25,9 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 ## Quick Start
 
 The in-cluster deployment is archived (`deploy/` is no longer wired into
-`cluster/k8s/kustomization.yaml`). Routine CI skips the parked packages and no
-longer publishes their images. Build or test them explicitly:
-
-```sh
-bbr build //devinfra/x/firecracker/manager:image //devinfra/x/firecracker/vm_pod:image
-bbr test //devinfra/x/firecracker/manager:test_service
-```
+`cluster/k8s/kustomization.yaml`). Keep the manager tests in routine CI while
+the deployment is parked. Automatic image publishing is disabled for
+`firecracker-manager` and `fc-vm-pod`.
 
 Before revival, restore the guest rootfs build ([prototype in #1167](https://github.com/agentydragon/ducktape/pull/1167)).
 Publish both images and set `deploy/deployment.yaml` and `deploy/config.yaml` to

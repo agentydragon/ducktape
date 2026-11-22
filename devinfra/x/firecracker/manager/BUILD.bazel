@@ -6,7 +6,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "models",
     srcs = ["models.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -14,7 +13,6 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
@@ -25,7 +23,6 @@ py_library(
 py_library(
     name = "clients",
     srcs = ["clients.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//httpx",
@@ -36,7 +33,6 @@ py_library(
 py_library(
     name = "k8s_client",
     srcs = ["k8s_client.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -48,7 +44,6 @@ py_library(
 py_library(
     name = "snapshots",
     srcs = ["snapshots.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         ":clients",
@@ -59,7 +54,6 @@ py_library(
 py_library(
     name = "service",
     srcs = ["service.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         ":clients",
@@ -75,7 +69,6 @@ py_library(
 py_binary(
     name = "service_bin",
     main_module = "devinfra.x.firecracker.manager.service",
-    tags = ["manual"],
     deps = [":service"],
 )
 
@@ -84,14 +77,12 @@ py_binary(
 aspect_py_binary(
     name = "service_image_bin",
     main = "service.py",
-    tags = ["manual"],
     deps = [":service"],
 )
 
 py_image_layer(
     name = "layers",
     binary = ":service_image_bin",
-    tags = ["manual"],
 )
 
 oci_image(
@@ -100,14 +91,12 @@ oci_image(
     entrypoint = py_image_entrypoint("service_image_bin"),
     env = py_image_env(binary_name = "service_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tags = ["manual"],
     tars = [":layers"],
 )
 
 py_test(
     name = "test_service",
     srcs = ["test_service.py"],
-    tags = ["manual"],
     deps = [
         ":service",
         "//:conftest",
