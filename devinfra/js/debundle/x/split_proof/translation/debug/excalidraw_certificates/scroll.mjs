@@ -83,14 +83,33 @@ const loaded = load();
 assert.equal(loaded.count, 1);
 assert.equal(load(), loaded);
 assert.equal(calls, 1);
-report.wrapper = { local: firstInit.callee.name, provider, exported, callsOnCreation: 0, callsAfterTwoLoads: calls };
+report.providerProbe = {
+  local: firstInit.callee.name,
+  provider,
+  exported,
+  callsOnCreation: 0,
+  callsAfterTwoLoads: calls,
+};
 
 const ast = path.join(process.env.TEST_TMPDIR, "editor.json");
 writeFileSync(ast, JSON.stringify(program));
 const spec = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-spec.json");
 writeFileSync(spec, JSON.stringify(trial, null, 2));
 const out = path.join(process.env.TEST_TMPDIR, "modules");
-const run = spawnSync(process.env.LOWERSPLIT, [ast, spec, out, "--require", "all-outcomes"], { encoding: "utf8" });
+// The authoring snapshot renames selected chunks. Resolve its editor alias back to
+// esbuild's output tree, where the original relative imports resolve on disk.
+const roster = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/js-files.txt"));
+const bundle = process.env.EXCALIDRAW_OUTPUTS.split(" ").find((file) => file.endsWith("/bundle"));
+const editor = readFileSync(roster, "utf8")
+  .split("\n")
+  .map((line) => line.split("\t"))
+  .find(([alias]) => alias === "editor.js");
+assert(bundle && editor?.[1]);
+const strictSource = path.join(bundle, editor[1]);
+assert.equal(readFileSync(strictSource, "utf8"), code);
+const run = spawnSync(process.env.LOWERSPLIT, [strictSource, spec, out, "--require", "normal-completion"], {
+  encoding: "utf8",
+});
 if (run.error) throw run.error;
 assert.equal(run.signal, null);
 assert.equal(run.status, 1, run.stdout + run.stderr);
@@ -100,6 +119,7 @@ writeFileSync(
   path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "result.json"),
   JSON.stringify(
     {
+      input: editor[1],
       selected,
       units: selectors.length,
       firstStatement: first.type,
@@ -111,13 +131,11 @@ writeFileSync(
   )
 );
 assert.equal(first.type, "ImportDeclaration");
-assert.deepEqual(verdict, {
-  requested: "all-outcomes",
-  scope: "closed-declarations",
-  status: "rejected",
-  guarantee: null,
-  reason: "statement 0: expected a variable declaration, got ImportDeclaration",
-});
+assert.equal(verdict.requested, "normal-completion");
+assert.equal(verdict.status, "rejected");
+assert.equal(verdict.guarantee, null);
+assert.equal(verdict.scope, "linked-programs");
+assert.equal(verdict.reason, "statement 5: expected a single declarator");
 assert(!existsSync(out), "a rejected trial published modules");
 
 // The pinned editor exposes its public names through an export list. Read the actual
@@ -177,53 +195,22 @@ assert(
 );
 assert(conflicts.some(([earlier, later]) => earlier === firstUnit && later === 1337));
 
-// Check the exact inversion set emitted by the real placement plan, rather than
-// a guessed ordinal range. The report identifies which conflicts the wrapper
-// theorem recognizes and the first one that needs a different rule.
-const pairsFile = path.join(process.env.TEST_TMPDIR, "wrapper-conflicts.json");
-const wrapperPairs = [...conflicts, [firstUnit, 1338]];
-writeFileSync(pairsFile, JSON.stringify(wrapperPairs));
-const wrapperCheck = spawnSync(
-  process.env.LOWERSPLIT,
-  ["--check-wrapper-swaps", path.join(chunks, "editor.js"), path.join(chunks, provider), pairsFile],
-  { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
-);
-if (wrapperCheck.error) throw wrapperCheck.error;
-assert.equal(wrapperCheck.status, 0, wrapperCheck.stdout + wrapperCheck.stderr);
-const wrapperReport = JSON.parse(wrapperCheck.stdout.trim());
-assert.equal(wrapperReport.checked.length, wrapperPairs.length);
-assert.deepEqual(
-  wrapperReport.checked.map(({ earlier, later }) => [earlier, later]),
-  wrapperPairs,
-  "the batch checker must report exactly the plan's structural inversion pairs"
-);
-const checkedConflicts = wrapperReport.checked.slice(0, conflicts.length);
-const recognized = checkedConflicts.filter(({ status }) => status === "conditional-normal");
-const unsupportedPairs = checkedConflicts.filter(({ status }) => status === "unsupported");
-const positiveControl = checkedConflicts.find(({ earlier, later }) => earlier === firstUnit && later === 1337);
-const negativeControl = wrapperReport.checked.at(-1);
-assert.equal(positiveControl?.status, "conditional-normal");
-assert.equal(negativeControl.status, "unsupported");
-assert.equal(recognized.length + unsupportedPairs.length, conflicts.length);
-assert.deepEqual(
-  recognized.map(({ earlier, later }) => [earlier, later]),
-  Array.from({ length: 14 }, (_, offset) => [offset + 5, 1337]),
-  "the rule should cover the fourteen lazy-wrapper declarations at units 5–18"
-);
-assert.equal(unsupportedPairs.length, 245);
-assert.deepEqual(
-  [unsupportedPairs[0]?.earlier, unsupportedPairs[0]?.later],
-  [19, 1337],
-  "unit 19 should be the first conflict the wrapper rule cannot justify"
-);
-report.wrapper.structuralConflictPairs = conflicts.length;
-report.wrapper.conditionalNormalPairs = recognized.length;
-report.wrapper.unsupportedPairs = unsupportedPairs.length;
-report.wrapper.firstRecognizedPair = recognized[0] ?? null;
-report.wrapper.firstUnsupportedPair = unsupportedPairs[0] ?? null;
+// Keep the ordinary move-plan evidence. This replay records the exact source
+// order inversions created by moving unit #1337; linked-provider certification
+// now lives in the small source-file E2E cases rather than a replay-only CLI.
+assert(conflicts.every(([, later]) => later === 1337));
+const moveReport = {
+  moved: ["#1337"],
+  structuralConflictPairs: conflicts.length,
+  firstConflict: conflicts[0],
+  includesImportBoundaryConflict: conflicts.some(([earlier, later]) => earlier === firstUnit && later === 1337),
+};
+assert.equal(moveReport.structuralConflictPairs, 259);
+assert(moveReport.includesImportBoundaryConflict);
+report.moveReport = moveReport;
 writeFileSync(
-  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "wrapper-conflicts.json"),
-  JSON.stringify({ summary: report.wrapper, checkedConflicts, negativeControl }, null, 2)
+  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-move-report.json"),
+  JSON.stringify({ summary: moveReport, conflicts }, null, 2)
 );
 writeFileSync(
   path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "import-boundary.json"),
@@ -233,7 +220,8 @@ console.log(
   JSON.stringify({
     firstBody: report.firstBody,
     selectedUnits: report.selectedUnits,
-    wrapper: report.wrapper,
+    providerProbe: report.providerProbe,
+    moveReport: report.moveReport,
     surfaces,
   })
 );

@@ -6,7 +6,7 @@ open EsmSplit Example Lean
 
 /-- Check `P`; write it if it passes (or with `force`). Exit code 0 iff it passes. -/
 def checkAndWrite (S : Spec) (P : Plan) (dir : System.FilePath) (force : Bool) : IO UInt32 := do
-  let ok ← report bundle S P
+  let ok := (← report bundle S P).ok
   if ok || force then FixtureRender.writeModules bundle P dir
   else IO.eprintln "checks failed; nothing written"
   return if ok then 0 else 1
