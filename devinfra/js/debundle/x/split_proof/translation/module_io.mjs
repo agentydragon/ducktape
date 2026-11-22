@@ -1,6 +1,7 @@
 // ESTree transport for LowerSplit's printer, input migration and declaration checker.
 import fs from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
@@ -65,6 +66,30 @@ try {
   } else if (mode === "--parse") {
     const [input, output] = args;
     writeJson(output, program(input));
+  } else if (mode === "--load-input") {
+    const [input, output] = args;
+    const snapshot = readJson(input);
+    const hasVersion =
+      snapshot &&
+      typeof snapshot === "object" &&
+      !Array.isArray(snapshot) &&
+      Object.hasOwn(snapshot, "annotationVersion");
+    if (hasVersion) {
+      if (snapshot.annotationVersion !== 2)
+        throw new Error(`unsupported annotationVersion: ${JSON.stringify(snapshot.annotationVersion)}`);
+      if (
+        typeof snapshot.sourceText !== "string" ||
+        !isDeepStrictEqual(snapshot, lowerDump(snapshot.sourceText, acorn, eslintScope))
+      )
+        throw new Error("input annotations differ from a fresh parse of sourceText");
+      writeJson(output, snapshot);
+    } else {
+      writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope));
+    }
+  } else if (mode === "--read-output") {
+    const [dir, output] = args;
+    if (!fs.lstatSync(dir).isDirectory()) throw new Error(`expected a module directory at ${dir}`);
+    writeJson(output, Object.fromEntries(readModules(dir)));
   } else if (mode === "--read-modules") {
     const [entry, names, output] = args;
     const source = fs.realpathSync(entry);
@@ -79,12 +104,7 @@ try {
   } else if (mode === "--upgrade") {
     const [input, output] = args;
     writeJson(output, upgradeLowerDump(readJson(input), acorn, eslintScope));
-  } else {
-    const dir = mode;
-    const [input, output] = args;
-    if (!fs.lstatSync(dir).isDirectory()) throw new Error(`expected a module directory at ${dir}`);
-    writeJson(output, { source: program(input), files: Object.fromEntries(readModules(dir)) });
-  }
+  } else throw new Error(`unknown mode: ${mode}`);
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

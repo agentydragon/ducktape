@@ -22,10 +22,14 @@ def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit 
 def readJson (path : System.FilePath) : IO Json := do
   IO.ofExcept (Json.parse (← IO.FS.readFile path))
 
-def loadProgram (path work : System.FilePath) : IO Json := do
+def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) : IO Json := do
   if path.extension == some "js" || path.extension == some "mjs" then
     let parsed := work / "source.json"
     javascript #["--parse"] #[path, parsed]
+    return ← readJson parsed
+  if validateSnapshot then
+    let parsed := work / "source.json"
+    javascript #["--load-input"] #[path, parsed]
     return ← readJson parsed
   let program ← readJson path
   match program.getObjVal? "annotationVersion" with
@@ -74,17 +78,15 @@ partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : 
       frontier := frontier.push (name, ast)
   return Json.mkObj providers.toList
 
-def certifyFiles (program : Json) (providers : Json) (B : Bundle) (P : Plan)
+def certifyFiles (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly : Bool) (asts : Array Json) (source : String)
     (check : Json → IO Unit) : IO Unit := do
   let dependencies := (← IO.ofExcept providers.getObj?).toList
   let verify (dir : System.FilePath) : IO Unit := do
     let reply := work / "reparsed.json"
-    javascript #[] #[dir, input, reply]
+    javascript #["--read-output"] #[dir, reply]
     let parsed ← readJson reply
-    unless (← IO.ofExcept (parsed.getObjVal? "source")) == program do
-      throw (IO.userError "input annotations differ from a fresh parse of sourceText")
-    let mut files ← IO.ofExcept (parsed.getObjVal? "files" >>= Json.getObj?)
+    let mut files ← IO.ofExcept parsed.getObj?
     for (name, expected) in dependencies do
       unless files.get? name == some expected do throw (IO.userError s!"provider {name} differs from the source graph")
       files := files.erase name
