@@ -381,7 +381,7 @@ function WindowRow({
         label={`${window.label} quota usage`}
       />
       <div className="aiquota-window-meta">
-        <span>{resetPending ? "Awaiting updated usage" : `Resets in ${window.reset}`}</span>
+        <span>{resetPending ? "Awaiting updated usage" : `↻ in ${window.reset}`}</span>
         {window.exhausted && !resetPending && <span className="aiquota-exhausted">exhausted</span>}
         {window.forecast && !window.exhausted && <span className="aiquota-forecast">{window.forecast}</span>}
       </div>
