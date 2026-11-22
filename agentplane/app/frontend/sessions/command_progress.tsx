@@ -83,7 +83,7 @@ export function CommandProgress({
     refused: "Command refused",
   };
   const reasonLabel = waitingReasonLabel(reason);
-  const description =
+  const label =
     stage === "local" && !local
       ? "Waiting for Dispatcher"
       : stage === "local" && unsent
@@ -91,7 +91,8 @@ export function CommandProgress({
         : stage === "queued" && reasonLabel
           ? reasonLabel
           : `${labels[stage]}${reasonLabel ? `: ${reasonLabel}` : ""}`;
-  const label = description;
+  const failed = stage === "failed" || stage === "dispatch_failed" || stage === "refused";
+  const uncertain = stage === "unconfirmed" || stage === "unknown";
   // The first light means submitted, not proof that another browser saved it locally.
   const current =
     stage === "local" || stage === "unconfirmed" || stage === "refused"
@@ -104,18 +105,40 @@ export function CommandProgress({
       ? "done"
       : step > current
         ? "future"
-        : stage === "failed" || stage === "dispatch_failed" || stage === "cancelled" || stage === "refused"
+        : failed || stage === "cancelled"
           ? "failed"
-          : stage === "unconfirmed" || stage === "unknown"
+          : uncertain
             ? "uncertain"
             : "waiting"
   );
+  const indicator =
+    stage === "effected" ? (
+      <IconCheck className="agentplane-command-check" size={16} aria-hidden="true" />
+    ) : (
+      <span className="agentplane-command-lights" aria-hidden="true">
+        {lights.map((state, index) => (
+          <span key={index} className="agentplane-command-light" data-state={state} />
+        ))}
+      </span>
+    );
+  if (failed || uncertain) {
+    return (
+      <span
+        className="agentplane-command-progress agentplane-command-progress-inline"
+        data-stage={stage}
+        role={failed ? "alert" : "status"}
+      >
+        {indicator}
+        <span>{label}</span>
+      </span>
+    );
+  }
   return (
     <span
       className="agentplane-command-progress"
       data-stage={stage}
       data-touch-open={touchOpen || undefined}
-      role={stage === "failed" || stage === "dispatch_failed" || stage === "refused" ? "alert" : "status"}
+      role="status"
       aria-label={label}
     >
       <button
@@ -130,15 +153,7 @@ export function CommandProgress({
           if (event.key === "Escape") setTouchOpen(false);
         }}
       >
-        {stage === "effected" ? (
-          <IconCheck className="agentplane-command-check" size={16} aria-hidden="true" />
-        ) : (
-          <span className="agentplane-command-lights" aria-hidden="true">
-            {lights.map((state, index) => (
-              <span key={index} className="agentplane-command-light" data-state={state} />
-            ))}
-          </span>
-        )}
+        {indicator}
       </button>
       <span className="agentplane-command-progress-label" role="tooltip">
         {label}

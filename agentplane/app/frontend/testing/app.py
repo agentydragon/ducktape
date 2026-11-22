@@ -34,6 +34,7 @@ class Flag(StrEnum):
     ENTITY_SEGMENTS_WITHHELD = "entitySegmentsWithheld"
     THREAD_SCOPE_UNAVAILABLE = "threadScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
+    COMMAND_SUBMISSION_REFUSED = "commandSubmissionRefused"
     PENDING_ACTIONS = "pendingActions"
     # Two opted-in reads ahead of PENDING_ACTIONS: a queue that overflows the attention strip even
     # after one decision.
@@ -268,5 +269,5 @@ class AgentplaneFixture:
     async def remember_short_refused_wake(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberShortRefusedWake()")
 
-    async def remember_failed_dispatch(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.rememberFailedDispatch()")
+    async def remember_failed_and_unknown_dispatches(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.rememberFailedAndUnknownDispatches()")

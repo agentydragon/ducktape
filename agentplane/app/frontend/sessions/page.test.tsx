@@ -1376,7 +1376,10 @@ function pendingRow(container: Element, commandId: string): HTMLElement {
 }
 
 function progressLabel(container: HTMLDivElement, commandId: string): string | null | undefined {
-  return pendingRow(container, commandId).querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label");
+  const progress = pendingRow(container, commandId).querySelector(".agentplane-command-progress");
+  return (
+    progress?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label") ?? progress?.textContent
+  );
 }
 
 function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
@@ -1490,7 +1493,7 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
   const container = await render();
   const row = pendingRow(container, failed.commandId);
   expect(row.querySelector('[data-stage="dispatch_failed"]')).not.toBeNull();
-  expect(progressLabel(container, failed.commandId)).toBe(
+  expect(row.querySelector('[role="alert"]')?.textContent).toBe(
     "Dispatcher could not deliver: Sandbox did not become Ready within 10 minutes: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound"
   );
   expect(buttonIn(row, "Retry")).toBeUndefined();
@@ -1592,9 +1595,11 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
   const container = await render();
   await sendDispatches([]);
 
+  const row = pendingRow(container, waiting.commandId);
   await vi.waitFor(() =>
-    expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="unknown"]')).not.toBeNull()
+    expect(row.querySelector('[role="status"]')?.textContent).toBe("Outcome unknown: sandbox_deleted")
   );
+  expect(row.querySelector('[role="alert"]')).toBeNull();
 });
 
 it("opens compact command detail on touch and closes on blur or Escape", async () => {
@@ -1769,9 +1774,7 @@ it("shows the failure and reason for a server-only command", async () => {
     requestedValue: undefined,
   });
   const pending = pendingRow(section, "test-entity");
-  expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
-    "Failed: model unavailable"
-  );
+  expect(pending.querySelector('[role="alert"]')?.textContent).toBe("Failed: model unavailable");
   expect(pending.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
@@ -1828,8 +1831,11 @@ it.each([
   expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-check")).toHaveLength(
     outcome === "effected" ? 1 : 0
   );
+  expect(bubble?.parentElement?.querySelector('[role="alert"]')?.textContent).toBe(
+    outcome === "failed" ? status : undefined
+  );
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
-    outcome === "noop" ? undefined : status
+    outcome === "effected" ? status : undefined
   );
   expect(bubble?.parentElement?.querySelector("button[aria-label='Dismiss']")).toBeNull();
   expect(container.querySelector(`.transcript-user-bubble[data-message-phase="${phase}"]`)).not.toBeNull();

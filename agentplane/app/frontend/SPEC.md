@@ -97,6 +97,12 @@ not yet present on Identities.
 An operator can set, rename, or clear a Thread name from the thread view. An unnamed Thread displays
 its ID as a placeholder; clearing the name restores that placeholder.
 
+## Thread command outcomes
+
+The thread shows command failures, refusals, unconfirmed Dispatcher receipts and unknown delivery
+outcomes below the command, including the reason when available. Unconfirmed submissions offer
+Retry when the browser can resend the command.
+
 ## Composer activity
 
 The composer shows the controller's next idle-suspension deadline from the current live Sandbox
