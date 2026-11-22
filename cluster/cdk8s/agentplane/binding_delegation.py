@@ -13,12 +13,17 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    DUCKTAPE_SOURCE,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -88,9 +93,6 @@ def add_flux_kustomizations(
     target_namespaces: Iterable[str],
 ) -> None:
     """Each target owner gates its delegation; bootstrap roots have no generated owner."""
-    source = KustomizationSpecSourceRef(
-        kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-    )
     for target_namespace in target_namespaces:
         # Bootstrap creates these namespaces before the generated owners reconcile.
         depends_on = (
@@ -101,7 +103,7 @@ def add_flux_kustomizations(
         flux_kustomization(
             flux_chart,
             f"{env.namespace}-binding-delegation-{target_namespace}",
-            source,
+            DUCKTAPE_SOURCE,
             path=f"./{directory(env, target_namespace)}",
             depends_on=depends_on,
             description=f"Delegates managed RoleBinding reconciliation in {target_namespace}.",

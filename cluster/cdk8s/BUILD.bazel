@@ -1951,6 +1951,7 @@ py_library(
     visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":config_format",
+        ":flux",
         ":gateway",
         ":manifest_roots",
         ":ntfy",
@@ -2318,7 +2319,6 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":namespace_access",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

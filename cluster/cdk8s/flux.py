@@ -49,6 +49,9 @@ from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
+DUCKTAPE_SOURCE = KustomizationSpecSourceRef(
+    kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
+)
 SOPS_DECRYPTION = KustomizationSpecDecryption(
     provider=KustomizationSpecDecryptionProvider.SOPS,
     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
