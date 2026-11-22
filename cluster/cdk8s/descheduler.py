@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from constructs import Construct
 
 from cluster.cdk8s import piraeus_storage, stateful_infra
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
@@ -95,54 +94,36 @@ def _values() -> dict[str, object]:
     }
 
 
-class Descheduler(Construct):
-    def __init__(self, scope: Construct, id: str) -> None:
-        super().__init__(scope, id)
-        helm_release(
-            self,
-            NAME,
-            NAMESPACE,
-            repository=https_helm_repository(
-                self, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/descheduler"
-            ),
-            chart="descheduler",
-            version="0.36.0",
-            interval="30m",
-            install=RETRY_FAILED_INSTALL,
-            values=_values(),
-        )
-
-
-class PvcReader(Construct):
-    """Read access to PersistentVolumeClaims for the chart's ServiceAccount, which the
-    chart names after the release."""
-
-    def __init__(self, scope: Construct, id: str) -> None:
-        super().__init__(scope, id)
-        role = k8s.KubeClusterRole(
-            self,
-            "role",
-            metadata=k8s.ObjectMeta(name=_PVC_READER),
-            rules=[
-                k8s.PolicyRule(api_groups=[""], resources=["persistentvolumeclaims"], verbs=["get", "list", "watch"])
-            ],
-        )
-        k8s.KubeClusterRoleBinding(
-            self,
-            "binding",
-            metadata=k8s.ObjectMeta(name=_PVC_READER),
-            role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=role.kind, name=role.name),
-            subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=NAMESPACE)],
-        )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
-    Descheduler(chart, "descheduler")
+    helm_release(
+        chart,
+        NAME,
+        NAMESPACE,
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/descheduler"),
+        chart="descheduler",
+        version="0.36.0",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(),
+    )
     return chart
 
 
 def rbac_chart(app: App) -> Chart:
+    """Read access to PVCs for the chart's ServiceAccount, named after the release."""
     chart = Chart(app, "rbac", disable_resource_name_hashes=True)
-    PvcReader(chart, "pvc-reader")
+    role = k8s.KubeClusterRole(
+        chart,
+        "role",
+        metadata=k8s.ObjectMeta(name=_PVC_READER),
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["persistentvolumeclaims"], verbs=["get", "list", "watch"])],
+    )
+    k8s.KubeClusterRoleBinding(
+        chart,
+        "binding",
+        metadata=k8s.ObjectMeta(name=_PVC_READER),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=role.kind, name=role.name),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=NAMESPACE)],
+    )
     return chart
