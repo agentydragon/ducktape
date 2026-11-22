@@ -10,6 +10,7 @@ go_library(
         "central_delivery.go",
         "delivery.go",
         "delivery_wake.go",
+        "dispatch_page.go",
         "dispatch_workset.go",
         "runtime_client.go",
         "session_watch.go",

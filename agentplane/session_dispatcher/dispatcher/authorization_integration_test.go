@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -596,5 +597,84 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		if _, err := client.ListSessions(authoritySVIDContext(t), request); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("invalid page request %v: %v", request, err)
 		}
+	}
+}
+
+func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *testing.T) {
+	ctx := t.Context()
+	queueStore := testStore(t, 5)
+	id, uid := uuid.NewString(), uuid.NewString()
+	enqueue := func(command string) {
+		t.Helper()
+		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-page-env", uid, input(command, "test retained text"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, command := range []string{"test-first", "test-second", "test-third"} {
+		enqueue(command)
+	}
+	peers := authorityClients(t, queueStore, &authorityInventory{sandboxErr: errors.New("inventory unavailable")}, nil)
+	page := func(token string, limit uint32) *dispatcherpb.ListSessionDispatchesResponse {
+		t.Helper()
+		result, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, PageToken: token, Limit: limit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	first := page("", 1)
+	if len(first.Dispatches) != 1 || first.Dispatches[0].GetCommandId() != "test-third" || first.NextPageToken == "" {
+		t.Fatalf("first receipt page: %v", first)
+	}
+	for _, session := range []string{id, "test-no-such-session"} {
+		_, err := peers.otherIdentity.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: session})
+		if status.Code(err) != codes.NotFound {
+			t.Fatalf("foreign Identity enumerated Session %q: %v", session, err)
+		}
+	}
+	for _, req := range []*dispatcherpb.ListSessionDispatchesRequest{
+		{SessionId: id, Limit: 101}, {SessionId: id, PageToken: "invalid"}, {SessionId: "other-session", PageToken: first.NextPageToken},
+	} {
+		if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), req); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid page request %v: %v", req, err)
+		}
+	}
+	initial := page("", 3)
+	if len(initial.Dispatches) != 3 {
+		t.Fatalf("initial receipt page: %v", initial)
+	}
+	oldVersion := initial.Dispatches[1].GetReceiptVersion()
+	if oldVersion <= 0 || initial.Dispatches[1].GetCommandId() != "test-second" {
+		t.Fatalf("initial receipt version: %v", initial)
+	}
+	point, err := peers.component.GetDispatch(authoritySVIDContext(t), &dispatcherpb.GetDispatchRequest{CommandId: "test-second"})
+	if err != nil || point.GetDispatch() == nil || point.GetDispatch().ReceiptVersion != nil {
+		t.Fatalf("point receipt version presence: %v, %v", point, err)
+	}
+	enqueue("test-later")
+	reason := strings.Repeat("test-reason-", 100)
+	if _, err := queueStore.Settle(ctx, "test-second", claimSessionOwner(t, queueStore, id), []string{store.QueueState}, store.FailedState, reason, nil); err != nil {
+		t.Fatal(err)
+	}
+	last := page(first.NextPageToken, 2)
+	if len(last.Dispatches) != 2 || last.Dispatches[0].GetCommandId() != "test-second" || last.Dispatches[0].GetReason() != reason || last.Dispatches[0].GetReceiptVersion() <= oldVersion ||
+		last.Dispatches[1].GetCommandId() != "test-first" || last.NextPageToken != "" || last.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
+		t.Fatalf("continued after admission and receipt update: %v", last)
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id='test-first'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=now()-interval '2 days'"); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := queueStore.PruneDispatchTombstones(ctx); err != nil || count != 1 {
+		t.Fatalf("prune: %d, %v", count, err)
+	}
+	if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, PageToken: first.NextPageToken}); status.Code(err) != codes.OutOfRange {
+		t.Fatalf("continued across pruned deletion: %v", err)
+	}
+	fresh := page("", 0)
+	if len(fresh.Dispatches) != 3 || fresh.Dispatches[0].GetCommandId() != "test-later" || fresh.NextPageToken != "" || fresh.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
+		t.Fatalf("fresh retained-row enumeration: %v", fresh)
 	}
 }
