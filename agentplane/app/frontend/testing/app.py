@@ -35,6 +35,7 @@ class Flag(StrEnum):
     THREAD_SCOPE_UNAVAILABLE = "threadScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
     COMMAND_SUBMISSION_REFUSED = "commandSubmissionRefused"
+    DISPATCH_WATCH_UNAVAILABLE = "dispatchWatchUnavailable"
     PENDING_ACTIONS = "pendingActions"
     # Two opted-in reads ahead of PENDING_ACTIONS: a queue that overflows the attention strip even
     # after one decision.

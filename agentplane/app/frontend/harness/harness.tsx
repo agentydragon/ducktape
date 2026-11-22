@@ -2757,6 +2757,7 @@ type Flag =
   | "threadScopeUnavailable"
   | "commandAdmissionTimedOut"
   | "commandSubmissionRefused"
+  | "dispatchWatchUnavailable"
   | "pendingActions"
   | "pendingActionOverflow"
   | "compactPodAction"
@@ -3357,8 +3358,11 @@ routes.push(
   [
     "GET",
     /^\/upstream\/dispatcher\/v1\/dispatches:watch$/,
-    (_match, query, signal) =>
-      ndjsonWatch(
+    (_match, query, signal) => {
+      if (flags.has("dispatchWatchUnavailable")) {
+        return Response.json({ error: { code: 14, message: "Dispatcher temporarily unavailable" } }, { status: 503 });
+      }
+      return ndjsonWatch(
         [
           ...query.getAll("filter.commandIds").map((commandId) => ({
             dispatch: {
@@ -3374,7 +3378,8 @@ routes.push(
           { caughtUp: {}, resumeToken: "visual-dispatch-checkpoint" },
         ],
         signal
-      ),
+      );
+    },
   ],
   [
     "POST",

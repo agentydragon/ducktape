@@ -178,6 +178,35 @@ it("restarts a partial fresh snapshot from the beginning instead of resuming bef
   expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
 });
 
+it("keeps the disconnect warning and receipt through a resumed stream's partial catch-up", async () => {
+  const store = new LocalCommands(SESSION);
+  queued(store, "a");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  const [first] = fetchMock.served;
+  first.send(dispatchFrame("a", "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "initial-row"));
+  first.send(caughtUp("initial-checkpoint"));
+  await settle();
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
+
+  first.end();
+  await settle();
+  expect(store.getSnapshot().dispatchWatchError).toBe("The Dispatcher closed the stream.");
+  expect(stateOf(store, "a")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+  await vi.advanceTimersByTimeAsync(1_000);
+  const resumed = fetchMock.served[1];
+  expect(resumed.url.searchParams.get("resumeToken")).toBe("initial-checkpoint");
+
+  resumed.send(dispatchFrame("a", "DELIVERY_STATE_DELIVERING_TO_RUNNER", "resumed-row"));
+  await settle();
+  expect(store.getSnapshot().dispatchWatchError).toBe("The Dispatcher closed the stream.");
+  expect(stateOf(store, "a")).toBe(DeliveryState.DELIVERING_TO_RUNNER);
+  resumed.send(caughtUp("resumed-checkpoint"));
+  await settle();
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
+  expect(store.dispatchWatchResumeToken(SESSION, ["a"])).toBe("resumed-checkpoint");
+});
+
 it("surfaces active-stream OUT_OF_RANGE, clears its cursor, and keeps the warning after resnapshot", async () => {
   const store = new LocalCommands(SESSION);
   queued(store, "a");
@@ -195,12 +224,14 @@ it("surfaces active-stream OUT_OF_RANGE, clears its cursor, and keeps the warnin
   const fresh = fetchMock.served[1];
   expect(first.url.searchParams.has("resumeToken")).toBe(false);
   expect(fresh.url.searchParams.has("resumeToken")).toBe(false);
+  expect(store.getSnapshot().dispatchWatchError).toContain("dispatch deletion coverage expired");
   expect(store.getSnapshot().dispatchWatchCoverageLost).toBe(true);
   fresh.send(dispatchFrame("a", "DELIVERY_STATE_FAILED", "fresh-row", "2026-10-19T12:00:02Z"));
   fresh.send(caughtUp("fresh-checkpoint"));
   await settle();
 
   expect(stateOf(store, "a")).toBe(DeliveryState.FAILED);
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
   expect(new LocalCommands(SESSION).getSnapshot().dispatchWatchCoverageLost).toBe(true);
   expect(store.dispatchWatchResumeToken(SESSION, ["a"])).toBe("fresh-checkpoint");
 });

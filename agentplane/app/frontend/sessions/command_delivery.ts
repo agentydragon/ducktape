@@ -19,6 +19,7 @@ const EMPTY_LOCAL: LocalCommandSnapshot = {
   commands: [],
   inputEchoes: [],
   error: null,
+  dispatchWatchError: null,
   dispatchWatchCoverageLost: false,
 };
 
@@ -151,7 +152,10 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
   // only when the set changes.
   const watched = watchedIds.join(",");
   useEffect(() => {
-    if (watched === "") return;
+    if (watched === "") {
+      store.setDispatchWatchError(null);
+      return;
+    }
     return watchDispatches(store, threadId, watched.split(","));
   }, [store, threadId, watched]);
   function submit(value: PendingCommand): boolean {

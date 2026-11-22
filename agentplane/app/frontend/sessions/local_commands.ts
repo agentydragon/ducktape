@@ -46,6 +46,8 @@ export interface LocalCommandSnapshot {
   /** Inputs whose admission is projected but whose referenced echo body has not arrived yet. */
   inputEchoes: Array<{ commandId: string; text: string }>;
   error: string | null;
+  /** Transient interruption of updates for commands still queued or delivering. */
+  dispatchWatchError: string | null;
   /** Sticky warning that the Dispatcher could no longer prove deletion coverage for this Session. */
   dispatchWatchCoverageLost: boolean;
 }
@@ -149,6 +151,7 @@ export class LocalCommands {
     commands: [],
     inputEchoes: [],
     error: null,
+    dispatchWatchError: null,
     dispatchWatchCoverageLost: false,
   };
   private readonly listeners = new Set<() => void>();
@@ -341,6 +344,12 @@ export class LocalCommands {
     }
   }
 
+  setDispatchWatchError(error: string | null): void {
+    if (this.snapshot.dispatchWatchError === error) return;
+    this.snapshot = { ...this.snapshot, dispatchWatchError: error };
+    for (const listener of this.listeners) listener();
+  }
+
   /** Deletion coverage cannot be recovered after its retention window; keep the warning across reloads. */
   recordDispatchWatchCoverageLoss(): void {
     this.snapshot = { ...this.snapshot, dispatchWatchCoverageLost: true };
@@ -510,7 +519,7 @@ export class LocalCommands {
           left.submittedAt - right.submittedAt || left.command.commandId.localeCompare(right.command.commandId)
       );
       inputEchoes.sort((left, right) => left.commandId.localeCompare(right.commandId));
-      this.snapshot = { commands, inputEchoes, error: null, dispatchWatchCoverageLost };
+      this.snapshot = { ...this.snapshot, commands, inputEchoes, error: null, dispatchWatchCoverageLost };
     } catch (error) {
       // Leave both the stored bytes and the last readable view intact; do not silently discard
       // input because storage is unavailable or a local record cannot be decoded.

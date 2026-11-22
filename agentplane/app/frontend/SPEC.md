@@ -111,6 +111,14 @@ timing as unavailable; a Sandbox that has not appeared yet shows no autosuspend 
 and turn completion remain separate signals; when Dispatcher confirms idle and their relative ages
 match within a minute, the composer combines them while keeping the exact idle timestamp on hover.
 
+## Command delivery updates
+
+When the Dispatch watch disconnects, the thread warns that queued and delivering states may
+be stale and shows the latest stream error or closure. The warning clears when the browser
+applies and saves a `CaughtUp` checkpoint or has no commands left to watch. Previously saved
+receipts remain visible, and History continues to supply command outcomes. A warning about
+expired deletion coverage remains after recovery.
+
 ## Runtime diagnostics
 
 The Status tab reads the generated EnvironmentService diagnostics facade through the authenticated

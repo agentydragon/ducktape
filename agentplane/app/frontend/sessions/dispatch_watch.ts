@@ -74,13 +74,11 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
                 throw new Error("Missing Dispatcher state could not be saved locally");
               }
             }
-            saveCursor(store, sessionId, asked, frame.resumeToken);
-            resumeToken = frame.resumeToken;
-            snapshotPending = false;
-          } else {
-            saveCursor(store, sessionId, asked, frame.resumeToken);
-            resumeToken = frame.resumeToken;
           }
+          saveCursor(store, sessionId, asked, frame.resumeToken);
+          resumeToken = frame.resumeToken;
+          snapshotPending = false;
+          store.setDispatchWatchError(null);
         } else {
           throw new Error("Dispatcher returned a watch frame without a result");
         }
@@ -89,7 +87,11 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
         throw reason;
       }
     },
-    onConnection: () => undefined,
+    onConnection: (connection) => {
+      if (connection.phase === "reconnecting") {
+        store.setDispatchWatchError(connection.lastError ?? "The Dispatcher closed the stream.");
+      }
+    },
     onError: (reason) => {
       if (!outOfRange(reason)) return;
       store.clearDispatchWatchResumeToken(sessionId, asked);
