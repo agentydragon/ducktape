@@ -1762,6 +1762,77 @@ async function showIssues(watch: ServedWatch, ...recentIssues: Array<ReturnType<
   });
 }
 
+it("acknowledges only the exact revision, including a matching local notice, and preserves the local command", async () => {
+  const local = message("local-acknowledged");
+  const first = issueReceipt(local.commandId, "9007199254740993");
+  const newer = issueReceipt(local.commandId, "9007199254740994", "Dispatcher found a new problem");
+  selectedReceipts = [first];
+  const store = new LocalCommands(THREAD.metadata.threadId);
+  store.remember(local);
+  store.updateDispatch(local.commandId, dispatchFromJson({ ...first, sessionId: THREAD.metadata.threadId }));
+  const writes: unknown[] = [];
+  deliveryRequest = (url, init) => {
+    if (url.pathname.endsWith(":batchGet")) return Response.json({ acknowledgements: [] });
+    writes.push(JSON.parse(String(init?.body)));
+    return Response.json({});
+  };
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, first);
+  const localRow = pendingRow(container, local.commandId);
+  expect(localRow).not.toBeNull();
+  expect(container.querySelector(`[data-dispatch-command-id="${local.commandId}"]`)).toBeNull();
+  await act(async () => buttonIn(localRow!, "Acknowledge")!.click());
+  expect(writes).toEqual([{ notice: { commandId: local.commandId, receiptVersion: "9007199254740993" } }]);
+  expect(container.querySelector(`[data-command-id="${local.commandId}"]`)).toBeNull();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
+  await showIssues(watch);
+  expect(container.querySelector(`[data-command-id="${local.commandId}"]`)).toBeNull();
+  expect(receiptBatchRequests.at(-1)?.searchParams.getAll("commandIds")).toEqual([local.commandId]);
+  selectedReceipts = [newer];
+  await showIssues(watch, newer);
+  expect(container.textContent).toContain("Dispatcher found a new problem");
+});
+
+it("keeps a saved local failure with no authoritative receipt for acknowledgement", async () => {
+  const local = message("unverified-saved-issue");
+  const receipt = issueReceipt(local.commandId, "51", "Saved local failure");
+  const store = new LocalCommands(THREAD.metadata.threadId);
+  store.remember(local);
+  store.updateDispatch(local.commandId, dispatchFromJson({ ...receipt, sessionId: THREAD.metadata.threadId }));
+  const request = vi.fn(() => Response.json({ acknowledgements: [{ notice: receipt }] }));
+  deliveryRequest = request;
+  const container = await render();
+  const row = pendingRow(container, local.commandId);
+  expect(row?.textContent).toContain(receipt.reason);
+  expect(buttonIn(row, "Acknowledge")).toBeUndefined();
+  expect(request).not.toHaveBeenCalled();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
+});
+
+it("bounds exact lookup and shared acknowledgement batches when a browser has over 100 saved issues", async () => {
+  const store = new LocalCommands(THREAD.metadata.threadId);
+  for (let index = 1; index <= 105; index++) {
+    const command = message(`saved-issue-${index}`);
+    const receipt = issueReceipt(command.commandId, String(index));
+    selectedReceipts.push(receipt);
+    store.remember(command);
+    store.updateDispatch(command.commandId, dispatchFromJson({ ...receipt, sessionId: THREAD.metadata.threadId }));
+  }
+  const appBatchSizes: number[] = [];
+  deliveryRequest = (_url, init) => {
+    const { notices } = JSON.parse(String(init?.body));
+    appBatchSizes.push(notices.length);
+    return Response.json({ acknowledgements: notices.map((notice: object) => ({ notice })) });
+  };
+  const container = await render();
+  const largeBatches = receiptBatchRequests.map((url) => url.searchParams.getAll("commandIds").length);
+  expect(largeBatches).toEqual([16, 16, 16, 16, 16, 16, 9]);
+  expect(appBatchSizes).toEqual([100, 5]);
+  expect(container.querySelector('[data-command-id="saved-issue-105"]')).toBeNull();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(105);
+});
+
 it("keeps unseen delivery issues visible when acknowledgement reads or writes fail", async () => {
   deliveryRequest = () => Response.json({ message: "temporarily unavailable" }, { status: 503 });
   const container = await render();

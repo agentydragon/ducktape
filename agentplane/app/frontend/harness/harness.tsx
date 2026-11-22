@@ -2463,6 +2463,7 @@ function rememberDispatched(
       commandId,
       sessionId: threadId,
       ...COMMAND_TARGET,
+      operation: "OPERATION_SUBMIT_INPUT",
       state,
       reason,
       updatedAt: ago(1_000),
@@ -2549,6 +2550,23 @@ function rememberFailedAndUnknownDispatches(): void {
   rememberDispatched(RUNNING_THREAD, "unknown-dispatch", "Continue when you can.", {
     state: "DELIVERY_STATE_UNKNOWN",
     reason: "Connection to the runner closed before it returned a receipt",
+  });
+}
+
+function savedDeliveryIssueOutsideWorkset(): void {
+  const commandId = "73343335-0000-4000-8000-000000000001";
+  const state = "DELIVERY_STATE_FAILED";
+  const reason = "Dispatcher could not deliver the saved input.";
+  rememberDispatched(RUNNING_THREAD, commandId, "Please keep the original text.", { state, reason });
+  dispatchWorksets.set(RUNNING_THREAD, { moreRecentIssuesAvailable: true });
+  dispatchDetails.set(commandId, {
+    commandId,
+    sessionId: RUNNING_THREAD,
+    operation: "OPERATION_SUBMIT_INPUT",
+    state,
+    reason,
+    updatedAt: ago(1_000),
+    receiptVersion: "9007199254740993",
   });
 }
 
@@ -4416,6 +4434,7 @@ const visualHarness = {
   versionedDispatchWorkset(): void {
     dispatchWorkset(true);
   },
+  savedDeliveryIssueOutsideWorkset,
   completedRollout(): void {
     serveRollout("Completed diagnostic run", rollout);
   },

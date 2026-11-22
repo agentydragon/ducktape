@@ -8,7 +8,7 @@ import {
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { waitingReasonLabel } from "./command_progress";
-import { isDeliveryIssue, noticeKey, type NoticeAttention } from "./command_notice_attention";
+import { isDeliveryIssue, matchingLocalIssue, noticeKey, type NoticeAttention } from "./command_notice_attention";
 import { readFullDispatchReason, type ReadDispatchReceipts, type ReasonLookup } from "./dispatch_workset";
 import type { LocalCommand } from "./local_commands";
 import type { ThreadDeliveryState } from "./thread_delivery";
@@ -123,7 +123,8 @@ export function DispatchWorksetPanel({
     readReceipts,
   } = delivery;
   const rows = snapshot ? [...snapshot.active, ...snapshot.recentIssues, ...snapshot.recentAdmittedOrCancelled] : [];
-  const hidden = new Set(localCommands.map((command) => command.command.commandId));
+  const hidden = new Set<string>();
+  const local = new Map(localCommands.map((command) => [command.command.commandId, command]));
   const pendingInHistory = new Set<string>();
   for (const row of entities) {
     if (row.entity.case === "confirmedInput") {
@@ -137,12 +138,13 @@ export function DispatchWorksetPanel({
       }
     }
   }
-  const visible = rows.filter(
-    (item) =>
-      !hidden.has(item.commandId) &&
-      !attention.acknowledged(item) &&
-      (!pendingInHistory.has(item.commandId) || isDeliveryIssue(item.state))
-  );
+  const visible = rows.filter((item) => {
+    if (hidden.has(item.commandId)) return false;
+    const localCommand = local.get(item.commandId);
+    if (!isDeliveryIssue(item.state)) return !localCommand && !pendingInHistory.has(item.commandId);
+    if (attention.acknowledged(item)) return false;
+    return !localCommand || !matchingLocalIssue(localCommand, delivery.sessionId, [item]);
+  });
   const hasOlderIssues = snapshot?.moreRecentIssuesAvailable;
   const limits = [
     snapshot?.moreActiveAvailable && "More active commands are outside this view.",

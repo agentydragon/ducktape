@@ -83,6 +83,9 @@ receipt revision needs separate attention. When the workset clips issues, Older 
 opens the paginated receipt history, where retained failures can still be acknowledged.
 The selected Thread shares acknowledgement state between the conversation and Delivery history.
 Opening the archive loads one page at a time. Acknowledging a receipt updates both views.
+The browser checks saved local terminal rows against bounded Dispatcher batch reads before
+hiding an equivalent acknowledged notice, including after it leaves the recent workset. Without
+an exact server revision the notice remains visible. History and saved command data are unchanged.
 Delivery history remains available independently of the History projection and includes previous
 acknowledgements. When an exact revision has expired or was superseded, the interface reports that
 loss of evidence.
