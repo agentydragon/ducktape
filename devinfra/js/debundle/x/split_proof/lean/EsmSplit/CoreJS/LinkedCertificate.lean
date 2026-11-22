@@ -177,6 +177,21 @@ private partial def objectLiteral : Std.DTreeMap.Internal.Impl String (fun _ => 
       objectLiteral left ++ " " ++ objectLiteral right ++ ")"
 end
 
+/-- The equation compiler puts a negative premise on the general unary case because
+`typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
+only uses unconditional rewrites. Dispatch on the operator and operand on the RHS
+so it can reduce any unary expression without unfolding the mutually recursive interpreter. -/
+@[cbv_eval] private theorem evalExpr_unary (n : Nat) (env : Env) (op : UnOp) (a : Expr) :
+    (evalExpr (n + 1) env (.unary op a) : M W Val) = (match op, a with
+      | .typeof, .var x =>
+        if (env.vars.lookup x).isNone then pure (.str "undefined") else do
+          let v ← readVar env x
+          lift (unop (← getState) .typeof v)
+      | _, _ => do
+        let v ← evalExpr n env a
+        lift (unop (← getState) op v)) := by
+  cases op <;> cases a <;> rfl
+
 /-- Prove both obligations by evaluating the real module graphs with an arbitrary host world.
 `cbv` produces kernel-checkable equations for definitions with well-founded recursion. -/
 macro "verify_linked_programs " fuel:num : tactic => `(tactic|

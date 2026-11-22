@@ -100,8 +100,6 @@ On 2026-11-22 the pairing covered all 9,707 body units in the archived review tr
 
 Strict replay of the isolated first production statement reaches the operand of a `typeof` comparison and rejects it with `statement 0: unsupported global window`. Make host globals explicit in the certification input. The caller should be able to state whether a binding such as `window` exists and, when needed, supply hypotheses about its value, identity, and behavior. The guarantee should quantify over worlds satisfying those hypotheses and report which assumptions it uses. With no applicable configuration, keep rejecting the lookup. Exercise both a browser-like configuration and one where the binding is absent.
 
-The linked prover also has an independent resource limitation. For a public reproducer, split the worker declaration in `const worker = () => "undefined" != typeof undefined; export const result = worker();` into its own module. The direct initializer certifies; the call during initialization exhausted the Lean proof process in a remote replay. Investigate concrete execution proof cost before relying on this form.
-
 ### Excalidraw (public intermediate milestone)
 
 Use the public editor and its real providers to exercise the same certification path on a public input. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) currently adds five private names to the entry’s exports. Keep that output as a rejection case.

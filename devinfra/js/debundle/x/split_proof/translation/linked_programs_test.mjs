@@ -341,7 +341,8 @@ for (const [name, expr] of [
   assertWorkerResult(`conditional-abrupt-${name}`, source, 7);
 }
 
-// Generate both operand orders and equality outcomes.
+// Exercise both direct evaluation and calls during initialization. The first seed
+// reproduces the proof-cost regression on a moved worker returning "undefined" != typeof undefined.
 for (const [index, [operand, tag, expected]] of [
   [id("undefined"), "undefined", false],
   [arrow([], literal(0)), "object", true],
@@ -351,7 +352,8 @@ for (const [index, [operand, tag, expected]] of [
   const type = { type: "UnaryExpression", operator: "typeof", prefix: true, argument: operand };
   const [left, right] = index % 2 === 0 ? [literal(tag), type] : [type, literal(tag)];
   const expr = { type: "BinaryExpression", operator: "!=", left, right };
-  assertWorkerResult(`generated-string-inequality-${index}`, observedProgram(expr, id("worker")), expected);
+  const source = index < 2 ? observedProgram(arrow([], expr), call(id("worker"))) : observedProgram(expr, id("worker"));
+  assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
 }
 
 // Different numeric spellings compare by string contents.
