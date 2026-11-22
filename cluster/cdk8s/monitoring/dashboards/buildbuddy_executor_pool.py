@@ -13,9 +13,12 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
 
 _SERVICE = 'namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics"'
 _EXECUTOR = f'{_SERVICE},endpoint="metrics"'
-_WORKER_POD = 'pod=~"virt-launcher-buildbuddy-kvm-worker-${worker}-.*"'
+_WORKER_PREFIX = "virt-launcher-buildbuddy-kvm-worker-"
+_WORKER_POD = f'pod=~"{_WORKER_PREFIX}${{worker}}-.*"'
+_WORKER_NUMBER_REGEX = f"/^{_WORKER_PREFIX}([0-9]+)-.*$/"
 _SELECTED = f"{_EXECUTOR},{_WORKER_POD}"
-_GUEST = f'{_SERVICE},endpoint="node-metrics",{_WORKER_POD}'
+_GUEST_ENDPOINT = f'{_SERVICE},endpoint="node-metrics"'
+_GUEST = f"{_GUEST_ENDPOINT},{_WORKER_POD}"
 _CURRENT = 'and on (namespace, pod) kube_pod_info{namespace="buildbuddy-executor"}'
 _DESIRED = 'max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"})'
 
@@ -248,11 +251,93 @@ def _disk(panel_id: int, title: str, mount: str, x: int) -> dashboard.Panel:
     )
 
 
+def _guest_memory_detail() -> list[dashboard.Panel]:
+    pod = f'pod=~"{_WORKER_PREFIX}${{memory_worker}}-.*"'
+    guest = f"{_GUEST_ENDPOINT},{pod}"
+
+    def meminfo(field: str) -> str:
+        return f"node_memory_{field}_bytes{{{guest}}}"
+
+    total = meminfo("MemTotal")
+    free = meminfo("MemFree")
+    # Keep all categories on the same launcher when replacement pods overlap.
+    launcher = (
+        f'topk(1, max by (namespace, pod) (kube_pod_start_time{{namespace="buildbuddy-executor",{pod}}})'
+        f" and on (namespace, pod) {total})"
+    )
+
+    def selected(expr: str) -> str:
+        return f"max(({expr}) and on (namespace, pod) ({launcher}))"
+
+    anonymous = meminfo("AnonPages")
+    shared = meminfo("Shmem")
+    file_cache = f"{meminfo('Cached')} + {meminfo('Buffers')} - {shared}"
+    reclaimable = meminfo("SReclaimable")
+    unreclaimable = meminfo("SUnreclaim")
+    other = f"{total} - ({anonymous} + {shared} + ({file_cache}) + {reclaimable} + {unreclaimable} + {free})"
+    categories = [
+        ("Anonymous pages", anonymous, "#6887d8"),
+        ("File cache + buffers", file_cache, "#48ac99"),
+        ("Shared memory / tmpfs", shared, "#dd8b57"),
+        ("Reclaimable slab", reclaimable, "#b496d5"),
+        ("Unreclaimable slab", unreclaimable, "#dbb94f"),
+        ("Other", other, "#8c98af"),
+        ("Free", free, "#b5c1cb"),
+    ]
+    composition = _chart(
+        23,
+        "Worker ${memory_worker} guest RAM composition",
+        "The stack adds up to Linux MemTotal across all guest processes. Anonymous pages can include RAM held by nested VMs. "
+        "Shared memory includes tmpfs and is subtracted from Cached before adding Buffers. "
+        "Reclaimable and unreclaimable slab partition slab memory. Other is the residual, including kernel "
+        "allocations such as page tables and stacks. Free is MemFree. Each sample uses the newest launcher "
+        "with guest memory metrics at that time.",
+        dashboard.GridPos(h=10, w=16, y=62),
+        [(label, selected(expr)) for label, expr, _ in categories],
+        "bytes",
+    )
+    options = series_options()
+    options.legend = common.VizLegendOptions(
+        show_legend=True,
+        display_mode=common.LegendDisplayMode.TABLE,
+        placement=common.LegendPlacement.RIGHT,
+        calcs=["lastNotNull"],
+    )
+    composition.options = options
+    composition.field_config = dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit="bytes",
+            min_val=0,
+            custom=common.GraphFieldConfig(
+                line_width=1,
+                fill_opacity=65,
+                show_points=common.VisibilityMode.NEVER,
+                span_nulls=False,
+                stacking=common.StackingConfig(mode=common.StackingMode.NORMAL, group="RAM"),
+            ),
+        ),
+        overrides=[
+            field_override(label, {"color": {"mode": "fixed", "fixedColor": color}}) for label, _, color in categories
+        ],
+    )
+    headroom = _chart(
+        24,
+        "Worker ${memory_worker} guest RAM headroom",
+        "Available (MemAvailable) estimates how much RAM new workloads can use without swapping. Linux estimates "
+        "how much cache and slab it can reclaim and accounts for reserved pages. Free (MemFree) counts unused RAM.",
+        dashboard.GridPos(h=10, w=8, x=16, y=62),
+        [("Available", selected(meminfo("MemAvailable"))), ("Free", selected(free))],
+        "bytes",
+    )
+    headroom.options = series_options(legend_calcs=["lastNotNull", "min"])
+    return [composition, headroom]
+
+
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
         uid="buildbuddy-executor-pool",
         title="BuildBuddy executor pool",
-        description="KVM pool capacity and worker activity. Select worker numbers to narrow the diagnostics below the pool chart.",
+        description="KVM pool capacity and worker activity. Worker detail filters the diagnostics. Memory worker picks a single guest for the RAM breakdown.",
         tags=["ci", "buildbuddy", "executor"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-6h"),
@@ -265,10 +350,21 @@ def build_dashboard() -> dashboard.Dashboard:
                     name="worker",
                     label="Worker detail",
                     query=f"label_values(up{{{_EXECUTOR}}}, pod)",
-                    regex="/^virt-launcher-buildbuddy-kvm-worker-([0-9]+)-.*$/",
+                    regex=_WORKER_NUMBER_REGEX,
                     refresh=dashboard.VariableRefresh.ON_TIME_RANGE_CHANGED,
                     all_value="[0-9]+",
-                )
+                ),
+                dashboard.VariableModel(
+                    name="memory_worker",
+                    label="Memory worker",
+                    datasource=mimir(),
+                    query=f"label_values(node_memory_MemTotal_bytes{{{_GUEST_ENDPOINT}}}, pod)",
+                    regex=_WORKER_NUMBER_REGEX,
+                    refresh=dashboard.VariableRefresh.ON_TIME_RANGE_CHANGED,
+                    sort=dashboard.VariableSort.NUMERICAL_ASC,
+                    allow_custom_value=False,
+                    current=dashboard.VariableOption(text="0", value="0"),
+                ),
             ]
         ),
         panels=[
@@ -324,5 +420,7 @@ def build_dashboard() -> dashboard.Dashboard:
             ),
             _disk(20, "Root disk headroom", "/", 0),
             _disk(14, "Work disk headroom", "/buildbuddy", 12),
+            dashboard.RowPanel(id_val=25, title="Memory by worker", grid_pos=dashboard.GridPos(h=1, w=24, y=61)),
+            *_guest_memory_detail(),
         ],
     )
