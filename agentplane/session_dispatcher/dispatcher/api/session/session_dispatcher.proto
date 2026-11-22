@@ -187,15 +187,47 @@ message WatchDispatchesRequest {
   // Opaque versioned position and filter digest; carries no authority. Reusing with a different
   // filter is INVALID_ARGUMENT. Empty requests a fresh snapshot including retained deletions.
   string resume_token = 2;
+  // Watch a bounded replacement snapshot for this whole Session. Omit filter
+  // in this mode. Reconnect returns a replacement.
+  string workset_session_id = 3;
 }
 
 // All changes through the response resume_token have been sent. May repeat as the watch advances.
 message CaughtUp {}
 
+// A Session's current delivery work and recent receipts. None of these rows
+// establish execution or effects. Authored commands can be read by ID.
+message DispatchWorkset {
+  string session_id = 1;
+  // Up to 1024 queued or delivering commands, in queue order.
+  repeated DispatchWorksetItem active = 2;
+  // Up to 20 failed or unknown receipts, newest Dispatcher update first.
+  // History can independently establish an outcome for these commands.
+  repeated DispatchWorksetItem recent_issues = 3;
+  // Up to 20 recent admissions or cancellations, newest update first.
+  // These bridge the transition out of the queue while History catches up.
+  repeated DispatchWorksetItem recent_admitted_or_cancelled = 4;
+  bool more_active_available = 5;
+  bool more_recent_issues_available = 6;
+  bool more_recent_admitted_or_cancelled_available = 7;
+}
+
+message DispatchWorksetItem {
+  string command_id = 1;
+  agentplane.proto.Operation operation = 2;
+  DeliveryState state = 3;
+  // The first 256 characters of the delivery reason, if any.
+  optional string reason = 4;
+  bool journal_admitted = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
 message WatchDispatchesResponse {
   oneof frame {
     Dispatch dispatch = 1;
     CaughtUp caught_up = 2;
+    DispatchWorkset workset = 5;
   }
   // Resume after this frame with the same filter. Deleted receipts have no Sandbox address.
   string resume_token = 3;
