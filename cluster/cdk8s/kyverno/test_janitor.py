@@ -2,27 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import (
-    App,
-    Chart,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import App, Chart
 
 from cluster.cdk8s.kyverno.apply import apply_policy
+from cluster.cdk8s.kyverno.apply_inputs import policy
 from cluster.cdk8s.kyverno.janitor import ApiResource, janitor
 
 _NAMESPACE = "janitor-test"
 
 
-@pytest.fixture
-def janitor_policy(scratch_app: App, tmp_path: Path) -> Path:
-    chart = Chart(scratch_app, "janitor-test")
+@pytest.fixture(scope="module")
+def janitor_policy(scratch_app_factory: Callable[[], App]) -> Path:
+    app = scratch_app_factory()
+    chart = Chart(app, "janitor-test")
     janitor(
         chart,
         "janitor",
@@ -31,10 +30,7 @@ def janitor_policy(scratch_app: App, tmp_path: Path) -> Path:
         schedule="* * * * *",
         resources=[ApiResource(group="", version="v1", resource="pods")],
     )
-    [document] = Cdk8sTesting.synth(chart)
-    path = tmp_path / "janitor.yaml"
-    path.write_text(yaml.safe_dump(document))
-    return path
+    return policy(chart, Path(app.outdir))
 
 
 def _pod(directory: Path, *, age: timedelta) -> Path:
@@ -63,6 +59,7 @@ class TestJanitor:
 
     def test_younger_object_is_kept(self, janitor_policy: Path, tmp_path: Path):
         result = apply_policy(janitor_policy, _pod(tmp_path, age=timedelta(days=6)))
+        assert result.ok, result.stdout
         assert result.passed == 0, result.stdout
 
 

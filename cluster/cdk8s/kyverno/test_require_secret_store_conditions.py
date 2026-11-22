@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -13,9 +14,10 @@ from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.apply_inputs import manifest, policy
 
 
-@pytest.fixture
-def secret_store_conditions_policy(scratch_app: App, tmp_path: Path) -> Path:
-    return policy(scratch_app, "require-secret-store-conditions", tmp_path, json_mode=True)
+@pytest.fixture(scope="module")
+def secret_store_conditions_policy(scratch_app_factory: Callable[[], App]) -> Path:
+    app = scratch_app_factory()
+    return policy(policies.require_secret_store_conditions_chart(app), Path(app.outdir), json_mode=True)
 
 
 def test_cluster_store_policy_enables_discoverable_v1_background_scan(scratch_app: App) -> None:
@@ -59,7 +61,8 @@ class TestRequireSecretStoreConditions:
         result = apply_policy(
             secret_store_conditions_policy, manifest("cluster_secret_store_with_conditions.yaml"), json_payload=True
         )
-        assert result.failed == 0, f"store naming its namespaces must pass\n{result.stdout}"
+        assert result.ok, result.stdout
+        assert result.passed == 1, f"store naming its namespaces must pass\n{result.stdout}"
 
 
 if __name__ == "__main__":
