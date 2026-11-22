@@ -15,25 +15,27 @@ from pydantic import AliasPath, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
+class CamelCaseModel(BaseModel):
+    """Accept Kubernetes camelCase fields and Python field names in validation models."""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+
 class K8sMetadata(BaseModel):
     """Kubernetes resource metadata."""
-
-    model_config = ConfigDict(extra="ignore")
 
     name: str = ""
     namespace: str = ""
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class Condition(BaseModel):
+class Condition(CamelCaseModel):
     """A standard Kubernetes status condition.
 
     Used by controllers across the cluster (Flux Kustomizations, HelmReleases,
     Deployments via `Available`/`Progressing`, CNPG `Cluster.Ready`, etc.) to
     report observed state. Consumers usually filter by `type` and check
     `status` ("True"/"False"/"Unknown")."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     type: str
     status: str  # "True" / "False" / "Unknown"
@@ -44,7 +46,7 @@ class Condition(BaseModel):
 class K8sResource(BaseModel):
     """Parsed Kubernetes resource from YAML (generic base; see module docstring)."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    model_config = ConfigDict(populate_by_name=True)
 
     kind: str
     api_version: str = Field(default="", alias="apiVersion")
@@ -59,15 +61,11 @@ class K8sResource(BaseModel):
         return self.metadata.namespace
 
 
-class PodContainer(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodContainer(CamelCaseModel):
     image: str | None = None
 
 
-class ContainerDisk(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class ContainerDisk(CamelCaseModel):
     image: str | None = None
 
 
@@ -75,16 +73,12 @@ class ImageVolumeSource(BaseModel):
     reference: str
 
 
-class PodVolume(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodVolume(CamelCaseModel):
     container_disk: ContainerDisk | None = None
     image: ImageVolumeSource | None = None
 
 
-class PodSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodSpec(CamelCaseModel):
     containers: list[PodContainer] = Field(default_factory=list)
     init_containers: list[PodContainer] = Field(default_factory=list)
     volumes: list[PodVolume] = Field(default_factory=list)
@@ -101,15 +95,11 @@ class PodSpec(BaseModel):
         return images
 
 
-class PodTemplateSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodTemplateSpec(CamelCaseModel):
     spec: PodSpec = Field(default_factory=PodSpec)
 
 
-class PodTemplateWorkloadSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodTemplateWorkloadSpec(CamelCaseModel):
     template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
 
 
@@ -125,9 +115,7 @@ class CronJobResource(PodTemplateWorkloadResource):
     spec: PodTemplateWorkloadSpec = Field(validation_alias=AliasPath("spec", "jobTemplate", "spec"))
 
 
-class SandboxTemplateSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class SandboxTemplateSpec(CamelCaseModel):
     pod_template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
 
 
@@ -139,17 +127,13 @@ class SandboxTemplateResource(K8sResource):
         return self.spec.pod_template.spec.images
 
 
-class FirecrackerTemplateSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class FirecrackerTemplateSpec(CamelCaseModel):
     pod: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
     boot_image: str | None = None
     runner_image: str | None = None
 
 
 class AgentplaneSandboxTemplateSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     pod: PodTemplateSpec | None = None
     vm: PodTemplateWorkloadSpec | None = None
     firecracker: FirecrackerTemplateSpec | None = None
@@ -176,12 +160,11 @@ class ImageRepositoryResource(K8sResource):
 
 
 class SecretRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     name: str = ""
 
 
-class RbacRule(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, alias_generator=to_camel)
+class RbacRule(CamelCaseModel):
+    model_config = ConfigDict(extra="forbid")
 
     api_groups: list[str] = Field(default_factory=list)
     resources: list[str] = Field(default_factory=list)
@@ -194,8 +177,8 @@ class RoleResource(K8sResource):
     rules: list[RbacRule] = Field(default_factory=list)
 
 
-class RbacRoleRef(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, alias_generator=to_camel)
+class RbacRoleRef(CamelCaseModel):
+    model_config = ConfigDict(extra="forbid")
 
     api_group: str
     kind: str
@@ -206,22 +189,16 @@ class RoleBindingResource(K8sResource):
     role_ref: RbacRoleRef | None = Field(default=None, alias="roleRef")
 
 
-class SecretStoreKubernetesProvider(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class SecretStoreKubernetesProvider(CamelCaseModel):
     remote_namespace: str = ""
     auth: dict[str, Any] = Field(default_factory=dict)
 
 
 class SecretStoreProvider(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     kubernetes: SecretStoreKubernetesProvider | None = None
 
 
 class SecretStoreSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
     conditions: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -253,7 +230,6 @@ class _ArtifactGeneratorArtifact(TypedDict):
 
 
 class ArtifactGeneratorSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     artifacts: list[_ArtifactGeneratorArtifact] = Field(default_factory=list)
 
 
@@ -266,14 +242,12 @@ class ArtifactGeneratorResource(K8sResource):
 
 
 class ReceiverResourceRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     kind: str = ""
     name: str = ""
     namespace: str | None = None
 
 
 class ReceiverSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     resources: list[ReceiverResourceRef] = []
 
 
@@ -286,8 +260,6 @@ class SopsMetadata(BaseModel):
     validation: a rendered Secret carrying it is ciphertext Flux cannot apply
     without a `decryption` block. Inner fields (mac, age recipients, lastmodified)
     are ignored — model them only if a future check consumes them."""
-
-    model_config = ConfigDict(extra="ignore")
 
 
 class SecretResource(K8sResource):
