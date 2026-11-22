@@ -54,6 +54,7 @@ py_library(
         ":schemas",
         ":wire",
         "//finance:yaml_decimal",
+        "//finance/augur:config_paths",
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
         "//finance/augur/sim:ids",
