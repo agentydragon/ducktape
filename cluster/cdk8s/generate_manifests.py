@@ -437,14 +437,17 @@ def generate_manifests(root: Path) -> None:
     talos_cloud_controller_manager_artifact = artifact(
         "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
     )
-    talos_cloud_controller_manager.talos_cloud_controller_manager(
+    flux.flux_kustomization(
         flux_chart,
+        talos_cloud_controller_manager.NAME,
         write_directory(
             root,
             talos_cloud_controller_manager_artifact,
             talos_cloud_controller_manager.helmrepository_chart,
             siblings=[talos_cloud_controller_manager.write_helmrelease(root)],
         ),
+        interval="30m",
+        target_namespace=talos_cloud_controller_manager.NAMESPACE,
     )
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
     user_agentydragon_kustomization = flux.flux_kustomization(
@@ -650,9 +653,12 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
-    seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
+    seaweedfs_operator_kustomization = flux.flux_kustomization(
         flux_chart,
+        seaweedfs_operator_release.NAME,
         write_directory(root, seaweedfs_operator_artifact, seaweedfs_namespace.chart, seaweedfs_operator_release.chart),
+        suspend=False,
+        timeout="5m",
     )
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
