@@ -32,18 +32,18 @@ def _names(docs: list[dict[str, Any]], kind: str) -> set[tuple[str, str]]:
 
 
 def test_flux_bindings_and_launches_name_rendered_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
-    policy_sets = {name for _, name in _names(catalog_manifests, "PolicySet")}
+    policy_sets = _names(catalog_manifests, "PolicySet")
+    bindings = _of(catalog_manifests, "PolicyBinding")
+    assert bindings
+    for binding in bindings:
+        namespace = binding["metadata"]["namespace"]
+        assert {(namespace, name) for name in binding["spec"]["policySets"]} <= policy_sets, binding["metadata"]
+
     config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    named = {
-        (f"preset {preset}", name) for preset, spec in config["sandbox_presets"].items() for name in spec["policy_sets"]
-    }
-    named |= {
-        (f"binding {binding['metadata']['name']}", name)
-        for binding in _of(catalog_manifests, "PolicyBinding")
-        for name in binding["spec"]["policySets"]
-    }
-    assert named
-    assert {(holder, name) for holder, name in named if name not in policy_sets} == set()
+    environments = config_map_yaml(catalog_manifests, "environments-settings", "config.yaml")
+    namespace = environments["environment_service"]["policy_namespace"]
+    for preset, spec in config["sandbox_presets"].items():
+        assert {(namespace, name) for name in spec["policy_sets"]} <= policy_sets, preset
 
 
 def test_no_policy_set_carries_a_kubernetes_rule(identity_catalog_manifests: list[dict[str, Any]]) -> None:
