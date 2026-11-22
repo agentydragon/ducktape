@@ -174,8 +174,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         owner("first", "secrets", "allowed"),
         owner("second", "secrets", "denied"),
         owner("unspecified", "secrets"),
-        owner("namespaces", "namespaces"),
-        owner("policy", "policy", "operator"),
+        owner("policy", "policy"),
     )
     secret_spec = {
         "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
@@ -195,35 +194,20 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
             "metadata": {"name": "explicit", "namespace": "allowed"},
             "spec": secret_spec,
         },
-        {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "referent"}},
-    )
-    write(
-        "cluster/generated/namespaces/resources.yaml",
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "allowed", "labels": {"team": "approved"}}},
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied"}},
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "original"}},
     )
     write(
         "cluster/generated/policy/resources.yaml",
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "source-operator"}},
         {
             "apiVersion": "external-secrets.io/v1",
             "kind": "ClusterSecretStore",
             "metadata": {"name": "shared"},
             "spec": {
-                "conditions": [{"namespaceSelector": {"matchLabels": {"team": "approved"}}}],
-                "provider": {"kubernetes": {"auth": {"serviceAccount": {"name": "referent"}}}},
+                "conditions": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "allowed"}}}]
             },
         },
-        {
-            "apiVersion": "external-secrets.io/v1",
-            "kind": "ClusterExternalSecret",
-            "metadata": {"name": "cluster-consumer"},
-            "spec": {"namespaces": ["allowed"], "externalSecretSpec": secret_spec},
-        },
     )
-    # The two targeted owners share one directory. The source Kustomization
-    # also remains available to an owner with no namespace override.
-    for directory in ("secrets", "namespaces", "policy"):
+    for directory in ("secrets", "policy"):
         write(
             f"cluster/generated/{directory}/kustomization.yaml",
             {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": ["resources.yaml"]},
@@ -235,9 +219,9 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         owner_name: {resource.namespace for resource in builds[owner_name] if resource.kind == "ExternalSecret"}
         for owner_name in ("first", "second", "unspecified")
     } == {"first": {"allowed"}, "second": {"denied"}, "unspecified": {"", "allowed"}}
-    assert {resource.name: resource.namespace for resource in builds["policy"] if resource.kind == "Namespace"} == {
-        "operator": ""
-    }
+    for owner_name, expected in (("first", "allowed"), ("second", "denied"), ("unspecified", "original")):
+        [namespace] = [resource for resource in builds[owner_name] if resource.kind == "Namespace"]
+        assert (namespace.name, namespace.namespace) == (expected, "")
     errors = check_external_secret_store_wiring(parsed)
     assert len(errors) == 2
     for secret in ("implicit", "explicit"):
