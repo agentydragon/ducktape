@@ -448,18 +448,39 @@ for (const [value, expressions, expected] of [
   }
 }
 
-assertWorkerResult(
-  "throwing-template-substitution",
-  'const worker = () => { try { return `${(() => { throw "first"; })()}${later}`; } catch (e) { return e; } let later; }; export const result = worker();',
-  "first"
-);
+// Both substitutions throw. Only the leftmost thrown value reaches the catch.
+for (const values of [
+  ["first", "second"],
+  ["second", "first"],
+]) {
+  const expressions = values.map((value) => call(arrow([], block([throws(literal(value))]))));
+  const template = {
+    type: "TemplateLiteral",
+    expressions,
+    quasis: ["", "/", ""].map((text, i) => ({
+      type: "TemplateElement",
+      value: { raw: text, cooked: text },
+      tail: i === expressions.length,
+    })),
+  };
+  const worker = arrow(
+    [],
+    block([tryStatement(block([returns(template)]), catchClause(id("error"), block([returns(id("error"))])))])
+  );
+  assertWorkerResult(`throwing-template-${values[0]}`, observedProgram(worker, call(id("worker"))), values[0]);
+}
 
-for (const [name, source] of [
-  ["template-object-coercion", "const worker = value => `${value}`; export const result = worker({});"],
-  ["tagged-template", "const worker = value => value; export const result = worker`raw`;"],
+for (const [name, source, reason] of [
+  [
+    "template-object-coercion",
+    "const worker = value => `${value}`; export const result = worker({});",
+    /object is converted to a primitive/,
+  ],
+  ["tagged-template", "const worker = value => value; export const result = worker`raw`;", /TaggedTemplateExpression/],
 ]) {
   const { verdict, out } = workerSplit(name, source);
   assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, reason);
   assert(!existsSync(out));
 }
 
