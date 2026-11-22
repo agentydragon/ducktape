@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
+from cdk8s import ApiObject, App
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
@@ -213,11 +213,11 @@ def external_delegation(scratch_app_factory: Callable[[], App]) -> list[dict[str
     app = scratch_app_factory()
     env = staging.ENV
     grants = staging.assignable_grants()
-    return [
-        doc
-        for target in binding_delegation.external_scopes(env, grants)
-        for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(binding_delegation.chart(app, env, target, grants)))
-    ]
+    objects: list[dict[str, Any]] = []
+    for target in binding_delegation.external_scopes(env, grants):
+        chart = binding_delegation.chart(app, env, target, grants)
+        objects.extend(cast(ApiObject, obj).to_json() for obj in chart.node.find_all() if ApiObject.is_api_object(obj))
+    return objects
 
 
 def test_external_delegation_is_separate_from_the_app(
