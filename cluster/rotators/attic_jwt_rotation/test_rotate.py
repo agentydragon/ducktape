@@ -413,21 +413,21 @@ def test_configure_ca_trust_loads_a_real_bundle():
     _configure_ca_trust(Path(certifi.where()))  # must not raise
 
 
-def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
+def test_bootstrap_admin_has_short_lived_cache_creation_access(monkeypatch):
     fake = _FakeRun(jwt="admin.jwt")
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    assert mint_admin_jwt("nix-cache", "deploy/attic-next", "/config/server.toml") == "admin.jwt"
+    assert mint_admin_jwt("bootstrap-ns", "deploy/bootstrap", "/config/bootstrap.toml") == "admin.jwt"
     (call,) = fake.calls
     assert call == [
         "kubectl",
         "-n",
-        "nix-cache",
+        "bootstrap-ns",
         "exec",
-        "deploy/attic-next",
+        "deploy/bootstrap",
         "--",
         "atticadm",
         "-f",
-        "/config/server.toml",
+        "/config/bootstrap.toml",
         "make-token",
         "--sub",
         "bootstrap-admin",
@@ -440,6 +440,17 @@ def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
         "--create-cache",
         "*",
     ]
+
+
+def test_bootstrap_mint_failure_keeps_command_output_out_of_the_error(monkeypatch):
+    def failed(*args, **kwargs):
+        return _Completed(stdout="example-token", stderr="example-diagnostic", returncode=1)
+
+    monkeypatch.setattr(rotate.subprocess, "run", failed)
+    with pytest.raises(RuntimeError, match="exit status 1") as error:
+        mint_admin_jwt("test", "deploy/attic", "/config/server.toml")
+    assert "example-token" not in str(error.value)
+    assert "example-diagnostic" not in str(error.value)
 
 
 @pytest.mark.parametrize(
