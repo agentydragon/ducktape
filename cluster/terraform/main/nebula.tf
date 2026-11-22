@@ -110,8 +110,7 @@ locals {
   # only `hosts`, `use_relays`). Tofu's ternary requires both branches to share
   # a type, so we build the two flavours as separate comprehensions and merge.
   #
-  # Invariant for TF-managed hosts: lighthouse=true ⇔ relay=true. Non-
-  # lighthouses use lighthouse-as-relay.
+  # Managed lighthouses serve as relays. Clients use the lighthouse IPs from the roster.
   nebula_configs_lighthouse = {
     for host_name in local.nebula_managed_hosts :
     host_name => merge(local.nebula_common, {
