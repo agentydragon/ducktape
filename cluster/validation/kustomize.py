@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -112,31 +112,25 @@ def stage_artifact_copies(repo_root: Path, artifact_root: Path, copies: Sequence
     repo_root = repo_root.resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
 
-    def relative_path(uri: str, prefix: str, *, directory_glob: bool = False) -> tuple[PurePosixPath, bool]:
+    artifact_root = artifact_root.resolve()
+
+    def resolve_copy_path(root: Path, uri: str, prefix: str, *, suffix: str = "") -> Path:
         if not uri.startswith(prefix):
             raise ValueError(f"artifact copy path must start with {prefix!r}: {uri!r}")
-        path = uri.removeprefix(prefix).rstrip("/")
-        is_glob = directory_glob and path.endswith("/**")
-        if is_glob:
-            path = path.removesuffix("/**")
-        if not path or any(part in {"", ".", ".."} for part in path.split("/")):
+        path = uri.removeprefix(prefix).rstrip("/").removesuffix(suffix)
+        if any(part in {"", ".", ".."} for part in path.split("/")):
             raise ValueError(f"artifact copy path must be a safe relative path: {uri!r}")
         if any(character in path for character in "*?[]{}"):
             raise ValueError(f"unsupported artifact copy pattern: {uri!r}")
-        return PurePosixPath(path), is_glob
+        resolved = (root / path).resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"artifact copy path escapes {root}: {uri!r}")
+        return resolved
 
     for source_uri, destination_uri in copies:
-        source_rel, is_directory = relative_path(source_uri, "@repo/", directory_glob=True)
-        destination_rel, destination_has_glob = relative_path(destination_uri, "@artifact/")
-        if destination_has_glob:
-            raise ValueError(f"artifact destination cannot contain a glob: {destination_uri!r}")
-
-        source = (repo_root / Path(*source_rel.parts)).resolve()
-        destination = (artifact_root / Path(*destination_rel.parts)).resolve()
-        if not source.is_relative_to(repo_root):
-            raise ValueError(f"artifact source escapes repository root: {source_uri!r}")
-        if not destination.is_relative_to(artifact_root.resolve()):
-            raise ValueError(f"artifact destination escapes staging root: {destination_uri!r}")
+        is_directory = source_uri.rstrip("/").endswith("/**")
+        source = resolve_copy_path(repo_root, source_uri, "@repo/", suffix="/**")
+        destination = resolve_copy_path(artifact_root, destination_uri, "@artifact/")
 
         if is_directory:
             if not source.is_dir():
