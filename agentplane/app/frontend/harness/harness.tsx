@@ -3357,6 +3357,11 @@ function retiredConnectionRows(): Connection[] {
 routes.push(
   [
     "GET",
+    /^\/upstream\/dispatcher\/v1\/dispatches\/legacy-input$/,
+    () => Response.json({ code: 5, message: "Dispatch not found" }, { status: 404 }),
+  ],
+  [
+    "GET",
     /^\/upstream\/dispatcher\/v1\/dispatches:watch$/,
     (_match, query, signal) => {
       if (flags.has("dispatchWatchUnavailable")) {
@@ -4412,6 +4417,20 @@ const visualHarness = {
   },
   commandOutcomes(): void {
     threadEntityRows = (id) => statesRows(id, true);
+  },
+  rememberLegacyInput(): void {
+    localStorage.setItem(
+      `agentplane.pending:${RUNNING_THREAD}:legacy-input`,
+      JSON.stringify({
+        command: {
+          commandId: "legacy-input",
+          submitInput: { text: "Check the staging deployment before continuing." },
+        },
+        submittedAt: Date.now(),
+        target: COMMAND_TARGET,
+        admission: null,
+      })
+    );
   },
   rememberPendingInput(): void {
     rememberInput("Continue when ready. This message has no saved confirmation yet.");
