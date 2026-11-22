@@ -425,16 +425,11 @@ def test_allowance_paced(
         capture_menu.capture(geometry, label="allowance paced")
 
 
-def test_rounded_balance_keeps_exact_amount_in_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+def test_rounded_balance_has_no_details_toggle(session: GnomeSession) -> None:
     with _menu(session, "allowance_fractional", "$200"):
         menu_text = string_reply(session.call("GetMenuText"))
         assert "$200 available" in menu_text
-        assert "$200.25" not in menu_text
-        assert "Balance details" in menu_text
-        assert string_reply(session.call("GetBalanceDetails")) == "Exact available: $200.25"
-        session.call("OpenBalanceDetails")
-        session.wait_for_paint()
-        capture_menu.capture(session.open_menu(), label="exact balance details")
+        assert "Balance details" not in menu_text
 
 
 def test_allowance_warning(
