@@ -86,7 +86,7 @@ class CentralSampler(Construct):
             logs=Path(_LOGS_PATH),
             history_target=self.history_ingress.authority,
             history_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=CENTRAL_SAMPLER_URI),
-            gateway_target=environment_service.CONTROL_TARGET_TEMPLATE,
+            gateway_target=environment_service.environments_service(namespace).authority,
             gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=CENTRAL_SAMPLER_URI),
             max_live_sessions=props.max_live_sessions,
             rpc_timeout_seconds=props.rpc_timeout_seconds,

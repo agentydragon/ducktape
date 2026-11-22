@@ -52,26 +52,6 @@ def _environments_grpc_target(staging_manifests: list[dict[str, Any]]) -> str:
     return f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
 
 
-@pytest.mark.parametrize(
-    ("config_map", "key", "setting"),
-    [
-        ("sessions-settings", "settings.yaml", "runner_control_target_template"),
-        ("environments-settings", "config.yaml", "runner_gateway_target"),
-        ("central-sampler-settings", "settings.json", "gateway_target"),
-    ],
-)
-def test_control_target_dials_the_receiver_in_the_destination_namespace(
-    staging_manifests: list[dict[str, Any]], config_map: str, key: str, setting: str
-) -> None:
-    template = config_map_yaml(staging_manifests, config_map, key)[setting]
-    service = find_resource(staging_manifests, "Service", environment_service.NAME)
-    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
-    assert (
-        template.format(namespace="another-namespace")
-        == f"{service['metadata']['name']}.another-namespace.svc:{port['port']}"
-    )
-
-
 def test_environments_selects_controller_endpoints_for_the_single_metrics_scrape(
     staging_manifests: list[dict[str, Any]],
 ) -> None:

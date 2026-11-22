@@ -296,7 +296,7 @@ class SandboxController(Construct):
             namespace=namespace,
             metrics_bind_address=f":{_METRICS_PORT.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
-            runner_gateway_target=environment_service.CONTROL_TARGET_TEMPLATE,
+            runner_gateway_target=environments.authority,
         )
         SettingsFile(
             environments_scope,
