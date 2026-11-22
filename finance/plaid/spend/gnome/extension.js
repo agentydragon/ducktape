@@ -185,6 +185,14 @@ function selectedPace(allowance, window) {
   return { amount, reference, ratio: amount / reference };
 }
 
+function formatPaceSummary(allowance, window) {
+  const periodId = window === "30d" ? "rolling_30d" : "rolling_7d";
+  const amount = periodReport(allowance, "recorded_pace_periods", periodId)?.observed_daily_minor_units;
+  const pace = selectedPace(allowance, window);
+  const percent = pace ? ` (${Math.round(pace.ratio * 100)}%)` : "";
+  return `${window} ${formatDaily(amount, allowance.currency)}${percent}`;
+}
+
 function panelSignal(allowance, window) {
   if (!allowance || allowance.status !== "active" || allowance.available_minor_units == null)
     return { level: "unknown", label: "Unavailable" };
@@ -922,10 +930,7 @@ const PlaidSpendIndicator = GObject.registerClass(
             const basis = allowance.forecast?.basis_period?.id === "rolling_30d" ? "30d" : "7d";
             this._addReadOnly(`Overall warning · ${basis} forecast or pace`, "plaid-spend-caution");
           }
-          this._addReadOnly(
-            `7d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.observed_daily_minor_units, allowance.currency)} · ` +
-              `30d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_30d")?.observed_daily_minor_units, allowance.currency)}`
-          );
+          this._addReadOnly(`${formatPaceSummary(allowance, "7d")} · ${formatPaceSummary(allowance, "30d")}`);
           const daily = allowance.daily_reference_minor_units;
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
           if (this._settings.get_strv("panel-visible").includes("sparkline")) {
