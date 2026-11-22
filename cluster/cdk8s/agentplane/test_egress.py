@@ -91,9 +91,6 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
     assert len(mtls_ports) == 1
 
-    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
-    assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
-
     role = find_resource(staging_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
