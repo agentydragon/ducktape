@@ -78,7 +78,7 @@ const PRINTED_FROM_SOURCE = new Set([
   "MethodDefinition",
 ]);
 
-const needsPrintRange = (node) =>
+export const needsPrintRange = (node) =>
   PRINTED_FROM_SOURCE.has(node.type) ||
   (node.type === "Property" && (node.method || node.kind === "get" || node.kind === "set"));
 

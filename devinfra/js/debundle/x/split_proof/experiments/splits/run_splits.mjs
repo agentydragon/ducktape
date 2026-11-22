@@ -10,7 +10,7 @@
 //             random: k ∈ {2, 3, 5, 8} modules, `seeds` random assignments each
 //
 // The bundle's footprints are computed once (`lower`, or the file given with `--footprints`); each split is checked
-// with `lowersplit --force --footprints` (checks, writes the modules even when rejected), then
+// with `lowersplit --diagnostic --force --footprints` (checks, writes the modules even when rejected), then
 // `smoke.mjs` on the entry module. One JSON line per split:
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
@@ -88,6 +88,7 @@ async function worker() {
       const spec = makeSpec(n, plan.strategy, plan.args);
       await writeFile(path.join(dir, "spec.json"), JSON.stringify(spec));
       const checked = await run(lowersplit, [
+        "--diagnostic",
         path.join(lowering, `${bundle}.json`),
         path.join(dir, "spec.json"),
         path.join(dir, "out"),

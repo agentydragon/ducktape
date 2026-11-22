@@ -114,7 +114,7 @@ if (process.argv[2] !== "--worker") {
       writeFileSync(path.join(dir, "source.mjs"), source);
       writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
       writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, order }));
-      const args = [path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir];
+      const args = ["--diagnostic", path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir];
       const checked = run(process.env.LOWERSPLIT, args);
       writeFileSync(path.join(dir, "checker.log"), checked.stdout + checked.stderr);
       if (checked.status === 0) {

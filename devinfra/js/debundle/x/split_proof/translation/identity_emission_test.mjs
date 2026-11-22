@@ -105,13 +105,13 @@ const callbacks = scopes.body[0].declarations.map((d) => d.init);
 assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
 for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
 const leanCertificate = path.join(temp, "generated.lean");
-const emitted = run(process.env.LOWERSPLIT, [ast, spec, out, "--lean", leanCertificate]);
+const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, out, "--lean", leanCertificate]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
 const legacyInput = path.join(temp, "legacy-ast.json");
 writeFileSync(legacyInput, legacyDump(parsed));
 const upgradedOut = path.join(temp, "upgraded");
-const upgraded = run(process.env.LOWERSPLIT, [legacyInput, spec, upgradedOut]);
+const upgraded = run(process.env.LOWERSPLIT, ["--diagnostic", legacyInput, spec, upgradedOut]);
 assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
 for (const file of ["entry.mjs", "side.mjs"])
   assert.equal(readFileSync(path.join(upgradedOut, file), "utf8"), readFileSync(path.join(out, file), "utf8"));
@@ -169,7 +169,7 @@ for (const [name, unsafe] of [
       },
     })
   );
-  const rejected = run(process.env.LOWERSPLIT, [unsafeAst, unsafeSpec, unsafeOut]);
+  const rejected = run(process.env.LOWERSPLIT, ["--diagnostic", unsafeAst, unsafeSpec, unsafeOut]);
   assert.equal(rejected.status, 1, `${name} must be rejected: ${rejected.stdout}\n${rejected.stderr}`);
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
   assert(!existsSync(path.join(unsafeOut, "entry.mjs")), `${name} must not emit a module`);
@@ -265,11 +265,11 @@ globalThis.cb();`,
       },
     })
   );
-  const rejected = run(process.env.LOWERSPLIT, [input, split, dir]);
+  const rejected = run(process.env.LOWERSPLIT, ["--diagnostic", input, split, dir]);
   assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
   assert(!existsSync(path.join(dir, "entry.mjs")), name);
-  const emitted = run(process.env.LOWERSPLIT, [input, split, dir, "--force"]);
+  const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", input, split, dir, "--force"]);
   assert.equal(emitted.status, 1, `${name}: ${emitted.stdout}\n${emitted.stderr}`);
   assert.match(emitted.stdout, /FAIL\s+OrderOk/);
   const before = run(process.execPath, [original]);
@@ -302,7 +302,7 @@ console.log(import.meta.url, result);`;
   mkdirSync(dir, { recursive: true });
   writeFileSync(input, JSON.stringify(lowerDump(codeWithFallback, acorn, eslintScope)));
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
-  const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  const result = run(process.env.LOWERSPLIT, ["--diagnostic", input, spec, dir]);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /1 with fallback nodes/);
 }

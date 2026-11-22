@@ -60,6 +60,7 @@ for (const [chunk, spec] of [
   const r = spawnSync(
     process.env.LOWERSPLIT,
     [
+      "--diagnostic",
       ast,
       spec,
       rendered,
@@ -98,7 +99,7 @@ for (const [chunk, spec] of [
       `${chunk}/${modulePath}`
     );
   }
-  const slice = r.stdout.split("\n").find((line) => line.includes("proved slice:"));
+  const slice = r.stdout.split("\n").find((line) => line.includes("model diagnostic:"));
   assert(slice, r.stderr);
   const moves = JSON.parse(readFileSync(path.join(dir, "moves.json"), "utf8"));
   const summary = {

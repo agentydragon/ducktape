@@ -25,7 +25,7 @@ genrule(
 work=$$(mktemp -d "$(@D)/split.XXXXXX")
 export BAZEL_BINDIR="$(BINDIR)"
 trap 'rm -rf "$$work"' EXIT
-$(execpath //devinfra/js/debundle/x/split_proof/lean:lowersplit) \
+$(execpath //devinfra/js/debundle/x/split_proof/lean:lowersplit) --diagnostic \
     $(location //devinfra/js/debundle/x/split_proof:example_ast) \
     $(location //devinfra/js/debundle/x/split_proof:example/spec.json) "$$work" --lean "$@"
 """,

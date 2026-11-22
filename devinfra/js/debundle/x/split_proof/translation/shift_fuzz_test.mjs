@@ -366,11 +366,15 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   };
   writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
-  const emitter = spawnSync(process.env.LOWERSPLIT, [path.join(dir, "ast.json"), path.join(dir, "spec.json"), out], {
-    encoding: "utf8",
-    // A cold Lean process loads the compiler before the splitter can read the case.
-    timeout: 60_000,
-  });
+  const emitter = spawnSync(
+    process.env.LOWERSPLIT,
+    ["--diagnostic", path.join(dir, "ast.json"), path.join(dir, "spec.json"), out],
+    {
+      encoding: "utf8",
+      // A cold Lean process loads the compiler before the splitter can read the case.
+      timeout: 60_000,
+    }
+  );
   if (emitter.error) {
     if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
       cpSync(dir, path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, `emitter-error-${seed}`), { recursive: true });

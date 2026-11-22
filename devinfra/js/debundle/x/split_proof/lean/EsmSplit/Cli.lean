@@ -23,21 +23,24 @@ structure PlanChecks where
 
 def PlanChecks.ok (checks : PlanChecks) : Bool := checks.layout && checks.order
 
-def report (B : Bundle) (S : Spec) (P : Plan) : IO PlanChecks := do
-  let t0 ← IO.monoMsNow
-  let order ← IO.lazyPure fun _ => P.evalOrder
-  let exec ← IO.lazyPure fun _ => P.execOrder
-  IO.println s!"  module order  {" → ".intercalate order}"
-  IO.println s!"  statement order  {if exec.length > 40 then s!"[{exec.length} statements]" else toString exec}  ({(← IO.monoMsNow) - t0} ms)"
-  let rs := [← timedCheck "UniqueDefs" fun _ => decide (UniqueDefs B),
-             ← timedCheck "ReadsClosed" fun _ => decide (ReadsClosed B),
-             ← timedCheck "Faithful" fun _ => decide (Faithful B S P),
-             ← timedCheck "Linkable" fun _ => decide (Linkable B P),
-             ← timedCheck "ExportsUnique" fun _ => decide (ExportsUnique B P),
-             ← timedCheck "Hygienic" fun _ => decide (Hygienic B P),
-             ← timedCheck "AssignsHome" fun _ => decide (AssignsHome B P),
-             ← timedCheck "Permutes" fun _ => decide (Permutes B P)]
-  let orderOk ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
+def report (B : Bundle) (S : Spec) (P : Plan) (verbose := true) : IO PlanChecks := do
+  if verbose then
+    let t0 ← IO.monoMsNow
+    let order ← IO.lazyPure fun _ => P.evalOrder
+    let exec ← IO.lazyPure fun _ => P.execOrder
+    IO.println s!"  module order  {" → ".intercalate order}"
+    IO.println s!"  statement order  {if exec.length > 40 then s!"[{exec.length} statements]" else toString exec}  ({(← IO.monoMsNow) - t0} ms)"
+  let check (name : String) (p : Unit → Bool) : IO Bool :=
+    if verbose then timedCheck name p else IO.lazyPure p
+  let rs := [← check "UniqueDefs" fun _ => decide (UniqueDefs B),
+             ← check "ReadsClosed" fun _ => decide (ReadsClosed B),
+             ← check "Faithful" fun _ => decide (Faithful B S P),
+             ← check "Linkable" fun _ => decide (Linkable B P),
+             ← check "ExportsUnique" fun _ => decide (ExportsUnique B P),
+             ← check "Hygienic" fun _ => decide (Hygienic B P),
+             ← check "AssignsHome" fun _ => decide (AssignsHome B P),
+             ← check "Permutes" fun _ => decide (Permutes B P)]
+  let orderOk ← check "OrderOk" fun _ => decide (OrderOk B P)
   return ⟨rs.all id, orderOk⟩
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.

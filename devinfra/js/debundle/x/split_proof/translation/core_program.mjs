@@ -1,4 +1,4 @@
-// A bundle in the CoreJS model, as `lowersplit --corejs` reads it to name the proved slice of a split.
+// A bundle in the CoreJS model, as `lowersplit --diagnostic --corejs` reads it to name the model diagnostic for a split.
 //
 //   node core_program.mjs <bundle.mjs> > program.json
 //

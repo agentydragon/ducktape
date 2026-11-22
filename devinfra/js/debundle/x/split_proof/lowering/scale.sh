@@ -11,7 +11,7 @@ LS=../lean/.lake/build/bin/lowersplit
 
 row() { # label bundle statements modules [replicate K]
   node ../experiments/splits/gen_spec.mjs "$3" blocks "$4" >"$T/spec.json"
-  timeout 240 "$LS" "bundles/$2.json" "$T/spec.json" "$T/out" ${5:+--replicate "$5"} 2>&1 | awk -v label="$1" -v n="$3" -v k="$4" '
+  timeout 240 "$LS" --diagnostic "bundles/$2.json" "$T/spec.json" "$T/out" ${5:+--replicate "$5"} 2>&1 | awk -v label="$1" -v n="$3" -v k="$4" '
     /\[time\] read/ { json = $(NF - 1) }
     /\[time\] footprints/ { fp = $(NF - 1) }
     /\[time\] mkPlan/ { plan = $(NF - 1) }

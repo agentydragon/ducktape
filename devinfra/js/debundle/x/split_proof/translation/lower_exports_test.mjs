@@ -1,6 +1,6 @@
 // `lower` and `lowersplit` analyze an ESTree dump the same way: the names its `export` statements publish start out
 // held by the world, so a unit that changes an exported object touches the world, and one that changes a private
-// object does not. `lowersplit --footprints` reads what `lower` printed, so a disagreement would make the two give
+// object does not. `lowersplit --diagnostic --footprints` reads what `lower` printed, so a disagreement would make the two give
 // different verdicts for one bundle.
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
@@ -31,7 +31,7 @@ function footprints(name, code) {
   );
   const out = path.join(temp, name);
   mkdirSync(out, { recursive: true });
-  const split = spawnSync(process.env.LOWERSPLIT, [input, spec, out], { encoding: "utf8" });
+  const split = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", input, spec, out], { encoding: "utf8" });
   assert.equal(split.status, 0, `${split.stdout}\n${split.stderr}`);
   const counted = Number(split.stdout.match(/(\d+) touch the world/)?.[1]);
   return { effects, counted };

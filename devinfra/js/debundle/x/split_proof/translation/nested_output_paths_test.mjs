@@ -31,7 +31,7 @@ writeFileSync(
 
 const out = path.join(work, "generated");
 assert(!existsSync(out), "the output root starts absent");
-const emitted = spawnSync(process.env.LOWERSPLIT, [astPath, specPath, out], { encoding: "utf8" });
+const emitted = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", astPath, specPath, out], { encoding: "utf8" });
 assert.equal(emitted.status, 0, emitted.stdout + "\n" + emitted.stderr);
 assert(existsSync(path.join(out, "public", "entry.mjs")), "the nested entry is written");
 assert(existsSync(path.join(out, "lib", "math.mjs")), "a sibling module directory is written");
@@ -61,7 +61,9 @@ writeFileSync(
   unsafeSpec,
   JSON.stringify({ entry: "../escape.mjs", modules: { "../escape.mjs": ["#0", "#1", "#2", "#3"] } })
 );
-const rejected = spawnSync(process.env.LOWERSPLIT, [astPath, unsafeSpec, unsafeOut], { encoding: "utf8" });
+const rejected = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", astPath, unsafeSpec, unsafeOut], {
+  encoding: "utf8",
+});
 assert.notEqual(rejected.status, 0, "project traversal in a module path is rejected");
 assert.match(rejected.stdout + "\n" + rejected.stderr, /unsafe output module path/);
 assert(!existsSync(unsafeOut), "an invalid spec does not create its output root");
@@ -117,4 +119,4 @@ const wrongTarget = spawnSync(
 const wrongTargetVerdict = JSON.parse(wrongTarget.stdout.trim().split("\n").at(-1));
 assert.equal(wrongTarget.status, 1, wrongTarget.stdout + wrongTarget.stderr);
 assert.equal(wrongTargetVerdict.status, "rejected", JSON.stringify(wrongTargetVerdict));
-assert.match(wrongTargetVerdict.reason, /ordered imports differ from the plan/);
+assert.match(wrongTargetVerdict.reason, /output module public\/entry\.mjs differs from its generated ESTree/);

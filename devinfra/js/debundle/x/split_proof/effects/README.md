@@ -13,8 +13,10 @@ node fuzz.mjs --count 300 --seed 3                    # tree fuzzer
 node frontend.mjs bundle <bundle.js> --out bundle.json
 ../lean/.lake/build/bin/lower bundle.json --premises premises.json              # a footprint per unit, as JSON lines
 ../lean/.lake/build/bin/translate bundle.json output.json cert.json --premises premises.json [--table t.json]
-../lean/.lake/build/bin/lowersplit ast.json spec.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
+../lean/.lake/build/bin/lowersplit --diagnostic ast.json spec.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
 ```
+
+This is a diagnostic invocation. Plan output and any emitted files are uncertified previews, even when the structural checks pass.
 
 `translation:effects_cases_test` and `translation:fixtures_test` run the golden cases and fixtures in Bazel. `lowersplit --footprints` reads what `lower` printed instead of analyzing again: the analysis does not depend on the split, so a run of many splits of one big bundle computes it once.
 

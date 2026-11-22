@@ -63,7 +63,7 @@ function translate(name, source, dir) {
   return run(process.env.TRANSLATE, [bundle, tree, cert]);
 }
 
-const lowersplit = (p, ...flags) => run(process.env.LOWERSPLIT, [p.input, p.spec, p.dir, ...flags]);
+const lowersplit = (p, ...flags) => run(process.env.LOWERSPLIT, ["--diagnostic", p.input, p.spec, p.dir, ...flags]);
 const describe = (name, r) => `${name}: ${r.stdout}\n${r.stderr}`;
 
 function refuse(name, code, side) {

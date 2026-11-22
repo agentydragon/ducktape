@@ -150,6 +150,7 @@ for (const chunk of selected) {
     const r = await run(
       process.env.LOWERSPLIT,
       [
+        "--diagnostic",
         astFile,
         specFile,
         path.join(dir, name),
@@ -170,7 +171,7 @@ for (const chunk of selected) {
       status: r.status,
       signal: r.signal,
       killed: r.killed,
-      slice: r.stdout.match(/^ {2}proved slice: (.*)$/m)?.[1],
+      slice: r.stdout.match(/^ {2}model diagnostic: (.*)$/m)?.[1],
       failures: r.stdout.split("\n").filter((line) => line.includes("FAIL")),
       stderr: r.stderr,
     };

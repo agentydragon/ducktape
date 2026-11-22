@@ -28,7 +28,10 @@ function emit(name, code, side, force = false) {
       },
     })
   );
-  return { dir, result: run(process.env.LOWERSPLIT, [ast, spec, dir, ...(force ? ["--force"] : [])]) };
+  return {
+    dir,
+    result: run(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, dir, ...(force ? ["--force"] : [])]),
+  };
 }
 
 // Two workers use disjoint case directories and inherit the same immutable runfiles.
