@@ -407,6 +407,10 @@ private def readJson (path : System.FilePath) : IO Json := do
   IO.ofExcept (Json.parse (← IO.FS.readFile path))
 
 private def loadProgram (path work : System.FilePath) : IO Json := do
+  if path.extension == some "js" || path.extension == some "mjs" then
+    let parsed := work / "source.json"
+    javascript #["--parse"] #[path, parsed]
+    return ← readJson parsed
   let program ← readJson path
   match program.getObjVal? "annotationVersion" with
   | .ok v =>
