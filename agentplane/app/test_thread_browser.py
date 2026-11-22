@@ -1731,13 +1731,24 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
             event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"After command {index}"))
         )
     await expect_projected_cursor(page, source.entries[-1].cursor)
-    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
-    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(f'.transcript-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
+    row = page.locator(f'[data-command-id="{command.command_id}"]')
+    label = "Execution failed" if outcome == "failed" else "No-op"
+    details_button = row.get_by_role("button", name=f"{label} · delivery details")
+    details = page.get_by_role("dialog", name="Delivery details")
+
+    async def open_retained_reason() -> None:
+        await expect(row).to_have_count(1)
+        await expect(row.get_by_text(submitted, exact=True)).to_be_visible()
+        await expect(row.locator(".transcript-user-bubble")).to_have_attribute("data-message-phase", outcome)
+        await details_button.press("Enter")
+        await expect(details.get_by_text(reason, exact=True)).to_be_visible()
+
+    await open_retained_reason()
+    await page.keyboard.press("Escape")
+    await expect(details).to_have_count(0)
+    await expect(details_button).to_be_focused()
     await page.reload()
-    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
-    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(f'.transcript-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
+    await open_retained_reason()
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
     assert source.runner.commands.empty()
 

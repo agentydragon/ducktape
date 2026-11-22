@@ -2536,6 +2536,7 @@ it.each([
   ["noop", "noop", "No-op: harness was stopping"],
   ["effected", "confirmed", "Agent confirmed message"],
 ] as const)("shows a server-only %s input as a persistent right-side message", async (outcome, phase, status) => {
+  const reason = outcome === "effected" ? undefined : status.split(": ")[1];
   const container = await render(
     threadState({
       rows: [
@@ -2551,7 +2552,7 @@ it.each([
                   ? ThreadCommandOutcome.NOOP
                   : ThreadCommandOutcome.EFFECTED,
             outcomeCursor: 2n,
-            outcomeReason: outcome === "effected" ? undefined : status.split(": ")[1],
+            outcomeReason: reason,
             requestedValue: undefined,
             inputRef: reference("failed-input", ThreadPayloadField.COMMAND_INPUT),
           },
@@ -2562,8 +2563,6 @@ it.each([
   const bubble = container.querySelector<HTMLElement>(`.transcript-user-bubble[data-message-phase="${phase}"]`);
   const plainOutcome = bubble?.parentElement?.querySelector(".agentplane-command-noop");
   expect(plainOutcome?.textContent).toBe(outcome === "noop" ? "No-op" : undefined);
-  if (outcome === "noop")
-    expect((await openDeliveryDetails(bubble!.parentElement!)).textContent).toContain("harness was stopping");
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
   expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(
     outcome === "effected" || outcome === "noop" ? 0 : 4
@@ -2574,8 +2573,8 @@ it.each([
   expect(bubble?.parentElement?.querySelector('[role="alert"]')?.textContent).toBe(
     outcome === "failed" ? "Execution failed" : undefined
   );
-  if (outcome === "failed")
-    expect((await openDeliveryDetails(bubble!.parentElement!)).textContent).toContain("runner unavailable");
+  const details = reason ? await openDeliveryDetails(bubble!.parentElement!) : undefined;
+  expect(details?.textContent).toBe(reason);
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     outcome === "effected" ? status : undefined
   );
