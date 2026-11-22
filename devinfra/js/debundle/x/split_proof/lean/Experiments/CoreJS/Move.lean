@@ -552,10 +552,10 @@ theorem bind_of_ok {α β : Type} {m : M W α} {f : α → M W β} {s s' : State
     | .fuel => .fuel : Res W β) = _
   rw [h]
 
-theorem runUnit_ok {n id : Nat} {env : Env} {st : Stmt} {s s' : State W} {f : Flow}
-    (h : runUnit n env id st s = .ok f s') :
-    ∃ u, execStmt n env st { s with region := id + 1 } = .ok f u ∧ s' = { u with region := 0 } := by
-  unfold runUnit inRegion at h
+theorem inRegion_ok_state {α : Type} {id : Nat} {m : M W α} {s s' : State W} {f : α}
+    (h : inRegion id m s = .ok f s') :
+    ∃ u, m { s with region := id + 1 } = .ok f u ∧ s' = { u with region := 0 } := by
+  unfold inRegion at h
   obtain ⟨_, t0, h0, h⟩ := bind_ok h
   cases h0
   obtain ⟨f', t1, h1, h⟩ := bind_ok h
@@ -564,14 +564,22 @@ theorem runUnit_ok {n id : Nat} {env : Env} {st : Stmt} {s s' : State W} {f : Fl
   cases h
   exact ⟨t1, h1, rfl⟩
 
-theorem runUnit_of {n id : Nat} {env : Env} {st : Stmt} {s u : State W} {f : Flow}
-    (h : execStmt n env st { s with region := id + 1 } = .ok f u) :
-    runUnit n env id st s = .ok f { u with region := 0 } := by
-  unfold runUnit inRegion
-  change (execStmt n env st >>= fun a => (modifyState (fun s : State W => { s with region := 0 }) >>= fun _ => pure a))
+theorem inRegion_of {α : Type} {id : Nat} {m : M W α} {s u : State W} {f : α}
+    (h : m { s with region := id + 1 } = .ok f u) :
+    inRegion id m s = .ok f { u with region := 0 } := by
+  unfold inRegion
+  change (m >>= fun a => (modifyState (fun s : State W => { s with region := 0 }) >>= fun _ => pure a))
     { s with region := id + 1 } = _
   rw [bind_of_ok h]
   rfl
+
+theorem runUnit_ok {n id : Nat} {env : Env} {st : Stmt} {s s' : State W} {f : Flow}
+    (h : runUnit n env id st s = .ok f s') :
+    ∃ u, execStmt n env st { s with region := id + 1 } = .ok f u ∧ s' = { u with region := 0 } := inRegion_ok_state h
+
+theorem runUnit_of {n id : Nat} {env : Env} {st : Stmt} {s u : State W} {f : Flow}
+    (h : execStmt n env st { s with region := id + 1 } = .ok f u) :
+    runUnit n env id st s = .ok f { u with region := 0 } := inRegion_of h
 
 theorem Sees.symm {r : Nat} {R : Addr → Prop} {s t : State W} (h : Sees r R s t) : Sees r R t s :=
   ⟨h.region', h.region, h.heap.symm, h.cells.symm, fun c hc => (h.reads c hc).symm⟩
@@ -592,28 +600,35 @@ theorem Sees.put_other {r q : Nat} {R : Addr → Prop} {s : State W} (hq : q ≠
   · show (s.put q H C).cellAt c = s.cellAt c
     rw [State.cellAt_put]; simp [hR c hc]
 
-/-- **Two local units in different regions commute**, when neither reads a binding of the other's region. -/
-theorem local_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R1 R2 : Addr → Prop} (hij : i ≠ j)
-    (h1 : Local (i + 1) R1 (execStmt n e1 st1 : M W Flow)) (h2 : Local (j + 1) R2 (execStmt n e2 st2 : M W Flow))
+/-- **Two local computations in different regions commute**, when neither reads a binding of the other's region. -/
+theorem local_inRegion_commute {α β : Type} {i j : Nat} {a : M W α} {b : M W β} {R1 R2 : Addr → Prop} (hij : i ≠ j)
+    (h1 : Local (i + 1) R1 a) (h2 : Local (j + 1) R2 b)
     (hR1 : ∀ c, R1 c → c.region ≠ j + 1) (hR2 : ∀ c, R2 c → c.region ≠ i + 1) :
-    Commute (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) := by
+    Commute (inRegion i a) (inRegion j b) := by
   intro s u s' fa fb ha hb
   have hne : i + 1 ≠ j + 1 := fun h => hij (by omega)
-  obtain ⟨u0, hu0, rfl⟩ := runUnit_ok ha
-  obtain ⟨v0, hv0, rfl⟩ := runUnit_ok hb
+  obtain ⟨u0, hu0, rfl⟩ := inRegion_ok_state ha
+  obtain ⟨v0, hv0, rfl⟩ := inRegion_ok_state hb
   obtain ⟨H1, C1, rfl, -⟩ := h1 _ _ fa u0 (Sees.refl rfl) hu0
   -- `j` sees the same after `i` as before it
   obtain ⟨H2, C2, rfl, hj⟩ := h2 _ { s with region := j + 1 } fb v0
     (Sees.put_other hne (fun c hc => (hR2 c hc)) H1 C1 (j + 1) rfl) hv0
-  refine ⟨_, runUnit_of hj, ?_⟩
+  refine ⟨_, inRegion_of hj, ?_⟩
   -- and `i` sees the same after `j` as before it
   obtain ⟨H, C, hu, hi⟩ := h1 { s with region := i + 1 } { s.put (j + 1) H2 C2 with region := i + 1 } fa _
     (Sees.put_other (s := s) hne.symm hR1 H2 C2 (i + 1) rfl).symm hu0
-  refine (runUnit_of hi).trans ?_
+  refine (inRegion_of hi).trans ?_
   have hh : s.heap.set! (i + 1) H1 = s.heap.set! (i + 1) H := congrArg State.heap hu
   have hc : s.cells.set! (i + 1) C1 = s.cells.set! (i + 1) C := congrArg State.cells hu
   simp only [State.put]
   rw [hh, hc, set!_comm s.heap hne, set!_comm s.cells hne]
+
+/-- **Two local units in different regions commute**, when neither reads a binding of the other's region. -/
+theorem local_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R1 R2 : Addr → Prop} (hij : i ≠ j)
+    (h1 : Local (i + 1) R1 (execStmt n e1 st1 : M W Flow)) (h2 : Local (j + 1) R2 (execStmt n e2 st2 : M W Flow))
+    (hR1 : ∀ c, R1 c → c.region ≠ j + 1) (hR2 : ∀ c, R2 c → c.region ≠ i + 1) :
+    Commute (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) :=
+  local_inRegion_commute hij h1 h2 hR1 hR2
 
 /-! ## A unit that does nothing when it runs commutes with every unit
 
