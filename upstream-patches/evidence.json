@@ -1,7 +1,7 @@
 {
-  "reviewed_at_utc": "2026-11-09 to 2026-11-10",
-  "source_devel_commit": "5720cbd391b4d02dd84d98c75c9e73801d6d3059",
-  "scope": "A reviewed snapshot of the upstream issues, patches, workarounds and forked features identified in the November 9–10 investigation, excluding items no longer tracked after fixes; not a comprehensive scan of every dependency or a live status feed.",
+  "reviewed_at_utc": "2026-11-22T11:04:32+00:00",
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "scope": "Rechecked the 29 previous cards, local patch paths, linked GitHub issue and PR states, the open upstream and upstream-waiting issue lists, and selected current dependency pins. Dates on incident reports identify observations. Source inspection does not establish a deployed fix.",
   "entries": [
     {
       "id": "seaweed-ref",
@@ -11,8 +11,8 @@
       "status": "Investigate",
       "priority": "High",
       "impact": "Concurrent pushes through separate mounts produced an empty Git ref.",
-      "upstream": "Current code retains deferred creates and path-based rename invalidation; no exact resolution established.",
-      "next_step": "Rebuild the lost two-mount reproducer and run it against current releases.",
+      "upstream": "The local incident remains open. The mount implementation linked below is from release 4.53. No current-release recovery result is available.",
+      "next_step": "Keep ref-integrity monitoring in place. Record the deployed version, mount topology and integrity outcome before changing the operating guidance.",
       "links": [
         {
           "label": "Our issue",
@@ -23,18 +23,10 @@
           "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/mount/weedfs_file_mkrm.go"
         }
       ],
-      "drafts": [
+      "tracker_checks": [
         {
-          "title": "mount: remote rename can retarget an unrelated local open handle",
-          "url": "https://github.com/seaweedfs/seaweedfs/issues/new",
-          "body": "**Describe the bug**\n\nWith two mounts, a rename event from one mount can be applied by path to an unrelated open handle on the other. In our incident, closing the unrelated empty Git lock then wrote an empty entry over the destination ref.\n\n**System Setup**\n\nLinux; two weed mounts against one filer. [Recreate and include exact master, filer, mount commands, weed versions, OS, and sanitized filer.toml.]\n\n**Expected behavior**\n\nA rename from another client must not retarget a local handle for a different file.\n\n**Additional context**\n\nWe reproduced the incident with a delayed invalidation worker in an older build; the scratch scripts were not retained. Current behavior needs a new reproduction before this report is submitted. Ducktape: https://github.com/agentydragon/ducktape/issues/7767",
-          "review": "The timing-sensitive reproducer was not retained; rebuild it and verify on current upstream before filing."
-        },
-        {
-          "title": "mount: O_CREAT|O_EXCL is not exclusive across mounts",
-          "url": "https://github.com/seaweedfs/seaweedfs/issues/new",
-          "body": "**Describe the bug**\n\nTwo clients can both create the same lock path with O_CREAT|O_EXCL when each has its own mount. In our setup the second create was checked against local metadata and the filer entry was deferred.\n\n**System Setup**\n\nLinux; two weed mounts on the same filer. [Supply exact version, commands, mount flags, OS, and sanitized filer.toml.]\n\n**Expected behavior**\n\nAn exclusive create succeeds for at most one client, or the cross-mount limitation is clearly documented.\n\n**Additional context**\n\nA prior two-mount experiment reproduced both opens succeeding. Recreate the experiment on a current version and clarify whether -dlm changes the supported contract. https://github.com/agentydragon/ducktape/issues/7767",
-          "review": "Recreate the two-mount test and check the advertised semantics and existing reports before filing."
+          "html_url": "https://github.com/agentydragon/ducktape/issues/7767",
+          "state": "open"
         }
       ]
     },
@@ -47,7 +39,7 @@
       "priority": "High",
       "impact": "A log-stream error can cause an accepted remote command to run again.",
       "upstream": "Current client still returns a log-stream error to a whole-attempt retry loop.",
-      "next_step": "File a report using the invocation evidence; retain the disable-retry mitigation.",
+      "next_step": "Retain bbr’s whole-run retry guard. The local issue includes a later ordinary required-CI occurrence. Use invocation IDs to distinguish an observer error from a terminal remote verdict.",
       "links": [
         {
           "label": "Our issue",
@@ -55,7 +47,11 @@
         },
         {
           "label": "Current client",
-          "url": "https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/remotebazel/remotebazel.go"
+          "url": "https://github.com/buildbuddy-io/buildbuddy/blob/bf72fba9b020566af57fdf7d99f20e2bc27083b0/cli/remotebazel/remotebazel.go"
+        },
+        {
+          "label": "Current wrapper",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/devinfra/buildbuddy/bbr.py#L226"
         }
       ],
       "drafts": [
@@ -65,6 +61,12 @@
           "body": "**Describe the bug**\n\nA log observation error after a remote run is accepted can cause bb remote to submit the entire command again. Side effects can repeat and the first run outcome may be unknown.\n\n**To Reproduce**\n\nRun a remote script with a visible side effect; after acceptance interrupt its log stream with an Internal/RST_STREAM failure. We observed a second outer invocation. [Add a minimal fault-injection harness and current-version result.]\n\n**Expected behavior**\n\nReconnect to the accepted invocation or surface an outcome-unknown error instead of submitting it again.\n\n**Desktop**\n\n- OS: Linux\n- Browser: not applicable\n- Version: see additional context\n\n**Additional context**\n\nObserved with bb 5.0.498 on Linux. The client retry loop calls attemptRun again after a streaming logs error. Our detailed evidence and invocation links: https://github.com/agentydragon/ducktape/issues/13270. We currently use --disable_retry=true.",
           "review": "The observed failure is real; reproduce on the current CLI and check for duplicates before filing.",
           "template": "bug_report.md"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/13270",
+          "state": "open"
         }
       ]
     },
@@ -81,11 +83,11 @@
       "links": [
         {
           "label": "Local notes",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/grocy_mcp/TODO.md"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/grocy_mcp/TODO.md"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/grocy/grocy/blob/master/services/StockService.php"
+          "url": "https://github.com/grocy/grocy/blob/80f68d4e93d07033578dbd671a5a317de9a44895/services/StockService.php"
         },
         {
           "label": "Related UI issue",
@@ -96,7 +98,13 @@
         "text": "Grocy asks contributors to exclude AI-generated content. Use the evidence above to write your own report and check its issue template.",
         "url": "https://github.com/grocy/grocy/issues/new/choose",
         "template_url": "https://github.com/grocy/grocy/blob/master/.github/ISSUE_TEMPLATE/bug-report.md"
-      }
+      },
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/grocy/grocy/issues/2721",
+          "state": "open"
+        }
+      ]
     },
     {
       "id": "grocy-spec",
@@ -106,16 +114,16 @@
       "status": "Present upstream",
       "priority": "Medium",
       "impact": "Missing fields and schemas and invalid enum/references impair generated API tools.",
-      "upstream": "The upstream static specification still has an empty enum and lacks sampled fields and schemas.",
-      "next_step": "Separate schema additions from validity and generated-reference fixes.",
+      "upstream": "The upstream spec inspected on 22 November has one empty enum, five distinct unresolved local schema references and 23 Product properties. Applying Ducktape’s generator reduced the first two counts to zero and produced 35 properties.",
+      "next_step": "Separate upstream schema repairs from local API choices. The generator also reduced the route count from 74 to 64 for Ducktape’s batch tools. Keep that route selection local.",
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/grocy_mcp/fix_openapi_spec.py"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/grocy_mcp/fix_openapi_spec.py"
         },
         {
           "label": "Upstream spec",
-          "url": "https://github.com/grocy/grocy/blob/master/grocy.openapi.json"
+          "url": "https://github.com/grocy/grocy/blob/52c5442149bf77912b57589b621c41ca5cce09bc/grocy.openapi.json"
         }
       ],
       "filing_policy": {
@@ -137,11 +145,11 @@
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/swc_ecma_transforms_base_49_0_1.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/swc_ecma_transforms_base_49_0_1.patch"
         },
         {
           "label": "Upstream resolver",
-          "url": "https://github.com/swc-project/swc/blob/main/crates/swc_ecma_transforms_base/src/resolver/mod.rs"
+          "url": "https://github.com/swc-project/swc/blob/5b7f7a9fd2cbf1216522404da7905a16f6ccd297/crates/swc_ecma_transforms_base/src/resolver/mod.rs"
         }
       ],
       "drafts": [
@@ -172,8 +180,8 @@
       "status": "Investigate",
       "priority": "High",
       "impact": "A concurrent first push can fail with a package unique-constraint error and HTTP 500.",
-      "upstream": "The current Codeberg tracker could not be inspected during this review.",
-      "next_step": "Check Codeberg for an existing fix and report the captured evidence if needed.",
+      "upstream": "The local incident remains open. Upstream resolution is unverified.",
+      "next_step": "Compare the deployed version with the upstream package-creation changelog and retain the unique-constraint signature as the acceptance criterion.",
       "links": [
         {
           "label": "Our issue",
@@ -184,13 +192,10 @@
           "url": "https://codeberg.org/forgejo/forgejo/issues"
         }
       ],
-      "drafts": [
+      "tracker_checks": [
         {
-          "title": "Container registry: concurrent first push can race when using multiple replicas",
-          "url": "https://codeberg.org/forgejo/forgejo/issues/new",
-          "body": "## Description\n\nConcurrent blob finalizations for a new container package can race across Forgejo replicas; the losing request returns HTTP 500 after a package unique-constraint violation.\n\n## Reproduction\n\nRun two replicas sharing PostgreSQL and submit concurrent blob finalizations for a new package. [Create a sanitized, repeatable standalone reproduction and current-version result.]\n\n## Expected behavior\n\nConcurrent creation converges on one package without a failed blob finalization.\n\n## Environment and context\n\nObserved on v15.0.8 with two replicas. Correlated database and application evidence: https://github.com/agentydragon/ducktape/issues/8318.",
-          "review": "Codeberg templates and duplicate reports were not accessible during this review; inspect both before filing.",
-          "manual_url": true
+          "html_url": "https://github.com/agentydragon/ducktape/issues/8318",
+          "state": "open"
         }
       ]
     },
@@ -202,20 +207,20 @@
       "status": "Present upstream",
       "priority": "Medium",
       "impact": "An interactive stream stalls before its initial metadata reaches the client.",
-      "upstream": "Current response-copy code still lacks the flush used by our prototype; current release not retested.",
-      "next_step": "Run the existing comparison on current upstream and submit a focused regression.",
+      "upstream": "Current upstream flushes SSE chunks. The general HTTP response path still writes the status and copies the buffered body without the explicit initial flush used in our interactive HTTP/2 trial.",
+      "next_step": "Run the interactive comparison on a candidate version before retiring the patch. A passing SSE stream exercises another handler.",
       "links": [
         {
           "label": "Findings",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/agentplane/egress/x/iron_proxy/findings.md"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/agentplane/egress/x/iron_proxy/findings.md"
         },
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/iron_proxy/streaming.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/third_party/iron_proxy/streaming.patch"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/paradigmxyz/iron-proxy/blob/main/internal/proxy/proxy.go"
+          "url": "https://github.com/paradigmxyz/iron-proxy/blob/d303dcd9aa9235195123fe6ad6f6de80ea8c8b50/internal/proxy/proxy.go"
         }
       ],
       "drafts": [
@@ -250,6 +255,20 @@
           "label": "Upstream PR",
           "url": "https://github.com/external-secrets/external-secrets/pull/6693"
         }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/11868",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/external-secrets/external-secrets/issues/6677",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/external-secrets/external-secrets/pull/6693",
+          "state": "open"
+        }
       ]
     },
     {
@@ -260,8 +279,8 @@
       "status": "Open upstream",
       "priority": "Medium",
       "impact": "Valid shape strings produce false diagnostics or unsafe autofixes.",
-      "upstream": "Ruff #9860 remains open; the newest release was not tested with our reproduction.",
-      "next_step": "Rerun the minimal example and contribute evidence or a fix.",
+      "upstream": "Issue #9860 remains open. The repository devshell’s Ruff 0.17.4 still flags Int64[Array, \"rollout\"] with UP037 and F821 in a minimal file using postponed annotations.",
+      "next_step": "Keep the narrow shape-string workaround. Retry those two diagnostics on the next candidate release before changing Augur’s annotations.",
       "links": [
         {
           "label": "Our issue",
@@ -270,6 +289,16 @@
         {
           "label": "Upstream issue",
           "url": "https://github.com/astral-sh/ruff/issues/9860"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/4570",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/astral-sh/ruff/issues/9860",
+          "state": "open"
         }
       ]
     },
@@ -296,6 +325,23 @@
           "label": "Closed PR",
           "url": "https://github.com/crossplane/crossplane-runtime/pull/804"
         }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/12157",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/crossplane/crossplane-runtime/issues/791",
+          "state": "closed",
+          "state_reason": "not_planned",
+          "closed_at": "2026-04-02T01:54:36Z"
+        },
+        {
+          "html_url": "https://github.com/crossplane/crossplane-runtime/pull/804",
+          "state": "closed",
+          "closed_at": "2026-04-02T01:54:35Z"
+        }
       ]
     },
     {
@@ -306,7 +352,7 @@
       "status": "Investigate",
       "priority": "Medium",
       "impact": "Thread synchronization can stop after repeated non-live requests at one offset.",
-      "upstream": "Current guard counts rapid same-offset requests; snapshot cancellation as the cause remains a hypothesis.",
+      "upstream": "The linked upstream guard source is unchanged from the earlier review. The local issue remains open. Snapshot cancellation as its cause is still unconfirmed.",
       "next_step": "Make a minimal client reproduction before reporting or concluding a fix.",
       "links": [
         {
@@ -315,7 +361,7 @@
         },
         {
           "label": "Upstream client",
-          "url": "https://github.com/electric-sql/electric/blob/main/packages/typescript-client/src/client.ts"
+          "url": "https://github.com/electric-sql/electric/blob/c4c48c02070af2a966f6c2243c1bb36083642ab1/packages/typescript-client/src/client.ts"
         }
       ],
       "drafts": [
@@ -325,6 +371,12 @@
           "body": "**Versions**\n\n- Client: TypeScript 1.5.28\n- Electric: [add server version]\n\n**Bug description**\n\nSeveral non-live requests at the same offset were canceled while subset snapshots succeeded. The fast-loop guard reported repeated requests. We suspect snapshot pause/resume cancellations are counted, but the causal path is not yet proven.\n\n**Expected behavior**\n\nNormal snapshot coordination does not trigger a stale-cache fast-loop failure.\n\n**Reproduction**\n\n[Create a minimal ShapeStream/requestSnapshot reproduction and confirm on the current client.]\n\n**Additional context**\n\nSanitized observation: https://github.com/agentydragon/ducktape/issues/8544.",
           "review": "This is a hypothesis: establish causation with a minimal reproduction before submitting.",
           "template": "bug_report.md"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/8544",
+          "state": "open"
         }
       ]
     },
@@ -336,8 +388,8 @@
       "status": "Present upstream",
       "priority": "Medium",
       "impact": "An unreachable node can leave a runner Pod terminating across reconciliation retries.",
-      "upstream": "Current runner code still waits for termination in both relevant branches.",
-      "next_step": "Design recovery that accounts for a potentially live process and state lock.",
+      "upstream": "Upstream added recovery for failed runners in #1921. The current terminating-runner branch still waits for Pod termination. Ducktape has already migrated production roots in batches.",
+      "next_step": "Scope remaining exposure to the tofu-controller roots in migration tracker #5943. Confirm state ownership and controller readiness before retiring any runner workaround.",
       "links": [
         {
           "label": "Our issue",
@@ -345,7 +397,15 @@
         },
         {
           "label": "Runner source",
-          "url": "https://github.com/flux-iac/tofu-controller/blob/main/controllers/runner_pod.go"
+          "url": "https://github.com/flux-iac/tofu-controller/blob/a875a4bad7ce65f06a278504aa274ec5b91db7ad/controllers/runner_pod.go"
+        },
+        {
+          "label": "Migration inventory",
+          "url": "https://github.com/agentydragon/ducktape/issues/5943"
+        },
+        {
+          "label": "Runner recovery",
+          "url": "https://github.com/flux-iac/tofu-controller/pull/1921"
         }
       ],
       "drafts": [
@@ -354,6 +414,12 @@
           "url": "https://github.com/flux-iac/tofu-controller/issues/new",
           "body": "## Description\n\nA runner Pod stuck terminating on an unreachable node can make every reconciliation time out while waiting for the same Pod to disappear.\n\n## Reproduction\n\nStart a runner, make its node unreachable and request deletion so it remains Running with a deletion timestamp. Reconcile repeatedly. [Provide a safe isolated reproduction and logs.]\n\n## Expected behavior\n\nReconciliation has a bounded recovery strategy that accounts for a potentially still-running Terraform process and state lock.\n\n## Environment and context\n\nObserved on v0.16.5. Both the TLS-mismatch and terminating branches wait for NotFound. https://github.com/agentydragon/ducktape/issues/5704.",
           "review": "Validate a safe recovery contract for partitioned nodes; force deletion can permit concurrent state access."
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/5704",
+          "state": "open"
         }
       ]
     },
@@ -365,8 +431,8 @@
       "status": "Released",
       "priority": "High",
       "impact": "A large HDD-backed agent database exceeded the startup migration lease.",
-      "upstream": "v2026.11.2 has a lease heartbeat and child-process checks; current main advances admission further.",
-      "next_step": "Test the exact large-database scenario with integrity enabled.",
+      "upstream": "The upstream stale-lease issue #176342 is closed as completed. The local large-database acceptance issue remains open.",
+      "next_step": "Use a disposable copy representative of the large HDD database and record startup time, lease progress and integrity completion on the candidate release.",
       "links": [
         {
           "label": "Our issue",
@@ -379,6 +445,18 @@
         {
           "label": "Related upstream issue",
           "url": "https://github.com/openclaw/openclaw/issues/176342"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/5646",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/openclaw/openclaw/issues/176342",
+          "state": "closed",
+          "state_reason": "completed",
+          "closed_at": "2026-10-30T14:19:03Z"
         }
       ]
     },
@@ -405,6 +483,24 @@
           "label": "History fix",
           "url": "https://github.com/openclaw/openclaw/pull/168726"
         }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/3864",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/openclaw/openclaw/pull/147139",
+          "state": "closed",
+          "closed_at": "2026-09-13T19:01:43Z",
+          "merged_at": "2026-09-13T19:01:43Z"
+        },
+        {
+          "html_url": "https://github.com/openclaw/openclaw/pull/168726",
+          "state": "closed",
+          "closed_at": "2026-10-11T00:46:58Z",
+          "merged_at": "2026-10-11T00:46:58Z"
+        }
       ]
     },
     {
@@ -415,8 +511,8 @@
       "status": "Investigate",
       "priority": "High",
       "impact": "A multipath recovery left out-of-sync bits despite UpToDate states; actual differing blocks were not established.",
-      "upstream": "9.3.4 has relevant bitmap fixes; a related multi-source stall remains open, including on 9.3.5-rc.1.",
-      "next_step": "Compare the exact recovery sequence with the fixes and reproduce.",
+      "upstream": "DRBD 9.3.5 has released. Its changelog lists bitmap and multi-peer resync fixes. Related upstream #149 and the local incident remain open, and the local bitmap observation did not establish differing user data.",
+      "next_step": "Compare the local kernel module, recovery topology and verification result with 9.3.5 before attributing the incident to a released fix.",
       "links": [
         {
           "label": "Our issue",
@@ -429,6 +525,10 @@
         {
           "label": "Related issue",
           "url": "https://github.com/LINBIT/drbd/issues/149"
+        },
+        {
+          "label": "9.3.5 changelog",
+          "url": "https://github.com/LINBIT/drbd/blob/drbd-9.3.5/ChangeLog"
         }
       ],
       "drafts": [
@@ -438,18 +538,28 @@
           "body": "## Description\n\nAfter a disk was reattached and one multi-peer resync completed, both peers reported UpToDate and Established while another connection retained a nonzero out-of-sync bitmap. Verification summary matched the pre-existing bitmap count; it does not establish the number of different blocks.\n\n## Reproduction\n\nThree diskful peers; detach and reattach one disk after storage exhaustion; observe a resync from one peer and a paused resync from another. [Reduce to a safe standalone reproduction; collect UUID, bitmap and state transitions.]\n\n## Expected behavior\n\nReplica state and pending reconciliation clearly reflect the remaining bitmap, or the expected semantics are documented.\n\n## Environment and context\n\nObserved with DRBD 9.3.3 and LINSTOR 1.35.2. Version 9.3.4 lists potentially related fixes; issue #149 describes a related but not proven identical resync stall. https://github.com/agentydragon/ducktape/issues/15010.",
           "review": "Do not file as confirmed data divergence. Reproduce on current DRBD and compare with existing issue #149."
         }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/15010",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/LINBIT/drbd/issues/149",
+          "state": "open"
+        }
       ]
     },
     {
       "id": "gazelle-parser",
       "project": "rules_python / tree-sitter",
-      "title": "Python grammar warnings",
+      "title": "Move Gazelle from RC archives to stable registry modules",
       "kind": "Issue",
-      "status": "In progress",
-      "priority": "Medium",
+      "status": "Released",
+      "priority": "High",
       "impact": "Older Gazelle parser warns on PEP 758 and PEP 696 syntax.",
-      "upstream": "The parser migration is in 2.5.0 release candidates; PEP 696 remains an open grammar issue.",
-      "next_step": "Review the RC trial PR: Gazelle generated no BUILD drift and warnings fell from 24 to one. Track the remaining PEP 696 issue and adopt the stable release when available.",
+      "upstream": "PR #15300 merged on 11 November. The Bazel Central Registry now publishes rules_python and rules_python_gazelle_plugin 2.5.1. The PEP 696 grammar issue remains open.",
+      "next_step": "Adopt 2.5.1 for both modules, keep the lock-copier and per-file Gazelle patches, and drop both RC version patches. In a disposable devel checkout this built Gazelle and ran it across the repository in diff mode. It exited 0 with zero BUILD drift and one parser warning in grocy_mcp/request_scoped_openapi.py. Run normal PR CI before switching pins.",
       "links": [
         {
           "label": "Our issue",
@@ -466,6 +576,48 @@
         {
           "label": "RC trial PR",
           "url": "https://github.com/agentydragon/ducktape/pull/15300"
+        },
+        {
+          "label": "Stable release",
+          "url": "https://github.com/bazel-contrib/rules_python/releases/tag/2.5.1"
+        },
+        {
+          "label": "rules_python registry",
+          "url": "https://registry.bazel.build/modules/rules_python/2.5.1"
+        },
+        {
+          "label": "Plugin registry",
+          "url": "https://registry.bazel.build/modules/rules_python_gazelle_plugin/2.5.1"
+        },
+        {
+          "label": "Gazelle build and diff-mode launch",
+          "url": "https://app.buildbuddy.io/invocation/bc1ed77a-e71e-448a-89c2-b4bc9829b84a"
+        },
+        {
+          "label": "Candidate module diff",
+          "url": "./stable-gazelle.patch"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/9138",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/bazel-contrib/rules_python/pull/4272",
+          "state": "closed",
+          "closed_at": "2026-10-16T01:30:38Z",
+          "merged_at": "2026-10-16T01:30:38Z"
+        },
+        {
+          "html_url": "https://github.com/tree-sitter/tree-sitter-python/issues/346",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/pull/15300",
+          "state": "closed",
+          "closed_at": "2026-11-11T02:25:36Z",
+          "merged_at": "2026-11-11T02:25:36Z"
         }
       ]
     },
@@ -482,11 +634,11 @@
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_sanitize_repo_name.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/third_party/patches/rules_conda_sanitize_repo_name.patch"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/calebzulawski/rules_conda/blob/main/conda/extensions.bzl"
+          "url": "https://github.com/calebzulawski/rules_conda/blob/04b9c24c66d8b472ee57c3082feff925fafa2d2d/conda/extensions.bzl"
         }
       ],
       "drafts": [
@@ -511,15 +663,15 @@
       "links": [
         {
           "label": "Module patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_rules_python_2_module.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/third_party/patches/rules_conda_rules_python_2_module.patch"
         },
         {
           "label": "Extension patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_rules_python_2_extension.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/third_party/patches/rules_conda_rules_python_2_extension.patch"
         },
         {
           "label": "Upstream module",
-          "url": "https://github.com/calebzulawski/rules_conda/blob/main/MODULE.bazel"
+          "url": "https://github.com/calebzulawski/rules_conda/blob/d66d95f1d41b845b469e06a135a69094f52eb841/MODULE.bazel"
         }
       ],
       "drafts": [
@@ -539,12 +691,12 @@
       "status": "Present upstream",
       "priority": "Medium",
       "impact": "Generating a binary for a main module removes the corresponding per-file library.",
-      "upstream": "The behavior remains in 2.5.0-rc4. Our macro-wiring hunk is repository-specific.",
-      "next_step": "Propose the independent per-file behavior change upstream.",
+      "upstream": "The release-candidate trial is merged. A 2.5.1 stable-module trial with the local per-file and macro-wiring patch generated zero repository BUILD drift.",
+      "next_step": "Keep the patch on 2.5.1. Evaluate the per-file hunk independently before upstreaming. The local macro-wiring hunk belongs to Ducktape.",
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_python_gazelle_ducktape.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/rules_python_gazelle_ducktape.patch"
         },
         {
           "label": "Upstream source",
@@ -574,11 +726,11 @@
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_tf_exclude_dotterraform.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/rules_tf_exclude_dotterraform.patch"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/yanndegat/rules_tf/blob/main/tf/def.bzl"
+          "url": "https://github.com/yanndegat/rules_tf/blob/f030bafda71d7ce780e509f578687e7432294ba3/tf/def.bzl"
         }
       ],
       "drafts": [
@@ -603,11 +755,11 @@
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_tf_tflint064_config.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/rules_tf_tflint064_config.patch"
         },
         {
           "label": "Upstream config",
-          "url": "https://github.com/yanndegat/rules_tf/blob/main/tf/toolchains/tflint/config.hcl"
+          "url": "https://github.com/yanndegat/rules_tf/blob/3a82710e24490e5ac4e3b9e2f2772d663a464fb9/tf/toolchains/tflint/config.hcl"
         }
       ],
       "drafts": [
@@ -636,7 +788,13 @@
         },
         {
           "label": "Local override",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/MODULE.bazel"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/MODULE.bazel"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/yanndegat/rules_tf/pull/28",
+          "state": "open"
         }
       ]
     },
@@ -653,11 +811,11 @@
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_mypy_external_generated_pyi.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/third_party/patches/rules_mypy_external_generated_pyi.patch"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/bazel-contrib/rules_mypy/blob/main/mypy/private/mypy.bzl"
+          "url": "https://github.com/bazel-contrib/rules_mypy/blob/9f56e973b5a30391afba51e1726b0c6638da024d/mypy/private/mypy.bzl"
         }
       ],
       "drafts": [
@@ -688,11 +846,11 @@
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/aspect_rules_lint_no_external_touch.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/aspect_rules_lint_no_external_touch.patch"
         },
         {
           "label": "Upstream source",
-          "url": "https://github.com/bazel-contrib/rules_lint/blob/main/lint/private/lint_aspect.bzl"
+          "url": "https://github.com/bazel-contrib/rules_lint/blob/96c7d44b8f5b51331c2b0d07b30f656bc74ac809/lint/private/lint_aspect.bzl"
         }
       ],
       "drafts": [
@@ -712,16 +870,16 @@
       "status": "Present upstream",
       "priority": "Low",
       "impact": "The generated helper reuses names for incompatible types under our checks.",
-      "upstream": "The current template retains the original variable reuse.",
-      "next_step": "Propose a small type-preserving cleanup.",
+      "upstream": "The upstream main template still changes the types of src and dst. The retained patch applied in the successful stable 2.5.1 Gazelle build.",
+      "next_step": "Preserve this patch during the 2.5.1 upgrade. Retire it after mypy accepts a generated lock target on a release without the patch.",
       "links": [
         {
           "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_python_lock_copier_mypy.patch"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/patches/rules_python_lock_copier_mypy.patch"
         },
         {
           "label": "Upstream template",
-          "url": "https://github.com/bazel-contrib/rules_python/blob/main/python/uv/private/template/lock_copier.py"
+          "url": "https://github.com/bazel-contrib/rules_python/blob/3896dbd05bd3a210e27a5b428eb90058be820353/python/uv/private/template/lock_copier.py"
         }
       ],
       "drafts": [
@@ -743,7 +901,7 @@
       "priority": "High",
       "impact": "Unrelated remote tests time out or wait for workspace attachment.",
       "upstream": "Hosted execution state and cause cannot be established from source alone.",
-      "next_step": "Refresh execution evidence and share the escalation packet with BuildBuddy.",
+      "next_step": "Separate slow execution from workspace-attach stalls using physical action timestamps and worker identity. Review a fresh matching run before escalating the older incident.",
       "links": [
         {
           "label": "Our issue",
@@ -751,7 +909,7 @@
         },
         {
           "label": "Hedge investigation",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/devinfra/buildbuddy/debug/ci_remote_cancellation/action_merge_hedge_hang.md"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/devinfra/buildbuddy/debug/ci_remote_cancellation/action_merge_hedge_hang.md"
         }
       ],
       "drafts": [
@@ -761,6 +919,12 @@
           "body": "**Describe the bug**\n\nSome hosted executions spend minutes between Firecracker resume and attaching workspacefs; identical actions also show a large worker-dependent runtime spread.\n\n**To Reproduce**\n\nInspect the linked execution VM logs and timestamps from the October incident. [Refresh with current invocations and provide identifiers through an appropriate support channel.]\n\n**Expected behavior**\n\nAn assigned execution attaches its workspace promptly or surfaces a bounded infrastructure failure.\n\n**Desktop**\n\n- OS: Linux\n- Browser: not applicable\n- Version: see additional context\n\n**Additional context**\n\nHistorical investigation and escalation packet: https://github.com/agentydragon/ducktape/issues/10405. Executor-side internal cause is not established.",
           "review": "Hosted logs and current recurrence require provider access; refresh evidence and sanitize invocation identifiers.",
           "template": "bug_report.md"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/10405",
+          "state": "open"
         }
       ]
     },
@@ -772,8 +936,8 @@
       "status": "Open upstream",
       "priority": "High",
       "impact": "Several outer execution VMs panicked despite retried Bazel tests passing.",
-      "upstream": "The newer-kernel issue and kernel-selection PR remain open; availability for our org is unknown.",
-      "next_step": "Ask about kernel availability and correlate our panic evidence.",
+      "upstream": "The upstream kernel issue and selection PR are open. Local issue #16222 recorded 154.355 s in a failed managed action before a successful retry. Required VM tests have since moved to cluster KVM.",
+      "next_step": "Track recurrence by physical execution and route. Use the managed-worker evidence for the upstream case and the current reliability cohort for required VM CI.",
       "links": [
         {
           "label": "Our issue",
@@ -786,6 +950,14 @@
         {
           "label": "Selection PR",
           "url": "https://github.com/buildbuddy-io/buildbuddy/pull/13858"
+        },
+        {
+          "label": "Measured retry",
+          "url": "https://github.com/agentydragon/ducktape/issues/16222"
+        },
+        {
+          "label": "Required KVM routing",
+          "url": "https://github.com/agentydragon/ducktape/pull/18046"
         }
       ],
       "drafts": [
@@ -795,6 +967,20 @@
           "template": "bug_report.md",
           "review": "The exact kernel patch level and cause are unknown. Refresh the retained execution evidence and ask whether 6.1 is available to our organization before filing.",
           "body": "**Describe the bug**\n\nThree outer Firecracker worker VMs running remote tests logged Linux 5.15 kernel general-protection faults in scheduler load accounting. BuildBuddy retried the failed executions, so the Bazel tests themselves passed.\n\n**To Reproduce**\n\nRun the Agentplane VM reproduction experiment and inspect the failed remote executions' `vm_log_tail.txt` artifacts. [Add a minimal repeatable action and current hosted results if available.]\n\n**Expected behavior**\n\nThe worker kernel should not panic, and infrastructure retries should remain visible to the operator.\n\n**Desktop**\n\n- OS: hosted Firecracker guest, Linux 5.15.0; exact patch level unknown\n- Browser: not applicable\n- Version: [add current hosted environment and CLI version]\n\n**Additional context**\n\nExecution IDs and log digests are recorded at https://github.com/agentydragon/ducktape/issues/14952. Similar-looking scheduler faults do not by themselves establish one root cause. Newer kernel availability is tracked in #13523 and #13858; availability for our organization is unverified."
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/14952",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/buildbuddy-io/buildbuddy/issues/13523",
+          "state": "open"
+        },
+        {
+          "html_url": "https://github.com/buildbuddy-io/buildbuddy/pull/13858",
+          "state": "open"
         }
       ]
     },
@@ -806,7 +992,7 @@
       "status": "Investigate",
       "priority": "Medium",
       "impact": "Some suspend attempts abort in the cellular modem driver.",
-      "upstream": "The error path remains, but the exact reason and any matching upstream fix are unproven.",
+      "upstream": "The linked driver path has not changed since the prior review. The local issue remains open. A specific upstream fix is unverified.",
       "next_step": "Capture the modem and power-state evidence needed to isolate the cause.",
       "links": [
         {
@@ -815,7 +1001,7 @@
         },
         {
           "label": "Upstream driver",
-          "url": "https://github.com/torvalds/linux/blob/master/drivers/bus/mhi/host/pci_generic.c"
+          "url": "https://github.com/torvalds/linux/blob/4dd10fbbeb9c33709edc89916e19c03c780a0751/drivers/bus/mhi/host/pci_generic.c"
         }
       ],
       "drafts": [
@@ -825,6 +1011,12 @@
           "body": "## Description\n\nTwo s2idle attempts aborted after the MHI PCI modem suspend callback returned -EBUSY; a later retry succeeded. The reason the modem was busy is unknown.\n\n## Reproduction\n\n[Provide exact kernel version, device IDs, sanitized kernel logs, workload, reproduction frequency and whether current kernels reproduce.]\n\n## Expected behavior\n\nSuspend enters s2idle when the device can quiesce, or logs identify the blocking state.\n\n## Environment and context\n\nOur investigation: https://github.com/agentydragon/ducktape/issues/11789. Chrome closure preceded a successful retry but causation is not established.",
           "review": "Linux normally accepts driver reports through the relevant kernel mailing lists, not GitHub issues. Identify the MHI maintainers and capture a current reproduction first.",
           "manual_url": true
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/agentydragon/ducktape/issues/11789",
+          "state": "open"
         }
       ]
     },
@@ -836,8 +1028,8 @@
       "status": "Investigate",
       "priority": "Medium",
       "impact": "Our image carries backend and UI support for OIDC management login.",
-      "upstream": "Both of our upstream PRs closed unmerged; the reason was not established in this review.",
-      "next_step": "Review closure context and decide whether to revive the contribution.",
+      "upstream": "Both contributions closed without merge. The devel image still uses the fork, with the backend based on v8.0.63.",
+      "next_step": "Keep the fork pins and consumer tests together. Reassess an upstream contribution when the projects indicate they will support this login contract.",
       "links": [
         {
           "label": "Backend PR",
@@ -849,7 +1041,103 @@
         },
         {
           "label": "Local package",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/cli_proxy_api/README.md"
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/third_party/cli_proxy_api/README.md"
+        }
+      ],
+      "tracker_checks": [
+        {
+          "html_url": "https://github.com/router-for-me/CLIProxyAPI/pull/6761",
+          "state": "closed",
+          "closed_at": "2026-10-27T14:15:41Z"
+        },
+        {
+          "html_url": "https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505",
+          "state": "closed",
+          "closed_at": "2026-10-27T14:16:29Z"
+        }
+      ]
+    },
+    {
+      "id": "tabby-stream",
+      "project": "TabbyAPI",
+      "title": "Incomplete streamed calls reported as complete",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "High",
+      "impact": "Consumers need a reliable terminal status for partial streamed arguments. The sampler rejected malformed JSON in the observed case.",
+      "upstream": "The pinned-image parser study in #18107 returned a tool-call finish for four incomplete inputs. Two complete controls returned valid objects. The local issue remains open.",
+      "next_step": "Use the six-case matrix as the acceptance check for a candidate version. Include stream-usage on and off and retain the end-of-stream reason.",
+      "links": [
+        {
+          "label": "Local trial and controls",
+          "url": "https://github.com/agentydragon/ducktape/issues/18107"
+        }
+      ]
+    },
+    {
+      "id": "pybind-hub",
+      "project": "pybind11_abseil",
+      "title": "Wait for a registered release of the pip hub rename",
+      "kind": "Patch",
+      "status": "Merged, no release",
+      "priority": "Low",
+      "impact": "The OR-Tools module graph needs distinct pip hub names for Bazel resolution.",
+      "upstream": "Upstream #73 merged. The BCR lists only 202402.0. Comparing the merged fix with tag v202402.0 showed the release does not contain it.",
+      "next_step": "Keep the single_version_override. Recheck the BCR at the next pin update, then build the OR-Tools consumer with the patch removed.",
+      "links": [
+        {
+          "label": "Override",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/MODULE.bazel#L148"
+        },
+        {
+          "label": "Merged fix",
+          "url": "https://github.com/pybind/pybind11_abseil/pull/73"
+        },
+        {
+          "label": "Registry",
+          "url": "https://registry.bazel.build/modules/pybind11_abseil"
+        }
+      ]
+    },
+    {
+      "id": "rules-py-tags",
+      "project": "aspect_rules_py",
+      "title": "Keep parked image actions out of ordinary builds",
+      "kind": "Patch",
+      "status": "Investigate",
+      "priority": "Medium",
+      "impact": "The pinned 1.12.1 ownership mutation drops the tags forwarded to the other expanded image targets. Ducktape patches that path.",
+      "upstream": "Upstream main now uses a different layer implementation and adds manual to forwarded tags. The original one-line patch no longer describes that implementation.",
+      "next_step": "Before upgrading, evaluate the parked target graph and build an explicitly requested image. Drop the patch if default selection and explicit builds behave correctly.",
+      "links": [
+        {
+          "label": "Pin and rationale",
+          "url": "https://github.com/agentydragon/ducktape/blob/bfa209746f112ed329ea7ab1f1f3b28ba5f48404/devinfra/bazel/oci.MODULE.bazel#L1"
+        },
+        {
+          "label": "Parked-image change",
+          "url": "https://github.com/agentydragon/ducktape/pull/18658"
+        },
+        {
+          "label": "Upstream layer implementation",
+          "url": "https://github.com/aspect-build/rules_py/blob/89c432d1a76e6bdcb35ca5507b80a090eaf03f37/py/private/py_image_layer.bzl#L1613"
+        }
+      ]
+    },
+    {
+      "id": "nix-recipes",
+      "project": "nixpkgs",
+      "title": "Retire local recipes as pinned package sets catch up",
+      "kind": "Workaround",
+      "status": "In progress",
+      "priority": "Low",
+      "impact": "Some package recipes remain local because their selected versions or dependency sets differ.",
+      "upstream": "The local tracker records adoption of the upstream py-key-value-aio recipe from the unstable set. Stable compatibility is a separate condition.",
+      "next_step": "Use the per-package version and feature constraints in #7061 when repinning nixpkgs. Start with the remaining overlay gate for py-key-value-aio and its filetree dependencies.",
+      "links": [
+        {
+          "label": "Package retirement criteria",
+          "url": "https://github.com/agentydragon/ducktape/issues/7061"
         }
       ]
     }
