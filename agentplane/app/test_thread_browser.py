@@ -2183,13 +2183,15 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.transcript-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
-        # Reload abandons the held Electric response. The new document delivers the same local
-        # Command again, and Dispatcher answers its durable row while replay is still held.
-        async with page.expect_response(response.url) as redelivered:
+        # Reload reads the durable Dispatch while History replay is still held.
+        async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as checked:
             await page.reload()
-        redelivery = await redelivered.value
-        assert redelivery.status == 200
-        assert dispatched_command_id(await redelivery.text()) == command.command_id
+        receipt = await checked.value
+        assert receipt.status == 200
+        assert (
+            json_format.ParseDict((await receipt.json())["dispatch"], session_dispatcher_pb2.Dispatch()).command
+            == command
+        )
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)

@@ -40,6 +40,7 @@ import {
   ChangeReasoningEffortResponseSchema,
   DeliveryState,
   DispatchSchema,
+  GetDispatchResponseSchema,
   InterruptTurnRequestSchema,
   InterruptTurnResponseSchema,
   SubmitInputRequestSchema,
@@ -306,6 +307,20 @@ function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, com
   )
     throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
   return { ...dispatch, state };
+}
+
+/** A missing current receipt leaves any earlier submission unconfirmed. */
+export function getDispatch(threadId: string, commandId: string): Promise<Dispatch | null> {
+  return fetchProto(
+    `/upstream/dispatcher/v1/dispatches/${encodeURIComponent(commandId)}`,
+    (value) =>
+      confirmedDispatch(
+        fromJson(GetDispatchResponseSchema, normalizeDispatchResponseJson(value)).dispatch,
+        threadId,
+        commandId
+      ),
+    "Dispatcher receipt"
+  );
 }
 
 export async function submitInput(threadId: string, commandId: string, text: string): Promise<CommandSubmission> {

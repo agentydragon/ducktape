@@ -614,6 +614,18 @@ async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None
 
 
 @DESKTOP_AND_MOBILE
+async def test_session_legacy_input_status(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.REMEMBER_LEGACY_INPUT)
+    await app.mount_thread(RUNNING_THREAD)
+    row = view.page.locator('[data-command-id="legacy-input"]')
+    await expect(row).to_contain_text("Dispatcher could not verify the stored command")
+    action = row.get_by_role("button", name="Check status")
+    await action.scroll_into_view_if_needed()
+    await expect(action).to_be_in_viewport(ratio=1)
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
 async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.PENDING_INPUT_ECHO)
     await app.build(Scene.REMEMBER_INPUT_ECHO)

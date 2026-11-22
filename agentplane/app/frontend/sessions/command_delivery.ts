@@ -6,6 +6,7 @@ import {
   changeReasoningEffort,
   CommandSubmissionRefused,
   interruptTurn,
+  getDispatch,
   submitInput,
   type CommandSubmission,
 } from "./client";
@@ -68,7 +69,6 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
 
   const deliver = useCallback(
     async (value: LocalCommand): Promise<void> => {
-      if (value.destination.kind === "reconcile-only") return;
       const id = value.command.commandId;
       if (active.current.has(id)) return;
       active.current.add(id);
@@ -84,7 +84,28 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           setErrors((previous) => new Map(previous).set(id, issue));
       };
       try {
-        if (!navigator.onLine || !store.markAttempted(id)) return;
+        if (!navigator.onLine) return;
+        if (value.attempted || value.destination.kind === "reconcile-only") {
+          const receipt = await getDispatch(threadId, id);
+          if (receipt?.command) {
+            if (value.destination.kind === "reconcile-only" && value.destination.target && !receipt.sandboxUid) {
+              throw new Error("Dispatcher receipt could not verify the original Sandbox destination");
+            }
+            store.acknowledgeDispatch(value.command, receipt);
+            settle(null);
+            return;
+          }
+          if (receipt !== null || value.destination.kind === "reconcile-only") {
+            settle({
+              kind: "unconfirmed",
+              message: "Dispatcher could not verify the stored command. The original is saved in this browser.",
+            });
+            return;
+          }
+          // Only a missing live receipt for a Session-addressed command permits an exact retry.
+          // Dispatcher serializes the command ID and fences admission on the Session's immutable Sandbox UID.
+        }
+        if (!store.markAttempted(id, value.attempted ? value.command : undefined)) return;
         const operation = value.command.operation;
         const commandId = value.command.commandId;
         let result: CommandSubmission;
@@ -111,7 +132,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           // A lost reply says nothing about how far the command got; the thread's history shows its
           // admission once the runner journaled it.
           {
-            kind: reason instanceof CommandSubmissionRefused ? "refused" : "unconfirmed",
+            kind: reason instanceof CommandSubmissionRefused && !value.attempted ? "refused" : "unconfirmed",
             message: displayableError(reason),
           }
         );
@@ -121,26 +142,29 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
     },
     [store, threadId]
   );
-  // Try Session-addressed commands with no server receipt on mount. An exact retry is safe after
-  // a lost reply because durable Dispatcher writes deduplicate the same command ID and payload.
   useEffect(() => {
-    for (const value of store.getSnapshot().commands)
-      if (value.admission === null && value.dispatch === null && !value.interruptResult) void deliver(value);
-  }, [deliver, store]);
-  useEffect(() => {
-    const redeliverFailed = () => {
-      for (const value of store.getSnapshot().commands)
-        if (
-          value.admission === null &&
-          value.dispatch === null &&
-          !value.interruptResult &&
-          (!value.attempted || errors.has(value.command.commandId))
-        )
-          void deliver(value);
+    let stopped = false;
+    const recover = async () => {
+      const checks: LocalCommand[] = [];
+      for (const value of store.getSnapshot().commands) {
+        if (value.admission || value.dispatch || value.interruptResult) continue;
+        if (value.attempted || value.destination.kind === "reconcile-only") checks.push(value);
+        else void deliver(value);
+      }
+      // A slow receipt lookup must not block a fresh draft's first attempt.
+      for (const value of checks) {
+        if (stopped || !navigator.onLine) break;
+        await deliver(value);
+      }
     };
-    window.addEventListener("online", redeliverFailed);
-    return () => window.removeEventListener("online", redeliverFailed);
-  }, [deliver, errors, store]);
+    const onOnline = () => void recover();
+    onOnline();
+    window.addEventListener("online", onOnline);
+    return () => {
+      stopped = true;
+      window.removeEventListener("online", onOnline);
+    };
+  }, [deliver, store]);
   const watchedIds = local.commands
     .filter(
       (value) =>

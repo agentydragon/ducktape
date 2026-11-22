@@ -124,10 +124,11 @@ The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `In
 the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
 stable command ID and addresses its Session. The Dispatcher checks Session authority and resolves its
 placement. Each command returns its stored `Dispatch`, including an exact-turn interrupt. If a
-response is lost, the browser keeps the Session command for exact-ID retry and History reconciliation.
-Older saved commands remain visible for History reconciliation and updates to known Dispatches.
-Their original Sandbox UID, when recorded, fences Dispatch updates. Only Session-addressed commands
-are eligible for delivery.
+response is lost, the browser keeps the authored command and reads its Dispatch by the original ID on
+reload, reconnect, or Retry. A matching stored command confirms the receipt. A missing live receipt
+permits a Session-addressed retry with the same command ID and payload under Dispatcher's immutable
+Session placement and deleted-Sandbox fence. An unreadable or conflicting receipt leaves the original
+saved. Older commands with uncertain or Sandbox-addressed destinations support read-only status checks.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's

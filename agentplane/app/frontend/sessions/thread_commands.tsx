@@ -31,10 +31,12 @@ function subject(operation: Operation | PendingCommand["operation"]["case"]): Co
 }
 
 function commandIssue(value: LocalCommand, errors: ReadonlyMap<string, CommandIssue>): CommandIssue | undefined {
+  const issue = errors.get(value.command.commandId);
+  if (issue) return issue;
   if (value.destination.kind === "reconcile-only" && !value.admission && !value.dispatch && !value.interruptResult) {
     return { kind: "unconfirmed", message: "Saved by an older app version. Waiting for History evidence." };
   }
-  return errors.get(value.command.commandId);
+  return undefined;
 }
 
 function progressStage(
@@ -180,7 +182,11 @@ export function PendingInputMessages({
         const dispatchAdmitted =
           dispatchState !== undefined && normalizeDeliveryState(dispatchState) === DeliveryState.RUNNER_ADMITTED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
-        const canAct = value.destination.kind === "session" && !admitted && value.dispatch === null;
+        const canAct =
+          (value.attempted || value.destination.kind === "session") &&
+          !admitted &&
+          value.dispatch === null &&
+          !value.interruptResult;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
           outcome === ThreadCommandOutcome.FAILED ||
@@ -211,7 +217,10 @@ export function PendingInputMessages({
             action={
               canAct
                 ? value.attempted
-                  ? { label: "Retry", onClick: () => void deliver(value) }
+                  ? {
+                      label: value.destination.kind === "reconcile-only" ? "Check status" : "Retry",
+                      onClick: () => void deliver(value),
+                    }
                   : { label: "Cancel", onClick: () => store.cancelUnsent(id) }
                 : undefined
             }
@@ -294,7 +303,7 @@ function LocalControlRows({
                   local
                   unsent={!value.attempted}
                 />
-                {value.destination.kind === "session" &&
+                {(value.attempted || value.destination.kind === "session") &&
                   !admitted &&
                   value.dispatch === null &&
                   !value.interruptResult && (
@@ -305,7 +314,11 @@ function LocalControlRows({
                         value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
                       }
                     >
-                      {value.attempted ? "Retry" : "Cancel"}
+                      {value.attempted
+                        ? value.destination.kind === "reconcile-only"
+                          ? "Check status"
+                          : "Retry"
+                        : "Cancel"}
                     </Button>
                   )}
               </Group>

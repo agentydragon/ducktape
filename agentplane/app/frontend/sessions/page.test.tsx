@@ -52,6 +52,7 @@ import {
   changeModel,
   changeReasoningEffort,
   interruptTurn,
+  getDispatch,
   getThread,
   listThreadMetadata,
 } from "./client";
@@ -93,6 +94,7 @@ vi.mock("./client", async (importOriginal) => ({
   changeModel: vi.fn(),
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
+  getDispatch: vi.fn(),
   getThread: vi.fn(),
   listThreadMetadata: vi.fn(),
 }));
@@ -199,6 +201,7 @@ beforeEach(() => {
       langfuseSearch: langfuseSearchSettings ?? undefined,
     })
   );
+  vi.mocked(getDispatch).mockResolvedValue(null);
   vi.mocked(getThread).mockImplementation(async () => sharedThreadView());
   vi.spyOn(appConfigClient, "listModels").mockResolvedValue(
     testModelCatalog([{ model: "test-model", displayName: "Test Model", reasoningEfforts: TEST_REASONING_EFFORTS }], [])
@@ -1430,7 +1433,8 @@ it("keeps legacy input visible for reconciliation without replaying it on mount 
   expect(sentIds()).toEqual(["session-retry"]);
   const row = pendingRow(container, legacy.commandId);
   expect(row.textContent).toContain("Test input legacy-targeted");
-  expect(progressLabel(container, legacy.commandId)).toContain("Waiting for History evidence");
+  expect(progressLabel(container, legacy.commandId)).toContain("Dispatcher could not verify");
+  expect(buttonIn(row, "Check status")).toBeDefined();
   expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 
@@ -1660,16 +1664,23 @@ it("does not offer Cancel once an offline command has begun its first HTTP attem
   expect(buttonIn(pendingRow(container, "queued"), "Cancel")).toBeUndefined();
 });
 
-it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
+it("checks an ambiguous submission against the stored command without resending it", async () => {
   new LocalCommands(THREAD.metadata.threadId).remember(message("hung"));
   let expire!: (reason: unknown) => void;
-  vi.mocked(submitInput)
-    .mockReturnValueOnce(
-      new Promise((_resolve, reject) => {
-        expire = reject;
-      })
-    )
-    .mockImplementationOnce(admit);
+  vi.mocked(submitInput).mockReturnValueOnce(
+    new Promise((_resolve, reject) => {
+      expire = reject;
+    })
+  );
+  vi.mocked(getDispatch).mockResolvedValue(
+    dispatchFromJson({
+      commandId: "hung",
+      sessionId: THREAD.metadata.threadId,
+      ...COMMAND_TARGET,
+      command: toJson(CommandSchema, message("hung")),
+      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+    })
+  );
   const container = await render();
   expect(progressLabel(container, "hung")).toContain("Saved in browser · waiting for Dispatcher");
   expect(
@@ -1686,7 +1697,8 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
   expect(sentIds()).toEqual(["hung"]);
 
   await act(async () => retry(container, "hung").click());
-  expect(sentIds()).toEqual(["hung", "hung"]);
+  expect(sentIds()).toEqual(["hung"]);
+  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, "hung");
   expect(progressLabel(container, "hung")).toContain("Runner accepted · waiting for agent confirmation");
   expect(progressLabel(container, "hung")).not.toContain("signal timed out");
 });
@@ -1698,18 +1710,45 @@ it("leaves a command whose delivery reply was lost unconfirmed", async () => {
   expect(progressLabel(container, "lost")).toBe("Dispatcher receipt unconfirmed: Command admission unconfirmed: 503");
 });
 
-it("redelivers an unconfirmed command when the browser comes back online", async () => {
-  new LocalCommands(THREAD.metadata.threadId).remember(message("offline"));
-  vi.mocked(submitInput)
-    .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
-    .mockImplementationOnce(admit);
+it("keeps authored input when reconnect cannot recover its receipt", async () => {
+  vi.mocked(getDispatch).mockRejectedValue(new Error("receipt lookup unavailable"));
+  const command = message("offline");
+  new LocalCommands(THREAD.metadata.threadId).remember(command);
+  vi.mocked(submitInput).mockRejectedValueOnce(new Error("lost reply"));
   const container = await render();
-  expect(progressLabel(container, "offline")).toContain("the sandbox's runner is not answering");
-  expect(sentIds()).toEqual(["offline"]);
-
+  expect(progressLabel(container, "offline")).toContain("lost reply");
   await act(async () => window.dispatchEvent(new Event("online")));
-  expect(sentIds()).toEqual(["offline", "offline"]);
-  expect(progressLabel(container, "offline")).toContain("Runner accepted · waiting for agent confirmation");
+  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId);
+  expect(sentIds()).toEqual(["offline"]);
+  expect(progressLabel(container, "offline")).toContain("receipt lookup unavailable");
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands[0].command).toEqual(command);
+});
+
+it.each([
+  ["missing payload", undefined],
+  ["conflicting payload", { commandId: "uncertain", submitInput: { text: "different authored text" } }],
+])("keeps an attempted command after reload with a %s", async (_label, returnedCommand) => {
+  const store = new LocalCommands(THREAD.metadata.threadId);
+  const command = message("uncertain");
+  store.remember(command);
+  expect(store.markAttempted(command.commandId)).toBe(true);
+  vi.mocked(getDispatch).mockResolvedValue(
+    dispatchFromJson({
+      commandId: command.commandId,
+      sessionId: THREAD.metadata.threadId,
+      ...COMMAND_TARGET,
+      ...(returnedCommand ? { command: returnedCommand } : {}),
+      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+    })
+  );
+  const container = await render();
+  expect(sentIds()).toEqual([]);
+  expect(getDispatch).toHaveBeenCalledWith(THREAD.metadata.threadId, command.commandId);
+  expect(pendingRow(container, command.commandId).querySelector('[data-stage="unconfirmed"]')).not.toBeNull();
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands[0]).toMatchObject({
+    command,
+    dispatch: null,
+  });
 });
 
 it("moves a local control into chronological history once projected and retains its effected outcome", async () => {

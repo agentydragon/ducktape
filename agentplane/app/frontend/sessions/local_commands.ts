@@ -21,7 +21,7 @@ export type PendingCommand = {
 };
 
 function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
-  return left.commandId === right.commandId && JSON.stringify(left.operation) === JSON.stringify(right.operation);
+  return equals(CommandSchema, create(CommandSchema, left), create(CommandSchema, right));
 }
 
 type SandboxDestination = { sandbox: string; sandboxUid: string };
@@ -211,7 +211,7 @@ export class LocalCommands {
   }
 
   /** Record the attempt *before* sending: a lost response can never become a cancellable draft. */
-  markAttempted(id: string): boolean {
+  markAttempted(id: string, retryCommand?: PendingCommand): boolean {
     const key = this.key(id);
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
@@ -220,10 +220,9 @@ export class LocalCommands {
     if (value.destination.kind === "reconcile-only" || value.admission || value.dispatch || value.interruptResult) {
       return false;
     }
-    if (!value.attempted) {
-      localStorage.setItem(key, JSON.stringify({ ...record, attempted: true }));
-      this.reload();
-    }
+    if (value.attempted) return retryCommand !== undefined && sameCommand(value.command, retryCommand);
+    localStorage.setItem(key, JSON.stringify({ ...record, attempted: true }));
+    this.reload();
     return true;
   }
 
@@ -241,7 +240,10 @@ export class LocalCommands {
 
   acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): boolean {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
-    const normalizedDispatch = { ...dispatch, state: normalizeDeliveryState(dispatch.state) };
+    if (dispatch.command && !sameCommand(command, dispatch.command))
+      throw new Error("Dispatcher stored a different command payload");
+    // Older open tabs use a Dispatch schema without the command field. The authored copy is already stored.
+    const normalizedDispatch = { ...dispatch, command: undefined, state: normalizeDeliveryState(dispatch.state) };
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
       this.checkKnownAdmission(command, dispatch.admission);
