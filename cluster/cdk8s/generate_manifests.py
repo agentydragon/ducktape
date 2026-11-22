@@ -916,16 +916,6 @@ def generate_manifests(root: Path) -> None:
             "agent-rbac/ directories."
         ),
     )
-    agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
-    flux.flux_kustomization(
-        flux_chart,
-        "agent-shared-secrets",
-        write_directory(root, agent_shared_secrets_artifact, siblings=["attic-push-token.sops.yaml"]),
-        retry_interval=None,
-        wait=None,
-        timeout="5m",
-        depends_on=[flux.flux_kustomization_depends_on(claude_rbac_kustomization)],
-    )
     external_creds_artifact = artifact("external-creds", external_creds.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
@@ -2581,7 +2571,6 @@ def generate_manifests(root: Path) -> None:
             airlock_artifact,
             alloy_otlp_bearer_artifact,
             agent_shared_rbac_artifact,
-            agent_shared_secrets_artifact,
             aiquota_artifact,
             clickhouse_grafana_artifact,
             atuin_artifact,
