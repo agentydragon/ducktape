@@ -95,10 +95,19 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   `dependsOn` edge per consumer, and the committed manifests see only
   `${VAR}`.
 - **Cluster-wide behavior is configured once where it runs; objects carry only
-  exceptions.** Reloader runs `autoReloadAll`, ignores Jobs/CronJobs (`reloader.py`), and
-  reads only workload metadata (not the pod template): a workload that must not restart
-  says `"false"` there; others say nothing. Alloy discovers every
-  ServiceMonitor/PodMonitor/PrometheusRule without a selector — no label for it.
+  exceptions.** Reloader runs [`autoReloadAll`](reloader.py). When a container reads a
+  ConfigMap or Secret through an environment variable or a mounted volume, omit the
+  reload annotation. Reloader discovers that reference. A named `…/reload` list can
+  add a trigger for a resource the Pod does not reference. It still allows automatic
+  reloads for other referenced resources.
+  - Put workload overrides on the Deployment or StatefulSet metadata. Use
+    `reloader.stakater.com/auto: "false"` to opt out of automatic reloads. For a
+    ConfigMap or Secret whose changes should never trigger a rollout for any consumer,
+    put `reloader.stakater.com/ignore: "true"` on that resource.
+  - The cluster excludes Jobs, CronJobs and the ClickHouse namespace. See the
+    [controller configuration](reloader.py) for the reasons.
+  - Alloy discovers every ServiceMonitor/PodMonitor/PrometheusRule without a selector —
+    no label for it.
 - **One shape per job** (build a kind, a field variant, amend a pod spec, declare a Flux
   node). Find how the tree already does it before writing a helper; a second shape for the
   same job is a review finding even if both work.
