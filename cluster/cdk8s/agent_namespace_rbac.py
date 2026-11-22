@@ -22,10 +22,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 
 
-def directory(namespace: str) -> str:
-    return f"{GENERATED_ROOT}/agents/namespace-rbac/{namespace}"
-
-
 def chart(app: App, namespace: str) -> Chart:
     classification = NAMESPACE_DIAGNOSTICS[namespace]
     scope = Chart(app, f"agent-namespace-rbac-{namespace}", disable_resource_name_hashes=True)
@@ -40,24 +36,20 @@ def chart(app: App, namespace: str) -> Chart:
     return scope
 
 
-def write_manifests(root: Path) -> None:
-    for namespace in NAMESPACE_DIAGNOSTICS:
-        output = directory(namespace)
-        manifest = write_charts(root, output, partial(chart, namespace=namespace))
-        write_yaml(root / output / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
-
-
-def add_flux_kustomizations(flux_chart: Chart, roles: Kustomization) -> None:
+def write_namespace_bindings(root: Path, flux_chart: Chart, roles: Kustomization) -> None:
     # Namespace existence is enforced by the API when the RoleBindings are applied.
     # On bootstrap Flux retries until the namespace exists; application readiness
     # must never gate the diagnostic access needed to investigate an unhealthy app.
     # Do not emit Namespaces here: their existing owners retain lifecycle control.
     for namespace in NAMESPACE_DIAGNOSTICS:
+        directory = f"{GENERATED_ROOT}/agents/namespace-rbac/{namespace}"
+        manifest = write_charts(root, directory, partial(chart, namespace=namespace))
+        write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
         flux_kustomization(
             flux_chart,
             f"agent-namespace-rbac-{namespace}",
             DUCKTAPE_SOURCE,
-            path=f"./{directory(namespace)}",
+            path=f"./{directory}",
             depends_on=[flux_kustomization_depends_on(roles)],
             description=f"Static agent diagnostics in {namespace}; policy shared with managed agents.",
         )

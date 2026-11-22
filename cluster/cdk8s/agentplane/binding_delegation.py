@@ -7,7 +7,7 @@ Preset and standing-account role grants plus retained cleanup scopes determine t
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 
@@ -46,10 +46,6 @@ def external_charts(
     }
 
 
-def directory(env: Environment, target_namespace: str) -> str:
-    return f"{GENERATED_ROOT}/agentplane/binding-delegation/{env.namespace}/{target_namespace}"
-
-
 def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequence[str]) -> Chart:
     scope = Chart(app, f"{env.namespace}-binding-delegation-{target_namespace}", disable_resource_name_hashes=True)
     role_name = f"{env.namespace}-external-bindings"
@@ -79,21 +75,19 @@ def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequen
     return scope
 
 
-def write_manifests(root: Path, env: Environment, charts: Mapping[str, Callable[[App], Chart]]) -> None:
-    for target_namespace, build in charts.items():
-        output_dir = directory(env, target_namespace)
-        manifest = write_charts(root, output_dir, build)
-        write_yaml(root / output_dir / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
-
-
-def add_flux_kustomizations(
+def write_delegations(
+    root: Path,
     flux_chart: Chart,
     env: Environment,
     target_dependencies: Mapping[str, Kustomization],
-    target_namespaces: Iterable[str],
+    assignable_grants: Sequence[KubernetesGrant],
 ) -> None:
     """Each target owner gates its delegation; bootstrap roots have no generated owner."""
-    for target_namespace in target_namespaces:
+    for target_namespace, build in external_charts(env, assignable_grants).items():
+        directory = f"{GENERATED_ROOT}/agentplane/binding-delegation/{env.namespace}/{target_namespace}"
+        manifest = write_charts(root, directory, build)
+        write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
+
         # Bootstrap creates these namespaces before the generated owners reconcile.
         depends_on = (
             None
@@ -104,7 +98,7 @@ def add_flux_kustomizations(
             flux_chart,
             f"{env.namespace}-binding-delegation-{target_namespace}",
             DUCKTAPE_SOURCE,
-            path=f"./{directory(env, target_namespace)}",
+            path=f"./{directory}",
             depends_on=depends_on,
             description=f"Delegates managed RoleBinding reconciliation in {target_namespace}.",
         )
