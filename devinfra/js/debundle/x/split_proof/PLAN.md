@@ -94,6 +94,18 @@ Defer modeling or rewriting `import.meta.url`. Start with the editor prefix spli
 
 Run the structural checks and the CoreJS checker on each complete candidate split. Record how many units move, which splits pass the structural checks, and which receive a CoreJS equivalence certificate under the stated premises. If the retained factory still blocks a whole-split certificate, record that verdict and try other placements or chunks whose certification does not depend on module URLs. Report the first blocker for each unsuccessful probe.
 
+Seven of the editor's eight flat destructuring declarations read keys present in
+four allocation-only object literals. Units 95 (`s6`), 103 (`Ui`), 201 (`I2`)
+and 299 (`x5`) have 5, 28, 5 and 5 distinct own keys. This accounts for 938
+candidate crossings. The remaining 134 involve unit 325 reading `Math`.
+[`literalVar_origin`](lean/Experiments/CoreJS/RecordOrigin.lean) establishes the
+binding and own data descriptors immediately after each qualifying declaration.
+For the first `Ui` read at 105, establish that the pattern at 104 preserves
+that record. Unit 104 reads `s6`, created at 95, and unit 99 executes an opaque
+`new Uint32Array(f6())` between creation and use. The next proof obligation is
+to show which bindings and heap records survive that intervening execution.
+[Editor move census](experiments/translation/debug/excalidraw_certificates/README.md)
+
 ### Proof track
 
 **N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units.
