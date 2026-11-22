@@ -32,10 +32,10 @@ For a closed module containing only identifier declarations, the checker can als
 
 ## Request a CoreJS guarantee
 
-Pass the unsplit annotated module AST, the placement spec and a fresh output directory to the normal splitter command.
+Pass the unsplit JavaScript module (`.mjs` or `.js`), the placement spec and a fresh output directory to the normal splitter command. The shared Acorn frontend parses JavaScript input. An annotated module AST in JSON is also accepted.
 
 ```sh
-bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.json spec.json output --require all-outcomes
+bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output --require all-outcomes
 ```
 
 The final stdout line is JSON. A successful order-preserving split reports

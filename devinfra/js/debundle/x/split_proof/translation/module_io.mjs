@@ -70,6 +70,9 @@ try {
     if (new URL(specifier, pathToFileURL(consumer)).href !== pathToFileURL(provider).href)
       throw new Error(`unsupported relative module specifier: ${specifier}`);
     writeJson(output, { consumer: program(consumer), provider: program(provider), specifier });
+  } else if (mode === "--parse") {
+    const [input, output] = args;
+    writeJson(output, program(input));
   } else if (mode === "--upgrade") {
     const [input, output] = args;
     writeJson(output, upgradeLowerDump(readJson(input), acorn, eslintScope));

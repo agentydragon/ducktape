@@ -16,8 +16,8 @@ function prepare(source, modules, order) {
   fs.writeFileSync(placement, JSON.stringify({ entry: "entry.mjs", order, sequential: true, modules }));
   return ast;
 }
-function request(out, requested, ...args) {
-  const result = spawnSync(process.env.LOWERSPLIT, [input, placement, out, "--require", requested, ...args], {
+function requestFile(file, out, requested, ...args) {
+  const result = spawnSync(process.env.LOWERSPLIT, [file, placement, out, "--require", requested, ...args], {
     encoding: "utf8",
   });
   if (result.error) throw result.error;
@@ -31,6 +31,9 @@ function request(out, requested, ...args) {
     assert(verdict.reason, diagnostics);
   }
   return verdict;
+}
+function request(out, requested, ...args) {
+  return requestFile(input, out, requested, ...args);
 }
 function check(out, requested, status, ...args) {
   const verdict = request(out, requested, ...args);
@@ -54,6 +57,13 @@ const out = path.join(root, "mutations");
 const placement3 = { [entry]: ["#2"], [left]: ["#0"], [right]: ["#1"] };
 const ast = prepare(source, placement3, [left, right]);
 assert.equal(check(out, all, "certified").guarantee, all);
+// The ordinary JavaScript entry point and the annotated dump share the same checker.
+const sourceFile = path.join(root, "source.mjs");
+const rawOutput = path.join(root, "from-source");
+fs.writeFileSync(sourceFile, source);
+assert.equal(requestFile(sourceFile, rawOutput, all).status, "certified");
+assert.equal(requestFile(sourceFile, out, all, "--check-output").status, "certified");
+assert.deepEqual(await observe(pathToFileURL(path.join(rawOutput, entry))), await observe(pathToFileURL(sourceFile)));
 const entryFile = path.join(out, entry);
 const emitted = fs.readFileSync(entryFile, "utf8");
 const imports = emitted.split("\n").filter((line) => line.startsWith("import "));
