@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
+
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -27,7 +29,13 @@ from ai_session_archive.web_settings import WebSettings
 from cluster.cdk8s import cilium, disruption_budget, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    SecretGeneratorArgs,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -45,7 +53,13 @@ DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespac
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _OIDC = SecretRef(namespace=NAMESPACE, name="ai-session-archive-oidc")
-_RESTIC_CREDENTIALS_PATH = session_backup.IMPORTER_CREDENTIALS_PATH
+_CREDENTIALS_PATH = PurePosixPath("/run/session-backup/session-backup.yaml")
+CREDENTIALS_SOURCE = "session-backup.sops.yaml"
+CREDENTIALS = SecretGeneratorArgs(
+    name="session-backup-importer-credentials",
+    namespace=NAMESPACE,
+    files=[f"{_CREDENTIALS_PATH.name}={CREDENTIALS_SOURCE}"],
+)
 _WEB_PORT = 8080
 _WEB_LABELS = {"app.kubernetes.io/name": NAME}
 _WEB = ServiceRef(name=NAME, port=Port(name="http", number=_WEB_PORT), pods=Pods(NAMESPACE, tuple(_WEB_LABELS.items())))
@@ -172,20 +186,16 @@ def _web(chart: Chart) -> None:
     )
 
 
-def _restic_credentials_volume() -> k8s.Volume:
-    return k8s.Volume(
-        name="restic-credentials",
-        secret=k8s.SecretVolumeSource(
-            secret_name=session_backup.IMPORTER_CREDENTIALS_SECRET,
-            default_mode=0o440,
-            items=[k8s.KeyToPath(key="session-backup.yaml", path="session-backup.yaml")],
-        ),
-    )
-
-
 def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> k8s.KubeCronJob:
     labels = {**_IMPORTER_LABELS, "app.kubernetes.io/instance": host}
-    credentials_volume = _restic_credentials_volume()
+    credentials_volume = k8s.Volume(
+        name="restic-credentials",
+        secret=k8s.SecretVolumeSource(
+            secret_name=CREDENTIALS.name,
+            default_mode=0o440,
+            items=[k8s.KeyToPath(key=_CREDENTIALS_PATH.name, path=_CREDENTIALS_PATH.name)],
+        ),
+    )
     job = k8s.KubeCronJob(
         chart,
         f"import-{host}-cronjob",
@@ -234,7 +244,7 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                         "--codex-root",
                                         _CODEX_ROOT,
                                         "--credentials-file",
-                                        _RESTIC_CREDENTIALS_PATH,
+                                        str(_CREDENTIALS_PATH),
                                     ],
                                     env=[
                                         DATABASE.app_secret.key("uri").env_var("DATABASE_URL"),
@@ -249,7 +259,7 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                     volume_mounts=[
                                         k8s.VolumeMount(
                                             name=credentials_volume.name,
-                                            mount_path="/run/session-backup",
+                                            mount_path=str(_CREDENTIALS_PATH.parent),
                                             read_only=True,
                                         )
                                     ],
