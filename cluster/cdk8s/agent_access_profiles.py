@@ -178,7 +178,6 @@ SHARED_DIAGNOSTICS = (
 )
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
-PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 # Shared grant membership for PolicySets. Each deployment chart composes these Kubernetes rules with
 # its own rules before materializing the complete PolicySet, then separately materializes controller
 # RBAC from the resolved assignable grants.
@@ -271,28 +270,24 @@ def plaid_pgweb_egress_rules(*, credential: str) -> list[PolicySetSpecRules]:
     ]
 
 
-def covering_policy_sets(grants: Sequence[str]) -> list[str]:
-    """The POLICY_SETS whose grants together are exactly `grants`, in POLICY_SETS order."""
-    covering = [name for name, members in POLICY_SETS.items() if set(members) <= set(grants)]
-    if uncovered := set(grants) - {grant for name in covering for grant in POLICY_SETS[name]}:
-        raise ValueError(f"no PolicySet holds only launch grants among {sorted(grants)}: {sorted(uncovered)}")
-    return covering
-
-
-MANAGED_GRANTS = {
-    "public-coder": PUBLIC_GRANTS,
+# The KubernetesRoleSets each launch account holds. Sets with egress rules also
+# supply those rules to the preset's Identity in the selected catalog mode.
+_PUBLIC_ROLE_SETS = (SHARED_DIAGNOSTICS_POLICY, "public-inventory", CLUSTER_DIAGNOSTICS_POLICY)
+PRESET_ROLE_SETS = {
+    "public-coder": _PUBLIC_ROLE_SETS,
     "finance-agent": (
-        *PUBLIC_GRANTS,
-        "coinbase-credentials",
-        "ovh-billing-credentials",
+        *_PUBLIC_ROLE_SETS,
+        COINBASE_POLICY,
+        OVH_BILLING_POLICY,
         "spend-policy-config",
         PLAID_DIAGNOSTICS_POLICY,
     ),
     "haku": (
-        *SHARED_DIAGNOSTICS,
-        *HAKU_EXTRAS,
-        "coinbase-credentials",
-        "ovh-billing-credentials",
+        SHARED_DIAGNOSTICS_POLICY,
+        CLUSTER_DIAGNOSTICS_POLICY,
+        "haku-sandbox-write",
+        COINBASE_POLICY,
+        OVH_BILLING_POLICY,
         PLAID_DIAGNOSTICS_POLICY,
     ),
 }

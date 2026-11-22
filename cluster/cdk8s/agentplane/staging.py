@@ -1010,14 +1010,14 @@ def _add_launch_accounts(chart: Chart, env: Environment, *, role_sets: Mapping[s
         description="Read-only namespace diagnostics every agent may use.",
         role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
     )
-    for preset in agent_access_profiles.MANAGED_GRANTS:
+    for preset, selected_sets in agent_access_profiles.PRESET_ROLE_SETS.items():
         KubernetesAccount(
             chart,
             f"kubernetes-account-{preset}",
             account=kubernetes_account_ref.account(env.namespace, preset),
             policy_namespace=env.namespace,
             description=f"The '{preset}' preset's Kubernetes identity.",
-            role_sets=[role_sets[role_set] for role_set in staging_config.preset_role_sets(preset)],
+            role_sets=[role_sets[role_set] for role_set in selected_sets],
         )
 
 
