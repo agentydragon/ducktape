@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env import config as configuration
 from agentplane.env.config import (
     CA_BUNDLE,
@@ -85,7 +86,7 @@ def guest_config_data(
                 server_uri=HISTORY_SERVICE_URI, proxy_address=guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)
             ),
         ),
-        model_config_target=guest_address(platform_routes.model_config(namespace).listen_port),
+        model_config_target=guest_address(PLATFORM_ROUTES_PORT),
         platform_instructions=platform_instructions,
         environment_runtime_environment=configuration.EnvironmentVariables(values=network),
         harness_environment=configuration.EnvironmentVariables(
@@ -119,9 +120,7 @@ def guest_config_data(
             f'{name}="{value}"\n'
             for name, value in sorted(
                 telemetry.service_environment(
-                    env.namespace,
-                    "agentplane-environment-runtime",
-                    endpoint=platform_routes.telemetry_endpoint(host=gateway),
+                    env.namespace, "agentplane-environment-runtime", endpoint=platform_routes.listener_url(host=gateway)
                 ).items()
             )
         ),

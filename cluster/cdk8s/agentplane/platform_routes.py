@@ -42,15 +42,6 @@ class Route:
     transport: PlatformRouteTransport
     service_prefixes: tuple[str, ...]
 
-    @property
-    def listen_port(self) -> int:
-        # Full gRPC methods select routes on the shared local listener.
-        return PLATFORM_ROUTES_PORT
-
-    @property
-    def local_target(self) -> str:
-        return f"127.0.0.1:{self.listen_port}"
-
 
 def egress_rules(namespace: str) -> Route:
     return Route(
@@ -135,8 +126,8 @@ def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> Platfor
     )
 
 
-def telemetry_endpoint(*, host: str = "127.0.0.1") -> str:
-    """The OTLP/gRPC endpoint on the shared listener, in the caller's network namespace."""
+def listener_url(*, host: str = "127.0.0.1") -> str:
+    """The shared platform route listener, in the caller's network namespace."""
     return f"http://{host}:{PLATFORM_ROUTES_PORT}"
 
 

@@ -276,10 +276,8 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     legacy_authority = f"session-dispatcher.{namespace}.svc.cluster.local:8080"
     history = history_service.service(namespace)
     history_origin = history.authority
-    history_route = platform_routes.history_grpc(namespace)
-    history_url = f"http://{history_route.local_target}"
+    listener_url = platform_routes.listener_url()
     environments = environment_service.environments_service(namespace)
-    environments_route = platform_routes.environments_grpc(namespace)
     basic = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)
     assert all(sessions.fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"])
     proxy_settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
@@ -330,8 +328,8 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
-    assert pod_env["AGENTPLANE_HISTORY_URL"] == history_url
-    assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == f"http://{environments_route.local_target}"
+    assert pod_env["AGENTPLANE_HISTORY_URL"] == listener_url
+    assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == listener_url
     assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
     assert all(
         source.get("serviceAccountToken", {}).get("audience") != "session-dispatcher"
@@ -349,11 +347,11 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     )
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
-        f"http://{launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
+        platform_routes.listener_url(host=launcher_relay.GUEST_GATEWAY)
     )
 
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_ENVIRONMENTS_URL"] == (
-        f"http://{launcher_relay.GUEST_GATEWAY}:{environments_route.listen_port}"
+        platform_routes.listener_url(host=launcher_relay.GUEST_GATEWAY)
     )
 
 
