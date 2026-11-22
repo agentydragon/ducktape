@@ -59,14 +59,14 @@ export function ClampedBlock({
     observer.observe(preview);
     return () => observer.disconnect();
   }, [content, expanded]);
-  const showMore = !expanded && overflows;
+  const isClamped = !expanded && overflows;
   useLayoutEffect(() => {
     if (content) remeasureCodeBlocks(content);
   }, [content, expanded, maxHeightRem]);
   const body = (
     <>
       <div
-        data-clamped={showMore}
+        data-clamped={isClamped}
         style={{
           position: "relative",
           overflow: "hidden",
@@ -74,7 +74,7 @@ export function ClampedBlock({
         }}
       >
         <div ref={setContent}>{children}</div>
-        {showMore && (
+        {isClamped && (
           <div
             aria-hidden="true"
             style={{
@@ -88,7 +88,7 @@ export function ClampedBlock({
           />
         )}
       </div>
-      {showMore && (
+      {isClamped && (
         <UnstyledButton
           aria-expanded={false}
           onClick={() => setExpanded(true)}
