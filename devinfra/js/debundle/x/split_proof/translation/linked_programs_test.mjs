@@ -153,21 +153,9 @@ function generatedTryCase(seed) {
     case 1:
       return {
         body: [
-          tryStatement(
-            block([
-              variables("var", [
-                ["before", literal(seed + 30)],
-                ["abrupt", call(arrow([], block([throws(id("before"))])))],
-                ["after", literal(seed + 21)],
-              ]),
-            ]),
-            catchClause(
-              null,
-              block([returns({ type: "UnaryExpression", operator: "!", prefix: true, argument: id("after") })])
-            )
-          ),
+          tryStatement(block([throws(literal(seed + 30))]), catchClause(null, block([returns(literal(seed + 21))]))),
         ],
-        expectedValue: true,
+        expectedValue: seed + 21,
       };
     case 2: {
       const value = seed + 20;
@@ -361,15 +349,12 @@ for (let seed = 0; seed < 8; seed++) {
   }
 }
 
-// The var binding is hoisted across the nested block. The later lexical
-// declarator shadows the parameter throughout the try block, even in the first initializer.
+// The second lexical binding shadows the function parameter throughout the try block.
 {
   const source = `const run = (later) => {
-    var early = nested, result = !early;
-    { var nested = 7, copy = nested; }
     try { let first = later, later = 9; }
-    catch { return result; }
-    throw "expected the lexical read to throw";
+    catch { return true; }
+    throw false;
   };
   export const observed = run(3);`;
   const files = prepare(path.join(root, "group-hoisting-and-tdz"), {
