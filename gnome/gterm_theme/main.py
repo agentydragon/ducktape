@@ -1,4 +1,4 @@
-"""GNOME Terminal theme follower — copies a named profile's colors to a mutable "Auto" profile."""
+"""GNOME Terminal theme follower — copies a source profile's colors to a mutable "Auto" profile."""
 
 import ast
 import subprocess
@@ -7,7 +7,7 @@ from uuid import UUID
 from absl import app, flags, logging
 from gi.repository import Gio
 
-_PROFILE = flags.DEFINE_string("profile", None, "Name of the source profile")
+_PROFILE = flags.DEFINE_string("profile", None, "UUID of the source profile")
 _TARGET_PROFILE = flags.DEFINE_string("target_profile", None, "UUID of the target profile")
 
 
@@ -46,17 +46,6 @@ class ProfileDConf:
             raise TypeError(f"Unsupported dconf value type: {type(value)}")
         except subprocess.CalledProcessError as e:
             raise KeyError(f"Reading '{property_name}' from {self.profile_uuid} failed") from e
-
-    @property
-    def visible_name(self) -> str:
-        v = self.read_property("visible-name")
-        assert isinstance(v, str)
-        return v
-
-    @visible_name.setter
-    def visible_name(self, name: str) -> None:
-        assert isinstance(name, str), "Name must be a string"
-        self.write_property("visible-name", name)
 
     def write_property(self, property_name: str, value: bool | str | list[str]) -> None:
         """Write a property to the profile."""
@@ -100,30 +89,14 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         target_dconf.write_property(prop, value)
 
 
-def get_profile_uuid_by_name_mapping(gsettings_profiles: GSettingsProfiles) -> dict[str, UUID]:
-    """Build a mapping of profile names to UUIDs."""
-    uuid_by_name: dict[str, UUID] = {}
-
-    for profile_uuid in gsettings_profiles.profile_uuids:
-        try:
-            name = ProfileDConf(profile_uuid).visible_name
-        except (KeyError, AssertionError, ValueError) as e:
-            logging.warning(f"Cannot get name for profile {profile_uuid}: {e}")
-            continue
-        if name in uuid_by_name:
-            logging.warning(f"Duplicate profile {name}: {uuid_by_name[name]} and {profile_uuid}")
-            continue
-        uuid_by_name[name] = profile_uuid
-
-    return uuid_by_name
-
-
 def _main(_):
     profiles = GSettingsProfiles()
+    source_uuid = UUID(_PROFILE.value)
     target_uuid = UUID(_TARGET_PROFILE.value)
-    if target_uuid not in profiles.profile_uuids:
-        raise ValueError(f"Target profile {target_uuid} is not in the GNOME Terminal profile list")
-    source_uuid = get_profile_uuid_by_name_mapping(profiles)[_PROFILE.value]
+    profile_uuids = profiles.profile_uuids
+    for role, profile_uuid in (("Source", source_uuid), ("Target", target_uuid)):
+        if profile_uuid not in profile_uuids:
+            raise ValueError(f"{role} profile {profile_uuid} is not in the GNOME Terminal profile list")
     copy_profile_colors(source_uuid, target_uuid)
 
 

@@ -20,13 +20,13 @@ let
   set_light_theme = pkgs.writeShellApplication {
     name = "set_light_theme";
     runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
-    text = "gterm-theme --target_profile=${autoProfile} --profile='Solarized Light'";
+    text = "gterm-theme --target_profile=${autoProfile} --profile=${lightProfile}";
   };
 
   set_dark_theme = pkgs.writeShellApplication {
     name = "set_dark_theme";
     runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
-    text = "gterm-theme --target_profile=${autoProfile} --profile='Solarized Dark'";
+    text = "gterm-theme --target_profile=${autoProfile} --profile=${darkProfile}";
   };
 in
 {
