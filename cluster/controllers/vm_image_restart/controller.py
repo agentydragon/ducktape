@@ -197,7 +197,7 @@ async def _finish(
 
 
 async def _request_restart(
-    *, vm_api: VMApi, core: CoreApi, settings: Settings, vm: dict[str, Any], state: RestartState, vmi: dict[str, Any]
+    *, vm_api: VMApi, core: CoreApi, settings: Settings, vm: dict[str, Any], state: RestartState
 ) -> bool:
     """Return whether the rollout remains active after this restart request."""
     attempts = state.attempts
@@ -219,7 +219,8 @@ async def _request_restart(
     attempts += 1
     backoff = RETRY_BACKOFF_SECONDS[min(attempts - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
     state.attempts = attempts
-    state.old_vmi_uid = vmi.get("metadata", {}).get("uid")
+    if not state.old_vmi_uid:
+        raise ValueError("cannot request a VMI restart without its UID")
     state.next_attempt_at = now + timedelta(seconds=backoff)
     state.message = f"requested graceful VMI restart {attempts}/{MAX_RESTART_ATTEMPTS}"
     # Persist before deleting so a controller pod restart cannot issue an unbounded series
@@ -232,7 +233,9 @@ async def _request_restart(
             namespace=settings.target_namespace,
             plural="virtualmachineinstances",
             name=settings.target_vm_name,
-            body=client.V1DeleteOptions(grace_period_seconds=RESTART_GRACE_SECONDS),
+            body=client.V1DeleteOptions(
+                grace_period_seconds=RESTART_GRACE_SECONDS, preconditions=client.V1Preconditions(uid=state.old_vmi_uid)
+            ),
         )
     except ApiException as exc:
         state.message = f"restart request {attempts}/{MAX_RESTART_ATTEMPTS} failed: {exc.reason or exc.status}"
@@ -372,19 +375,17 @@ async def reconcile(
         return None
 
     # Let a matching VMI finish booting. `Always` handles failed launches.
-    restart_needed = (
-        not vmi.get("metadata", {}).get("deletionTimestamp")
-        and restart_required
-        and (not image_matches or (ready and observed_generation < generation))
-    )
     if replaced:
         state.old_vmi_uid = vmi_uid
         # A replacement on the old template can be restarted within the same attempt budget.
         state.next_attempt_at = now + timedelta(seconds=60) if image_matches else now
         await _write_state(core, settings, state)
+    if vmi.get("metadata", {}).get("deletionTimestamp"):
+        return deadline
+    restart_needed = restart_required and (not image_matches or (ready and observed_generation < generation))
     request_now = not image_matches if replaced else restart_needed
     if request_now:
-        still_active = await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state, vmi=vmi)
+        still_active = await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state)
         if not still_active:
             return None
     if restart_needed and state.attempts < MAX_RESTART_ATTEMPTS:

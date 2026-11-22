@@ -155,7 +155,7 @@ async def test_initial_restart_persists_attempt_and_gracefully_deletes_vmi() -> 
     state = _stored_state(core)
     assert state.phase == "Restarting"
     assert state.attempts == 1
-    assert state.old_vmi_uid == "old-vmi"
+    assert vm_api.delete_calls[0]["body"].preconditions.uid == state.old_vmi_uid == "old-vmi"
     assert _event_reasons(core) == ["VMImageRestartRequested"]
 
 
@@ -170,10 +170,11 @@ async def test_replacement_is_ready_only_after_new_vmi_is_ready_on_desired_image
     assert vm_api.delete_calls == []
 
 
-async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() -> None:
+@pytest.mark.parametrize("uid", ["old-vmi", "replacement-vmi"])
+async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi(uid: str) -> None:
     vm_api = FakeVMApi(
         _vm(generation=3, observed_generation=2, image="registry.invalid/appliance:newer"),
-        _vmi(uid="old-vmi", image=_OLD_IMAGE, ready=False, deleting=True),
+        _vmi(uid=uid, image=_OLD_IMAGE, ready=False, deleting=True),
     )
     core = FakeCoreApi(_state(attempts=2))
 
@@ -183,7 +184,7 @@ async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() ->
     assert state.generation == 3
     assert state.image == "registry.invalid/appliance:newer"
     assert state.attempts == 0
-    assert state.old_vmi_uid == "old-vmi"
+    assert state.old_vmi_uid == uid
     assert vm_api.delete_calls == []
 
 
