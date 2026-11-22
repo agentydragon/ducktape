@@ -477,19 +477,16 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Search GitHub commits",
       schema: searchCommits,
-      compact: ({ args }) => (
-        <Stack gap={4}>
-          <Field name="Query" value={args.query} />
-          <Field name="Page size" value={args.perPage} />
-        </Stack>
-      ),
+      compact: ({ args }) => <Field name="Query" value={args.query} />,
       request: ({ args }) => (
         <Stack gap={4}>
           <Field name="Query" value={args.query} />
+          <Field name="Page" value={args.page} />
           <Field name="Page size" value={args.perPage} />
         </Stack>
       ),
       staticCard: true,
+      hasFoldedArguments: (args) => args.page !== undefined || args.perPage !== undefined,
       result: defineResultPreview(
         z.object({
           items: z.array(commitResult),

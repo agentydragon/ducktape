@@ -125,7 +125,7 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(podLabel).toBeDefined();
   expect(podLabel?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
   expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
-  expect(container.textContent).toContain("Matching pods where");
+  expect(container.textContent).not.toContain("app=example");
   expect(container.textContent).toContain("systemctl restart backup");
   expect(container.textContent).not.toContain("Requested by");
   expect(container.textContent).not.toContain("test description adding what the decision_pending title leaves out");
@@ -159,7 +159,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       <ActionsSidebarSection />
     </ActionsTestApp>
   );
-  const reads: { request: ActionRequest; visible: string[]; expands: boolean }[] = [
+  const reads: { request: ActionRequest; visible: string[]; folded?: string[]; expands: boolean }[] = [
     {
       request: {
         ...request(ActionState.DECISION_PENDING, 3),
@@ -181,8 +181,9 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         },
         title: "list namespace pods",
       },
-      visible: ["List pods in namespace", "test-namespace", "app=example", "status.phase=Running"],
-      expands: false,
+      visible: ["List pods in namespace", "test-namespace"],
+      folded: ["app=example", "status.phase=Running"],
+      expands: true,
     },
     {
       request: {
@@ -191,8 +192,9 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
         title: "inspect pod logs",
       },
-      visible: ["container sidecar", "previous run", "last 100 lines (default)"],
-      expands: false,
+      visible: ["container sidecar", "previous run"],
+      folded: ["last 100 lines (default)"],
+      expands: true,
     },
     {
       request: {
@@ -201,17 +203,20 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { q: "from:deployments@example.com", maxResults: 5 },
         title: "search deployment mail",
       },
-      visible: ["from:deployments@example.com", "Up to 5 threads"],
-      expands: false,
+      visible: ["from:deployments@example.com"],
+      folded: ["Up to 5 threads"],
+      expands: true,
     },
   ];
   await send(reads.map(({ request: row }) => row));
   await vi.waitFor(() => expect(container.textContent).toContain("previous run"));
-  for (const { request: read, visible, expands } of reads) {
+  for (const { request: read, visible, folded = [], expands } of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
     expect(disclosure !== null).toBe(expands);
+    expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
+    for (const value of folded) expect(container.textContent).not.toContain(value);
     if (disclosure) await act(async () => disclosure.click());
-    for (const value of visible) expect(container.textContent).toContain(value);
+    for (const value of [...visible, ...folded]) expect(container.textContent).toContain(value);
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
   }

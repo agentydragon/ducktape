@@ -67,7 +67,7 @@ describe("Action presentation slots", () => {
     );
   });
 
-  it("shows pod filters without repeating the operation or namespace", async () => {
+  it("folds pod filters without repeating the operation or namespace", async () => {
     const args = {
       namespace: "prod",
       fieldSelector: "status.phase=Running",
@@ -76,8 +76,7 @@ describe("Action presentation slots", () => {
     const collapsed = await mount(renderPaneCollapsed(identity("kubernetes_admin", "pods_list_in_namespace"), args));
     const details = await mount(renderDetailsArguments(identity("kubernetes_admin", "pods_list_in_namespace"), args));
 
-    expect(collapsed.textContent).toContain("Matching pods where");
-    expect(collapsed.textContent).not.toContain("namespace prod");
+    expect(collapsed.textContent).toBe("");
     expect(details.textContent).toContain("field selector status.phase=Running");
     expect(details.textContent).not.toContain("List pods in namespace");
     expect(details.textContent).not.toContain("namespace prod");
@@ -152,15 +151,15 @@ describe("Action presentation slots", () => {
     expect(actionOffersCardDecisionButtons(action, { ...args, namespace: "" })).toBe(false);
   });
 
-  it("puts list scope in Kubernetes action labels and leaves only filters in the pane", async () => {
+  it("keeps Kubernetes list scope visible and folds narrowing selectors", async () => {
     const listArgs = { apiVersion: "v1", kind: "Pod", namespace: "apps", labelSelector: "app=web" };
     const listAction = identity("kubernetes_admin", "resources_list");
     const listLabel = await mount(renderActionLabel(listAction, listArgs));
     const listCollapsed = await mount(renderPaneCollapsed(listAction, listArgs));
     const listPane = await mount(renderPaneOpened(listAction, listArgs));
     expect(listLabel.textContent).toContain("List Pod resources in namespace apps");
-    expect(listCollapsed.textContent).toContain("label selector app=web");
-    expect(listCollapsed.textContent).not.toContain("API version");
+    expect(listCollapsed.textContent).not.toContain("label selector app=web");
+    expect(listCollapsed.textContent).toContain("Using API version v1");
     expect(listCollapsed.textContent).not.toContain("apps");
     expect(listPane.textContent).toContain("label selector app=web");
     expect(listPane.textContent).toContain("Using API version v1");
@@ -170,10 +169,11 @@ describe("Action presentation slots", () => {
     const eventsAction = identity("kubernetes_admin", "events_list");
     const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
     const eventsCollapsed = await mount(renderPaneCollapsed(eventsAction, eventsArgs));
+    const eventsOpened = await mount(renderPaneOpened(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
-    expect(eventsCollapsed.textContent).toContain("Show events matching");
-    expect(eventsCollapsed.textContent).toContain("type=Warning");
-    expect(eventsCollapsed.textContent).not.toContain("apps");
+    expect(eventsCollapsed.textContent).toBe("");
+    expect(eventsOpened.textContent).toContain("type=Warning");
+    expect(eventsOpened.textContent).not.toContain("apps");
     expect(renderPaneCollapsed(eventsAction, { namespace: "apps" })).toBeNull();
   });
 
@@ -330,12 +330,12 @@ describe("Action presentation slots", () => {
 
     expect(label.textContent).toContain("Gmail: Search threads");
     expect(collapsed.textContent).toContain("from:alerts@example.com");
-    expect(collapsed.textContent).toContain("Up to 5 threads");
-    expect(collapsed.textContent).toContain("Inbox");
+    expect(collapsed.textContent).not.toContain("Up to 5 threads");
+    expect(collapsed.textContent).not.toContain("Inbox");
     expect(collapsed.textContent).not.toContain("Includes spam and trash");
     expect(details.textContent).toContain("Up to 5 threads");
     expect(details.textContent).toContain("Inbox");
-    expect(actionCompactCardExpands(action, args)).toBe(false);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
 
     const includingSpamAndTrash = await mount(
       renderPaneCollapsed(action, { q: "from:alerts@example.com", includeSpamTrash: true })
@@ -1422,6 +1422,37 @@ describe("compact card renderers", () => {
     ["__proto__", "constructor", {}, true],
   ] as const)("%s/%s with %o expands: %s", (group, name, args, expands) => {
     expect(actionCompactCardExpands(identity(group, name), args)).toBe(expands);
+  });
+
+  it.each(["search_code", "search_commits", "search_pull_requests", "search_repositories", "search_users"])(
+    "folds GitHub %s pagination while preserving scope and validation",
+    async (name) => {
+      const action = identity("github", name);
+      const args = { query: "repo:example/service rollout", page: 3, perPage: 10 };
+      const compact = await mount(renderPaneCollapsed(action, args));
+      expect(compact.textContent).toContain(args.query);
+      expect(compact.textContent).not.toContain("Page");
+      const details = await mount(renderPaneOpened(action, args));
+      expect(details.textContent).toContain("Page 3");
+      expect(details.textContent).toContain("Page size 10");
+      expect(actionCompactCardExpands(action, args)).toBe(true);
+      expect(actionCompactCardExpands(action, { query: args.query })).toBe(false);
+      expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+      expect(actionOffersCardDecisionButtons(action, { ...args, unknownScope: true })).toBe(false);
+    }
+  );
+
+  it("abbreviates the branch-update condition and keeps its exact SHA in details", async () => {
+    const action = identity("github", "update_pull_request_branch");
+    const args = { owner: "example", repo: "service", pullNumber: 42, expectedHeadSha: "0123456789abcdef" };
+    const label = await mount(renderActionLabel(action, args));
+    expect(label.textContent).toContain("example/service#42");
+    expect(label.textContent).toContain("latest base changes");
+    expect(label.textContent).toContain("If unchanged");
+    expect(label.textContent).not.toContain(args.expectedHeadSha);
+    expect((await mount(renderPaneOpened(action, args))).textContent).toContain(args.expectedHeadSha);
+    expect(actionCompactCardExpands(action, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
   });
 
   it("shows an explicitly supplied maintainer edit permission in compact and opened PR summaries", async () => {

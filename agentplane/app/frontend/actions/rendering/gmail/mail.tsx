@@ -4,9 +4,9 @@ import type { JSX } from "react";
 import { z } from "zod";
 
 import { TextBlock } from "../../../ui/text_block";
-import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps } from "../entry";
+import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps, useCompactPane } from "../entry";
 import { useIntegrationPreviewNames } from "../integration_previews";
-import { expandsForRejectedArguments, type ActionPresentation } from "../presentation";
+import { expandsForDetails, type ActionPresentation } from "../presentation";
 import { defineResultPreview, type ResultPreviewProps } from "../result_entry";
 import {
   draftHref,
@@ -298,14 +298,17 @@ function mailRead<Args extends z.ZodType<MailReadArguments>, Result extends z.Zo
   };
 }
 
-const draftListPreview = definePreview(listArguments, ({ args }) => (
-  <Stack gap={4}>
-    {args.q ? <EmailField name="Query" value={args.q} /> : <Text size="sm">All unsent drafts</Text>}
-    {args.maxResults != null && <Text size="sm">Up to {args.maxResults} drafts</Text>}
-    {args.includeSpamTrash && <Text size="sm">Includes spam and trash</Text>}
-    {args.pageToken && <Text size="sm">Continues a previous search</Text>}
-  </Stack>
-));
+const draftListPreview = definePreview(listArguments, function DraftListArguments({ args }) {
+  const compact = useCompactPane();
+  return (
+    <Stack gap={4}>
+      {args.q ? <EmailField name="Query" value={args.q} /> : <Text size="sm">All unsent drafts</Text>}
+      {!compact && args.maxResults != null && <Text size="sm">Up to {args.maxResults} drafts</Text>}
+      {args.includeSpamTrash && <Text size="sm">Includes spam and trash</Text>}
+      {args.pageToken && <Text size="sm">Continues a previous search</Text>}
+    </Stack>
+  );
+});
 const draftListResult = z
   .object({
     drafts: z.array(draftResult).nullish(),
@@ -357,9 +360,9 @@ export const mailReadRenderers: ReadonlyMap<string, ActionPresentation> = new Ma
     "drafts_list",
     {
       fallbackLabel: "Search Gmail drafts",
-      pane: { collapsed: draftListPreview },
+      pane: { collapsed: draftListPreview, opened: draftListPreview },
       details: { arguments: draftListPreview, result: defineResultPreview(draftListResult, DraftList) },
-      compactCardExpands: expandsForRejectedArguments(listArguments),
+      compactCardExpands: expandsForDetails(listArguments, (args) => args.maxResults != null),
       offersCardDecisionButtons: (args) => listArguments.safeParse(args).success,
     },
   ],

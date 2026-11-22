@@ -57,3 +57,14 @@ export interface ActionPresentation {
 export function expandsForRejectedArguments(schema: z.ZodType): (args: unknown) => boolean {
   return (args) => !schema.safeParse(args).success;
 }
+
+/** Open when the preview has additional information, or to show recorded arguments a schema rejects. */
+export function expandsForDetails<S extends z.ZodType>(
+  schema: S,
+  hasDetails: (args: z.infer<S>) => boolean
+): (args: unknown) => boolean {
+  return (args) => {
+    const parsed = schema.safeParse(args);
+    return !parsed.success || hasDetails(parsed.data);
+  };
+}
