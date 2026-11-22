@@ -2,6 +2,7 @@ package threads
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -216,9 +217,13 @@ func assertQuiet(t *testing.T, wakeup <-chan struct{}) {
 func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T) {
 	store, _, _ := openStore(t)
 	ctx := t.Context()
-	session := NoticeScope{ThreadID: uuid.New(), OperatorKey: [32]byte{1}}
-	otherSession := NoticeScope{ThreadID: uuid.New(), OperatorKey: session.OperatorKey}
-	secondOperator := NoticeScope{ThreadID: session.ThreadID, OperatorKey: [32]byte{2}}
+	session := NoticeScope{ThreadID: uuid.New(), Issuer: "https://operator.test/identity", Subject: "user/1"}
+	otherSession := session
+	otherSession.ThreadID = uuid.New()
+	secondOperator := session
+	secondOperator.Subject = "user/2"
+	otherIssuer := session
+	otherIssuer.Issuer = "https://other.test/identity"
 	old := NoticeRevision{CommandID: "same-command", Version: 37}
 	changed := NoticeRevision{CommandID: old.CommandID, Version: old.Version + 1}
 	other := NoticeRevision{CommandID: "other-command", Version: 39}
@@ -258,6 +263,18 @@ func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T)
 	page, err := store.ListNoticeAcknowledgements(ctx, session, nil, 1)
 	if err != nil || len(page) != 2 || page[0].NoticeRevision != changed || page[1].NoticeRevision != other {
 		t.Fatalf("first page and lookahead: %v, %v", page, err)
+	}
+	for _, scope := range []NoticeScope{otherSession, secondOperator, otherIssuer} {
+		if _, err := store.ListNoticeAcknowledgements(ctx, scope, &page[0].ID, 2); !errors.Is(err, ErrNoticeCursor) {
+			t.Fatalf("cross-scope cursor: %v", err)
+		}
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, otherIssuer, []NoticeRevision{old}); err != nil || len(rows) != 0 {
+		t.Fatalf("different issuer with same subject: %v, %v", rows, err)
+	}
+	var issuer, subject string
+	if err := store.db.QueryRowContext(ctx, "SELECT operator_issuer,operator_subject FROM command_notice_acknowledgement WHERE acknowledgement_id=$1", page[0].ID).Scan(&issuer, &subject); err != nil || issuer != session.Issuer || subject != session.Subject {
+		t.Fatalf("persisted OIDC identity: issuer=%q subject=%q err=%v", issuer, subject, err)
 	}
 	next, err := store.ListNoticeAcknowledgements(ctx, session, &page[0].ID, 2)
 	if err != nil || len(next) != 2 || next[0].NoticeRevision != other || next[1].NoticeRevision != old || !next[1].AcknowledgedAt.Equal(ackTime) {

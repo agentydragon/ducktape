@@ -2,10 +2,8 @@ package threads
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -54,9 +52,7 @@ func (h *Handler) noticeScope(ctx context.Context, threadID string) (threadstore
 	if !ok || caller.Kind != auth.CallerOperator || caller.Issuer == "" || caller.Subject == "" {
 		return threadstore.NoticeScope{}, status.Error(codes.Unauthenticated, "Verified operator identity is required")
 	}
-	// JSON encodes the two strings without delimiter collisions. Usernames and session cookies may change.
-	identity, _ := json.Marshal([2]string{caller.Issuer, caller.Subject})
-	return threadstore.NoticeScope{ThreadID: id, OperatorKey: sha256.Sum256(identity)}, nil
+	return threadstore.NoticeScope{ThreadID: id, Issuer: caller.Issuer, Subject: caller.Subject}, nil
 }
 
 func (h *Handler) AcknowledgeCommandNotice(ctx context.Context, request *apppb.AcknowledgeCommandNoticeRequest) (*emptypb.Empty, error) {
@@ -109,29 +105,30 @@ func (h *Handler) ListCommandNoticeAcknowledgements(ctx context.Context, request
 	if err != nil {
 		return nil, err
 	}
-	scopeDigest := sha256.Sum256(append(scope.OperatorKey[:], scope.ThreadID[:]...))
-	pageScope := hex.EncodeToString(scopeDigest[:]) + "/"
 	var before *int64
 	if token := request.GetPageToken(); token != "" {
-		if len(token) > base64.RawURLEncoding.EncodedLen(len(pageScope)+19) {
+		// A positive int64 is at most 19 decimal digits.
+		if len(token) > base64.RawURLEncoding.EncodedLen(19) {
 			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token")
 		}
 		raw, err := base64.RawURLEncoding.DecodeString(token)
-		key, ok := strings.CutPrefix(string(raw), pageScope)
-		n, parseErr := strconv.ParseInt(key, 10, 64)
-		if err != nil || !ok || parseErr != nil || n <= 0 {
-			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token for this operator and Session")
+		n, parseErr := strconv.ParseInt(string(raw), 10, 64)
+		if err != nil || parseErr != nil || n <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token")
 		}
 		before = &n
 	}
 	rows, err := h.store.ListNoticeAcknowledgements(ctx, scope, before, int(size))
+	if errors.Is(err, threadstore.ErrNoticeCursor) {
+		return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token for this operator and Session")
+	}
 	if err != nil {
 		return nil, noticeStorageError(err)
 	}
 	var next *string
 	if len(rows) > int(size) {
 		rows = rows[:size]
-		token := base64.RawURLEncoding.EncodeToString([]byte(pageScope + strconv.FormatInt(rows[len(rows)-1].ID, 10)))
+		token := base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(rows[len(rows)-1].ID, 10)))
 		next = &token
 	}
 	result := noticeAcknowledgements(rows)
