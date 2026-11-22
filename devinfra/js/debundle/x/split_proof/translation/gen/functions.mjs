@@ -10,7 +10,6 @@ export function install(g) {
   const pick = (xs) => g.pick(xs);
   const N = (s, d = 2) => g.num(s, d);
   const B = (s, d = 2) => g.bool(s, d);
-  const S = (s, d = 2) => g.str(s, d);
   const numeric = (name, mutable = true) => ({ name, scope: "local", type: "num", mutable });
   const params = (n) => Array.from({ length: n }, () => numeric(g.fresh("p")));
   const names = (ps) => ps.map((p) => local(p.name)).join(", ");
@@ -116,7 +115,7 @@ export function install(g) {
   num.push({
     w: 3,
     ok: (g, s) => s.fn?.arguments,
-    make: (g, s) =>
+    make: () =>
       pick([
         "arguments.length",
         "(arguments[0] ?? 0)",

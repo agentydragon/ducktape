@@ -5,6 +5,7 @@
 # gazelle:exclude lowering
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("//devinfra/lint:linters.bzl", "eslint_test")
 
 exports_files(
     [
@@ -92,4 +93,25 @@ js_run_binary(
     stdout = "generated/ProofFixture.lean",
     tool = ":extract",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
+)
+
+# Include first-party runfile helpers as lint sources.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(
+        [
+            "extract/*.mjs",
+            "experiments/**/*.mjs",
+        ],
+        exclude = [
+            "experiments/lowering/entries/**",
+            "experiments/lowering/torture.mjs",
+        ],
+    ),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
 )

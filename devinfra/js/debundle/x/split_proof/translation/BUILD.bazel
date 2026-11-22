@@ -1,5 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
+load("//devinfra/lint:linters.bzl", "eslint_test")
 
 # These Python diagnostics remain hand-run tools, as they were under experiments/.
 # gazelle:exclude fuzz_mutate.py
@@ -25,6 +26,21 @@ js_binary(
     ],
     entry_point = "reparse.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
+# Include first-party runfile helpers as lint sources.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(
+        ["**/*.mjs"],
+        exclude = ["fixtures/**"],
+    ),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
 )
 
 _SHIFT_FUZZ_DATA = [

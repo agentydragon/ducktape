@@ -33,7 +33,7 @@ export function install(g) {
     g.imports.push(FORMS[0].line);
     has.add("path");
   }
-  const when = (facility) => (g, s) => has.has(facility);
+  const when = (facility) => () => has.has(facility);
 
   // ---- what the imports export, called with numbers and strings
   const num = g.prods.num;

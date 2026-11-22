@@ -814,7 +814,7 @@ form(
   "object:duplicate-key",
   "ES5",
   "({ a: 1, a: 2 });",
-  (n, p) =>
+  (n) =>
     n.type === "ObjectExpression" &&
     new Set(n.properties.map((q) => q.key?.name ?? q.key?.value)).size < n.properties.filter((q) => q.key).length
 );

@@ -15,7 +15,6 @@ const fps = fs
   .split("\n")
   .filter(Boolean)
   .map((l) => JSON.parse(l));
-const FN = new Set(["FunctionExpression", "ArrowFunctionExpression", "FunctionDeclaration"]);
 const why = new Map();
 // returns undefined when `n` only allocates, else the first node type that does more
 function more(n) {

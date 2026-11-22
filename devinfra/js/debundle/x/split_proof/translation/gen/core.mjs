@@ -16,6 +16,7 @@
 // names they bind are never marked, because a module imports them itself.
 export const top = (n) => `\u0001${n}\u0002`;
 export const local = (n) => `\u0003${n}\u0004`;
+// eslint-disable-next-line no-control-regex -- Match the reserved top-level name marker.
 const TOP = /\u0001([^\u0002]+)\u0002/g;
 
 export function rng(seed) {
@@ -205,9 +206,9 @@ export class Gen {
     // an observer of a binding goes anywhere after the unit that declares it
     const inserts = [];
     for (const [b, text] of observable)
-      if (this.chance(0.55)) inserts.push({ at: declared(b) + 1 + this.int(this.units.length - declared(b)), b, text });
+      if (this.chance(0.55)) inserts.push({ at: declared(b) + 1 + this.int(this.units.length - declared(b)), text });
     inserts.sort((a, b) => b.at - a.at);
-    inserts.forEach(({ at, b, text }, i) =>
+    inserts.forEach(({ at, text }, i) =>
       this.units.splice(at, 0, { tmpl: "observe", src: `console.log("o${i}", ${text});`, defs: [], bindings: [] })
     );
     if (observable.length > 0)
@@ -253,6 +254,7 @@ export function build(seed, installers, { units } = {}) {
  */
 export function renderProgram(program, { top: renameTop = (n) => n, local: renameLocal = (n) => n } = {}) {
   const spell = (src) =>
+    // eslint-disable-next-line no-control-regex -- Match the reserved local name marker.
     src.replace(TOP, (_, n) => renameTop(n)).replace(/\u0003([^\u0004]+)\u0004/g, (_, n) => renameLocal(n));
   const lines = [...program.imports, ...program.units.map((u) => spell(u.src))];
   if (program.exports.length > 0) lines.push(`export { ${program.exports.map(renameTop).join(", ")} };`);
