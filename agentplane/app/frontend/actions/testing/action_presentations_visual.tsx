@@ -3,11 +3,11 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { type JSX, useState } from "react";
 import { MemoryRouter } from "react-router";
 
-import type { ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
-import { ActionHistoryCard } from "../actions/history";
-import { ActionRequestsContext, PendingActionCard } from "../actions/requests";
-import { PendingActionList } from "../actions/sidebar";
-import { createAppQueryClient } from "../transport/query";
+import type { ActionRequest } from "../../../../action_service/api/contracts/action_service_pb";
+import { ActionHistoryCard } from "../history";
+import { ActionRequestsContext, PendingActionCard } from "../requests";
+import { PendingActionList } from "../sidebar";
+import { createAppQueryClient } from "../../transport/query";
 
 export function ActionPresentationsVisual({
   pending,

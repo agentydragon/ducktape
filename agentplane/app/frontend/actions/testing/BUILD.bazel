@@ -1,3 +1,5 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("//agentplane/app/frontend:visual_tests.bzl", "agentplane_visual_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(
@@ -43,8 +45,67 @@ ts_library(
 filegroup(
     name = "typed_lint_srcs",
     srcs = [
+        "action_presentations_visual.tsx",
         "harness.tsx",
+        "operation_presentation_visual.tsx",
         "proto_fixtures.ts",
+        "visual_fixtures.ts",
+        "visual_harness.tsx",
     ],
     visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+ts_library(
+    name = "visual_fixtures",
+    srcs = ["visual_fixtures.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend:harness_fetch_mock",
+    ],
+)
+
+ts_library(
+    name = "visual_harness",
+    srcs = [
+        "action_presentations_visual.tsx",
+        "operation_presentation_visual.tsx",
+        "visual_harness.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":visual_fixtures",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend:harness_fetch_mock",
+        "//agentplane/app/frontend:harness_mount",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
+        "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/shell:shell_css",
+        "//agentplane/app/frontend/transport:query",
+        "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
+        "//util/frontend:code_block",
+    ],
+)
+
+agentplane_visual_bundle(
+    name = "visual_bundle",
+    entry_point = "visual_harness.js",
+    output_dir = "visual",
+    deps = [":visual_harness"],
+)
+
+copy_file(
+    name = "visual_index",
+    src = "//agentplane/app/frontend:visual_index_html",
+    out = "visual/index.html",
 )

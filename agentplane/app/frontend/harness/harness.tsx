@@ -1,3 +1,4 @@
+import { routes, UNANSWERED } from "./fetch_mock";
 import {
   SessionActivitySchema,
   SessionSchema,
@@ -10,7 +11,7 @@ import {
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
- * `fetch` (stubbed by network.ts, imported first) answers API, Electric Shape, event stream and watch routes.
+ * `fetch` (stubbed by fetch_mock.ts, imported first) answers API, Electric Shape, event stream and watch routes.
  */
 import {
   electricLive,
@@ -20,9 +21,7 @@ import {
   liveNdjsonWatch,
   ndjsonWatch,
   publishStreams,
-  routes,
   type ServerSentEvent,
-  UNANSWERED,
 } from "./network";
 import {
   ActionGroupSchema,
@@ -97,8 +96,6 @@ import { acknowledgedQuiescingLifecycleFixture, runtimeDiagnosticsFixture } from
 import "@mantine/core/styles.css";
 
 import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
-import type { ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 
 import App from "../shell/app";
 import {
@@ -122,7 +119,6 @@ import { sampleConnection } from "../connections/testing/fixture";
 
 import { type ThreadView, dispatchFromJson } from "../sessions/client";
 import { ThreadMetadataSchema } from "../../app_service_pb";
-import { ACTION_RENDERERS } from "../actions/rendering/index";
 import {
   WatchInboxResponseSchema,
   WatchInboxEntriesResponseSchema,
@@ -164,14 +160,21 @@ import {
   type ThreadEntity,
   type ThreadPayloadReference,
 } from "../../../history_service/api/history/history_service_pb";
+import {
+  actionIntegrationSummaryRoute,
+  actionPreview,
+  actionReceipt,
+  COMPACT_POD_ACTION,
+  SSH_COMPLETED_ACTION,
+  SSH_EXEC_RESULT,
+  SSH_PENDING_ACTION,
+} from "../actions/testing/visual_fixtures";
+import { mount } from "./mount";
 import { DisclosureVisual } from "./disclosure_visual";
-import { ActionPresentationsVisual } from "./action_presentations_visual";
-import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../sessions/local_commands";
 import { electricEntityVariant } from "../sessions/testing/electric_entity";
 import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
 import { streamRegistry } from "../transport/stream_status";
-import { ThemeProvider } from "../shell/theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";
 
@@ -1239,26 +1242,6 @@ let mapThread = (thread: ThreadView): ThreadView => thread;
 const DIAGRAM_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
 
-// What the ssh MCP server's `exec` (ssh_mcp_server/server.py) returns for a listing that names one
-// missing path: ls exits 2, and its output runs past the lines the widget shows before "Show all".
-const SSH_EXEC_RESULT = {
-  host: "test-archive-host",
-  user: "test-user",
-  exit_code: 2,
-  stdout: [
-    "/home/test-user/test-archive:",
-    "total 1536",
-    ...Array.from({ length: 30 }, (_, index) => {
-      const day = index + 1;
-      return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
-    }),
-    "",
-  ].join("\n"),
-  stderr: "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
-  stdout_truncated: false,
-  stderr_truncated: false,
-};
-
 const ACTIONS: ActionRequest[] = [
   fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000001",
@@ -1273,65 +1256,8 @@ const ACTIONS: ActionRequest[] = [
     createdAt: ago(3 * 60_000),
     updatedAt: ago(3 * 60_000),
   }),
-  fromJson(ActionRequestSchema, {
-    id: "70000000-0000-4000-8000-000000000006",
-    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh/exec.tsx).
-    action: { group: "ssh", name: "exec" },
-    arguments: {
-      host: "test-archive-host",
-      user: "test-user",
-      command: 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
-      timeout_seconds: 60,
-    },
-    title: "restart the test backup service",
-    description: "Its last run stopped on a stale lock, which a restart clears.",
-    idempotencyKey: "visual-ssh-pending",
-    caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    state: "ACTION_STATE_DECISION_PENDING",
-    version: "1",
-    createdAt: ago(2 * 60_000),
-    updatedAt: ago(2 * 60_000),
-  }),
-  fromJson(ActionRequestSchema, {
-    id: "70000000-0000-4000-8000-000000000007",
-    action: { group: "ssh", name: "exec" },
-    arguments: {
-      host: "test-archive-host",
-      user: "test-user",
-      command: 'ls -l "$HOME/test-archive" "$HOME/test-archive/test-missing"',
-    },
-    title: "list the test backup archive",
-    idempotencyKey: "visual-ssh-completed",
-    caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    state: "ACTION_STATE_SUCCEEDED",
-    version: "4",
-    createdAt: ago(5 * 60_000),
-    updatedAt: ago(4 * 60_000),
-    decision: {
-      id: "71000000-0000-4000-8000-000000000007",
-      verdict: "VERDICT_ALLOW",
-      operator: {
-        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      },
-      idempotencyKey: "visual-allow-ssh",
-      decidedAt: ago(4 * 60_000),
-    },
-    execution: {
-      id: "72000000-0000-4000-8000-000000000007",
-      state: "EXECUTION_STATE_SUCCEEDED",
-      // The whole CallToolResult, as FastMCP answers with the ExecResult: the value as structured
-      // content and again as one JSON text block, and the server's info in `_meta`.
-      result: {
-        _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
-        content: [{ type: "text", text: JSON.stringify(SSH_EXEC_RESULT) }],
-        structuredContent: SSH_EXEC_RESULT,
-        isError: false,
-      },
-      createdAt: ago(4 * 60_000),
-      startedAt: ago(4 * 60_000 - 500),
-      completedAt: ago(4 * 60_000 - 1_900),
-    },
-  }),
+  SSH_PENDING_ACTION,
+  SSH_COMPLETED_ACTION,
   fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000002",
     // An MCP group in MCP_GROUPS below, so its stored result is the tool's whole CallToolResult.
@@ -1469,19 +1395,6 @@ const ACTIONS: ActionRequest[] = [
     },
   }),
 ];
-
-// A single losslessly rendered request, for compact approval screenshots.
-const COMPACT_POD_ACTION = clone(ActionRequestSchema, ACTIONS[1]!);
-COMPACT_POD_ACTION.id = "70000000-0000-4000-8000-000000000009";
-COMPACT_POD_ACTION.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" });
-COMPACT_POD_ACTION.arguments = {
-  namespace: "test-apps",
-  labelSelector: "app=demo",
-  fieldSelector: "status.phase=Running",
-};
-COMPACT_POD_ACTION.title = "inspect running demo pods";
-COMPACT_POD_ACTION.description = "Read-only inspection of the demo workload.";
-COMPACT_POD_ACTION.idempotencyKey = "visual-pods-compact-pending";
 
 const COMPACT_RESOURCE_ACTION = clone(ActionRequestSchema, COMPACT_POD_ACTION);
 COMPACT_RESOURCE_ACTION.id = "70000000-0000-4000-8000-000000000011";
@@ -3002,11 +2915,7 @@ routes.push(
         : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
     },
   ],
-  [
-    "GET",
-    /^\/upstream\/actions\/v1\/operator\/action-requests\/[^/]+\/(gmail-thread-summaries|gmail-resource-summaries|github-label-summaries|github-push-files-preview|tana-node-summaries|google-calendar-event-preview|grocy-reference-summaries)$/,
-    (match) => actionIntegrationSummaries?.[match[1]!],
-  ],
+  actionIntegrationSummaryRoute(() => actionIntegrationSummaries),
   [
     "GET",
     /^\/upstream\/connections\/v1\/operator\/connections$/,
@@ -4107,12 +4016,6 @@ function projectQueuedSession(): void {
   publishStreams("/upstream/history/v1/session-summaries:watch");
 }
 
-function mount(element: ReactNode): void {
-  const container = document.getElementById("app");
-  if (!container) throw new Error("missing #app");
-  createRoot(container).render(<ThemeProvider>{element}</ThemeProvider>);
-}
-
 /** Callable fixture builders, not a name-to-recipe dispatcher. Python owns their composition. */
 const visualHarness = {
   dispatcherActivityHost(): void {
@@ -4210,24 +4113,6 @@ const visualHarness = {
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
   },
-  mountActionPresentations(sidebarWidth: number, detailWidth: number, mcp: boolean): void {
-    const receipt = ACTIONS[0];
-    if (previewAction === null || receipt?.execution === undefined) {
-      throw new Error("Seed a pending Action and a receipt before mounting their presentations.");
-    }
-    mount(
-      <ActionPresentationsVisual
-        pending={previewAction}
-        receipt={receipt}
-        sidebarWidth={sidebarWidth}
-        detailWidth={detailWidth}
-        mcp={mcp}
-      />
-    );
-  },
-  mountOperationPresentation(): void {
-    mount(<OperationPresentationVisual />);
-  },
   autosuspendCountdown,
   autosuspendBusy,
   autosuspendStarting,
@@ -4258,25 +4143,12 @@ const visualHarness = {
   ageOutage(milliseconds: number): void {
     streamRegistry.now = () => Date.now() + milliseconds;
   },
-  actionRendererKeys(): string[] {
-    return Array.from(ACTION_RENDERERS, ([group, renderers]) =>
-      Array.from(renderers.keys(), (name) => `${group}.${name}`)
-    ).flat();
-  },
   showActionPreview(
     action: { group: string; name: string },
     args: NonNullable<ActionRequest["arguments"]>,
     summaries: Record<string, JsonValue> | null
   ): void {
-    const preview = clone(ActionRequestSchema, COMPACT_POD_ACTION);
-    preview.action = create(ActionIdentitySchema, action);
-    preview.arguments = args;
-    preview.title =
-      action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
-        ? "inspect running demo pods"
-        : `review ${action.name.replaceAll("_", " ")}`;
-    preview.description = "Check the exact call before approving.";
-    previewAction = preview;
+    previewAction = actionPreview(action, args);
     actionIntegrationSummaries = summaries;
   },
   showActionResult(
@@ -4298,14 +4170,7 @@ const visualHarness = {
       action.group === "sandbox" || MCP_GROUPS.some((group) => group.key === action.group)
         ? undefined
         : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
-    const receipt = clone(ActionRequestSchema, ACTIONS[2]!);
-    receipt.action = create(ActionIdentitySchema, action);
-    receipt.arguments = args;
-    receipt.title = "Long action text";
-    receipt.description = undefined;
-    if (receipt.execution === undefined) throw new Error("Receipt fixture has no Execution.");
-    receipt.execution.result = fromJson(ValueSchema, result);
-    ACTIONS.splice(0, ACTIONS.length, receipt);
+    ACTIONS.splice(0, ACTIONS.length, actionReceipt(ACTIONS[2]!, action, args, result));
   },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
