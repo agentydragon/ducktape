@@ -8,7 +8,7 @@ sensitive grants are explicit profile selections rather than diagnostics.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -32,7 +32,7 @@ from cluster.cdk8s.agentplane.kubernetes_grants import (
     RoleBindingGrant,
     RoleRef,
 )
-from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
+from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 from cluster.cdk8s.plaid_mcp import db, pgweb as plaid_pgweb, spend
 from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRule
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
@@ -81,95 +81,67 @@ NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, CLAUDE_AI)
 CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, CLAUDE_AI)
 
 
-def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
-    grants: dict[str, RoleBindingGrant] = {}
-    # Keep staging first to preserve existing preset order.
-    for namespace in ("agentplane-staging", *sorted(NAMESPACE_DIAGNOSTICS.keys() - {"agentplane-staging"})):
-        grants[f"{namespace}-metadata"] = RoleBindingGrant(
-            kind="RoleBinding",
-            namespace=namespace,
-            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
-        )
-        if NAMESPACE_DIAGNOSTICS[namespace] is AgentReadable.LOGS:
-            grants[f"{namespace}-logs"] = RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=namespace,
-                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
-            )
-    return grants
+# Keep staging first to preserve the deployed order.
+_NAMESPACE_READ_GRANTS = {
+    f"{namespace}-{level}": RoleBindingGrant(
+        namespace=namespace, role_ref=RoleRef(kind="ClusterRole", name=f"agent-readable-namespace-{level}")
+    )
+    for namespace in ("agentplane-staging", *sorted(NAMESPACE_DIAGNOSTICS.keys() - {"agentplane-staging"}))
+    for level in NAMESPACE_DIAGNOSTICS[namespace].levels
+}
 
-
-def catalog() -> dict[str, KubernetesGrant]:
-    """Fresh existing grant models; consumers must not mutate another profile's catalog."""
-    return {
-        # Reuse public-coder's narrow cluster inventory, not Haku's broader
-        # cluster-diagnostics-reader.
-        "public-coder-node-read": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding",
-            role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-node-reader"),
-        ),
-        "public-coder-cluster-metadata-read": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding",
-            role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-cluster-metadata-reader"),
-        ),
-        "cluster-diagnostics": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader")
-        ),
-        "haku-sandbox-write": RoleBindingGrant(
-            kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
-        ),
-        **_namespace_read_grants(),
-        PLAID_DIAGNOSTICS_POLICY: RoleBindingGrant(
-            kind="RoleBinding",
-            namespace=db.NAMESPACE,
-            role_ref=RoleRef(kind="Role", name=db.FINANCE_DIAGNOSTICS_READER),
-        ),
-        "spend-policy-config": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace=spend.NAMESPACE,
-            role_ref=RoleRef(kind="Role", name=spend.FINANCE_CONFIG_READER),
-        ),
-        "ovh-billing-credentials": RoleBindingGrant(
-            kind="RoleBinding", namespace="agentplane-staging", role_ref=RoleRef(kind="Role", name="ovh-billing-reader")
-        ),
-        "coinbase-credentials": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="agentplane-staging",
-            role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
-        ),
-        "agentplane-sandbox-read": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="agentplane-staging",
-            role_ref=RoleRef(kind="Role", name="claude-ai-sandbox-reader"),
-        ),
-        "haku-console-metadata": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="haku-console",
-            role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
-        ),
-        "clickhouse-diagnostics": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="clickhouse",
-            role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
-        ),
-        "ducktape-flux-read": RoleBindingGrant(
-            kind="RoleBinding", namespace="ducktape-flux", role_ref=RoleRef(kind="Role", name="ducktape-flux-reader")
-        ),
-        "public-coder-volsync-status": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="public-coder-agent",
-            role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
-        ),
-        "public-coder-agent-reader": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="public-coder-agent",
-            role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
-        ),
-    }
+_GRANTS: dict[str, KubernetesGrant] = {
+    # Reuse public-coder's narrow cluster inventory, not Haku's broader
+    # cluster-diagnostics-reader.
+    "public-coder-node-read": ClusterRoleBindingGrant(
+        role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-node-reader")
+    ),
+    "public-coder-cluster-metadata-read": ClusterRoleBindingGrant(
+        role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-cluster-metadata-reader")
+    ),
+    "cluster-diagnostics": ClusterRoleBindingGrant(
+        role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader")
+    ),
+    "haku-sandbox-write": RoleBindingGrant(
+        namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
+    ),
+    **_NAMESPACE_READ_GRANTS,
+    PLAID_DIAGNOSTICS_POLICY: RoleBindingGrant(
+        namespace=db.NAMESPACE, role_ref=RoleRef(kind="Role", name=db.FINANCE_DIAGNOSTICS_READER)
+    ),
+    "spend-policy-config": RoleBindingGrant(
+        namespace=spend.NAMESPACE, role_ref=RoleRef(kind="Role", name=spend.FINANCE_CONFIG_READER)
+    ),
+    "ovh-billing-credentials": RoleBindingGrant(
+        namespace="agentplane-staging", role_ref=RoleRef(kind="Role", name="ovh-billing-reader")
+    ),
+    "coinbase-credentials": RoleBindingGrant(
+        namespace="agentplane-staging", role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader")
+    ),
+    "agentplane-sandbox-read": RoleBindingGrant(
+        namespace="agentplane-staging", role_ref=RoleRef(kind="Role", name="claude-ai-sandbox-reader")
+    ),
+    "haku-console-metadata": RoleBindingGrant(
+        namespace="haku-console", role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader")
+    ),
+    "clickhouse-diagnostics": RoleBindingGrant(
+        namespace="clickhouse", role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader")
+    ),
+    "ducktape-flux-read": RoleBindingGrant(
+        namespace="ducktape-flux", role_ref=RoleRef(kind="Role", name="ducktape-flux-reader")
+    ),
+    "public-coder-volsync-status": RoleBindingGrant(
+        namespace="public-coder-agent",
+        role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
+    ),
+    "public-coder-agent-reader": RoleBindingGrant(
+        namespace="public-coder-agent", role_ref=RoleRef(kind="Role", name="public-coder-agent-reader")
+    ),
+}
 
 
 SHARED_DIAGNOSTICS = (
-    *_namespace_read_grants(),
+    *_NAMESPACE_READ_GRANTS,
     "haku-console-metadata",
     "clickhouse-diagnostics",
     "ducktape-flux-read",
@@ -178,7 +150,6 @@ SHARED_DIAGNOSTICS = (
 )
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
-PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 # Shared grant membership for PolicySets. Each deployment chart composes these Kubernetes rules with
 # its own rules before materializing the complete PolicySet, then separately materializes controller
 # RBAC from the resolved assignable grants.
@@ -194,9 +165,9 @@ POLICY_SETS = {
 }
 
 
-def policy_set_grants(catalog: Mapping[str, KubernetesGrant]) -> dict[str, tuple[KubernetesGrant, ...]]:
+def policy_set_grants() -> dict[str, tuple[KubernetesGrant, ...]]:
     """Resolve the Kubernetes grants held by each shared, assignable PolicySet."""
-    return {name: tuple(catalog[grant] for grant in grants) for name, grants in POLICY_SETS.items()}
+    return {name: tuple(_GRANTS[grant] for grant in grants) for name, grants in POLICY_SETS.items()}
 
 
 def _bindings_for_grants(grants: Sequence[KubernetesGrant]) -> tuple[list[tuple[str, str, list[str]]], list[str]]:
@@ -271,28 +242,24 @@ def plaid_pgweb_egress_rules(*, credential: str) -> list[PolicySetSpecRules]:
     ]
 
 
-def covering_policy_sets(grants: Sequence[str]) -> list[str]:
-    """The POLICY_SETS whose grants together are exactly `grants`, in POLICY_SETS order."""
-    covering = [name for name, members in POLICY_SETS.items() if set(members) <= set(grants)]
-    if uncovered := set(grants) - {grant for name in covering for grant in POLICY_SETS[name]}:
-        raise ValueError(f"no PolicySet holds only launch grants among {sorted(grants)}: {sorted(uncovered)}")
-    return covering
-
-
-MANAGED_GRANTS = {
-    "public-coder": PUBLIC_GRANTS,
+# The KubernetesRoleSets each launch account holds. Sets with egress rules also
+# supply those rules to the preset's Identity in the selected catalog mode.
+_PUBLIC_ROLE_SETS = (SHARED_DIAGNOSTICS_POLICY, "public-inventory", CLUSTER_DIAGNOSTICS_POLICY)
+PRESET_ROLE_SETS = {
+    "public-coder": _PUBLIC_ROLE_SETS,
     "finance-agent": (
-        *PUBLIC_GRANTS,
-        "coinbase-credentials",
-        "ovh-billing-credentials",
+        *_PUBLIC_ROLE_SETS,
+        COINBASE_POLICY,
+        OVH_BILLING_POLICY,
         "spend-policy-config",
         PLAID_DIAGNOSTICS_POLICY,
     ),
     "haku": (
-        *SHARED_DIAGNOSTICS,
-        *HAKU_EXTRAS,
-        "coinbase-credentials",
-        "ovh-billing-credentials",
+        SHARED_DIAGNOSTICS_POLICY,
+        CLUSTER_DIAGNOSTICS_POLICY,
+        "haku-sandbox-write",
+        COINBASE_POLICY,
+        OVH_BILLING_POLICY,
         PLAID_DIAGNOSTICS_POLICY,
     ),
 }
@@ -318,17 +285,16 @@ def claude_ai_static_grants() -> tuple[KubernetesGrant, ...]:
     diagnostic footprint. Its `coinbase` and `plaid-diagnostics` PolicySet grants are represented
     separately by their same-named role sets.
     """
-    grants = catalog()
     return (
-        grants[CLUSTER_DIAGNOSTICS_POLICY],
-        *_namespace_read_grants().values(),
-        *(grants[name] for name in STATIC_GRANTS["claude-ai"]),
+        _GRANTS[CLUSTER_DIAGNOSTICS_POLICY],
+        *_NAMESPACE_READ_GRANTS.values(),
+        *(_GRANTS[name] for name in STATIC_GRANTS["claude-ai"]),
     )
 
 
 def profile_subjects(grant: str) -> tuple[Subject, ...]:
     """Static profile membership for a binding, in its existing manifest order."""
-    assert grant in catalog(), grant
+    assert grant in _GRANTS, grant
     return tuple(
         subject
         for profile, identities in STATIC_IDENTITIES.items()
@@ -338,7 +304,7 @@ def profile_subjects(grant: str) -> tuple[Subject, ...]:
 
 
 def role_ref(grant: str) -> k8s.RoleRef:
-    ref = catalog()[grant].role_ref
+    ref = _GRANTS[grant].role_ref
     return k8s.RoleRef(api_group=RBAC_GROUP, kind=ref.kind, name=ref.name)
 
 

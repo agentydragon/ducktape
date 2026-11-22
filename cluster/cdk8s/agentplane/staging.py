@@ -74,7 +74,6 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     sandbox_controller,
     staging_config,
-    staging_grants,
     workload_certificate_admission,
     workload_tls,
 )
@@ -116,7 +115,11 @@ from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, Kube
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
-from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
+from cluster.cdk8s.agentplane.sandbox_pod import (
+    SECRET_NAME as SANDBOX_SECRET_NAME,
+    TOOL_CONFIG_GRANT,
+    tool_config_grant,
+)
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -717,10 +720,7 @@ def environment(*, identity_catalog: bool) -> Environment:
 def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
     """The assignable sets' Kubernetes grants, by set: PolicySet rules, or in the identity catalog
     the KubernetesRoleSets of the same names."""
-    catalog = staging_grants.catalog(ENV.namespace)
-    sets = agent_access_profiles.policy_set_grants(catalog)
-    sets[TOOL_CONFIG_GRANT] = (catalog[TOOL_CONFIG_GRANT],)
-    return sets
+    return {**agent_access_profiles.policy_set_grants(), TOOL_CONFIG_GRANT: (tool_config_grant(ENV.namespace),)}
 
 
 def assignable_grants() -> tuple[KubernetesGrant, ...]:
@@ -1010,14 +1010,14 @@ def _add_launch_accounts(chart: Chart, env: Environment, *, role_sets: Mapping[s
         description="Read-only namespace diagnostics every agent may use.",
         role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
     )
-    for preset in agent_access_profiles.MANAGED_GRANTS:
+    for preset, selected_sets in agent_access_profiles.PRESET_ROLE_SETS.items():
         KubernetesAccount(
             chart,
             f"kubernetes-account-{preset}",
             account=kubernetes_account_ref.account(env.namespace, preset),
             policy_namespace=env.namespace,
             description=f"The '{preset}' preset's Kubernetes identity.",
-            role_sets=[role_sets[role_set] for role_set in staging_config.preset_role_sets(preset)],
+            role_sets=[role_sets[role_set] for role_set in selected_sets],
         )
 
 

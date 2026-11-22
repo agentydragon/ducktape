@@ -757,17 +757,6 @@ py_library(
 )
 
 py_library(
-    name = "staging_grants",
-    srcs = ["staging_grants.py"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":kubernetes_grants",
-        ":sandbox_pod",
-        "//cluster/cdk8s:agent_access_profiles",
-    ],
-)
-
-py_library(
     name = "environment",
     srcs = ["environment.py"],
     visibility = [
@@ -884,7 +873,6 @@ py_library(
         ":sandbox_controller",
         ":sandbox_pod",
         ":staging_config",
-        ":staging_grants",
         ":workload_certificate_admission",
         ":workload_tls",
         "//agentplane:subjects",
@@ -1105,7 +1093,6 @@ py_test(
         ":notifications",
         ":platform_routes",
         ":staging",
-        ":staging_grants",
         "//:conftest",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:agent_access_profiles",
@@ -1113,7 +1100,6 @@ py_test(
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

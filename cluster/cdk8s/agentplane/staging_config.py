@@ -87,20 +87,13 @@ def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
     }
 
 
-def preset_role_sets(preset: str) -> list[str]:
-    """The role sets granted to `preset`'s Kubernetes account: its launch roles plus cluster
-    diagnostics, so the account covers the shared account's reads."""
-    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
-    return list(dict.fromkeys([*sets, agent_access_profiles.CLUSTER_DIAGNOSTICS_POLICY]))
-
-
 def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
     """Identity-supported egress sets for a preset, plus its own Kubernetes account use set.
 
     In the mixed catalog, legacy bindings keep the original Kubernetes-bearing PolicySets while
     new launches use their pure-egress `-identity` variants.
     """
-    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
+    sets = agent_access_profiles.PRESET_ROLE_SETS[preset]
     egress_sets = assignable_set_egress_rules()
     suffix = "" if identity_catalog else "-identity"
     return [

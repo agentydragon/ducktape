@@ -13,6 +13,10 @@ class AgentReadable(StrEnum):
     METADATA = "rbac.ducktape.io/agent-readable-metadata"
     LOGS = "rbac.ducktape.io/agent-readable-logs"
 
+    @property
+    def levels(self) -> tuple[str, ...]:
+        return ("metadata", "logs") if self is AgentReadable.LOGS else ("metadata",)
+
 
 # `plaid-mcp` is intentionally absent: it contains Plaid-linked private data and
 # the Finance-only spend policy, so access uses narrower named roles instead.
