@@ -42,9 +42,9 @@ class Permission:
 
 def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -> set[Permission]:
     grants = set(available)
-    # Equal resource permissions already cover each other. URL permissions still need the cluster-scope check.
-    remaining = (permission for permission in required if permission.url is not None or permission not in grants)
-    return {permission for permission in remaining if not any(grant.covers(permission) for grant in grants)}
+    return {
+        permission for permission in set(required) - grants if not any(grant.covers(permission) for grant in grants)
+    }
 
 
 class Rbac:
