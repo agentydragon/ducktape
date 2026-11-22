@@ -146,6 +146,36 @@ ts_library(
 )
 
 ts_library(
+    name = "dispatch_workset",
+    srcs = ["dispatch_workset.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:session_dispatcher_client",
+        "//agentplane/app/frontend/transport:watch_stream",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
+    name = "dispatch_workset_panel",
+    srcs = ["dispatch_workset_panel.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_progress",
+        ":dispatch_workset",
+        ":local_commands",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/history_service/api/history:history_service_pb",
+        "//agentplane/proto:command_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
     name = "stored_command_details",
     srcs = ["stored_command_details.tsx"],
     tsconfig = TSCONFIG,
@@ -258,6 +288,8 @@ ts_library(
         ":command_delivery",
         ":command_delivery_history",
         ":composer",
+        ":dispatch_workset",
+        ":dispatch_workset_panel",
         ":harness_behavior",
         ":history_rows",
         ":live",
@@ -306,6 +338,7 @@ ts_library(
         ":composer",
         ":conversation",
         ":conversation_css",
+        ":dispatch_workset_panel",
         ":harness_behavior",
         ":live",
         ":model_catalog",

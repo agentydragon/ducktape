@@ -84,6 +84,7 @@ class Scene(StrEnum):
     PENDING_INPUT_ECHO = "pendingInputEcho"
     COMMAND_OUTCOMES = "commandOutcomes"
     REMEMBER_LEGACY_INPUT = "rememberLegacyInput"
+    DISPATCH_WORKSET = "dispatchWorkset"
     REMEMBER_PENDING_INPUT = "rememberPendingInput"
     REMEMBER_INPUT_ECHO = "rememberInputEcho"
     REMEMBER_SETTLED_COMMANDS = "rememberSettledCommands"
