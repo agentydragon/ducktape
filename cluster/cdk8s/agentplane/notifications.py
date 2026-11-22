@@ -153,7 +153,7 @@ class Notifications(Construct):
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(settings_model.model_dump(mode="json", exclude_none=True)),
+            content=yaml_config(settings_model, exclude_none=True),
         )
         role = Role(
             self,
