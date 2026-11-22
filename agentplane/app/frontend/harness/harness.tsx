@@ -2568,6 +2568,39 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
 // What the mock Dispatcher's stream reports for a queued command, where a scene gives it a reason of
 // its own.
 const queuedReasons = new Map<string, string>();
+const dispatchWorksets = new Map<string, Record<string, unknown>>();
+const dispatchDetails = new Map<string, Record<string, unknown>>();
+
+function dispatchWorkset(): void {
+  const reason =
+    "Runner connection was lost while setting the model. The Runtime recorded the command, but the Dispatcher could not obtain an outcome before the Sandbox became unavailable. A later History update may still establish the result. The last response mentioned the disconnected execution stream.";
+  const issue = {
+    commandId: "5034baaf-0000-4000-8000-000000000001",
+    operation: "OPERATION_CHANGE_MODEL",
+    state: "DELIVERY_STATE_UNKNOWN",
+    updatedAt: ago(1_000),
+  };
+  dispatchWorksets.set(RUNNING_THREAD, {
+    active: [
+      {
+        commandId: "7988d401-0000-4000-8000-000000000002",
+        operation: "OPERATION_SUBMIT_INPUT",
+        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+        reason: "sandbox_resuming",
+      },
+    ],
+    recentIssues: [{ ...issue, journalAdmitted: true, reason: reason.slice(0, 256), reasonTruncated: true }],
+    recentAdmittedOrCancelled: [
+      {
+        commandId: "2e08b63a-0000-4000-8000-000000000003",
+        operation: "OPERATION_INTERRUPT_TURN",
+        state: "DELIVERY_STATE_CANCELLED_IN_DISPATCHER",
+      },
+    ],
+    moreRecentIssuesAvailable: true,
+  });
+  dispatchDetails.set(issue.commandId, { ...issue, reason, sessionId: RUNNING_THREAD });
+}
 
 // Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
 // its indicator sits near the right edge of the page.
@@ -3359,13 +3392,20 @@ routes.push(
     "GET",
     /^\/upstream\/dispatcher\/v1\/dispatches:watch$/,
     (_match, query, signal) => {
+      const worksetId = query.get("worksetSessionId");
+      if (worksetId) {
+        return ndjsonWatch(
+          [{ workset: { sessionId: worksetId, ...dispatchWorksets.get(worksetId) }, resumeToken: "visual-workset" }],
+          signal
+        );
+      }
       if (flags.has("dispatchWatchUnavailable")) {
         return Response.json({ error: { code: 14, message: "Dispatcher temporarily unavailable" } }, { status: 503 });
       }
       return ndjsonWatch(
         [
           ...query.getAll("filter.commandIds").map((commandId) => ({
-            dispatch: {
+            dispatch: dispatchDetails.get(commandId) ?? {
               commandId,
               sessionId: query.get("filter.sessionId"),
               ...COMMAND_TARGET,
@@ -4424,6 +4464,7 @@ const visualHarness = {
   rememberDispatch,
   rememberShortRefusedWake,
   rememberFailedAndUnknownDispatches,
+  dispatchWorkset,
   completedRollout(): void {
     serveRollout("Completed diagnostic run", rollout);
   },

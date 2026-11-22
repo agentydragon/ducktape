@@ -68,6 +68,13 @@ The Thread page uses Dispatcher placement to identify the exact Environment befo
 Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
 is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
+The open Thread watches the Dispatcher's bounded Session workset for active commands, recent
+delivery issues, and recent admissions or cancellations. A fresh browser can see these receipts
+without local state. Local command rows and settled History take precedence over duplicate receipts.
+An unresolved delivery issue can remain alongside a pending History command. The browser retains
+the last workset while disconnected and reports clipped groups and expired receipt coverage.
+When a reason is abbreviated, the user can read the retained original through the command-ID watch.
+
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can

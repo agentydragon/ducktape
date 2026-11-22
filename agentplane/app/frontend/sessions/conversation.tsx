@@ -27,6 +27,7 @@ import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript
 import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
+import { DispatchWorksetPanel } from "./dispatch_workset_panel";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
@@ -330,6 +331,7 @@ function ConversationBody({
           deliver={commands.deliver}
         />
       )}
+      <DispatchWorksetPanel key={threadId} sessionId={threadId} localCommands={localCommands} entities={entities} />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
         <ModelActivityHint

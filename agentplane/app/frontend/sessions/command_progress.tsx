@@ -20,7 +20,7 @@ export type CommandSubject = "input" | "model" | "effort" | "other";
 type LightState = "done" | "waiting" | "uncertain" | "failed" | "future";
 
 /** Reasons the Dispatcher gives as `<reason>: <detail>`, where the detail names the failure it met. */
-function waitingReasonLabel(reason: string | null | undefined): string | null | undefined {
+export function waitingReasonLabel(reason: string | null | undefined): string | null | undefined {
   const detailOf = (prefix: string): string | null =>
     reason?.startsWith(`${prefix}:`) ? reason.slice(prefix.length + 1).trim() : null;
   const deadline = detailOf("wake_deadline_expired");
