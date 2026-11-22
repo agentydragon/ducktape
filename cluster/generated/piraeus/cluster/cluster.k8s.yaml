@@ -4123,6 +4123,24 @@ spec:
               topology.kubernetes.io/region: hil
       csiNode:
         enabled: true
+        podTemplate:
+          spec:
+            containers:
+              - name: linstor-csi
+                resources:
+                  requests:
+                    cpu: 75m
+                    memory: 96Mi
+              - name: csi-node-driver-registrar
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
+              - name: csi-livenessprobe
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
       highAvailabilityController:
         enabled: true
       nfsServer:
