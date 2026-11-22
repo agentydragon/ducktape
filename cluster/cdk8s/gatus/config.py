@@ -24,7 +24,7 @@ from cluster.cdk8s.authentik import app as authentik_app
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo_app
 from cluster.cdk8s.grocy import app as grocy_app
-from cluster.cdk8s.litellm import proxy as litellm_proxy
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.matrix import matrix
 from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
 from cluster.cdk8s.nix_cache import attic
@@ -76,7 +76,7 @@ _GROCY_LABELS = {"sf": "SF", "vallejo": "Vallejo"}
 
 
 def _endpoints() -> list[Endpoint]:
-    litellm_url = _in_cluster(litellm_proxy.SERVICE)
+    litellm_url = _in_cluster(litellm.SERVICE)
     return [
         Endpoint(
             name="Website", group=Group.CORE, url=f"https://{website.HOSTNAME}", interval="60s", conditions=[_STATUS_OK]

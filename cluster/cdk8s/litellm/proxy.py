@@ -59,7 +59,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_app, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.litellm.database import NAMESPACE
+from cluster.cdk8s.litellm.endpoint import NAME, NAMESPACE, SERVICE
 from cluster.cdk8s.litellm.upstreams import (
     RUGGED_LOCAL_LLM_KEY_ENV,
     RUGGED_LOCAL_LLM_PORT,
@@ -70,17 +70,11 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
-from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
-NAME = "litellm"
-SERVICE = ServiceRef(
-    name=NAME,
-    port=Port(name="http", number=4000),
-    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
-)
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=NAMESPACE, name="litellm-master-key").key("api-key")
 _LANGFUSE_OTEL_CONFIG = SecretRef(namespace=NAMESPACE, name="litellm-langfuse-otel-config")

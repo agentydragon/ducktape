@@ -79,7 +79,7 @@ from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
-from cluster.cdk8s.litellm import proxy as litellm_proxy
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import TlsGrpcHealth
@@ -241,7 +241,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         (
             "litellm-cheap-experiments",
             CHEAP_EXPERIMENTS_KEY,
-            "The shared LiteLLM cheap-experiments virtual key at http://litellm.litellm.svc.cluster.local:4000. "
+            f"The shared LiteLLM cheap-experiments virtual key at {litellm.API_BASE}. "
             "LiteLLM enforces its model allowlist and shared spending budget; this is not an admin key.",
         ),
     ):
@@ -612,7 +612,7 @@ class Egress(Construct):
         _egress_policies(
             self,
             namespace=env.namespace,
-            litellm_host=litellm_host or litellm_proxy.SERVICE.fqdn,
+            litellm_host=litellm_host or litellm.SERVICE.fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
         )
 
@@ -828,7 +828,7 @@ class Egress(Construct):
                 notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
-                litellm_proxy.SERVICE.egress(),
+                litellm.SERVICE.egress(),
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 # Local Gateway requests also need backend identity/target-port grants: keep those
