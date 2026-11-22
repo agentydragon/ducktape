@@ -27,15 +27,9 @@ def test_names_are_unique() -> None:
     assert sorted(names) == sorted(set(names))
 
 
-def test_sops_files_are_unique() -> None:
-    """Two rotations sharing a sops_file silently couple their schedules.
-
-    `remaining_hours()` reads that file's `expires_unencrypted` stamp to decide
-    whether a mint is due, so a shared file makes whichever entry ran last
-    suppress the other's rotation -- and the suppressed token then expires with
-    nothing failing until it does.
-    """
-    paths = [r.sops_file for r in ROTATIONS.rotations]
+def test_output_paths_are_unique() -> None:
+    """A rotation must never overwrite another output, including a published Secret."""
+    paths = [path for rotation in ROTATIONS.rotations for path in rotation.output_paths]
     assert sorted(paths) == sorted(set(paths))
 
 
@@ -56,8 +50,7 @@ def test_sops_files_have_creation_rules() -> None:
     config = yaml.safe_load((Runfiles.CreateOrRaise().root() / _SOPS_CONFIG).read_text())
     patterns = [re.compile(rule["path_regex"]) for rule in config["creation_rules"]]
 
-    paths = [str(r.sops_file) for r in ROTATIONS.rotations]
-    paths += [str(r.k8s_secret.path) for r in ROTATIONS.rotations if r.k8s_secret]
+    paths = [str(path) for rotation in ROTATIONS.rotations for path in rotation.output_paths]
     uncovered = [p for p in paths if not any(pat.search(p) for pat in patterns)]
     assert not uncovered, f"no .sops.yaml creation_rule matches: {uncovered}"
 

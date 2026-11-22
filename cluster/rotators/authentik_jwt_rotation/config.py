@@ -117,6 +117,10 @@ class Rotation(BaseModel):
         return self
 
     @property
+    def output_paths(self) -> list[Path]:
+        return [self.sops_file, self.k8s_secret.path] if self.k8s_secret else [self.sops_file]
+
+    @property
     def expected_issuer(self) -> str:
         return f"{AUTH_BASE}/application/o/{self.provider_slug}/"
 
