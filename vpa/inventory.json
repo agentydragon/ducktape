@@ -32,9 +32,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "kube-apiserver",
@@ -126,9 +124,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns104952"],
       "containers": [
         {
           "name": "kube-apiserver",
@@ -220,9 +216,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "kube-apiserver",
@@ -314,9 +308,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "codex-executor",
@@ -383,9 +375,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "egress-sidecar",
@@ -452,9 +442,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "egress-sidecar",
@@ -521,9 +509,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "egress-sidecar",
@@ -590,9 +576,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "dcgm-exporter",
@@ -1354,10 +1338,7 @@
           "containers": [
             {
               "containerName": "virt-handler",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -1538,9 +1519,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "alloy",
@@ -2470,26 +2449,17 @@
           "containers": [
             {
               "containerName": "gc",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
               "containerName": "master",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
               "containerName": "worker",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -2534,9 +2504,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "nvidia-device-plugin-ctr",
@@ -3326,9 +3294,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -3460,9 +3426,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -3594,9 +3558,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -3728,9 +3690,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -3862,9 +3822,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -3996,9 +3954,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns104952"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -4130,9 +4086,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -4264,9 +4218,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "drbd-reactor",
@@ -4577,9 +4529,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -4711,9 +4661,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -4845,9 +4793,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -4979,9 +4925,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -5113,9 +5057,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -5247,9 +5189,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns104952"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -5381,9 +5321,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -5619,9 +5557,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -5753,9 +5689,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "lvm-collector",
@@ -6562,9 +6496,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "aw-server",
@@ -6773,9 +6705,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "agent-sandbox-controller",
@@ -6820,10 +6750,7 @@
           "containers": [
             {
               "containerName": "agent-sandbox-controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "15m",
@@ -6872,10 +6799,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "actions",
@@ -6933,10 +6857,7 @@
           "containers": [
             {
               "containerName": "actions",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -6986,10 +6907,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "app",
@@ -7047,10 +6965,7 @@
           "containers": [
             {
               "containerName": "app",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -7100,10 +7015,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "central-sampler",
@@ -7161,10 +7073,7 @@
           "containers": [
             {
               "containerName": "central-sampler",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -7208,11 +7117,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns1001419",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns1001419", "wyrm2"],
       "containers": [
         {
           "name": "proxy",
@@ -7283,10 +7188,7 @@
           "containers": [
             {
               "containerName": "proxy",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -7330,9 +7232,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "electric",
@@ -7377,10 +7277,7 @@
           "containers": [
             {
               "containerName": "electric",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "448Mi"
@@ -7427,10 +7324,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "environments",
@@ -7488,10 +7382,7 @@
           "containers": [
             {
               "containerName": "environments",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "64Mi"
@@ -7541,10 +7432,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "frontend",
@@ -7602,10 +7490,7 @@
           "containers": [
             {
               "containerName": "frontend",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -7649,10 +7534,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "history-service",
@@ -7710,10 +7592,7 @@
           "containers": [
             {
               "containerName": "history-service",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -7763,10 +7642,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "ingress",
@@ -7824,10 +7700,7 @@
           "containers": [
             {
               "containerName": "ingress",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -7877,10 +7750,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "mcp-edge",
@@ -7938,10 +7808,7 @@
           "containers": [
             {
               "containerName": "mcp-edge",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -7991,10 +7858,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "notifications",
@@ -8065,10 +7929,7 @@
           "containers": [
             {
               "containerName": "notifications",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -8118,10 +7979,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "policy-controller",
@@ -8179,10 +8037,7 @@
           "containers": [
             {
               "containerName": "policy-controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "64Mi"
@@ -8232,10 +8087,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "sessions",
@@ -8293,10 +8145,7 @@
           "containers": [
             {
               "containerName": "sessions",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "256Mi"
@@ -8346,9 +8195,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "airlock",
@@ -8436,9 +8283,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "atuin",
@@ -8522,9 +8367,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "server",
@@ -8608,9 +8451,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "worker",
@@ -8759,9 +8600,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "cdi-apiserver",
@@ -8806,10 +8645,7 @@
           "containers": [
             {
               "containerName": "cdi-apiserver",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -8853,9 +8689,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "cdi-deployment",
@@ -8900,10 +8734,7 @@
           "containers": [
             {
               "containerName": "cdi-deployment",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -8947,9 +8778,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "cdi-operator",
@@ -8994,10 +8823,7 @@
           "containers": [
             {
               "containerName": "cdi-operator",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -9041,9 +8867,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "cdi-uploadproxy",
@@ -9088,10 +8912,7 @@
           "containers": [
             {
               "containerName": "cdi-uploadproxy",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -9135,9 +8956,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "collector",
@@ -9182,10 +9001,7 @@
           "containers": [
             {
               "containerName": "collector",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -9230,10 +9046,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "wyrm2"],
       "containers": [
         {
           "name": "cert-manager-controller",
@@ -9291,10 +9104,7 @@
           "containers": [
             {
               "containerName": "cert-manager-controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "20m",
@@ -9347,10 +9157,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "wyrm2"],
       "containers": [
         {
           "name": "cert-manager-cainjector",
@@ -9408,10 +9215,7 @@
           "containers": [
             {
               "containerName": "cert-manager-cainjector",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "20m",
@@ -9464,11 +9268,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952", "wyrm2"],
       "containers": [
         {
           "name": "cert-manager-webhook",
@@ -9539,10 +9339,7 @@
           "containers": [
             {
               "containerName": "cert-manager-webhook",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "10m",
@@ -9595,10 +9392,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns104952"],
       "containers": [
         {
           "name": "trust-manager",
@@ -9656,10 +9450,7 @@
           "containers": [
             {
               "containerName": "trust-manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "25m",
@@ -9712,10 +9503,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "claude-session-sync",
@@ -9773,10 +9561,7 @@
           "containers": [
             {
               "containerName": "claude-session-sync",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -9821,9 +9606,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "claude-session-sync-control",
@@ -9868,10 +9651,7 @@
           "containers": [
             {
               "containerName": "claude-session-sync-control",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -9916,9 +9696,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "aiquota-api",
@@ -10002,9 +9780,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "cli-proxy-api",
@@ -10088,9 +9864,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "altinity-clickhouse-operator",
@@ -10169,9 +9943,7 @@
           "containers": [
             {
               "containerName": "metrics-exporter",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "25m",
@@ -10184,10 +9956,7 @@
             },
             {
               "containerName": "altinity-clickhouse-operator",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -10251,9 +10020,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "manager",
@@ -10332,9 +10099,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "barman-cloud",
@@ -10413,9 +10178,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "vm-image-restart",
@@ -10466,11 +10229,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns102453",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns102453", "wyrm2"],
       "containers": [
         {
           "name": "crossplane",
@@ -10541,10 +10300,7 @@
           "containers": [
             {
               "containerName": "crossplane",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -10596,9 +10352,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "crossplane",
@@ -10643,9 +10397,7 @@
           "containers": [
             {
               "containerName": "crossplane",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -10657,10 +10409,7 @@
             },
             {
               "containerName": "package-runtime",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "15m",
@@ -10709,9 +10458,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "package-runtime",
@@ -10756,9 +10503,7 @@
           "containers": [
             {
               "containerName": "crossplane",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -10770,10 +10515,7 @@
             },
             {
               "containerName": "package-runtime",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "15m",
@@ -10826,9 +10568,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "package-runtime",
@@ -10873,9 +10613,7 @@
           "containers": [
             {
               "containerName": "crossplane",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -10887,10 +10625,7 @@
             },
             {
               "containerName": "package-runtime",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "15m",
@@ -10943,9 +10678,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "package-runtime",
@@ -10990,9 +10723,7 @@
           "containers": [
             {
               "containerName": "crossplane",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -11004,10 +10735,7 @@
             },
             {
               "containerName": "package-runtime",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "15m",
@@ -11060,10 +10788,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "wyrm2"],
       "containers": [
         {
           "name": "nginx",
@@ -11121,10 +10846,7 @@
           "containers": [
             {
               "containerName": "nginx",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "10m",
@@ -11177,9 +10899,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "external-dns",
@@ -11224,10 +10944,7 @@
           "containers": [
             {
               "containerName": "external-dns",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "25m",
@@ -11276,10 +10993,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104963",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns104963", "wyrm2"],
       "containers": [
         {
           "name": "external-secrets",
@@ -11337,10 +11051,7 @@
           "containers": [
             {
               "containerName": "external-secrets",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -11393,10 +11104,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns104952"],
       "containers": [
         {
           "name": "webhook",
@@ -11454,9 +11162,7 @@
           "containers": [
             {
               "containerName": "external-secrets",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -11469,10 +11175,7 @@
             },
             {
               "containerName": "webhook",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "15m",
@@ -11525,9 +11228,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "manager",
@@ -11572,10 +11273,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -11619,9 +11317,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "manager",
@@ -11666,10 +11362,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -11713,9 +11406,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "manager",
@@ -11760,10 +11451,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -11807,9 +11495,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "manager",
@@ -11854,10 +11540,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -11901,9 +11584,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "manager",
@@ -11948,10 +11629,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -11995,9 +11673,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "manager",
@@ -12042,10 +11718,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -12089,9 +11762,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "manager",
@@ -12136,10 +11807,7 @@
           "containers": [
             {
               "containerName": "manager",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -12183,9 +11851,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "tofu-controller",
@@ -12230,10 +11896,7 @@
           "containers": [
             {
               "containerName": "tofu-controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -12277,10 +11940,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656"],
       "containers": [
         {
           "name": "forgejo",
@@ -12377,9 +12037,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "gatus",
@@ -12463,9 +12121,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "gitlab-exporter",
@@ -12510,10 +12166,7 @@
           "containers": [
             {
               "containerName": "gitlab-exporter",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -12558,10 +12211,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656"],
       "containers": [
         {
           "name": "gitlab-shell",
@@ -12619,9 +12269,7 @@
           "containers": [
             {
               "containerName": "gitlab-shell",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "23m"
@@ -12678,10 +12326,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "registry",
@@ -12739,9 +12384,7 @@
           "containers": [
             {
               "containerName": "registry",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -12800,9 +12443,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "sidekiq",
@@ -12847,9 +12488,7 @@
           "containers": [
             {
               "containerName": "sidekiq",
-              "controlledResources": [
-                "memory"
-              ],
+              "controlledResources": ["memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "900m",
@@ -12908,9 +12547,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "toolbox",
@@ -12989,10 +12626,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "gitlab-workhorse",
@@ -13160,9 +12794,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "gitlab-spike-runner-gitlab-runner",
@@ -13207,10 +12839,7 @@
           "containers": [
             {
               "containerName": "gitlab-spike-runner-gitlab-runner",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "160Mi"
@@ -13258,9 +12887,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "app",
@@ -13344,9 +12971,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "goldilocks",
@@ -13430,9 +13055,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "goldilocks",
@@ -13516,9 +13139,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "server",
@@ -13563,10 +13184,7 @@
           "containers": [
             {
               "containerName": "server",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "224Mi"
@@ -13614,9 +13232,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "grocy",
@@ -13700,9 +13316,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "server",
@@ -13786,9 +13400,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "grocy",
@@ -13872,9 +13484,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "server",
@@ -13958,9 +13568,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "facade",
@@ -14039,10 +13647,7 @@
           "containers": [
             {
               "containerName": "ha-mcp",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -14087,11 +13692,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns103711",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns103711", "wyrm2"],
       "containers": [
         {
           "name": "egress-sidecar",
@@ -14162,10 +13763,7 @@
           "containers": [
             {
               "containerName": "egress-sidecar",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -14209,10 +13807,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "server",
@@ -14347,10 +13942,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "optiplex",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["optiplex", "wyrm2"],
       "containers": [
         {
           "name": "static",
@@ -14447,9 +14039,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "stalwart",
@@ -14533,9 +14123,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "anki",
@@ -14672,9 +14260,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "egress-sidecar",
@@ -14864,9 +14450,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns104952"],
       "containers": [
         {
           "name": "headlamp",
@@ -15003,9 +14587,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "caddy",
@@ -15084,10 +14666,7 @@
           "containers": [
             {
               "containerName": "home-assistant",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "512Mi"
@@ -15095,10 +14674,7 @@
             },
             {
               "containerName": "caddy",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "40Mi"
@@ -15165,10 +14741,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656"],
       "containers": [
         {
           "name": "keda-admission-webhooks",
@@ -15226,10 +14799,7 @@
           "containers": [
             {
               "containerName": "keda-admission-webhooks",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "25m",
@@ -15282,9 +14852,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "keda-operator",
@@ -15329,10 +14897,7 @@
           "containers": [
             {
               "containerName": "keda-operator",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -15384,10 +14949,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "keda-operator-metrics-apiserver",
@@ -15445,10 +15007,7 @@
           "containers": [
             {
               "containerName": "keda-operator-metrics-apiserver",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -15501,10 +15060,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104963",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns104963", "wyrm2"],
       "containers": [
         {
           "name": "cilium-operator",
@@ -15596,10 +15152,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "coredns",
@@ -15691,9 +15244,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "hubble-relay",
@@ -15772,9 +15323,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "backend",
@@ -15906,10 +15455,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns103711"],
       "containers": [
         {
           "name": "metrics-server",
@@ -16001,9 +15547,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "reloader-reloader",
@@ -16082,10 +15626,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "snapshot-controller",
@@ -16177,9 +15718,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "talos-cloud-controller-manager",
@@ -16258,11 +15797,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711", "wyrm2"],
       "containers": [
         {
           "name": "vpa",
@@ -16367,9 +15902,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "vpa",
@@ -16448,9 +15981,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "vpa",
@@ -16529,9 +16060,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "server",
@@ -16576,10 +16105,7 @@
           "containers": [
             {
               "containerName": "server",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "192Mi"
@@ -16627,10 +16153,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "virt-api",
@@ -16688,10 +16211,7 @@
           "containers": [
             {
               "containerName": "virt-api",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -16735,10 +16255,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "virt-controller",
@@ -16796,10 +16313,7 @@
           "containers": [
             {
               "containerName": "virt-controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -16843,10 +16357,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "virt-operator",
@@ -16904,10 +16415,7 @@
           "containers": [
             {
               "containerName": "virt-operator",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -16951,11 +16459,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "kyverno",
@@ -17026,10 +16530,7 @@
           "containers": [
             {
               "containerName": "kyverno",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -17082,9 +16583,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "controller",
@@ -17129,10 +16628,7 @@
           "containers": [
             {
               "containerName": "controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -17184,11 +16680,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "optiplex",
-        "ovh-ns103711",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["optiplex", "ovh-ns103711", "wyrm2"],
       "containers": [
         {
           "name": "controller",
@@ -17259,10 +16751,7 @@
           "containers": [
             {
               "containerName": "controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "10m",
@@ -17314,9 +16803,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "controller",
@@ -17361,10 +16848,7 @@
           "containers": [
             {
               "containerName": "controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "100m",
@@ -17416,9 +16900,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "langfuse-web",
@@ -17502,9 +16984,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "langfuse-worker",
@@ -17588,10 +17068,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "litellm",
@@ -17688,9 +17165,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "dnsmasq",
@@ -17822,11 +17297,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "loki",
@@ -17931,9 +17402,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "proxy",
@@ -17978,10 +17447,7 @@
           "containers": [
             {
               "containerName": "proxy",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -18033,9 +17499,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "element-web",
@@ -18119,9 +17583,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "synapse",
@@ -18205,9 +17667,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "redis",
@@ -18291,9 +17751,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "alloy",
@@ -18425,9 +17883,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "alloy",
@@ -18559,9 +18015,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "exporter",
@@ -18659,9 +18113,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "exporter",
@@ -18740,9 +18192,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "exporter",
@@ -18821,9 +18271,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "exporter",
@@ -18902,9 +18350,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "exporter",
@@ -18983,9 +18429,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "grafana",
@@ -19064,9 +18508,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "grafana-operator",
@@ -19145,9 +18587,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "blackbox-exporter",
@@ -19226,9 +18666,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "blackbox-exporter",
@@ -19307,9 +18745,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "kube-state-metrics",
@@ -19388,9 +18824,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "distributor",
@@ -19469,9 +18903,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "gateway",
@@ -19550,9 +18982,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "querier",
@@ -19631,9 +19061,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "query-frontend",
@@ -19712,9 +19140,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "query-scheduler",
@@ -19793,9 +19219,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "ruler",
@@ -19874,9 +19298,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "exporter",
@@ -19955,9 +19377,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "kube-prometheus-stack",
@@ -20036,9 +19456,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "prober",
@@ -20117,9 +19535,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "prober",
@@ -20198,9 +19614,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "attic",
@@ -20284,9 +19698,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "gc",
@@ -20331,26 +19743,17 @@
           "containers": [
             {
               "containerName": "gc",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
               "containerName": "master",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
               "containerName": "worker",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -20395,9 +19798,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "master",
@@ -20442,26 +19843,17 @@
           "containers": [
             {
               "containerName": "gc",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
               "containerName": "master",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
               "containerName": "worker",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -20506,9 +19898,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "ntfy",
@@ -20592,9 +19982,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "public-auth-proxy",
@@ -20835,9 +20223,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "tabbyapi",
@@ -20916,9 +20302,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "linstor-affinity-controller",
@@ -20997,9 +20381,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "linstor-controller",
@@ -21078,9 +20460,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "csi-attacher",
@@ -21424,9 +20804,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "manager",
@@ -21505,9 +20883,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "plaid-web",
@@ -21552,10 +20928,7 @@
           "containers": [
             {
               "containerName": "plaid-web",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -21604,9 +20977,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "pgweb",
@@ -21651,10 +21022,7 @@
           "containers": [
             {
               "containerName": "pgweb",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -21699,9 +21067,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "plaid-spend",
@@ -21746,10 +21112,7 @@
           "containers": [
             {
               "containerName": "plaid-spend",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "384Mi"
@@ -21797,9 +21160,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "provider",
@@ -21844,10 +21205,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -21895,9 +21253,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "provider",
@@ -21942,10 +21298,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "416Mi"
@@ -21993,9 +21346,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "provider",
@@ -22040,10 +21391,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -22091,9 +21439,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "gateway",
@@ -22138,10 +21484,7 @@
           "containers": [
             {
               "containerName": "gateway",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly"
             },
             {
@@ -22186,9 +21529,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "provider",
@@ -22233,10 +21574,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "175m",
@@ -22285,9 +21623,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "provider",
@@ -22332,10 +21668,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "175m",
@@ -22384,9 +21717,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "provider",
@@ -22431,10 +21762,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "128Mi"
@@ -22482,9 +21810,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "provider",
@@ -22529,10 +21855,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "576Mi"
@@ -22580,9 +21903,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "provider",
@@ -22627,10 +21948,7 @@
           "containers": [
             {
               "containerName": "provider",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "50m",
@@ -22679,9 +21997,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "nginx",
@@ -22988,9 +22304,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "reflector",
@@ -23074,9 +22388,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "controller",
@@ -23121,10 +22433,7 @@
           "containers": [
             {
               "containerName": "controller",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "cpu": "10m",
@@ -23176,10 +22485,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103711",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns103711", "ovh-ns104963"],
       "containers": [
         {
           "name": "s3",
@@ -23243,9 +22549,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "seaweedfs-operator",
@@ -23296,10 +22600,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "s3",
@@ -23363,9 +22664,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "csi-attacher",
@@ -23656,10 +22955,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "ai-session-archive",
@@ -23723,9 +23019,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "rest-server",
@@ -23776,9 +23070,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "server",
@@ -23823,10 +23115,7 @@
           "containers": [
             {
               "containerName": "server",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "144Mi"
@@ -23874,9 +23163,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "app",
@@ -23921,10 +23208,7 @@
           "containers": [
             {
               "containerName": "app",
-              "controlledResources": [
-                "cpu",
-                "memory"
-              ],
+              "controlledResources": ["cpu", "memory"],
               "controlledValues": "RequestsOnly",
               "minAllowed": {
                 "memory": "224Mi"
@@ -23971,9 +23255,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "server",
@@ -24060,9 +23342,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "firebase-resigner",
@@ -24271,9 +23551,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "redis-operator",
@@ -24352,9 +23630,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "manager",
@@ -24433,10 +23709,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "optiplex",
-        "wyrm2"
-      ],
+      "readyPodNodes": ["optiplex", "wyrm2"],
       "containers": [
         {
           "name": "server",
@@ -24552,9 +23825,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "clickhouse",
@@ -24633,9 +23904,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "clickhouse",
@@ -24714,9 +23983,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "clickhouse-keeper",
@@ -24795,9 +24062,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "clickhouse-keeper",
@@ -24876,9 +24141,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns104952"],
       "containers": [
         {
           "name": "clickhouse-keeper",
@@ -24957,10 +24220,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "forgejo-valkey-ovh",
@@ -25057,11 +24317,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "gitaly",
@@ -25166,11 +24422,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "praefect",
@@ -25275,10 +24527,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103656"],
       "containers": [
         {
           "name": "gitlab-valkey",
@@ -25370,10 +24619,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "egress-sidecar",
@@ -25536,10 +24782,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "langfuse-valkey-ovh",
@@ -25636,10 +24879,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "loki",
@@ -25797,10 +25037,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "loki",
@@ -25903,10 +25140,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns104963"],
       "containers": [
         {
           "name": "alertmanager",
@@ -26025,9 +25259,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "compactor",
@@ -26106,10 +25338,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns103656",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103656", "ovh-ns103711"],
       "containers": [
         {
           "name": "ingester",
@@ -26201,9 +25430,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "store-gateway",
@@ -26282,9 +25509,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "tempo",
@@ -26363,10 +25588,7 @@
       "desiredReplicas": 2,
       "readyReplicas": 2,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "filer",
@@ -26430,11 +25652,7 @@
       "desiredReplicas": 3,
       "readyReplicas": 3,
       "activePods": 3,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "master",
@@ -26511,9 +25729,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns102453"
-      ],
+      "readyPodNodes": ["ovh-ns102453"],
       "containers": [
         {
           "name": "volume",
@@ -26564,9 +25780,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103656"
-      ],
+      "readyPodNodes": ["ovh-ns103656"],
       "containers": [
         {
           "name": "volume",
@@ -26617,9 +25831,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "volume",
@@ -26670,9 +25882,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "volume",
@@ -26723,9 +25933,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns104952"],
       "containers": [
         {
           "name": "volume",
@@ -26776,9 +25984,7 @@
       "desiredReplicas": 1,
       "readyReplicas": 1,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "volume",
@@ -27812,9 +27018,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "rsync-tls",
@@ -27889,9 +27093,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "rsync-tls",
@@ -28058,9 +27260,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "compute",
@@ -28127,9 +27327,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "wyrm2"
-      ],
+      "readyPodNodes": ["wyrm2"],
       "containers": [
         {
           "name": "compute",
@@ -28196,9 +27394,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns1001419"
-      ],
+      "readyPodNodes": ["ovh-ns1001419"],
       "containers": [
         {
           "name": "compute",
@@ -28265,9 +27461,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104963"],
       "containers": [
         {
           "name": "compute",
@@ -28401,9 +27595,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "compute",
@@ -28470,10 +27662,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -28528,10 +27717,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -28586,10 +27772,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -28644,10 +27827,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -28702,10 +27882,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns102453",
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns102453", "ovh-ns103711"],
       "containers": [
         {
           "name": "postgres",
@@ -28760,10 +27937,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -28818,10 +27992,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -28876,10 +28047,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -28934,10 +28102,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -28992,10 +28157,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -29050,9 +28212,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "optiplex"
-      ],
+      "readyPodNodes": ["optiplex"],
       "containers": [
         {
           "name": "postgres",
@@ -29094,10 +28254,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -29152,10 +28309,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -29210,10 +28364,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -29268,10 +28419,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -29326,10 +28474,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -29384,10 +28529,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -29442,10 +28584,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns104952",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns104952", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -29500,10 +28639,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -29558,10 +28694,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
@@ -29616,9 +28749,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 1,
-      "readyPodNodes": [
-        "ovh-ns103711"
-      ],
+      "readyPodNodes": ["ovh-ns103711"],
       "containers": [
         {
           "name": "postgres",
@@ -29660,10 +28791,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104963"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104963"],
       "containers": [
         {
           "name": "postgres",
@@ -29718,10 +28846,7 @@
       "desiredReplicas": null,
       "readyReplicas": null,
       "activePods": 2,
-      "readyPodNodes": [
-        "ovh-ns1001419",
-        "ovh-ns104952"
-      ],
+      "readyPodNodes": ["ovh-ns1001419", "ovh-ns104952"],
       "containers": [
         {
           "name": "postgres",
