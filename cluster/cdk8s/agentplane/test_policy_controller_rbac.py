@@ -24,7 +24,7 @@ def controller_permissions(staging_manifests: list[dict[str, Any]]) -> set[Permi
 
 
 def _allowed(permissions: set[Permission], group: str, resource: str, *verbs: str) -> set[str | None]:
-    """The namespaces where the controller may use any of verbs on group's resource."""
+    """The namespaces where the grants allow any of verbs on group's resource."""
     return {
         grant.namespace
         for grant in permissions
@@ -104,29 +104,14 @@ def test_controller_may_apply_the_status_it_reports(
 
 
 def test_only_the_policy_controller_writes_workload_credential_status(staging_manifests: list[dict[str, Any]]) -> None:
-    """Requesters write a record's spec; the status verifiers trust is the issuer's alone. Roles staging
-    does not render, the API server's own, grant nothing on Agentplane kinds."""
-    roles = {
-        (doc["kind"], doc["metadata"]["name"], doc["metadata"].get("namespace")): doc
-        for doc in staging_manifests
-        if doc["kind"] in {"Role", "ClusterRole"}
+    """Requesters write a record's spec. Verifiers trust the issuer alone to write its status."""
+    rbac = Rbac(staging_manifests)
+    writers = {
+        (subject["kind"], subject["name"], subject.get("namespace"))
+        for binding in rbac.bindings
+        if _allowed(rbac.binding_rules(binding), GROUP, "workloadcredentials/status", "update", "patch")
+        for subject in binding.get("subjects", [])
     }
-    writers = set()
-    for binding in staging_manifests:
-        if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
-            continue
-        ref = binding["roleRef"]
-        role = roles.get(
-            (ref["kind"], ref["name"], binding["metadata"].get("namespace") if ref["kind"] == "Role" else None)
-        )
-        if role is None or not any(
-            set(rule.get("apiGroups", [])) & {GROUP, "*"}
-            and set(rule["resources"]) & {"workloadcredentials/status", "*"}
-            and set(rule["verbs"]) & {"update", "patch", "*"}
-            for rule in role.get("rules", [])
-        ):
-            continue
-        writers |= {(s["kind"], s["name"], s.get("namespace")) for s in binding.get("subjects", [])}
     assert writers == {("ServiceAccount", policy_controller.NAME, STAGING_NAMESPACE)}
 
 
