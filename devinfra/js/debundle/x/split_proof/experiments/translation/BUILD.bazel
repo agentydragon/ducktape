@@ -677,3 +677,19 @@ js_test(
     ),
     tags = ["manual"],
 )
+
+js_test(
+    name = "excalidraw_authored_placements",
+    size = "large",
+    data = _COREJS_DIFFERENTIAL_DATA + [
+        "//devinfra/js/debundle/excalidraw:inputs",
+        "//devinfra/js/debundle/excalidraw:spec_graphs",
+    ],
+    entry_point = "debug/excalidraw_certificates/authored.mjs",
+    env = dict(
+        _COREJS_DIFFERENTIAL_ENV,
+        EXCALIDRAW_INPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
+        SPEC_GRAPHS = "$(rootpath //devinfra/js/debundle/excalidraw:spec_graphs)",
+    ),
+    tags = ["manual"],
+)
