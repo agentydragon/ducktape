@@ -66,6 +66,7 @@ NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
 _METRICS = Port(name="metrics", number=9090)
 _NODE_METRICS = Port(name="node-metrics", number=9100)
+_SCRAPE_PORTS = (_METRICS, _NODE_METRICS)
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
 _VM_SHUTDOWN_GRACE_SECONDS = 87_000
@@ -347,7 +348,7 @@ def chart(app: App) -> Chart:
         "pool-network",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
-        ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
+        ingress=[alloy_endpoints.NODE.admit(*(port.number for port in _SCRAPE_PORTS))],
         egress=[
             cilium.dns_egress(resolves=["*"]),
             EgressRule.to_fqdns(*_HTTPS_HOSTS),
@@ -360,9 +361,7 @@ def chart(app: App) -> Chart:
         "metrics-service",
         metadata=k8s.ObjectMeta(name=_METRICS_SERVICE, namespace=NAMESPACE, labels=_WORKER_LABELS),
         spec=k8s.ServiceSpec(
-            selector=_WORKER_LABELS,
-            ports=[_METRICS.k8s_service_port(), _NODE_METRICS.k8s_service_port()],
-            type="ClusterIP",
+            selector=_WORKER_LABELS, ports=[port.k8s_service_port() for port in _SCRAPE_PORTS], type="ClusterIP"
         ),
     )
     ServiceMonitor(
@@ -371,7 +370,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
-            endpoints=[Endpoint.plain(port=_METRICS.name), Endpoint.plain(port=_NODE_METRICS.name)],
+            endpoints=[Endpoint.plain(port=port.name) for port in _SCRAPE_PORTS],
         ),
     )
     PrometheusRule(

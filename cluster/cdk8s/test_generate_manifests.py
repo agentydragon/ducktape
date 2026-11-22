@@ -177,7 +177,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in fence["egress"])
 
 
-def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
+def test_kvm_worker_network_fence_admits_alloy_on_the_scraped_ports(
     documents: list[dict[str, Any]], worker_pool: dict[str, Any]
 ) -> None:
     service = find_resource(documents, "Service", "buildbuddy-kvm-worker-metrics")
@@ -188,15 +188,22 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
     assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
     assert {endpoint["port"] for endpoint in monitor["spec"]["endpoints"]} == ports.keys()
     for policy in (
-        doc
+        doc["spec"]
         for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+        if doc["kind"] == "CiliumNetworkPolicy"
+        and doc["metadata"].get("namespace") == worker_pool["metadata"]["namespace"]
+        and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
     ):
-        (rule,) = policy["spec"]["ingress"]
+        (rule,) = policy["ingress"]
+        assert not rule.get("fromEntities")
+        assert not rule.get("fromCIDR")
         assert rule["fromEndpoints"] == [
             {"matchLabels": {"app.kubernetes.io/name": "alloy-node", "k8s:io.kubernetes.pod.namespace": "monitoring"}}
         ]
-        assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
+        assert all(group.get("ports") for group in rule["toPorts"])
+        assert {(p["port"], p["protocol"]) for group in rule["toPorts"] for p in group["ports"]} == {
+            (str(port["targetPort"]), port["protocol"]) for port in ports.values()
+        }
 
 
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
@@ -243,13 +250,6 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     assert not any("cloudInitNoCloud" in volume for volume in guest["volumes"])
     config_map = find_resource(documents, "ConfigMap", "buildbuddy-kvm-worker")
     assert volumes[disks["bbconfig"]]["configMap"]["name"] == config_map["metadata"]["name"]
-    policy = find_resource(documents, "CiliumNetworkPolicy", "buildbuddy-kvm-worker")["spec"]
-    # Ingress admits only named peers (the metrics scraper); the exact peer and port are pinned in
-    # test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy.
-    assert all(
-        rule.get("fromEndpoints") and not rule.get("fromEntities") and not rule.get("fromCIDR")
-        for rule in policy["ingress"]
-    )
 
 
 @pytest.fixture(scope="module")
