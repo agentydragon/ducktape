@@ -2308,7 +2308,9 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":agent_rbac_test_support",
         ":conftest",
+        "//agentplane:crd_group",
         "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/haku:namespace",
