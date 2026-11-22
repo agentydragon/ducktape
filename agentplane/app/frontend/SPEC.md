@@ -114,10 +114,11 @@ match within a minute, the composer combines them while keeping the exact idle t
 ## Command delivery updates
 
 When the Dispatch watch disconnects, the thread warns that queued and delivering states may
-be stale and shows the latest stream error or closure. The warning clears when the browser
-applies and saves a `CaughtUp` checkpoint or has no commands left to watch. Previously saved
-receipts remain visible, and History continues to supply command outcomes. A warning about
-expired deletion coverage remains after recovery.
+be stale. Stream errors appear immediately. A clean closure gets a three-second grace period
+for expected watch lease renewals. The warning clears when the browser applies and saves a
+`CaughtUp` checkpoint or has no commands left to watch. Previously saved receipts remain
+visible, and History continues to supply command outcomes. A warning about expired deletion
+coverage remains after recovery.
 
 ## Runtime diagnostics
 

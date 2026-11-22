@@ -7,6 +7,9 @@ import { canonicalDispatchCommandIds, type LocalCommands } from "./local_command
 /** `DispatchFilter.command_ids`' bound; the commands past it go unwatched. */
 const MAX_WATCHED_COMMANDS = 1000;
 
+/** Clean EOF also ends a normal watch lease. Give the first retry time to catch up. */
+const CLEAN_CLOSE_GRACE_MS = 3_000;
+
 function outOfRange(reason: unknown): boolean {
   if (reason instanceof WatchStreamError) return reason.code === 11;
   return reason instanceof HttpError && reason.code === 11;
@@ -34,7 +37,12 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
     return params;
   };
   let held = new Set<string>();
-  return sessionDispatcherClient.watchDispatches(nextQuery, {
+  let cleanCloseTimer: number | undefined;
+  const clearCleanCloseTimer = () => {
+    window.clearTimeout(cleanCloseTimer);
+    cleanCloseTimer = undefined;
+  };
+  const stopWatch = sessionDispatcherClient.watchDispatches(nextQuery, {
     onOpen: () => {
       held = new Set();
     },
@@ -78,6 +86,7 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
           saveCursor(store, sessionId, asked, frame.resumeToken);
           resumeToken = frame.resumeToken;
           snapshotPending = false;
+          clearCleanCloseTimer();
           store.setDispatchWatchError(null);
         } else {
           throw new Error("Dispatcher returned a watch frame without a result");
@@ -88,8 +97,15 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
       }
     },
     onConnection: (connection) => {
-      if (connection.phase === "reconnecting") {
-        store.setDispatchWatchError(connection.lastError ?? "The Dispatcher closed the stream.");
+      if (connection.phase !== "reconnecting") return;
+      if (connection.lastError !== null) {
+        clearCleanCloseTimer();
+        store.setDispatchWatchError(connection.lastError);
+      } else if (store.getSnapshot().dispatchWatchError === null) {
+        cleanCloseTimer ??= window.setTimeout(
+          () => store.setDispatchWatchError("The Dispatcher closed the stream."),
+          CLEAN_CLOSE_GRACE_MS
+        );
       }
     },
     onError: (reason) => {
@@ -101,4 +117,8 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
       store.recordDispatchWatchCoverageLoss();
     },
   });
+  return () => {
+    stopWatch();
+    clearCleanCloseTimer();
+  };
 }

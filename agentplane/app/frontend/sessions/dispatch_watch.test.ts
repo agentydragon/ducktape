@@ -178,7 +178,25 @@ it("restarts a partial fresh snapshot from the beginning instead of resuming bef
   expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
 });
 
-it("keeps the disconnect warning and receipt through a resumed stream's partial catch-up", async () => {
+it("suppresses a clean lease renewal that catches up promptly", async () => {
+  const store = new LocalCommands(SESSION);
+  queued(store, "a");
+  store.saveDispatchWatchResumeToken(SESSION, ["a"], "previous-checkpoint");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  fetchMock.served[0].send(caughtUp("initial-checkpoint"));
+  await settle();
+
+  fetchMock.served[0].end();
+  await settle();
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
+  await vi.advanceTimersByTimeAsync(1_000);
+  fetchMock.served[1].send(caughtUp("renewed-checkpoint"));
+  await vi.advanceTimersByTimeAsync(3_000);
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
+});
+
+it("warns after a prolonged clean disconnect and keeps the receipt through partial catch-up", async () => {
   const store = new LocalCommands(SESSION);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
@@ -191,14 +209,14 @@ it("keeps the disconnect warning and receipt through a resumed stream's partial 
 
   first.end();
   await settle();
-  expect(store.getSnapshot().dispatchWatchError).toBe("The Dispatcher closed the stream.");
+  expect(store.getSnapshot().dispatchWatchError).toBeNull();
   expect(stateOf(store, "a")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
   await vi.advanceTimersByTimeAsync(1_000);
   const resumed = fetchMock.served[1];
   expect(resumed.url.searchParams.get("resumeToken")).toBe("initial-checkpoint");
 
   resumed.send(dispatchFrame("a", "DELIVERY_STATE_DELIVERING_TO_RUNNER", "resumed-row"));
-  await settle();
+  await vi.advanceTimersByTimeAsync(2_000);
   expect(store.getSnapshot().dispatchWatchError).toBe("The Dispatcher closed the stream.");
   expect(stateOf(store, "a")).toBe(DeliveryState.DELIVERING_TO_RUNNER);
   resumed.send(caughtUp("resumed-checkpoint"));
