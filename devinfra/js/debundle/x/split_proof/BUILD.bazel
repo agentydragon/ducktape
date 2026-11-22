@@ -4,8 +4,8 @@
 # gazelle:exclude lowering
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
-load("//devinfra/js/debundle/x/split_proof:lint.bzl", "eslint_entry_points")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/lint:module_entry_points.bzl", "eslint_entry_points")
 load("//devinfra/python:defs.bzl", "py_binary")
 
 exports_files(

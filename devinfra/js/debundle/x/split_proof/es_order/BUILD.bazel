@@ -1,5 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
-load("//devinfra/js/debundle/x/split_proof:lint.bzl", "eslint_entry_points")
+load("//devinfra/lint:module_entry_points.bzl", "eslint_entry_points")
 
 _EVALORDER = "//devinfra/js/debundle/x/split_proof/lean:evalorder"
 
