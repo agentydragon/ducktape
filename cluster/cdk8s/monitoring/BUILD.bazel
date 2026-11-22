@@ -487,6 +487,7 @@ py_test(
         "//third_party/containers:blackbox_exporter",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@pypi//testcontainers",
     ],
 )
 
