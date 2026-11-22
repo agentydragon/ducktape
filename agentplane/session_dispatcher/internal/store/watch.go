@@ -115,9 +115,12 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 		}
 		defer rows.Close()
 		for rows.Next() {
-			change, err := scanDispatchChange(rows, filter.GetIncludeReceiptVersion())
+			change, err := scanDispatchChange(rows)
 			if err != nil {
 				return err
+			}
+			if filter.GetIncludeReceiptVersion() {
+				change.Dispatch.ReceiptVersion = &change.Version
 			}
 			batch.Changes = append(batch.Changes, change)
 		}
@@ -126,7 +129,7 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 	return batch, err
 }
 
-func scanDispatchChange(row interface{ Scan(...any) error }, includeReceiptVersion bool) (DispatchChange, error) {
+func scanDispatchChange(row interface{ Scan(...any) error }) (DispatchChange, error) {
 	var change DispatchChange
 	var dispatch Dispatch
 	var reason sql.NullString
@@ -159,8 +162,5 @@ func scanDispatchChange(row interface{ Scan(...any) error }, includeReceiptVersi
 		return change, err
 	}
 	change.Dispatch, err = DescribeDispatch(&dispatch, true)
-	if err == nil && includeReceiptVersion {
-		change.Dispatch.ReceiptVersion = proto.Int64(change.Version)
-	}
 	return change, err
 }

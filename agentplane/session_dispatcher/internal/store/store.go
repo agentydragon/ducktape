@@ -888,9 +888,12 @@ func (s *Store) ListDispatchesForCaller(ctx context.Context, filter *dispatcherp
 	defer rows.Close()
 	var result []*dispatcherpb.Dispatch
 	for rows.Next() {
-		change, err := scanDispatchChange(rows, filter.GetIncludeReceiptVersion())
+		change, err := scanDispatchChange(rows)
 		if err != nil {
 			return nil, err
+		}
+		if filter.GetIncludeReceiptVersion() {
+			change.Dispatch.ReceiptVersion = &change.Version
 		}
 		result = append(result, change.Dispatch)
 	}
