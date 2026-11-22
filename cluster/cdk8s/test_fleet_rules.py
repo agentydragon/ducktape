@@ -351,15 +351,14 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         labels=proxy,
     )
     assert https_egress_sni_conflicts([open_egress, internal]) == []
-    # A selector this cannot reduce to labels -- none at all, or `matchExpressions` -- covers
-    # everything in scope, so it conflicts rather than being skipped.
+    # Without contradictory required labels, these selectors can cover the open endpoint.
     no_selector = _policy("catch-all", [_https({"toEntities": ["remote-node", "host"]}, ["a.test"])])
     assert len(https_egress_sni_conflicts([open_egress, no_selector])) == 1
     expressions = _policy_for("expressions", pinned_egress["spec"]["egress"], namespace=_STAGING, labels={})
-    expressions["spec"]["endpointSelector"]["matchExpressions"] = [
-        {"key": "app.kubernetes.io/name", "operator": "In", "values": ["egress"]}
-    ]
+    expressions["spec"]["endpointSelector"]["matchExpressions"] = [{"key": "tier", "operator": "Exists"}]
     assert len(https_egress_sni_conflicts([open_egress, expressions])) == 1
+    expressions["spec"]["endpointSelector"]["matchLabels"] = another
+    assert https_egress_sni_conflicts([open_egress, expressions]) == []
     # The same shape inside one policy -- a pinned rule and an open one on 443 -- is the same
     # contradiction, and is named as its own error.
     both = _policy_for(
