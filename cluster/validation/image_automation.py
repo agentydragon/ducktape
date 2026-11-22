@@ -74,7 +74,7 @@ def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[st
         if isinstance(resource, ImagePolicyResource)
     }
 
-    errors = []
+    errors: list[str] = []
     for path in sorted(k8s_dir.rglob("*.yaml")):
         text = path.read_text()
         # Setters are YAML comments. Only scan YAML tokens in files containing a setter.
