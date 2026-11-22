@@ -123,6 +123,12 @@ class AppServices:
     deployment_info: DeploymentInfo
     product_service: ProductService
 
+    @property
+    def budget(self) -> BudgetService:
+        if self.config.budget_service is None:
+            raise ValueError("no budget config for this deployment")
+        return self.config.budget_service
+
 
 def build_services(config: ApiServerConfig) -> AppServices:
     """Acquire the deployment's runtime resources: the property catalog, the portfolio sources
@@ -181,8 +187,6 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
-
-    # `response_model` drives the OpenAPI contract and FastAPI validates and serializes each model.
 
     @app.get("/api/catalog", response_model=CatalogResponse, response_model_exclude_none=True)
     def catalog_route(services: Services) -> CatalogResponse:
@@ -339,39 +343,21 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
             sanity_bands=sanity_bands,
         )
 
-    @app.post("/api/budget/snapshot", response_model=BudgetSnapshotResponse, response_model_exclude_none=False)
-    async def budget_snapshot(
-        request: BudgetSnapshotRequest, services: Services
-    ) -> BudgetSnapshotResponse | JSONResponse:
-        budget_service = services.config.budget_service
-        if budget_service is None:
-            return error(400, "no budget config for this deployment")
-        return await budget_service.build_snapshot(window=request.window)
+    @app.post("/api/budget/snapshot")
+    async def budget_snapshot(request: BudgetSnapshotRequest, services: Services) -> BudgetSnapshotResponse:
+        return await services.budget.build_snapshot(window=request.window)
 
-    @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse, response_model_exclude_none=False)
-    async def budget_transactions(
-        request: BudgetTransactionsRequest, services: Services
-    ) -> BudgetTransactionsResponse | JSONResponse:
-        budget_service = services.config.budget_service
-        if budget_service is None:
-            return error(400, "no budget config for this deployment")
-        return await budget_service.list_transactions_in_bucket(bucket_id=request.bucket_id, window=request.window)
+    @app.post("/api/budget/transactions")
+    async def budget_transactions(request: BudgetTransactionsRequest, services: Services) -> BudgetTransactionsResponse:
+        return await services.budget.list_transactions_in_bucket(bucket_id=request.bucket_id, window=request.window)
 
     @app.post("/api/budget/snapshot.csv", response_class=CsvResponse)
-    async def budget_snapshot_csv(request: BudgetSummaryCsvRequest, services: Services) -> Response:
-        budget_service = services.config.budget_service
-        if budget_service is None:
-            return error(400, "no budget config for this deployment")
-        result = await budget_service.build_snapshot_csv(window=request.window, adjustments=request.adjustments)
-        return CsvResponse(content=result, headers=no_store)
+    async def budget_snapshot_csv(request: BudgetSummaryCsvRequest, services: Services) -> str:
+        return await services.budget.build_snapshot_csv(window=request.window, adjustments=request.adjustments)
 
     @app.post("/api/budget/transactions.csv", response_class=CsvResponse)
-    async def budget_transactions_csv(request: BudgetTransactionsRequest, services: Services) -> Response:
-        budget_service = services.config.budget_service
-        if budget_service is None:
-            return error(400, "no budget config for this deployment")
-        result = await budget_service.build_transactions_csv(bucket_id=request.bucket_id, window=request.window)
-        return CsvResponse(content=result, headers=no_store)
+    async def budget_transactions_csv(request: BudgetTransactionsRequest, services: Services) -> str:
+        return await services.budget.build_transactions_csv(bucket_id=request.bucket_id, window=request.window)
 
     # The health check is not part of the typed wire contract, so keep it out of the
     # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes

@@ -1,7 +1,9 @@
 """HTTP serialization contracts for the budget endpoints and deployment metadata."""
 
+import csv
 from datetime import date
 from decimal import Decimal
+from io import StringIO
 from typing import Any
 
 import pytest
@@ -10,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from finance.augur.api.config import Config
+from finance.augur.api.conftest import MakeClient
 from finance.augur.api.server import ApiServerConfig, create_app, static_price_clients
 from finance.augur.model.testing import ConstantFrameModel
 from finance.budget import service as budget_service
@@ -128,7 +131,18 @@ def test_http_response_money_dates_nulls_and_csv(augur_config: Config, monkeypat
             assert "application/json" in operation["requestBody"]["content"]
             assert set(operation["responses"]["200"]["content"]) == {"text/csv"}
             assert response.headers["content-type"] == "text/csv; charset=utf-8"
-            assert "9007199254740993.01" in response.text
+            _, data_row = csv.reader(StringIO(response.text))
+            assert "9007199254740993.01" in data_row
+
+
+def test_csv_download_without_budget_config(make_client: MakeClient) -> None:
+    client = make_client({"current_model": ConstantFrameModel()})
+    path = "/api/budget/snapshot.csv"
+    response = client.post(path, json={"window": {"kind": "trailing_months", "months": 1}})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "no budget config for this deployment"}
+    assert response.headers["cache-control"] == "no-store"
+    assert client.post(path, json={}).status_code == 422
 
 
 if __name__ == "__main__":
