@@ -561,7 +561,6 @@ class Actions(Construct):
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
-            replica_profile=self.env.replicas,
             env_variables=self._container_env(),
             readiness=health.readiness(),
             liveness=health.liveness(),

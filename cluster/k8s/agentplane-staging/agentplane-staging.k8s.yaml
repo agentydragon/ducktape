@@ -3726,8 +3726,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
-              value: /etc/agentplane-central-sampler/settings.json
             - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -3735,6 +3733,8 @@ spec:
                   name: postgres-central-sampler
             - name: SSL_CERT_FILE
               value: /var/run/public-web-pki/ca-certificates.crt
+            - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
+              value: /etc/agentplane-central-sampler/settings.json
           image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -3780,7 +3780,7 @@ spec:
             periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-central-sampler
-              name: central-sampler-settings
+              name: configmap-central-sampler-settings
               readOnly: true
             - mountPath: /var/log/central-sampler
               name: logs
@@ -3818,7 +3818,7 @@ spec:
       volumes:
         - configMap:
             name: central-sampler-settings
-          name: central-sampler-settings
+          name: configmap-central-sampler-settings
         - emptyDir: {}
           name: logs
         - name: workload-tls

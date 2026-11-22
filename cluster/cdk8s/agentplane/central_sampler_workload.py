@@ -39,7 +39,6 @@ from cluster.cdk8s.settings_file import SettingsFile
 from util.settings_contract import env_name
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset"
-_CONFIG_PATH = "/etc/agentplane-central-sampler/settings.json"
 _LOGS_PATH = "/var/log/central-sampler"
 
 
@@ -101,13 +100,8 @@ class CentralSampler(Construct):
             "settings",
             metadata=ApiObjectMetadata(name=f"{central_sampler.NAME}-settings", namespace=namespace),
             content=json_config(settings.model_dump(mode="json", exclude_none=True)),
-            path=_CONFIG_PATH,
+            path="/etc/agentplane-central-sampler/settings.json",
         )
-        settings_volume = Volume.from_config_map(
-            self, "settings-volume", settings_file.config_map, name=f"{central_sampler.NAME}-settings"
-        )
-        config_env = Settings.config_file_env
-        database_env = env_name(Settings, "database_url")
         workload = add_service_workload(
             self,
             env,
@@ -116,8 +110,7 @@ class CentralSampler(Construct):
             image=_IMAGE,
             extra_ports=[Port(name="health", number=central_sampler.HEALTH_PORT).container_port()],
             env_variables={
-                config_env: EnvValue.from_value(_CONFIG_PATH),
-                database_env: database_url,
+                env_name(Settings, "database_url"): database_url,
                 "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             },
             readiness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=3, period_seconds=10),
@@ -130,11 +123,11 @@ class CentralSampler(Construct):
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
             ),
             termination_grace=Duration.seconds(60),
-            replica_profile=props.replicas or env.replicas,
+            replica_profile=props.replicas,
             placement=placement,
             registry_secret_name=registry_secret_name,
         )
-        workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
+        settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
         workload_tls.service_certificate(
             self, env, container=workload.container, name=central_sampler.NAME, uri=CENTRAL_SAMPLER_URI
