@@ -13,12 +13,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { frontBundle, frontTree } from "../translation/frontend.mjs";
+import { pairFiles } from "../translation/pair.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const lower = process.env.LOWER ?? path.join(here, "../lean/.lake/build/bin/lower");
 const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
-const pair = path.join(here, "../translation/pair.mjs");
-const frontend = path.join(here, "../translation/frontend.mjs");
 const show = process.argv.includes("--show");
 const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);
@@ -131,12 +131,11 @@ const reorder = (c, bundleJson, lines, order) => {
   writeFileSync(path.join(out, "entry.js"), order.map((i) => lines[i]).join("\n") + "\n");
   const outputJson = path.join(work, "output.json");
   const certJson = path.join(work, "cert.json");
-  for (const [name, args] of [
-    ["tree", [frontend, "tree", out, "--entry", "entry.js", "--out", outputJson]],
-    ["pairing", [pair, bundleJson, outputJson, "--out", certJson]],
-  ]) {
-    const r = spawnSync(process.execPath, args, { encoding: "utf8" });
-    if (r.status !== 0) throw new Error(`${c.name}: ${name} of [${order}]: ${r.stderr}`);
+  try {
+    writeFileSync(outputJson, JSON.stringify(frontTree(out, "entry.js")));
+    pairFiles(bundleJson, outputJson, certJson);
+  } catch (cause) {
+    throw new Error(`${c.name}: building the pairing certificate for [${order}]`, { cause });
   }
   const checked = spawnSync(translate, [bundleJson, outputJson, certJson, "--premises", c.premisesFile], {
     encoding: "utf8",
@@ -157,8 +156,11 @@ for (const [n, raw] of cases.entries()) {
   const source = path.join(work, "case.mjs");
   const bundle = path.join(work, "bundle.json");
   writeFileSync(source, c.source);
-  const front = spawnSync(process.execPath, [frontend, "bundle", source, "--out", bundle], { encoding: "utf8" });
-  if (front.status !== 0) throw new Error(`${c.name}: ${front.stderr}`);
+  try {
+    writeFileSync(bundle, JSON.stringify(frontBundle(source)));
+  } catch (cause) {
+    throw new Error(`${c.name}: parsing the bundle`, { cause });
+  }
   const run = spawnSync(lower, [bundle, "--premises", c.premisesFile], { encoding: "utf8", maxBuffer: 1 << 26 });
   if (run.status !== 0) throw new Error(`${c.name}: ${run.stderr}`);
   const footprints = run.stdout

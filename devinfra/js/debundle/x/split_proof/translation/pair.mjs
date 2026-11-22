@@ -141,107 +141,115 @@ function links(module, known) {
   return { imports, exports };
 }
 
-const [bundlePath, outputPath, ...rest] = process.argv.slice(2);
-const outAt = rest.indexOf("--out");
-if (!bundlePath || !outputPath || outAt < 0)
-  throw new Error("usage: pair.mjs <bundle.json> <output.json> --out <cert.json>");
-const bundle = JSON.parse(readFileSync(bundlePath, "utf8"));
-const output = JSON.parse(readFileSync(outputPath, "utf8"));
+export function pairFiles(bundlePath, outputPath, certificatePath) {
+  const bundle = JSON.parse(readFileSync(bundlePath, "utf8"));
+  const output = JSON.parse(readFileSync(outputPath, "utf8"));
 
-// every unit gets a global id: the bundle's first, then the output's
-const bundleUnits = bodyUnits(bundle.program);
-const nB = bundleUnits.length;
-const units = bundleUnits.map((ast) => ({ ast, side: "B" }));
-output.modules.forEach((module, m) =>
-  bodyUnits(module.program).forEach((ast, u) => units.push({ ast, side: "O", m, u, path: module.path }))
-);
-const names = units.map((unit) => topNames(unit.ast));
-const label = units.map((unit) => shapeKey(unit.ast));
+  // every unit gets a global id: the bundle's first, then the output's
+  const bundleUnits = bodyUnits(bundle.program);
+  const nB = bundleUnits.length;
+  const units = bundleUnits.map((ast) => ({ ast, side: "B" }));
+  output.modules.forEach((module, m) =>
+    bodyUnits(module.program).forEach((ast, u) => units.push({ ast, side: "O", m, u, path: module.path }))
+  );
+  const names = units.map((unit) => topNames(unit.ast));
+  const label = units.map((unit) => shapeKey(unit.ast));
 
-// who uses whom
-const uses = units.map(() => []);
-{
-  const bundleDecl = new Map();
-  for (let i = 0; i < nB; i++)
-    for (const name of names[i].declared) bundleDecl.set(name, [...(bundleDecl.get(name) ?? []), i]);
-  for (let i = 0; i < nB; i++)
-    for (const name of names[i].used)
-      for (const target of bundleDecl.get(name) ?? []) if (target !== i) uses[i].push(target);
-  const index = new Map(output.modules.map((module, m) => [module.path, m]));
-  const declOut = output.modules.map(() => new Map());
-  for (let id = nB; id < units.length; id++) for (const name of names[id].declared) declOut[units[id].m].set(name, id);
-  const known = new Set(index.keys());
-  const linkage = output.modules.map((module) => links(module, known));
-  const resolve = (m, name) => {
-    if (declOut[m].has(name)) return declOut[m].get(name);
-    const imp = linkage[m].imports.get(name);
-    const src = imp && index.get(imp.from);
-    return src === undefined ? undefined : declOut[src].get(linkage[src].exports.get(imp.imported));
-  };
-  for (let id = nB; id < units.length; id++) {
-    for (const name of names[id].used) {
-      const target = resolve(units[id].m, name);
-      if (target !== undefined && target !== id) uses[id].push(target);
+  // who uses whom
+  const uses = units.map(() => []);
+  {
+    const bundleDecl = new Map();
+    for (let i = 0; i < nB; i++)
+      for (const name of names[i].declared) bundleDecl.set(name, [...(bundleDecl.get(name) ?? []), i]);
+    for (let i = 0; i < nB; i++)
+      for (const name of names[i].used)
+        for (const target of bundleDecl.get(name) ?? []) if (target !== i) uses[i].push(target);
+    const index = new Map(output.modules.map((module, m) => [module.path, m]));
+    const declOut = output.modules.map(() => new Map());
+    for (let id = nB; id < units.length; id++)
+      for (const name of names[id].declared) declOut[units[id].m].set(name, id);
+    const known = new Set(index.keys());
+    const linkage = output.modules.map((module) => links(module, known));
+    const resolve = (m, name) => {
+      if (declOut[m].has(name)) return declOut[m].get(name);
+      const imp = linkage[m].imports.get(name);
+      const src = imp && index.get(imp.from);
+      return src === undefined ? undefined : declOut[src].get(linkage[src].exports.get(imp.imported));
+    };
+    for (let id = nB; id < units.length; id++) {
+      for (const name of names[id].used) {
+        const target = resolve(units[id].m, name);
+        if (target !== undefined && target !== id) uses[id].push(target);
+      }
     }
   }
-}
-const usedBy = units.map(() => []);
-uses.forEach((targets, id) => targets.forEach((t) => usedBy[t].push(id)));
+  const usedBy = units.map(() => []);
+  uses.forEach((targets, id) => targets.forEach((t) => usedBy[t].push(id)));
 
-const hash = (text) => createHash("sha1").update(text).digest("hex").slice(0, 16);
-const classCount = () => new Set(label).size;
-function refine() {
-  for (let round = 0, before = classCount(); round < 20; round++) {
-    const next = label.map((own, id) =>
-      hash(
-        `${own}|${uses[id]
-          .map((t) => label[t])
-          .sort()
-          .join(",")}|${usedBy[id]
-          .map((t) => label[t])
-          .sort()
-          .join(",")}`
-      )
-    );
-    for (let id = 0; id < label.length; id++) label[id] = next[id];
-    const after = classCount();
-    if (after === before) return;
-    before = after;
+  const hash = (text) => createHash("sha1").update(text).digest("hex").slice(0, 16);
+  const classCount = () => new Set(label).size;
+  function refine() {
+    for (let round = 0, before = classCount(); round < 20; round++) {
+      const next = label.map((own, id) =>
+        hash(
+          `${own}|${uses[id]
+            .map((t) => label[t])
+            .sort()
+            .join(",")}|${usedBy[id]
+            .map((t) => label[t])
+            .sort()
+            .join(",")}`
+        )
+      );
+      for (let id = 0; id < label.length; id++) label[id] = next[id];
+      const after = classCount();
+      if (after === before) return;
+      before = after;
+    }
   }
-}
-refine();
-
-const pairs = [];
-const done = new Set();
-let fixed = 0;
-for (;;) {
-  const classes = new Map();
-  label.forEach((l, id) => {
-    if (done.has(id)) return;
-    const c = classes.get(l) ?? { B: [], O: [] };
-    c[units[id].side].push(id);
-    classes.set(l, c);
-  });
-  let ambiguous = null;
-  for (const c of classes.values()) {
-    if (c.B.length === 1 && c.O.length === 1) {
-      pairs.push([units[c.O[0]].m, units[c.O[0]].u, c.B[0]]);
-      done.add(c.B[0]).add(c.O[0]);
-    } else if (!ambiguous && c.B.length > 0 && c.O.length > 0) ambiguous = c;
-  }
-  if (!ambiguous) break;
-  // copies nothing tells apart: fix one pair (any pair does) and refine again
-  const [b, o] = [ambiguous.B[0], ambiguous.O[0]];
-  pairs.push([units[o].m, units[o].u, b]);
-  done.add(b).add(o);
-  label[b] = label[o] = `fixed${fixed++}`;
   refine();
+
+  const pairs = [];
+  const done = new Set();
+  let fixed = 0;
+  for (;;) {
+    const classes = new Map();
+    label.forEach((l, id) => {
+      if (done.has(id)) return;
+      const c = classes.get(l) ?? { B: [], O: [] };
+      c[units[id].side].push(id);
+      classes.set(l, c);
+    });
+    let ambiguous = null;
+    for (const c of classes.values()) {
+      if (c.B.length === 1 && c.O.length === 1) {
+        pairs.push([units[c.O[0]].m, units[c.O[0]].u, c.B[0]]);
+        done.add(c.B[0]).add(c.O[0]);
+      } else if (!ambiguous && c.B.length > 0 && c.O.length > 0) ambiguous = c;
+    }
+    if (!ambiguous) break;
+    // copies nothing tells apart: fix one pair (any pair does) and refine again
+    const [b, o] = [ambiguous.B[0], ambiguous.O[0]];
+    pairs.push([units[o].m, units[o].u, b]);
+    done.add(b).add(o);
+    label[b] = label[o] = `fixed${fixed++}`;
+    refine();
+  }
+  const leftover = [];
+  for (let id = 0; id < units.length; id++)
+    if (!done.has(id)) leftover.push(units[id].side === "B" ? `bundle ${id}` : `${units[id].path}#${units[id].u}`);
+  writeFileSync(certificatePath, JSON.stringify({ pairs }));
+  return { paired: pairs.length, total: nB, fixed, leftover };
 }
-const leftover = [];
-for (let id = 0; id < units.length; id++)
-  if (!done.has(id)) leftover.push(units[id].side === "B" ? `bundle ${id}` : `${units[id].path}#${units[id].u}`);
-writeFileSync(rest[outAt + 1], JSON.stringify({ pairs }));
-console.log(
-  `paired ${pairs.length} of ${nB} bundle units; copies fixed by hand: ${fixed}; left over: ${leftover.length}`
-);
-if (leftover.length) console.log(`  e.g. ${leftover.slice(0, 6).join(", ")}`);
+
+if (import.meta.main) {
+  const [bundlePath, outputPath, ...rest] = process.argv.slice(2);
+  const outAt = rest.indexOf("--out");
+  if (!bundlePath || !outputPath || outAt < 0)
+    throw new Error("usage: pair.mjs <bundle.json> <output.json> --out <cert.json>");
+  const { paired, total, fixed, leftover } = pairFiles(bundlePath, outputPath, rest[outAt + 1]);
+  console.log(
+    `paired ${paired} of ${total} bundle units; copies fixed by hand: ${fixed}; left over: ${leftover.length}`
+  );
+  if (leftover.length) console.log(`  e.g. ${leftover.slice(0, 6).join(", ")}`);
+}
