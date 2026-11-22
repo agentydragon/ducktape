@@ -700,8 +700,8 @@ async def _expect_delivery_gutter(row: Locator) -> None:
         assert box["x"] + box["width"] <= bubble_box["x"]
 
 
-@DESKTOP_AND_MOBILE
-async def test_outstanding_command_conversation(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_outstanding_command_conversation(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.build(Scene.OUTSTANDING_COMMAND_CONVERSATION)
     await app.mount_thread(RUNNING_THREAD)
     history = view.page.get_by_role("region", name="Thread history")
@@ -712,7 +712,7 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
 
     await expect(history.get_by_text("The previous deployment is healthy.", exact=False)).to_be_visible()
     await expect(phase).to_have_count(1)
-    await expect(phase).to_contain_text("Runner accepted the command")
+    await expect(phase.get_by_role("status")).to_have_text("Outcome unknown")
     await expect(continuation.get_by_text("continue", exact=True)).to_be_visible()
     await expect(model).to_contain_text("chatgpt-sub/oai-responses/gpt-6.2-sol")
     await expect(queued).to_contain_text("Review the deployment once the Sandbox is ready.")
@@ -724,6 +724,23 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await _expect_delivery_gutter(continuation)
     await view.page.mouse.move(0, 0)
     await view.capture(name="unknown_on_history_input")
+    details_button = phase.get_by_role("button", name="Outcome unknown · delivery details")
+    details = view.page.get_by_role("dialog", name="Delivery details")
+    await expect(details).to_have_count(0)
+    if viewport.has_touch:
+        await details_button.tap()
+    else:
+        await details_button.focus()
+        await details_button.press("Enter")
+    await expect(details).to_contain_text("Dispatcher did not receive an outcome before the runner disconnected.")
+    await expect(details).to_contain_text("Runner accepted the command")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="unknown_on_history_input_details")
+    if viewport.has_touch:
+        await details_button.tap()
+    else:
+        await details_button.press("Escape")
+    await expect(details).to_have_count(0)
     await phase.get_by_role("button", name="Dismiss delivery issue", exact=False).click()
     await expect(phase).to_have_count(1)
     await expect(phase.locator(".transcript-user-message-aside")).to_have_count(0)
@@ -789,15 +806,22 @@ async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: Visua
     row = view.page.locator('[data-command-id="wake-deadline-dispatch"]')
     failure = row.get_by_role("alert")
     await expect(failure).to_be_visible()
-    await expect(failure).to_contain_text("Sandbox did not become Ready within 10 minutes")
-    await expect(failure).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
+    await expect(failure).to_have_text("Delivery failed")
+    await failure.get_by_role("button", name="Delivery failed · delivery details").click()
+    details = view.page.get_by_role("dialog", name="Delivery details")
+    await expect(details).to_contain_text("Sandbox did not become Ready within 10 minutes")
+    await expect(details).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
     await row.scroll_into_view_if_needed()
     await expect(failure).to_be_in_viewport(ratio=1)
     await view.capture(name="failed")
+    await view.page.keyboard.press("Escape")
+    await expect(details).to_have_count(0)
     unknown = view.page.locator('[data-command-id="unknown-dispatch"]')
     status = unknown.get_by_role("status")
-    await expect(status).to_have_text("Outcome unknown: Connection to the runner closed before it returned a receipt")
+    await expect(status).to_have_text("Outcome unknown")
     await expect(unknown.get_by_role("alert")).to_have_count(0)
+    await status.get_by_role("button", name="Outcome unknown · delivery details").click()
+    await expect(details).to_contain_text("Connection to the runner closed before it returned a receipt")
     await expect(status).to_be_visible()
     await unknown.scroll_into_view_if_needed()
     await expect(status).to_be_in_viewport(ratio=1)

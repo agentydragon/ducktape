@@ -110,29 +110,38 @@
   flex: none;
 }
 
-/* Leave room beside long bubbles for delivery feedback while letting short bubbles stay compact. */
-.transcript-user-message-aside:has(
-  > :is(.agentplane-command-progress-inline, .agentplane-receipt-progress[data-inline])
-) {
-  max-width: min(34rem, 100%);
+/* Keep feedback compact and beside the message, even when the message is long. */
+.transcript-user-message-aside:has(> :is(.agentplane-command-progress-inline, .agentplane-message-delivery)) {
+  max-width: 100%;
 }
 
-.transcript-user-message-aside:has(
-    > :is(.agentplane-command-progress-inline, .agentplane-receipt-progress[data-inline])
-  )
+.transcript-user-message-aside:has(> :is(.agentplane-command-progress-inline, .agentplane-message-delivery))
   + .transcript-user-bubble {
-  max-width: min(34rem, calc(100% - clamp(7rem, 45%, 15rem) - var(--mantine-spacing-xs)));
+  max-width: min(34rem, calc(100% - clamp(10rem, 53%, 14rem) - var(--mantine-spacing-xs)));
 }
 
-@media (max-width: 36em) {
-  .transcript-user-message-aside .agentplane-command-progress-inline {
-    flex-wrap: wrap;
-    row-gap: 0.25rem;
-  }
+.transcript-user-message-aside .agentplane-command-progress-inline {
+  gap: 0.25rem;
+  flex: 0 1 auto;
+  align-items: center;
+}
 
-  .transcript-user-message-aside .agentplane-command-progress-inline > :last-child {
-    flex-basis: 100%;
-  }
+.agentplane-message-delivery {
+  min-width: 0;
+}
+
+.agentplane-command-details-trigger {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+  min-width: 0;
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .agentplane-command-card-line:has(

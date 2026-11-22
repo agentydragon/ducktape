@@ -576,6 +576,7 @@ ts_library(
     srcs = ["command_progress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend/ui:icons",

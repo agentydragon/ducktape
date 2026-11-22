@@ -121,14 +121,36 @@ export function DispatchReceiptProgress({
   subject: CommandSubject;
 }): JSX.Element {
   const { reason, actions } = useReceiptReason(delivery.readReceipts, item);
+  const accepted = item.state === DeliveryState.UNKNOWN && item.journalAdmitted && (
+    <Text size="xs" c="dimmed">
+      Runner accepted the command
+    </Text>
+  );
+  const stage = receiptStage[item.state] ?? "unknown";
+  if (subject === "input" && isDeliveryIssue(item.state)) {
+    return (
+      <Group gap={4} wrap="nowrap" className="agentplane-message-delivery">
+        <CommandProgress
+          stage={stage}
+          subject={subject}
+          reason={reason}
+          details={
+            accepted || actions ? (
+              <>
+                {accepted}
+                {actions}
+              </>
+            ) : undefined
+          }
+        />
+        <AcknowledgeDeliveryIssue item={item} attention={delivery.attention} />
+      </Group>
+    );
+  }
   return (
     <Stack gap={2} className="agentplane-receipt-progress" data-inline={isDeliveryIssue(item.state) || undefined}>
-      <CommandProgress stage={receiptStage[item.state] ?? "unknown"} subject={subject} reason={reason} />
-      {item.state === DeliveryState.UNKNOWN && item.journalAdmitted && (
-        <Text size="xs" c="dimmed">
-          Runner accepted the command
-        </Text>
-      )}
+      <CommandProgress stage={stage} subject={subject} reason={reason} />
+      {accepted}
       {(actions || delivery.attention.canAcknowledge(item)) && (
         <Group gap="xs">
           {actions}

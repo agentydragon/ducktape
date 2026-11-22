@@ -1,5 +1,6 @@
+import { Popover, Stack, Text } from "@mantine/core";
 import { IconCheck } from "../ui/icons";
-import { type JSX, useState } from "react";
+import { type JSX, type ReactNode, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */
 export type CommandStage =
@@ -49,12 +50,14 @@ export function CommandProgress({
   stage,
   subject,
   reason,
+  details,
   local = false,
   unsent = false,
 }: {
   stage: Exclude<CommandStage, "noop">;
   subject: CommandSubject;
   reason?: string | null;
+  details?: ReactNode;
   /** This browser actually retained the command; server-only rows cannot claim that. */
   local?: boolean;
   /** Only the browser owns a command that has not been attempted over HTTP yet. */
@@ -122,6 +125,7 @@ export function CommandProgress({
       </span>
     );
   if (failed || uncertain) {
+    const summary = stage === "dispatch_failed" ? "Delivery failed" : labels[stage];
     return (
       <span
         className="agentplane-command-progress agentplane-command-progress-inline"
@@ -129,7 +133,33 @@ export function CommandProgress({
         role={failed ? "alert" : "status"}
       >
         {indicator}
-        <span>{label}</span>
+        {subject !== "input" ? (
+          <span>{label}</span>
+        ) : reasonLabel || details ? (
+          <Popover position="bottom-start" shadow="md" width="min(22rem, calc(100vw - 2rem))" returnFocus>
+            <Popover.Target>
+              <button
+                type="button"
+                className="agentplane-command-details-trigger"
+                aria-label={summary + " · delivery details"}
+              >
+                {summary}
+              </button>
+            </Popover.Target>
+            <Popover.Dropdown aria-label="Delivery details">
+              <Stack gap="xs">
+                {reasonLabel && (
+                  <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    {reasonLabel}
+                  </Text>
+                )}
+                {details}
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
+        ) : (
+          <span>{summary}</span>
+        )}
       </span>
     );
   }

@@ -1416,6 +1416,15 @@ function pendingRow(container: Element, commandId: string): HTMLElement {
   return row;
 }
 
+async function openDeliveryDetails(row: Element): Promise<HTMLElement> {
+  const trigger = row.querySelector<HTMLButtonElement>(".agentplane-command-details-trigger");
+  if (!trigger) throw new Error("Missing delivery details trigger");
+  await act(async () => trigger.click());
+  const detail = document.querySelector<HTMLElement>('[aria-label="Delivery details"]');
+  if (!detail) throw new Error("Missing delivery details");
+  return detail;
+}
+
 function progressLabel(container: HTMLDivElement, commandId: string): string | null | undefined {
   const progress = pendingRow(container, commandId).querySelector(".agentplane-command-progress");
   return (
@@ -1535,8 +1544,9 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
   const container = await render();
   const row = pendingRow(container, failed.commandId);
   expect(row.querySelector('[data-stage="dispatch_failed"]')).not.toBeNull();
-  expect(row.querySelector('[role="alert"]')?.textContent).toBe(
-    "Dispatcher could not deliver: Sandbox did not become Ready within 10 minutes: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound"
+  expect(row.querySelector('[role="alert"]')?.textContent).toBe("Delivery failed");
+  expect((await openDeliveryDetails(row)).textContent).toContain(
+    "Sandbox did not become Ready within 10 minutes: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound"
   );
   expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
@@ -1731,17 +1741,17 @@ it("keeps one History bubble for an unresolved receipt across dismissal and a ne
     journalAdmitted: true,
   };
   await showIssues(watch, issue);
-  expect(pendingRow(container, input.entityId).textContent).toContain(issue.reason);
+  expect((await openDeliveryDetails(pendingRow(container, input.entityId))).textContent).toContain(issue.reason);
   await rerender(container, threadState({ rows: [viewState(), input] }));
   const rows = () => container.querySelectorAll(`[data-command-id="${input.entityId}"]`);
   expect(rows()).toHaveLength(1);
-  expect(rows()[0].textContent).toContain(issue.reason);
+  expect(rows()[0].textContent).toContain("Outcome unknown");
   await act(async () => buttonIn(rows()[0], "Dismiss")!.click());
   expect(rows()).toHaveLength(1);
   expect(rows()[0].textContent).not.toContain(issue.reason);
   await showIssues(watch, { ...issue, receiptVersion: "33", reason: "A later uncertain outcome" });
   expect(rows()).toHaveLength(1);
-  expect(rows()[0].textContent).toContain("A later uncertain outcome");
+  expect((await openDeliveryDetails(rows()[0])).textContent).toContain("A later uncertain outcome");
 });
 
 it("shows the Dispatcher input when an unspecified History command has no rendered bubble", async () => {
@@ -1832,7 +1842,9 @@ it("acknowledges only the exact revision, including a matching local notice, and
   expect(receiptBatchRequests.at(-1)?.searchParams.getAll("commandIds")).toEqual([local.commandId]);
   selectedReceipts = [newer];
   await showIssues(watch, newer);
-  expect(container.textContent).toContain("Dispatcher found a new problem");
+  expect((await openDeliveryDetails(pendingRow(container, local.commandId))).textContent).toContain(
+    "Dispatcher found a new problem"
+  );
 });
 
 it("reconciles an old synthetic missing receipt by exact ID and original content", async () => {
@@ -1868,12 +1880,14 @@ it("reconciles an old synthetic missing receipt by exact ID and original content
   await showIssues(watch, exact);
   expect(container.querySelectorAll(`[data-command-id="${local.commandId}"]`)).toHaveLength(1);
   const bubble = pendingRow(container, local.commandId);
-  expect(bubble.textContent).toContain(exact.reason);
+  expect((await openDeliveryDetails(bubble)).textContent).toContain(exact.reason);
   await act(async () => buttonIn(bubble, "Dismiss")!.click());
   expect(writes).toEqual([{ notice: { commandId: local.commandId, receiptVersion: "91" } }]);
   expect(container.querySelector(`[data-command-id="${local.commandId}"]`)).toBeNull();
   const unmatched = pendingRow(container, unrelated.commandId);
-  expect(unmatched.textContent).toContain("Dispatcher did not return a receipt for this command");
+  expect((await openDeliveryDetails(unmatched)).textContent).toContain(
+    "Dispatcher did not return a receipt for this command"
+  );
   expect(buttonIn(unmatched, "Dismiss")).toBeUndefined();
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(2);
 });
@@ -1888,7 +1902,7 @@ it("keeps a saved local failure with no authoritative receipt for acknowledgemen
   deliveryRequest = request;
   const container = await render();
   const row = pendingRow(container, local.commandId);
-  expect(row?.textContent).toContain(receipt.reason);
+  expect((await openDeliveryDetails(row)).textContent).toContain(receipt.reason);
   expect(buttonIn(row, "Dismiss")).toBeUndefined();
   expect(request).not.toHaveBeenCalled();
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
@@ -1923,10 +1937,10 @@ it("keeps unseen delivery issues visible when acknowledgement reads or writes fa
   const watch = await selectedWorksetWatch();
   await showIssues(watch, issueReceipt("keep-unseen", "41"));
   const row = pendingRow(container, "keep-unseen");
-  expect(row.textContent).toContain("Delivery refused");
+  expect(row.textContent).toContain("Delivery failed");
   expect(container.textContent).toContain("Could not load acknowledgements.");
   await act(async () => buttonIn(row, "Dismiss")!.click());
-  expect(row.textContent).toContain("Delivery refused");
+  expect(row.textContent).toContain("Delivery failed");
   expect(container.textContent).toContain("Could not acknowledge the delivery issue.");
 });
 
@@ -2044,7 +2058,7 @@ it("keeps a newer receipt visible when its acknowledgement lookup fails", async 
   await showIssues(watch, earlier);
   expect(container.textContent).not.toContain(earlier.reason);
   await showIssues(watch, newer);
-  expect(container.textContent).toContain(newer.reason);
+  expect((await openDeliveryDetails(pendingRow(container, newer.commandId))).textContent).toContain(newer.reason);
   expect(container.textContent).toContain("Could not load acknowledgements.");
 });
 
@@ -2142,7 +2156,7 @@ it("reads a full legacy reason by command ID and retains the view across expired
       resumeToken: "legacy-workset",
     });
   });
-  const panel = pendingRow(container, row.commandId);
+  const panel = await openDeliveryDetails(pendingRow(container, row.commandId));
   await act(async () => buttonIn(panel, "Show full reason")?.click());
   expect(receiptBatchRequests.at(-1)?.searchParams.getAll("commandIds")).toEqual([row.commandId]);
   expect(panel.textContent).toContain(reason);
@@ -2224,10 +2238,9 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
   await sendDispatches([]);
 
   const row = pendingRow(container, waiting.commandId);
-  await vi.waitFor(() =>
-    expect(row.querySelector('[role="status"]')?.textContent).toBe(
-      "Outcome unknown: Dispatcher did not return a receipt for this command"
-    )
+  await vi.waitFor(() => expect(row.querySelector('[role="status"]')?.textContent).toBe("Outcome unknown"));
+  expect((await openDeliveryDetails(row)).textContent).toContain(
+    "Dispatcher did not return a receipt for this command"
   );
   expect(row.querySelector('[role="alert"]')).toBeNull();
 });
@@ -2333,7 +2346,10 @@ it("leaves a command whose delivery reply was lost unconfirmed", async () => {
   new LocalCommands(THREAD.metadata.threadId).remember(message("lost"));
   vi.mocked(submitInput).mockRejectedValueOnce(new Error("Command admission unconfirmed: 503"));
   const container = await render();
-  expect(progressLabel(container, "lost")).toBe("Dispatcher receipt unconfirmed: Command admission unconfirmed: 503");
+  expect(progressLabel(container, "lost")).toBe("Dispatcher receipt unconfirmed");
+  expect((await openDeliveryDetails(pendingRow(container, "lost"))).textContent).toContain(
+    "Command admission unconfirmed: 503"
+  );
 });
 
 it("keeps authored input when reconnect cannot recover its receipt", async () => {
@@ -2528,8 +2544,10 @@ it.each([
     outcome === "effected" ? 1 : 0
   );
   expect(bubble?.parentElement?.querySelector('[role="alert"]')?.textContent).toBe(
-    outcome === "failed" ? status : undefined
+    outcome === "failed" ? "Failed" : undefined
   );
+  if (outcome === "failed")
+    expect((await openDeliveryDetails(bubble!.parentElement!)).textContent).toContain("runner unavailable");
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     outcome === "effected" ? status : undefined
   );
