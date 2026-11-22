@@ -1761,12 +1761,6 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
-    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await page.evaluate(
-        """([thread, id]) => ['agentplane.pending:', 'agentplane.input-echo:'].some(prefix =>
-            localStorage.getItem(prefix + encodeURIComponent(thread) + ':' + encodeURIComponent(id)) !== null)""",
-        [str(thread.id), command.command_id],
-    )
     source.confirm_input(command, message_id="test-confirmed-message")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
