@@ -268,7 +268,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.LAYOUT, staging.chart
     )
-    delegation_charts = binding_delegation.external_charts(staging.ENV, staging.assignable_grants())
+    delegation_charts = binding_delegation.external_charts(staging.ENV, staging.ASSIGNABLE_GRANTS)
     binding_delegation.write_manifests(root, staging.ENV, delegation_charts)
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
