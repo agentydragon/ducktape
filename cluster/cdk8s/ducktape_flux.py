@@ -159,12 +159,12 @@ def chart(app: App) -> Chart:
     )
     # Only the two public control-plane CRDs in this namespace. In particular no access to
     # the controller-only SOPS key Secret, ConfigMaps, Pods, logs, exec, or writes.
-    reader = access.role_ref("ducktape-flux-read")
+    diagnostics_role = access.role_ref("ducktape-flux-read")
     k8s.KubeRole(
         chart,
         "reader",
         metadata=k8s.ObjectMeta(
-            name=reader.name,
+            name=diagnostics_role.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only public Ducktape Flux diagnostics."},
         ),
@@ -185,7 +185,7 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={"description": "Binds the Haku OIDC group to public Ducktape Flux diagnostics."},
         ),
-        role_ref=reader,
+        role_ref=diagnostics_role,
         subjects=[subject.k8s() for subject in access.HAKU_IDENTITIES],
     )
     return chart
