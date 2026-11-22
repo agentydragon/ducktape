@@ -87,7 +87,6 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.proto import session_pb2
 from agentplane.sampler.settings import ActionsConfig, AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
@@ -150,7 +149,6 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
-from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
@@ -928,10 +926,6 @@ def add_vm_templates(
         env,
         gateway=launcher_relay.GUEST_GATEWAY,
         block_devices=("/dev/disk/by-id/virtio-workspace",),
-        platform_instructions=platform_instructions(
-            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
-        ),
-        harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
         codex_readiness=_VM_CODEX_READINESS,
     )
     config = ConfigMap(
@@ -1000,7 +994,6 @@ def add_firecracker_template(
     firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
     workspace_volume = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
     workspace_volume["claim"]["resources"] = state_volume["claim"]["resources"]
-    guest_gateway = environment_firecracker.GATEWAY
     environment_firecracker.EnvironmentFirecrackerTemplate(
         scope,
         "firecracker-template",
@@ -1009,10 +1002,6 @@ def add_firecracker_template(
         state_volume=firecracker_state,
         workspace_volume=workspace_volume,
         runner_image=environment_vm.RUNNER_DISK_IMAGE,
-        platform_instructions=platform_instructions(
-            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
-        ),
-        harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
         image_pull_secret_name=None,
         codex_readiness=_VM_CODEX_READINESS,
     )

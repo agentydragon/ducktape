@@ -82,13 +82,10 @@ def test_runtime_overrides_reach_the_vm_guest() -> None:
         replace(staging.ENV, vm_console_autologin=True),
         gateway=launcher_relay.GUEST_GATEWAY,
         block_devices=("/dev/vdb",),
-        platform_instructions="Test platform guidance.",
-        harness_env={"EXAMPLE_SERVICE_URL": "http://service.test"},
         session_reconcile_concurrency=2048,
         codex_readiness=readiness,
     )
     config = Configuration.model_validate_json(data["environment-runtime.json"])
-    assert config.harness_environment.values["EXAMPLE_SERVICE_URL"] == "http://service.test"
     assert isinstance(config.environment, SystemdEnvironment)
     assert config.environment.console_autologin is True
     assert config.session_reconcile_concurrency == 2048
