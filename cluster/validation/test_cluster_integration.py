@@ -39,7 +39,12 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resources
+from cluster.validation.k8s import (
+    AgentplaneSandboxTemplateResource,
+    ArtifactGeneratorResource,
+    K8sResource,
+    parse_k8s_resources,
+)
 from cluster.validation.kustomize import (
     KustomizeFile,
     flux_generated_kustomization,
@@ -296,6 +301,24 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         ]
         assert "second" in error
         assert "./cluster/generated/secrets" in error
+
+
+def test_staging_sandbox_templates_use_their_pinned_images(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    component = yaml.safe_load((k8s_dir / "agentplane-staging/image-pins/kustomization.yaml").read_text())
+    pins = {entry["name"]: entry["newTag"] for entry in component["images"]}
+    templates = [
+        resource
+        for resource in cluster.rendered_resources["agentplane-staging"]
+        if isinstance(resource, AgentplaneSandboxTemplateResource)
+    ]
+    assert templates
+    for template in templates:
+        assert template.images, template.name
+        for image in template.images:
+            name, _, tag = image.rpartition(":")
+            assert tag != "unset", (template.name, image)
+            if name in pins:
+                assert tag == pins[name], (template.name, image)
 
 
 def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:
