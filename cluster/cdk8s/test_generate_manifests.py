@@ -726,7 +726,7 @@ def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(parsed_yaml_docum
 
 
 def test_session_archive_importers_mount_the_generated_credentials(
-    generated: Path, documents: list[dict[str, Any]], checkout: Path, tmp_path: Path, kustomize: Path
+    generated: Path, documents: list[dict[str, Any]], checkout: Path, tmp_path: Path, runfiles: Runfiles
 ) -> None:
     generator = find_resource(documents, "ArtifactGenerator", "ducktape-artifacts")
     archive = next(item for item in generator["spec"]["artifacts"] if item["name"] == "ai-session-archive")
@@ -742,6 +742,7 @@ def test_session_archive_importers_mount_the_generated_credentials(
     payload = b"synthetic encrypted payload"
     destinations[f"@repo/{source}"].write_bytes(payload)
 
+    kustomize = runfiles.root() / os.environ["KUSTOMIZE_RLOCATION"]
     resources = list(yaml.safe_load_all(subprocess.check_output([kustomize, "build", work])))
     [secret] = [doc for doc in resources if doc["kind"] == "Secret"]
     jobs = [doc for doc in resources if doc["kind"] == "CronJob"]
