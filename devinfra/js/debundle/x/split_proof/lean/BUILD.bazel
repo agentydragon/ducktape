@@ -71,6 +71,11 @@ diff_test(
     file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
 
+_ESTREE_SOURCES = [
+    "Experiments/ESTreeSource.lean",
+    "Experiments/ESTreeUnits.lean",
+]
+
 # The checker's Lean sources, less the entry and the module that converts footprints to
 # statements, so the `no_writes` mutation test can swap in a changed `Translate.lean`.
 _TRANSLATE_BASE = [
@@ -86,8 +91,9 @@ _TRANSLATE_BASE = [
     "Experiments/IntrinsicMembers.lean",
     "Experiments/Intrinsics.lean",
     "Experiments/Lower.lean",
+    "Experiments/TranslateInput.lean",
     "Experiments/TranslateMain.lean",
-]
+] + _ESTREE_SOURCES
 
 lean_binary(
     name = "translate",
@@ -106,7 +112,8 @@ lean_binary(
         "Experiments/Intrinsics.lean",
         "Experiments/Lower.lean",
         "Experiments/LowerMain.lean",
-    ],
+        "Experiments/TranslateInput.lean",
+    ] + _ESTREE_SOURCES,
     entry = "Experiments/LowerMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
@@ -164,7 +171,7 @@ lean_binary(
         "Experiments/Intrinsics.lean",
         "Experiments/Lower.lean",
         "Experiments/LowerSplit.lean",
-    ],
+    ] + _ESTREE_SOURCES,
     entry = "Experiments/LowerSplit.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
@@ -214,7 +221,7 @@ lean_binary(
             "Experiments/CoreJS/Scope.lean",
             "Experiments/CoreJS/Split.lean",
         ],
-    ) + ["Experiments/CoreJSMain.lean"],
+    ) + ["Experiments/CoreJSMain.lean"] + _ESTREE_SOURCES,
     entry = "Experiments/CoreJSMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )

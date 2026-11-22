@@ -17,7 +17,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
+import * as eslintScope from "eslint-scope";
 import { parse as parseYaml } from "yaml";
+import { dumpParsed } from "../lowering/dump_core.mjs";
+import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const lowersplit = path.join(here, "../../lean/.lake/build/bin/lowersplit");
@@ -34,18 +37,6 @@ const keepDir = option("keep", null) && path.resolve(option("keep", null));
 // ---------------------------------------------------------------- source analysis
 
 const HOLES = /\b(ANYTHING|EXPR|STMT|ARGS|STMT_LIST|ARRAY_ELEMENTS|CASE_REST|DECLARATORS|SEQ_EXPRS)(_\w+)?\b/;
-const DROP = new Set(["start", "end", "loc", "range", "raw", "regex", "bigint", "sourceType"]);
-
-/** ESTree without positions, as `dump.mjs` writes it for Lean. */
-function strip(node) {
-  return JSON.parse(
-    JSON.stringify(node, function (k, v) {
-      if (DROP.has(k)) return undefined;
-      if (k === "value" && this && this.type === "Literal") return undefined;
-      return typeof v === "bigint" ? String(v) : v;
-    })
-  );
-}
 
 /** Position-free AST for comparing a template with a statement; literals keep their values. */
 function shape(node) {
@@ -126,14 +117,14 @@ function declaredNames(statement) {
 }
 
 function analyze(code) {
-  const ast = acorn.parse(code, { ecmaVersion: "latest", sourceType: "module", ranges: true });
-  return ast.body.map((statement) => ({
-    ast: strip(statement),
-    src: code.slice(statement.start, statement.end),
-    type: statement.type,
-    declared: declaredNames(statement),
-    shape: shape(statement),
+  const parsed = parseModule(code, acorn.parse, eslintScope);
+  // These ordinals propose a placement. The checker derives its units from the Program.
+  const statements = topLevelStatements(parsed.ast, code).map(({ node }) => ({
+    node,
+    declared: declaredNames(node),
+    shape: shape(node),
   }));
+  return { program: dumpParsed(parsed), statements };
 }
 
 /** The one statement a hole-free template parses to, as a shape string; `null` when it is not one statement. */
@@ -219,7 +210,7 @@ function translate(spec, chunk, statements) {
   // `export { … }` is the entry's public surface. Under `catchall_file` the catchall takes the unclaimed declarations,
   // the unclaimed anonymous statements that precede its last statement (their effects must stay ahead of it), and
   // everything when it is the only module. Later anonymous statements stay in the entry (design.md, "Spec explicitness").
-  const surface = (i) => statements[i].type === "ExportNamedDeclaration" && !statements[i].ast.declaration;
+  const surface = (i) => statements[i].node.type === "ExportNamedDeclaration" && !statements[i].node.declaration;
   const swept = statements.flatMap((s, i) => (owner[i] === null && !surface(i) && s.declared.length > 0 ? [i] : []));
   let sinkFile = null;
   if (kind === "catchall_file") {
@@ -335,25 +326,22 @@ function runCase(dir, specName, expected) {
     if (!existsSync(path.join(stage, "package.json")))
       writeFileSync(path.join(stage, "package.json"), '{"type":"module"}\n');
     const code = readFileSync(path.join(stage, chunkFile), "utf8");
-    let statements;
+    let analysis;
     try {
-      statements = analyze(code);
+      analysis = analyze(code);
     } catch (error) {
       return unsupported("input does not parse as a module", error.message);
     }
     const spec = parseYaml(readFileSync(path.join(dir, specName), "utf8"));
     let plan;
     try {
-      plan = translate(spec, chunk, statements);
+      plan = translate(spec, chunk, analysis.statements);
     } catch (error) {
       if (error instanceof Unsupported) return unsupported(error.cause, error.detail);
       throw error;
     }
 
-    writeFileSync(
-      path.join(stage, "bundle.json"),
-      JSON.stringify({ statements: statements.map(({ ast, src }) => ({ ast, src })) })
-    );
+    writeFileSync(path.join(stage, "bundle.json"), JSON.stringify(analysis.program));
     writeFileSync(
       path.join(stage, "lean_spec.json"),
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
@@ -375,7 +363,7 @@ function runCase(dir, specName, expected) {
     const mine = { verdict: checked.code === 0 ? "accept" : "reject", failed };
     const placed = Object.entries(plan.modules).filter(([file]) => file !== plan.entry);
     const split = {
-      statements: statements.length,
+      statements: analysis.statements.length,
       modules: placed.filter(([, held]) => held.length > 0).length,
       moved: placed.reduce((sum, [, held]) => sum + held.length, 0),
     };

@@ -3,7 +3,7 @@ import Experiments.CoreJS.Syntax
 import Experiments.CoreJS.Number
 
 /-! Lower a module from the annotated ESTree used by the split checker.
-Statement identities are indices into the declarator-split AST dump. -/
+Statement identities are the source ordinals Lean derives from the module body. -/
 
 namespace CoreJS.FromESTree
 open Lean (Json)
@@ -88,9 +88,5 @@ def program (asts : Array Json) : Except String Program := do
     if let some st := s then body := body.push (i, st)
     exports := exports ++ names.toArray
   return { entry := "main", modules := [{ name := "main", imports := [], body := body.toList, exports := exports.toList }] }
-
-def statements (dump : Json) : Except String (Array Json) := do
-  let units ← dump.getObjVal? "statements" >>= Json.getArr?
-  units.mapM (·.getObjVal? "ast")
 
 end CoreJS.FromESTree

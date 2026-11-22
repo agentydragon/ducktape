@@ -1,23 +1,22 @@
+import Experiments.TranslateInput
 import Experiments.Effects
 
 open Lean Lower Effects
 
-/-- `lower <bundle.json> [--premises <file>]`: one JSON footprint per top-level unit, one per line, from the abstract
-interpreter of `Effects`. The bundle is either acorn's ESTree (`{"statements": [{"ast": …}]}`,
-`experiments/lowering/dump.mjs`) or the annotated units of the translation front end
-(`{"units": […], "imports": […], "exports": […]}`, `experiments/translation/frontend.mjs`). The premises the
-verdict rests on go to stderr. -/
+/-- Print one footprint per source ordinal for an annotated Program, or per executable unit
+for a translation-checker bundle. The premises used by the analysis go to stderr. -/
 def main (args : List String) : IO UInt32 := do
   let (premPath?, args) := takeFlag "--premises" args
   let [path] := args | IO.eprintln "usage: lower <bundle.json> [--premises <file>]"; return 2
   let prem ← loadPremises premPath?
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-  let units := if isNull (fld j "units") then dumpUnits j else items (fld j "units")
-  -- the front end lists the exports; an ESTree dump has them in its `export` statements
-  let exported :=
-    if isNull (fld j "units") then (units.toList.flatMap exportedBindings).toArray
-    else (items (fld j "exports")).map fun e => str (fld e "local")
-  let (fps, r) := footprints units (importsOf j) prem exported
+  let (units, imports, exported) ← IO.ofExcept (do
+    if (j.getObjVal? "program").isOk then
+      let bundle ← TranslateInput.bundle j
+      return (bundle.units, bundle.imports, bundle.exports.map (·.2))
+    let asts ← ESTreeUnits.nodes j
+    return (footprintUnits asts, importsOf asts, (asts.toList.flatMap exportedBindings).toArray))
+  let (fps, r) := footprints units imports prem exported
   for f in fps do IO.println f.toJson.compress
   for line in premiseLines prem r do IO.eprintln line
   if (← IO.getEnv "EFFECTS_WHY").isSome then

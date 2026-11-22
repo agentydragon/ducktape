@@ -19,6 +19,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { topLevelStatements } from "../translation/scope_metadata.mjs";
 import { spec as makeSpec } from "./gen_spec.mjs";
 import { smoke } from "./smoke.mjs";
 
@@ -60,7 +61,7 @@ async function analyze() {
 }
 const footprints = option("footprints", null) ?? (await analyze());
 const bundleJson = JSON.parse(await readFile(path.join(lowering, `${bundle}.json`), "utf8"));
-const n = bundleJson.statements.length;
+const n = topLevelStatements(bundleJson, bundleJson.sourceText).length;
 const baseline = JSON.stringify(await smoke(family, path.join(lowering, `${bundle}.mjs`)));
 if (!JSON.parse(baseline).ok) throw new Error(`the bundle itself fails its smoke test: ${baseline}`);
 

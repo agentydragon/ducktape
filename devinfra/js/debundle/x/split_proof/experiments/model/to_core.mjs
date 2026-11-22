@@ -11,7 +11,7 @@
 // string, and a module that is not a relative path.
 //
 // Identities: the top-level statements of a file are numbered in order, a declaration list counting once for each
-// name, an `import` not at all. `lowering/dump_core.mjs` numbers the statements of a bundle without imports the same
+// name, an `import` not at all. `lowersplit` numbers the statements of a bundle without imports the same
 // way, and `ids` gives a file other numbers: the ones its statements had in the bundle they were taken from.
 //
 // Anything outside the fragment is refused with the type of the node. So is a name the program does not declare and
@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "acorn";
-import { parseModule } from "../translation/scope_metadata.mjs";
+import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 export class Refused extends Error {
   constructor(node, why) {
@@ -189,8 +189,9 @@ export function toCore(source, { opaque = null, ...options } = {}) {
 }
 
 export function coreFromParsed(
-  { ast, scopes: resolvedScopes, units },
-  { allowHost = false, ids = null, idBase = 0, external = false, census = false, opaque = true } = {}
+  { ast, code, scopes: resolvedScopes },
+  { allowHost = false, ids = null, idBase = 0, external = false, census = false, opaque = true } = {},
+  units = topLevelStatements(ast, code)
 ) {
   const scopeManager = opaque ? resolvedScopes : null;
   const opaqueUnits = [];

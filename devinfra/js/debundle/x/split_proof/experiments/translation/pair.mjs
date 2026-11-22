@@ -12,6 +12,7 @@
 // one pair is fixed, the labels are refined again, and so on.
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { bodyUnits, resolveSource } from "./frontend.mjs";
 
 /** The outside import at the root of a chain of plain member accesses. */
 function vendorChain(node) {
@@ -19,7 +20,8 @@ function vendorChain(node) {
     node.type === "MemberExpression" &&
     node.computed === false &&
     node.optional === false &&
-    node.property.type === "Name"
+    node.property.type === "Identifier" &&
+    node.property.k === undefined
   )
     node = node.object;
   return node.type === "Identifier" && node.k === "V";
@@ -43,6 +45,7 @@ function isWorkerWithPath(node) {
 function shapeKey(unit) {
   const parts = [];
   const locals = new Map();
+  const metadata = new Set(["start", "end", "range", "loc", "raw", "sourceType", "sourceText"]);
   const walk = (node) => {
     if (Array.isArray(node)) {
       parts.push("[");
@@ -58,7 +61,12 @@ function shapeKey(unit) {
       if (node.k === "L") {
         if (!locals.has(node.b)) locals.set(node.b, locals.size);
         parts.push(`L${locals.get(node.b)}`);
-      } else parts.push(`${node.k}${node.k === "G" ? `:${node.name}` : ""}${node.d ? "!" : ""}`);
+      } else if (node.k === undefined) parts.push(`Name:${JSON.stringify(node.name)}`);
+      else parts.push(`${node.k}${node.k === "G" ? `:${node.name}` : ""}${node.d ? "!" : ""}`);
+      return;
+    }
+    if (node.type === "TemplateElement") {
+      parts.push(`TemplateElement:${JSON.stringify([node.value.cooked, node.value.raw, node.tail])}`);
       return;
     }
     if (node.type === "MemberExpression" && vendorChain(node)) {
@@ -77,7 +85,7 @@ function shapeKey(unit) {
     }
     parts.push(`(${node.type}`);
     for (const key of Object.keys(node).sort()) {
-      if (key === "type") continue;
+      if (key === "type" || metadata.has(key) || (node.type === "Property" && key === "shorthand")) continue;
       parts.push(`${key}=`);
       walk(node[key]);
     }
@@ -105,6 +113,34 @@ function topNames(unit) {
   return { declared, used };
 }
 
+const specName = (node) => (node.type === "Identifier" ? node.name : node.lit.slice(2));
+
+function links(module, known) {
+  const imports = new Map();
+  const exports = new Map();
+  for (const stmt of module.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      const from = resolveSource(known, module.path, specName(stmt.source));
+      for (const spec of stmt.specifiers) {
+        const imported =
+          spec.type === "ImportDefaultSpecifier"
+            ? "default"
+            : spec.type === "ImportNamespaceSpecifier"
+              ? "*"
+              : specName(spec.imported);
+        imports.set(spec.local.name, { from, imported });
+      }
+    } else if (stmt.type === "ExportNamedDeclaration" && !stmt.source) {
+      if (stmt.declaration) {
+        for (const name of topNames(stmt.declaration).declared) exports.set(name, name);
+      } else {
+        for (const spec of stmt.specifiers) exports.set(specName(spec.exported), spec.local.name);
+      }
+    }
+  }
+  return { imports, exports };
+}
+
 const [bundlePath, outputPath, ...rest] = process.argv.slice(2);
 const outAt = rest.indexOf("--out");
 if (!bundlePath || !outputPath || outAt < 0)
@@ -113,10 +149,11 @@ const bundle = JSON.parse(readFileSync(bundlePath, "utf8"));
 const output = JSON.parse(readFileSync(outputPath, "utf8"));
 
 // every unit gets a global id: the bundle's first, then the output's
-const nB = bundle.units.length;
-const units = bundle.units.map((ast) => ({ ast, side: "B" }));
+const bundleUnits = bodyUnits(bundle.program);
+const nB = bundleUnits.length;
+const units = bundleUnits.map((ast) => ({ ast, side: "B" }));
 output.modules.forEach((module, m) =>
-  module.units.forEach((ast, u) => units.push({ ast, side: "O", m, u, path: module.path }))
+  bodyUnits(module.program).forEach((ast, u) => units.push({ ast, side: "O", m, u, path: module.path }))
 );
 const names = units.map((unit) => topNames(unit.ast));
 const label = units.map((unit) => shapeKey(unit.ast));
@@ -133,16 +170,13 @@ const uses = units.map(() => []);
   const index = new Map(output.modules.map((module, m) => [module.path, m]));
   const declOut = output.modules.map(() => new Map());
   for (let id = nB; id < units.length; id++) for (const name of names[id].declared) declOut[units[id].m].set(name, id);
-  const exportsOf = output.modules.map((module) => new Map(module.exports.map((e) => [e.exported, e.local])));
-  const importsOf = output.modules.map(
-    (module) =>
-      new Map(module.imports.flatMap((d) => d.specs.map((s) => [s.local, { from: d.from, imported: s.imported }])))
-  );
+  const known = new Set(index.keys());
+  const linkage = output.modules.map((module) => links(module, known));
   const resolve = (m, name) => {
     if (declOut[m].has(name)) return declOut[m].get(name);
-    const imp = importsOf[m].get(name);
+    const imp = linkage[m].imports.get(name);
     const src = imp && index.get(imp.from);
-    return src === undefined ? undefined : declOut[src].get(exportsOf[src].get(imp.imported));
+    return src === undefined ? undefined : declOut[src].get(linkage[src].exports.get(imp.imported));
   };
   for (let id = nB; id < units.length; id++) {
     for (const name of names[id].used) {

@@ -28,44 +28,39 @@ writeFileSync(
 );
 const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
 const parsed = parseModule(code, acorn.parse, eslintScope);
-const lowered = dumpParsed(parsed).statements;
-// A declarator list becomes one statement per declarator; imports and exports stay. The statements are the
-// ESTree of their own source text: the dump is the parse of a rewritten source.
+// The transported Program keeps its declaration list, import and export. Lean splits the list later.
 const syntax = 'import {x as y} from "./dep.js"; const a = y, b = 1; export {a};';
-const syntaxStatements = lowerDump(syntax, acorn, eslintScope).statements;
+const syntaxProgram = lowerDump(syntax, acorn, eslintScope);
+assert.equal(syntaxProgram.sourceText, syntax);
+assert.equal(syntaxProgram.sourceType, "module");
 assert.deepEqual(
-  syntaxStatements.map((s) => s.src),
-  ['import {x as y} from "./dep.js";', "const a = y;", "const b = 1;", "export {a};"]
+  syntaxProgram.body.map((s) => syntax.slice(s.start, s.end)),
+  ['import {x as y} from "./dep.js";', "const a = y, b = 1;", "export {a};"]
 );
-assert.equal(syntaxStatements[1].ast.declarations[0].init.k, "V");
 assert.deepEqual(
-  syntaxStatements.map((s) => s.oracle.eager),
-  [[], ["y"], [], ["a"]]
+  syntaxProgram.body[1].declarations.map((d) => syntax.slice(d.start, d.end)),
+  ["a = y", "b = 1"]
 );
-// Removing just the new metadata gives the exact legacy structural JSON.
-const legacy = (value) =>
+assert.equal(syntaxProgram.body[1].declarations[0].init.k, "V");
+assert.equal(syntaxProgram.body[2].specifiers[0].local.k, "T");
+const structure = (value) =>
   JSON.parse(
     JSON.stringify(value, function (key, v) {
-      if (["start", "end", "loc", "range", "raw", "regex", "bigint", "sourceType"].includes(key)) return undefined;
-      if (this?.type === "Literal" && key === "value") return undefined;
-      return v;
-    })
-  );
-const unannotate = (value) =>
-  JSON.parse(
-    JSON.stringify(value, function (key, v) {
+      if (["start", "end", "sourceText"].includes(key)) return undefined;
       if (this?.type === "Identifier" && ["k", "b", "d"].includes(key)) return undefined;
-      if (this?.type === "Literal" && key === "lit") return undefined;
+      if (this?.type === "Literal" && ["lit", "value", "raw"].includes(key)) return undefined;
       return v;
     })
   );
 assert.deepEqual(
-  syntaxStatements.map((s) => unannotate(s.ast)),
-  acorn
-    .parse(syntaxStatements.map((s) => s.src).join("\n"), { sourceType: "module", ecmaVersion: "latest" })
-    .body.map(legacy)
+  structure(syntaxProgram),
+  structure(acorn.parse(syntax, { sourceType: "module", ecmaVersion: "latest" }))
 );
-writeFileSync(ast, JSON.stringify({ statements: lowered }));
+writeFileSync(ast, JSON.stringify(dumpParsed(parsed)));
+const scopes = lowerDump("const a = (x) => x, b = (x) => x;", acorn, eslintScope);
+const callbacks = scopes.body[0].declarations.map((d) => d.init);
+assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
+for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
 const leanCertificate = path.join(temp, "generated.lean");
 const emitted = run(process.env.LOWERSPLIT, [ast, spec, out, "--lean", leanCertificate]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
@@ -74,7 +69,7 @@ const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
 const frontend = path.join(here, "frontend.mjs");
-writeFileSync(bundle, JSON.stringify(bundleFromParsed(parsed, source)));
+writeFileSync(bundle, JSON.stringify(bundleFromParsed(parsed)));
 for (const args of [
   [frontend, "tree", out, "--entry", "entry.mjs", "--out", tree],
   [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],

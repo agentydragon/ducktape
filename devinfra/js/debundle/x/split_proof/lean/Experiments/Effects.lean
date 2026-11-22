@@ -2213,26 +2213,20 @@ def takeFlag (name : String) : List String → Option String × List String
     if a == name then (some v, rest) else let (r, l) := takeFlag name (v :: rest); (r, a :: l)
   | l => (none, l)
 
-/-- The local names of a bundle's imports, with the module and the name each one imports (`default`, or `*` for the
-namespace): the list the translation front end wrote, or the `import` declarations of an ESTree dump. -/
-def importsOf (bundleJ : Json) : Std.HashMap String (String × String) :=
-  let listed := (items (fld bundleJ "imports")).foldl
-    (fun acc i => acc.insert (str (fld i "local")) (str (fld i "from"), str (fld i "imported"))) {}
-  (items (fld bundleJ "statements")).foldl (fun acc s =>
-    let d := fld s "ast"
+/-- Map each imported local binding to its source module and exported name. -/
+def importsOf (asts : Array Json) : Std.HashMap String (String × String) :=
+  asts.foldl (fun acc d =>
     if typ d != "ImportDeclaration" then acc else
       (items (fld d "specifiers")).foldl (fun acc sp =>
         let imported := match typ sp with
           | "ImportDefaultSpecifier" => "default"
           | "ImportNamespaceSpecifier" => "*"
           | _ => specName (fld sp "imported")
-        acc.insert (str (fld (fld sp "local") "name")) (specName (fld d "source"), imported)) acc) listed
+        acc.insert (str (fld (fld sp "local") "name")) (specName (fld d "source"), imported)) acc) {}
 
-/-- The units of an ESTree dump: its top-level statements. An `import` declaration runs nothing and `importsOf` says
-what its names stand for, so its unit is an empty statement. -/
-def dumpUnits (bundleJ : Json) : Array Json :=
-  (items (fld bundleJ "statements")).map fun s =>
-    let ast := fld s "ast"
+/-- An import has a source ordinal, but no executable statement. -/
+def footprintUnits (asts : Array Json) : Array Json :=
+  asts.map fun ast =>
     if typ ast == "ImportDeclaration" then Json.mkObj [("type", "EmptyStatement")] else ast
 
 /-- What a verdict rests on, one line each: the premises of this analysis and what it did not understand. -/

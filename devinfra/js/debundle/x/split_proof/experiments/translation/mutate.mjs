@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { bodyUnits } from "./frontend.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
@@ -35,7 +36,7 @@ const candidates = {
 };
 const topNamesOf = output.modules.map(() => new Set());
 output.modules.forEach((module, m) => {
-  for (const unit of module.units) {
+  for (const unit of bodyUnits(module.program)) {
     const binders = new Set();
     const walk = (node, parent, key) => {
       if (Array.isArray(node)) {

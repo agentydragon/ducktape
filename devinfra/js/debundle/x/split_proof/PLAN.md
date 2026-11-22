@@ -110,6 +110,8 @@ to show which bindings and heap records survive that intervening execution.
 
 **Derive CoreJS from the annotated AST.** The checker and interpreter share the first Lean lowering rules for declarations, primitive literals, binding reads and local named exports. Extend expression and statement coverage against the existing JavaScript lowerer and Node. Before migrating opaque fallback, check exactly which cells a deferred body captures, its part number and the handling of direct eval, module identity and top-level await. Replay Excalidraw on the AST alone before retiring the external checker input.
 
+**Prove top-level declaration extraction.** Start with lists of identifier declarators in `var`, `let`, and `const`, including named exports. Define declaration instantiation and ordered initialization on the unsplit list, then show that evaluation of the extracted units preserves binding states and abrupt completion. Connect that result to the existing CoreJS move theorems. Track the separate obligation that the emitted module AST implements the checked plan, including renaming and linking. The parser and binding resolution remain premises.
+
 **N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units.
 
 The active [footprint soundness work](docs/footprint_soundness.md) establishes a compositional contract for checked Effects output, starting with binding-only statements and keeping unsupported analysis rules outside the proved slice.

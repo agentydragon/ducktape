@@ -1,4 +1,4 @@
-// Lower a bundle to ESTree JSON with eslint-scope metadata for Lean and a free-variable oracle.
+// Write the annotated ESTree Program and original source for Lean.
 //
 //   node dump.mjs <bundle.mjs> > bundle.json
 import { readFileSync } from "node:fs";

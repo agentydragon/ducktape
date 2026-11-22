@@ -16,15 +16,15 @@ for (const chunk of ["editor", "main"]) {
   const validation = JSON.parse(readFileSync(path.join(reports, "translation_validation.json"), "utf8"));
   assert(validation.gate_accepts && validation.accepts);
   const source = readFileSync(path.join(chunks, chunk + ".js"), "utf8");
-  const { dump, core } = splitInputs(source, { external: true, census: true });
+  const { dump, core, units } = splitInputs(source, { external: true, census: true });
   const nodes = graph.nodes.sort((a, b) => a.statement_ordinal - b.statement_ordinal);
-  assert.equal(nodes.length, dump.statements.length);
+  assert.equal(nodes.length, units.length);
   const entry = "entry.mjs";
   const owners = new Map(graph.module_graph.nodes.map((m) => [m.key, m.kind === "entry" ? entry : m.path + ".mjs"]));
   const modules = Object.fromEntries([...owners.values()].map((name) => [name, []]));
   for (const [i, node] of nodes.entries()) {
     assert.equal(node.statement_ordinal, i);
-    const ast = dump.statements[i].ast;
+    const ast = units[i].node;
     const binding = ast.declarations?.[0]?.id ?? ast.id;
     if (binding?.type === "Identifier")
       assert(
