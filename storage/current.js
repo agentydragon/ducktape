@@ -30,7 +30,7 @@ export function CurrentStorage() {
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("./current-evidence.json?v=20261122105825", {
+    fetch("./current-evidence.json?v=202611221137", {
       signal: controller.signal,
     })
       .then((response) => {
@@ -50,7 +50,14 @@ export function CurrentStorage() {
     >`;
   if (!data) return html`<${Text}>Loading storage snapshot…<//>`;
 
-  const { pools, buckets, cache, clickhouse } = data;
+  const {
+    pools,
+    buckets,
+    cache,
+    clickhouse,
+    ownership_review: review,
+    discard_review: discard,
+  } = data;
   const currentPeak = Math.max(...pools.map((pool) => pool.physical_used_pct));
   const growth = pools.reduce(
     (sum, pool) => sum + pool.physical_growth_gb_7d,
@@ -69,13 +76,14 @@ export function CurrentStorage() {
       <${Anchor} href="../">← All reports<//>
       <${Title} order=${1} mt="sm">Cluster storage<//>
       <${Text} size="lg" mt="sm">
-        Two HDD pools are overcommitted, and all three used more physical space
-        than a week earlier. Add or free durable pool capacity before committing
-        to smaller SeaweedFS volumes.
+        All 37 diskful volume copies on the three OVH HDD pools have bound
+        claims. Released volumes are on other pools. Zot has a discard
+        configuration mismatch on its active mount.
       <//>
       <${Text} size="sm" c="dimmed" mt="xs">
-        22 November 2026, 10:57–10:58 UTC. Three OVH HDD pools. Capacity and
-        usage comparisons use decimal GB.
+        22 November 2026 UTC. Pool capacity and growth measured at 10:57–10:58.
+        The ownership and discard follow-up is dated below. Capacity and usage
+        comparisons use decimal GB.
       <//>
     </header>
     <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md">
@@ -94,7 +102,9 @@ export function CurrentStorage() {
     <//>
     <${Group} gap="md" component="nav">
       <${Anchor} href="#hdd-pools">HDD pools<//>
+      <${Anchor} href="#ownership-review">Volume ownership<//>
       <${Anchor} href="#current-actions">Interventions<//>
+      <${Anchor} href="#zot-discard">Zot discard<//>
       <${Anchor} href="#bucket-growth">Bucket usage<//>
       <${Anchor} href="#historical-analysis">Earlier analysis<//>
       <${Anchor} href="./current-evidence.json">Current evidence<//>
@@ -169,6 +179,41 @@ export function CurrentStorage() {
       <//>
     </section>
 
+    <section id="ownership-review">
+      <${Title} order=${2}>Which volumes can free OVH HDD capacity?<//>
+      <${Text} my="sm">${review.census}<//>
+      <${Table.ScrollContainer} minWidth=${470}>
+        <${Table} striped withTableBorder aria-label="OVH HDD volume ownership">
+          <${Table.Thead}
+            ><${Table.Tr}>
+              <${Table.Th} scope="col">Pool<//>
+              <${Table.Th} scope="col">Bound diskful copies<//>
+              <${Table.Th} scope="col">Copies referenced by active pods<//>
+              <${Table.Th} scope="col">Released copies<//>
+            <//><//
+          >
+          <${Table.Tbody}
+            >${review.pools.map(
+              (row) =>
+                html`<${Table.Tr} key=${row.pool}>
+                  <${Table.Th} scope="row">${row.pool}<//
+                  ><${Table.Td}>${row.bound}<//>
+                  <${Table.Td}>${row.pod_referenced}<//
+                  ><${Table.Td}>${row.released}<//>
+                <//>`,
+            )}<//
+          >
+        <//>
+      <//>
+      <${Text} my="sm">${review.idle_claims}<//>
+      <${Text} my="sm">${review.other_pools}<//>
+      <${Text} size="sm" c="dimmed"
+        >${review.method} ${" "}<${Anchor} href="./current-evidence.json"
+          >Ownership counts and scope<//
+        ><//
+      >
+    </section>
+
     <section id="current-actions">
       <${Title} order=${2}>Interventions<//>
       <${Stack} gap="sm" mt="md">
@@ -227,34 +272,40 @@ export function CurrentStorage() {
           size. Filesystem overhead would raise the last column.
         <//>
         <${Text}>
-          A resize alone leaves B and C short. The maximum claims would start B
-          and C at 77% and 81% of their nominal size. Evaluate capacity or
-          redistribution before choosing targets. With current commitments,
-          adding about ${displayGb(pools[1].capacity_add_gb_at_10pct_reserve)}
-          to B and ${displayGb(pools[2].capacity_add_gb_at_10pct_reserve)} to C
-          would give each a 10% declared reserve. The larger pool also needs
+          Moving existing copies among A, B and C cannot by itself meet the
+          reserve. Across the three pools, declared volume limits exceed the 90%
+          budget by
+          ${displayGb(-pools.reduce((sum, pool) => sum + pool.commitment_margin_gb_at_10pct_reserve, 0))}.
+          A resize alone leaves B and C short. Retiring the old 20 GiB Quest
+          claim on A would leave the deficits on B and C unchanged. The maximum
+          claims would start B and C at 77% and 81% of their nominal size.
+          Evaluate capacity or redistribution before choosing targets. With
+          current commitments, adding about
+          ${displayGb(pools[1].capacity_add_gb_at_10pct_reserve)} to B and
+          ${displayGb(pools[2].capacity_add_gb_at_10pct_reserve)} to C would
+          give each a 10% declared reserve. The larger pool also needs
           ${displayGb(pools[0].capacity_add_gb_at_10pct_reserve)} under that
           scenario.
         <//>
-        <${Text}>
-          <strong
-            >2. Check the cache discard gap before reducing replicas.</strong
+        <section id="zot-discard">
+          <${Title} order=${3}
+            >2. Verify Zot discard after its next natural rollout<//
           >
-          Zot uses ${decimal.format(cache.zot_fs_used_gb)} GB in the filesystem
-          and LINSTOR reports about
-          ${displayGb(cache.zot_allocated_gb_by_copy[0])} per diskful copy. In
-          24 hours, clients made
-          ${round.format(cache.zot_successful_manifest_gets_24h)} successful
-          manifest GETs and received
-          ${decimal.format(cache.zot_successful_blob_response_bytes_24h / 1e9)}
-          GB of blob responses, including repeated and cold-cache responses.
-          Compare thin-LV allocations to filesystem data and verify discard on
-          both replicas before attempting a monitored reclaim. GC remains
-          enabled on a 24-hour interval. ${" "}<${Anchor}
-            href=${dataSource + "cluster/k8s/oci-cache/config.json"}
-            >Zot policy<//
-          >
-        <//>
+          <${Text} my="sm">${discard.mount_finding}<//>
+          <${Text} my="sm">${discard.replica_finding}<//>
+          <${Text} my="sm">${discard.action}<//>
+          <${Text} size="sm" c="dimmed">
+            Zot served ${round.format(cache.zot_successful_manifest_gets_24h)}
+            successful manifest GETs and
+            ${decimal.format(cache.zot_successful_blob_response_bytes_24h / 1e9)}
+            GB of blob responses in the preceding traffic sample. Registry
+            garbage collection runs every 24 hours. ${" "}<${Anchor}
+              href=${dataSource + "cluster/k8s/oci-cache/config.json"}
+              >Zot policy<//
+            >
+            · <${Anchor} href="./current-evidence.json">Discard observations<//>
+          <//>
+        </section>
         <${Text}>
           <strong>3. Measure a Langfuse archive and restore.</strong> Langfuse
           remains the largest tracked bucket. Sample the raw-event prefix by age

@@ -197,5 +197,146 @@
     "seaweed": "Individually derive the largest allowed Seaweed claim on each host after ClickHouse resize by taking the floor in GiB. Divide the observed filesystem bytes used by nominal candidate claim bytes; a formatted filesystem would have less usable space.",
     "change": "Seven-day physical growth is the change in LVM data percent multiplied by the current data LV size. Point-to-point; no time-to-exhaustion estimate.",
     "deletions": "SeaweedFS reports deleted bytes on its volume servers. The counter does not measure available space or bytes LVM would actually recover."
+  },
+  "ownership_review": {
+    "observed_utc": "2026-11-22T11:32:42Z",
+    "reviewed_devel_commit": "9eaaaa053b89ea1567d69410872dc6c03056ab5c",
+    "pools": [
+      {
+        "pool": "A",
+        "bound": 12,
+        "pod_referenced": 11,
+        "released": 0,
+        "declared_gb": 3731.25
+      },
+      {
+        "pool": "B",
+        "bound": 14,
+        "pod_referenced": 14,
+        "released": 0,
+        "declared_gb": 2600.6
+      },
+      {
+        "pool": "C",
+        "bound": 11,
+        "pod_referenced": 10,
+        "released": 0,
+        "declared_gb": 2310.69
+      }
+    ],
+    "pv_count": 185,
+    "bound_pvs": 138,
+    "released_pvs": 47,
+    "csi_volume_handles": 174,
+    "linstor_definitions": 174,
+    "diskful_members": 209,
+    "diskless_members": 52,
+    "reused_claim_names_with_new_uids": 8,
+    "accessible_satellites_checked": 8,
+    "unmanaged_pvc_named_lvs": 0,
+    "manual_ssd_snapshot_of_bound_volume": 1,
+    "idle_hdd_claims": [
+      {
+        "pool": "A",
+        "claim": "platform-sessions-quest-captures",
+        "declared_gib": 20,
+        "allocated_gb": 0.498
+      },
+      {
+        "pool": "C",
+        "claim": "platform-sessions-myquest-captures",
+        "declared_gib": 20,
+        "allocated_gb": 0.526
+      }
+    ],
+    "released_by_media_clusterwide": {
+      "hdd": {
+        "copies": 32,
+        "physical_gb": 37.1,
+        "declared_gib": 320,
+        "unique_volumes": 32
+      },
+      "ssd": {
+        "copies": 29,
+        "physical_gb": 27.67,
+        "declared_gib": 281,
+        "unique_volumes": 15
+      }
+    },
+    "census": "22 November, 11:32–11:34 UTC. The cluster had 185 persistent volumes, including 47 Released. Every diskful copy on the three OVH HDD pools still belonged to a Bound volume. The 37 current definitions match the earlier commitment model.",
+    "idle_claims": "Two capture volumes had no active pod reference. The older Quest capture on A was left after a provider rename. It reserves 20 GiB and uses 0.50 GB. Check whether its recordings must be archived before retiring it. The MyQuest capture on C reserves 20 GiB and uses 0.53 GB. GitOps still declares it and preserves recordings while capture is off. All 14 copies on B had an active pod reference.",
+    "other_pools": "The 32 Released HDD volumes are all on a different host. Together they reserve 320 GiB and use 37.10 GB. A first cleanup batch there has 16 former staging test HDD volumes (160 GiB declared, 3.28 GB allocated) and one SSD probe. Check artifact retention with the owners before retiring each by its original volume and claim UID. This batch frees zero capacity on A, B or C.",
+    "method": "Joined PVs by CSI volume handle, current PVC UID and bound PV name, pod claim references, and LINSTOR diskful identities. Released capacity is counted once per backing copy. Checked workload and GitOps ownership for the two idle OVH claims. A separate manual SSD snapshot of a bound service remains outside this comparison. Eight released volumes have claim names already reused by newer PVCs.",
+    "owner_sources": {
+      "provider_migration": "https://github.com/agentydragon/ducktape/pull/16270",
+      "capture_retention": "https://github.com/agentydragon/ducktape/blob/9eaaaa053b89ea1567d69410872dc6c03056ab5c/cluster/cdk8s/platform_sessions/test_remote.py#L161"
+    },
+    "synthetic_retirement_candidates": {
+      "hdd": {
+        "pvs": 16,
+        "declared_gib": 160,
+        "allocated_gb": 3.276
+      },
+      "ssd": {
+        "pvs": 1,
+        "declared_gib": 1,
+        "allocated_gb": 0.052
+      }
+    }
+  },
+  "discard_review": {
+    "checked_utc": "2026-11-22T11:34:55Z",
+    "filesystem_used_bytes": 3570450432,
+    "replicas": [
+      {
+        "pool": "A",
+        "allocated_kib": 49294624,
+        "disk_state": "UpToDate"
+      },
+      {
+        "pool": "C",
+        "allocated_kib": 49032416,
+        "disk_state": "UpToDate"
+      }
+    ],
+    "driver": "LINSTOR CSI v1.13.1",
+    "filesystem": "ext4",
+    "mount_requested": "discard",
+    "active_ext4_option": "nodiscard",
+    "zot_pod_started_utc": "2026-11-01T23:28:57Z",
+    "pv_mount_option_patched_utc": "2026-11-09T19:11:35Z",
+    "queue_granularity_bytes": 65536,
+    "queue_discard_max_bytes": 67108864,
+    "mount_finding": "The live Zot filesystem explicitly reported nodiscard on 22 November. The 100 GiB PV requests discard, but its current pod started on 1 November, eight days before that option was patched. The running filesystem does not issue online discard when Zot deletes blobs.",
+    "replica_finding": "Zot used 3.57 GB in ext4 while its two healthy thin volumes held 50.48 GB on A and 50.21 GB on C. On 10 November around 04:34 UTC the discard counters advanced on both replicas. Mapped space fell by 16.28 GB per copy while filesystem use stayed at 3.99 GB. The counters then stayed flat through 22 November at 11:37 UTC. The thin pools can reclaim blocks even though the physical HDDs do not accept discard.",
+    "action": "Keep both replicas and let Zot roll naturally. After the volume is freshly published, check the running ext4 options for discard and verify a registry pull. Then observe both thin LVs across a real deletion. Online discard handles newly freed blocks. If older allocation becomes worth reclaiming, measure both copies before and after one filesystem-scoped trim. Both 100 GiB reservations remain, and B has no Zot replica.",
+    "sources": {
+      "mount_option_change": "https://github.com/agentydragon/ducktape/pull/15044",
+      "prior_disposable_filesystem_trim": "https://github.com/agentydragon/ducktape/blob/9eaaaa053b89ea1567d69410872dc6c03056ab5c/cluster/debug/piraeus_migration/2026-11-02-reclaim-test.md"
+    },
+    "latest_counter_increase_utc": {
+      "primary_drbd_and_thin_lv": "2026-11-10T04:34:20Z",
+      "secondary_thin_lv": "2026-11-10T04:34:55Z"
+    },
+    "last_observation_utc": "2026-11-22T11:37:38Z",
+    "completed_discards": {
+      "primary_drbd_frontend": 1926,
+      "primary_thin_lv": 1801,
+      "secondary_thin_lv": 1811
+    },
+    "thin_device_allocated_bytes": {
+      "A": 50482642944,
+      "C": 50211520512
+    },
+    "historical_event": {
+      "date_utc": "2026-11-10",
+      "minutes_utc": "04:06–04:36",
+      "allocation_gb_before_after": [
+        [22.53, 6.25],
+        [22.09, 5.81]
+      ],
+      "filesystem_used_gb_before_after": [3.99, 3.99],
+      "initiator": "Unidentified by device counters"
+    }
   }
 }
