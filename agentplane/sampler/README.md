@@ -351,13 +351,15 @@ the central sampler for Qwen; existing sessions keep their harness. Backend mode
 Codex metadata remain available for existing sessions.
 
 Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
-A model change within a Session normally preserves connection, provider model, API, dialect and exec
-encoding. If its old route is removed, an idle, settled Chat Completions Session can switch to
-another Chat Completions route and send it the retained messages and tool calls. Responses and
-Anthropic continue to require their original route contract; Anthropic also requires the same request
-options because signed continuation is bound to them. The target must
-allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;
-use a new route ID to change it. Standard routes reject manual compaction, and reaching the
+A model change always preserves the API. An idle, settled ChatGPT Responses Lite Session can
+switch between models on the same Agentplane ingress connection with the same tool encoding,
+while its original transcript is the active context. This includes model routes removed from
+configuration when retained sampling requests establish the matching contract. The sampler replays
+the retained conversation and leaves the provider to handle incompatible reasoning.
+If a Chat Completions route is removed, an idle, settled Session can switch to another Chat
+Completions route and replay its retained messages and tool calls. Other switches require the
+original route contract. See [the continuation rules](SPEC.md#model-changes). Standard routes
+reject manual compaction, and reaching the
 configured automatic compaction threshold fails the turn before any private compaction request.
 Portable compaction is not implemented. Provider compatibility still needs live validation;
 scripted tests establish the sampler's protocol and execution behavior.

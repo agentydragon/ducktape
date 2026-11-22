@@ -355,14 +355,25 @@ retained in provider history and answered with the matching function or custom t
 unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
 unsupported output items, duplicate call IDs, and configured names used with the wrong item type
 remain validation failures.
-Model changes cannot change connection, provider model, API, dialect or exec encoding within a
-Session. Matching wire formats do not establish that a different model accepts retained signed
-thinking, encrypted reasoning or compaction items; cross-model continuation is conservatively
-rejected with `FAILED_PRECONDITION`. Route aliases for the same provider model remain eligible.
-If the old route has been removed, an idle, settled Chat Completions Session can explicitly switch
-to another Chat Completions route. Its plain message and tool-call history is retained and sent to
-the chosen provider; providers can still reject that history. Responses and Anthropic Sessions
-continue to require their original route contract because retained items can be model-bound.
+
+### Model changes
+
+Model changes preserve the Session's API and current reasoning effort. Aliases for the same
+connection, provider model, dialect, exec encoding and provider continuation settings remain
+eligible.
+
+An idle and settled Session can switch between ChatGPT subscription Responses Lite models on the
+same Agentplane ingress connection and tool encoding. Retained sampling requests must match the
+endpoint, account, API and history projection. This evidence also covers removed routes. The
+switch requires an uncompacted transcript with settled tool calls and no pending or queued work.
+A message queued after the switch uses the selected replacement. The sampler sends the existing
+conversation unchanged. The provider may omit incompatible reasoning, as documented in
+[OpenAI's Responses reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#reasoning-item-removal-across-requests).
+
+A removed Chat Completions route can still be replaced by another Chat Completions route in an idle,
+settled Session. The sampler replays the retained messages and tool calls. Other route changes
+require the original continuation contract. The sampler declines incompatible switches with
+`FAILED_PRECONDITION`.
 Anthropic also requires the same request options to preserve signed continuation. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID. Model changes require the
 target to allow the current effort; effort changes must be allowed by the current model.

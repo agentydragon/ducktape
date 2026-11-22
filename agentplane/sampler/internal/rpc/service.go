@@ -71,6 +71,7 @@ var (
 	errModelChangeUnavailable = errors.New("cannot change model because the current model configuration is no longer available")
 	errModelIncompatible      = errors.New("cannot change to this model because its conversation format is incompatible with the current model")
 	errModelChangeUnsettled   = errors.New("cannot change model while the conversation has unfinished work")
+	errModelChangeCompacted   = errors.New("cannot change Responses model after provider compaction")
 	errTargetModelUnavailable = errors.New("requested model or reasoning effort is not available")
 	errEffortUnsupported      = errors.New("unsupported reasoning effort")
 	errEffortFixed            = errors.New("model route has fixed reasoning effort")
@@ -102,6 +103,8 @@ func samplerError(ctx context.Context, err error) error {
 		return status.Error(codes.FailedPrecondition, "cannot change model: the current sampler policy does not allow this model switch")
 	case errors.Is(err, errModelChangeUnsettled):
 		return status.Error(codes.FailedPrecondition, "cannot change model while the conversation has unfinished work")
+	case errors.Is(err, errModelChangeCompacted):
+		return status.Error(codes.FailedPrecondition, errModelChangeCompacted.Error())
 	case errors.Is(err, errTargetModelUnavailable):
 		return status.Error(codes.InvalidArgument, "requested model or reasoning effort is not available")
 	case errors.Is(err, errEffortUnsupported):
@@ -210,35 +213,15 @@ func (s *Sampler) commandUsing(
 	if input := command.GetSubmitInput(); input != nil && (input.GetText() == "" || len(input.GetText()) > 1024*1024) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	validate := func(session *sessionstore.Session, conversation *sessionstore.Conversation) error {
+	validate := func(state sessionstore.AdmissionState) error {
+		session := state.Session
 		currentConfig, currentConfigured := s.Settings.Models[session.Model]
 		if model := command.GetChangeModel(); model != nil {
 			targetConfig, targetConfigured := s.Settings.Models[model.GetModel()]
 			if !targetConfigured || !slices.Contains(targetConfig.ReasoningEfforts, session.Effort) {
 				return errTargetModelUnavailable
 			}
-			if !currentConfigured {
-				// Chat Completions retains plain messages and JSON tool calls. A deliberate
-				// switch can continue a settled conversation on another Chat route even
-				// when the old route configuration has gone away. Responses and Anthropic
-				// may retain model-bound opaque items, so require their old contract.
-				if conversation.API != protocol.APIStyleChatCompletions || targetConfig.API != conversation.API {
-					return errModelChangeUnavailable
-				}
-				if session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil {
-					return errModelChangeUnsettled
-				}
-				if err := conversation.Transcript.CheckSettled(); err != nil {
-					return errModelChangeUnsettled
-				}
-				if err := conversation.Context().CheckSettled(); err != nil {
-					return errModelChangeUnsettled
-				}
-				return nil
-			}
-			if !currentConfig.Compatible(targetConfig) {
-				return errModelIncompatible
-			}
+			return s.validateModelChange(state, currentConfig, currentConfigured, targetConfig)
 		} else if !currentConfigured {
 			return errModelUnavailable
 		}
@@ -261,6 +244,85 @@ func (s *Sampler) commandUsing(
 	}
 	s.Runtime.Wake(sessionID)
 	return entry, nil
+}
+
+func (s *Sampler) validateModelChange(state sessionstore.AdmissionState, current samplersettings.ModelConfig, currentConfigured bool, target samplersettings.ModelConfig) error {
+	conversation := state.Conversation
+	if target.API != conversation.API {
+		return errModelIncompatible
+	}
+	if currentConfigured && current.Compatible(target) {
+		return nil
+	}
+	// A removed Chat Completions route can be replaced without reconstructing its wire
+	// contract because the adapter retains ordinary messages and JSON tool calls.
+	if !currentConfigured && target.API == protocol.APIStyleChatCompletions {
+		return checkModelChangeSettled(state)
+	}
+	refusal := errModelIncompatible
+	if !currentConfigured {
+		refusal = errModelChangeUnavailable
+	}
+	connection := s.Settings.Connections[target.Connection]
+	if target.API != protocol.APIStyleResponses || target.Responses.Dialect != responses.DialectLite ||
+		connection.Auth.Type != samplersettings.AuthTypeAgentplaneIngress || !isChatGPTResponsesRoute(target.ProviderModel) {
+		return refusal
+	}
+	if currentConfigured && (current.Connection != target.Connection || current.API != target.API ||
+		current.Responses != target.Responses || current.ExecEncoding != target.ExecEncoding ||
+		!isChatGPTResponsesRoute(current.ProviderModel)) {
+		return refusal
+	}
+	if err := checkModelChangeSettled(state); err != nil {
+		return err
+	}
+	// Earlier commands could sample or compact before the switch is applied. A message
+	// queued after this change sees the projected replacement model at admission.
+	if state.HasQueuedCommands {
+		return errModelChangeUnsettled
+	}
+	transcript, ok := conversation.Transcript.(*responses.Context)
+	if !ok {
+		return refusal
+	}
+	if conversation.ActiveContext != nil || transcript.HasCompaction() {
+		return errModelChangeCompacted
+	}
+	// Check all distinct recorded request contracts. A shared ingress alone does not
+	// establish which upstream account and wire produced the retained items.
+	routes, err := state.SamplingRoutes()
+	if err != nil {
+		return err
+	}
+	if !currentConfigured && len(routes) == 0 {
+		return refusal
+	}
+	next := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, target).ProviderRequest
+	for _, prior := range routes {
+		if prior.API != next.API || prior.Connection != next.Connection || prior.URL != next.URL ||
+			!isChatGPTResponsesRoute(prior.ProviderModel) || !sessionstore.ProviderRequestProjectionMatches(target, &prior) {
+			return refusal
+		}
+	}
+	// Replay the original transcript in order. Responses handles incompatible reasoning
+	// items at the provider, and there is no opaque compaction standing in for old turns.
+	return nil
+}
+
+func checkModelChangeSettled(state sessionstore.AdmissionState) error {
+	session, conversation := state.Session, state.Conversation
+	if session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil ||
+		conversation.Transcript.CheckSettled() != nil || conversation.Context().CheckSettled() != nil {
+		return errModelChangeUnsettled
+	}
+	return nil
+}
+
+// The model catalog's route names encode the upstream account and wire. Identify the
+// ChatGPT subscription Responses routes on Agentplane ingress, including removed routes.
+func isChatGPTResponsesRoute(model string) bool {
+	id, ok := strings.CutPrefix(model, "chatgpt-sub/oai-responses/")
+	return ok && id != "" && !strings.Contains(id, "/")
 }
 
 func (s *Sampler) SubmitInput(ctx context.Context, r *harnesshostpb.SubmitInputRequest) (*harnesshostpb.SubmitInputResponse, error) {
