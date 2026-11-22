@@ -179,7 +179,7 @@ metadata:
   annotations:
     description: Serves the owner-authenticated Claude session page and proxies controls to the credential owner.
     goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "claude-session-sync", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
-    goldilocks.fairwinds.com/vpa-update-mode: initial
+    goldilocks.fairwinds.com/vpa-update-mode: auto
   labels:
     app.kubernetes.io/component: web
     app.kubernetes.io/name: claude-session-sync
@@ -280,6 +280,18 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: web
+              app.kubernetes.io/name: claude-session-sync
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
