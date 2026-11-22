@@ -68,6 +68,25 @@ The Thread page uses Dispatcher placement to identify the exact Environment befo
 Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
 is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
+The open Thread watches the Dispatcher's bounded Session workset for active commands, recent
+delivery issues, and recent admissions or cancellations. A fresh browser can see these receipts
+while History is still unavailable. Local command rows and loaded settled History take precedence
+over duplicate receipts.
+An unresolved delivery issue can remain alongside a pending History command. The browser retains
+the last workset while disconnected and reports clipped groups and expired receipt coverage.
+When a reason is abbreviated, the browser reads the full retained reason by command ID.
+
+An operator can acknowledge a failed or unknown Dispatcher delivery issue. The App stores the
+preference for the verified OIDC operator, Thread, command ID, and exact receipt revision. Another
+browser signed in as that operator sees it when it opens or returns focus to the Thread. A newer
+receipt revision needs separate attention. When the workset clips issues, Older delivery issues
+opens the paginated receipt history, where retained failures can still be acknowledged.
+The selected Thread shares acknowledgement state between the conversation and Delivery history.
+Opening the archive loads one page at a time. Acknowledging a receipt updates both views.
+Delivery history remains available independently of the History projection and includes previous
+acknowledgements. When an exact revision has expired or was superseded, the interface reports that
+loss of evidence.
+
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can

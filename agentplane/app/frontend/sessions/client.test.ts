@@ -4,6 +4,7 @@ import { create, fromJson } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
 import {
+  batchGetDispatches,
   interruptTurn,
   changeModel,
   changeReasoningEffort,
@@ -563,4 +564,84 @@ it("retries the same Session command and payload after a lost transport reply", 
     expect(new URL(request.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:submitInput");
     expect(await request.json()).toEqual(input);
   }
+});
+
+const batchSessionId = "5c35dc98-6f98-45f4-a536-506abe79c8af";
+const legacyReceipt = {
+  commandId: "legacy",
+  sessionId: batchSessionId,
+  operation: "OPERATION_SUBMIT_INPUT",
+  state: "DELIVERY_STATE_UNKNOWN",
+  reason: "Original reason from the retained deletion record.",
+  receiptVersion: "9007199254740993",
+};
+
+it("reads current receipts, legacy deletion receipts, and misses in exact command ID order", async () => {
+  const ids = ["current", "legacy", "missing"];
+  const current = { ...legacyReceipt, commandId: "current", sandbox: "demo", sandboxUid: "sandbox-id" };
+  const fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.href);
+    expect(url.pathname).toBe(`/upstream/dispatcher/v1/sessions/${batchSessionId}/dispatches:batchGet`);
+    expect(url.searchParams.getAll("commandIds")).toEqual(ids);
+    return Promise.resolve(
+      Response.json({
+        results: [
+          { commandId: "current", dispatch: current },
+          { commandId: "legacy", legacyDeletionReceipt: legacyReceipt },
+          { commandId: "missing", notFound: {} },
+        ],
+      })
+    );
+  });
+  vi.stubGlobal("fetch", fetch);
+  const results = await batchGetDispatches(batchSessionId, ids, new AbortController().signal);
+  expect(results.map((row) => [row.commandId, row.result.case])).toEqual([
+    ["current", "dispatch"],
+    ["legacy", "legacyDeletionReceipt"],
+    ["missing", "notFound"],
+  ]);
+  expect(results[1]?.result.value).toMatchObject({
+    reason: legacyReceipt.reason,
+    receiptVersion: 9007199254740993n,
+  });
+  expect(fetch).toHaveBeenCalledOnce();
+});
+
+it.each([
+  { result: {}, error: "Missing Dispatcher result" },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, receiptVersion: undefined } },
+    error: "Dispatcher omitted a receipt revision",
+  },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, sessionId: "another-session" } },
+    error: "mismatched Dispatcher destination or command",
+  },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, sandbox: "demo", sandboxUid: "sandbox-id" } },
+    error: "Invalid legacy deletion receipt",
+  },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, commandId: "another-command" } },
+    error: "mismatched Dispatcher destination or command",
+  },
+])("rejects a batch whose selected deletion receipt is unconfirmed ($error)", async ({ result, error }) => {
+  vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ results: [{ commandId: "legacy", ...result }] })));
+  await expect(batchGetDispatches(batchSessionId, ["legacy"], new AbortController().signal)).rejects.toThrow(error);
+});
+
+it("splits a receipt read when the complete batch exceeds the server's byte limit", async () => {
+  const seen: string[][] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    const ids = new URL(String(input), window.location.href).searchParams.getAll("commandIds");
+    seen.push(ids);
+    return Promise.resolve(
+      ids.length > 1
+        ? Response.json({ code: 8, message: "Dispatch batch exceeds 4 MiB" }, { status: 429 })
+        : Response.json({ results: ids.map((commandId) => ({ commandId, notFound: {} })) })
+    );
+  });
+  const results = await batchGetDispatches(batchSessionId, ["first", "second"], new AbortController().signal);
+  expect(results.map((row) => row.commandId)).toEqual(["first", "second"]);
+  expect(seen).toEqual([["first", "second"], ["first"], ["second"]]);
 });

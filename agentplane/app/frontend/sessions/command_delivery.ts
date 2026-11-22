@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   type ThreadView,
@@ -13,16 +13,9 @@ import {
 import { displayableError } from "../transport/client";
 import { watchDispatches } from "./dispatch_watch";
 import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
+import type { LocalCommands, LocalCommand, LocalCommandSnapshot, PendingCommand } from "./local_commands";
+import type { ThreadDeliveryState } from "./thread_delivery";
 import type { ThreadEntity } from "../../../history_service/api/history/history_service_pb";
-
-const EMPTY_LOCAL: LocalCommandSnapshot = {
-  commands: [],
-  inputEchoes: [],
-  error: null,
-  dispatchWatchError: null,
-  dispatchWatchCoverageLost: false,
-};
 
 export interface CommandIssue {
   kind: "refused" | "unconfirmed";
@@ -46,13 +39,24 @@ interface ThreadCommands {
   store: LocalCommands;
 }
 
-export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
+export function useThreadCommands(
+  thread: ThreadView,
+  entities: ThreadEntity[],
+  { local, store }: Pick<ThreadDeliveryState, "local" | "store">
+): ThreadCommands {
   const threadId = thread.metadata.threadId;
-  const store = useMemo(() => new LocalCommands(threadId), [threadId]);
-  const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
+  const conversation = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const scope = new AbortController();
+    conversation.current = scope;
+    return () => {
+      conversation.current = null;
+      scope.abort();
+    };
+  }, [store]);
   useEffect(() => {
     setErrors((previous) =>
       pruneCommandErrors(previous, new Set(local.commands.map((command) => command.command.commandId)))
@@ -70,7 +74,8 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
   const deliver = useCallback(
     async (value: LocalCommand): Promise<void> => {
       const id = value.command.commandId;
-      if (active.current.has(id)) return;
+      const signal = conversation.current?.signal;
+      if (!signal || signal.aborted || active.current.has(id)) return;
       active.current.add(id);
       const settle = (issue: CommandIssue | null) => {
         if (issue === null)
@@ -86,7 +91,8 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
       try {
         if (!navigator.onLine) return;
         if (value.attempted || value.destination.kind === "reconcile-only") {
-          const receipt = await getDispatch(threadId, id);
+          const receipt = await getDispatch(threadId, id, signal);
+          if (signal.aborted) return;
           if (receipt?.command) {
             if (value.destination.kind === "reconcile-only" && value.destination.target && !receipt.sandboxUid) {
               throw new Error("Dispatcher receipt could not verify the original Sandbox destination");
@@ -128,14 +134,15 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
         store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
       } catch (reason) {
-        settle(
-          // A lost reply says nothing about how far the command got; the thread's history shows its
-          // admission once the runner journaled it.
-          {
-            kind: reason instanceof CommandSubmissionRefused && !value.attempted ? "refused" : "unconfirmed",
-            message: displayableError(reason),
-          }
-        );
+        if (!signal.aborted)
+          settle(
+            // A lost reply says nothing about how far the command got; the thread's history shows its
+            // admission once the runner journaled it.
+            {
+              kind: reason instanceof CommandSubmissionRefused && !value.attempted ? "refused" : "unconfirmed",
+              message: displayableError(reason),
+            }
+          );
       } finally {
         active.current.delete(id);
       }

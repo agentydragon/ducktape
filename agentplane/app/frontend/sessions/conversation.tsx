@@ -27,6 +27,8 @@ import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript
 import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
+import { DispatchWorksetPanel } from "./dispatch_workset_panel";
+import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
@@ -198,6 +200,7 @@ interface ConversationBodyProps {
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
+  delivery: ThreadDeliveryState;
 }
 
 function ConversationBody({
@@ -214,6 +217,7 @@ function ConversationBody({
   traceSearch,
   langfuseSearch,
   sandbox,
+  delivery,
 }: ConversationBodyProps): JSX.Element {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
@@ -230,7 +234,7 @@ function ConversationBody({
   const activityAge = modelActivityAge(lastModelActivityAt, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
-  const commands = useThreadCommands(thread, entities);
+  const commands = useThreadCommands(thread, entities, delivery);
   const onInputEchoLoaded = useCallback(
     (commandId: string) => commands.store.acknowledgeEcho(commandId),
     [commands.store]
@@ -333,6 +337,12 @@ function ConversationBody({
           deliver={commands.deliver}
         />
       )}
+      <DispatchWorksetPanel
+        delivery={delivery}
+        onOpenDeliveryHistory={onOpenDeliveryHistory}
+        localCommands={localCommands}
+        entities={entities}
+      />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
         <ModelActivityHint
@@ -523,6 +533,7 @@ export interface ThreadConversationProps {
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
+  delivery: ThreadDeliveryState;
 }
 
 export function ThreadConversation({
@@ -537,6 +548,7 @@ export function ThreadConversation({
   traceSearch,
   langfuseSearch,
   sandbox,
+  delivery,
 }: ThreadConversationProps): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
@@ -546,6 +558,7 @@ export function ThreadConversation({
       <>
         <DeliveryHistoryFallback onOpen={onOpenDeliveryHistory} />
         {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
+        <DispatchWorksetPanel delivery={delivery} onOpenDeliveryHistory={onOpenDeliveryHistory} />
       </>
     );
   }
@@ -577,6 +590,7 @@ export function ThreadConversation({
         traceSearch={traceSearch}
         langfuseSearch={langfuseSearch}
         sandbox={sandbox}
+        delivery={delivery}
       />
     </>
   );

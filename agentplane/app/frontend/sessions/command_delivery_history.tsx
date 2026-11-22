@@ -1,40 +1,22 @@
-import { Button, Divider, Group, Modal, ScrollArea, Stack, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useState } from "react";
-import { Operation } from "../../../proto/command_pb";
-import { DeliveryState, type Dispatch } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { Button, Divider, Group, Modal, ScrollArea, Stack, Tabs, Text } from "@mantine/core";
+import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { CommandNoticeAcknowledgement, CommandNoticeRevision } from "../../app_service_pb";
+import type {
+  Dispatch,
+  DispatchWorksetItem,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError } from "../transport/client";
 import { TopbarActions } from "../shell/topbar";
 import { TimeAgo } from "../ui/time_ago";
 import { listSessionDispatches } from "./client";
+import { isDeliveryIssue, noticeKey } from "./command_notice_attention";
+import { listCommandNoticeAcknowledgements } from "./command_notice_client";
+import { deliveryOperationLabel, deliveryStateLabel } from "./delivery_labels";
+import { readSelectedDispatchReceipts, worksetItemFromReceipt, type ReadDispatchReceipts } from "./dispatch_workset";
+import { AcknowledgeDeliveryIssue, WorksetRow } from "./dispatch_workset_panel";
 import { StoredCommandDetails } from "./stored_command_details";
+import type { ThreadDeliveryState } from "./thread_delivery";
 import { timestampLabel } from "./thread_presentation";
-
-export function deliveryOperationLabel(operation: Operation): string {
-  switch (operation) {
-    case Operation.SUBMIT_INPUT:
-      return "Send message";
-    case Operation.CHANGE_MODEL:
-      return "Model change";
-    case Operation.CHANGE_REASONING_EFFORT:
-      return "Reasoning effort change";
-    case Operation.INTERRUPT_TURN:
-      return "Turn interrupt";
-    case Operation.COMPACT:
-      return "Compact conversation";
-    default:
-      return "Command";
-  }
-}
-
-export const deliveryStateLabel: Record<DeliveryState, string> = {
-  [DeliveryState.UNSPECIFIED]: "Delivery unconfirmed",
-  [DeliveryState.QUEUED_IN_DISPATCHER]: "Queued in Dispatcher",
-  [DeliveryState.DELIVERING_TO_RUNNER]: "Sending to runner",
-  [DeliveryState.RUNNER_ADMITTED]: "Runner accepted",
-  [DeliveryState.FAILED]: "Delivery failed",
-  [DeliveryState.CANCELLED_IN_DISPATCHER]: "Cancelled before delivery",
-  [DeliveryState.UNKNOWN]: "Outcome unknown",
-};
 
 interface Page<T> {
   rows: T[];
@@ -45,28 +27,36 @@ export function PagedHistory<T>({
   sessionId,
   load,
   renderRows,
+  revision = 0,
 }: {
   sessionId: string;
   load: (sessionId: string, token: string, signal: AbortSignal) => Promise<Page<T>>;
   renderRows: (rows: T[], more: boolean) => ReactNode;
+  revision?: number;
 }): JSX.Element {
   const [tokens, setTokens] = useState([""]);
   const [retry, setRetry] = useState(0);
   const token = tokens[tokens.length - 1];
-  const [result, setResult] = useState<{ token: string; retry: number; page?: Page<T>; error?: string } | null>(null);
+  const [result, setResult] = useState<{
+    token: string;
+    retry: number;
+    revision: number;
+    page?: Page<T>;
+    error?: string;
+  } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     load(sessionId, token, controller.signal).then(
       (page) => {
-        if (!controller.signal.aborted) setResult({ token, retry, page });
+        if (!controller.signal.aborted) setResult({ token, retry, revision, page });
       },
       (error: unknown) => {
-        if (!controller.signal.aborted) setResult({ token, retry, error: displayableError(error) });
+        if (!controller.signal.aborted) setResult({ token, retry, revision, error: displayableError(error) });
       }
     );
     return () => controller.abort();
-  }, [load, retry, sessionId, token]);
-  const loaded = result?.token === token && result.retry === retry ? result : null;
+  }, [load, retry, revision, sessionId, token]);
+  const loaded = result?.token === token && result.retry === retry && result.revision === revision ? result : null;
   const next = loaded?.page?.nextPageToken;
   return (
     <Stack gap="sm">
@@ -123,53 +113,190 @@ async function retained(sessionId: string, pageToken: string, signal: AbortSigna
   return { rows: dispatches, nextPageToken };
 }
 
-export function RetainedDispatches({ sessionId }: { sessionId: string }): JSX.Element {
+function RetainedReceiptRows({ delivery, rows }: { delivery: ThreadDeliveryState; rows: Dispatch[] }) {
+  const { attention, registerArchiveIssues } = delivery;
+  const notices = useMemo(() => rows.filter((row) => isDeliveryIssue(row.state)).map(worksetItemFromReceipt), [rows]);
+  useEffect(() => registerArchiveIssues(notices), [notices, registerArchiveIssues]);
+  const byCommand = new Map(notices.map((notice) => [notice.commandId, notice]));
+  if (rows.length === 0)
+    return (
+      <Text size="sm" c="dimmed">
+        No retained receipts.
+      </Text>
+    );
+  return (
+    <>
+      {attention.error && (
+        <Text size="xs" role="alert">
+          {attention.error}
+        </Text>
+      )}
+      {rows.map((row) => {
+        const time = timestampLabel(row.updatedAt);
+        const notice = byCommand.get(row.commandId);
+        return (
+          <Stack key={row.commandId} gap={2} style={{ overflowWrap: "anywhere" }}>
+            <Divider />
+            <Text size="sm" fw={500}>
+              {deliveryOperationLabel(row.operation)} · {deliveryStateLabel[row.state] ?? "Delivery unconfirmed"}
+            </Text>
+            <Group gap="xs" justify="space-between" align="baseline">
+              <Text size="xs" ff="monospace" c="dimmed">
+                {row.commandId}
+              </Text>
+              {time && (
+                <Text size="xs" c="dimmed">
+                  <TimeAgo value={time} />
+                </Text>
+              )}
+            </Group>
+            {row.reason && (
+              <Text size="xs" style={{ whiteSpace: "pre-wrap" }}>
+                {row.reason}
+              </Text>
+            )}
+            {notice &&
+              (attention.acknowledged(notice) ? (
+                <Text size="xs" c="dimmed">
+                  Acknowledged
+                </Text>
+              ) : (
+                <Group>
+                  <AcknowledgeDeliveryIssue item={notice} attention={attention} />
+                </Group>
+              ))}
+            <StoredCommandDetails receipt={row} />
+          </Stack>
+        );
+      })}
+    </>
+  );
+}
+
+function RetainedDispatches({ delivery }: { delivery: ThreadDeliveryState }): JSX.Element {
   return (
     <Stack gap="sm">
       <Text size="xs" c="dimmed">
         Showing retained commands, newest first. Older deletion receipts are outside this history.
       </Text>
       <PagedHistory
-        key={sessionId}
-        sessionId={sessionId}
+        sessionId={delivery.sessionId}
         load={retained}
-        renderRows={(rows) =>
-          rows.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No retained receipts.
-            </Text>
-          ) : (
-            rows.map((row) => {
-              const time = timestampLabel(row.updatedAt);
-              return (
-                <Stack key={row.commandId} gap={2} style={{ overflowWrap: "anywhere" }}>
-                  <Divider />
-                  <Text size="sm" fw={500}>
-                    {deliveryOperationLabel(row.operation)} · {deliveryStateLabel[row.state] ?? "Delivery unconfirmed"}
-                  </Text>
-                  <Group gap="xs" justify="space-between" align="baseline">
-                    <Text size="xs" ff="monospace" c="dimmed">
-                      {row.commandId}
-                    </Text>
-                    {time && (
-                      <Text size="xs" c="dimmed">
-                        <TimeAgo value={time} />
-                      </Text>
-                    )}
-                  </Group>
-                  {row.reason && (
-                    <Text size="xs" style={{ whiteSpace: "pre-wrap" }}>
-                      {row.reason}
-                    </Text>
-                  )}
-                  <StoredCommandDetails receipt={row} />
-                </Stack>
-              );
-            })
-          )
-        }
+        renderRows={(rows) => <RetainedReceiptRows delivery={delivery} rows={rows} />}
       />
     </Stack>
+  );
+}
+
+async function acknowledged(
+  sessionId: string,
+  pageToken: string,
+  signal: AbortSignal
+): Promise<Page<CommandNoticeAcknowledgement>> {
+  const { acknowledgements, nextPageToken } = await listCommandNoticeAcknowledgements(sessionId, pageToken, signal);
+  return { rows: acknowledgements, nextPageToken };
+}
+
+function AcknowledgedReceiptEvidence({
+  readReceipts,
+  notice,
+}: {
+  readReceipts: ReadDispatchReceipts;
+  notice: CommandNoticeRevision;
+}) {
+  const controllerRef = useRef<AbortController | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ item: DispatchWorksetItem } | { unavailable: string; retry: boolean } | null>(
+    null
+  );
+  useEffect(() => () => controllerRef.current?.abort(), []);
+  const inspect = () => {
+    const controller = new AbortController();
+    controllerRef.current?.abort();
+    controllerRef.current = controller;
+    setLoading(true);
+    void readSelectedDispatchReceipts(readReceipts, [notice.commandId], controller.signal)
+      .then(([receipt]) => {
+        if (controller.signal.aborted) return;
+        setResult(
+          receipt?.receiptVersion === notice.receiptVersion && isDeliveryIssue(receipt.state)
+            ? { item: worksetItemFromReceipt(receipt) }
+            : {
+                unavailable: receipt
+                  ? "The original receipt revision is unavailable. Dispatcher has a different revision."
+                  : "Dispatcher could not return the original receipt revision.",
+                retry: false,
+              }
+        );
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setResult({ unavailable: `Could not inspect the receipt. ${displayableError(error)}`, retry: true });
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+  };
+  if (result && "item" in result)
+    return <WorksetRow readReceipts={readReceipts} item={result.item} showCommandId={false} />;
+  return (
+    <Group gap="xs">
+      {(!result || result.retry) && (
+        <Button size="compact-xs" variant="subtle" loading={loading} onClick={inspect}>
+          Inspect original receipt
+        </Button>
+      )}
+      {result && (
+        <Text size="xs" c="dimmed" role="status">
+          {result.unavailable}
+        </Text>
+      )}
+    </Group>
+  );
+}
+
+function AcknowledgedIssues({ delivery }: { delivery: ThreadDeliveryState }) {
+  const { sessionId, readReceipts, attention } = delivery;
+  const current = new Map(attention.issues.map((item) => [noticeKey(item), item]));
+  return (
+    <PagedHistory
+      sessionId={sessionId}
+      load={acknowledged}
+      revision={attention.historyRevision}
+      renderRows={(rows) =>
+        rows.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No acknowledged delivery issues.
+          </Text>
+        ) : (
+          rows.map(({ notice, acknowledgedAt }) => {
+            if (!notice) return null;
+            const item = current.get(noticeKey(notice));
+            const stamp = timestampLabel(acknowledgedAt);
+            return (
+              <Stack key={noticeKey(notice)} gap={2} style={{ overflowWrap: "anywhere" }}>
+                <Divider />
+                <Group gap="xs" justify="space-between" align="baseline">
+                  <Text size="xs" ff="monospace" c="dimmed">
+                    {notice.commandId}
+                  </Text>
+                  {stamp && (
+                    <Text size="xs" c="dimmed">
+                      <TimeAgo value={stamp} />
+                    </Text>
+                  )}
+                </Group>
+                {item ? (
+                  <WorksetRow readReceipts={readReceipts} item={item} showCommandId={false} />
+                ) : (
+                  <AcknowledgedReceiptEvidence readReceipts={readReceipts} notice={notice} />
+                )}
+              </Stack>
+            );
+          })
+        )
+      }
+    />
   );
 }
 
@@ -185,11 +312,11 @@ export function DeliveryHistoryFallback({ onOpen }: { onOpen: () => void }): JSX
 }
 
 export function CommandDeliveryHistory({
-  sessionId,
+  delivery,
   opened,
   onClose,
 }: {
-  sessionId: string;
+  delivery: ThreadDeliveryState;
   opened: boolean;
   onClose: () => void;
 }): JSX.Element {
@@ -201,7 +328,20 @@ export function CommandDeliveryHistory({
       size="lg"
       scrollAreaComponent={ScrollArea.Autosize}
     >
-      {opened && <RetainedDispatches key={sessionId} sessionId={sessionId} />}
+      {opened && (
+        <Tabs defaultValue="receipts" keepMounted={false}>
+          <Tabs.List mb="sm">
+            <Tabs.Tab value="receipts">Retained receipts</Tabs.Tab>
+            <Tabs.Tab value="acknowledged">Acknowledged</Tabs.Tab>
+          </Tabs.List>
+          <Tabs.Panel value="receipts">
+            <RetainedDispatches delivery={delivery} />
+          </Tabs.Panel>
+          <Tabs.Panel value="acknowledged">
+            <AcknowledgedIssues delivery={delivery} />
+          </Tabs.Panel>
+        </Tabs>
+      )}
     </Modal>
   );
 }

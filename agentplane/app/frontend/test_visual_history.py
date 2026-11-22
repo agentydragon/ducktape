@@ -618,6 +618,57 @@ async def test_dispatch_watch_interruption_and_recovery(view: VisualPage, app: A
     await view.capture(name="dispatch_watch_recovered")
 
 
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_workset(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.DISPATCH_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    panel = view.page.get_by_role("region", name="Dispatcher delivery")
+    await expect(panel).to_contain_text("Send message · Queued in Dispatcher")
+    await expect(panel).to_contain_text("Model change · Outcome unknown")
+    await expect(panel).to_contain_text("Turn interrupt · Cancelled before delivery")
+    await expect(panel.get_by_role("button", name="Older delivery issues")).to_be_visible()
+    await panel.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="workset", target=panel)
+
+    await panel.get_by_role("button", name="Show full reason").click()
+    await expect(panel).to_contain_text("disconnected execution stream.")
+    await expect(panel.get_by_role("button", name="Show full reason")).to_have_count(0)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="workset_full_reason", target=panel)
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_notice_acknowledgement(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.VERSIONED_DISPATCH_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    panel = view.page.get_by_role("region", name="Dispatcher delivery")
+    unknown = panel.locator('[data-dispatch-command-id="5034baaf-0000-4000-8000-000000000001"]')
+    await expect(unknown).to_contain_text("Model change · Outcome unknown")
+    await expect(panel).to_contain_text("Reasoning effort change · Delivery failed")
+    acknowledge = unknown.get_by_role("button", name="Acknowledge delivery issue", exact=False)
+    await acknowledge.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issues", target=panel)
+    await acknowledge.click()
+    await expect(unknown).to_have_count(0)
+    await expect(panel).to_contain_text("Reasoning effort change · Delivery failed")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issue_acknowledged", target=panel)
+
+    older_issues = panel.get_by_role("button", name="Older delivery issues")
+    await older_issues.focus()
+    await older_issues.press("Enter")
+    history = view.page.get_by_role("dialog", name="Delivery history")
+    await expect(history.get_by_role("tab", name="Retained receipts")).to_have_attribute("aria-selected", "true")
+    await history.get_by_role("tab", name="Acknowledged").click()
+    await expect(history).to_contain_text("Model change · Outcome unknown")
+    await history.get_by_role("button", name="Show full reason").click()
+    await expect(history).to_contain_text("disconnected execution stream.")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issue_history", target=history)
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
 async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.PENDING_COMMANDS)
