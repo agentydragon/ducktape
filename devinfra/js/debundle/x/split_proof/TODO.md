@@ -1,5 +1,7 @@
 # TODO
 
+- **Explain a linked execution mismatch.** When both initializers finish normally with different exported strings, the current refusal prints the start of a failed Lean state equality. The first 1,200 characters describe built-in heap entries. Use the concrete probe to report a differing exported value when available, keeping the kernel proof as the condition for certification.
+
 - **Derived-class commutation.** Default-derived creation now has model semantics, but `allocOnly` rejects it. Extend replay reasoning to stable superclass/prototype heap reads, with checked exclusion or explicit treatment of accessor effects. Preserve the roughjs alternating plan as the acceptance target; seven inverted pairs cross its derived class. A binding read-set alone cannot justify these reads.
 
 - **Lean formatter and optional linter.** Evaluate [`lean-fmt`](https://github.com/jcreinhold/lean-fmt), pinned to the project's Lean toolchain (`v4.35.0` has a matching release). As of 2026-11-21, nixpkgs code search finds no package and our pinned nixpkgs lacks `pkgs/by-name/le/lean-fmt/package.nix`; package it through the shared Nix tool environment if still absent. Check idempotence and compile the formatted corpus before adding pre-commit hooks; land the reformat separately from proof changes. Assess lint rules individually. Keep compilation and axiom audits in Bazel/CI. Existing hooks already check trailing whitespace and final newlines.
