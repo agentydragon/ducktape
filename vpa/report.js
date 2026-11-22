@@ -504,13 +504,12 @@ function Report() {
       <${Text} mt="sm">
         <strong>CNPG sizing needs a controlled rollout.</strong> All four
         Clusters recovered after the request wave, but three write endpoints
-        were unready for roughly three minutes each during primary restarts. A
-        later Study Casino switchover test had an 11.1-second gap between
-        successful client reads and ten failed attempts before reconnection; it
-        did not test committed writes. Both instances and archiving recovered.
-        This is one observation, not an outage bound. ${" "}<${Anchor}
-          href=${github + "pull/19102"}
-          >Database sizing PR<//
+        were unready for roughly three minutes each during primary restarts. At
+        11:24 UTC on 22 November, a Study Casino switchover test had an
+        11.1-second gap between successful client reads and ten failed attempts
+        before reconnection; it did not test committed writes. Both instances
+        and archiving recovered. This is one observation, not an outage bound.
+        ${" "}<${Anchor} href=${github + "pull/19102"}>Database sizing PR<//
         >${" · "}<${Anchor} href=${github + "pull/19119"}>Switchover test<//
         >${" · "}<${Anchor} href="./rollout-evidence.json">Dated evidence<//>.
       <//>
