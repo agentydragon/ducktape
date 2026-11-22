@@ -270,3 +270,37 @@ the control and Node prints the same output for both orders.
 Certifying this pair for Excalidraw would require evidence about what outside code
 can observe during this initialization, including the host global read. The test
 establishes that the receiver and its observers matter under the current premises.
+
+## Constructor calls crossing opaque arrow allocations
+
+The editor replay after the local-negation proof has 1,619 structurally
+independent crossings between opaque `new` initializers and opaque arrow
+allocations. Grouping the inverted pairs by the constructor's source unit gives:
+
+| Constructor | Initializers | Crossings | Arguments                                                    |
+| ----------- | -----------: | --------: | ------------------------------------------------------------ |
+| Array       |            6 |       804 | Three numeric binding reads and three arithmetic expressions |
+| Set         |            5 |       426 | Arrays of string literals                                    |
+| WeakMap     |            2 |       199 | No arguments or an empty array                               |
+| RegExp      |            1 |       130 | Template with two substitutions                              |
+| Map         |            1 |        60 | No arguments                                                 |
+
+For unit 46, `new Array((Oi + 2) * 2)`, the preceding initializers give
+`Yi = 256`, `SU = 29` and `Oi = Yi + 1 + SU`. That explains the intended
+576-element sparse array. It does not establish the identity of the global
+constructor at evaluation time. CoreJS lowers all five global names here to an
+opaque statement. Effects tracks visible intrinsic patches and assumes P1 for
+unseen patches. Its `Array` summary does not provide a CoreJS constructor or a
+proof of correspondence for sparse arrays.
+
+The executable controls in [inert_escape_test.mjs](../../inert_escape_test.mjs)
+move a factory initializer across (1) an in-bundle replacement of `Array`
+and (2) a call to the original `Array` whose length expression runs `valueOf`.
+Each original prints `undefined`, each forced split prints `function`, and both
+checkers refuse both moves. A constructor-name rule would miss these cases.
+The next candidate independent of intrinsic constructor identity is destructuring:
+eight declarators crossing opaque arrows account for 1,072 pairs. Unit 105 reads
+named fields of unit 103's zlib constants object. A proof would need to establish
+which object is read and that each property access is an own data-property read.
+
+[Pair report](https://app.buildbuddy.io/invocation/30d817ef-4e12-4d32-84a2-8ace0c26cda6)
