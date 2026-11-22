@@ -4,6 +4,7 @@
 # gazelle:exclude lowering
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("//devinfra/js/debundle/x/split_proof:lint.bzl", "eslint_entry_points")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_binary")
 
@@ -38,24 +39,9 @@ js_library(
     deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
 )
 
-# Include first-party runfile helpers as lint sources.
-js_library(
-    name = "lint_sources",
-    testonly = True,
-    srcs = glob(
-        [
-            "experiments/**/*.mjs",
-        ],
-        exclude = [
-            "experiments/lowering/entries/**",
-            "experiments/lowering/torture.mjs",
-        ],
-    ),
-)
-
 eslint_test(
     name = "eslint_test",
-    srcs = [":lint_sources"],
+    srcs = [":lowering_dump_core"],
 )
 
 # keep
@@ -107,3 +93,5 @@ js_binary(
     env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
     tags = ["manual"],
 )
+
+eslint_entry_points(name = "eslint_entry_points_test")

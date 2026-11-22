@@ -1,5 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
+load("//devinfra/js/debundle/x/split_proof:lint.bzl", "eslint_entry_points")
 load("//devinfra/js/debundle/x/split_proof/experiments/splits:sweep.bzl", "real_bundle_artifacts")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_test")
@@ -26,10 +27,10 @@ js_library(
 js_binary(
     name = "module_io",
     data = [
-        "print.mjs",
         ":node_modules/acorn",
         ":node_modules/astring",
         ":node_modules/eslint-scope",
+        ":print",
         ":scope_metadata",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     ],
@@ -47,27 +48,6 @@ js_test(
     ],
     entry_point = "linked_input_test.mjs",
     env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
-)
-
-# Include first-party runfile helpers as lint sources.
-js_library(
-    name = "lint_sources",
-    testonly = True,
-    srcs = glob(
-        ["**/*.mjs"],
-        exclude = ["fixtures/**"],
-    ),
-)
-
-eslint_test(
-    name = "eslint_test",
-    srcs = [
-        ":lint_sources",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
-    ],
 )
 
 _SHIFT_FUZZ_DATA = [
@@ -114,7 +94,7 @@ js_test(
 _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
 _CHECKER_RUNFILES = [
-    "frontend.mjs",
+    ":frontend",
     "scope_metadata.mjs",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
@@ -132,7 +112,7 @@ js_test(
     name = "fixtures_test",
     data = [
         "mutate.mjs",
-        "pair.mjs",
+        ":pair",
     ] + _CHECKER_RUNFILES + glob(
         ["fixtures/**"],
         allow_empty = False,
@@ -145,7 +125,7 @@ js_test(
     name = "identity_emission_test",
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
-        "pair.mjs",
+        ":pair",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
@@ -565,9 +545,9 @@ js_test(
 js_test(
     name = "inert_escape_test",
     data = _CHECKER_RUNFILES + [
-        "pair.mjs",
         "testdata/inert_escape/seed2026_round3.js.txt",
         "testdata/inert_escape/seed2026_round8.js.txt",
+        ":pair",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
@@ -581,7 +561,7 @@ js_test(
 js_test(
     name = "factory_emission_test",
     data = _CHECKER_RUNFILES + [
-        "pair.mjs",
+        ":pair",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
@@ -719,7 +699,7 @@ js_test(
 _EFFECTS = "//devinfra/js/debundle/x/split_proof/effects"
 
 _EFFECTS_CASES_DATA = _CHECKER_RUNFILES + [
-    "pair.mjs",
+    ":pair",
     _EFFECTS + ":cases",
     "//devinfra/js/debundle/x/split_proof/lean:lower",
 ]
@@ -926,12 +906,12 @@ js_test(
     data = _FUZZ_SOURCES + [
         "analysis_inventory.mjs",
         "coverage_audit.mjs",
-        "frontend.mjs",
         "fuzz.mjs",
         "intrinsics_probe.mjs",
         "modern_syntax.mjs",
         "scope_metadata.mjs",
         "syntax_inventory.mjs",
+        ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":node_modules/shift-codegen",
@@ -959,10 +939,10 @@ js_test(
     size = "medium",
     data = [
         "footprint_oracle.mjs",
-        "frontend.mjs",
         "oracle_harness.mjs",
         "scope_metadata.mjs",
         "syntax_inventory.mjs",
+        ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         "//devinfra/js/debundle/x/split_proof/lean:lower",
@@ -1010,10 +990,10 @@ js_test(
     data = [
         "footprint_oracle.mjs",
         "footprint_reduce.mjs",
-        "frontend.mjs",
         "oracle_harness.mjs",
         "scope_metadata.mjs",
         "syntax_inventory.mjs",
+        ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
     ],
@@ -1061,9 +1041,9 @@ js_test(
 js_test(
     name = "corejs_ast_lowering_test",
     data = [
-        "frontend.mjs",
         "scope_metadata.mjs",
         "split_dump.mjs",
+        ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         _MODEL + ":sources",
@@ -1307,3 +1287,41 @@ py_test(
         "@rules_python//python/runfiles",
     ],
 )
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [
+        ":bazel_parser",
+        ":frontend",
+        ":pair",
+        ":print",
+        ":scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    ],
+)
+
+js_library(
+    name = "frontend",
+    srcs = ["frontend.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+    ],
+)
+
+js_library(
+    name = "pair",
+    srcs = ["pair.mjs"],
+    deps = [":frontend"],
+)
+
+js_library(
+    name = "print",
+    srcs = ["print.mjs"],
+    deps = [":node_modules/astring"],
+)
+
+eslint_entry_points(name = "eslint_entry_points_test")
