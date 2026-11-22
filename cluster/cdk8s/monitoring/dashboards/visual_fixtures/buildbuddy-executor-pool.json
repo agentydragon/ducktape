@@ -193,7 +193,7 @@
     }
   },
   "fixture": {
-    "_note": "Synthetic KVM worker scaling, task and filesystem data for the visual preview. RAM panels use 25 consecutive five-minute samples from one guest, aligned with the preview timeline.",
+    "_note": "Synthetic KVM worker scaling, task and filesystem data for the visual preview. Guest RAM panels use 25 consecutive five-minute samples from one guest. Host RAM uses observed usage-to-request ratios scaled to the preview pool.",
     "variables": {
       "worker": ["0", "1", "2"],
       "memory_worker": ["0", "1", "2"]
@@ -841,10 +841,10 @@
                 "values": [
                   { "$recorded_ref": "value_003" },
                   [
-                    49218818048, 40139976704, 42813460480, 39914414080, 34702610432, 19101052928, 22623973376,
-                    22284230656, 64515219456, 69025951744, 69990354944, 67052228608, 64705548288, 69644849152,
-                    66130440192, 63149584384, 64175091712, 64080523264, 64222375936, 64500142080, 59825627136,
-                    52830449664, 45791072256, 22053990400, 31539396608
+                    14282775876, 16307470174, 14494677691, 13513193300, 14098458221, 12933484126, 22978324935,
+                    22633260941, 24572137229, 26290155608, 26657471228, 25538416776, 24644628437, 26525877228,
+                    25187331999, 24052003024, 24442591586, 24406572970, 24460600894, 28075879607, 15190663869,
+                    15330832838, 15502760721, 14932943007, 12813354957
                   ]
                 ]
               }
