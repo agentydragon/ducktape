@@ -85,16 +85,18 @@ def zone_spread(zones: Sequence[str], labels: Mapping[str, str]) -> k8s.Topology
     )
 
 
-def one_per_host(labels: Mapping[str, str]) -> dict[str, object]:
-    """An untyped `affinity` for Helm values and operator pod templates. Required, so a Pod waits
-    Pending rather than share a host with another Pod matching `labels`."""
-    return {
-        "podAntiAffinity": {
-            "requiredDuringSchedulingIgnoredDuringExecution": [
-                {"labelSelector": {"matchLabels": dict(labels)}, "topologyKey": "kubernetes.io/hostname"}
+def one_per_host(labels: Mapping[str, str], *, node_affinity: k8s.NodeAffinity | None = None) -> k8s.Affinity:
+    """Require separate hosts for Pods matching the selector."""
+    return k8s.Affinity(
+        node_affinity=node_affinity,
+        pod_anti_affinity=k8s.PodAntiAffinity(
+            required_during_scheduling_ignored_during_execution=[
+                k8s.PodAffinityTerm(
+                    label_selector=k8s.LabelSelector(match_labels=dict(labels)), topology_key="kubernetes.io/hostname"
+                )
             ]
-        }
-    }
+        ),
+    )
 
 
 def hostname_spread(labels: Mapping[str, str]) -> k8s.TopologySpreadConstraint:
