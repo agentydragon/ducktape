@@ -1,0 +1,210 @@
+{
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "gitlab_capacity": {
+    "reservations_started_utc": "2026-11-22T10:57:24+00:00",
+    "recommendations_snapshot_finished_utc": "2026-11-22T10:56:22Z",
+    "eligible_workers": 3,
+    "scenarios": [
+      {
+        "name": "Rails surge",
+        "target": {
+          "min_remaining_millicores": 1575,
+          "min_remaining_mib": -401,
+          "fitting_placements": 0,
+          "candidate_placements": 1
+        },
+        "sensitivity": {
+          "min_remaining_millicores": 1575,
+          "min_remaining_mib": -2263,
+          "fitting_placements": 0,
+          "candidate_placements": 1
+        }
+      },
+      {
+        "name": "Sidekiq surge",
+        "target": {
+          "min_remaining_millicores": 1544,
+          "min_remaining_mib": 2730,
+          "fitting_placements": 2,
+          "candidate_placements": 3
+        },
+        "sensitivity": {
+          "min_remaining_millicores": 1544,
+          "min_remaining_mib": 867,
+          "fitting_placements": 1,
+          "candidate_placements": 3
+        }
+      },
+      {
+        "name": "Both surges",
+        "target": {
+          "min_remaining_millicores": 1544,
+          "min_remaining_mib": -401,
+          "fitting_placements": 0,
+          "candidate_placements": 3
+        },
+        "sensitivity": {
+          "min_remaining_millicores": 1544,
+          "min_remaining_mib": -2263,
+          "fitting_placements": 0,
+          "candidate_placements": 3
+        }
+      },
+      {
+        "name": "Loss of a Sidekiq host",
+        "target": {
+          "min_remaining_millicores": 1544,
+          "min_remaining_mib": 2645,
+          "fitting_placements": 3,
+          "candidate_placements": 4
+        },
+        "sensitivity": {
+          "min_remaining_millicores": 1544,
+          "min_remaining_mib": 867,
+          "fitting_placements": 2,
+          "candidate_placements": 4
+        }
+      },
+      {
+        "name": "Loss of Rails host A",
+        "target": {
+          "min_remaining_millicores": 1575,
+          "min_remaining_mib": -401,
+          "fitting_placements": 0,
+          "candidate_placements": 1
+        },
+        "sensitivity": {
+          "min_remaining_millicores": 1575,
+          "min_remaining_mib": -2263,
+          "fitting_placements": 0,
+          "candidate_placements": 1
+        }
+      },
+      {
+        "name": "Loss of Rails host B",
+        "target": {
+          "min_remaining_millicores": 1575,
+          "min_remaining_mib": -401,
+          "fitting_placements": 0,
+          "candidate_placements": 2
+        },
+        "sensitivity": {
+          "min_remaining_millicores": 1575,
+          "min_remaining_mib": -2263,
+          "fitting_placements": 0,
+          "candidate_placements": 2
+        }
+      }
+    ],
+    "inputs": {
+      "target": {
+        "Rails": {
+          "cpu_millicores": 400,
+          "memory_mib": 3247
+        },
+        "Sidekiq": {
+          "cpu_millicores": 900,
+          "memory_mib": 3072
+        },
+        "Sampler": {
+          "cpu_millicores": 587,
+          "memory_mib": 512
+        }
+      },
+      "sensitivity": {
+        "Rails": {
+          "cpu_millicores": 400,
+          "memory_mib": 4085
+        },
+        "Sidekiq": {
+          "cpu_millicores": 900,
+          "memory_mib": 4096
+        },
+        "Sampler": {
+          "cpu_millicores": 587,
+          "memory_mib": 512
+        }
+      }
+    },
+    "budget_2500m_10gib": {
+      "healthy_three_rails_three_sidekiq": {
+        "min_remaining_millicores": 613,
+        "min_remaining_mib": 1547,
+        "fitting_placements": 2,
+        "candidate_placements": 9
+      },
+      "worst_two_rails_two_sidekiq_after_one_loss": {
+        "min_remaining_millicores": 613,
+        "min_remaining_mib": 1547,
+        "fitting_placements": 4,
+        "candidate_placements": 8
+      }
+    }
+  },
+  "gitlab_capacity_scope": [
+    "Three Ready untainted OVH workers matched the live Rails and Sidekiq node selectors.",
+    "Charge allocated and declared CPU and memory for assigned nonterminal Pods, including init stages, restartable init sidecars, Pod-level requests and overhead. Hold unrelated survivors fixed.",
+    "Enumerate new placements with surviving cohort Pods pinned, two steady Rails replicas on separate hosts, a third Rails surge host when all workers are available, and two Central Sampler reservations. Sidekiq can share a host if capacity permits.",
+    "Current targets replace live Rails and Sidekiq admitted memory with their VPA targets. Sensitivity uses the Rails upper estimate and the Sidekiq 4 GiB policy ceiling. Sampler always uses target CPU and its 512 MiB template request.",
+    "The 10 GiB / 2,500m budget applies before this cohort and excludes displaced unrelated workloads, simultaneous infrastructure failures and scheduler constraints beyond the tested placement rules."
+  ],
+  "kubevirt": {
+    "controller_lease_acquired_utc": "2026-11-22T10:29:35.641533Z",
+    "controller_lease_renewed_utc": "2026-11-22T10:57:24.561910Z",
+    "post_handoff_vmi_samples": [
+      {
+        "created_utc": "2026-11-22T10:57:22Z",
+        "ready_utc": "2026-11-22T10:58:57Z"
+      }
+    ],
+    "api_ready_endpoints": 2,
+    "pod_disruption_budgets_allowed": {
+      "virt-api-pdb": 1,
+      "virt-controller-pdb": 1,
+      "virt-operator": 1
+    },
+    "api_client_during_turnover": "unverified"
+  },
+  "notifications": {
+    "image_source_commit": "9636d81d8430032ffa1d340072df88b6d8f5c4dd",
+    "backoff_fix_commit": "c2f0745a789b6a81b828a0da3f7cb199cdc45e05",
+    "verified_by_git_ancestry": true,
+    "ready_replicas": 2,
+    "container_restarts": 0,
+    "live_vpa_mode": "Recreate",
+    "vpa_policy_pr": 19101,
+    "allowed_disruptions": 1,
+    "image_rollout": "PR #19101 traces signed webhook delivery to native runner confirmation after an image replacement and reports two available replicas at all 73 evaluations during the rollout window.",
+    "vpa_eviction_events_in_namespace": 0,
+    "webhook_through_vpa_eviction": "unverified"
+  },
+  "piraeus_gap_breakdown": [
+    {
+      "workload_group": "CSI node DaemonSet",
+      "containers": 24
+    },
+    {
+      "workload_group": "Satellite DaemonSets",
+      "containers": 16
+    },
+    {
+      "workload_group": "HA controller DaemonSet",
+      "containers": 8
+    },
+    {
+      "workload_group": "Management and CSI Deployments",
+      "containers": 9
+    }
+  ],
+  "inventory_flux_source_revision": "34af0f324892b6b34f6ec16379c91eec52bedf3d",
+  "rollout_observed_utc": "2026-11-22T11:07:34Z",
+  "cnpg": {
+    "policy_pr": 19102,
+    "matching_cluster_objects": 4,
+    "matching_barman_objects": 4,
+    "ready_pods_with_all_three_requests": 8,
+    "expected_instance_pods": 8,
+    "scope": "PostgreSQL, bootstrap controller and Barman requests on the four target clusters; next backup cycle pending",
+    "pods_observed_utc": "2026-11-22T11:10:35Z"
+  }
+}

@@ -1014,6 +1014,10 @@ export function StorageRemediation() {
       });
     return () => controller.abort();
   }, []);
+  useEffect(() => {
+    if (data && window.location.hash)
+      document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+  }, [data]);
   if (error)
     return html`<${Alert} color="red"
       >Storage remediation evidence could not be loaded.<//
@@ -1029,10 +1033,11 @@ export function StorageRemediation() {
   >
     <header>
       <${Badge} variant="light">Read-only snapshot · 10 November 2026 UTC<//>
-      <${Title} order=${1} mt="sm">Make HDD commitments fit<//>
+      <${Title} order=${2} mt="sm"
+        >Earlier HDD commitments and reclaim scenarios<//
+      >
       <${Text} mt="sm" size="lg">
-        Reduce the pool limits that exceed physical capacity while preserving
-        the data and recovery guarantees that matter.
+        The following sections use the November 10 measurements and budgets.
       <//>
       <${Text} c="dimmed" size="sm" mt="sm">
         Pool and Langfuse observations were collected around 19:13–19:20 UTC;

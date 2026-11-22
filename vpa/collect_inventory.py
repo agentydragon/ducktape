@@ -2,9 +2,9 @@
 
 Requires kubectl access to workload, Pod, VPA, metrics and Mimir query APIs.
 Run: python vpa/collect_inventory.py > vpa/inventory.json
-Raw Kubernetes objects and Prometheus labels other than namespace/pod/container
-are not emitted. Reads are sequential, so this is a collection window, not an
-atomic snapshot. Never collect or publish Secret objects, env vars or logs.
+The emitted inventory uses snapshot-local aliases for Pods, hosts and dynamic
+owners. Reads are sequential, so this is a collection window. Never collect or
+publish Secret objects, env vars or logs.
 """
 
 import datetime as dt
@@ -89,6 +89,45 @@ def quantity(value):
     return float(s)
 
 
+def sanitize_rows(rows, node_names):
+    hosts = {name: f"host-{i}" for i, name in enumerate(sorted(node_names), 1)}
+    dynamic_owners = Counter()
+
+    def public_name(name):
+        for host, alias in hosts.items():
+            name = name.replace(host, alias)
+        return name
+
+    for row in rows:
+        if row["scope"] == "pod-owner":
+            cohort = (row["namespace"], row["kind"])
+            dynamic_owners[cohort] += 1
+            row["name"] = f"{row['kind'].lower()}-{dynamic_owners[cohort]}"
+            owner_alias = row["name"]
+            for i, policy in enumerate(row["vpas"], 1):
+                policy["name"] = f"{owner_alias}-vpa-{i}"
+            for i, policy in enumerate(row["hpas"], 1):
+                policy["name"] = f"{owner_alias}-hpa-{i}"
+        else:
+            row["name"] = public_name(row["name"])
+            for policy in row["vpas"] + row["hpas"]:
+                policy["name"] = public_name(policy["name"])
+        row["readyPodNodes"] = [hosts[name] for name in row["readyPodNodes"]]
+
+        pod_names = sorted(
+            {
+                pod["pod"]
+                for container in row["containers"]
+                for pod in container["admitted"]
+            }
+        )
+        pods = {name: f"pod-{i}" for i, name in enumerate(pod_names, 1)}
+        for container in row["containers"]:
+            for pod in container["admitted"]:
+                pod["pod"] = pods[pod["pod"]]
+                pod["node"] = hosts.get(pod["node"])
+
+
 started = now()
 controllers = objs("deployments,statefulsets,daemonsets,cronjobs,jobs")
 replicasets = objs("replicasets")
@@ -96,6 +135,7 @@ pods = objs("pods")
 vpas = objs("verticalpodautoscalers")
 hpas = objs("horizontalpodautoscalers")
 namespaces = objs("namespaces")
+nodes = get("get", "nodes", "-o", "json")["items"]
 metrics = get("get", "--raw", "/apis/metrics.k8s.io/v1beta1/pods")["items"]
 query = 'max by (namespace,pod,container) (max_over_time(container_memory_working_set_bytes{container!="",container!="POD",pod!=""}[7d]))'
 history_end = now()
@@ -106,7 +146,9 @@ path = (
 history = get("get", "--raw", path)
 if history.get("status") != "success":
     raise RuntimeError("Mimir history query failed")
-flux_source = get("get", "gitrepository", "flux-system", "-n", "flux-system", "-o", "json")
+flux_source = get(
+    "get", "gitrepository", "flux-system", "-n", "flux-system", "-o", "json"
+)
 flux_revision = flux_source["status"]["artifact"]["revision"]
 flux_observed = now()
 finished = flux_observed
@@ -399,6 +441,11 @@ for typ in ("requests", "limits"):
         counts[f"missing_{typ}_{unit}"] = sum(
             quantity(c[typ][unit]) in (None, 0) for c in admitted
         )
+node_names = {node["metadata"]["name"] for node in nodes}
+node_names.update(
+    pod["spec"]["nodeName"] for pod in active if pod["spec"].get("nodeName")
+)
+sanitize_rows(rows, node_names)
 print(
     json.dumps(
         {

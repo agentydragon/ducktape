@@ -304,35 +304,47 @@ function Inventory({ workloads, initialGroup }) {
 }
 
 function Report() {
-  const [inventory, setInventory] = useState(null);
+  const [snapshot, setSnapshot] = useState(null);
   const [error, setError] = useState("");
   const [selection, setSelection] = useState({ group: "All", revision: 0 });
   const openGroup = (group) =>
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261122103146")
-      .then((response) => {
-        if (!response.ok)
-          throw new Error(`Inventory request returned HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(setInventory)
+    const read = async (path) => {
+      const response = await fetch(`${path}?v=202611221107`);
+      if (!response.ok)
+        throw new Error(`${path} returned HTTP ${response.status}`);
+      return response.json();
+    };
+    Promise.all([read("./inventory.json"), read("./rollout-evidence.json")])
+      .then(([inventory, review]) => setSnapshot({ inventory, review }))
       .catch((error) => setError(String(error)));
   }, []);
   useEffect(() => {
-    if (inventory && window.location.hash)
+    if (snapshot && window.location.hash)
       document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
-  }, [inventory]);
+  }, [snapshot]);
 
   if (error)
     return html`<${Container} py="xl">
       <${Alert} color="red" title="Inventory could not be loaded">${error}<//>
     <//>`;
-  if (!inventory)
+  if (!snapshot)
     return html`<${Container} py="xl"><${Text}>Loading VPA inventory…<//><//>`;
 
+  const { inventory, review } = snapshot;
   const { counts, workloads } = inventory;
+  const gitlab = review.gitlab_capacity;
+  const railsSurge = gitlab.scenarios.find(
+    (scenario) => scenario.name === "Rails surge",
+  );
+  const vmi = review.kubevirt.post_handoff_vmi_samples[0];
+  const clock = (stamp) => stamp.slice(11, 19);
+  const remaining = (mib) =>
+    mib < 0
+      ? `${(-mib).toLocaleString("en-US")} MiB short`
+      : `${mib.toLocaleString("en-US")} MiB free`;
   const active = workloads.filter(activeController);
   const mutating = active.filter(mutatingVpa);
   const both = active.filter(sizedForBoth);
@@ -464,35 +476,41 @@ function Report() {
     <section id="rollout-status">
       <${Title} order=${2} mt="xl">Recent rollouts<//>
       <${Text} mt="sm">
-        <strong>KubeVirt placement and operator.</strong> The operator VPA is
-        Recreate. The API and controller now have hard per-revision host spread;
-        both were 2/2 Ready on separate hosts after the rollout, and the handler
-        recovered to 8/8. Flux reported Ready and the controller lease moved to
-        a new replica. A guest-info request succeeded after rollout. A new VMI
-        reaching Ready after that handoff is still unverified. ${" "}<${Anchor}
-          href=${github + "pull/19077"}
-          >Operator PR<//
-        >
-        ${" · "}<${Anchor} href=${github + "pull/19086"}>Placement PR<//>.
+        <strong>KubeVirt recovered VMI reconciliation.</strong> The controller
+        lease moved at ${clock(review.kubevirt.controller_lease_acquired_utc)}
+        UTC. A new BuildBuddy VMI created at ${clock(vmi.created_utc)} UTC
+        reached Ready at ${clock(vmi.ready_utc)} UTC. The API and controller
+        were each 2/2 Ready across two hosts. The API had
+        ${review.kubevirt.api_ready_endpoints} Ready service backends, and each
+        PDB allowed one disruption. API client recovery during turnover remains
+        open. ${" "}<${Anchor} href=${github + "pull/19086"}>Placement PR<//>.
       <//>
       <${Text} mt="sm">
-        <strong>Request coverage.</strong> The MyQuest canary is Initial; its
-        owner-matched admission dry run applied 175m CPU and about 1.22 GiB
-        memory while retaining its limits. The existing Pod was not restarted.
-        SeaweedFS CSI sidecar requests are deployed, with the controller 1/1 and
-        both node and mount DaemonSets 6/6 Ready at the rollout check.
-        ${" "}<${Anchor} href=${github + "pull/19067"}>Canary PR<//>
-        ${" · "}<${Anchor} href=${github + "pull/19080"}>CSI PR<//>.
+        <strong>Notifications moved to Recreate.</strong> Both replicas were
+        Ready on the image containing the delivery-backoff fix. The rollout
+        traced a webhook through the replacement to runner confirmation. The
+        live VPA is Recreate and its PDB allows one disruption. The first
+        updater eviction is still unobserved. ${" "}<${Anchor}
+          href=${github + "pull/19101"}
+          >Rollout evidence<//
+        >.
       <//>
       <${Text} mt="sm">
-        <strong>Other automatic updates.</strong> Claude session viewer, Kyverno
-        cleanup and staging History now use Recreate. Notifications stays
-        Initial; its delivery-backoff fix has merged. Existing readiness and
-        replay checks do not by themselves prove delivery through an eviction.
-        ${" "}<${Anchor} href=${github + "pull/19069"}>Viewer<//>
-        ${" · "}<${Anchor} href=${github + "pull/19071"}>Kyverno<//>
-        ${" · "}<${Anchor} href=${github + "pull/19072"}>History<//>
-        ${" · "}<${Anchor} href=${github + "pull/19082"}>Notifications fix<//>.
+        <strong>SeaweedFS CSI has requests across the Ready fleet.</strong> The
+        controller was 1/1 Ready and the node and mount DaemonSets were both
+        6/6. Every sampled regular container had CPU and memory requests.
+        ${" "}<${Anchor} href=${github + "pull/19080"}>CSI PR<//>.
+      <//>
+      <${Text} mt="sm">
+        <strong>Four PostgreSQL clusters admitted static requests.</strong>
+        All four Cluster and Barman ObjectStore specs have the new requests. At
+        11:07 UTC, ${review.cnpg.ready_pods_with_all_three_requests} of
+        ${review.cnpg.expected_instance_pods} Pods were Ready with the new
+        PostgreSQL, bootstrap and backup sidecar requests. Check the remaining
+        instances and the next backup cycle. ${" "}<${Anchor}
+          href=${github + "pull/19102"}
+          >Database sizing PR<//
+        >.
       <//>
     </section>
 
@@ -500,41 +518,71 @@ function Report() {
       <span id="batches"></span><span id="adoption-progress"></span>
       <${Title} order=${2} mt="xl">Next waves<//>
       <${Stack} id="open-rollout-decisions" gap="sm" mt="sm">
-        <${Text}>
-          <strong>1. KubeVirt API and controller.</strong> Observe a new VMI
-          reaching Ready after the controller leadership handoff and exercise an
-          ordinary API client through turnover. Then review each controller for
-          Recreate with current PDB and placement headroom. The /leader
-          readiness endpoint also returns success on standby, so it is not proof
-          of active reconciliation. ${" "}<${Anchor}
-            href=${github + "pull/19086"}
-            >Placement evidence<//
+        <${Text} id="worker-loss-placement">
+          <strong>1. Keep Rails admission sizing in draft.</strong> The fresh
+          model is ${remaining(railsSurge.target.min_remaining_mib)} for a Rails
+          surge and either Rails-host failure at current targets. The loss case
+          reaches ${remaining(railsSurge.sensitivity.min_remaining_mib)} at the
+          Rails upper estimate and Sidekiq ceiling. A healthy Sidekiq-only surge
+          fits. ${" "}<${Anchor} href=${github + "pull/18555"}>Rails draft<//>.
+        <//>
+        <${Table.ScrollContainer} minWidth=${515}>
+          <${Table}
+            striped
+            withTableBorder
+            aria-label="GitLab workload placement model"
+          >
+            <${Table.Thead}
+              ><${Table.Tr}>
+                <${Table.Th} scope="col">Scenario<//>
+                <${Table.Th} scope="col">Current targets<//>
+                <${Table.Th} scope="col">Upper estimate and ceiling<//>
+              <//><//
+            >
+            <${Table.Tbody}>
+              ${gitlab.scenarios.map(
+                (scenario, index) =>
+                  html`<${Table.Tr} key=${index}>
+                    <${Table.Th} scope="row">${scenario.name}<//>
+                    <${Table.Td}
+                      >${remaining(scenario.target.min_remaining_mib)}<//
+                    >
+                    <${Table.Td}
+                      >${remaining(scenario.sensitivity.min_remaining_mib)}<//
+                    >
+                  <//>`,
+              )}
+            <//>
+          <//>
+        <//>
+        <${Text} size="sm" c="dimmed">
+          Values show the tightest surviving worker in the best modeled
+          placement across three eligible workers. Reserving 10 GiB and 2,500m
+          per worker before Rails, Sidekiq and Central Sampler fits the modeled
+          upper case. Budget additional capacity for unrelated Pods displaced by
+          a lost worker. ${" "}<${Anchor} href="./rollout-evidence.json"
+            >Inputs and placements<//
           >.
         <//>
-        <${Text} id="worker-loss-placement">
-          <strong>2. GitLab Rails capacity.</strong> Keep admission sizing in
-          <${Anchor} href=${github + "pull/18555"}> draft<//>. The November 22
-          10:15 UTC model is 322 MiB short after loss of either Rails host at
-          current targets; at the Rails upper estimate and Sidekiq ceiling it is
-          2,185 MiB short. A sufficient modeled budget is 10 GiB and 2,500m per
-          eligible worker before Rails, Sidekiq and Central Sampler, plus
-          capacity for other workloads displaced by a failed node. Refresh this
-          model and implement a durable capacity or recovery strategy before
-          enabling it.
+        <${Text}>
+          <strong>2. Prove KubeVirt client recovery.</strong> Exercise an
+          ordinary API client through turnover, verify placement headroom and
+          PDBs, and evaluate Recreate per controller. The VMI result clears the
+          new-instance check for the observed handoff.
         <//>
         <${Text}>
-          <strong>3. Notifications recovery.</strong> Verify the backoff fix on
-          its deployed image, investigate the remaining SQL readiness stalls,
-          and trace a webhook to runner receipt through a natural replacement.
-          Keep Initial until delivery recovery is demonstrated.
+          <strong>3. Size Piraeus requests with its operators.</strong> Of 57
+          gaps, CSI node accounts for 24, satellites for 16, HA controller for
+          eight, and management and CSI Deployments for nine. Start with
+          owner-configured static requests for the management and CSI
+          Deployments. Check recovery and per-node budget before changing the
+          satellites or node agents.
         <//>
         <${Text}>
-          <strong>4. Remaining request gaps.</strong> Review Piraeus, CNPG and
-          other operator-owned Pods with their actual owners. The SeaweedFS CSI
-          sidecars now have static requests. Batch compatible application
-          admission sizing in parallel, preserving startup floors, limits and
-          HPA resource ownership; do not roll storage components merely to prove
-          sizing.
+          <strong>4. Observe the first Notifications updater eviction.</strong>
+          Confirm one endpoint keeps serving, the replacement schedules with the
+          recommended requests, and a webhook reaches runner confirmation. Check
+          for SQL readiness stalls during that observation.
         <//>
       <//>
       <${Title} order=${3} mt="lg">Review cohorts<//>
@@ -543,7 +591,7 @@ function Report() {
         both the resource and Recreate queues. Confirm ownership and restart
         behavior before choosing the cohort. Ownership and rollout gates are
         tracked in the ${" "}<${Anchor}
-          href=${github + "blob/devel/cluster/plans/vpa.md"}
+          href=${github + "blob/" + revision + "/cluster/plans/vpa.md"}
           >cluster rollout plan<//
         >.
       <//>
@@ -571,8 +619,9 @@ function Report() {
       <${Title} order=${3} mt="lg">Apply these gates across the wave<//>
       <${Stack} gap="sm" mt="sm">
         <${Text}>
-          <strong>Resource ownership.</strong> For targets with a CPU or memory
-          HPA, keep that resource out of VPA control.${" "}
+          <strong>Resource ownership.</strong> CNPG VPAs stay in Off mode. Set
+          requests through the Cluster and Barman ObjectStore specs. For targets
+          with a CPU or memory HPA, keep that resource out of VPA control.${" "}
           ${`The snapshot has ${workloads.filter(reviewGroups[3].matches).length} active resource HPA targets. `}
           ${link("Review HPA resources")}. External metric scaling calls for its
           own startup and capacity check. Existing RequestsAndLimits policies
@@ -638,10 +687,9 @@ function Report() {
       <${Title} order=${2} mt="xl">Search the workload snapshot<//>
       <${Text} component="p">
         Search an owner, namespace, Pod or container. A row is a Deployment,
-        StatefulSet, DaemonSet or CronJob template, or an active Pod owner whose
-        template is outside that set. Template resources come from the stored
-        controller. Admitted resources come from non-terminating Running or
-        Pending Pods.
+        StatefulSet, DaemonSet or CronJob template, or another active Pod owner.
+        Pods, hosts and dynamic owners use aliases local to this snapshot.
+        Admitted resources come from non-terminating Running or Pending Pods.
       <//>
       <${Inventory}
         key=${selection.revision}
@@ -688,6 +736,9 @@ function Report() {
         <${Group} gap="sm">
           <${Anchor} href="./inventory.json">Snapshot inventory<//>
           <${Anchor} href="./collect_inventory.py">Collector<//>
+          <${Anchor} href="./rollout-evidence.json"
+            >Rollout checks and capacity model<//
+          >
           <${Anchor} href="./evidence.json">Earlier evidence<//>
           <${Anchor} href="./manifest.json">Dates and hashes<//>
         <//>
