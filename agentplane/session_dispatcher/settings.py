@@ -122,6 +122,7 @@ class Settings(BaseModel):
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
+                "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessionDispatches",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
             }
             if not set(self.dispatcher_service_delegation.methods) <= dispatcher_methods:

@@ -61,19 +61,6 @@ py_library(
 )
 
 py_test(
-    name = "test_runner",
-    srcs = ["test_runner.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":runner",
-        "//cluster/cdk8s:conftest",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_secret_contract",
     srcs = ["test_secret_contract.py"],
     data = [

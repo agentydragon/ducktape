@@ -63,9 +63,8 @@ traceback below.
 **Removed again once root cause #2 was confirmed fixed and the CronJob
 verified green** (operator judgment call: standing `pods/log` + `configmaps`
 read access to a credential-handling namespace is broader than this specific
-incident warranted once the actual bug was found). If `agents-infra` needs
-agent-readable logs again for a future incident, re-add the same
-`agent-rbac/` directory — the pattern above still applies.
+incident warranted once the actual bug was found). For a future incident requiring access, see the
+[current service RBAC instructions](../agent_rbac.md#adding-agent-rbac-for-a-new-service).
 
 ## Root cause #2 (fixed, this change): `.sops.yaml` has no creation rule for `secrets/haku-mail-jwt.yaml`
 

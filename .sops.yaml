@@ -37,6 +37,16 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # Personal Google account: only agentydragon's user SSH keys may decrypt it.
+  - path_regex: secrets/google-alt-01\.sops\.yaml$
+    key_groups:
+      - age:
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # AirSense BLE application credentials, portable between user workstations.
   - path_regex: secrets/cpap-ble\.sops\.json$
     key_groups:
@@ -143,6 +153,18 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # OVH billing: Flux applies the canonical Secret; workstations can decrypt it.
+  - path_regex: cluster/k8s/external-creds/ovh-billing-credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # SF Public Library credentials: Flux applies the Secret, and the user's
   # workstations can decrypt it to update the card number and PIN.
   - path_regex: cluster/k8s/external-creds/sfpl-credentials\.sops\.yaml$
@@ -174,9 +196,7 @@ creation_rules:
 
   # Brave Search API key — external-creds is canonical and ESO distributes it
   # to the egress proxy; workstations read it directly via ducktape.sopsEnv.
-  # The legacy shared-secrets copy remains managed during the initial cutover
-  # and is removed under pruning after the consumer ExternalSecret is verified.
-  - path_regex: cluster/k8s/(agents/shared-secrets|external-creds)/brave-search-api-key\.sops\.yaml$
+  - path_regex: cluster/k8s/external-creds/brave-search-api-key\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
@@ -305,21 +325,6 @@ creation_rules:
       - age:
           - *admin
           - *cluster-secrets
-
-  # Shared Plaid Spend display settings: Flux applies them, and the user's
-  # workstations can decrypt them to edit the card selection and limits.
-  - path_regex: cluster/k8s/agents/plaid-mcp/cards\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-          - *ci
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-          - *gecko-agentydragon
 
   # Crossplane's laptop client tokens are applied in-cluster and consumed from
   # the same SOPS files by home-manager. Keep each token readable
@@ -596,16 +601,6 @@ creation_rules:
       - age:
           - *admin
           - *rugged-agentydragon
-  - path_regex: secrets/home/atlas/.*\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *atlas-agentydragon
-  - path_regex: secrets/home/gecko/.*\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *gecko-agentydragon
 
   # --- Plaid API credentials (admin + all user keys) ---
   - path_regex: secrets/plaid\.sops\.yaml$
@@ -858,12 +853,13 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
-  # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node).
+  # OVH US server-management credential.
   # cluster-secrets: the infra-drift tf-runner (cluster/generated/infra-drift) needs
   # the ovh provider to configure during a plan. tf-runner-role already grants
   # cluster-wide secret read, so a narrow key here would buy nothing the runner
   # cannot already take.
   - path_regex: secrets/ovh-credentials\.sops\.yaml$
+    encrypted_regex: ^(application_key|application_secret|consumer_key)$
     key_groups:
       - age:
           - *admin

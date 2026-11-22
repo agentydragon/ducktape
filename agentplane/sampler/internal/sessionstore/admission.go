@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -16,7 +17,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session, *Conversation) error) (*eventlogpb.EventEntry, error) {
+var (
+	ErrSessionBlocked        = fmt.Errorf("session is blocked: %w", protocol.ErrPrecondition)
+	ErrInterruptTurnInactive = fmt.Errorf("interrupt target is not the active turn: %w", protocol.ErrPrecondition)
+	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
+)
+
+// AdmissionState holds the projected session and evidence read under its admission lock.
+// ProviderRoutes is only valid during the validation callback.
+type AdmissionState struct {
+	Session           *Session
+	Conversation      *Conversation
+	HasQueuedCommands bool
+	ProviderRoutes    func() ([]ProviderRequest, error)
+}
+
+func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(AdmissionState) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerKey == "" {
 		return nil, protocol.ErrInvalid
 	}
@@ -54,11 +70,12 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			return err
 		}
 		if session.Blocked {
-			return protocol.ErrPrecondition
+			return ErrSessionBlocked
 		}
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
 			projected := *session
+			hasQueuedCommands := false
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM sampler_command
                 WHERE session_id=$1 AND outcome=$2 ORDER BY admission`, id,
 				int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
@@ -67,6 +84,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			}
 			defer rows.Close()
 			for rows.Next() {
+				hasQueuedCommands = true
 				var wire []byte
 				if err := rows.Scan(&wire); err != nil {
 					return err
@@ -86,13 +104,23 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			rows.Close()
-			if err := validate(&projected, conversation); err != nil {
+			if err := validate(AdmissionState{
+				Session:           &projected,
+				Conversation:      conversation,
+				HasQueuedCommands: hasQueuedCommands,
+				ProviderRoutes: func() ([]ProviderRequest, error) {
+					return providerRoutes(ctx, tx, conversation.ID)
+				},
+			}); err != nil {
 				return err
 			}
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
-			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {
-				return protocol.ErrPrecondition
+			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() {
+				return ErrInterruptTurnInactive
+			}
+			if conversation.Owner == nil {
+				return ErrInterruptOwnerMissing
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_interrupt(id,conversation_id,generation,target_turn,result)
 				VALUES($1,$2,$3,$4,NULL)`, uuid.New(), conversation.ID, conversation.Generation, interrupt.GetTurnId()); err != nil {

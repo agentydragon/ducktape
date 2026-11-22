@@ -21,7 +21,7 @@ export type PendingCommand = {
 };
 
 function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
-  return left.commandId === right.commandId && JSON.stringify(left.operation) === JSON.stringify(right.operation);
+  return equals(CommandSchema, create(CommandSchema, left), create(CommandSchema, right));
 }
 
 type SandboxDestination = { sandbox: string; sandboxUid: string };
@@ -46,6 +46,8 @@ export interface LocalCommandSnapshot {
   /** Inputs whose admission is projected but whose referenced echo body has not arrived yet. */
   inputEchoes: Array<{ commandId: string; text: string }>;
   error: string | null;
+  /** Transient interruption of updates for commands still queued or delivering. */
+  dispatchWatchError: string | null;
   /** Sticky warning that the Dispatcher could no longer prove deletion coverage for this Session. */
   dispatchWatchCoverageLost: boolean;
 }
@@ -149,6 +151,7 @@ export class LocalCommands {
     commands: [],
     inputEchoes: [],
     error: null,
+    dispatchWatchError: null,
     dispatchWatchCoverageLost: false,
   };
   private readonly listeners = new Set<() => void>();
@@ -208,7 +211,7 @@ export class LocalCommands {
   }
 
   /** Record the attempt *before* sending: a lost response can never become a cancellable draft. */
-  markAttempted(id: string): boolean {
+  markAttempted(id: string, retryCommand?: PendingCommand): boolean {
     const key = this.key(id);
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
@@ -217,10 +220,9 @@ export class LocalCommands {
     if (value.destination.kind === "reconcile-only" || value.admission || value.dispatch || value.interruptResult) {
       return false;
     }
-    if (!value.attempted) {
-      localStorage.setItem(key, JSON.stringify({ ...record, attempted: true }));
-      this.reload();
-    }
+    if (value.attempted) return retryCommand !== undefined && sameCommand(value.command, retryCommand);
+    localStorage.setItem(key, JSON.stringify({ ...record, attempted: true }));
+    this.reload();
     return true;
   }
 
@@ -238,7 +240,10 @@ export class LocalCommands {
 
   acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): boolean {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
-    const normalizedDispatch = { ...dispatch, state: normalizeDeliveryState(dispatch.state) };
+    if (dispatch.command && !sameCommand(command, dispatch.command))
+      throw new Error("Dispatcher stored a different command payload");
+    // Older open tabs use a Dispatch schema without the command field. The authored copy is already stored.
+    const normalizedDispatch = { ...dispatch, command: undefined, state: normalizeDeliveryState(dispatch.state) };
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
       this.checkKnownAdmission(command, dispatch.admission);
@@ -339,6 +344,12 @@ export class LocalCommands {
       this.reportStorageFailure(error);
       return false;
     }
+  }
+
+  setDispatchWatchError(error: string | null): void {
+    if (this.snapshot.dispatchWatchError === error) return;
+    this.snapshot = { ...this.snapshot, dispatchWatchError: error };
+    for (const listener of this.listeners) listener();
   }
 
   /** Deletion coverage cannot be recovered after its retention window; keep the warning across reloads. */
@@ -510,7 +521,7 @@ export class LocalCommands {
           left.submittedAt - right.submittedAt || left.command.commandId.localeCompare(right.command.commandId)
       );
       inputEchoes.sort((left, right) => left.commandId.localeCompare(right.commandId));
-      this.snapshot = { commands, inputEchoes, error: null, dispatchWatchCoverageLost };
+      this.snapshot = { ...this.snapshot, commands, inputEchoes, error: null, dispatchWatchCoverageLost };
     } catch (error) {
       // Leave both the stored bytes and the last readable view intact; do not silently discard
       // input because storage is unavailable or a local record cannot be decoded.

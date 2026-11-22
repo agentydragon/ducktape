@@ -2,8 +2,8 @@
 
 `aiquota` can run as a small in-cluster API and an Authentik-gated browser
 dashboard in addition to the CLI and GNOME extension. Its Kubernetes manifests
-and Deployment are separate from CLIProxyAPI. The API's Codex adapter uses the
-CLIProxyAPI integration; it does not mount or access CLIProxyAPI's OAuth PVC.
+and Deployment are separate from CLIProxyAPI. The API's Claude and Codex adapters
+use the CLIProxyAPI integration; they do not mount or access CLIProxyAPI's OAuth PVC.
 
 ## Endpoints
 
@@ -127,7 +127,7 @@ details add the original amount when it differs from remaining, and exact remain
 when rounding hides a fraction. The optional `original_repeats_remaining` presentation hint
 suppresses repeated originals; older payloads without the hint still show the existing
 `original` string.
-Monetary balances use the shared `Available balance` label within their provider and organization;
+Monetary balances use the shared `Balance` label within their provider and organization;
 Claude's separate subscription prepaid pool is identified in details. Banked resets are separate
 from monetary and paid-credit balances.
 Known zero banked resets remain available in details. The default shows zero only when
@@ -181,7 +181,7 @@ applies.
 
 ## Historical collection
 
-The in-cluster Deployment refreshes Claude and Codex every five minutes even
+The in-cluster Deployment refreshes every enabled provider every five minutes even
 when no API client is active. Each provider snapshot is appended to the shared
 analytics ClickHouse cluster:
 
@@ -315,8 +315,8 @@ over ClickHouse's HTTP interface, one statement per request, before it starts
 collecting (`ClickHouseSnapshotSink.apply_schema`); a failure ends the process,
 so the Pod restarts until the schema applies. A schema change therefore ships
 in the same PR as the code that needs it, with no Job or version number to
-bump. Every statement is `CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it
-at every start is safe.
+bump. `CREATE` and column additions use `IF NOT EXISTS`; materialized view
+queries are replaced with the same definition on each start.
 
 ## Credential ownership
 
@@ -333,31 +333,37 @@ appropriate where another process is the declared sole refresh owner.
 ### Initial API deployment
 
 The API has one Claude credential path: CLIProxyAPI's authenticated management
-integration. AIQuota does not receive the Claude setup token, mount the
+integration. AIQuota does not receive the Claude setup token or mount the
 CLIProxyAPI PVC.
 
 ### CLIProxyAPI integration
 
-The Claude and Codex adapters discover their single available provider
-credential through CLIProxyAPI's authenticated integration endpoint, then ask
-CLIProxyAPI to call the provider's usage endpoint with that credential. The
-`$TOKEN$` substitution and OAuth refresh remain entirely inside CLIProxyAPI;
-aiquota never reads or writes the `ReadWriteOnce` PVC. The integration key is
-the SOPS-managed `cli-proxy-api-management` Secret, injected into both
-Deployments without putting it in the TOML config.
+The Claude and Codex adapters discover credentials through CLIProxyAPI's
+management endpoint and request each account's usage separately. `$TOKEN$`
+substitution and OAuth refresh stay inside CLIProxyAPI; aiquota does not mount
+its PVC. The SOPS-managed `cli-proxy-api-management` Secret is injected into
+both deployments.
 
-CLIProxyAPI's current `/api-call` contract requires an opaque runtime
-`auth_index` for token substitution, so aiquota briefly discovers the one
-available credential for each provider through `/auth-files`. It does not read
-file names, file contents, access tokens, or refresh tokens. If CLIProxyAPI
-adds provider-based selection to `/api-call`, this discovery can be removed.
+`auth_index` selects a credential for a single request. AIQuota identifies
+Codex accounts by the provider account ID in CLIProxyAPI's parsed ID-token
+claims, and Claude accounts by account and organization UUIDs from the profile
+endpoint. It exposes an account ID and, when available, email and reported
+plan category in the authenticated quota response. An account's last success
+and errors are tracked separately. Legacy history has an unknown account; it is
+not attributed retroactively. Percentages from separate accounts are not added.
+If a raw endpoint has multiple matching accounts, pass `?account_id=...`.
 
-CLIProxyAPI can hold multiple credentials for a provider, for example when
-cycling between subscriptions. AIQuota deliberately does not choose between
-them: it fails unless exactly one matching credential is enabled and available.
-The current deployment therefore expects one Claude and one Codex credential;
-support for displaying or cycling multiple subscriptions would be a separate
-explicit feature.
+The server config can provide an owner-chosen label and tier for an account.
+Copy the exact account ID from the authenticated `/v1/quotas` response. A
+configured tier is a user annotation, distinct from `plan_type`, the category
+reported by the provider; the latter may not identify an exact subscription.
+For example:
+
+```toml
+[accounts."codex:provider-account-id"]
+label = "main"
+tier = "Pro"
+```
 
 The CLIProxyAPI management surface is not exposed through the public
 `cli-proxy-api.allegedly.works` route; that route only forwards `/v1` model

@@ -161,11 +161,12 @@ it("keeps a queued ProtoJSON command readable by the writing tab after a watch u
   localStorage.setItem(key, JSON.stringify({ command, admission: null, submittedAt: 1, dispatch: queued }));
 
   const store = new LocalCommands("thread");
-  const failed = fromJson(DispatchSchema, { ...queued, state: "DELIVERY_STATE_FAILED" });
+  const failed = fromJson(DispatchSchema, { ...queued, command, state: "DELIVERY_STATE_FAILED" });
   expect(store.updateDispatch("legacy", failed)).toBe(true);
   const saved = JSON.parse(localStorage.getItem(key)!);
   expect(fromJson(CommandSchema, saved.command)).toEqual(fromJson(CommandSchema, command));
-  expect(fromJson(DispatchSchema, saved.dispatch)).toEqual(failed);
+  expect(saved.dispatch).not.toHaveProperty("command");
+  expect(fromJson(DispatchSchema, saved.dispatch)).toEqual({ ...failed, command: undefined });
 });
 
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {
@@ -275,6 +276,7 @@ it("only cancels a command that has never been attempted", () => {
   expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
   store.remember(COMMAND);
   expect(store.markAttempted(COMMAND.commandId)).toBe(true);
+  expect(store.markAttempted(COMMAND.commandId)).toBe(false);
   expect(new LocalCommands("thread").getSnapshot().commands[0].attempted).toBe(true);
   expect(store.cancelUnsent(COMMAND.commandId)).toBe(false);
   expect(new LocalCommands("thread").getSnapshot().commands).toHaveLength(1);

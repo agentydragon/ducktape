@@ -12,24 +12,30 @@ import textwrap
 from pathlib import Path
 from uuid import uuid4
 
+import grpc
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
-
-from agentplane.app.testing.client import Client
-from agentplane.environments.v1 import environment_service_pb2
-from agentplane.proto import session_pb2
-from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import (
-    Agent,
-    environment_runtime_startup_retries,
-    scripted_turn_with_admission_and_history,
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    retry_if_exception_type,
+    retry_if_result,
+    stop_after_delay,
+    wait_fixed,
 )
-from agentplane.system_tests.driver.app_sandbox import wait_until_running
+
+from agentplane.environments.v1 import environment_service_pb2
+from agentplane.grpc.calls import ServiceError
+from agentplane.history_service.api.history import history_service_pb2
+from agentplane.proto import event_pb2, session_pb2
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.offered_models import models_offered_for
+from agentplane.system_tests.driver.native_platform import RUNNER_READY_SECONDS, NativePlatformClients
+from agentplane.system_tests.driver.native_sandbox import wait_until_running
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.session import Session
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -163,46 +169,54 @@ async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credenti
 
 
 async def preserves_live_guest(
-    cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    sandbox: Sandboxes,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, platform: NativePlatformClients, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     view = await sandbox(f"systest-firecracker-{uuid4().hex[:8]}", template="environment-firecracker")
     pod = view.kubernetes_diagnostics.pod
     assert pod.uid
     harness = session_pb2.HARNESS_CODEX
-    offered = await models_offered_for(client, [harness])
+    environment = platform.environment
     model = scripted.model(pod.name, harness)
-    agent = await Agent.create(
-        client,
-        dispatcher,
-        sandbox=view.target.name,
-        sandbox_uid=view.target.uid,
-        harness=harness,
-        model=offered[harness],
-        cwd=VM_WORKING_DIRECTORY,
+    session = await Session.create(
+        platform.dispatcher,
+        platform.history,
+        session_id=uuid4(),
+        spec=session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name=view.target.name, uid=view.target.uid),
+                    harness=harness,
+                )
+            ),
+            model=LOCAL_MODEL_MODELS[harness].id,
+            reasoning_effort="low",
+            cwd=VM_WORKING_DIRECTORY,
+        ),
     )
     output = undeclared_outputs_dir() / "firecracker"
     output.mkdir(exist_ok=True)
 
     async def probe(number: int) -> dict[str, object]:
-        turn, _, _ = await scripted_turn_with_admission_and_history(
-            client,
-            agent,
+        turn, _ = await drive_scripted_turn(
+            session,
             command_id=f"firecracker-{number}",
             prompt="Run the guest proof command.",
             model=model,
-            history_turns=number,
             shell_command=_probe(
                 start=number == 1,
-                session_id=str(agent.thread_id),
+                session_id=str(session.session_id),
                 environment=(view.target.namespace, view.target.name, view.target.uid),
             ),
             shell_call_id=f"guest-proof-{number}",
             response="Guest proof observed.",
         )
+        summary: history_service_pb2.SessionSummary = await AsyncRetrying(
+            stop=stop_after_delay(30),
+            wait=wait_fixed(0.1),
+            retry=retry_if_result(lambda row: row.folded_through < session.cursor),
+        )(platform.history.get_session_summary, str(session.session_id))
+        assert summary.committed_cursor >= session.cursor
+        assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
         (output / f"turn-{number}.txt").write_text(turn.transcript)
         reports = [
             line.removeprefix(_REPORT)
@@ -251,7 +265,7 @@ async def preserves_live_guest(
                     samples.write(json.dumps(sample) + "\n")
                 assert sample["limit_bytes"] == memory_limit, sample
                 assert sample["oom_kill"] == 0, sample
-                suspended = await client.get_environment(view.target)
+                suspended = await environment.get_environment(view.target)
                 assert suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
                 assert suspended.observed_state.stop_stage == "Stopped", suspended.observed_state
                 assert suspended.kubernetes_diagnostics.pod.uid == pod.uid
@@ -288,8 +302,18 @@ async def preserves_live_guest(
     secret_name = record["status"]["secretName"]
     running_credential = await _renew_credentials(cluster, secret_name)
     await _wait_for_served_certificate(cluster, pod.name, running_credential)
-    initial = await client.runtime_diagnostics(view.target)
-    (process,) = [row for row in initial.processes if str(agent.thread_id) in row.assigned_session_ids]
+
+    async def runtime_diagnostics() -> session_pb2.EnvironmentRuntimeStatus:
+        response: environment_service_pb2.GetRuntimeDiagnosticsResponse = await environment.unary(
+            environment.stub.GetRuntimeDiagnostics,
+            environment_service_pb2.GetRuntimeDiagnosticsRequest(target=view.target),
+        )
+        assert response.target == view.target
+        assert response.incarnation_uid == pod.uid
+        return response.status
+
+    initial = await runtime_diagnostics()
+    (process,) = [row for row in initial.processes if str(session.session_id) in row.assigned_session_ids]
     assert process.process_id
     assert initial.environment_runtime_boot_id
     # Exercise the conditional idle admission barrier as well as the VM primitive.
@@ -308,17 +332,20 @@ async def preserves_live_guest(
     await cluster.kubectl(
         "patch", "sandbox", view.target.name, "--type=merge", "-p", json.dumps({"spec": {"idleSuspendAfter": None}})
     )
-    await client.resume_sandbox(view.target)
-    resumed = await wait_until_running(client, view.target)
+    await environment.resume_environment(view.target)
+    resumed = await wait_until_running(environment, view.target)
     await _wait_for_served_certificate(cluster, pod.name, thaw_credential)
     assert resumed.kubernetes_diagnostics.pod.uid == pod.uid
     resumed_sandbox = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
     assert resumed_sandbox["status"]["firecrackerSuspension"]["phase"] == "Released", resumed_sandbox["status"]
-    async for attempt in environment_runtime_startup_retries():
-        with attempt:
-            restored = await client.runtime_diagnostics(view.target)
+    restored: session_pb2.EnvironmentRuntimeStatus = await AsyncRetrying(
+        stop=stop_after_delay(RUNNER_READY_SECONDS),
+        wait=wait_fixed(2),
+        retry=retry_if_exception(lambda err: isinstance(err, ServiceError) and err.code == grpc.StatusCode.UNAVAILABLE),
+        reraise=True,
+    )(runtime_diagnostics)
     assert restored.environment_runtime_boot_id == initial.environment_runtime_boot_id
-    (continued_process,) = [row for row in restored.processes if str(agent.thread_id) in row.assigned_session_ids]
+    (continued_process,) = [row for row in restored.processes if str(session.session_id) in row.assigned_session_ids]
     assert continued_process.process_id == process.process_id
     after = await probe(2)
     for key in ("boot_id", "pid", "start_ticks", "marker", "cgroup"):
@@ -327,10 +354,10 @@ async def preserves_live_guest(
 
     # Exercise full capture from a restored, actively used memory mapping. A
     # cold capture alone never observes the overlapping restore and dump buffers.
-    await client.suspend_sandbox(view.target)
+    await environment.suspend_environment(view.target)
     await wait_for_checkpoint(2)
-    await client.resume_sandbox(view.target)
-    resumed_again = await wait_until_running(client, view.target)
+    await environment.resume_environment(view.target)
+    resumed_again = await wait_until_running(environment, view.target)
     assert resumed_again.kubernetes_diagnostics.pod.uid == pod.uid
     after_second = await probe(3)
     for key in ("boot_id", "pid", "start_ticks", "marker", "cgroup", "working_set_bytes"):

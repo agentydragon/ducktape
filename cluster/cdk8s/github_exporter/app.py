@@ -94,10 +94,7 @@ def _deployment(
         chart,
         service.name,
         metadata=k8s.ObjectMeta(
-            name=service.name,
-            namespace=_NAMESPACE,
-            labels=labels,
-            annotations={"description": description, "secret.reloader.stakater.com/reload": _token_secret(account)},
+            name=service.name, namespace=_NAMESPACE, labels=labels, annotations={"description": description}
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
@@ -157,7 +154,7 @@ def _rest_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
                 k8s.EnvVar(name="LISTEN_PORT", value=str(service.pod_port)),
                 k8s.EnvVar(name="LOG_LEVEL", value="info"),
             ],
-            ports=[service.port.k8s_container_port()],
+            ports=[service.k8s_container_port()],
             volume_mounts=[k8s.VolumeMount(name="github-token", mount_path=_TOKEN_DIR, read_only=True)],
             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=10, period_seconds=30),
             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=30),
@@ -193,7 +190,7 @@ def _graphql_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
                 k8s.EnvVar(name="GITHUB_ACCOUNT", value=account),
                 k8s.EnvVar(name="GITHUB_TOKEN_FILE", value=f"{_TOKEN_DIR}/token"),
             ],
-            ports=[service.port.k8s_container_port()],
+            ports=[service.k8s_container_port()],
             volume_mounts=[k8s.VolumeMount(name="github-token", mount_path=_TOKEN_DIR, read_only=True)],
             liveness_probe=k8s.Probe(http_get=healthz, initial_delay_seconds=10, period_seconds=30),
             readiness_probe=k8s.Probe(http_get=healthz, initial_delay_seconds=5, period_seconds=30),
@@ -207,7 +204,7 @@ def _kube_service(chart: Chart, service: ServiceRef) -> None:
         chart,
         f"{service.name}-service",
         metadata=k8s.ObjectMeta(name=service.name, namespace=_NAMESPACE, labels=service.labels),
-        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.k8s_service_port()]),
     )
 
 

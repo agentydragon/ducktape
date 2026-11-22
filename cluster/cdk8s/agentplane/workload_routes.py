@@ -12,6 +12,6 @@ def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
         (llm_ingress.service(namespace), LLM_INGRESS_URI),
         (runner_gateway.sessions_service(namespace), SESSION_DISPATCHER_URI),
     ):
-        authority = f"{service.fqdn}:{service.port.number}"
+        authority = service.authority
         routes[authority] = WorkloadRoute(upstream=authority, server_uri=server_uri)
     return routes

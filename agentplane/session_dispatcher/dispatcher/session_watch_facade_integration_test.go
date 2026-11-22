@@ -20,6 +20,22 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// The deployed HTTP facade emits unpopulated fields. Older browser bundles parse ProtoJSON
+// strictly, so even a null "command" would invalidate ordinary mutation and watch receipts.
+func TestSummaryDispatchJSONRemainsReadableByOlderClients(t *testing.T) {
+	wire, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(&dispatcherpb.Dispatch{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := fields["command"]; ok {
+		t.Fatalf("unexpected command field in summary receipt: %s", value)
+	}
+}
+
 // Exercise the generated JSON stream over native gRPC admission, not a handwritten route.
 func TestSessionWatchGeneratedJSONFacade(t *testing.T) {
 	queueStore, databaseURL := testStoreWithURL(t, 5)

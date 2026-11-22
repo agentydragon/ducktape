@@ -123,10 +123,11 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &store.AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}})
 
 	const command = "delegated-identity-input"
-	if _, err := client.SubmitInput(actingFor(ownerIdentity), &dispatcherpb.SubmitInputRequest{
+	wantCommand := input(command, "owned")
+	if got, err := client.SubmitInput(actingFor(ownerIdentity), &dispatcherpb.SubmitInputRequest{
 		CommandId: command, SessionId: owned, ExpectedSandboxUid: ownerSandbox.UID, Text: "owned",
-	}); err != nil {
-		t.Fatalf("delegated Identity SubmitInput: %v", err)
+	}); err != nil || got.GetDispatch().GetCommandId() != command || got.GetDispatch().GetCommand() != nil {
+		t.Fatalf("delegated Identity SubmitInput: %v, %v", got, err)
 	}
 	queued, err := queueStore.GetDispatch(t.Context(), command)
 	if err != nil {
@@ -140,8 +141,26 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if got, err := client.GetSession(actingFor(ownerIdentity), &dispatcherpb.GetSessionRequest{SessionId: owned}); err != nil || got.GetSession().GetSessionId() != owned {
 		t.Fatalf("delegated Identity GetSession: %v, %v", got, err)
 	}
-	if got, err := client.GetDispatch(actingFor(ownerIdentity), &dispatcherpb.GetDispatchRequest{CommandId: command}); err != nil || got.GetDispatch().GetCommandId() != command {
+	if got, err := client.GetDispatch(actingFor(ownerIdentity), &dispatcherpb.GetDispatchRequest{CommandId: command}); err != nil || !proto.Equal(got.GetDispatch().GetCommand(), wantCommand) {
 		t.Fatalf("delegated Identity GetDispatch: %v, %v", got, err)
+	}
+	if _, err := client.GetDispatch(actingFor(otherIdentity), &dispatcherpb.GetDispatchRequest{CommandId: command}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign GetDispatch: %v", err)
+	}
+	filter := testSessionDispatchFilter(owned, command)
+	list := func(identity *identitypb.Identity) []*dispatcherpb.Dispatch {
+		t.Helper()
+		result, err := client.ListDispatches(actingFor(identity), &dispatcherpb.ListDispatchesRequest{Filter: filter})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.GetDispatches()
+	}
+	if got := list(ownerIdentity); len(got) != 1 || got[0].GetCommand() != nil {
+		t.Fatalf("summary list: %v", got)
+	}
+	if got := list(otherIdentity); len(got) != 0 {
+		t.Fatalf("foreign summaries: %v", got)
 	}
 	listed, err := client.ListSessions(actingFor(ownerIdentity), &dispatcherpb.ListSessionsRequest{})
 	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != owned {

@@ -7,7 +7,7 @@ import (
 )
 
 func TestDescribeDispatchMapsUnknownStoredStateToUnknown(t *testing.T) {
-	dispatch, err := DescribeDispatch(&Dispatch{State: "FUTURE_STATE", Operation: "submit_input"})
+	dispatch, err := DescribeDispatch(&Dispatch{State: "FUTURE_STATE", Operation: "submit_input"}, false)
 	if err != nil {
 		t.Fatalf("DescribeDispatch() error = %v", err)
 	}

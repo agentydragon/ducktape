@@ -116,6 +116,7 @@ function formatBankedResets(count, expiries, expiryLookupFailed, now, details = 
 }
 
 function isApiProvider(providerId) {
+  providerId = providerId.split(":", 1)[0];
   return providerId === "openai_platform" || providerId === "anthropic_platform";
 }
 
@@ -895,20 +896,14 @@ const QuotaIndicator = GObject.registerClass(
       bar.fill.add_style_class_name(`quota-${tint}`);
     }
 
-    _clearQuotaBar(bar) {
-      this._setQuotaBar(bar, null, null, "unknown");
-    }
-
     _mapWindow(w) {
       if (!w) return null;
       const resetAtMs = w.reset_at ? new Date(w.reset_at).getTime() : null;
       return {
         name: w.name ?? null,
-        display: w.display !== false,
         usedPercent: w.used_percent ?? null,
         resetAtMs,
         resetSeconds: w.reset_seconds ?? null,
-        windowSeconds: w.window_seconds ?? null,
         label: w.label,
         used: w.used,
         reset: w.reset,
@@ -923,25 +918,18 @@ const QuotaIndicator = GObject.registerClass(
 
     _mapExtraSpend(extra) {
       if (!extra) return null;
-      return {
-        is_enabled: extra.is_enabled,
-        utilization: extra.utilization,
-        used_usd: extra.used_usd,
-        monthly_limit_usd: extra.monthly_limit_usd,
-      };
+      return { used_usd: extra.used_usd, monthly_limit_usd: extra.monthly_limit_usd };
     }
 
     _loadViewData(data) {
-      const providerIds = new Set(
-        (Array.isArray(data.providers) ? data.providers : [])
-          .map((provider) => provider?.provider)
-          .filter((id) => PROVIDER_DEFS.some((definition) => definition.id === id))
+      const entries = (Array.isArray(data.providers) ? data.providers : []).filter((provider) =>
+        PROVIDER_DEFS.some((definition) => definition.id === provider?.provider)
       );
-      this._setProviderVisibility(providerIds);
+      this._setProviderVisibility(entries);
       const fetchedAt = data.fetched_at ? new Date(data.fetched_at).getTime() : null;
       this._viewConnectionError = data.connection_error ?? null;
       for (const p of this._providers) {
-        const pq = data.providers?.find((x) => x.provider === p.id);
+        const pq = entries.find((x) => x.provider === p.providerId && (x.account_id ?? null) === p.accountId);
         if (!pq) {
           p.state = emptyProviderState();
           continue;
@@ -981,13 +969,23 @@ const QuotaIndicator = GObject.registerClass(
       if (needsRebuild) this._buildPopup();
     }
 
-    _setProviderVisibility(providerIds) {
+    _setProviderVisibility(entries) {
       const currentIds = this._providers.map(({ id }) => id);
-      const nextIds = PROVIDER_DEFS.filter(({ id }) => providerIds.has(id)).map(({ id }) => id);
+      const definitions = PROVIDER_DEFS.flatMap((def) =>
+        entries
+          .filter((entry) => entry.provider === def.id)
+          .map((entry) => ({
+            ...def,
+            providerId: def.id,
+            accountId: entry.account_id ?? null,
+            id: entry.account_id ? `${def.id}:${entry.account_id}` : def.id,
+          }))
+      );
+      const nextIds = definitions.map(({ id }) => id);
       if (currentIds.length === nextIds.length && currentIds.every((id, index) => id === nextIds[index])) return;
 
       const priorState = new Map(this._providers.map((provider) => [provider.id, provider.state]));
-      this._providers = PROVIDER_DEFS.filter(({ id }) => providerIds.has(id)).map((def) => ({
+      this._providers = definitions.map((def) => ({
         ...def,
         state: priorState.get(def.id) ?? emptyProviderState(),
         icon: null,
@@ -1065,7 +1063,8 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         const groups = readingGroups(p.state);
         const single = groups.length === 1;
-        const inlineBalance = !isApiProvider(p.id) || (single && !groups[0].name);
+        const inlineBalance =
+          !isApiProvider(p.id) || (single && !groups[0].name && p.providerId !== "anthropic_platform");
         this._renderProviderHeader(
           p.header,
           p.state.label || p.label,
@@ -1095,7 +1094,7 @@ const QuotaIndicator = GObject.registerClass(
       const parts = [title];
       if (includeGroup && group?.name) parts.push(group.name);
       const balance = group && headerBalance(group);
-      if (balance && inlineBalance) parts.push(`${balance.label}: ${balance.value}`);
+      if (balance && inlineBalance) parts.push(`${balance.label ? `${balance.label}: ` : ""}${balance.value}`);
       item.label.set_text(parts.join(" — "));
     }
 
@@ -1103,7 +1102,7 @@ const QuotaIndicator = GObject.registerClass(
       const lines = group.balances.map((balance) => {
         const staleSince = balance.stale_since ? new Date(balance.stale_since).getTime() : null;
         const stale = staleSince == null ? "" : ` · stale ${formatAge(Math.max(0, (nowMs() - staleSince) / 1000))} ago`;
-        return `${balance.label}: ${balance.value}${stale}`;
+        return `${balance.label ? `${balance.label}: ` : ""}${balance.value}${stale}`;
       });
       item.visible = lines.length > 0 && (!hasHeader || headerBalance(group) === null);
       item._summaryLabel.set_text(lines.join("\n"));
@@ -1231,7 +1230,7 @@ const QuotaIndicator = GObject.registerClass(
       const liveState = withLiveReset(state, staleAgeSeconds != null);
       const parts = [
         `${liveState.used}%`,
-        liveState.reset === "awaiting update" ? liveState.reset : `resets in ${liveState.reset}`,
+        liveState.reset === "awaiting update" ? liveState.reset : `↻ in ${liveState.reset}`,
       ];
       if (staleAgeSeconds == null && liveState.forecast) parts.push(liveState.forecast);
       item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);

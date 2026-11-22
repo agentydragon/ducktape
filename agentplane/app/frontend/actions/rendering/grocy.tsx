@@ -1,11 +1,11 @@
-import { Stack } from "@mantine/core";
+import { Code, Stack } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
 import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 
-import { definePreview, defineReceiptPreview } from "./entry";
-import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
+import { definePreview, defineReceiptPreview, type PreviewProps } from "./entry";
+import { type ActionPresentation, type CardDecisionProps, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 import {
   batchError,
@@ -17,6 +17,7 @@ import {
   objectLink,
   reference,
   useGrocyReferences,
+  useGrocyRequestReferences,
 } from "./grocy_shared";
 import { grocyCatalogRenderers } from "./grocy_catalog";
 import { grocyEntityRenderers } from "./grocy_entities";
@@ -269,6 +270,12 @@ function ProductChanges({
                   ? objectLink("product", item.product, title)
                   : displayRef(item.product, "products")}
               </strong>
+              {summary?.name && (
+                <>
+                  {" "}
+                  · <Code>#{item.product}</Code>
+                </>
+              )}
             </Line>
             {changes.map(([label, value, old]) => (
               <Line key={label}>
@@ -335,6 +342,63 @@ const edits = definePreview(editProductArguments, ({ args, requestId }) => (
     <ProductChanges args={args} />
   </GrocyReview>
 ));
+
+function ProductEditSummary({ args, requestId }: PreviewProps<z.infer<typeof editProductArguments>>): JSX.Element {
+  const refs = useGrocyRequestReferences(requestId);
+  return (
+    <Stack gap={4}>
+      {args.items.slice(0, 2).map((item, index) => (
+        <Stack key={index} gap={2}>
+          <Line>
+            {typeof item.product === "number"
+              ? refs?.get(`product_edits/${item.product}`)?.name || `Product #${item.product}`
+              : item.product}
+            {item.name != null && <> → {item.name}</>}
+          </Line>
+          {item.location != null && <Line>Default location · {displayRef(item.location, "locations")}</Line>}
+          {item.clear_fields?.includes("description") ? (
+            <Line>Clear description</Line>
+          ) : (
+            item.description != null && <Line>Replace description</Line>
+          )}
+        </Stack>
+      ))}
+      {args.items.length > 2 && <Line>{args.items.length - 2} more products</Line>}
+    </Stack>
+  );
+}
+
+const compactProductEdit = z.strictObject({
+  items: z.tuple([
+    z.strictObject({
+      product: z.int().positive(),
+      name: z.string().trim().min(1).max(120).nullish(),
+      location: z.int().positive().nullish(),
+      description: z.string().max(160).nullish(),
+      clear_fields: z.tuple([z.literal("description")]).nullish(),
+    }),
+  ]),
+});
+
+function ProductEditDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
+  const parsed = compactProductEdit.safeParse(args);
+  const refs = useGrocyRequestReferences(parsed.success ? requestId : undefined);
+  if (!parsed.success) return fallback;
+  const [item] = parsed.data.items;
+  const target = refs?.get(`product_edits/${item.product}`);
+  const current = target?.productEditCurrent;
+  if (!target?.name.trim() || current === undefined) return fallback;
+  if (item.location != null) {
+    if (current.locationId == null || current.locationId <= 0n || !Number.isSafeInteger(Number(current.locationId)))
+      return fallback;
+    const previous = refs?.get(`locations/${current.locationId}`)?.name.trim();
+    const next = refs?.get(`locations/${item.location}`)?.name.trim();
+    if (!previous || !next || (previous === next && current.locationId !== BigInt(item.location))) return fallback;
+  }
+  const changesDescription = item.description != null || item.clear_fields != null;
+  if (item.description != null && item.clear_fields != null) return fallback;
+  return item.name != null || item.location != null || changesDescription ? buttons : fallback;
+}
 
 const stockGetArguments = z.strictObject({
   products: z.array(reference).optional(),
@@ -414,7 +478,7 @@ const stockGetResult = defineResultPreview(
   )
 );
 
-export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ...grocyStockRenderers,
   ...grocyShoppingRenderers,
   ...grocyCatalogRenderers,
@@ -427,8 +491,16 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     {
       fallbackLabel: "Edit Grocy products",
       call: editProductCall,
-      pane: { opened: edits },
+      pane: {
+        collapsed: definePreview(editProductArguments, (props) => (
+          <GrocyReview requestId={props.requestId}>
+            <ProductEditSummary {...props} />
+          </GrocyReview>
+        )),
+        opened: edits,
+      },
       details: { arguments: edits, pendingPreviewOnly: true, result: editProductReceipt },
+      liveCardDecision: { component: ProductEditDecision },
       outcome: (result) => {
         const parsed = editProductResult.safeParse(result);
         return parsed.success ? batchOutcome(parsed.data) : undefined;
@@ -445,3 +517,5 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     },
   ],
 ]);
+
+export const grocyPresentationGroup: readonly [string, typeof grocyRenderers] = ["grocy_sf", grocyRenderers];

@@ -218,6 +218,7 @@ spec:
               weight: 100
       annotations:
         goldilocks.fairwinds.com/enabled: "false"
+        goldilocks.fairwinds.com/vpa-update-mode: auto
       extraEnv:
         - name: GOMEMLIMIT
           value: 3277MiB

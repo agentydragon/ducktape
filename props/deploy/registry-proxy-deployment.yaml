@@ -4,7 +4,6 @@ metadata:
   name: props-registry-proxy
   namespace: props
   annotations:
-    reloader.stakater.com/auto: "true"
     description: >-
       OCI registry proxy data plane — serves /v2/* for props agent image pushes and pulls, split out of the props backend so large image transfers do not run through the dashboard/API pod.
 spec:

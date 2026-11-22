@@ -62,9 +62,8 @@ minting fresh values for fields you can't recover (i.e. rotate).
   obvious.
 - In-cluster VMs should forward guest logs to a destination the cluster already collects;
   see <docs/troubleshooting.md> § Loki for the KubeVirt path and query.
-- YAML consumed by `configMapGenerator` stays `.yaml` (never disguised as `.txt`): add
-  `cluster-manifest-ignored=true` in root `.gitattributes`, add the path to the kubeconform
-  exclusion in `.pre-commit-config.yaml`, and mark the file as a `configMapGenerator` input.
+- List configuration YAML in its consuming `configMapGenerator` and keep the `.yaml`
+  extension. Exclude application-specific YAML from kubeconform in `.pre-commit-config.yaml`.
 - A `HelmRepository`/`GitRepository` consumed by exactly one `HelmRelease` in the same
   component directory: put it first in `helmrelease.yaml` and list only that file in
   `kustomization.yaml`. Keep separate if reused, independently owned, or a consumer needs
@@ -152,10 +151,8 @@ precaution based on a suspected, not proven, diskless-primary reattachment issue
 
 - A decommissioned or indefinitely suspended app whose source ducktape does **not** own
   (third-party image/chart/tool) moves whole to `cluster/parked/<name>/`, layout unchanged.
-  Its Flux Kustomization stays in the central chart with `spec.suspend: true` and annotation
-  `ducktape.org/parked: "true"` (required for `cluster/parked/` paths by
-  `test_flux_kustomizations_under_parked_path_are_annotated` in
-  `cdk8s/test_generate_manifests.py`).
+  Its Flux Kustomization stays in the central chart with `spec.suspend: true`.
+  `flux_kustomization` sets `ducktape.org/parked: "true"` from the artifact's directory.
 - Ducktape-owned code (`<project>/deploy/`, e.g. `props/deploy/`) keeps its manifests beside
   its source, active or suspended.
 - `cluster/parked` is outside the manifest roots: `cluster/validation` skips it, image
@@ -170,7 +167,8 @@ precaution based on a suspected, not proven, diskless-primary reattachment issue
 Everything under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s` or
 `cluster/parked`, and files `.gitattributes` marks `linguist-generated=true` there are
 `bb run //cluster/cdk8s:generate_manifests` output: change the generator and regenerate
-(`//cluster/cdk8s:test_generate_manifests` fails on drift). A directory is under
+(`//cluster/cdk8s:test_generate_manifests` fails on drift). For remote generation and patch retrieval,
+follow <../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch>. A directory is under
 `cluster/generated` exactly when the generator writes all of it. Layout rules above bind
 generated directories only where the generator has a knob. Invariants over generated
 objects are fleet rules or tests beside the generator, never new `cluster/validation/` tests

@@ -37,14 +37,15 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
@@ -57,21 +58,14 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cpap-sync"
 # The tags come from image-pins/kustomization.yaml.
 _IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
 _GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"
-_LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "sync"}
+_SYNC = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "sync")))
 _GATEWAY = "cpap-gateway"
-_GUEST_METRICS_PORT = 9100
-_GUEST_METRICS_PORT_NAME = "node-metrics"
+_GUEST_METRICS = Port(name="node-metrics", number=9100)
 _GUEST_METRICS_SERVICE = f"{_GATEWAY}-metrics"
-_GUEST_POD_LABELS = domain_labels(_GATEWAY)
+_GUEST = Pods(namespace=NAMESPACE, labels=tuple(domain_labels(_GATEWAY).items()))
 _GUEST_METRICS_SERVICE_LABELS = {"app.kubernetes.io/name": _GUEST_METRICS_SERVICE}
-_GUEST_CARD_CLIENT_LABELS = {**cilium.endpoint_labels(NAMESPACE, NAME), "app.kubernetes.io/component": "sync"}
 # The gateway VM's forwarder listens on 18080; the Service presents it on 80.
-_CARD = ServiceRef(
-    name="cpap-card",
-    port=Port(name="http", number=80),
-    pods=Pods(namespace=NAMESPACE, labels=tuple(domain_labels(_GATEWAY).items())),
-    target_port=18080,
-)
+_CARD = ServiceRef(name="cpap-card", port=Port(name="http", number=80), pods=_GUEST, target_port=18080)
 _GIT_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="cpap-data-git-write")
 _GIT_READ_CREDENTIALS = "cpap-data-git-read"
 _WORKDIR = "/workdir"
@@ -107,9 +101,9 @@ def _gateway_vm(chart: Chart) -> VirtualMachine:
         # The host the CPAP card's USB WiFi adapter is attached to.
         node_selector=node_scheduling.OPTIPLEX.node_selector,
         ports=[
-            VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name="http", port=_CARD.pod_port),
+            VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name=_CARD.port.name, port=_CARD.pod_port),
             VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(
-                name=_GUEST_METRICS_PORT_NAME, port=_GUEST_METRICS_PORT
+                name=_GUEST_METRICS.name, port=_GUEST_METRICS.number
             ),
         ],
         disks={
@@ -175,16 +169,14 @@ def chart(app: App) -> Chart:
                 spec=k8s.JobSpec(
                     backoff_limit=2,
                     template=k8s.PodTemplateSpec(
-                        metadata=k8s.ObjectMeta(labels=_LABELS),
+                        metadata=k8s.ObjectMeta(labels=_SYNC.selector),
                         spec=k8s.PodSpec(
                             restart_policy="OnFailure",
                             node_selector=node_scheduling.OPTIPLEX.node_selector,
                             automount_service_account_token=False,
                             volumes=[
                                 k8s.Volume(name="workdir", empty_dir=k8s.EmptyDirVolumeSource()),
-                                k8s.Volume(
-                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
-                                ),
+                                public_web_pki.VOLUME,
                             ],
                             containers=[
                                 k8s.Container(
@@ -198,33 +190,20 @@ def chart(app: App) -> Chart:
                                         capabilities=k8s.Capabilities(drop=["ALL"]),
                                         seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                                     ),
-                                    args=[
-                                        "--base-url",
-                                        _CARD.url,
-                                        "--git-url",
-                                        "$(GIT_REPO_URL)",
-                                        "--wifi-interface",
-                                        "",
-                                    ],
+                                    args=["--base-url", _CARD.url, "--git-url", "$(GIT_REPO_URL)"],
                                     env=[
                                         # The clone (initial re-seed: the card's full history) lands in
                                         # TMPDIR — keep it on the emptyDir, not the container layer.
                                         k8s.EnvVar(name="TMPDIR", value=_WORKDIR),
-                                        k8s.EnvVar(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                        k8s.EnvVar(
-                                            name="GIT_SSL_CAINFO", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
+                                        public_web_pki.SSL_CERT_FILE,
+                                        k8s.EnvVar(name="GIT_SSL_CAINFO", value=public_web_pki.CA_FILE),
                                         _GIT_CREDENTIALS.key("repo_url").env_var("GIT_REPO_URL"),
                                         _GIT_CREDENTIALS.key("username").env_var("GIT_USERNAME"),
                                         _GIT_CREDENTIALS.key("password").env_var("GIT_PASSWORD"),
                                     ],
                                     volume_mounts=[
                                         k8s.VolumeMount(name="workdir", mount_path=_WORKDIR),
-                                        k8s.VolumeMount(
-                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                        ),
+                                        public_web_pki.VOLUME_MOUNT,
                                     ],
                                     # git pack-objects on the initial ~0.5-1GB seed push.
                                     resources=container_resources(cpu="100m", memory="128Mi", memory_limit="512Mi"),
@@ -261,18 +240,7 @@ def chart(app: App) -> Chart:
             labels=_GUEST_METRICS_SERVICE_LABELS,
             annotations={"description": "Internal metrics endpoint for the CPAP gateway guest filesystem collector."},
         ),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_GUEST_POD_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=_GUEST_METRICS_PORT_NAME,
-                    port=_GUEST_METRICS_PORT,
-                    protocol="TCP",
-                    target_port=k8s.IntOrString.from_number(_GUEST_METRICS_PORT),
-                )
-            ],
-        ),
+        spec=k8s.ServiceSpec(type="ClusterIP", selector=_GUEST.selector, ports=[_GUEST_METRICS.k8s_service_port()]),
     )
     ServiceMonitor(
         chart,
@@ -284,7 +252,7 @@ def chart(app: App) -> Chart:
         ),
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_GUEST_METRICS_SERVICE_LABELS),
-            endpoints=[Endpoint.plain(port=_GUEST_METRICS_PORT_NAME)],
+            endpoints=[Endpoint.plain(port=_GUEST_METRICS.name)],
         ),
     )
     NetworkPolicy(
@@ -300,12 +268,12 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        endpoint_selector=_GUEST_POD_LABELS,
+        endpoint_selector=_GUEST.selector,
         ingress=[
             # Adding ingress isolation to the virt-launcher also covers the existing
             # cpap-card Service path, whose only in-cluster client is the sync Job.
-            IngressRule.from_endpoints(_GUEST_CARD_CLIENT_LABELS, ports=[_CARD.pod_port]),
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_GUEST_METRICS_PORT]),
+            _SYNC.admit(_CARD.pod_port),
+            alloy_endpoints.NODE.admit(_GUEST_METRICS.number),
         ],
     )
     PrometheusRule(

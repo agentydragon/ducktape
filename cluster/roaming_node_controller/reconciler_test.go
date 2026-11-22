@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -40,13 +39,8 @@ func lease(name string, renewedAgo time.Duration) *coordinationv1.Lease {
 	}
 }
 
-func reconcileNode(t *testing.T, name string, objects ...client.Object) (*corev1.Node, reconcile.Result) {
+func reconcileNode(t *testing.T, c client.Client, name string) (*corev1.Node, reconcile.Result) {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 	r := &Reconciler{Client: c, Now: func() time.Time { return now }}
 	result, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: name}})
 	if err != nil {
@@ -68,11 +62,6 @@ func TestReconcile(t *testing.T) {
 		wantRequeue time.Duration
 	}{
 		{
-			name:        "roaming kubelet silent past the threshold is marked out of service",
-			objects:     []client.Object{node("laptop", corev1.ConditionUnknown, roamingTaint), lease("laptop", 6*time.Minute)},
-			wantTainted: true,
-		},
-		{
 			name:        "roaming node whose kubelet never renewed a Lease is marked out of service",
 			objects:     []client.Object{node("laptop", corev1.ConditionUnknown, roamingTaint)},
 			wantTainted: true,
@@ -88,10 +77,6 @@ func TestReconcile(t *testing.T) {
 			wantRequeue: readyRecheck,
 		},
 		{
-			name:    "a renewed Lease removes the taint at once",
-			objects: []client.Object{node("laptop", corev1.ConditionUnknown, roamingTaint, outOfServiceTaint), lease("laptop", time.Second)},
-		},
-		{
 			name:        "a Lease renewed minutes ago leaves the taint (hysteresis)",
 			objects:     []client.Object{node("laptop", corev1.ConditionUnknown, roamingTaint, outOfServiceTaint), lease("laptop", 2*time.Minute)},
 			wantTainted: true,
@@ -103,7 +88,8 @@ func TestReconcile(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			name := tc.objects[0].GetName()
-			got, result := reconcileNode(t, name, tc.objects...)
+			c := fake.NewClientBuilder().WithObjects(tc.objects...).Build()
+			got, result := reconcileNode(t, c, name)
 			if tainted := hasTaint(got.Spec.Taints, outOfServiceTaint.Key); tainted != tc.wantTainted {
 				t.Errorf("out-of-service taint present = %v, want %v (taints %v)", tainted, tc.wantTainted, got.Spec.Taints)
 			}
@@ -114,21 +100,28 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-func TestOutOfServiceTaintKeepsOtherTaints(t *testing.T) {
+func TestOutOfServiceTaintAcrossLeaseRenewal(t *testing.T) {
 	unreachable := corev1.Taint{Key: corev1.TaintNodeUnreachable, Effect: corev1.TaintEffectNoExecute}
-	got, _ := reconcileNode(t, "laptop", node("laptop", corev1.ConditionUnknown, roamingTaint, unreachable), lease("laptop", time.Hour))
-	if !hasTaint(got.Spec.Taints, roamingTaintKey) || !hasTaint(got.Spec.Taints, corev1.TaintNodeUnreachable) {
-		t.Errorf("existing taints dropped: %v", got.Spec.Taints)
+	laptop := node("laptop", corev1.ConditionUnknown, roamingTaint, unreachable)
+	heartbeat := lease(laptop.Name, time.Hour)
+	c := fake.NewClientBuilder().WithObjects(laptop, heartbeat).Build()
+
+	got, result := reconcileNode(t, c, laptop.Name)
+	index := slices.IndexFunc(got.Spec.Taints, func(t corev1.Taint) bool { return t.Key == corev1.TaintNodeOutOfService })
+	if index < 0 {
+		t.Fatalf("stale node missing out-of-service taint: %v", got.Spec.Taints)
 	}
-	for _, taint := range got.Spec.Taints {
-		if taint.Key == outOfServiceTaint.Key && (taint.Effect != corev1.TaintEffectNoExecute || taint.TimeAdded == nil) {
-			t.Errorf("out-of-service taint = %+v, want NoExecute with TimeAdded", taint)
-		}
+	if taint := got.Spec.Taints[index]; taint.Effect != corev1.TaintEffectNoExecute || taint.TimeAdded == nil || result.RequeueAfter != 0 {
+		t.Fatalf("stale node taint = %+v, requeue = %v", taint, result.RequeueAfter)
 	}
 
-	back := corev1.Taint{Key: outOfServiceTaint.Key, Value: outOfServiceTaint.Value, Effect: outOfServiceTaint.Effect}
-	got, _ = reconcileNode(t, "laptop", node("laptop", corev1.ConditionUnknown, roamingTaint, unreachable, back), lease("laptop", 0))
-	if hasTaint(got.Spec.Taints, outOfServiceTaint.Key) || len(got.Spec.Taints) != 2 {
-		t.Errorf("untaint should drop only out-of-service: %v", got.Spec.Taints)
+	renewed := metav1.NewMicroTime(now)
+	heartbeat.Spec.RenewTime = &renewed
+	if err := c.Update(context.Background(), heartbeat); err != nil {
+		t.Fatal(err)
+	}
+	got, result = reconcileNode(t, c, laptop.Name)
+	if len(got.Spec.Taints) != 2 || !slices.Contains(got.Spec.Taints, roamingTaint) || !slices.Contains(got.Spec.Taints, unreachable) || result.RequeueAfter != 0 {
+		t.Errorf("after renewal taints = %v, requeue = %v", got.Spec.Taints, result.RequeueAfter)
 	}
 }

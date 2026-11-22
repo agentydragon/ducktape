@@ -64,7 +64,6 @@ def public_coder_agent_backup(
         chart,
         NAME,
         directory,
-        annotations={"ducktape.org/parked": "true"},
         # Parked: OpenClaw is off; PVCs and data stay (cluster/parked/public-coder-agent/README.md).
         suspend=True,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

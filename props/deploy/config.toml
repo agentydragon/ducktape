@@ -6,7 +6,7 @@ backend_url = "http://props:8000"
 # props/deploy/llm-proxy-deployment.yaml.
 llm_proxy_url = "http://props-llm-proxy:8000"
 # Default evaluator: the grader supervisor auto-grades critic runs with this
-# model. GPT-5.6 Terra via LiteLLM keeps grading off the home GPU host.
+# model. GPT-6.2 Sol via LiteLLM keeps grading off the home GPU host.
 grader_model = "codex-gpt-6-sol"
 
 [executor]
@@ -44,7 +44,7 @@ context_window_tokens = 131072
 max_output_tokens = 131072
 max_parallel_agents = 3
 
-# GPT-6 Sol via the Codex subscription route in LiteLLM. The subscription
+# GPT-6.2 Sol via the Codex subscription route in LiteLLM. The subscription
 # route is flat-rate, so Props records no per-token charge for grading.
 # `name` is props' own exposed model name (recorded in eval results and named by
 # grader_model above) and deliberately keeps its pre-#4823 spelling; only the
@@ -52,7 +52,7 @@ max_parallel_agents = 3
 [[models]]
 name = "codex-gpt-6-sol"
 upstream = "litellm"
-upstream_model = "chatgpt-sub/ant-messages/gpt-6-sol"
+upstream_model = "chatgpt-sub/ant-messages/gpt-6.2-sol"
 api_shape = "anthropic"
 input_usd_per_1m_tokens = 0
 cached_input_usd_per_1m_tokens = 0

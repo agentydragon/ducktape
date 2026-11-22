@@ -338,7 +338,14 @@ async def test_credentials_turn_cancels_model_wait_when_collection_fails() -> No
     assert diagnostic in str(caught.value.exceptions[0])
 
 
-async def test_run_returns_successful_turn_outputs() -> None:
+@pytest.mark.parametrize(
+    ("tool_succeeded", "tool_output"),
+    [
+        (True, 'Output:\n{"identity":{"name":"sandbox"}}'),
+        (False, 'Exit code: 3\n{"error":{"code":"UNAVAILABLE","message":"egress rules unavailable"}}'),
+    ],
+)
+async def test_run_preserves_tool_outcome_on_completed_turn(tool_succeeded: bool, tool_output: str) -> None:
     client = create_autospec(Client, instance=True)
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
     thread_id = UUID("00000000-0000-4000-8000-000000000001")
@@ -361,7 +368,7 @@ async def test_run_returns_successful_turn_outputs() -> None:
                 after_cursor + 3,
                 event_pb2.Event(
                     item_completed=event_pb2.ItemCompleted(
-                        item_id="test-tool", tool=event_pb2.ToolResult(output="test tool output", succeeded=True)
+                        item_id="test-tool", tool=event_pb2.ToolResult(output=tool_output, succeeded=tool_succeeded)
                     )
                 ),
             ),
@@ -389,7 +396,15 @@ async def test_run_returns_successful_turn_outputs() -> None:
     )
 
     assert turn.status == event_pb2.TURN_STATUS_COMPLETED
-    assert turn.tool_outputs == ["test tool output"]
+    assert turn.tool_outputs == [tool_output]
+    command = "agentplane --json egress rules"
+    if tool_succeeded:
+        assert turn.shell_json(command) == {"identity": {"name": "sandbox"}}
+    else:
+        with pytest.raises(AssertionError, match=r"egress rules.*failed") as caught:
+            turn.shell_json(command)
+        assert tool_output in str(caught.value)
+        assert "[text] test answer" in str(caught.value)
     assert turn.answer == "test answer"
     assert turn.native == ['{"test": "result"}']
     dispatcher.submit_input.assert_awaited_once()

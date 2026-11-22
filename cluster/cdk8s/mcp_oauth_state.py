@@ -18,10 +18,9 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
+    Database as CnpgDatabase,
     DatabaseSpec,
     DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecEnsure,
 )
 from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount
@@ -29,14 +28,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
@@ -45,7 +42,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -161,7 +158,7 @@ def _db_chart(app: App) -> Chart:
             url_key="uri",
         )
 
-    cluster.cluster(
+    postgres = cluster.cluster(
         chart,
         "cluster",
         ref=DATABASE,
@@ -187,29 +184,24 @@ def _db_chart(app: App) -> Chart:
     backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
     for store in STORES:
-        Database(
+        cluster.Database(
             chart,
             f"database-{store.id}",
             # CNPG's Database CR metadata.name is a Kubernetes DNS name; the
             # PostgreSQL database name in spec may still contain underscores.
             metadata=ApiObjectMetadata(name=f"mcp-oauth-{store.id}-database", namespace=NAMESPACE),
-            spec=DatabaseSpec(
-                cluster=DatabaseSpecCluster(name=DATABASE.name),
-                name=store.database,
-                owner=store.role,
-                # OAuth associations may be recreated after a deliberate reset, but pruning this
-                # Database CR should not silently remove its backing database.
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            ),
+            cluster=postgres,
+            name=store.database,
+            owner=store.role,
         )
         _consumer_secret_access(chart, store)
 
-    Database(
+    CnpgDatabase(
         chart,
         "database-plaid-db-tombstone",
         metadata=ApiObjectMetadata(name=f"mcp-oauth-{_RETIRED_PLAID_DB.id}-database", namespace=NAMESPACE),
         spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=DATABASE.name),
+            cluster=DatabaseSpecCluster(name=postgres.name),
             name=_RETIRED_PLAID_DB.database,
             owner=_RETIRED_PLAID_DB.role,
             ensure=DatabaseSpecEnsure.ABSENT,
@@ -262,11 +254,7 @@ def mcp_oauth_state_db(
         artifact,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         depends_on=flux_kustomization_depends_on_many(
             cnpg_operator, external_secrets_operator, monitoring_crds, kyverno, seaweedfs_operator
         ),

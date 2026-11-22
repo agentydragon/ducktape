@@ -137,6 +137,8 @@ func Methods(rule auth.Rule) auth.Methods {
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
+		dispatcherpb.SessionDispatcher_BatchGetDispatches_FullMethodName:    rule,
+		dispatcherpb.SessionDispatcher_ListSessionDispatches_FullMethodName: rule,
 		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:        rule,
 	}
 }
@@ -366,7 +368,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSan
 	if err != nil {
 		return nil, apiError(err)
 	}
-	return store.DescribeDispatch(row)
+	return store.DescribeDispatch(row, false)
 }
 
 func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -610,7 +612,7 @@ func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDisp
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := store.DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row, true)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -646,52 +648,25 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := store.DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row, false)
 	if err != nil {
 		return nil, apiError(err)
 	}
 	return &dispatcherpb.CancelDispatchResponse{Dispatch: dispatch}, nil
 }
 
-func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter) ([]*dispatcherpb.Dispatch, error) {
+func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if filter == nil {
-		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
-	}
-	var session, sandbox string
-	switch scope := filter.GetScope().(type) {
-	case *dispatcherpb.DispatchFilter_SessionId:
-		session = scope.SessionId
-	case *dispatcherpb.DispatchFilter_Sandbox:
-		sandbox = scope.Sandbox
-	default:
-		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
-	}
-	if len(filter.GetCommandIds()) > maxFilterCommands {
-		return nil, status.Errorf(codes.InvalidArgument, "dispatch filter names more than %d commands", maxFilterCommands)
-	}
-	rows, err := s.Store.ListDispatchesForCaller(ctx, session, sandbox, filter.GetCommandIds(), caller)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	result := make([]*dispatcherpb.Dispatch, 0, len(rows))
-	for _, row := range rows {
-		dispatch, err := store.DescribeDispatch(row)
-		if err != nil {
-			return nil, apiError(err)
-		}
-		result = append(result, dispatch)
-	}
-	return result, nil
-}
-
-func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
-	rows, err := s.list(ctx, request.GetFilter())
+	filter, err := dispatchFilter(request.GetFilter())
 	if err != nil {
 		return nil, err
+	}
+	rows, err := s.Store.ListDispatchesForCaller(ctx, filter, caller)
+	if err != nil {
+		return nil, apiError(err)
 	}
 	return &dispatcherpb.ListDispatchesResponse{Dispatches: rows}, nil
 }

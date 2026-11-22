@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -29,9 +29,7 @@ from cluster.rotators.attic_jwt_rotation.config import (
 from util.settings_contract import validate_settings_fragment
 
 
-class TestSettingsEntry(BaseModel):
-    __test__: ClassVar[bool] = False
-
+class Peer(BaseModel):
     url: AnyHttpUrl
     token_file: Path
     retries: int = 3
@@ -49,49 +47,46 @@ class TestSettingsEntry(BaseModel):
         return serialized
 
 
-class TestSettings(BaseModel):
-    __test__: ClassVar[bool] = False
-
-    peer: TestSettingsEntry
-    peers: list[TestSettingsEntry]
-    named_peers: dict[str, TestSettingsEntry]
+class Settings(BaseModel):
+    peer: Peer
+    peers: list[Peer]
+    named_peers: dict[str, Peer]
     database_url: str
 
 
-class TestAliasedSettingsEntry(BaseModel):
-    __test__: ClassVar[bool] = False
-
+class AliasedPeer(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)
     account: str = Field(serialization_alias="accountName")
 
 
-class TestExtendedSettingsEntry(TestSettingsEntry):
+class ExtendedPeer(Peer):
     additional: str
 
 
-class TestFloatSettings(BaseModel):
-    __test__: ClassVar[bool] = False
-
+class FloatSettings(BaseModel):
     model_config = ConfigDict(ser_json_inf_nan="strings")
     value: float
 
 
+def _render(format: str, data: BaseModel | dict[str, Any]) -> dict[str, Any]:
+    decoded = yaml.safe_load(yaml_config(data)) if format == "yaml" else json.loads(json_config(data))
+    assert isinstance(decoded, dict)
+    return decoded
+
+
 @pytest.mark.parametrize("nested", [False, True])
 def test_json_preserves_model_number_encoding(nested: bool) -> None:
-    settings = TestFloatSettings(value=float("inf"))
+    settings = FloatSettings(value=float("inf"))
     rendered = json_config({"settings": settings} if nested else settings)
     expected = {"value": "Infinity"}
     assert json.loads(rendered) == ({"settings": expected} if nested else expected)
 
 
 @pytest.mark.parametrize("format", ["yaml", "json"])
-def test_nested_models_remain_typed_until_rendering(format: str) -> None:
-    peer = TestSettingsEntry(
-        url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None, account="app"
-    )
+def test_complete_and_nested_models_use_their_serializers(format: str) -> None:
+    peer = Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None, account="app")
     content: dict[str, Any] = {"peer": peer, "peers": [peer], "named_peers": {"worker": peer}}
-    fragment = validate_settings_fragment(TestSettings, content)
-    rendered = yaml.safe_load(yaml_config(fragment)) if format == "yaml" else json.loads(json_config(fragment))
+    fragment = validate_settings_fragment(Settings, content)
     expected: dict[str, Any] = {
         "url": "http://peer.invalid/",
         "token_file": "file:/tokens/peer",
@@ -101,7 +96,8 @@ def test_nested_models_remain_typed_until_rendering(format: str) -> None:
     }
     if format == "json":
         expected["optional"] = None
-    assert rendered == {"peer": expected, "peers": [expected], "named_peers": {"worker": expected}}
+    assert _render(format, peer) == expected
+    assert _render(format, fragment) == {"peer": expected, "peers": [expected], "named_peers": {"worker": expected}}
     assert fragment is content
     assert content["peer"] is peer
     assert content["peers"][0] is peer
@@ -109,45 +105,23 @@ def test_nested_models_remain_typed_until_rendering(format: str) -> None:
 
 
 @pytest.mark.parametrize("format", ["yaml", "json"])
-def test_complete_model_uses_the_same_serialization_boundary(format: str) -> None:
-    peer = TestSettingsEntry(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), retries=3)
-    rendered = yaml.safe_load(yaml_config(peer)) if format == "yaml" else json.loads(json_config(peer))
-    expected = {
-        "url": "http://peer.invalid/",
-        "token_file": "file:/tokens/peer",
-        "retries": 3,
-        "account": "app",
-        "serialized": True,
-    }
-    if format == "json":
-        expected["optional"] = None
-    assert rendered == expected
-
-
-@pytest.mark.parametrize("format", ["yaml", "json"])
 def test_models_control_their_serialization_aliases(format: str) -> None:
-    content = {"peer": TestAliasedSettingsEntry(account="app")}
-    rendered = yaml.safe_load(yaml_config(content)) if format == "yaml" else json.loads(json_config(content))
+    content = {"peer": AliasedPeer(account="app")}
+    rendered = _render(format, content)
     assert rendered == {"peer": {"accountName": "app"}}
 
 
 @pytest.mark.parametrize("format", ["yaml", "json"])
 def test_serialization_retains_nested_field_schema(format: str) -> None:
-    entry = TestExtendedSettingsEntry(
+    entry = ExtendedPeer(
         url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), additional="subclass-only"
     )
-    settings = TestSettings(peer=entry, peers=[entry], named_peers={"worker": entry}, database_url="test-db")
-    rendered = yaml.safe_load(yaml_config(settings)) if format == "yaml" else json.loads(json_config(settings))
-    expected = {
-        "url": "http://peer.invalid/",
-        "token_file": "file:/tokens/peer",
-        "retries": 3,
-        "optional": None,
-        "account": "app",
-        "serialized": True,
-    }
-    if format == "yaml":
-        del expected["optional"]
+    settings = Settings(peer=entry, peers=[entry], named_peers={"worker": entry}, database_url="test-db")
+    rendered = _render(format, settings)
+    # A field typed as Peer serializes only the base schema, including inside a list or map.
+    expected = _render(format, entry)
+    assert expected["additional"] == "subclass-only"
+    del expected["additional"]
     assert rendered == {
         "peer": expected,
         "peers": [expected],
@@ -157,16 +131,11 @@ def test_serialization_retains_nested_field_schema(format: str) -> None:
 
 
 def test_yaml_keeps_cdk8s_null_omission() -> None:
-    peer = TestSettingsEntry(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None)
-    assert yaml.safe_load(yaml_config({"peer": peer, "optional": None}, exclude_none=True)) == {
-        "peer": {
-            "url": "http://peer.invalid/",
-            "token_file": "file:/tokens/peer",
-            "retries": 3,
-            "account": "app",
-            "serialized": True,
-        }
-    }
+    peer = Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None)
+    result = yaml.safe_load(yaml_config({"peer": peer, "optional": None}, exclude_none=True))
+    assert set(result) == {"peer"}
+    assert result["peer"] == _render("yaml", peer)
+    assert "optional" not in result["peer"]
 
 
 @pytest.mark.parametrize("format", ["yaml", "json"])
@@ -197,7 +166,7 @@ def test_config_preserves_default_destination_discriminators(format: str, nested
     )
 
     content = {"settings": config} if nested else config
-    rendered = yaml.safe_load(yaml_config(content)) if format == "yaml" else json.loads(json_config(content))
+    rendered = _render(format, content)
     settings = rendered["settings"] if nested else rendered
 
     assert [token["destination"]["storage"] for token in settings["tokens"]] == ["sops", "kubernetes"]

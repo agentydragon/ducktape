@@ -10,7 +10,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, piraeus_storage
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
@@ -19,20 +19,20 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote
 from cluster.cdk8s.reflector import mirror_annotations
-from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
 
 NAME = "platform-sessions"
 NAMESPACE = NAME
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=(("app", remote.GATEWAY),))
+    name=NAME, port=remote.GATEWAY_PORT, pods=Pods(namespace=NAMESPACE, labels=(("app", remote.GATEWAY),))
 )
 
 
 def _claim(chart: Chart, name: str, namespace: str) -> None:
     volume_claim(
-        chart, f"claim-{namespace}", name=name, namespace=namespace, storage_class="piraeus-ssd-local", size="1Gi"
+        chart, f"claim-{namespace}", name=name, namespace=namespace, storage_class=piraeus_storage.SSD_LOCAL, size="1Gi"
     )
 
 
@@ -69,13 +69,13 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector={"app": remote.GATEWAY}, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.k8s_service_port()]),
     )
     https_route(
         chart,
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        hostnames=["platform-sessions.allegedly.works"],
+        hostnames=[remote.PUBLIC_HOSTNAME],
         backend=SERVICE,
     )
     return chart

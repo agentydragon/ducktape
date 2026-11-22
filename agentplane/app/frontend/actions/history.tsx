@@ -43,14 +43,7 @@ import {
   timestampText,
 } from "./presentation";
 import { actionHistory, followActionRequests, getAction } from "./client";
-import {
-  renderActionCall,
-  renderActionOutcome,
-  renderActionLabel,
-  renderDetailsArguments,
-  renderDetailsResult,
-  renderNativeDetailsResult,
-} from "./rendering/index";
+import { useActionRendering } from "./rendering/dispatch";
 import { actionGroupsQuery, stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
@@ -137,6 +130,7 @@ export function ActionHistoryCard({
   mcp: boolean;
   compact?: boolean;
 }): JSX.Element {
+  const rendering = useActionRendering();
   const location = useLocation();
   const decision = request.decision;
   const decisionNote = decision?.decider.case === "operator" ? decision.decider.value.decisionNote : undefined;
@@ -152,12 +146,12 @@ export function ActionHistoryCard({
   const prettyResult = mcp
     ? call === null
       ? undefined
-      : renderDetailsResult(action, call, { requestId: request.id, arguments: args })
+      : rendering.renderDetailsResult(action, call, { requestId: request.id, arguments: args })
     : hasResult
-      ? renderNativeDetailsResult(action, result)
+      ? rendering.renderNativeDetailsResult(action, result)
       : undefined;
-  const combinedCall = renderActionCall(action, args, call ?? undefined, request.id);
-  const actionOutcome = call === null ? undefined : renderActionOutcome(action, call);
+  const combinedCall = rendering.renderActionCall(action, args, call ?? undefined, request.id);
+  const actionOutcome = call === null ? undefined : rendering.renderActionOutcome(action, call);
   const toolError = request.state === ActionState.SUCCEEDED && call?.isError === true;
   const decisionLabel =
     decision === undefined
@@ -214,9 +208,9 @@ export function ActionHistoryCard({
   const pretty =
     call !== null ||
     prettyResult !== undefined ||
-    renderDetailsArguments(action, args) !== undefined ||
+    rendering.renderDetailsArguments(action, args) !== undefined ||
     combinedCall !== undefined;
-  const actionLabel = renderActionLabel(action, args);
+  const actionLabel = rendering.renderActionLabel(action, args, request.id);
   const receipt = (
     <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <ActionCall
@@ -283,9 +277,11 @@ export function ActionHistoryCard({
                 </Tooltip>
               </Group>
             </Group>
-            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-              {request.title}
-            </Text>
+            {rendering.shouldRenderRequestTitle(action, args, request.title, actionLabel) && (
+              <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                {request.title}
+              </Text>
+            )}
             {timestamp}
           </Stack>
           <Disclosure summary="Receipt details" open={receiptOpen} onOpenChange={setReceiptOpen} keepMounted>

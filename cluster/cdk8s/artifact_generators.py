@@ -22,7 +22,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 
-from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization
+from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization, literal_artifact_path
 from cluster.cdk8s.generation import write_app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -35,38 +35,24 @@ _FLUX_SYSTEM_SOURCE = ArtifactGeneratorSpecSources(
 )
 
 
-def artifact(name: str, *directories: str, files: Mapping[str, str] | None = None) -> ArtifactGeneratorSpecArtifacts:
-    """An artifact packaging `directories`, in copy order. The first is the consumer's
-    Kustomization directory; following ones are shared bases its Kustomization references.
-    `files` maps exact repository file paths to paths inside the first directory. These files
-    are added only to the generated source artifact, not copied into the repository tree."""
-
-    def valid_path(path: str) -> bool:
-        return (
-            bool(path)
-            and not path.startswith("/")
-            and not any(
-                part in {"", ".", ".."} or any(character in part for character in "*?[]{}") for part in path.split("/")
-            )
-        )
-
-    if any(not valid_path(directory) for directory in directories):
+def artifact(
+    name: str, directory: str, *bases: str, files: Mapping[str, str] | None = None
+) -> ArtifactGeneratorSpecArtifacts:
+    """Package the consumer directory and its shared bases at their repository paths.
+    Supplemental files map repository sources to destinations relative to the consumer directory."""
+    directories = (directory, *bases)
+    if any(not literal_artifact_path(path) for path in directories):
         raise ValueError(f"{name=}: artifact directory paths must be relative literal paths: {directories=}")
 
     copies = [
-        ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{directory}/**", to=f"@artifact/{directory}/")
-        for directory in directories
+        ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{path}/**", to=f"@artifact/{path}/") for path in directories
     ]
-    if files:
-        if not directories:
-            raise ValueError(f"{name=}: file copies need a first artifact directory")
-        root = directories[0]
-        for source, destination in files.items():
-            if not valid_path(source):
-                raise ValueError(f"{name=}: repository file path must stay relative: {source=}")
-            if not valid_path(destination) or not destination.startswith(f"{root}/"):
-                raise ValueError(f"{name=}: file destination must be inside {root}: {destination=}")
-            copies.append(ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source}", to=f"@artifact/{destination}"))
+    for source, destination in (files or {}).items():
+        if not literal_artifact_path(source) or not literal_artifact_path(destination):
+            raise ValueError(f"{name=}: artifact file paths must be relative literal paths: {source=} {destination=}")
+        copies.append(
+            ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source}", to=f"@artifact/{directory}/{destination}")
+        )
     return ArtifactGeneratorSpecArtifacts(name=name, origin_revision="@repo", copy=copies)
 
 

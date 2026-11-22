@@ -10,8 +10,6 @@ See `README.md` for the full rotation and deployment contract.
 import base64
 import json
 import logging
-import os
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -21,6 +19,7 @@ import typer
 import yaml
 
 from cluster.rotators.authentik_jwt_rotation.config import AUTH_BASE, Config, K8sSecretOutput, Probe, Rotation
+from cluster.rotators.git_publish import enter_sparse_checkout, github_remote, push_outputs
 from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 
@@ -47,24 +46,6 @@ def token_audiences(payload: dict[str, Any]) -> list[str]:
     if aud is None:
         return []
     return [aud] if isinstance(aud, str) else list(aud)
-
-
-def stamped_audiences(sops_file: Path) -> list[str] | None:
-    """Audiences from the plaintext `audiences_unencrypted` stamp, or None if absent.
-
-    Lets the freshness check notice an audience-expectation change without
-    decrypting the token (the rotator has no in-cluster age key).
-    """
-    return unencrypted_stamps(sops_file).get("audiences_unencrypted")
-
-
-def stamped_claims(sops_file: Path) -> dict[str, str] | None:
-    """Claims from the plaintext `claims_unencrypted` stamp, or None if absent.
-
-    Lets the freshness check notice a claim-expectation change (e.g. an Authentik
-    service account's email getting fixed) without decrypting the token.
-    """
-    return unencrypted_stamps(sops_file).get("claims_unencrypted")
 
 
 def mint_jwt(client: httpx.Client, rotation: Rotation) -> str:
@@ -169,14 +150,15 @@ def published_token_rejected(client: httpx.Client, name: str, out: K8sSecretOutp
 
 def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool:
     """Mint + write a fresh token for one rotation. Returns True if it wrote."""
-    remaining = remaining_hours(rotation.sops_file)
+    existing_stamps = unencrypted_stamps(rotation.sops_file)
+    remaining = remaining_hours(existing_stamps)
     fresh = remaining is not None and remaining > config.rotate_below_hours
     # An audience expectation the stored token doesn't already satisfy forces a
     # re-mint regardless of remaining validity — otherwise adding an audience
     # wouldn't take effect until the (~44-day) expiry. Read from the plaintext
     # `audiences_unencrypted` stamp (no SOPS decryption needed).
     if fresh and rotation.expected_audiences:
-        stored = stamped_audiences(rotation.sops_file)
+        stored = existing_stamps.get("audiences_unencrypted")
         if stored is None or not set(rotation.expected_audiences) <= set(stored):
             logger.info(
                 "%s: stored audiences %s do not cover expected %s; forcing re-mint",
@@ -189,7 +171,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
     # a stored token minted before an upstream Authentik fix landed would otherwise
     # keep being treated as fresh until its ~44-day expiry.
     if fresh and rotation.expected_claims:
-        stored_claims = stamped_claims(rotation.sops_file)
+        stored_claims = existing_stamps.get("claims_unencrypted")
         if stored_claims is None or stored_claims != rotation.expected_claims:
             logger.info(
                 "%s: stored claims %s do not match expected %s; forcing re-mint",
@@ -295,36 +277,6 @@ def write_k8s_secret(out: K8sSecretOutput, token: str, exp_epoch: int) -> None:
     write_sops_yaml(path=out.path, document=build_secret_manifest(out, token, exp_epoch))
 
 
-def sparse_clone(config: Config, github_pat: str) -> None:
-    """Init + sparse-fetch only .sops.yaml and the rotations' sops_files into cwd."""
-    remote = f"https://x-access-token:{github_pat}@github.com/{config.github_repo}.git"
-    sparse_paths = [config.sops_config, *(str(r.sops_file) for r in config.rotations)]
-    sparse_paths += [str(r.k8s_secret.path) for r in config.rotations if r.k8s_secret]
-    subprocess.run(["git", "init", "-q"], check=True)
-    subprocess.run(["git", "remote", "add", "origin", remote], check=True)
-    subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
-    Path(".git/info/sparse-checkout").write_text("\n".join(sparse_paths) + "\n")
-    subprocess.run(["git", "fetch", "-q", "--depth=1", "--no-tags", "origin", "devel"], check=True)
-    subprocess.run(["git", "checkout", "-q", "FETCH_HEAD"], check=True)
-
-
-def commit_and_push(config: Config, rotated: list[str]) -> None:
-    subprocess.run(["git", "config", "user.name", config.git_author_name], check=True)
-    subprocess.run(["git", "config", "user.email", config.git_author_email], check=True)
-    for rotation in config.rotations:
-        if rotation.name in rotated:
-            subprocess.run(["git", "add", "--", str(rotation.sops_file)], check=True)
-            if rotation.k8s_secret:
-                subprocess.run(["git", "add", "--", str(rotation.k8s_secret.path)], check=True)
-    if subprocess.run(["git", "diff", "--cached", "--quiet"], check=False).returncode == 0:
-        logger.info("tokens minted but SOPS files unchanged on disk (unexpected); nothing to commit")
-        return
-    message = f"chore: rotate authentik JWTs ({datetime.now(UTC):%Y-%m-%d}): {', '.join(rotated)}"
-    subprocess.run(["git", "commit", "-q", "-m", message], check=True)
-    subprocess.run(["git", "push", "-q", "origin", "HEAD:devel"], check=True)
-    logger.info("pushed: %s", ", ".join(rotated))
-
-
 def main(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="rotations.yaml")],
     github_pat_file: Annotated[Path, typer.Option("--github-pat-file")] = Path("/var/run/secrets/github-pat/token"),
@@ -333,27 +285,34 @@ def main(
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
     github_pat = github_pat_file.read_text().strip()
 
-    repo_dir = Path("/tmp/repo")
-    repo_dir.mkdir()
-    os.chdir(repo_dir)
-    sparse_clone(config, github_pat)
+    enter_sparse_checkout(
+        Path("/tmp/repo"),
+        github_remote(config.github_repo, github_pat),
+        [config.sops_config, *(path for rotation in config.rotations for path in rotation.output_paths)],
+    )
 
     # Isolate entries: one broken rotation must not starve the others (a bad
     # entry otherwise stalls every token in the cluster until someone notices).
     # Failures still fail the Job at the end, after healthy entries commit.
-    rotated: list[str] = []
+    rotated: list[Rotation] = []
     failed: list[str] = []
     with httpx.Client(timeout=30) as client:
         for rotation in config.rotations:
             try:
                 if rotate_one(client, rotation, config):
-                    rotated.append(rotation.name)
+                    rotated.append(rotation)
             except Exception:
                 logger.exception("%s: rotation failed; continuing with remaining entries", rotation.name)
                 failed.append(rotation.name)
 
     if rotated:
-        commit_and_push(config, rotated)
+        push_outputs(
+            (path for rotation in rotated for path in rotation.output_paths),
+            author_name=config.git_author_name,
+            author_email=config.git_author_email,
+            subject="authentik JWTs",
+            names=(rotation.name for rotation in rotated),
+        )
     else:
         logger.info("no rotations needed this cycle")
     if failed:

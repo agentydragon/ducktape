@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
@@ -138,9 +138,7 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
 
 
 def tool_config_grant(namespace: str) -> RoleBindingGrant:
-    return RoleBindingGrant(
-        kind="RoleBinding", namespace=namespace, role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME)
-    )
+    return RoleBindingGrant(namespace=namespace, role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME))
 
 
 def workload_security_context() -> k8s.SecurityContext:
@@ -160,9 +158,7 @@ def add_sidecar_settings(
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
     settings = sidecar_config.Settings(
-        proxy=sidecar_config.Proxy(
-            address=f"{egress.proxy(env.namespace).fqdn}:{egress.PROXY_PORT}", transport=proxy_transport
-        ),
+        proxy=sidecar_config.Proxy(address=egress.proxy(env.namespace).authority, transport=proxy_transport),
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
         platform_routes=platform_routes,
         workload_routes=dict(workload_routes) if workload_routes is not None else {},
@@ -173,7 +169,7 @@ def add_sidecar_settings(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(settings.model_dump(mode="json", exclude_none=True)),
+        content=yaml_config(settings, exclude_none=True),
         path=_SIDECAR_SETTINGS_PATH,
     )
 
@@ -297,9 +293,7 @@ def pod_spec(
 
 def render_pod_template(labels: Mapping[str, str], spec: k8s.PodSpec) -> dict[str, Any]:
     """`spec` under `labels`, as a PodTemplateSpec's Kubernetes JSON."""
-    rendered: dict[str, Any] = k8s.KubePodTemplate(
-        Chart(App(), "pod-template"),
-        "podtemplate",
-        template=k8s.PodTemplateSpec(metadata=k8s.ObjectMeta(labels=dict(labels)), spec=spec),
-    ).to_json()["template"]
+    rendered: dict[str, Any] = k8s.KubePodTemplate.manifest(
+        template=k8s.PodTemplateSpec(metadata=k8s.ObjectMeta(labels=dict(labels)), spec=spec)
+    )["template"]
     return rendered

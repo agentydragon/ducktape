@@ -1,3 +1,5 @@
+import { appActionRendering } from "../actions/rendering/index";
+import { ActionRenderingContext } from "../actions/rendering/dispatch";
 import { ActionIcon, Stack, Text, Title } from "@mantine/core";
 import { IconMenu2 } from "../ui/icons";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
@@ -203,14 +205,16 @@ function AppRoutes(): JSX.Element {
 
 export default function App(): JSX.Element {
   return (
-    <ThreadSyncContext.Provider value={electricThreadSync}>
-      <HashRouter>
-        <RoutedThreadsLiveProvider>
-          <SandboxesLiveProvider>
-            <AppRoutes />
-          </SandboxesLiveProvider>
-        </RoutedThreadsLiveProvider>
-      </HashRouter>
-    </ThreadSyncContext.Provider>
+    <ActionRenderingContext.Provider value={appActionRendering}>
+      <ThreadSyncContext.Provider value={electricThreadSync}>
+        <HashRouter>
+          <RoutedThreadsLiveProvider>
+            <SandboxesLiveProvider>
+              <AppRoutes />
+            </SandboxesLiveProvider>
+          </RoutedThreadsLiveProvider>
+        </HashRouter>
+      </ThreadSyncContext.Provider>
+    </ActionRenderingContext.Provider>
   );
 }

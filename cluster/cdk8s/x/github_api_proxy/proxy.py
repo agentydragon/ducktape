@@ -49,13 +49,15 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, piraeus_storage
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
@@ -202,7 +204,7 @@ def _capture_claim(scope: Construct) -> None:
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
+            storage_class_name=piraeus_storage.SSD_REPLICATED,
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
         ),
     )
@@ -218,10 +220,7 @@ def _proxy_container() -> k8s.Container:
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
         ),
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
-            limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
-        ),
+        resources=container_resources(cpu="100m", memory="256Mi", cpu_limit="2", memory_limit="2Gi"),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_METRICS.name)),
             initial_delay_seconds=3,
@@ -317,17 +316,7 @@ def _service(scope: Construct) -> None:
         scope,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_SERVICE.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=_SERVICE.port.name,
-                    port=_SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(_SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-        ),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
 
 
@@ -340,7 +329,7 @@ def _network_policy(scope: Construct) -> None:
         ingress=[
             IngressRule.from_gateway(_SERVICE.pod_port),
             # Scraped by the Alloy on this pod's node.
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS.number]),
+            alloy_endpoints.NODE.admit(_METRICS.number),
         ],
         egress=[*cilium.open_internet_egress(ports=[80, 443], entities=(Entity.WORLD,))],
         # These non-public ranges can be outside Cilium's cluster identity set.

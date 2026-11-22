@@ -42,18 +42,11 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 
 from cluster.cdk8s import disruption_budget, node_scheduling
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
-from cluster.cdk8s.seaweedfs import (
-    cluster,
-    drivefs_artifacts_bucket,
-    external_credentials,
-    loom_gym_bucket,
-    namespace,
-    s3,
-)
+from cluster.cdk8s.seaweedfs import drivefs_artifacts_bucket, external_credentials, loom_gym_bucket, namespace, s3
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-s3"
@@ -113,7 +106,7 @@ def _iam(scope: Construct) -> None:
         "claude-reader-policy",
         metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicySpec(
-            seaweed_ref=S3PolicySpecSeaweedRef(name=cluster.NAME),
+            seaweed_ref=S3PolicySpecSeaweedRef(name=CLUSTER_NAME),
             reclaim_policy=S3PolicySpecReclaimPolicy.RETAIN,
             statements=[
                 S3PolicySpecStatements(
@@ -148,7 +141,7 @@ def _iam(scope: Construct) -> None:
         "claude-reader-policy-binding",
         metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicyBindingSpec(
-            seaweed_ref=S3PolicyBindingSpecSeaweedRef(name=cluster.NAME),
+            seaweed_ref=S3PolicyBindingSpecSeaweedRef(name=CLUSTER_NAME),
             policy_ref=S3PolicyBindingSpecPolicyRef(name=_CLAUDE_READER_POLICY),
             subjects=[
                 S3PolicyBindingSpecSubjects(kind=S3PolicyBindingSpecSubjectsKind.S3_IDENTITY, name=_CLAUDE_READER)
@@ -205,7 +198,7 @@ def _gateway(scope: Construct) -> None:
                                 f"weed -logtostderr=true s3 -port={_S3.pod_port} -filer=seaweedfs-filer:8888"
                                 f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS.pod_port} -ip.bind=0.0.0.0",
                             ],
-                            ports=[_S3.port.k8s_container_port(), _METRICS.port.k8s_container_port()],
+                            ports=[_S3.k8s_container_port(), _METRICS.k8s_container_port()],
                             readiness_probe=k8s.Probe(
                                 http_get=k8s.HttpGetAction(
                                     path="/status", port=k8s.IntOrString.from_number(_S3.pod_port)
@@ -240,9 +233,7 @@ def _gateway(scope: Construct) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=_S3.name, namespace=namespace.NAME, labels=_LABELS),
         spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_PODS.selector,
-            ports=[_S3.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
+            type="ClusterIP", selector=_PODS.selector, ports=[_S3.k8s_service_port(), _METRICS.k8s_service_port()]
         ),
     )
     ServiceMonitor(
@@ -271,26 +262,3 @@ def chart(app: App) -> Chart:
     _iam(chart)
     _gateway(chart)
     return chart
-
-
-def seaweedfs_public_s3(
-    chart: Chart,
-    directory: RenderedDirectory,
-    seaweedfs_operator: Kustomization,
-    kyverno: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "seaweedfs-public-s3",
-        directory,
-        depends_on=flux_kustomization_depends_on_many(
-            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
-            seaweedfs_operator,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
-            kyverno,
-            # ServiceMonitor.
-            monitoring_crds,
-        ),
-        timeout="5m",
-    )

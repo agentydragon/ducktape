@@ -11,16 +11,11 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium, external_creds, namespaces
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.plaid_mcp import db
+from cluster.cdk8s.plaid_mcp.secret_copy import copy_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    DataFrom,
-    ExternalSecret,
-    SecretStoreRef,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -33,13 +28,10 @@ _CPU_REQUEST = "50m"
 _MEMORY_LIMIT = "512Mi"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
-POLICY_SECRET = "plaid-spend-policy"
-POLICY_NAMESPACE = "finance-spend-config"
+POLICY_SOURCE = SecretRef(namespace="finance-spend-config", name="plaid-spend-policy")
+_POLICY = SecretRef(namespace=NAMESPACE, name=POLICY_SOURCE.name)
 FINANCE_CONFIG_READER = "plaid-spend-finance-config-reader"
-POLICY_READER = "plaid-spend-policy-reader"
-_WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
-_WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
-_WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
+_WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-spend-web-oidc-config")
 _COINBASE_CREDENTIALS_NAME = "coinbase-api-credentials"
 _COINBASE_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_COINBASE_CREDENTIALS_NAME)
 _EXTERNAL_CREDS_READER = "external-creds-reader"
@@ -72,60 +64,6 @@ def _container_security_context() -> k8s.SecurityContext:
         run_as_group=1000,
         run_as_non_root=True,
         run_as_user=1000,
-    )
-
-
-def _web_oidc_credentials(chart: Chart) -> None:
-    reader = ServiceAccount(
-        chart,
-        "web-oidc-secret-reader",
-        metadata=ApiObjectMetadata(name=_WEB_OIDC_READER, namespace=NAMESPACE),
-        automount_token=False,
-    )
-    store = single_secret_store(
-        chart,
-        "plaid-spend-web-oidc",
-        reader=reader,
-        source_namespace="authentik",
-        source_secret=_WEB_OIDC_CREDENTIALS_NAME,
-        consumer_namespace=NAMESPACE,
-    )
-    ExternalSecret(
-        chart,
-        "web-oidc-external-secret",
-        metadata=ApiObjectMetadata(name=_WEB_OIDC_CREDENTIALS_NAME, namespace=NAMESPACE),
-        refresh_interval="10m",
-        secret_store_ref=SecretStoreRef.cluster(store),
-        data_from=[DataFrom.from_extract(_WEB_OIDC_CREDENTIALS_NAME)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
-    )
-
-
-def _spend_policy_secret(chart: Chart) -> None:
-    reader = ServiceAccount(
-        chart,
-        "spend-policy-secret-reader",
-        metadata=ApiObjectMetadata(name=POLICY_READER, namespace=NAMESPACE),
-        automount_token=False,
-    )
-    store = single_secret_store(
-        chart,
-        "plaid-spend-policy",
-        reader=reader,
-        source_namespace=POLICY_NAMESPACE,
-        source_secret=POLICY_SECRET,
-        consumer_namespace=NAMESPACE,
-    )
-    ExternalSecret(
-        chart,
-        "spend-policy-external-secret",
-        metadata=ApiObjectMetadata(name=POLICY_SECRET, namespace=NAMESPACE),
-        refresh_interval="10m",
-        secret_store_ref=SecretStoreRef.cluster(store),
-        data_from=[DataFrom.from_extract(POLICY_SECRET)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
     )
 
 
@@ -187,14 +125,14 @@ def _deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=POLICY_SECRET))],
+                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_POLICY.name))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
                             image="git.allegedly.works/ducktape-ci/plaid-spend:unset",
                             image_pull_policy="Always",
                             security_context=_container_security_context(),
-                            ports=[_WEB.port.k8s_container_port()],
+                            ports=[_WEB.k8s_container_port()],
                             env=[
                                 *(
                                     k8s.EnvVar(
@@ -245,17 +183,17 @@ def chart(app: App) -> Chart:
         chart,
         "finance-config-reader",
         metadata=k8s.ObjectMeta(name=FINANCE_CONFIG_READER, namespace=NAMESPACE),
-        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[POLICY_SECRET], verbs=["get"])],
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[_POLICY.name], verbs=["get"])],
     )
-    _web_oidc_credentials(chart)
-    _spend_policy_secret(chart)
+    copy_secret(chart, "plaid-spend-web-oidc", source_namespace="authentik", target=_WEB_OIDC_CREDENTIALS)
+    copy_secret(chart, _POLICY.name, source_namespace=POLICY_SOURCE.namespace, target=_POLICY)
     _coinbase_credentials(chart)
     _deployment(chart)
     k8s.KubeService(
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
-        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.k8s_service_port()], type="ClusterIP"),
     )
     https_route(
         chart,

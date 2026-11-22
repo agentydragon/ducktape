@@ -57,6 +57,11 @@ service SessionDispatcher {
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
   }
+  // Ordered full receipts for 1-16 command IDs in one authorized retained Session.
+  // Live rows take precedence. A legacy deletion receipt has no original command; missing evidence may have expired.
+  rpc BatchGetDispatches(BatchGetDispatchesRequest) returns (BatchGetDispatchesResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/dispatches:batchGet"};
+  }
   // Current and retained deleted Dispatches of a Session or Sandbox, followed by versioned changes.
   // CaughtUp checkpoints may repeat; every frame carries a resumable position. No token requests
   // a fresh snapshot. Expired deletion coverage returns OUT_OF_RANGE: surface the loss and resync.
@@ -65,6 +70,11 @@ service SessionDispatcher {
   }
   rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse) {
     option (google.api.http) = {get: "/v1/dispatches"};
+  }
+  // Discover retained command rows, newest submission first. Read each page with current
+  // Session authority. A physical deletion during traversal can require a fresh first page.
+  rpc ListSessionDispatches(ListSessionDispatchesRequest) returns (ListSessionDispatchesResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/dispatches"};
   }
   // Only before possible forwarding. QUEUED alone is insufficient: a lost reply or recovery
   // can requeue an attempted command. Such cancellation fails FAILED_PRECONDITION.
@@ -105,6 +115,11 @@ message Dispatch {
   agentplane.proto.DeliveryBlocker delivery_blocker = 11;
   // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the command.
   agentplane.proto.WakeAssessment wake_assessment = 12;
+  // The command stored by Dispatcher. Present on GetDispatch. Mutation receipts omit it for ProtoJSON clients.
+  // Exact live reads include the original. Collection/watch summaries and legacy deletion receipts omit it.
+  optional agentplane.proto.Command command = 13;
+  // Positive database version of this exact receipt revision. Set on reads that explicitly expose it.
+  optional int64 receipt_version = 14;
 }
 
 message SubmitInputRequest {
@@ -175,6 +190,8 @@ message DispatchFilter {
   }
   // When not empty, only these commands within the scope; at most 1000.
   repeated string command_ids = 3;
+  reserved 5, 6;
+  reserved "include_command", "include_receipt_version";
 }
 
 message WatchDispatchesRequest {
@@ -182,15 +199,54 @@ message WatchDispatchesRequest {
   // Opaque versioned position and filter digest; carries no authority. Reusing with a different
   // filter is INVALID_ARGUMENT. Empty requests a fresh snapshot including retained deletions.
   string resume_token = 2;
+  // Watch a bounded replacement snapshot for this whole Session. Omit filter
+  // in this mode. Reconnect returns a replacement.
+  string workset_session_id = 3;
 }
 
 // All changes through the response resume_token have been sent. May repeat as the watch advances.
 message CaughtUp {}
 
+// A Session's current delivery work and recent receipts. None of these rows
+// establish execution or effects. Authored commands can be read by ID.
+message DispatchWorkset {
+  string session_id = 1;
+  // Up to 1024 queued or delivering commands, in queue order.
+  repeated DispatchWorksetItem active = 2;
+  // Up to 20 failed or unknown receipts, newest Dispatcher update first.
+  // History can independently establish an outcome for these commands.
+  repeated DispatchWorksetItem recent_issues = 3;
+  // Up to 20 recent admissions or cancellations, newest update first.
+  // These bridge the transition out of the queue while History catches up.
+  repeated DispatchWorksetItem recent_admitted_or_cancelled = 4;
+  bool more_active_available = 5;
+  bool more_recent_issues_available = 6;
+  bool more_recent_admitted_or_cancelled_available = 7;
+}
+
+message DispatchWorksetItem {
+  string command_id = 1;
+  agentplane.proto.Operation operation = 2;
+  DeliveryState state = 3;
+  // The first 256 characters of the delivery reason, if any.
+  optional string reason = 4;
+  bool journal_admitted = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  // The original reason is available from an ordinary command-ID watch for as
+  // long as this receipt is retained, including receipts of deleted Dispatches.
+  bool reason_truncated = 8;
+  // Positive revision of this receipt from the Dispatcher's shared version
+  // sequence. Legacy and live receipts share the sequence.
+  optional int64 receipt_version = 9;
+  bool legacy_deletion_receipt = 10;
+}
+
 message WatchDispatchesResponse {
   oneof frame {
     Dispatch dispatch = 1;
     CaughtUp caught_up = 2;
+    DispatchWorkset workset = 5;
   }
   // Resume after this frame with the same filter. Deleted receipts have no Sandbox address.
   string resume_token = 3;
@@ -202,6 +258,53 @@ message ListDispatchesRequest {
 
 message ListDispatchesResponse {
   repeated Dispatch dispatches = 1;  // oldest first
+}
+
+message BatchGetDispatchesRequest {
+  string session_id = 1;
+  // 1-16 distinct nonempty command IDs.
+  repeated string command_ids = 2;
+}
+
+message BatchGetDispatchesResponse {
+  message Result {
+    string command_id = 1;
+    oneof result {
+      Dispatch dispatch = 2;
+      // No retained evidence in this Session. Older delivery evidence may have expired.
+      google.protobuf.Empty not_found = 3;
+      // Latest retained deletion evidence. Includes its exact revision and available admission,
+      // but the original command and Sandbox address were not stored.
+      Dispatch legacy_deletion_receipt = 4;
+    }
+  }
+  // One result per requested ID in the request's order. Only a live dispatch has its original command.
+  repeated Result results = 1;
+}
+
+message ListSessionDispatchesRequest {
+  string session_id = 1;
+  // 1-100 rows. Zero selects 25.
+  uint32 limit = 2;
+  string page_token = 3;
+  reserved 4;
+  reserved "verify_retained_command_ids";
+}
+
+message ListSessionDispatchesResponse {
+  // Metadata only: identity, placement, operation, delivery state, full reason and timestamps.
+  // Use GetDispatch to inspect admission and other evidence on an individual receipt.
+  repeated Dispatch dispatches = 1;
+  // Empty when all retained rows through the first page have been covered.
+  string next_page_token = 2;
+  enum Coverage {
+    COVERAGE_UNSPECIFIED = 0;
+    // Excludes legacy watch-only tombstones and any previously pruned evidence.
+    RETAINED_DISPATCH_ROWS = 1;
+  }
+  Coverage coverage = 3;
+  reserved 4;
+  reserved "retains_commands_after_environment_deletion";
 }
 
 message CancelDispatchRequest {

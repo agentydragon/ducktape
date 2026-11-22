@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env import config as configuration
 from agentplane.env.config import (
     CA_BUNDLE,
@@ -19,8 +20,10 @@ from agentplane.env.config import (
 )
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s.agentplane import history_service, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager import cluster_ca
 
 _ENVIRONMENT_RUNTIME_PORT = 9090
@@ -38,8 +41,6 @@ def guest_config_data(
     gateway: str,
     workload_api_socket: str | None = None,
     block_devices: Sequence[str],
-    platform_instructions: str,
-    harness_env: Mapping[str, str],
     session_reconcile_concurrency: int | None = None,
     codex_readiness: CodexReadiness | None = None,
 ) -> dict[str, str]:
@@ -80,19 +81,21 @@ def guest_config_data(
             ),
         ),
         ingress=Endpoint(
-            target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
+            target=history_service.service(namespace).authority,
             svid=SVIDEndpoint(
                 server_uri=HISTORY_SERVICE_URI, proxy_address=guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)
             ),
         ),
-        model_config_target=guest_address(platform_routes.model_config(namespace).listen_port),
-        platform_instructions=platform_instructions,
+        model_config_target=guest_address(PLATFORM_ROUTES_PORT),
+        platform_instructions=platform_instructions(
+            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=gateway
+        ),
         environment_runtime_environment=configuration.EnvironmentVariables(values=network),
         harness_environment=configuration.EnvironmentVariables(
             values={
                 **network,
                 **env.sandbox_workload_env,
-                **harness_env,
+                **agent_cli_environment(service_urls(env, egress_host=gateway)),
                 "HOME": "/state/home",
                 "USER": "agent",
                 "LOGNAME": "agent",
@@ -119,9 +122,7 @@ def guest_config_data(
             f'{name}="{value}"\n'
             for name, value in sorted(
                 telemetry.service_environment(
-                    env.namespace,
-                    "agentplane-environment-runtime",
-                    endpoint=platform_routes.telemetry_endpoint(host=gateway),
+                    env.namespace, "agentplane-environment-runtime", endpoint=platform_routes.listener_url(host=gateway)
                 ).items()
             )
         ),

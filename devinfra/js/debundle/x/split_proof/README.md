@@ -7,22 +7,66 @@ This is an experiment. It does not use the `debundle` code; nothing here imports
 
 [`SUPPORT.md`](SUPPORT.md) lists what a debundler built on this has to support (the syntax and the standard and host features that the real inputs use) and what it does not (a top-level `await`, a name declared twice in one list, and what the tools refuse today). It is a requirement, not a claim that the experiment meets it.
 
-Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order`, `--splits` or `--model`).
-It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
-`run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
-
-Bazel generates the example's Lean instance from the bundle and spec, checks the proof and the
-axioms in `EsmSplit/Audit.lean`, checks that the committed instance is up to date, and runs the
-rendered modules and controls in Node:
+From the repository root, run the same checks as CI:
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/debundle/x/split_proof/lean:example_test //devinfra/js/debundle/x/split_proof/lean:instance_freshness_test
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/..." --config=ci
 ```
 
-Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other experiments in
-`run.sh` are not yet Bazel targets.
+Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused checks and longer experiments, use the following commands with the same `p` (`out` is an absolute output path):
 
-`lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
+| Task                                                         | Command                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                     |
+| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                   |
+| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
+| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
+| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
+| Fuzz the example renderer                                    | `bb run "$p:render_fuzz" -- 600 1`                                                    |
+| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/translation:effects_cases_test"`         |
+| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
+| Run the extended CoreJS comparison                           | `bbr test "$p/translation:corejs_differential_sweep_test"`                            |
+| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
+| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
+
+To refresh the checked-in example instance after changing the inputs:
+
+```sh
+dir=devinfra/js/debundle/x/split_proof
+bb build "//$dir:generated_instance" --remote_download_outputs=toplevel
+cp "bazel-bin/$dir/generated/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
+bbr test "//$dir/lean:instance_freshness_test"
+```
+
+Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
+
+For a closed module containing only identifier declarations, the checker also handles `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. [Declaration certificate](lean/EsmSplit/CoreJS/DeclarationCertificate.lean)
+
+## Request a CoreJS guarantee
+
+Pass the source module, placement spec and a fresh output directory to the normal splitter command. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
+
+```sh
+bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output
+```
+
+The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
+
+Lean certifies the original annotated ESTree against the exact map of output module ASTs it hands to Astring, including generated imports and exports. Only then does the splitter print and publish the directory. The JavaScript guarantee assumes that Acorn and eslint-scope describe the source faithfully, that the printer preserves the certified trees, and that CoreJS models the supported syntax. To inspect an existing directory, pass `--check-output`. This certifies the same trees, then parses the files and compares their syntax, callable source spelling and module names with the expected output. Copied providers must match their source text. [Declaration correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
+
+For a module that calls functions or imports named bindings from relative JavaScript files, use
+the normal three-positional command with the original source path. The splitter parses
+reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
+Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world.
+The state includes the heap and captured bindings of exported closures. The proof uses
+a fixed interpreter fuel witness. Insufficient fuel, unsupported syntax or a proof that fails
+to reduce yields a rejection. A successful comparison reports `"scope":"linked-programs"`.
+[AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
+
+### Inspect an uncertified preview
+
+`lowersplit --diagnostic bundle.mjs spec.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## The example
 
@@ -68,7 +112,7 @@ Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, o
 
 Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
 
-Output, `example/output/` (written by `./run.sh`, not committed). Lean writes the files. Statements are copied verbatim.
+The `render` target writes these files to the output directory you pass it. Statements are copied verbatim.
 
 ```js
 // main.mjs
@@ -179,36 +223,36 @@ The main development does not use `native_decide`, so the compiler is not truste
 
 ## What is not proved
 
-1. **Footprints.** [`Effects.lean`](lean/Experiments/Effects.lean) runs the bundle's top level once over abstract values and reports, per statement, whether it touches the world (`effect`), which names it may change (`writes`) and which names it reads through functions it calls but does not mention (`deps`).
-   [`Lower.lean`](lean/Experiments/Lower.lean) scans the same statement for what it declares, mentions eagerly or only inside function bodies, and assigns.
+1. **Footprints.** [`Effects.lean`](lean/EsmSplit/Effects.lean) runs the bundle's top level once over abstract values and reports, per statement, whether it touches the world (`effect`), which names it may change (`writes`) and which names it reads through functions it calls but does not mention (`deps`).
+   [`Lower.lean`](lean/EsmSplit/Lower.lean) scans the same statement for what it declares, mentions eagerly or only inside function bodies, and assigns.
    Code the interpreter can see is run, standard functions come from a table of summaries, and anything else is a call into the world: an effect, which keeps its order against every other effect.
    A statement that touches only objects the program made is not an effect. One that touches the world also counts everything its closures mention as eager, since the world may call them.
-   The checker trusts the interpreter's rules and its printed premises ([`experiments/effects/`](experiments/effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
+   The checker trusts the interpreter's rules and its printed premises ([`effects/`](effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
    golden cases with reorders, fuzzers over random bundles and splits, a mutation harness that removes one rule at a time. A wrong rule shows up as a wrong accept.
-   A `var` inside a top-level block declares a module-scope name ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
-   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. `lowersplit --lean` writes a certificate from the interpreter's footprints instead.
+   A `var` inside a top-level block declares a module-scope name ([`debundle_cases/`](debundle_cases/README.md)).
+   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. The legacy `lowersplit --diagnostic … --lean` instance writer uses the interpreter's footprints, but does not certify emitted artifacts.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
-5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports. A binding that the glue exports under another name is imported back under its own.
-6. **The lowering front end around the model.** Lean checks none of this.
-   - **One statement per declarator.** [`dump.mjs`](experiments/lowering/dump.mjs) rewrites the source before the proof: a top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, also under `export`. This assumes the separate statements run as the list does.
-   - **Imports and exports stay in the entry.** `lowersplit` rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. When the rule fails, `lowersplit --lean` writes no certificate. Moving it into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
-   - **Outside modules run first.** The model has no outside modules. An `import` statement declares nothing and does nothing in it, and an imported name is a global: the same binding in every module. The printer of `lowersplit` (`renderModule` in [`LowerSplit.lean`](lean/Experiments/LowerSplit.lean)) writes the entry's `import` and `export … from` statements before its glue imports, in their order, so the outside modules run before every statement and in the bundle's order. Another module gets an `import` line of its own for the outside names it mentions. That this keeps the order is argued, not proved. It assumes that no outside module awaits at its top level, and that the modules are written where the bundle was, so a relative specifier names the same file. `export * from` is rejected.
+5. **Emission.** Lean builds the output module ASTs and Astring prints them. A binding that the glue exports under another name is imported back under its own. The standalone kernel example renders its embedded statement strings with [`FixtureRender.lean`](lean/Experiments/FixtureRender.lean).
+6. **The lowering front end around the model.** Lean checks the generated module trees before printing. The shared parser, scope annotations and printer are part of the trusted boundary. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes CoreJS directly from supported source syntax. Its agreement with JavaScript semantics is tested against Node. An external `--corejs` program and the legacy `--lean` instance writer are available only under `--diagnostic`; neither certifies a split.
+   - **One statement per declarator.** Lean splits a top-level `var`, `let` or `const` list into one AST node per declarator, including under `export`. The declaration extraction theorem relates these units to the original lists for the supported CoreJS subset.
+   - **Imports and exports stay in the entry.** The normal command rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. Diagnostic mode may still write a preview after this rejection, but it cannot certify it. Moving the rule into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
+   - **Outside modules run first.** The model has no outside modules. An `import` statement declares nothing and does nothing in it, and an imported name is a global: the same binding in every module. [The output AST builder](lean/EsmSplit/ESTreeEmit.lean) places the entry's `import` and `export … from` statements before its glue imports, in their order, so the outside modules run before every statement and in the bundle's order. Another module gets an `import` line of its own for the outside names it mentions. That this keeps the order is argued, not proved. It assumes that no outside module awaits at its top level, and that the modules are written where the bundle was, so a relative specifier names the same file. `export * from` is rejected.
    - **What an `export` statement publishes** (`Stmt.exports`) is read from its AST by the front end. `ExportsUnique` and `Linkable` rest on it. A glue export adds a name to the entry's interface (`m$1` when `m` is taken); nothing says the interface is otherwise unchanged ([`PLAN.md`](PLAN.md) step 4).
 
-   A rule that code assigning a name stays with its declaration used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
+   A rule that code assigning a name stays with its declaration used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`translation/fixtures/assign`).
 
-7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
+7. **The translation checker's front end.** [`translation/frontend.mjs`](translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
    Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved, and it has an edge: a program that reads `fn.name`, calls `Function.prototype.toString` or prints a function sees the new spelling.
    The checker refuses what a move or a rename visibly changes (`import.meta` except `new URL("/abs", import.meta.url)`, a direct `eval`, a top-level `await`).
-   Its soundness rests on a list of the ways a move can change behavior, so it is tested against Node by a [fuzzer](experiments/translation/README.md#fuzzer), which found two holes the fixtures had not: a pure read moving across a write, and `import.meta`.
+   Its soundness rests on a list of the ways a move can change behavior, so it is tested against Node by a [fuzzer](translation/README.md#fuzzer), which found two holes the fixtures had not: a pure read moving across a write, and `import.meta`.
 
 ## Controls
 
 Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`, checked by the kernel) and a real failure in Node.
-`./run.sh --controls` shows the Node side.
+`lean:example_test` checks the Node behavior.
 
 | Control                                                                                                      | Failing check | Node, when written anyway                                          |
 | ------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------------------------------------------------ |
@@ -225,7 +269,7 @@ Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`
 
 ## Checking the trusted parts
 
-These are tests, not proofs. `./run.sh --fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
+These are tests, not proofs. The Bazel target `:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
 510 random placements of the 12 statements, each rendered and run in Node.
 
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
@@ -275,29 +319,31 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 8. how a proof is produced, with a strategy ladder;
 9. what already exists and what I would reuse;
 10. the module-order model against Node;
-11. debundle's 207 e2e cases through the checker, with causes for the ones that do not work ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md), plan in [`PLAN.md`](PLAN.md)).
-12. translation validation: is an output tree the bundle, renamed and reshuffled? ([`experiments/translation/`](experiments/translation/README.md)).
-13. footprints by abstract interpretation ([`experiments/effects/`](experiments/effects/README.md)).
+11. debundle's 207 e2e cases through the checker, with causes for the ones that do not work ([`debundle_cases/`](debundle_cases/README.md), plan in [`PLAN.md`](PLAN.md)).
+12. translation validation: is an output tree the bundle, renamed and reshuffled? ([`translation/`](translation/README.md)).
+13. footprints by abstract interpretation ([`effects/`](effects/README.md)).
 14. an executable model of a core of JavaScript, tested against Node, and the first footprint rule proved in it.
 
 ## Files
 
-| Path                           | Role                                                                                                                                                                                                                         |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lean/EsmSplit/Bundle.lean`    | statement footprints, read closure (worklist over a `TreeMap` index, proved least and closed), conflict                                                                                                                      |
-| `lean/EsmSplit/Semantics.lean` | abstract semantics and the reorder theorem                                                                                                                                                                                   |
-| `lean/EsmSplit/Plan.lean`      | spec, plan, ES order model, the checks as plain statements                                                                                                                                                                   |
-| `lean/EsmSplit/Fast.lean`      | how each check is decided: table-based algorithms, each proved equal to its statement                                                                                                                                        |
-| `lean/EsmSplit/Split.lean`     | the splitter `mkPlan` (untrusted)                                                                                                                                                                                            |
-| `lean/EsmSplit/Correct.lean`   | `Correct` and `split_correct`                                                                                                                                                                                                |
-| `lean/EsmSplit/Render.lean`    | prints a module                                                                                                                                                                                                              |
-| `lean/EsmSplit/Instance.lean`  | generated: footprints, spec, kernel-checked theorems                                                                                                                                                                         |
-| `lean/EsmSplit/Controls.lean`  | buggy-splitter plans, semantic non-vacuity                                                                                                                                                                                   |
-| `lean/EsmSplit/Audit.lean`     | `#print axioms`                                                                                                                                                                                                              |
-| `lean/Main.lean`               | the `render` executable                                                                                                                                                                                                      |
-| `lean/Experiments/`            | experiments: mini-JS semantics, two tiers, lowering, strategy ladder, module order, translation checker, the CoreJS model                                                                                                    |
-| `extract/`                     | JavaScript front end for the example (`extract.mjs`)                                                                                                                                                                         |
-| `example/`                     | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                                                                 |
-| `fuzz/`                        | fuzzer and mutation test                                                                                                                                                                                                     |
-| `experiments/`                 | [experiments](experiments/README.md) and [timings](experiments/TIMINGS.md); scripts in `lowering/`, `scaling/`, `splits/`, `proof_search/`, `es_order/`, `debundle_cases/`, `translation/`; raw timing records in `records/` |
-| `run.sh`                       | everything, end to end                                                                                                                                                                                                       |
+| Path                                        | Role                                                                                                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `lean/EsmSplit/`                            | active checker, operational Lean code, and the CoreJS model                                                                                                                                |
+| `lean/Experiments/`                         | historical Lean experiments: mini-JS semantics, two tiers, and proof automation                                                                                                            |
+| `lean/EsmSplit/Bundle.lean`                 | statement footprints, read closure (worklist over a `TreeMap` index, proved least and closed), conflict                                                                                    |
+| `lean/EsmSplit/Semantics.lean`              | abstract semantics and the reorder theorem                                                                                                                                                 |
+| `lean/EsmSplit/Plan.lean`                   | spec, plan, ES order model, the checks as plain statements                                                                                                                                 |
+| `lean/EsmSplit/Fast.lean`                   | how each check is decided: table-based algorithms, each proved equal to its statement                                                                                                      |
+| `lean/EsmSplit/Split.lean`                  | the splitter `mkPlan` (untrusted)                                                                                                                                                          |
+| `lean/EsmSplit/Correct.lean`                | `Correct` and `split_correct`                                                                                                                                                              |
+| `lean/EsmSplit/ESTreeEmit.lean`             | builds output module ASTs                                                                                                                                                                  |
+| `lean/EsmSplit/Instance.lean`               | generated: footprints, spec, kernel-checked theorems                                                                                                                                       |
+| `lean/EsmSplit/Controls.lean`               | buggy-splitter plans, semantic non-vacuity                                                                                                                                                 |
+| `lean/EsmSplit/Audit.lean`                  | `#print axioms`                                                                                                                                                                            |
+| `lean/Main.lean`                            | the `render` executable                                                                                                                                                                    |
+| `extract/`                                  | JavaScript front end for the example (`extract.mjs`)                                                                                                                                       |
+| `example/`                                  | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                               |
+| `fuzz/`                                     | fuzzer and mutation test                                                                                                                                                                   |
+| `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by the Bazel commands above                                                                                                               |
+| `translation/`, `effects/`, `model/`        | Translation validator, footprint analysis cases, and the CoreJS differential harness                                                                                                       |
+| `experiments/`                              | [research notes](experiments/README.md) and [timings](experiments/TIMINGS.md); research scripts in `scaling/`, `splits/`, `proof_search/`, and `esmeta/`; raw timing records in `records/` |

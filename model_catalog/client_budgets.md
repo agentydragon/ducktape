@@ -203,7 +203,19 @@ Codex `model_catalog_json` is a startup-only local file containing a full
 `ModelsResponse` (`{"models": [ModelInfo, ...]}`), not a sparse limits map or URL.
 In 0.157.0 it replaces the bundled catalogue; per-thread config does not reload it.
 Unreadable, invalid or empty catalogues fail loading.
-The generated entries are parsed by the pinned Codex in
+Deployment metadata comes directly from OpenAI's `codex-rs/models-manager/models.json`,
+using the `codex_model_catalog` Bazel download pinned to an immutable source commit and
+SHA-256 in `devinfra/bazel/artifacts.MODULE.bazel`. By default, select the same release
+as `agentplane_codex_cli_linux_x64`. Divergence is allowed when newer model metadata
+is needed without an app-server protocol upgrade; document the reason beside the pin
+and run `//cluster/cdk8s/agentplane:test_codex_models` against the native CLI.
+The source JSON is not the CLI-normalized `debug models --bundled` output: the CLI
+adds defaults and transforms fields. Regenerate manifests when changing the source;
+the compatibility test verifies that the pinned runtime accepts the served entries.
+To update, resolve the release tag to its source commit, download that file, update
+its URL and SHA-256, then follow the [manifest generation recipe](../cluster/docs/model_catalog.md).
+Native tests retain their harness pin's own bundled catalog.
+The generated deployment entries are parsed by the pinned harness in
 [`test_codex_models.py`](../cluster/cdk8s/agentplane/test_codex_models.py) through
 this setting. See the [pinned source](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/config/mod.rs).
 

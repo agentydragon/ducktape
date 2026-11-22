@@ -132,12 +132,14 @@ class Rbac:
                 (subject["kind"], subject["name"], subject.get("namespace", "")) in subjects
                 for subject in binding.get("subjects", [])
             ):
-                role_ref = binding["roleRef"]
-                assert role_ref.get("apiGroup") == "rbac.authorization.k8s.io", binding
-                assert role_ref["kind"] in ("Role", "ClusterRole"), binding
-                namespace = binding["metadata"].get("namespace") if binding["kind"] == "RoleBinding" else None
-                permissions.update(self.rules(role_ref["kind"], role_ref["name"], namespace))
+                permissions.update(self.binding_rules(binding))
         return permissions
+
+    def binding_rules(self, binding: dict[str, Any]) -> set[Permission]:
+        role = binding["roleRef"]
+        assert role.get("apiGroup") == "rbac.authorization.k8s.io", binding
+        namespace = binding["metadata"]["namespace"] if binding["kind"] == "RoleBinding" else None
+        return self.rules(role["kind"], role["name"], namespace)
 
     def bound(self, roles: Iterable[BoundRole]) -> set[Permission]:
         return {permission for role in roles for permission in self.rules(role.kind, role.name, role.namespace)}

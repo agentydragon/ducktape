@@ -3,12 +3,12 @@
 import asyncio
 import os
 from datetime import UTC, datetime
-from pathlib import Path
 from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 
+from aiquota.config import AnthropicPlatformSettings
 from aiquota.models import (
     AnthropicPlatformCredits,
     AnthropicPlatformCreditValue,
@@ -22,12 +22,6 @@ from aiquota.providers.base import Provider
 from aiquota.providers.client import ProviderClientFactory
 
 API_TIMEOUT_SECS = 20.0
-
-
-class AnthropicPlatformSettings(BaseModel):
-    enabled: bool = False
-    url: str | None = None
-    token_path: Path | None = None
 
 
 class _Organization(BaseModel):

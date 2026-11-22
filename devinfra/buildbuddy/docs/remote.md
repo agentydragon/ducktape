@@ -448,6 +448,62 @@ bbr build //:requirements --remote_download_regex='.*requirements\.out'
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
 ```
 
+### Run repository writers remotely and retrieve a patch
+
+For generators that modify tracked workspace files, run them through `bbr --script`
+and upload a patch from `$BUILDBUDDY_ARTIFACTS_DIRECTORY`. This avoids downloading
+an entire executable runfiles tree. On 2026-11-21, `--run_remotely=false` built
+`//model_catalog:generate_nix` successfully but its downloaded Python runtime failed
+with `ModuleNotFoundError: No module named 'encodings'`; the remote script below
+completed both generators and returned a patch that applied locally.
+
+From the checkout, with the generator edits already present and generated files clean:
+
+```bash
+scratch="${TMPDIR:-/tmp}/agents/2026_11_21/model-rosters"
+mkdir -p "$scratch"
+bbr --script='set -eu
+bazelisk run //cluster/cdk8s:generate_manifests
+bazelisk run //model_catalog:generate_nix
+mkdir -p "$BUILDBUDDY_ARTIFACTS_DIRECTORY"
+git diff --binary -- cluster/generated cluster/k8s cluster/parked model_catalog/claude-wrappers.json > "$BUILDBUDDY_ARTIFACTS_DIRECTORY/model-manifests.patch"'
+```
+
+Use the task's start date and scratch name. Record the **outer** invocation ID from
+`Streaming remote runner logs to:`. The script's Bazel invocations have separate IDs.
+Keep these generated files unchanged locally until applying the patch. The diff above
+captures tracked files only; a generator adding files also needs `git add -N` for those
+output paths on the remote runner before exporting the diff.
+
+Agentplane retrieval using its reviewed BuildBuddy egress placeholder (check
+`agentplane egress rules` first):
+
+```bash
+invocation_id=OUTER_INVOCATION_UUID
+curl -fsSL -H 'x-buildbuddy-api-key: agentplane-credential-buildbuddy' \
+  -H 'Content-Type: application/json' \
+  --data "$(jq -nc --arg id "$invocation_id" '{lookup:{invocation_id:$id}}')" \
+  https://app.buildbuddy.io/rpc/BuildBuddyService/GetInvocation \
+  -o "$scratch/invocation.json"
+jq -e '.invocation[0] | .success == true and .invocationStatus == "COMPLETE_INVOCATION_STATUS"' \
+  "$scratch/invocation.json"
+artifact_uri=$(jq -er '[.invocation[].targetGroups[]?.targets[]?.files[]? |
+  select(.name == "model-manifests.patch")] |
+  if length == 1 then .[0].uri else error("expected one patch") end' "$scratch/invocation.json")
+curl -fsSL -G -H 'x-buildbuddy-api-key: agentplane-credential-buildbuddy' \
+  --data-urlencode "invocation_id=$invocation_id" \
+  --data-urlencode "bytestream_url=$artifact_uri" \
+  https://app.buildbuddy.io/file/download -o "$scratch/model-manifests.patch"
+git apply --check "$scratch/model-manifests.patch"
+git apply "$scratch/model-manifests.patch"
+bbr test //cluster/cdk8s:test_generate_manifests //model_catalog:test_nix
+```
+
+The script runs on BuildBuddy, where the runner supplies its own Bazel credentials.
+Do not pass Agentplane's literal credential placeholder as a Bazel `--remote_header`
+to that remote process: substitution happens at the Sandbox egress proxy, not on the
+remote runner.
+
 ### Checking a generated tree after download
 
 A successful local writer only shows that it processed the input it received; it

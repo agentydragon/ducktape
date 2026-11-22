@@ -87,7 +87,6 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.proto import session_pb2
 from agentplane.sampler.settings import ActionsConfig, AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
@@ -107,7 +106,7 @@ from agentplane.system_tests.driver.native_auth import (
 )
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
-from cluster.cdk8s import agent_access_profiles as access
+from cluster.cdk8s import agent_access_profiles as access, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -150,12 +149,12 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
-from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
+from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.service_ref import Pods, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_5_5_API, Route
 
 
 @dataclass(frozen=True)
@@ -216,9 +215,10 @@ _VM_GUEST_KERNEL_ARGS = "console=ttyS0 net.ifnames=0"
 LOCAL_MODEL_ROUTES = HarnessRoutes(
     claude=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CLAUDE],), codex=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CODEX],)
 )
+LOCAL_MODEL_ROUTES_WITH_SAMPLER = replace(LOCAL_MODEL_ROUTES, central_sampler=(GPT6_LUNA_RESPONSES,))
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
-PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
+PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_5_5_API,), codex=(GPT6_LUNA_RESPONSES,))
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 _EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
@@ -249,11 +249,11 @@ NATIVE_CALLERS = {
     )
 }
 BACKEND_DATABASES = (
-    fixture_database.Database.ACTIONS,
-    fixture_database.Database.EGRESS,
-    fixture_database.Database.NOTIFICATIONS,
-    fixture_database.Database.HISTORY,
-    fixture_database.Database.SESSION_DISPATCHER,
+    Database.ACTIONS,
+    Database.EGRESS,
+    Database.NOTIFICATIONS,
+    Database.HISTORY,
+    Database.SESSION_DISPATCHER,
 )
 
 
@@ -290,25 +290,19 @@ def app_props(
         reach_incluster_authentik=False,
         config=Settings(
             models=catalog,
-            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
+            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.authority}"),
             thread_presets=_THREAD_PRESETS,
             sandbox_presets=_SANDBOX_PRESETS,
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
             egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
             sandbox_namespace=NAMESPACE,
-            runner_gateway_target=(
-                f"{environment_service.environments_service(NAMESPACE).fqdn}:{environment_service.environments_service(NAMESPACE).pod_port}"
-            ),
+            runner_gateway_target=environment_service.environments_service(NAMESPACE).authority,
             runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
-            session_dispatcher_target=(
-                f"{runner_gateway.sessions_service(NAMESPACE).fqdn}:{runner_gateway.sessions_service(NAMESPACE).port.number}"
-            ),
+            session_dispatcher_target=(runner_gateway.sessions_service(NAMESPACE).authority),
             session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
-            policy_service_target=policy_controller.tls_target(NAMESPACE),
+            policy_service_target=policy_controller.tls_service(NAMESPACE).authority,
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
-            history_service_target=(
-                f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
-            ),
+            history_service_target=(history_service.service(NAMESPACE).authority),
             history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
             notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
@@ -339,11 +333,11 @@ def app_props(
     )
 
 
-def central_sampler_props(*, model: Route) -> CentralSamplerProps:
+def central_sampler_props(models: Sequence[Route]) -> CentralSamplerProps:
     return CentralSamplerProps(
         admin_service_callers=(GATEWAY_SESSIONS_URI,),
         actions=ActionsConfig(
-            target=f"{ACTIONS_SERVICE.fqdn}:{ACTIONS_SERVICE.port.number}",
+            target=ACTIONS_SERVICE.authority,
             tls=TLS(
                 cert_file="/run/agentplane/workload-tls/tls.crt",
                 key_file="/run/agentplane/workload-tls/tls.key",
@@ -361,10 +355,11 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
                 responses=ResponsesConfig(dialect="lite"),
                 exec_encoding="freeform",
             )
+            for model in models
         },
         connections={
             "llm-ingress": ConnectionConfig(
-                base_url=f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}",
+                base_url=f"https://{llm_ingress.service(NAMESPACE).authority}",
                 auth=AuthConfig(type="agentplane_ingress"),
                 tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
             )
@@ -608,8 +603,8 @@ def add_fixture_pki(
     ConfigMap(
         chart,
         "fixture-public-web-pki",
-        metadata=ApiObjectMetadata(name="public-web-pki", namespace=NAMESPACE),
-        data={"ca-certificates.crt": system_roots},
+        metadata=ApiObjectMetadata(name=public_web_pki.NAME, namespace=NAMESPACE),
+        data={public_web_pki.KEY: system_roots},
     )
     ConfigMap(
         chart,
@@ -627,11 +622,6 @@ def add_backend_services(
     platform_callers: dict[ServiceAccountRef, Pods],
     notification_callers: Sequence[Pods],
 ) -> Construct:
-    actions_database_url = fixture_database.Database.ACTIONS.url(chart, namespace=env.namespace)
-    egress_database_url = fixture_database.Database.EGRESS.url(chart, namespace=env.namespace)
-    history_database_url = fixture_database.Database.HISTORY.url(chart, namespace=env.namespace)
-    notifications_database_url = fixture_database.Database.NOTIFICATIONS.url(chart, namespace=env.namespace)
-    dispatcher_database_url = fixture_database.Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace)
     # Control-plane `memory_request`s below are the measured peak working set (`memory/peaks.json`
     # in a suite's undeclared outputs) plus about half again, so the node keeps room for Sandboxes.
     llm_ingress.LlmIngress(
@@ -649,7 +639,7 @@ def add_backend_services(
         chart,
         "egress",
         env,
-        database_url=egress_database_url,
+        database_url=Database.EGRESS.url(chart, namespace=env.namespace),
         runners=environment_sandbox.pods(env.namespace),
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
@@ -674,11 +664,6 @@ def add_backend_services(
     environment_service_delegation_actor = (
         ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME) if env.actions.orchestration_v1 is not None else None
     )
-    environment_service_delegated_methods = (
-        ("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",)
-        if environment_service_delegation_actor is not None
-        else ()
-    )
     gateway_callers = platform_callers | notifications_caller
     runner_gateway_workload.add_service(chart, env)
     runner_gateway_workload.RunnerGateway(
@@ -689,7 +674,7 @@ def add_backend_services(
         orchestration_callers=orchestration_caller,
         wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
         delegation_actor=environment_service_delegation_actor,
-        database_url=dispatcher_database_url,
+        database_url=Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace),
         sessions_image="git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
         registry_secret_name=None,
         placement=None,
@@ -701,7 +686,7 @@ def add_backend_services(
         chart,
         "history-service",
         env,
-        database_url=history_database_url,
+        database_url=Database.HISTORY.url(chart, namespace=env.namespace),
         callers=platform_callers | notifications_caller | orchestration_caller,
         delegation_actor=environment_service_delegation_actor,
         placement=None,
@@ -720,8 +705,7 @@ def add_backend_services(
             launchers=orchestration_caller,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
             wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
-            delegation_actor=environment_service_delegation_actor,
-            extra_delegated_methods=environment_service_delegated_methods,
+            delegate_to_actions=environment_service_delegation_actor is not None,
         ),
         runtime_proxy_readers=(RUNTIME_PROXY_TEST_READER_URI,),
         placement=None,
@@ -733,7 +717,7 @@ def add_backend_services(
         chart,
         "actions",
         env,
-        database_url=actions_database_url,
+        database_url=Database.ACTIONS.url(chart, namespace=env.namespace),
         history=history_service.service(NAMESPACE),
         dispatcher=runner_gateway.sessions_service(NAMESPACE),
         environment_service_endpoint=(
@@ -751,7 +735,7 @@ def add_backend_services(
         chart,
         "notifications",
         env,
-        database_url=notifications_database_url,
+        database_url=Database.NOTIFICATIONS.url(chart, namespace=env.namespace),
         actions=actions.service(NAMESPACE),
         history=history_service.service(NAMESPACE),
         dispatcher=runner_gateway.sessions_service(NAMESPACE),
@@ -766,22 +750,25 @@ def add_backend_services(
 
 
 def add_central_sampler(chart: Chart, env: Environment) -> Construct:
-    sampler_database_url = fixture_database.Database.CENTRAL_SAMPLER.url(chart, namespace=env.namespace)
     return central_sampler_workload.CentralSampler(
-        chart, "central-sampler", env, database_url=sampler_database_url, placement=None, registry_secret_name=None
+        chart,
+        "central-sampler",
+        env,
+        database_url=Database.CENTRAL_SAMPLER.url(chart, namespace=env.namespace),
+        placement=None,
+        registry_secret_name=None,
     )
 
 
 def add_app(chart: Chart, env: Environment) -> AppFixture:
     if env.app is None:
         raise ValueError("the fixture App requires app configuration")
-    app_database_url = fixture_database.Database.APP.url(chart, namespace=env.namespace, key="async-uri")
     service = app_component.App(
         chart,
         "app",
         env,
         electric=None,
-        database_url=app_database_url,
+        database_url=Database.APP.url(chart, namespace=env.namespace, key="async-uri"),
         environment_service_endpoint=environment_service.environments_service(NAMESPACE),
         placement=None,
         registry_secret_name=None,
@@ -847,7 +834,7 @@ def add_mcp_edge(chart: Chart, env: Environment) -> Construct:
         chart,
         "mcp-edge",
         env,
-        database_url=fixture_database.Database.MCP_EDGE.url(chart, namespace=env.namespace),
+        database_url=Database.MCP_EDGE.url(chart, namespace=env.namespace),
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
@@ -920,22 +907,11 @@ def add_vm_templates(
     launcher_relay.LauncherRelayPolicy(
         scope, "launcher-relay", namespace=env.namespace, template_name=POD_TEMPLATE, settings_config_map=relay_settings
     )
-    state_volume = runner_template.spec["stateVolume"]
-    state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
-    if env.vm_storage_class is not None:
-        state_claim["storageClassName"] = env.vm_storage_class
-    vm_state_volume = {**state_volume, "claim": state_claim}
-    workspace_volume = environment_sandbox.workspace_volume_spec(
-        vm_state_volume, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
-    )
+    state_storage_class = env.vm_storage_class or runner_template.storage_class
     config_data = environment_guest.guest_config_data(
         env,
         gateway=launcher_relay.GUEST_GATEWAY,
         block_devices=("/dev/disk/by-id/virtio-workspace",),
-        platform_instructions=platform_instructions(
-            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
-        ),
-        harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
         codex_readiness=_VM_CODEX_READINESS,
     )
     config = ConfigMap(
@@ -955,8 +931,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(_VM_GUEST_KERNEL_ARGS),
         config_map=config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
     oom_config = ConfigMap(
         scope,
@@ -974,8 +950,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} agentplane.cgroup-observer=1"),
         config_map=oom_config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
     environment_vm.EnvironmentVmTemplate(
         scope,
@@ -987,8 +963,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} {vm_configuration.SUPERVISION_KERNEL_ARG}"),
         config_map=config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
 
 
@@ -996,27 +972,13 @@ def add_firecracker_template(
     chart: Chart, env: Environment, runner_template: environment_sandbox.EnvironmentSandboxTemplate
 ) -> None:
     """Compose the opt-in Firecracker template beside its runner Pod template."""
-    scope = chart
-    state_volume = runner_template.spec["stateVolume"]
-    claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
-    if env.vm_storage_class is not None:
-        claim["storageClassName"] = env.vm_storage_class
-    firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
-    workspace_volume = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
-    workspace_volume["claim"]["resources"] = state_volume["claim"]["resources"]
-    guest_gateway = environment_firecracker.GATEWAY
     environment_firecracker.EnvironmentFirecrackerTemplate(
-        scope,
+        chart,
         "firecracker-template",
         env,
         labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-        state_volume=firecracker_state,
-        workspace_volume=workspace_volume,
+        storage_class=env.vm_storage_class or runner_template.storage_class,
         runner_image=environment_vm.RUNNER_DISK_IMAGE,
-        platform_instructions=platform_instructions(
-            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
-        ),
-        harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
         image_pull_secret_name=None,
         codex_readiness=_VM_CODEX_READINESS,
     )

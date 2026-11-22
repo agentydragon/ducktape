@@ -22,11 +22,13 @@ from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecExtensionsEnsure,
 )
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from agentplane.x.indexing.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import cluster
+from cluster.cdk8s.cnpg.health import database_health
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -182,15 +184,9 @@ def _worker(
                                 *env,
                                 _READ_TOKEN.env_var(env_name(Settings, "read_token")),
                             ],
-                            ports=[worker.port.k8s_container_port()],
+                            ports=[worker.k8s_container_port()],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("250m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("2Gi")},
-                            ),
+                            resources=container_resources(cpu="250m", memory="512Mi", memory_limit="2Gi"),
                             readiness_probe=_health_probe(),
                             liveness_probe=_health_probe(period_seconds=30),
                             startup_probe=_health_probe(period_seconds=5, failure_threshold=60),
@@ -211,7 +207,7 @@ def _worker(
         chart,
         f"{instance}-service",
         metadata=k8s.ObjectMeta(name=worker.name, namespace=worker.pods.namespace),
-        spec=k8s.ServiceSpec(selector=worker.pods.selector, ports=[worker.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=worker.pods.selector, ports=[worker.k8s_service_port()]),
     )
 
 
@@ -290,18 +286,7 @@ def agentplane_index(
             ),
             KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name="ducktape", namespace=NAME),
         ],
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1",
-                kind="Database",
-                current=(
-                    "has(status.applied) && status.applied && "
-                    "has(status.observedGeneration) && status.observedGeneration == "
-                    "metadata.generation && has(status.extensions) && "
-                    "status.extensions.exists(e, e.name == 'vector' && e.applied)"
-                ),
-            )
-        ],
+        health_check_exprs=[database_health(extension="vector")],
         depends_on=flux_kustomization_depends_on_many(
             cnpg,
             external_secrets_operator,

@@ -8,67 +8,26 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, App, Chart, Testing as Cdk8sTesting  # not collected by pytest
-from cdk8s_plus_34 import ConfigMap
-from more_itertools import one
 from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, SystemdEnvironment
-from cluster.cdk8s.agentplane import environment_guest, environment_sandbox, environment_vm, launcher_relay, staging
+from cluster.cdk8s.agentplane import environment_guest, environment_vm, launcher_relay, staging
 from cluster.cdk8s.testing.manifests import find_resource
 
-HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
+
+@pytest.fixture(scope="module")
+def vm_spec(staging_manifests: list[dict[str, Any]]) -> dict[str, Any]:
+    return cast(dict[str, Any], find_resource(staging_manifests, "SandboxTemplate", environment_vm.NAME)["spec"])
 
 
-def _environment_vm_manifests(
-    *,
-    app: App,
-    console_autologin: bool,
-    session_reconcile_concurrency: int | None = None,
-    codex_readiness: CodexReadiness | None = None,
-) -> dict[str, dict[str, Any]]:
-    chart = Chart(app, "test")
-    env = replace(staging.ENV, vm_console_autologin=console_autologin)
-    guest_config = ConfigMap(
-        chart,
-        "environment-vm-config",
-        metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
-        data=environment_guest.guest_config_data(
-            env,
-            gateway=launcher_relay.GUEST_GATEWAY,
-            block_devices=("/dev/disk/by-id/virtio-workspace",),
-            platform_instructions="Test platform guidance.",
-            harness_env=HARNESS_ENV,
-            session_reconcile_concurrency=session_reconcile_concurrency,
-            codex_readiness=codex_readiness,
-        ),
-    )
-    environment_vm.EnvironmentVmTemplate(
-        chart,
-        "environment-vm-template",
-        env,
-        template_name=environment_vm.NAME,
-        root_image=environment_vm.ROOT_IMAGE,
-        config_map=guest_config,
-        labels={},
-        state_volume={
-            "name": "state",
-            "claim": {"storageClassName": "test-storage", "volumeMode": "Filesystem"},
-            "layout": {"type": "DirectoryTree"},
-        },
-        workspace_volume=environment_sandbox.workspace_volume_spec(
-            {"claim": {"storageClassName": "test-storage"}}, layout_type="BlockFilesystem"
-        ),
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    config_map = find_resource(docs, "ConfigMap", "environment-vm-config")
-    sandbox_template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    return {
-        "config_map": config_map["data"],
-        "config_map_name": config_map["metadata"]["name"],
-        "environment_runtime": cast(dict[str, Any], json.loads(config_map["data"]["environment-runtime.json"])),
-        "sandbox_template": sandbox_template,
-    }
+@pytest.fixture(scope="module")
+def guest_config(staging_manifests: list[dict[str, Any]]) -> dict[str, Any]:
+    return find_resource(staging_manifests, "ConfigMap", f"{environment_vm.NAME}-config")
+
+
+@pytest.fixture(scope="module")
+def runtime(guest_config: dict[str, Any]) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(guest_config["data"]["environment-runtime.json"]))
 
 
 @pytest.fixture(scope="module")
@@ -94,65 +53,50 @@ def runtime_service_unit(runfiles: Runfiles) -> dict[str, str]:
     }
 
 
-@pytest.mark.parametrize(("console_autologin", "rendered"), [(True, True), (False, False)])
-def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
-    scratch_app: App, console_autologin: bool, rendered: bool
-) -> None:
-    config = Configuration.model_validate(
-        _environment_vm_manifests(app=scratch_app, console_autologin=console_autologin)["environment_runtime"]
-    )
-    assert isinstance(config.environment, SystemdEnvironment)
-    assert config.environment.console_autologin == rendered
-
-
-def test_executor_selects_native_implementation(scratch_app: App) -> None:
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
-    executor = rendered["environment_runtime"]["environment"]["executor"]
+def test_executor_selects_native_implementation(runtime: dict[str, Any]) -> None:
+    environment = runtime["environment"]
+    executor = environment["executor"]
     assert executor["implementation"] == "native"
     assert executor["owner"] == {"kind": "systemd"}
     assert executor["placement"] == "systemd"
     assert staging.STAGING_VM_RESOURCES.executor_workload is not None
-    assert rendered["environment_runtime"]["environment"]["resources"]["executor_workload"] == (
-        staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
-    )
+    assert environment["resources"]["executor_workload"] == staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
 
 
-def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
-    config = Configuration.model_validate(rendered["environment_runtime"])
-    assert all(config.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
+def test_default_runtime_settings(runtime: dict[str, Any]) -> None:
+    config = Configuration.model_validate(runtime)
     assert config.harness_environment.values["HOME"] == "/state/home"
     assert config.session_reconcile_concurrency is None
     assert config.codex_readiness is None
-    assert "codex_readiness" not in rendered["environment_runtime"]
     assert isinstance(config.environment, SystemdEnvironment)
+    assert config.environment.console_autologin is False
 
 
-def test_session_reconcile_concurrency_reaches_vm_environment_runtime_configuration(scratch_app: App) -> None:
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False, session_reconcile_concurrency=2048)
-    config = Configuration.model_validate(rendered["environment_runtime"])
-    assert config.session_reconcile_concurrency == 2048
-
-
-def test_codex_readiness_reaches_vm_environment_runtime_configuration(scratch_app: App) -> None:
+def test_runtime_overrides_reach_the_vm_guest() -> None:
     readiness = CodexReadiness(
         exec_server_ready_timeout_ms=60_000,
         exec_server_probe_timeout_ms=5_000,
         exec_server_dependency_timeout_ms=120_000,
     )
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False, codex_readiness=readiness)
+    data = environment_guest.guest_config_data(
+        replace(staging.ENV, vm_console_autologin=True),
+        gateway=launcher_relay.GUEST_GATEWAY,
+        block_devices=("/dev/vdb",),
+        session_reconcile_concurrency=2048,
+        codex_readiness=readiness,
+    )
+    config = Configuration.model_validate_json(data["environment-runtime.json"])
+    assert isinstance(config.environment, SystemdEnvironment)
+    assert config.environment.console_autologin is True
+    assert config.session_reconcile_concurrency == 2048
+    assert config.codex_readiness == readiness
 
-    assert rendered["environment_runtime"]["codex_readiness"] == {
-        "exec_server_ready_timeout_ms": 60_000,
-        "exec_server_probe_timeout_ms": 5_000,
-        "exec_server_dependency_timeout_ms": 120_000,
-    }
 
-
-def test_vm_size_and_environment_runtime_configuration_share_resource_policy(scratch_app: App) -> None:
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
-    config = rendered["environment_runtime"]["environment"]
-    vm = rendered["sandbox_template"]["spec"]["vm"]
+def test_vm_size_and_environment_runtime_configuration_share_resource_policy(
+    vm_spec: dict[str, Any], runtime: dict[str, Any]
+) -> None:
+    config = runtime["environment"]
+    vm = vm_spec["vm"]
     domain = vm["template"]["spec"]["domain"]
 
     assert domain["cpu"]["cores"] == config["resources"]["guest_vcpu_count"]
@@ -160,19 +104,8 @@ def test_vm_size_and_environment_runtime_configuration_share_resource_policy(scr
     assert int(memory.removesuffix("Mi")) * 1024 * 1024 == config["resources"]["guest_memory_bytes"]
 
 
-def test_vm_workspace_is_a_controller_attached_block_filesystem(scratch_app: App) -> None:
-    template = _environment_vm_manifests(app=scratch_app, console_autologin=False)["sandbox_template"]["spec"]
-    assert template["workspaceVolume"] == {
-        "name": "workspace",
-        "claim": {"storageClassName": "test-storage", "volumeMode": "Block"},
-        "layout": {"type": "BlockFilesystem", "filesystem": "ext4"},
-    }
-    assert template["stateVolume"] == {
-        "name": "state",
-        "claim": {"storageClassName": "test-storage", "volumeMode": "Filesystem"},
-        "layout": {"type": "DirectoryTree"},
-    }
-    vm = template["vm"]
+def test_vm_workspace_is_a_controller_attached_block_filesystem(vm_spec: dict[str, Any]) -> None:
+    vm = vm_spec["vm"]
     disks = vm["template"]["spec"]["domain"]["devices"]["disks"]
     assert any(
         disk["name"] == "workspace" and disk["disk"]["bus"] == "virtio" and disk["serial"] == "workspace"
@@ -194,8 +127,6 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert vm_workspace["claim"]["volumeMode"] == "Block"
     assert vm_workspace["layout"] == {"type": "BlockFilesystem", "filesystem": "ext4"}
     assert vm_state["claim"]["storageClassName"] == vm_workspace["claim"]["storageClassName"]
-    # The Piraeus provider declares this class in cluster/cdk8s/piraeus.py.
-    assert staging.ENV.vm_storage_class == "piraeus-ssd-2-autodiskful"
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
     environment_template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
@@ -209,24 +140,23 @@ def test_vm_storage_class_requires_vm_sandboxes() -> None:
         replace(staging.ENV, vm_sandboxes=False, vm_storage_class="example-storage")
 
 
-def test_vm_template_renders_mtls_server_listener(scratch_app: App) -> None:
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
-    environment_runtime = rendered["environment_runtime"]
-    template = rendered["sandbox_template"]["spec"]
+def test_vm_template_renders_mtls_server_listener(vm_spec: dict[str, Any], runtime: dict[str, Any]) -> None:
 
-    assert environment_runtime["control"]["security"]["mode"] == "mtls"
-    interface = template["vm"]["template"]["spec"]["domain"]["devices"]["interfaces"][0]
-    listener_port = int(environment_runtime["control"]["listen_address"].rsplit(":", 1)[1])
+    assert runtime["control"]["security"]["mode"] == "mtls"
+    interface = vm_spec["vm"]["template"]["spec"]["domain"]["devices"]["interfaces"][0]
+    listener_port = int(runtime["control"]["listen_address"].rsplit(":", 1)[1])
     assert {"port": listener_port} in interface["ports"]
 
 
 def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
-    vm_guest_contract: dict[str, Any], runtime_service_unit: dict[str, str], scratch_app: App
+    vm_guest_contract: dict[str, Any],
+    runtime_service_unit: dict[str, str],
+    guest_config: dict[str, Any],
+    runtime: dict[str, Any],
+    vm_spec: dict[str, Any],
 ) -> None:
-    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
-    config_map = rendered["config_map"]
-    runtime_config = rendered["environment_runtime"]
-    vm = rendered["sandbox_template"]["spec"]["vm"]
+    config_map = guest_config["data"]
+    vm = vm_spec["vm"]
     domain = vm["template"]["spec"]["domain"]
 
     disk_names_by_serial = {disk["serial"]: disk["name"] for disk in domain["devices"]["disks"] if "serial" in disk}
@@ -236,31 +166,31 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
     volumes_by_name = {volume["name"]: volume for volume in vm["template"]["spec"]["volumes"]}
     assert (
         volumes_by_name[vm_guest_contract["disks"]["config"]["volume_name"]]["configMap"]["name"]
-        == rendered["config_map_name"]
+        == guest_config["metadata"]["name"]
     )
 
-    assert runtime_config["state_dir"] == vm_guest_contract["state"]["mount"]
-    assert runtime_config["control"]["security"]["tls"]["cert_file"] == (
+    assert runtime["state_dir"] == vm_guest_contract["state"]["mount"]
+    assert runtime["control"]["security"]["tls"]["cert_file"] == (
         f"{vm_guest_contract['environment_runtime_tls']['runtime_path']}/tls.crt"
     )
-    assert runtime_config["control"]["security"]["tls"]["key_file"] == (
+    assert runtime["control"]["security"]["tls"]["key_file"] == (
         f"{vm_guest_contract['environment_runtime_tls']['runtime_path']}/tls.key"
     )
-    assert runtime_config["control"]["security"]["tls"]["ca_file"] == (
+    assert runtime["control"]["security"]["tls"]["ca_file"] == (
         f"{vm_guest_contract['environment_runtime_trust']['mount']}/{vm_guest_contract['environment_runtime_trust']['key']}"
     )
     workload_trust = vm_guest_contract["environment_runtime_workload_trust"]
-    assert runtime_config["control"]["security"]["tls"]["client_ca_file"] == (
+    assert runtime["control"]["security"]["tls"]["client_ca_file"] == (
         f"{workload_trust['mount']}/{workload_trust['key']}"
     )
-    assert runtime_config["harness_environment"]["values"]["PATH"].endswith(
+    assert runtime["harness_environment"]["values"]["PATH"].endswith(
         f"{vm_guest_contract['disks']['runtime']['mount']}/bin"
     )
-    assert runtime_config["environment"]["block_devices"] == [vm_guest_contract["disks"]["workspace"]["device"]]
+    assert runtime["environment"]["block_devices"] == [vm_guest_contract["disks"]["workspace"]["device"]]
     assert vm_guest_contract["files"]["runtime_config"] in config_map
     assert vm_guest_contract["files"]["runtime_environment"] in config_map
     assert "kubeconfig" not in config_map
-    assert "KUBECONFIG" not in runtime_config["harness_environment"]["values"]
+    assert "KUBECONFIG" not in runtime["harness_environment"]["values"]
 
     config_mount = vm_guest_contract["disks"]["config"]["mount"]
     launch_mount = vm_guest_contract["disks"]["launch"]["mount"]

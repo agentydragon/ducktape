@@ -16,19 +16,24 @@ from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, disruption_budget, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, disruption_budget, namespaces, node_scheduling, piraeus_storage, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, VpaProfile
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
-from cluster.cdk8s.vpa_policy import ContainerPolicy
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 from devinfra.claude.session_export.settings import ControlSettings, WebSettings
 from util.settings_contract import env_name
 
@@ -48,24 +53,21 @@ _DATA_CLAIM = "claude-session-sync-state"
 _DATA_DIR = "/data"
 _CREDENTIALS_FILE = f"{_DATA_DIR}/credentials.json"
 _CONTROL_NAME = f"{NAME}-control"  # the control Pods' label value and container name
-_CONTROL_OBJECT_NAME = "control"  # the control Deployment and Service
 # The hosts the OAuth token is refreshed at and the sessions API is read from.
 _ANTHROPIC_HOSTS = ("api.anthropic.com", "platform.claude.com")
 _UID = 1000
-_WEB_LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "web"}
-_CONTROL_LABELS = {"app.kubernetes.io/name": _CONTROL_NAME, "app.kubernetes.io/component": "control"}
-_WEB_ENDPOINT_LABELS = {**cilium.endpoint_labels(NAMESPACE, NAME), "app.kubernetes.io/component": "web"}
-_CONTROL_ENDPOINT_LABELS = {
-    **cilium.endpoint_labels(NAMESPACE, _CONTROL_NAME),
-    "app.kubernetes.io/component": "control",
-}
 WEB_SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(_WEB_LABELS.items()))
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "web"))),
 )
 CONTROL_SERVICE = ServiceRef(
-    name=_CONTROL_OBJECT_NAME,
+    name="control",
     port=Port(name="http", number=8080),
-    pods=Pods(namespace=NAMESPACE, labels=tuple(_CONTROL_LABELS.items())),
+    pods=Pods(
+        namespace=NAMESPACE,
+        labels=(("app.kubernetes.io/name", _CONTROL_NAME), ("app.kubernetes.io/component", "control")),
+    ),
 )
 
 
@@ -81,7 +83,7 @@ def _database(chart: Chart) -> None:
             )
         },
         # Both PostgreSQL instances use single-copy local HDD volumes.
-        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
+        profile=cluster.OVH_PIRAEUS_HDD,
         size="40Gi",
         resize_in_use_volumes=False,
         instances=2,
@@ -99,7 +101,7 @@ def _data_claim(chart: Chart) -> None:
     # credential's one owner (Recreate strategy, one replica); losing the file means pairing again.
     # One small file: two DRBD copies, following the Pod onto its node.
     volume_claim(
-        chart, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="64Mi"
+        chart, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_REPLICATED, size="64Mi"
     )
 
 
@@ -115,9 +117,7 @@ def _deployment(
     chart: Chart,
     *,
     workload_id: str,
-    name: str,
     container: str,
-    labels: dict[str, str],
     selector_labels: dict[str, str] | None = None,
     args: list[str],
     env: list[k8s.EnvVar],
@@ -125,20 +125,27 @@ def _deployment(
     replicas: int,
     strategy: str,
     description: str,
+    vpa_mode: Vpa,
+    topology_spread_constraints: list[k8s.TopologySpreadConstraint] | None = None,
     volumes: list[k8s.Volume] | None = None,
     volume_mounts: list[k8s.VolumeMount] | None = None,
     tolerate_control_plane: bool = False,
 ) -> None:
+    labels = service.pods.selector
     deployment = k8s.KubeDeployment(
         chart,
         workload_id,
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=service.name,
             namespace=NAMESPACE,
             labels=labels,
             annotations={
                 "description": description,
-                **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only(container)),
+                VPA_UPDATE_MODE_LABEL: vpa_mode,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy.cpu_and_memory_requests_only(container),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -158,7 +165,7 @@ def _deployment(
                             name=container,
                             image=_IMAGE,
                             args=args,
-                            ports=[service.port.k8s_container_port()],
+                            ports=[service.k8s_container_port()],
                             env=env,
                             readiness_probe=_healthz(service, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=_healthz(service, initial_delay_seconds=30, period_seconds=20),
@@ -171,6 +178,7 @@ def _deployment(
                         )
                     ],
                     volumes=volumes,
+                    topology_spread_constraints=topology_spread_constraints,
                 ),
             ),
         ),
@@ -185,14 +193,15 @@ def _web_deployment(chart: Chart) -> None:
     _deployment(
         chart,
         workload_id="web-deployment",
-        name=NAME,
         container=NAME,
-        labels=_WEB_LABELS,
         selector_labels={"app.kubernetes.io/name": NAME},  # preserve the existing Deployment's immutable selector
         args=["web"],
         service=WEB_SERVICE,
         replicas=2,
         strategy="RollingUpdate",
+        # EventSource reconnects can replay the durable journal on either replica.
+        vpa_mode=Vpa.AUTO,
+        topology_spread_constraints=[node_scheduling.hostname_spread(WEB_SERVICE.pods.selector)],
         description="Serves the owner-authenticated Claude session page and proxies controls to the credential owner.",
         env=[
             DATABASE.app_secret.key("uri").env_var(env_name(WebSettings, "database_url")),
@@ -212,13 +221,12 @@ def _control_deployment(chart: Chart) -> None:
     _deployment(
         chart,
         workload_id="control-deployment",
-        name=_CONTROL_OBJECT_NAME,
         container=_CONTROL_NAME,
-        labels=_CONTROL_LABELS,
         args=["control"],
         service=CONTROL_SERVICE,
         replicas=1,
         strategy="Recreate",
+        vpa_mode=Vpa.INITIAL,
         description="Owns the rotating Claude OAuth credential, pairing flow, polling cycle, and live API streams.",
         env=[
             DATABASE.app_secret.key("uri").env_var(env_name(ControlSettings, "database_url")),
@@ -236,20 +244,13 @@ def _control_deployment(chart: Chart) -> None:
 
 
 def _service_and_route(chart: Chart) -> None:
-    k8s.KubeService(
-        chart,
-        "web-service",
-        metadata=k8s.ObjectMeta(name=WEB_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_WEB_LABELS, ports=[WEB_SERVICE.port.k8s_service_port()], type="ClusterIP"),
-    )
-    k8s.KubeService(
-        chart,
-        "control-service",
-        metadata=k8s.ObjectMeta(name=CONTROL_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_CONTROL_LABELS, ports=[CONTROL_SERVICE.port.k8s_service_port()], type="ClusterIP"
-        ),
-    )
+    for construct_id, service in (("web-service", WEB_SERVICE), ("control-service", CONTROL_SERVICE)):
+        k8s.KubeService(
+            chart,
+            construct_id,
+            metadata=k8s.ObjectMeta(name=service.name, namespace=NAMESPACE),
+            spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.k8s_service_port()], type="ClusterIP"),
+        )
     https_route(
         chart,
         "route",
@@ -275,7 +276,7 @@ def _network_policies(chart: Chart) -> None:
                 )
             },
         ),
-        endpoint_selector=_WEB_ENDPOINT_LABELS,
+        endpoint_selector=WEB_SERVICE.pods.cilium,
         ingress=[IngressRule.from_gateway(WEB_SERVICE.pod_port)],
         egress=[
             cilium.dns_egress(resolves=["*"]),
@@ -295,7 +296,7 @@ def _network_policies(chart: Chart) -> None:
                 "description": "Only web Pods may call the single Claude credential and sync control process."
             },
         ),
-        endpoint_selector=_CONTROL_ENDPOINT_LABELS,
+        endpoint_selector=CONTROL_SERVICE.pods.cilium,
         ingress=[WEB_SERVICE.pods.admit(CONTROL_SERVICE.pod_port)],
         egress=[
             cilium.dns_egress(resolves=["*"]),

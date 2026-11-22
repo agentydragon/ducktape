@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -19,6 +18,7 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import kubernetes_account_ref
 from cluster.cdk8s.agentplane.actions_staging_policies import (
+    ASSIGNABLE_EGRESS_RULES,
     COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
@@ -28,11 +28,10 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     HAKU_SHARED_GITHUB_POLICIES,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
-    coinbase_egress_rules,
+    identity_egress_set_name,
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
 from cluster.cdk8s.agentplane.egress import (
-    BASIC_POLICY,
     BUILDBUDDY_POLICY,
     DEFAULT_POLICIES,
     GITHUB_ACTIONS_LOGS_POLICY,
@@ -40,11 +39,7 @@ from cluster.cdk8s.agentplane.egress import (
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import (
-    AIQUOTA_READ_POLICY,
-    FORGEJO_FINANCE_AGENT_POLICY,
-    PLAID_PGWEB_CREDENTIAL,
-)
+from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, FORGEJO_FINANCE_AGENT_POLICY
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, TABBYAPI_QWEN_STOCK
 from util.urls import HttpEndpointUrl
@@ -60,12 +55,6 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
     ]
 )
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
-# What the Haku preset binds: the reviewed read-only bundle the haku-agent and claude-ai
-# bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH, Kubernetes
-# inspection) plus sandbox use and the GitHub identity read, and Haku's one write: rerunning failed
-# jobs on a ducktape CI run. Nothing here is a new grant -- each set's own auto-approval rule was
-# reviewed for the connector principals, and every other write stays on the human path.
-HAKU_ACTION_POLICY_SETS = (*HAKU_SHARED_ACTION_SETS, DUCKTAPE_PR_FAILED_JOBS_SET)
 
 # Inbox groups and the presets that launch into them (operator, 2026-10-21 07:51 UTC). A group's Sandboxes carry
 # its inbox tag and hold its `send_to` PolicySet, so they may message one another.
@@ -81,39 +70,19 @@ def send_to(group: str) -> str:
     return f"send-to-{group}"
 
 
-def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
-    """The non-Kubernetes rules of the assignable sets that have any, by set name. In the identity
-    catalog these are the sets that stay `PolicySet`s; the rest are only `KubernetesRoleSet`s."""
-    return {
-        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
-        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
-            credential=PLAID_PGWEB_CREDENTIAL
-        ),
-    }
-
-
-def preset_role_sets(preset: str) -> list[str]:
-    """The role sets granted to `preset`'s Kubernetes account: its launch roles plus cluster
-    diagnostics, so the account covers the shared account's reads."""
-    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
-    return list(dict.fromkeys([*sets, agent_access_profiles.CLUSTER_DIAGNOSTICS_POLICY]))
-
-
 def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
     """Identity-supported egress sets for a preset, plus its own Kubernetes account use set.
 
     In the mixed catalog, legacy bindings keep the original Kubernetes-bearing PolicySets while
     new launches use their pure-egress `-identity` variants.
     """
-    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
-    if not identity_catalog:
-        identity_egress_sets = assignable_set_egress_rules()
-        return [
-            *(f"{name}-identity" for name in sets if name in identity_egress_sets),
-            kubernetes_account_ref.account(namespace, preset).credential_name,
-        ]
+    sets = agent_access_profiles.PRESET_ROLE_SETS[preset]
     return [
-        *(name for name in sets if name in assignable_set_egress_rules()),
+        *(
+            identity_egress_set_name(name, identity_catalog=identity_catalog)
+            for name in sets
+            if name in ASSIGNABLE_EGRESS_RULES
+        ),
         kubernetes_account_ref.account(namespace, preset).credential_name,
     ]
 
@@ -131,7 +100,6 @@ def config(
     electric_url: HttpEndpointUrl,
     identity_catalog: bool,
 ) -> Settings:
-    basic_policy_set = BASIC_POLICY
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
@@ -140,7 +108,6 @@ def config(
         action_federation=action_federation,
         connection_service_url=connection_service_url,
         app_origin=app_origin,
-        basic_policy_set=basic_policy_set,
         oidc_issuer=oidc_issuer,
         electric_url=electric_url,
         public_coder_policy_sets=[
@@ -210,12 +177,11 @@ def config(
         # These policies are what a *launch* is granted, independent of which
         # Identity launches it.
         policy_sets=[
-            basic_policy_set,
             *HAKU_SHARED_CORE_POLICIES,
             *HAKU_SHARED_GITHUB_POLICIES,
-            # Bound at launch on the Sandbox Identity rather than through the standing `haku-agent`
-            # binding; this preset determines what a managed Haku may do without the operator.
-            *HAKU_ACTION_POLICY_SETS,
+            *HAKU_SHARED_ACTION_SETS,
+            # Only the launched Sandbox gets to rerun failed ducktape CI jobs.
+            DUCKTAPE_PR_FAILED_JOBS_SET,
             *_launch_sets("haku", namespace=namespace, identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_HAKU_CODEX,
@@ -235,7 +201,6 @@ def config(
         title="Finance agent",
         template=sandbox_template,
         policy_sets=[
-            basic_policy_set,
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
@@ -278,11 +243,7 @@ def config(
     )
     # Every preset grants the defaults itself, so a preset shows all a launch of it grants: the
     # baseline sets and the shared diagnostics account (operator, 2026-11-12).
-    defaults = [
-        basic_policy_set,
-        *DEFAULT_POLICIES[1:],
-        kubernetes_account_ref.shared_diagnostics(namespace).credential_name,
-    ]
+    defaults = [*DEFAULT_POLICIES, kubernetes_account_ref.shared_diagnostics(namespace).credential_name]
     for sandbox_preset in cfg.sandbox_presets.values():
         sandbox_preset.policy_sets = list(dict.fromkeys([*defaults, *sandbox_preset.policy_sets]))
     # A new staging Sandbox suspends after 15 idle minutes and wakes for a message (operator, 2026-10-24).

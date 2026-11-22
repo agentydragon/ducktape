@@ -1,68 +1,55 @@
-"""Flux domain: models, parsing, and build execution."""
+"""Flux resource models and parsing."""
 
 from __future__ import annotations
 
-import asyncio
-from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
 import durationpy
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
-from python.runfiles import Runfiles
+from pydantic import BaseModel, Field
 
 from cluster.cdk8s.manifest_roots import MANIFEST_ROOTS
-from cluster.validation.k8s import Condition, SecretRef, parse_k8s_resources
+from cluster.validation.k8s import CamelCaseModel, Condition, SecretRef
 
 
 class DependsOn(BaseModel):
     """Flux Kustomization dependency reference."""
 
-    model_config = ConfigDict(extra="ignore")
-
     name: str
     namespace: str | None = None
 
 
-class SourceRef(BaseModel):
+class SourceRef(CamelCaseModel):
     """Flux Kustomization spec.sourceRef — the GitRepository/OCIRepository/ExternalArtifact it reconciles from."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     kind: str = ""
     name: str = ""
     namespace: str | None = None
 
 
-class HealthCheck(BaseModel):
+class HealthCheck(CamelCaseModel):
     """Flux Kustomization health check reference."""
 
-    model_config = ConfigDict(extra="ignore")
-
+    api_version: str = ""
     kind: str = ""
     name: str = ""
     namespace: str = ""
 
 
-class Decryption(BaseModel):
+class Decryption(CamelCaseModel):
     """Flux Kustomization spec.decryption — declares how Flux decrypts SOPS
     Secrets under the path. A SOPS-encrypted Secret needs both `provider: sops`
     and a `secretRef.name` pointing at the age-key Secret: without the provider
     Flux applies ENC[...] ciphertext literally; without the secretRef it has no
     key to decrypt with. Both fail silently."""
 
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
-
     provider: str = ""
     secret_ref: SecretRef | None = None
 
 
-class FluxKustomizationSpec(BaseModel):
+class FluxKustomizationSpec(CamelCaseModel):
     """Parsed spec from a Flux Kustomization CR."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     path: str = ""
     # Namespace of this Kustomization CR (from metadata.namespace), populated by
@@ -70,8 +57,10 @@ class FluxKustomizationSpec(BaseModel):
     # (no explicit namespace) in this namespace, so cross-namespace validation
     # needs it. Default "" means "unknown" — cross-namespace checks skip it.
     namespace: str = ""
-    depends_on: list[DependsOn] = []
-    health_checks: list[HealthCheck] = []
+    target_namespace: str | None = None
+    manifest_path: Path | None = Field(default=None, exclude=True)
+    depends_on: list[DependsOn] = Field(default_factory=list)
+    health_checks: list[HealthCheck] = Field(default_factory=list)
     source_ref: SourceRef | None = None
     retry_interval: str | None = None
     wait: bool = False
@@ -98,15 +87,13 @@ def parse_go_duration(s: str | None) -> float:
     return durationpy.from_str(s).total_seconds()
 
 
-class _HistoryMetadata(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class _HistoryMetadata(CamelCaseModel):
     revision: str = ""
 
 
-class FluxReconcileHistoryEntry(BaseModel):
-    """One per-revision entry in `Kustomization.status.history` / `HelmRelease.status.history`
-    (Flux 2.7+). Each entry summarises every reconcile attempt against a single
-    `(revision, build digest)`:
+class FluxReconcileHistoryEntry(CamelCaseModel):
+    """One entry in `Kustomization.status.history` (Flux 2.7+). Each entry summarises
+    reconcile attempts against a single `(revision, build digest)`:
 
     - `total_reconciliations` — count of attempts at this revision/digest.
     - `last_reconciled_status` — outcome of the most recent attempt
@@ -123,8 +110,6 @@ class FluxReconcileHistoryEntry(BaseModel):
       current condition's message or a `Warning` Event for that.
     """
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
     last_reconciled: datetime | None = None
     last_reconciled_duration: str | None = None
     last_reconciled_status: str = ""
@@ -140,15 +125,10 @@ class FluxReconcileHistoryEntry(BaseModel):
         return parse_go_duration(self.last_reconciled_duration)
 
 
-class FluxKustomizationStatus(BaseModel):
-    """Parsed status from a live Flux Kustomization CR (live API responses only;
-    YAML on disk doesn't carry status). Same shape works for HelmRelease too —
-    the conditions / history fields are identical."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class FluxStatus(BaseModel):
+    """Current conditions reported by Flux controllers."""
 
     conditions: list[Condition] = []
-    history: list[FluxReconcileHistoryEntry] = []
 
     def condition(self, type_: str) -> Condition | None:
         """Return the first condition with the given type, or None."""
@@ -158,6 +138,12 @@ class FluxKustomizationStatus(BaseModel):
     def ready(self) -> Condition | None:
         """Convenience: the `Ready` condition, the one consumers want 99% of the time."""
         return self.condition("Ready")
+
+
+class FluxKustomizationStatus(FluxStatus):
+    """Live Kustomization status with its per-revision reconcile history."""
+
+    history: list[FluxReconcileHistoryEntry] = []
 
     def history_in_window(self, since: datetime) -> list[FluxReconcileHistoryEntry]:
         """History entries whose `last_reconciled` falls inside the window
@@ -176,17 +162,13 @@ class FluxKustomizationStatus(BaseModel):
 
 
 class _ObjectMeta(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     name: str
     namespace: str = ""
     annotations: dict[str, str] = Field(default_factory=dict)
 
 
-class _FluxKustomizationDoc(BaseModel):
+class _FluxKustomizationDoc(CamelCaseModel):
     """Top-level structure of a Flux Kustomization YAML document."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     api_version: str
     kind: str
@@ -209,6 +191,7 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
             results[parsed.metadata.name] = parsed.spec.model_copy(
                 update={
                     "namespace": parsed.metadata.namespace,
+                    "manifest_path": flux_file,
                     "parked": parsed.metadata.annotations.get("ducktape.org/parked") == "true",
                 }
             )
@@ -224,56 +207,3 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
 # so parse_cluster indexes the generators instead.
 FLUX_SOURCE_KINDS = {"GitRepository", "OCIRepository", "HelmRepository", "HelmChart"}
 EXTERNAL_ARTIFACT_KIND = "ExternalArtifact"
-
-
-async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
-    """Run flux build and return (returncode, stdout, stderr)."""
-    kustomization_file = k8s_dir / "flux" / "flux-system" / "gotk-sync.yaml"
-
-    if not kustomization_file.exists():
-        raise FileNotFoundError(f"gotk-sync.yaml not found at {kustomization_file}")
-
-    flux_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
-    proc = await asyncio.create_subprocess_exec(
-        flux_bin,
-        "build",
-        "kustomization",
-        "flux-system",
-        "--path",
-        k8s_dir,
-        "--kustomization-file",
-        kustomization_file,
-        "--dry-run",
-        "--verbose",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=60)
-    return await proc.wait(), stdout_bytes.decode(), stderr_bytes.decode()
-
-
-async def validate_flux_build(k8s_dir: Path) -> list[str]:
-    """Validate flux build."""
-    try:
-        returncode, stdout, stderr = await run_flux_build(k8s_dir)
-    except FileNotFoundError as e:
-        return [str(e)]
-
-    if returncode != 0:
-        return [f"flux build failed:\nk8s_dir: {k8s_dir}\nstdout:\n{stdout}\nstderr:\n{stderr}"]
-
-    if not stdout.strip():
-        return [f"flux build returned empty output:\nk8s_dir: {k8s_dir}\nstderr: {stderr.strip() or 'none'}"]
-
-    errors = []
-    resource_counts: Counter[str] = Counter()
-
-    for resource in parse_k8s_resources(yaml.safe_load_all(stdout)):
-        resource_counts[resource.kind] += 1
-
-    if resource_counts.get("Kustomization", 0) == 0:
-        errors.append("No Flux Kustomization resources found in flux build output")
-    if resource_counts.get("GitRepository", 0) == 0:
-        errors.append("No GitRepository resource found in flux build output")
-
-    return errors

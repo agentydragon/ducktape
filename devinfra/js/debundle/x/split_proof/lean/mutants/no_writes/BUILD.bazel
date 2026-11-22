@@ -9,7 +9,7 @@ _BASE = "//devinfra/js/debundle/x/split_proof/lean:translate_mutation_base_sourc
 genrule(
     name = "mutated_translate",
     srcs = [_SOURCE],
-    outs = ["Experiments/Translate.lean"],
+    outs = ["EsmSplit/Translate.lean"],
     cmd = "test \"$$(grep -F -c 'writes := f.writes,' $(location " + _SOURCE + "))\" -eq 1 && " +
           "sed 's/writes := f.writes,/writes := [],/' $(location " + _SOURCE + ") > $@",
 )
@@ -20,6 +20,6 @@ lean_binary(
         _BASE,
         ":mutated_translate",
     ],
-    entry = "Experiments/TranslateMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    entry = "EsmSplit/TranslateMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )

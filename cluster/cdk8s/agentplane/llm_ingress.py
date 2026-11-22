@@ -23,17 +23,17 @@ from constructs import Construct
 from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import central_sampler, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.litellm import endpoint as litellm
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -62,7 +62,7 @@ def proxied_url(namespace: str) -> str:
     """The LLM ingress as a workload dials it through the egress proxy, which matches the host on the
     exact string its policy names."""
     llm = service(namespace)
-    return f"http://{llm.fqdn}:{llm.port.number}"
+    return f"http://{llm.authority}"
 
 
 class LlmIngress(Construct):
@@ -76,7 +76,7 @@ class LlmIngress(Construct):
         id: str,
         env: Environment,
         *,
-        litellm_url: str = "http://litellm.litellm.svc.cluster.local:4000",
+        litellm_url: str = litellm.API_BASE,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
@@ -96,26 +96,17 @@ class LlmIngress(Construct):
                 data={_CODEX_CATALOG_PATH.name: catalog},
             )
         )
+        health = TlsGrpcHealth(
+            port=self.service.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=LLM_INGRESS_URI
+        )
         workload = add_service_workload(
             self,
             env,
             serves=[self.service],
             container="ingress",
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
-            annotations={
-                "configmap.reloader.stakater.com/reload": ",".join(
-                    config_map
-                    for config_map in (
-                        f"{_NAME}-settings",
-                        "public-web-pki",
-                        None if catalog_map is None else catalog_map.name,
-                    )
-                    if config_map is not None
-                ),
-                "secret.reloader.stakater.com/reload": env.llm_ingress.litellm_key_secret_name,
-            },
             env_variables={
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
                 # The only real model credential in this service; runners never mount it.
                 Settings.litellm_key_env: SecretRef(
                     namespace=env.namespace, name=env.llm_ingress.litellm_key_secret_name
@@ -123,20 +114,8 @@ class LlmIngress(Construct):
                 .key("api-key")
                 .env_value(self, "litellm-key-secret"),
             },
-            readiness=tls_grpc_probe(
-                port=self.service.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=LLM_INGRESS_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=self.service.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=LLM_INGRESS_URI,
-                initial_delay_seconds=20,
-                period_seconds=30,
-            ),
+            readiness=health.readiness(),
+            liveness=health.liveness(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
@@ -147,12 +126,7 @@ class LlmIngress(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         reader_role_name = f"{_NAME}-sandbox-reader"
         reader_role = Role(
             self,
@@ -182,9 +156,6 @@ class LlmIngress(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=_NAME, uri=LLM_INGRESS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         static_settings = Settings(
             allowed_service_account_namespaces=frozenset({env.namespace}),
             policy_namespace=env.namespace,
@@ -196,11 +167,7 @@ class LlmIngress(Construct):
             codex_model_catalog_file=None if catalog_map is None else Path(str(_CODEX_CATALOG_PATH)),
             litellm_url=AnyHttpUrl(litellm_url),
             log_levels={},
-            rpc=Listener(
-                listen_address=f"0.0.0.0:{self.service.pod_port}",
-                tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
+            rpc=serving_tls.spiffe_listener(self.service.pod_port),
         )
         settings = SettingsFile(
             self,
@@ -238,7 +205,11 @@ class LlmIngress(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
+                    {
+                        "k8s:io.kubernetes.pod.namespace": litellm.NAMESPACE,
+                        **{f"k8s:{key}": value for key, value in litellm.SERVICE.pods.labels},
+                    },
+                    litellm.SERVICE.pod_port,
                 ),
             ],
         )

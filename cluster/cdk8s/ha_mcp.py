@@ -37,7 +37,7 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import cilium, namespaces, pod_policy
+from cluster.cdk8s import cilium, namespaces, pod_policy, public_web_pki
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
@@ -103,7 +103,6 @@ def _home_assistant_token(scope: Construct) -> None:
                 reader=reader,
                 source_namespace=home_assistant.HA_MCP_TOKEN.secret_namespace,
                 source_secret=home_assistant.HA_MCP_TOKEN.secret_name,
-                consumer_namespace=_NAMESPACE,
             )
         ),
         data=[remote_data(home_assistant.HA_MCP_TOKEN.secret_name, "token", secret_key=_HOME_ASSISTANT_TOKEN.key)],
@@ -226,13 +225,13 @@ class HaMcpApp(Construct):
             name="facade",
             image=f"{_APP_FACADE_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[FACADE.port.container_port(), _METRICS.port.container_port()],
+            ports=[FACADE.container_port(), _METRICS.container_port()],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
                 # The same token agentplane-staging's Action Service presents (its ESO copy of
                 # this Secret) -- one source of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": BEARER.env_value(self, "ha-mcp-bearer-ref"),
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(200)),
@@ -247,12 +246,7 @@ class HaMcpApp(Construct):
             # could break the running facade. Same rationale as litellm/proxy.py.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        facade.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, facade)
         pod_policy.harden(deployment)
         return deployment
 
@@ -262,7 +256,7 @@ class HaMcpApp(Construct):
             "service",
             metadata=ApiObjectMetadata(name=FACADE.name, namespace=_NAMESPACE, labels=FACADE.labels),
             selector=deployment,
-            ports=[FACADE.port.service_port(), _METRICS.port.service_port()],
+            ports=[FACADE.service_port(), _METRICS.service_port()],
         )
 
     def _add_network_policy(self) -> None:

@@ -1,10 +1,11 @@
-"""The CNPG Cluster holding every tofu-controller Terraform state, and the `tofu-state-db`
-Kustomization that owns it together with the tofu-state Namespace.
+"""PostgreSQL state backend for the GitOps OpenTofu roots.
 
-Hand-written beside the generated output: `db/credentials.sops.yaml`, the `tfstate` role
-password. CNPG reconciles the role from that Secret through `spec.managed.roles`, so a
-SOPS rotation propagates to Postgres as `ALTER ROLE`; Terraform runners (`PGPASSWORD`)
-and `cluster/.envrc` read the same Secret directly.
+Crossplane's OpenTofu provider manages the migrated roots. The remaining tofu-controller
+runners use the same database. Each root keeps its state in its own PostgreSQL schema.
+
+CNPG reconciles the tfstate role password from db/credentials.sops.yaml. Reflector copies
+the Secret into flux-system for the providers' PGPASSWORD references. cluster/.envrc
+reads the encrypted source directly.
 """
 
 from __future__ import annotations
@@ -19,13 +20,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -33,7 +32,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, manifest_file, write_charts, write_yaml
+from cluster.cdk8s.generation import manifest_file, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -47,6 +46,11 @@ STATE_PASSWORD = SecretRef(namespace="flux-system", name="tofu-state-db-credenti
 STATE_CONNECTION_STRING = (
     f"postgres://tfstate@{DATABASE.rw.host}:{DATABASE.rw.port.number}/{STATE_DATABASE_NAME}?sslmode=disable"
 )
+
+
+def gitops_state_schema(name: str) -> str:
+    """The default Postgres backend schema for `tf/gitops/<name>`."""
+    return name.replace("-", "_")
 
 
 def chart(app: App) -> Chart:
@@ -115,11 +119,7 @@ def tofu_state_db(
         artifact,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
     )

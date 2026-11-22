@@ -40,9 +40,8 @@ no separate client CA needed.
 ### Rotation
 
 Automatic. cert-manager renews each leaf 30 days before its 90-day expiry. The
-on-demand eval Job mounts the current client Secret on each run; the long-lived
-DinD pod (which does not hot-reload TLS) is bounced by the stakater reloader via
-the `reloader.stakater.com/auto: "true"` annotation on its Deployment.
+on-demand eval Job mounts the current client Secret on each run; cluster-wide
+Reloader restarts the long-lived DinD pod when its mounted server Secret changes.
 
 **Adding a SAN** (the original reason this PKI was hand-rolled): edit
 `dnsNames` on the `docker-ci-server` Certificate. No admin key, no re-signing.
@@ -59,7 +58,7 @@ route that does not trip the listener conflict
 
 - **Namespace**: `docker-ci` (privileged PSA — DinD requires it)
 - **Deployment**: `docker:dind` (tag pinned in `deployment.yaml`) with `--tlsverify`, scheduled on OVH workers
-  (`topology.kubernetes.io/region: hil`); `reloader.stakater.com/auto` for cert rotation
+  (`topology.kubernetes.io/region: hil`)
 - **Storage**: `emptyDir` (30Gi) for `/var/lib/docker` — a disposable overlay2
   cache, hence no PVC (rationale in `deployment.yaml`).
 - **Service**: ClusterIP on port 2376

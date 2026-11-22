@@ -13,20 +13,14 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesPasswordSecret,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-    DatabaseSpecExtensions,
-    DatabaseSpecExtensionsEnsure,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
+from cluster.cdk8s import piraeus_storage
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
@@ -34,11 +28,10 @@ from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3_AUTHORITY, S3_HTTP_URL
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/dependencies"
-_S3_ENDPOINT = "http://seaweedfs-s3.seaweedfs.svc:8333"
-_S3_HOST = "seaweedfs-s3.seaweedfs.svc:8333"
 _SECRET_STORE = "gitlab-s3-credentials"
 _SECRET_READER = "gitlab-s3-secret-reader"
 
@@ -54,7 +47,7 @@ def _databases(chart: Chart) -> None:
         port=app.GITLAB_DB.rw.port.number,
         database=app.PRAEFECT_DATABASE,
     )
-    cluster.cluster(
+    postgres = cluster.cluster(
         chart,
         "gitlab-cluster",
         ref=app.GITLAB_DB,
@@ -76,33 +69,27 @@ def _databases(chart: Chart) -> None:
         wal_archive=True,
     )
     backup.CnpgBackup(chart, "gitlab-backup", ref=app.GITLAB_DB, retention="30d")
-    Database(
+    cluster.Database(
         chart,
         "praefect-database",
         metadata=ApiObjectMetadata(name="praefect", namespace=app.NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
-            name=app.PRAEFECT_DATABASE,
-            owner=app.PRAEFECT_DATABASE,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-        ),
+        cluster=postgres,
+        name=app.PRAEFECT_DATABASE,
+        owner=app.PRAEFECT_DATABASE,
     )
     # Adopt the bootstrap-created database so CNPG installs and keeps these extensions.
     # Retain prevents deleting the Database CR from deleting GitLab's data.
-    Database(
+    cluster.Database(
         chart,
         "gitlab-extensions",
         metadata=ApiObjectMetadata(name="gitlab-extensions", namespace=app.NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
-            name=app.GITLAB_DATABASE,
-            owner=app.GITLAB_DATABASE,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[
-                DatabaseSpecExtensions(name=name, ensure=DatabaseSpecExtensionsEnsure.PRESENT)
-                for name in ("amcheck", "pg_trgm", "btree_gist")
-            ],
-        ),
+        cluster=postgres,
+        name=app.GITLAB_DATABASE,
+        owner=app.GITLAB_DATABASE,
+        extensions=[
+            DatabaseSpecExtensions(name=name, ensure=DatabaseSpecExtensionsEnsure.PRESENT)
+            for name in ("amcheck", "pg_trgm", "btree_gist")
+        ],
     )
 
 
@@ -116,7 +103,7 @@ def _valkey(chart: Chart) -> None:
         cpu_limit=Cpu.units(2),
         memory_limit=Size.gibibytes(2),
         max_memory_percent_of_limit=75,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         storage_size=Size.gibibytes(5),
     )
 
@@ -188,7 +175,7 @@ def _object_storage(chart: Chart) -> None:
                 "  accesskey: '{{ .access_key }}'\n"
                 "  secretkey: '{{ .secret_key }}'\n"
                 "  region: us-east-1\n"
-                f"  regionendpoint: {_S3_ENDPOINT}\n"
+                f"  regionendpoint: {S3_HTTP_URL}\n"
                 f"  bucket: {name}\n"
                 "  pathstyle: true\n"
                 "  checksum_disabled: true\n"
@@ -204,7 +191,7 @@ def _object_storage(chart: Chart) -> None:
                 "region: us-east-1\n"
                 "aws_access_key_id: '{{ .access_key }}'\n"
                 "aws_secret_access_key: '{{ .secret_key }}'\n"
-                f"endpoint: {_S3_ENDPOINT}\n"
+                f"endpoint: {S3_HTTP_URL}\n"
                 "path_style: true\n"
                 "aws_signature_version: 4\n"
             )
@@ -244,8 +231,8 @@ def _object_storage(chart: Chart) -> None:
                     "access_key = {{ .access_key }}\n"
                     "secret_key = {{ .secret_key }}\n"
                     "bucket_location = us-east-1\n"
-                    f"host_base = {_S3_HOST}\n"
-                    f"host_bucket = {_S3_HOST}\n"
+                    f"host_base = {S3_AUTHORITY}\n"
+                    f"host_bucket = {S3_AUTHORITY}\n"
                     "use_https = False\n"
                     "signature_v2 = False\n"
                     "multipart_chunk_size_mb = 128\n"

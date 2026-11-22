@@ -26,10 +26,7 @@ py_library(
     name = "logging",
     srcs = ["logging.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//structlog",
-        "@pypi//typer",
-    ],
+    deps = ["@pypi//typer"],
 )
 
 py_library(

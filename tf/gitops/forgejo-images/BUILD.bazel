@@ -1,7 +1,5 @@
 load("//devinfra/tf:defs.bzl", "tf_module")
 
-exports_files(["variables.tf"])
-
 tf_module(
     name = "forgejo-images",
     providers = {

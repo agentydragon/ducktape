@@ -15,15 +15,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.service_database import Database, role_secret_name
 from cluster.cdk8s.cnpg import cluster as cnpg  # Local `cluster` parameters shadow the module name.
 from cluster.cdk8s.cnpg.cluster import ClusterPlacement
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
@@ -31,17 +27,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 
 _CLUSTER_NAME = "postgres"
 
-# The logical databases services own on the shared Cluster; the initdb-owned
-# "app"/trajectory database needs no Database/role of its own. `mcp_edge` is the MCP
-# edge's database.
-# `sandbox_service` is the History Service database; renaming it moves the data.
-_ROLE_NAMES = ["actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher"]
 _ELECTRIC_ROLE = "electric"
-
-
-def _role_secret_name(role: str) -> str:
-    """PostgreSQL identifiers may contain underscores; Kubernetes Secret names may not."""
-    return f"postgres-{role.replace('_', '-')}"
 
 
 def postgres(env: Environment) -> cnpg.PostgresRef:
@@ -66,7 +52,7 @@ def _role_credentials(
     mint_db_role_secret(
         scope,
         id,
-        name=_role_secret_name(role),
+        name=role_secret_name(role),
         namespace=cluster.namespace,
         role=role,
         host=cluster.rw.host,
@@ -96,13 +82,18 @@ class Db(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment, props: DbProps) -> None:
         super().__init__(scope, id)
         cluster = postgres(env)
-        roles = [*_ROLE_NAMES, *(["central_sampler"] if env.central_sampler is not None else [])]
+        # CNPG initdb owns app. The optional sampler keeps its database when disabled.
+        roles = [
+            role.value
+            for role in Database
+            if role != Database.APP and (role != Database.CENTRAL_SAMPLER or env.central_sampler is not None)
+        ]
 
         for role in roles:
             _role_credentials(self, f"role-credentials-{role}", cluster=cluster, role=role)
         _role_credentials(self, "role-credentials-electric", cluster=cluster, role=_ELECTRIC_ROLE, database_name="app")
 
-        cnpg.cluster(
+        postgres_cluster = cnpg.cluster(
             self,
             "cluster",
             ref=cluster,
@@ -125,7 +116,7 @@ class Db(Construct):
                         name=role,
                         ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                         login=True,
-                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=_role_secret_name(role)),
+                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=role_secret_name(role)),
                     )
                     for role in roles
                 ]
@@ -135,26 +126,24 @@ class Db(Construct):
                         ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                         login=True,
                         replication=True,
-                        password_secret=ClusterSpecManagedRolesPasswordSecret(name="postgres-electric"),
+                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=role_secret_name(_ELECTRIC_ROLE)),
                     )
                 ]
             ),
         )
 
         for role in roles:
-            Database(
+            cnpg.Database(
                 self,
                 f"database-{role}",
                 metadata=ApiObjectMetadata(name=role.replace("_", "-"), namespace=env.namespace),
-                spec=DatabaseSpec(
-                    cluster=DatabaseSpecCluster(name=cluster.name),
-                    name=role,
-                    owner=role,
-                    # Disabling the optional sampler must preserve its authored conversations.
-                    database_reclaim_policy=(
-                        DatabaseSpecDatabaseReclaimPolicy.RETAIN
-                        if role == "central_sampler"
-                        else DatabaseSpecDatabaseReclaimPolicy.DELETE
-                    ),
+                cluster=postgres_cluster,
+                name=role,
+                owner=role,
+                # Disabling the optional sampler must preserve its authored conversations.
+                database_reclaim_policy=(
+                    DatabaseSpecDatabaseReclaimPolicy.RETAIN
+                    if role == Database.CENTRAL_SAMPLER
+                    else DatabaseSpecDatabaseReclaimPolicy.DELETE
                 ),
             )

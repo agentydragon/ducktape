@@ -1796,7 +1796,7 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	if _, err := queueStore.EnqueueForCaller(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, admission); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("store missing Session: %v", err)
 	}
-	if rows, err := queueStore.ListDispatchesForCaller(ctx, "missing", "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter("missing"), testStoreCaller(nil)); err != nil || len(rows) != 0 {
 		t.Fatalf("missing Session left work: %+v %v", rows, err)
 	}
 }
@@ -1831,7 +1831,7 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 			t.Fatalf("cross-placement command: %v", err)
 		}
 	}
-	if rows, err := queueStore.ListDispatchesForCaller(ctx, sessionID, "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter(sessionID), testStoreCaller(nil)); err != nil || len(rows) != 0 {
 		t.Fatalf("cross-placement command left work: %+v %v", rows, err)
 	}
 }
@@ -1885,7 +1885,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			if err := <-result; !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("deleted Session admitted command: %v", err)
 			}
-			if rows, err := queueStore.ListDispatchesForCaller(ctx, sessionID, "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
+			if rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter(sessionID), testStoreCaller(nil)); err != nil || len(rows) != 0 {
 				t.Fatalf("deleted Session left work: %+v %v", rows, err)
 			}
 		})
@@ -2168,7 +2168,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	var state string
-	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != store.UnknownState {
@@ -2295,7 +2295,7 @@ func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := queueStore.ListDispatchesForCaller(ctx, dispatch.SessionID, "", nil, testStoreCaller(nil))
+	rows, err := queueStore.ListDispatchesForCaller(ctx, testSessionDispatchFilter(dispatch.SessionID), testStoreCaller(nil))
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("list dispatches: %d rows, %v", len(rows), err)
 	}
@@ -2315,7 +2315,7 @@ func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
 			t.Fatalf("%s assessment: blocker=%v wake=%v", name, got.blocker, got.assessment)
 		}
 	}
-	wireDispatch, err := store.DescribeDispatch(gotDispatch)
+	wireDispatch, err := store.DescribeDispatch(gotDispatch, true)
 	if err != nil || !proto.Equal(wireDispatch.GetWakeAssessment(), assessment) || !proto.Equal(wireDispatch.GetDeliveryBlocker(), blocker) {
 		t.Fatalf("dispatch projection: %+v %v", wireDispatch, err)
 	}

@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { getGrocyReferenceSummaries } from "../client";
-import { definePreview, type PreviewProps } from "./entry";
+import { definePreview, type PreviewProps, useCompactPane } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
 import type { ResultPreview } from "./result_entry";
 
@@ -45,20 +45,26 @@ export function GrocyReview({ requestId, children }: { requestId?: string; child
 }
 
 export function useGrocyReferences(): ReadonlyMap<string, GrocyReferenceSummary> | undefined {
-  const requestId = useContext(review);
-  return useQuery({
+  return useGrocyRequestReferences(useContext(review));
+}
+
+export function useGrocyRequestReferences(requestId?: string): ReadonlyMap<string, GrocyReferenceSummary> | undefined {
+  const query = useQuery({
     queryKey: ["action-integration-preview", "grocy_sf", requestId],
     queryFn: ({ signal }) => getGrocyReferenceSummaries(requestId ?? "", signal),
     enabled: Boolean(requestId),
     retry: false,
     staleTime: 30_000,
-  }).data;
+  });
+  return query.isSuccess ? query.data : undefined;
 }
 
 function GrocyReference({ kind, id }: { kind: GrocyReferenceKind; id: number }): JSX.Element {
   const refs = useGrocyReferences();
+  const compact = useCompactPane();
   const [path, fallback] = referenceRoutes[kind];
-  return objectLink(path, id, refs?.get(`${kind}/${id}`)?.name || `${fallback} #${id}`);
+  const name = refs?.get(`${kind}/${id}`)?.name || `${fallback} #${id}`;
+  return compact ? <>{name}</> : objectLink(path, id, name);
 }
 
 export function displayRef(value: string | number, kind?: GrocyReferenceKind): ReactNode {
@@ -81,7 +87,8 @@ export function grocyRequest<S extends z.ZodType>(
   label: string,
   schema: S,
   preview: (props: PreviewProps<z.infer<S>>) => ReactNode,
-  result: ResultPreview
+  result: ResultPreview,
+  summary?: (props: PreviewProps<z.infer<S>>) => ReactNode
 ): ActionPresentation {
   const Preview = preview;
   const argumentsPreview = definePreview(schema, ({ args, requestId }) => (
@@ -89,9 +96,19 @@ export function grocyRequest<S extends z.ZodType>(
       <Preview args={args} requestId={requestId} />
     </GrocyReview>
   ));
+  const collapsed =
+    summary &&
+    definePreview(schema, function GrocySummary({ args, requestId }) {
+      const Summary = summary;
+      return (
+        <GrocyReview requestId={requestId}>
+          <Summary args={args} requestId={requestId} />
+        </GrocyReview>
+      );
+    });
   return {
     fallbackLabel: label,
-    pane: { opened: argumentsPreview },
+    pane: { collapsed, opened: argumentsPreview },
     details: { arguments: argumentsPreview, result, pendingPreviewOnly: true },
   };
 }

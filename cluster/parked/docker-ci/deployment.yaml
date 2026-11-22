@@ -5,10 +5,6 @@ metadata:
   namespace: docker-ci
   labels:
     app.kubernetes.io/name: docker-ci
-  annotations:
-    # dockerd does not hot-reload its TLS material; bounce the long-lived daemon
-    # when cert-manager rotates the docker-ci-server-tls Secret.
-    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   strategy:

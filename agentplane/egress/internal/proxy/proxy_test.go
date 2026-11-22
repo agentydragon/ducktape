@@ -45,6 +45,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -147,6 +148,11 @@ func failWatch(l *lab, kind watchhealth.Kind) {
 
 func newLab(t *testing.T) *lab {
 	t.Helper()
+	return newLabWithIdentityReader(t, nil)
+}
+
+func newLabWithIdentityReader(t *testing.T, wrap func(client.Reader) client.Reader) *lab {
+	t.Helper()
 	intercept, interceptRoot := makeCA(t, "interception")
 	upstreamCA, upstreamRoot := makeCA(t, "upstream")
 	name := "runner-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
@@ -172,7 +178,11 @@ func newLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	proxyClientTLS.NextProtos = []string{"http/1.1"}
-	svids, err := resolver.New(workload.Objects, []string{runner.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	var reader client.Reader = workload.Objects
+	if wrap != nil {
+		reader = wrap(reader)
+	}
+	svids, err := resolver.New(reader, []string{runner.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

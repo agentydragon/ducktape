@@ -23,6 +23,7 @@ from opentofu_workspace_crds.io.upbound.opentofu import (
     WorkspaceSpecForProviderVars,
     WorkspaceSpecProviderConfigRef,
 )
+from pydantic import BaseModel
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -40,9 +41,9 @@ from cluster.cdk8s.tofu_state import db
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
 KUBECONFIG_DIRECTORY = "/etc/opentofu/kubernetes"
-WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
-    api_version="opentofu.upbound.io/v1beta1",
-    kind="Workspace",
+_WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
+    api_version=Workspace.GVK.api_version,
+    kind=Workspace.GVK.kind,
     current=(
         "has(status.conditions) && "
         "status.conditions.exists(c, has(c.type) && c.type == 'Synced' && "
@@ -79,15 +80,16 @@ def gitops_workspace(
     *,
     name: str,
     provider_config_name: str,
-    schema: str,
-    directory: str,
+    schema: str | None = None,
     management_policies: Sequence[str],
     external_name: str = "default",
     kubernetes_identity: str | None = None,
-    variables: Sequence[WorkspaceSpecForProviderVars] = (),
+    variables: BaseModel | None = None,
     env: Sequence[WorkspaceSpecForProviderEnv] = (),
 ) -> Workspace:
     """Use PostgreSQL state; callers choose the workspace, lifecycle and Kubernetes identity."""
+    if schema is None:
+        schema = db.gitops_state_schema(name)
     configuration = 'terraform {\n  backend "pg" {}\n}\n'
     if kubernetes_identity is not None:
         configuration += (
@@ -112,9 +114,13 @@ def gitops_workspace(
             provider_config_ref=WorkspaceSpecProviderConfigRef(name=provider_config_name),
             for_provider=WorkspaceSpecForProvider(
                 source="Inline",
-                module=inline_module(directory),
+                module=inline_module(f"tf/gitops/{name}"),
                 plan_args=["-lock-timeout=5m"],
-                vars=list(variables) or None,
+                vars=[
+                    WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()
+                ]
+                if variables is not None
+                else None,
                 env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
             ),
         ),
@@ -177,13 +183,13 @@ def gitops_workspace_chart(
     *,
     module_name: str,
     identity_name: str,
-    schema: str,
+    schema: str | None = None,
     secret_accesses: Sequence[tuple[str, str, Sequence[str], Sequence[str]]],
 ) -> Chart:
     """Build the standard crossplane-prefixed chart for a managed GitOps Workspace.
 
     The module name supplies the chart and ProviderConfig names and the `tf/gitops/` path.
-    The Workspace uses Observe/Create/Update; callers provide its schema, identity and exact Secret grants.
+    The Workspace uses Observe/Create/Update; callers provide its identity, exact Secret grants and any historical schema override.
     """
     chart_name = f"crossplane-{module_name}"
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
@@ -196,7 +202,6 @@ def gitops_workspace_chart(
         name=module_name,
         provider_config_name=chart_name,
         schema=schema,
-        directory=f"tf/gitops/{module_name}",
         management_policies=["Observe", "Create", "Update"],
         kubernetes_identity=identity_name,
     )
@@ -207,21 +212,30 @@ def workspace_kustomization(
     chart: Chart,
     name: str,
     directory: RenderedDirectory,
-    source: ArtifactGeneratorSpecArtifacts,
+    source: ArtifactGeneratorSpecArtifacts | None = None,
     *,
     depends_on: Sequence[Kustomization],
     timeout: str = "20m",
+    description: str | None = None,
 ) -> Kustomization:
-    """Create a Workspace Kustomization that consumes its ExternalArtifact path."""
+    """Use the directory's artifact unless a shared parent artifact supplies it."""
+    source_ref: RenderedDirectory | KustomizationSpecSourceRef = directory
+    path = None
+    decryption = None
+    if source is not None:
+        source_ref = KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=flux.NAMESPACE
+        )
+        path = f"./{artifact_directory(directory.artifact)}"
+        decryption = directory.decryption
     return flux_kustomization(
         chart,
         name,
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=flux.NAMESPACE
-        ),
-        path=f"./{artifact_directory(directory.artifact)}",
-        decryption=directory.decryption,
+        source_ref,
+        path=path,
+        decryption=decryption,
         timeout=timeout,
         depends_on=flux_kustomization_depends_on_many(*depends_on),
-        health_check_exprs=[WORKSPACE_HEALTH_CHECK_EXPR],
+        health_check_exprs=[_WORKSPACE_HEALTH_CHECK_EXPR],
+        description=description,
     )

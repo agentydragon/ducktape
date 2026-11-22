@@ -1168,9 +1168,9 @@ fn non_var_decl_statements_are_not_split() {
 fn split_comma_list_assigns_per_declarator_source_ranges() {
     // Each post-split single-declarator source unit must report just its
     // declarator's line range, not the parent statement's (for
-    // `export const`, not the `ExportDecl` wrapper's). The proposer's
-    // `size_lines_estimate` and the lane workers' `body_extraction`
-    // per-source-unit snippets both rely on this.
+    // `export const`, not the `ExportDecl` wrapper's). `AtomicGroupReport`'s
+    // `size_lines_estimate` and `source_line_range` are built from these
+    // per-unit ranges.
     for source in [
         "const A = 1,\n      B = 2,\n      C = 3;\n",
         "export const A = 1,\n             B = 2,\n             C = 3;\n",

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import networkx as nx
 
 from cluster.validation.cluster import ParsedCluster
@@ -11,9 +9,7 @@ from cluster.validation.crd_layering import BOOTSTRAP_API_GROUPS, BUILT_IN_API_G
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND
 
 
-def validate_operator_dependencies(
-    cluster: ParsedCluster, repo_root: Path, crd_to_operator: dict[str, str] | None = None
-) -> list[str]:
+def validate_operator_dependencies(cluster: ParsedCluster, crd_to_operator: dict[str, str] | None = None) -> list[str]:
     """Validate that kustomizations using CRD instances transitively depend on the managing operator.
 
     Uses CRD_TO_OPERATOR from crd_layering.py as the source of truth for which CRD kinds
@@ -23,23 +19,24 @@ def validate_operator_dependencies(
     if crd_to_operator is None:
         crd_to_operator = CRD_TO_OPERATOR
 
-    flux_resources = cluster.flux_kust_resources(repo_root)
+    flux_resources = cluster.flux_kust_resources()
     errors = []
     g = cluster.graph
-    reported: set[tuple[str, str]] = set()
+    exempt_groups = BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS
     unprovided: set[tuple[str, str]] = set()
 
     for kust_name, resources in flux_resources.items():
+        checked_operators: set[str] = set()
         for resource in resources:
             group = resource.api_version.rpartition("/")[0]
             operator = crd_to_operator.get(f"{resource.kind}.{group}", crd_to_operator.get(resource.kind))
             if operator is None:
-                if group not in BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS:
+                if group not in exempt_groups:
                     unprovided.add((kust_name, f"{resource.kind} ({resource.api_version})"))
                 continue
-            key = (kust_name, operator)
-            if key in reported:
+            if operator in checked_operators:
                 continue
+            checked_operators.add(operator)
             # A HelmRelease is admitted before helm-controller installs its operator.
             # A zero-length graph path cannot order that install before sibling CRs.
             # Providers applying resources directly (e.g. Flux image automation) do
@@ -49,12 +46,10 @@ def validate_operator_dependencies(
                     f"{kust_name} installs its operator through Helm and also applies {resource.kind} resources; "
                     f"move those instances to a separate Kustomization that depends on {operator}"
                 )
-                reported.add(key)
             elif operator not in g or not nx.has_path(g, kust_name, operator):
                 errors.append(
                     f"{kust_name} uses {resource.kind} resources but doesn't transitively depend on {operator}"
                 )
-                reported.add(key)
 
     errors += [
         f"{kust_name} uses {kind} resources but no OPERATOR_CRDS entry names the Kustomization installing its CRD"
@@ -101,8 +96,8 @@ def check_source_references(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def validate_dependencies(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+def validate_dependencies(cluster: ParsedCluster) -> list[str]:
     """Validate operator prerequisites and sourceRef resolution across the Flux graph."""
     if not cluster.flux_kustomizations:
         return ["No Flux kustomizations found"]
-    return [*validate_operator_dependencies(cluster, repo_root), *check_source_references(cluster)]
+    return [*validate_operator_dependencies(cluster), *check_source_references(cluster)]

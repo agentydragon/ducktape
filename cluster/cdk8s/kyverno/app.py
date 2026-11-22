@@ -9,7 +9,12 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, initial_request_annotations
-from cluster.cdk8s.vpa_policy import ContainerPolicy
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
@@ -38,15 +43,18 @@ def _values() -> dict[str, object]:
             # Deployment metadata keeps the Pod template unchanged. Peak 30-day
             # working set was 206Mi, including 158Mi in the first 10 minutes.
             "annotations": {
-                **initial_request_annotations(
-                    ContainerPolicy.memory_requests_only(
-                        "kyverno",
-                        cpu_request=_ADMISSION_CPU_REQUEST,
-                        memory_floor="224Mi",
-                        memory_limit=_ADMISSION_MEMORY_LIMIT,
-                    )
-                ),
                 VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy(
+                        container_name="kyverno",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("cpu", "memory"),
+                        min_allowed={"cpu": _ADMISSION_CPU_REQUEST, "memory": "224Mi"},
+                        # Bound a stale VPA CPU target to fit a replacement on the control plane.
+                        max_allowed={"cpu": "2", "memory": _ADMISSION_MEMORY_LIMIT},
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
             },
             "container": {
                 "resources": {
@@ -67,19 +75,13 @@ def _values() -> dict[str, object]:
             # ReplicaSet to spread across the control-plane nodes it can use.
             "antiAffinity": {"enabled": True},
             "topologySpreadConstraints": [
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "DoNotSchedule",
-                    "nodeTaintsPolicy": "Honor",
-                    "labelSelector": {
-                        "matchLabels": {
-                            "app.kubernetes.io/component": "admission-controller",
-                            "app.kubernetes.io/instance": "{{ .Release.Name }}",
-                        }
+                node_scheduling.hostname_spread(
+                    {
+                        "app.kubernetes.io/component": "admission-controller",
+                        "app.kubernetes.io/instance": "{{ .Release.Name }}",
                     },
-                    "matchLabelKeys": ["pod-template-hash"],
-                }
+                    min_domains=None,
+                )
             ],
             # Kyverno's internal certificates, not cert-manager. The webhook controller creates the
             # ValidatingWebhookConfiguration only after the certificate controller has made the CA
@@ -119,30 +121,28 @@ def _values() -> dict[str, object]:
             "podDisruptionBudget": {"minAvailable": 2},
             "updateStrategy": {"rollingUpdate": {"maxUnavailable": 0}},
             "topologySpreadConstraints": [
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "DoNotSchedule",
-                    "nodeTaintsPolicy": "Honor",
-                    "labelSelector": {
-                        "matchLabels": {
-                            "app.kubernetes.io/component": "cleanup-controller",
-                            "app.kubernetes.io/instance": "{{ .Release.Name }}",
-                        }
+                node_scheduling.hostname_spread(
+                    {
+                        "app.kubernetes.io/component": "cleanup-controller",
+                        "app.kubernetes.io/instance": "{{ .Release.Name }}",
                     },
-                    "matchLabelKeys": ["pod-template-hash"],
-                }
+                    min_domains=None,
+                )
             ],
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
-            "annotations": initial_request_annotations(
-                ContainerPolicy.cpu_and_memory_requests_only(
-                    "controller",
-                    cpu_floor=_CLEANUP_CPU_REQUEST,
-                    memory_floor="124Mi",
-                    memory_ceiling=_CLEANUP_MEMORY_LIMIT,
-                )
-            ),
+            "annotations": {
+                VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy.cpu_and_memory_requests_only(
+                        "controller",
+                        cpu_floor=_CLEANUP_CPU_REQUEST,
+                        memory_floor="124Mi",
+                        memory_ceiling=_CLEANUP_MEMORY_LIMIT,
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
+            },
             "resources": {
                 "limits": {"cpu": "100m", "memory": _CLEANUP_MEMORY_LIMIT},
                 "requests": {"cpu": _CLEANUP_CPU_REQUEST, "memory": "32Mi"},

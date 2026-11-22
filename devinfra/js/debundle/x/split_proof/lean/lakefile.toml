@@ -13,20 +13,20 @@ name = "Experiments"
 
 [[lean_exe]]
 name = "lower"
-root = "Experiments.LowerMain"
+root = "EsmSplit.LowerMain"
 
 [[lean_exe]]
 name = "lowersplit"
-root = "Experiments.LowerSplit"
+root = "EsmSplit.LowerSplitMain"
 
 [[lean_exe]]
 name = "evalorder"
-root = "Experiments.EvalOrder"
+root = "EsmSplit.EvalOrder"
 
 [[lean_exe]]
 name = "translate"
-root = "Experiments.TranslateMain"
+root = "EsmSplit.TranslateMain"
 
 [[lean_exe]]
 name = "corejs"
-root = "Experiments.CoreJSMain"
+root = "EsmSplit.CoreJSMain"

@@ -4,18 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
+from agentplane_sandboxtemplate_crds.works.allegedly.agentplane import (
+    SandboxTemplate,
+    SandboxTemplateSpec,
+    SandboxTemplateSpecFirecracker,
+    SandboxTemplateSpecWorkspaceVolumeLayoutType,
+)
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env.config import CodexReadiness
 from agentplane.firecracker.config import Config
-from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, workload_routes
+from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, template_storage, workload_routes
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.environment_guest import guest_config_data
 from cluster.cdk8s.config_format import json_config
@@ -37,11 +41,8 @@ class EnvironmentFirecrackerTemplate(Construct):
         env: Environment,
         *,
         labels: Mapping[str, str],
-        state_volume: dict[str, Any],
-        workspace_volume: dict[str, Any],
+        storage_class: str,
         runner_image: str,
-        platform_instructions: str,
-        harness_env: Mapping[str, str],
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         session_reconcile_concurrency: int | None = None,
         codex_readiness: CodexReadiness | None = None,
@@ -60,8 +61,6 @@ class EnvironmentFirecrackerTemplate(Construct):
                 gateway=GATEWAY,
                 workload_api_socket="unix:///run/agentplane/environment-runtime-tls/workload.sock",
                 block_devices=("/dev/vdd",),
-                platform_instructions=platform_instructions,
-                harness_env=harness_env,
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=codex_readiness,
             ),
@@ -71,7 +70,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             env,
             name=f"{NAME}-relay",
             listen_address=f"[::]:{sandbox_pod.SIDECAR_LISTEN_PORT}",
-            platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
+            platform_routes=platform_routes.listener(*platform_routes.runner_routes(namespace), listen_host="0.0.0.0"),
             workload_routes=workload_routes.sidecar_routes(namespace),
             proxy_transport=sidecar_config.TLSProxyTransport(
                 ca_file=sidecar_config.RUNNER_WORKLOAD_TRUST_FILE,
@@ -159,26 +158,21 @@ class EnvironmentFirecrackerTemplate(Construct):
             endpoint_selector={**labels, "agentplane.allegedly.works/environment-backend": "firecracker"},
             ingress=[IngressRule.from_entities(Entity.KUBE_APISERVER, Entity.HOST, ports=[9092])],
         )
-        self.template = ApiObject(
+        self.template = SandboxTemplate(
             self,
             "Resource",
-            api_version=f"{GROUP}/{VERSION}",
-            kind="SandboxTemplate",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-        )
-        self.template.add_json_patch(
-            JsonPatch.add(
-                "/spec",
-                {
-                    "firecracker": {
-                        "pod": sandbox_pod.render_pod_template(labels, pod),
-                        "bootImage": BOOT_IMAGE,
-                        "runnerImage": runner_image,
-                        "vcpuCount": resources.guest_vcpu_count,
-                        "memoryMiB": resources.guest_memory_bytes // (1024 * 1024),
-                    },
-                    "stateVolume": state_volume,
-                    "workspaceVolume": workspace_volume,
-                },
-            )
+            spec=SandboxTemplateSpec(
+                firecracker=SandboxTemplateSpecFirecracker(
+                    pod=sandbox_pod.render_pod_template(labels, pod),
+                    boot_image=BOOT_IMAGE,
+                    runner_image=runner_image,
+                    vcpu_count=resources.guest_vcpu_count,
+                    memory_mib=resources.guest_memory_bytes // (1024 * 1024),
+                ),
+                state_volume=template_storage.state_volume(storage_class, volume_mode="Filesystem", raw_disk=True),
+                workspace_volume=template_storage.workspace_volume(
+                    storage_class, SandboxTemplateSpecWorkspaceVolumeLayoutType.RAW_DISK_IMAGE
+                ),
+            ),
         )

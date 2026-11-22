@@ -1,6 +1,6 @@
 """Compose the MCP acceptance suites' shared deployment recipe."""
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, mcp_fixture_chart
 from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
@@ -13,13 +13,11 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     RenderedFixture,
     SandboxRuntime,
 )
+from cluster.cdk8s.agentplane.service_database import Database
 
 
 def render_mcp_fixture(
-    *,
-    routes: fixture_chart.HarnessRoutes,
-    central_sampler: fixture_chart.CentralSamplerProps | None,
-    central_sampler_session_delegation: bool,
+    *, routes: fixture_chart.HarnessRoutes, central_sampler_session_delegation: bool
 ) -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
     operator_oidc = fixture_chart.operator_oidc()
@@ -32,6 +30,7 @@ def render_mcp_fixture(
         central_sampler_session_delegation=central_sampler_session_delegation,
     )
     actions_props = mcp_fixture_chart.mcp_actions_props(actions_props, MCP_PLACEHOLDERS)
+    central_sampler = fixture_chart.central_sampler_props(routes.central_sampler) if routes.central_sampler else None
     env = fixture_chart.environment(
         runtime=SandboxRuntime.POD,
         routes=routes,
@@ -48,9 +47,9 @@ def render_mcp_fixture(
         namespace=env.namespace,
         databases=(
             *fixture_chart.BACKEND_DATABASES,
-            fixture_database.Database.APP,
-            fixture_database.Database.MCP_EDGE,
-            *((fixture_database.Database.CENTRAL_SAMPLER,) if central_sampler is not None else ()),
+            Database.APP,
+            Database.MCP_EDGE,
+            *((Database.CENTRAL_SAMPLER,) if central_sampler is not None else ()),
         ),
     )
     fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))
@@ -85,9 +84,6 @@ def render_mcp_fixture(
 
 
 def render() -> RenderedFixture:
-    routes = replace(fixture_chart.LOCAL_MODEL_ROUTES, central_sampler=(fixture_chart.GPT6_LUNA_RESPONSES,))
     return render_mcp_fixture(
-        routes=routes,
-        central_sampler=fixture_chart.central_sampler_props(model=fixture_chart.GPT6_LUNA_RESPONSES),
-        central_sampler_session_delegation=True,
+        routes=fixture_chart.LOCAL_MODEL_ROUTES_WITH_SAMPLER, central_sampler_session_delegation=True
     )

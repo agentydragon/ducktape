@@ -1,4 +1,6 @@
+import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -8,6 +10,7 @@ from cluster.x.forgejo_retention_report.forgejo_retention_report import (
     classify_shape,
     make_report,
     markdown,
+    scan_repo,
 )
 
 NOW = datetime(2026, 11, 8, tzinfo=UTC)
@@ -32,6 +35,26 @@ def test_classify_shape(version: str, shape: str) -> None:
     assert classify_shape(version) == shape
 
 
+def test_git_scan_protects_committed_and_rolled_back_references(tmp_path: Path) -> None:
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "remote", "add", "origin", "https://git.example.test/fixtures/repo.git"], check=True)
+    pins = tmp_path / "pins.yaml"
+    pins.write_text(f"digest: {DIGEST}\n")
+    subprocess.run([*git, "add", pins.name], check=True)
+    subprocess.run([*git, "commit", "-qm", "initial digest"], check=True)
+    tag = "devel-20260102000000-1234567"
+    pins.write_text(f"newTag: {tag}\nimage: git.allegedly.works/fixture/image:stable\n")
+    subprocess.run([*git, "commit", "-qam", "replace digest"], check=True)
+
+    protection = Protection()
+    source = scan_repo(str(tmp_path), rollback_days=1, protection=protection)
+    revision = source["revision"][:12]
+    assert f"git:{tmp_path.name}:{revision}:pins.yaml:1" in protection.tokens[tag]
+    assert f"git:{tmp_path.name}:{revision}:pins.yaml:2" in protection.references["fixture/image:stable"]
+    assert protection.tokens[DIGEST] == {f"rollback:{tmp_path.name}:{revision}:1d"}
+
+
 def _version(version_id: int, owner: str, name: str, version: str, *, internal: bool = False) -> dict:
     return {
         "id": version_id,
@@ -45,6 +68,7 @@ def _version(version_id: int, owner: str, name: str, version: str, *, internal: 
 
 
 def test_out_of_policy_groups_report_unrecognized_and_exclusive_bytes() -> None:
+    referenced_tag = "devel-20260102000000-1234567"
     snapshot = {
         "captured_at": "2026-11-08T00:00:00+00:00",
         "versions": [
@@ -52,6 +76,7 @@ def test_out_of_policy_groups_report_unrecognized_and_exclusive_bytes() -> None:
             _version(2, "haku", "ui", "main-20260101000000-1234567"),
             _version(3, "haku", "ui", "weird-tag"),
             _version(4, "ducktape-ci", "img", "_upload", internal=True),
+            _version(5, "ducktape-ci", "img", referenced_tag),
         ],
         # blob 10 is held by the in-policy version and the main-* version, blob 11 only by weird-tag.
         "files": [[1, 10, True], [2, 10, True], [3, 11, True], [4, 12, False]],
@@ -61,7 +86,10 @@ def test_out_of_policy_groups_report_unrecognized_and_exclusive_bytes() -> None:
             {"id": 12, "size": 3, "sha256": "2" * 64},
         ],
     }
-    report = make_report(snapshot, Protection(), owner="ducktape-ci", keep=0, days=0, now=NOW)
+    protection = Protection()
+    protection.scan(referenced_tag, "git:fixture")
+    report = make_report(snapshot, protection, owner="ducktape-ci", keep=0, days=0, now=NOW)
+    assert {v["id"] for v in report["versions"] if v["candidate"]} == {1}
 
     groups = {(g["owner"], g["shape"]): g for g in report["out_of_policy"]}
     assert set(groups) == {("haku", "dated-main"), ("haku", "unrecognized"), ("ducktape-ci", "upload-session")}

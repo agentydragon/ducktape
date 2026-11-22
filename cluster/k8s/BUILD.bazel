@@ -7,7 +7,18 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+filegroup(
+    name = "flux_root",
+    srcs = glob(["flux/**"]) + ["//cluster/k8s/flux/flux-system:flux_system_files"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # Focused tests inline these direct-file inputs in their data lists.
+exports_files(
+    ["flux/ducktape-flux/ducktape-flux.k8s.yaml"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 exports_files(
     ["haku/forgejo-tea/haku-forgejo-tea.sops.yaml"],
     visibility = ["//cluster/cdk8s/haku_ci:__pkg__"],
@@ -26,4 +37,12 @@ exports_files(
 exports_files(
     ["agents/plaid-mcp/readonly-role.sql"],
     visibility = ["//cluster/cdk8s/plaid_mcp:__pkg__"],
+)
+
+exports_files(
+    ["buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//devinfra/buildbuddy/kvm/x/nixos_worker_qualification:__pkg__",
+    ],
 )

@@ -49,13 +49,13 @@ def test_default_rows_keep_balances_grants_groups_and_subscription_windows_separ
 ) -> None:
     rendered = human.render(quota_fixture("platform_credits_with_subscription_resets"), now=_NOW, tz=UTC)
 
-    assert rendered.startswith("Subscriptions\n\nClaude\n  Available balance: $26")
+    assert rendered.startswith("Subscriptions\n\nClaude\n  Balance: $26")
     assert "5h:  45% used  ↻ 2h" in rendered
     assert "Codex\n  Banked resets: 3 · next known expiry Jan 29, 12:00" in rendered
     assert "Banked resets: 3 · next known expiry Jan 29, 12:00 · 1 expiry unknown" in rendered
-    assert "\n\nAPI balances\n\nOpenAI API\n  Available balance: $60" in rendered
+    assert "\n\nAPI balances\n\nOpenAI API\n  Balance: $60" in rendered
     assert "Grant: $60 remaining · expires Jun 1" in rendered
-    assert "Anthropic API\n  Shared org\n    Available balance: $75" in rendered
+    assert "Anthropic API · Shared org\n  Balance: $75" in rendered
     assert "Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet)" in rendered
     assert "$100.00 granted" not in rendered
     window_rows = [line for line in rendered.splitlines() if "% used" in line]
@@ -126,7 +126,7 @@ def test_paid_mode_keeps_each_window_without_repeating_visible_status(
 
     assert "Included quota exhausted" not in rendered
     assert "paid credits available" not in rendered
-    assert rendered.index("Paid credits: 2,746 credits") < rendered.index("5h: 100% used")
+    assert rendered.index("2,746 credits") < rendered.index("5h: 100% used")
     assert "5h: 100% used  ↻ 1h 30m" in rendered
     assert "7d:  38% used  ↻ 3d 14h" in rendered
 
@@ -179,8 +179,8 @@ def test_stale_observation_is_marked_without_showing_pace_or_forecast(
 
 def test_warnings_and_spend_precede_readings_and_windows(quota_fixture: Callable[[str], AllQuotas]) -> None:
     fallback = human.render(quota_fixture("stale_fallback"), now=_NOW, tz=UTC)
-    assert fallback.index("Stale data") < fallback.index("Available balance") < fallback.index("% used")
-    assert fallback.index("Refresh failed") < fallback.index("Available balance")
+    assert fallback.index("Stale data") < fallback.index("Balance") < fallback.index("% used")
+    assert fallback.index("Refresh failed") < fallback.index("Balance")
 
     spend = human.render(quota_fixture("extra_enabled_not_burning"), now=_NOW, tz=UTC)
     assert spend.index("Extra spend this month") < spend.index("% used")

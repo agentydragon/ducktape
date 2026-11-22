@@ -13,9 +13,10 @@ from pathlib import Path
 from uuid import UUID
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
+from aiquota.config import ClaudeSettings
 from aiquota.models import (
     ClaudeResetGrant,
     ExtraSpend,
@@ -46,16 +47,6 @@ LONG_WINDOW_SECS = 7 * 86400
 _OAUTH_HEADERS = {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
 # Anthropic gates reset inventory on both this option and the Claude Code surface.
 _USAGE_HEADERS = {**_OAUTH_HEADERS, "User-Agent": "claude-cli/2.1.292 (external, cli) aiquota/1.0"}
-
-
-class ClaudeSettings(BaseModel):
-    enabled: bool = True
-    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
-    # An explicit token selects an externally owned, static credential source.
-    # A trusted credential-substitution proxy can replace a non-secret sentinel
-    # on the exact upstream Authorization header. This source is never
-    # refreshed or written by aiquota.
-    access_token: SecretStr | None = None
 
 
 # Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that
@@ -94,6 +85,7 @@ class _ClaudeOrganization(BaseModel):
 
 class _ClaudeProfileResponse(BaseModel):
     organization: _ClaudeOrganization
+    account: _ClaudeOrganization | None = None
 
     model_config = ConfigDict(hide_input_in_errors=True)
 
@@ -305,17 +297,13 @@ class ClaudeProvider(Provider):
             return ProviderFetch(fetched_at=now, result=_to_success(usage, prepaid_balance))
 
         path = self.settings.credentials_path
-        creds, stored_token = _read_credentials(path)
-        configured_token = self.settings.access_token.get_secret_value() if self.settings.access_token else None
-        token = configured_token or stored_token
+        creds, token = _read_credentials(path)
         if not token:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
             async with self.client_factory(self.name, {USAGE_URL, PLAIN_USAGE_URL}, API_TIMEOUT_SECS) as client:
-                # An explicitly supplied token belongs to a proxy or another
-                # credential owner; never refresh or write it from this process.
-                if configured_token is None and _token_expired(creds):
+                if _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))

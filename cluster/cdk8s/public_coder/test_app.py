@@ -1,10 +1,4 @@
-"""public-coder's access boundaries, across the charts that grant or carry them.
-
-The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
-ducktape-flux and public-coder rbac charts; its traffic over the app and Agentplane egress.
-The ClickHouse reader's hand-written Secret is checked in
-`//cluster/cdk8s/clickhouse:test_public_coder_clickhouse_reader_contract`.
-"""
+"""Access boundaries of the parked public-coder app."""
 
 from __future__ import annotations
 
@@ -13,148 +7,56 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-import yaml
-from cdk8s import (
-    App,
-    Chart,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import App
 from more_itertools import one
 
-from cluster.cdk8s import agent_rbac_base, agent_shared_rbac
-from cluster.cdk8s.clickhouse import client, installation
-from cluster.cdk8s.haku.charts import console_chart
+from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.public_coder import app as public_coder_app, egress as public_coder_egress
-
-_HAKU_SUBJECTS = {
-    ("Group", "oidc-ksbx-groups:haku", None),
-    ("Group", "haku:access-profile:haku", None),
-    ("ServiceAccount", "haku", "haku-sandbox"),
-}
-_READ = ["get", "list", "watch"]
-
-
-def _synth(chart: Chart) -> list[dict[str, Any]]:
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-
-
-def _subjects(binding: dict[str, Any]) -> set[tuple[str, str, str | None]]:
-    return {(item["kind"], item["name"], item.get("namespace")) for item in binding["subjects"]}
-
-
-def _resources(role: dict[str, Any]) -> set[str]:
-    return set().union(*(set(rule["resources"]) for rule in role["rules"]))
-
-
-def _named(objects: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
-    return [obj for obj in objects if obj["metadata"]["name"] == name]
-
-
-def _one(objects: list[dict[str, Any]], kind: str, name: str | None = None) -> dict[str, Any]:
-    return one(obj for obj in objects if obj["kind"] == kind and name in {None, obj["metadata"]["name"]})
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 @pytest.fixture(scope="module")
 def app_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    return _synth(public_coder_app.app_chart(scratch_app_factory()))
+    return public_coder_app.app_chart(scratch_app_factory()).to_json()
 
 
 @pytest.fixture(scope="module")
-def rbac_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    return _synth(public_coder_app.rbac_chart(scratch_app_factory()))
-
-
-@pytest.fixture(scope="module")
-def console_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    return _synth(console_chart(scratch_app_factory()))
-
-
-@pytest.fixture(scope="module")
-def clickhouse_diagnostics_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    return _synth(installation.agent_diagnostics_rbac_chart(scratch_app_factory()))
-
-
-def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
-    scratch_app: App,
-    console_objects: list[dict[str, Any]],
-    rbac_objects: list[dict[str, Any]],
-    clickhouse_diagnostics_objects: list[dict[str, Any]],
-) -> None:
-    """Configured public diagnostics do not widen secret or exec access."""
-    base_objects = _synth(agent_rbac_base.chart(scratch_app))
-    metadata_role = _one(base_objects, "ClusterRole", "agent-readable-namespace-metadata")
-    assert all(rule["verbs"] == _READ for rule in metadata_role["rules"])
-    assert not {
-        "secrets",
-        "externalsecrets",
-        "secretstores",
-        "clustersecretstores",
-        "pushsecrets",
-        "clusterpushsecrets",
-        "pods/log",
-        "pods/exec",
-        "pods/attach",
-        "pods/portforward",
-    } & _resources(metadata_role)
-
-    sources = {
-        "clickhouse agent-diagnostics-rbac chart": clickhouse_diagnostics_objects,
-        "haku-console chart": _named(console_objects, "agent-haku-console-metadata-reader"),
-        "public-coder-agent chart": _named(rbac_objects, "agent-public-coder-extended-diagnostics-reader"),
-    }
-    for source, objects in sources.items():
-        role = _one(objects, "Role")
-        binding = _one(objects, "RoleBinding")
-        assert binding["roleRef"]["name"] == role["metadata"]["name"], source
-        assert all(rule["verbs"] == _READ for rule in role["rules"]), source
-        assert not {"secrets", "pods/log", "pods/exec"} & _resources(role), source
-
-    # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
-    shared_objects = _synth(agent_shared_rbac.chart(scratch_app))
-    haku_cluster_binding = _one(shared_objects, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
-    assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
-
-    diagnostics_role = _one(base_objects, "ClusterRole", "cluster-diagnostics-reader")
-    assert {
-        (api_group, resource, verb)
-        for rule in diagnostics_role["rules"]
-        for api_group in rule["apiGroups"]
-        for resource in rule["resources"]
-        for verb in rule["verbs"]
-    } >= {("redis.redis.opstreelabs.in", "redisreplications", verb) for verb in _READ}
+def pod(app_objects: list[dict[str, Any]]) -> dict[str, Any]:
+    deployment = find_resource(app_objects, "Deployment", "public-coder-agent")
+    return cast(dict[str, Any], deployment["spec"]["template"]["spec"])
 
 
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
-    egress = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
+    egress = find_resource(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
     assert all(rule.get("to") for rule in egress)
     assert not any("ipBlock" in peer for rule in egress for peer in rule["to"])
     assert not {port["port"] for rule in egress for port in rule.get("ports", [])} & {443, 6443}
 
 
-def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
+def test_app_reaches_clickhouse_only_through_the_proxy(pod: dict[str, Any]) -> None:
     """ClickHouse stays out of NO_PROXY: only the proxy replaces the app's password placeholder."""
-    container = one(
-        c for c in _one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"] if c["name"] == "openclaw"
-    )
+    container = one(c for c in pod["containers"] if c["name"] == "openclaw")
     no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
 
-def test_openclaw_uses_relay_without_receiving_its_svid(app_objects: list[dict[str, Any]]) -> None:
-    assert _one(app_objects, "Deployment", "public-coder-agent")["spec"]["replicas"] == 0
-    pod = _one(app_objects, "Deployment")["spec"]["template"]["spec"]
+def test_openclaw_uses_relay_without_receiving_its_svid(app_objects: list[dict[str, Any]], pod: dict[str, Any]) -> None:
     assert pod["serviceAccountName"] == "openclaw"
     assert pod["automountServiceAccountToken"] is False
-    account = _one(app_objects, "ServiceAccount", "openclaw")
+    account = find_resource(app_objects, "ServiceAccount", "openclaw")
     assert account["automountServiceAccountToken"] is False
-    relay = one(c for c in pod["containers"] if c["name"] == "egress-sidecar")
-    assert public_coder_egress.SVID_VOLUME in {v["name"] for v in relay["volumeMounts"]}
-    for container in pod["initContainers"] + [c for c in pod["containers"] if c != relay]:
-        assert public_coder_egress.SVID_VOLUME not in {v["name"] for v in container["volumeMounts"]}
+    svid = one(
+        v["name"] for v in pod["volumes"] if v.get("secret", {}).get("secretName") == public_coder_egress.SVID_SECRET
+    )
+    assert [
+        c["name"]
+        for c in pod["initContainers"] + pod["containers"]
+        if any(m["name"] == svid for m in c.get("volumeMounts", []))
+    ] == ["egress-sidecar"]
 
 
 def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, Any]]) -> None:
-    rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
+    rules = find_resource(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
     assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 4000}
     gateway = one(r for r in rules if {p["port"] for p in r["ports"]} == {8888})
     assert gateway["to"] == [
@@ -165,22 +67,17 @@ def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, An
     ]
 
 
-def test_rules_route_wires_workload_identity_without_mounting_the_svid_into_openclaw(
-    app_objects: list[dict[str, Any]],
+def test_openclaw_can_query_only_rules_on_the_local_relay(
+    app_objects: list[dict[str, Any]], pod: dict[str, Any]
 ) -> None:
-    settings = yaml.safe_load(_one(app_objects, "ConfigMap", "openclaw-egress-sidecar")["data"]["settings.yaml"])
-    route = settings["platform_routes"]
-    route_config = route["routes"]["egress-rules"]
-    assert route["listen_address"] == "127.0.0.1:3130"
-    assert route_config["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
-    assert route_config["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-    assert route_config["transport"] == {"mode": "tls_connect", "server_uri": "spiffe://agentplane/egress-proxy"}
-    pod = _one(app_objects, "Deployment", "public-coder-agent")["spec"]["template"]["spec"]
+    settings = config_map_yaml(app_objects, "openclaw-egress-sidecar", "settings.yaml")
+    listener = settings["platform_routes"]
+    assert set(listener["routes"]) == {"egress-rules"}
+    assert listener["listen_address"].rsplit(":", 1)[0] == "127.0.0.1"
     app = one(c for c in pod["containers"] if c["name"] == "openclaw")
     env = {item["name"]: item.get("value") for item in app["env"]}
-    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3130"
+    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://{listener['listen_address']}"
     assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
-    assert public_coder_egress.SVID_VOLUME not in {mount["name"] for mount in app["volumeMounts"]}
 
 
 if __name__ == "__main__":

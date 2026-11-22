@@ -25,15 +25,17 @@ of truth for exact case membership.
 ## Suite entrypoints
 
 Each k3s system-test target starts one fixture stack. Scenarios share it only when their resource
-changes are compatible. `test_dispatcher` owns a separate stack because it scales the `sessions`
-Deployment and deletes one of its Pods. The external MCP delegation acceptance owns another stack
+changes are compatible. `test_dispatcher` owns a separate native stack because it scales the
+`sessions` Deployment and deletes one of its Pods. The fixture client presents the App service
+SVID for the Dispatcher RPCs. The external MCP delegation acceptance owns another stack
 because it scales the app to zero after OAuth consent.
 
 | Target                                                                 | Coverage                                              |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
 | `//agentplane/system_tests/suites:test_pod`                            | App-backed Pod Sandbox scenarios                      |
+| `//agentplane/system_tests/suites:test_pod_storage`                    | Native Pod workspace replacement                      |
 | `//agentplane/system_tests/suites:test_pod_platform`                   | Native Pod workload trust and Egress credentials      |
-| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
+| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and native CLI History reads         |
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
 | `//agentplane/system_tests/suites/mcp:test_services`                   | App-backed delegated Action admission                 |
@@ -53,6 +55,8 @@ because it scales the app to zero after OAuth consent.
 | [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Cold KVM comparison, manual                           |
 
 See [CI executor routing](../../devinfra/ci/README.md#where-bazel-ci-runs-tests) for pool selection and the paired evidence.
+The [VM fixture options](deployment/vm_fixture_architecture.md) record what each path retains,
+setup costs by cache state and the requirements for sharing cluster infrastructure.
 
 `test_vm_tcg`, `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
@@ -62,8 +66,7 @@ the [live-test instructions](#running-live) explain how to run them.
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
 which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
 own shared deployment/model-server lifetime, while each callback owns its clients, guests, and
-cleanup. The storage case carries an explicit exclusivity marker and runs before other Pod cases,
-so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
+cleanup. The storage case owns a separate stack with no other Sandboxes. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
 `case_timeout(seconds)` starts with the scenario, after shared deployment setup. It is separate
@@ -87,8 +90,8 @@ For matched concurrency experiments, override the slot count with
 `--test_env=AGENTPLANE_POD_CASE_LIMIT=2` (or another positive count). Claude and Codex
 open separate Sessions on that same Sandbox. Protocol cases reuse their worker's Sandbox; a
 fresh-guest case deletes its worker's cache before creating its own guests. Current nonexclusive
-cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Storage runs
-alone before the workers start. Failed guest cleanup aborts the batch before further allocations.
+cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Failed guest
+cleanup aborts the batch before further allocations.
 
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and

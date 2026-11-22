@@ -4,7 +4,6 @@ metadata:
   name: props-llm-proxy
   namespace: props
   annotations:
-    reloader.stakater.com/auto: "true"
     description: >-
       LLM proxy data plane — serves /v1/responses for agents (auth + budget + cost + upstream routing), split out of the props backend so the dashboard/API can roll without disrupting in-flight agents.
 spec:

@@ -20,9 +20,7 @@ py_library(
     deps = [
         ":age_archive",
         "//gmail_archiver:inbox",
-        "//gmail_archiver:models",
         "//gmail_archiver:plan",
-        "@pypi//pydantic",
     ],
 )
 
@@ -33,9 +31,7 @@ py_library(
     deps = [
         ":age_archive",
         "//gmail_archiver:inbox",
-        "//gmail_archiver:models",
         "//gmail_archiver:plan",
-        "@pypi//pydantic",
     ],
 )
 
@@ -49,7 +45,6 @@ py_library(
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
-        "@pypi//pydantic",
         "@pypi//python_dateutil",
     ],
 )
@@ -64,7 +59,6 @@ py_library(
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
-        "@pypi//pydantic",
     ],
 )
 
@@ -127,7 +121,6 @@ py_library(
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
-        "@pypi//pydantic",
     ],
 )
 
@@ -149,6 +142,7 @@ py_test(
         ":anthropic",
         ":conftest",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -160,6 +154,7 @@ py_test(
         ":conftest",
         ":square",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -186,6 +181,21 @@ py_test(
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_aliexpress",
+    srcs = ["test_aliexpress.py"],
+    deps = [
+        ":aliexpress",
+        ":conftest",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

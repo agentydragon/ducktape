@@ -19,17 +19,17 @@ The main tables are in [`README.md` § 5](README.md#5-how-far-does-the-check-sca
 
 These are historical measurements; the `check` executable and verbatim-output workflow have since been removed.
 
-| What                                                                                                           | Time                               |
-| -------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| fetch Lean 4.35 from the Nix cache (first time)                                                                | 38 s                               |
-| clean `lake build` (default targets: core library and `render`)                                                | 18.6 s                             |
-| then `lake build Experiments check lower lowersplit evalorder`                                                 | 14.7 s                             |
-| `./run.sh --controls --fuzz --experiments --lowering --es-order --splits` from a fresh copy in the repository  | 302 s                              |
-| kernel check of the real 12-statement example (`lake env lean Experiments/Generated.lean`, with process start) | 1.5 s (0.6 s in the first version) |
-| fuzzer, 600 requests (510 unique splits), each rendered and run in Node                                        | 47–53 s                            |
-| mutation test, 6 mutants × 400 splits                                                                          | 247 s                              |
-| `splits/run_all.sh`: 2,740 splits of six real bundles, each checked and run in Node, 4 jobs                    | 154 s                              |
-| `es_order/check.mjs 500 1`: 500 random import graphs, Node against the model                                   | 52 s                               |
+| What                                                                                                          | Time                               |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| fetch Lean 4.35 from the Nix cache (first time)                                                               | 38 s                               |
+| clean `lake build` (default targets: core library and `render`)                                               | 18.6 s                             |
+| then `lake build Experiments check lower lowersplit evalorder`                                                | 14.7 s                             |
+| `./run.sh --controls --fuzz --experiments --lowering --es-order --splits` from a fresh copy in the repository | 302 s                              |
+| kernel check of the real 12-statement example (`lake env lean EsmSplit/Generated.lean`, with process start)   | 1.5 s (0.6 s in the first version) |
+| fuzzer, 600 requests (510 unique splits), each rendered and run in Node                                       | 47–53 s                            |
+| mutation test, 6 mutants × 400 splits                                                                         | 247 s                              |
+| `splits/run_all.sh`: 2,740 splits of six real bundles, each checked and run in Node, 4 jobs                   | 154 s                              |
+| `es_order/check.mjs 500 1`: 500 random import graphs, Node against the model                                  | 52 s                               |
 
 ## The check on the example, compiled
 

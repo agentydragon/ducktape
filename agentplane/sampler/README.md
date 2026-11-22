@@ -1,7 +1,7 @@
 # Sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses, Chat Completions, and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.166.0** JavaScript host for many
+Responses, Chat Completions, and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.171.0** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
@@ -102,7 +102,7 @@ environment variable. Gateway mode requires `gateway_target` and either a rotati
 local-test targets. It keeps one `OpenSession` gRPC stream to Runner and sends process and file
 operations as typed unary RPCs. Runner owns the connection to Codex's exec-server; the gRPC stream
 is not the Codex session itself. Closing the stream releases that adapter connection without
-sending a process-termination request. Pinned Codex 0.166.0 keeps a detached native session for up
+sending a process-termination request. Pinned Codex 0.171.0 keeps a detached native session for up
 to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
 durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure
@@ -351,13 +351,15 @@ the central sampler for Qwen; existing sessions keep their harness. Backend mode
 Codex metadata remain available for existing sessions.
 
 Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
-A model change within a Session normally preserves connection, provider model, API, dialect and exec
-encoding. If its old route is removed, an idle, settled Chat Completions Session can switch to
-another Chat Completions route and send it the retained messages and tool calls. Responses and
-Anthropic continue to require their original route contract; Anthropic also requires the same request
-options because signed continuation is bound to them. The target must
-allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;
-use a new route ID to change it. Standard routes reject manual compaction, and reaching the
+A model change always preserves the API. An idle, settled ChatGPT Responses Lite Session can
+switch between models on the same Agentplane ingress connection with the same tool encoding.
+This includes model routes removed from configuration when retained provider requests establish
+the matching contract. The sampler replays the active conversation window, including any opaque
+compaction, and leaves the provider to handle incompatible reasoning.
+If a Chat Completions route is removed, an idle, settled Session can switch to another Chat
+Completions route and replay its retained messages and tool calls. Other switches require the
+original route contract. See [the continuation rules](SPEC.md#model-changes). Standard routes
+reject manual compaction, and reaching the
 configured automatic compaction threshold fails the turn before any private compaction request.
 Portable compaction is not implemented. Provider compatibility still needs live validation;
 scripted tests establish the sampler's protocol and execution behavior.

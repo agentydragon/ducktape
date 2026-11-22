@@ -1,9 +1,13 @@
-import { Stack, Text } from "@mantine/core";
+import { Badge, isLightColor, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
+
+import { getGitHubLabelSummaries } from "../../client";
 
 import { TextBlock } from "../../../ui/text_block";
 import type { ActionPresentation } from "../presentation";
+import { definePreview } from "../entry";
 import { defineResultPreview, type ResultPreviewProps } from "../result_entry";
 import {
   account,
@@ -218,6 +222,36 @@ const write = repoInput.extend({
     )
     .optional(),
 });
+const nonBlank = z.string().refine((value) => value.trim().length > 0);
+const labelWrite = repoInput.extend({
+  method: z.literal("update"),
+  issue_number: number,
+  labels: z.array(nonBlank),
+});
+// Only these updates show every effect on the closed card. The picked object stays strict.
+const compactUpdate = write
+  .pick({ owner: true, repo: true, method: true, issue_number: true, state: true, state_reason: true, type: true })
+  .extend({
+    owner: z.string().regex(/^[\w-]+$/),
+    repo: z
+      .string()
+      .regex(/^[\w.-]+$/)
+      .refine((value) => value !== "." && value !== ".."),
+    method: z.literal("update"),
+    issue_number: number,
+    title: nonBlank.optional(),
+    assignees: z.array(nonBlank).optional(),
+    labels: z.array(nonBlank).optional(),
+    milestone: number.optional(),
+    state_reason: z.enum(["completed", "not_planned"]).optional(),
+  })
+  .refine(
+    (args) =>
+      (args.state_reason === undefined || args.state === "closed") &&
+      [args.state, args.title, args.assignees, args.labels, args.milestone, args.type].some(
+        (effect) => effect !== undefined
+      )
+  );
 const issueWriteResult = z.union([
   issueComment,
   z.object({ method: z.enum(["create", "update"]), issue: issueComment }),
@@ -280,6 +314,167 @@ function MetaTarget({ args }: { args: z.infer<typeof metaTarget> }): JSX.Element
   );
 }
 
+function IssueLabels({ labels, requestId }: { labels: readonly string[]; requestId?: string }): JSX.Element {
+  const summaries = useQuery({
+    queryKey: ["action-github-label-summaries", requestId],
+    queryFn: ({ signal }) => getGitHubLabelSummaries(requestId ?? "", signal),
+    enabled: Boolean(requestId && labels.length),
+    retry: false,
+    staleTime: 30_000,
+  }).data;
+  return (
+    <>
+      {labels.map((label, index) => {
+        const summaryColor = summaries?.labels.find((entry) => entry.name === label)?.color;
+        const color = summaryColor && /^[0-9a-fA-F]{6}$/.test(summaryColor) ? `#${summaryColor}` : undefined;
+        return (
+          <Badge
+            key={index}
+            component="span"
+            color={color ?? "gray.7"}
+            c={color && isLightColor(color) ? "black" : "white"}
+            size="sm"
+            tt="none"
+            h="auto"
+            maw="100%"
+            me={4}
+            my={1}
+            style={{ verticalAlign: "middle" }}
+            styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
+          >
+            {label}
+          </Badge>
+        );
+      })}
+    </>
+  );
+}
+
+type IssueWrite = z.infer<typeof write>;
+
+function IssueWriteLabel({ args, requestId }: { args: IssueWrite; requestId?: string }): JSX.Element {
+  if (args.method === "create") {
+    return (
+      <span>
+        Create issue in{" "}
+        <GitHubLink href={`${repositoryHref(args)}/issues`}>
+          {args.owner}/{args.repo}
+        </GitHubLink>
+      </span>
+    );
+  }
+  if (args.issue_number === undefined) return <span>Update GitHub issue</span>;
+  const issueLink = (
+    <GitHubLink href={issueHref(args, args.issue_number)}>
+      {args.owner}/{args.repo}#{args.issue_number}
+    </GitHubLink>
+  );
+  const labelOnly = labelWrite.safeParse(args);
+  if (labelOnly.success) {
+    return labelOnly.data.labels.length === 0 ? (
+      <span>Clear labels on {issueLink}</span>
+    ) : (
+      <span>
+        Set labels on {issueLink}: <IssueLabels labels={labelOnly.data.labels} requestId={requestId} />
+      </span>
+    );
+  }
+  const verb = args.state === "closed" ? "Close" : args.state === "open" ? "Reopen" : "Update";
+  return (
+    <span>
+      {verb} {issueLink}
+    </span>
+  );
+}
+
+function IssueWriteArguments({
+  args,
+  requestId,
+  collapsed = false,
+}: {
+  args: IssueWrite;
+  requestId?: string;
+  collapsed?: boolean;
+}): JSX.Element | null {
+  if (labelWrite.safeParse(args).success) return null;
+  const update = args.method === "update";
+  return (
+    <Stack gap={4}>
+      <Field name={update ? "New title" : "Title"} value={args.title} />
+      {update && args.state === "closed" ? (
+        <Field name="Reason" value={displayState(args.state_reason ?? "completed")} />
+      ) : (
+        <Field name="Requested reason" value={displayState(args.state_reason)} />
+      )}
+      {args.assignees &&
+        (args.assignees.length === 0 ? (
+          <Text size="sm">{update ? "Clear assignees" : "No assignees"}</Text>
+        ) : (
+          <Field name={update ? "Set assignees to" : "Assignees"} value={args.assignees.join(", ")} />
+        ))}
+      {args.labels &&
+        (args.labels.length === 0 ? (
+          <Text size="sm">{update ? "Clear labels" : "No labels"}</Text>
+        ) : (
+          <Field
+            name={update ? "Set labels to" : "Labels"}
+            value={<IssueLabels labels={args.labels} requestId={update ? requestId : undefined} />}
+          />
+        ))}
+      <Field
+        name={update ? "Set milestone to" : "Milestone"}
+        value={args.milestone === 0 ? undefined : args.milestone}
+      />
+      {!collapsed && args.milestone === 0 && <Field name="Submitted milestone" value={0} />}
+      <Field name={update ? "Set issue type to" : "Issue type"} value={args.type || undefined} />
+      {update && (args.type === null || args.type === "") && <Text size="sm">Clear issue type</Text>}
+      {args.parent_issue_number && (
+        <Field
+          name="Parent"
+          value={
+            <GitHubLink
+              href={issueHref(
+                { owner: args.parent_owner ?? args.owner, repo: args.parent_repo ?? args.repo },
+                args.parent_issue_number
+              )}
+            >
+              {args.parent_owner ?? args.owner}/{args.parent_repo ?? args.repo}#{args.parent_issue_number}
+            </GitHubLink>
+          }
+        />
+      )}
+      {args.duplicate_of && (
+        <Field
+          name="Duplicate of"
+          value={<GitHubLink href={issueHref(args, args.duplicate_of)}>Issue #{args.duplicate_of}</GitHubLink>}
+        />
+      )}
+      {collapsed && Boolean(args.issue_fields?.length) && (
+        <Field name="Edit issue fields" value={args.issue_fields?.map((field) => field.field_name).join(", ")} />
+      )}
+      {!collapsed &&
+        args.issue_fields?.map((field, index) => (
+          <Field
+            key={index}
+            name={field.field_name}
+            value={
+              field.delete
+                ? "Clear value"
+                : (field.field_option_name ?? (field.value == null ? undefined : String(field.value)))
+            }
+          />
+        ))}
+      {args.body &&
+        (collapsed ? (
+          <Text size="sm">{update ? "Replace description" : "Include a description"}</Text>
+        ) : (
+          <TextBlock text={args.body} heading={update ? "New description" : "Description"} format="prose" />
+        ))}
+      {!collapsed && args.body === "" && <Text size="sm">Empty description submitted.</Text>}
+    </Stack>
+  );
+}
+
 export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
     "issue_read",
@@ -287,7 +482,12 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
       label: "Read GitHub issue",
       schema: read,
       result: issueReadResult,
-      compact: ({ args }) => <Text size="sm">{readMethods[args.method]}</Text>,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo}#{args.issue_number} · {readMethods[args.method]}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <IssueTarget args={args} />
@@ -302,6 +502,7 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     githubPresentation({
       label: "List GitHub issues",
       schema: readList,
+      cardDecision: true,
       compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
@@ -368,69 +569,19 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ],
   [
     "issue_write",
-    githubPresentation({
-      label: "Change GitHub issue",
-      schema: write,
-      outcome: awaitingGitHubSubmission,
-      compact: ({ args }) => <Text size="sm">{args.method === "create" ? "Create issue" : "Update issue"}</Text>,
-      request: ({ args }) => (
-        <Stack gap={4}>
-          {args.issue_number ? (
-            <IssueTarget args={{ ...args, issue_number: args.issue_number }} />
-          ) : (
-            <RepoTarget repo={args} path="/issues" />
-          )}
-          <Field name={args.method === "create" ? "Create issue" : "Update issue"} value={args.title} />
-          <Field name="State" value={displayState(args.state)} />
-          <Field name="Reason" value={displayState(args.state_reason)} />
-          <Field
-            name="Assignees"
-            value={args.assignees?.length === 0 ? "Clear assignees" : args.assignees?.join(", ")}
-          />
-          <Field name="Labels" value={args.labels?.length === 0 ? "Clear labels" : args.labels?.join(", ")} />
-          <Field name="Milestone" value={args.milestone === 0 ? "Clear milestone" : args.milestone} />
-          <Field name="Issue type" value={args.type === null || args.type === "" ? "Clear type" : args.type} />
-          {args.parent_issue_number && (
-            <Field
-              name="Parent"
-              value={
-                <GitHubLink
-                  href={issueHref(
-                    { owner: args.parent_owner ?? args.owner, repo: args.parent_repo ?? args.repo },
-                    args.parent_issue_number
-                  )}
-                >
-                  {args.parent_owner ?? args.owner}/{args.parent_repo ?? args.repo}#{args.parent_issue_number}
-                </GitHubLink>
-              }
-            />
-          )}
-          {args.duplicate_of && (
-            <Field
-              name="Duplicate of"
-              value={<GitHubLink href={issueHref(args, args.duplicate_of)}>Issue #{args.duplicate_of}</GitHubLink>}
-            />
-          )}
-          {args.issue_fields?.map((field, index) => (
-            <Field
-              key={index}
-              name={field.field_name}
-              value={
-                field.delete
-                  ? "Clear value"
-                  : (field.field_option_name ?? (field.value == null ? undefined : String(field.value)))
-              }
-            />
-          ))}
-          {args.body === "" ? (
-            <Text size="sm">Clear the description.</Text>
-          ) : (
-            args.body && <TextBlock text={args.body} heading="Description" format="prose" />
-          )}
-        </Stack>
-      ),
-      result: defineResultPreview(issueWriteResult, IssueWriteReceipt),
-    }),
+    {
+      ...githubPresentation({
+        label: "Change GitHub issue",
+        schema: write,
+        outcome: awaitingGitHubSubmission,
+        compact: (props) => <IssueWriteArguments {...props} collapsed />,
+        request: IssueWriteArguments,
+        result: defineResultPreview(issueWriteResult, IssueWriteReceipt),
+      }),
+      label: definePreview(write, IssueWriteLabel),
+      offersCardDecisionButtons: (args) => compactUpdate.safeParse(args).success,
+      compactCardExpands: (args) => !compactUpdate.safeParse(args).success,
+    },
   ],
   [
     "sub_issue_write",
@@ -573,7 +724,12 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     githubPresentation({
       label: "Read GitHub issue label",
       schema: repoInput.extend({ name: z.string().min(1) }),
-      compact: ({ args }) => <Field name="Label" value={args.name} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo} · {args.name}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/labels" />

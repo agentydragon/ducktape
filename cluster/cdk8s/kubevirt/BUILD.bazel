@@ -26,6 +26,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:cdi",
         "//cluster/cdk8s/providers/kubevirt:storageprofile",
@@ -74,7 +75,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/vpa:policy",
-        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
         "@pypi//cdk8s",
     ],
 )

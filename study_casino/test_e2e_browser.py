@@ -8,21 +8,19 @@ stuck on `syncing`.
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import time
-import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 from playwright.async_api import Page, Route
-from python.runfiles import Runfiles
 
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
+from study_casino.conftest import post_json
 from testing.asgi import serve_app_sync
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
@@ -35,8 +33,7 @@ pytest_plugins = ("util.playwright",)
 
 
 @pytest.fixture
-def casino_server(db_url: str) -> Iterator[str]:
-    frontend_dist = Path(str(Runfiles.CreateOrRaise().root() / "ducktape/study_casino/frontend/dist/index.html")).parent
+def casino_server(db_url: str, frontend_dist: Path) -> Iterator[str]:
     app = create_app(Settings(database_url=db_url, frontend_dist_dir=frontend_dist))
     with serve_app_sync(app) as base_url:
         yield base_url
@@ -49,20 +46,9 @@ def _attach_logs(page: Page) -> list[str]:
     return logs
 
 
-def _post_json(base_url: str, path: str, payload: dict[str, object]) -> None:
-    req = urllib.request.Request(
-        f"{base_url}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        assert resp.status == 200
-
-
 def _ack_changelog(base_url: str) -> None:
     """Ack the changelog so the "what's new" modal doesn't intercept clicks."""
-    _post_json(
+    post_json(
         base_url,
         "/actions/changelog/ack",
         {"client_action_id": f"test.changelog:{time.time_ns()}", "last_id": LATEST_CHANGELOG_ID},
@@ -70,7 +56,7 @@ def _ack_changelog(base_url: str) -> None:
 
 
 def _seed_credits(base_url: str, credits: int) -> None:
-    _post_json(
+    post_json(
         base_url,
         "/actions/import",
         {

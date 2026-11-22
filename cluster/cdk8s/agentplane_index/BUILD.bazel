@@ -4,15 +4,18 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "workers",
     srcs = ["workers.py"],
+    tags = ["manual"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//agentplane/x/indexing:settings",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/cnpg:health",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",

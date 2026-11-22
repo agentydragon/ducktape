@@ -10,11 +10,10 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
@@ -64,8 +63,13 @@ def _deployment(chart: Chart) -> None:
                 VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
                 VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
                     # Cap the global 100Mi recommendation floor for this small proxy.
-                    ContainerPolicy.memory_requests_only(
-                        "nginx", cpu_request=_NGINX_CPU_REQUEST, memory_floor=_NGINX_MEMORY_REQUEST, memory_limit="24Mi"
+                    ContainerPolicy(
+                        container_name="nginx",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("cpu", "memory"),
+                        min_allowed={"cpu": _NGINX_CPU_REQUEST, "memory": _NGINX_MEMORY_REQUEST},
+                        # Keep a stale VPA CPU target schedulable when the other proxy replica keeps its host.
+                        max_allowed={"cpu": "1", "memory": "24Mi"},
                     ),
                     ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
                 ),
@@ -77,19 +81,10 @@ def _deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
-                    affinity=k8s.Affinity(
-                        pod_anti_affinity=k8s.PodAntiAffinity(
-                            required_during_scheduling_ignored_during_execution=[
-                                k8s.PodAffinityTerm(
-                                    label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
-                                    topology_key="kubernetes.io/hostname",
-                                )
-                            ]
-                        )
-                    ),
+                    affinity=node_scheduling.one_per_host(_SERVICE.pods.selector),
                     topology_spread_constraints=[
                         k8s.TopologySpreadConstraint(
-                            topology_key="topology.kubernetes.io/zone",
+                            topology_key=node_scheduling.ZONE_LABEL,
                             max_skew=1,
                             # A single eligible zone can keep both replicas on different hosts.
                             min_domains=1,
@@ -207,21 +202,6 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
     return chart
-
-
-def kube_api_proxy(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=_PROXY, namespace=NAMESPACE),
-            KustomizationSpecHealthChecks(
-                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name=_ROUTE, namespace=NAMESPACE
-            ),
-        ],
-    )

@@ -312,6 +312,36 @@ py_test(
 )
 
 py_test(
+    name = "test_environment_identity_browser",
+    size = "medium",
+    srcs = ["test_environment_identity_browser.py"],
+    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:browser_certificate",
+        "//agentplane/app/testing:history",
+        "//agentplane/app/testing:http2_proxy",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:thread_browser",
+        "//agentplane/app/testing:thread_browser_backends",
+        "//agentplane/history_service/testing:electric_service",
+        "//agentplane/net/peertls:config",
+        "//agentplane/policy/v1:policy_service_pb2",
+        "//agentplane/policy/v1:policy_service_pb2_grpc",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:tls",
+        "//testing/frontend_visual:capture",
+        "@pypi//grpcio",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows the generated PolicyService gRPC servicer
+    ],
+)
+
+py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
@@ -329,6 +359,7 @@ py_test(
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/app/testing:thread_browser",
+        "//agentplane/app/testing:thread_browser_backends",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/testing:thread_view_marks",
         "//agentplane/history_service:channels",
@@ -338,9 +369,6 @@ py_test(
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",
         "//agentplane/history_service/testing:protojson",
-        "//agentplane/net/peertls:config",
-        "//agentplane/policy/v1:policy_service_pb2",
-        "//agentplane/policy/v1:policy_service_pb2_grpc",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
@@ -349,20 +377,15 @@ py_test(
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/session_dispatcher/testing:gateway_process",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//agentplane/testing:tls",
-        "//devinfra/testing:output_writer",
         "//devinfra/testing:undeclared_outputs",
         "//testing/frontend_visual:capture",
         "//testing/frontend_visual:viewports",
-        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//types_grpcio",  # keep: mypy follows the generated PolicyService gRPC servicer
     ],
 )
 

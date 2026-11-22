@@ -3,21 +3,32 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "secret_copy",
+    srcs = ["secret_copy.py"],
+    deps = [
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
         ":db",
+        ":secret_copy",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:vpa_policy",
-        "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -72,6 +83,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":db",
+        ":secret_copy",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:external_creds",
@@ -80,7 +92,6 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:vpa_policy",
-        "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

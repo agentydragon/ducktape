@@ -13,8 +13,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-import yaml
-from cdk8s import App, Testing as Cdk8sTesting
+from cdk8s import App
 
 from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
 from cluster.cdk8s.agent_rbac_test_support import BoundRole, Permission, Rbac, uncovered
@@ -26,7 +25,9 @@ from cluster.cdk8s.haku.charts import console_chart
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db as plaid_db, spend as plaid_spend
 from cluster.cdk8s.public_coder import app as public_coder_app
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+
+pytest_plugins = ("cluster.cdk8s.agentplane.testing.fixtures",)
 
 _NAMESPACE = staging.ENV.namespace
 _ACCOUNTS_NAMESPACE = kubernetes_accounts_namespace(_NAMESPACE)
@@ -48,31 +49,30 @@ class Rendering:
         return self.rbac.held(self.bindings[name]["policySets"])
 
 
-def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool) -> Rendering:
-    """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
-    app = scratch_app_factory()
-    env = staging.environment(identity_catalog=identity_catalog)
-    charts = [
-        agent_rbac_base.chart(app),
-        agent_shared_rbac.chart(app),
-        staging.chart(app, env),
-        haku_rbac.chart(app),
-        ducktape_flux.chart(app),
-        plaid_db.chart(app),
-        plaid_spend.chart(app),
-        public_coder_app.rbac_chart(app),
-        clickhouse_installation.agent_diagnostics_rbac_chart(app),
-        console_chart(app),
-    ]
-    charts.extend(agent_namespace_rbac.chart(app, namespace) for namespace in NAMESPACE_DIAGNOSTICS)
-    # Its own app: it names its chart "agentplane" too.
-    charts.append(staging.delivery_chart(scratch_app_factory(), env))
-    docs = [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
+@pytest.fixture(scope="module")
+def static_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    """Roles and bindings owned outside Agentplane are shared by both policy catalogs."""
+    # chart.to_json() validates the whole owning App. These charts are independent.
+    resources: list[dict[str, Any]] = []
+    for build in (
+        agent_rbac_base.chart,
+        agent_shared_rbac.chart,
+        haku_rbac.chart,
+        ducktape_flux.chart,
+        plaid_db.chart,
+        plaid_spend.chart,
+        public_coder_app.rbac_chart,
+        clickhouse_installation.agent_diagnostics_rbac_chart,
+        console_chart,
+    ):
+        resources.extend(build(scratch_app_factory()).to_json())
+    for namespace in NAMESPACE_DIAGNOSTICS:
+        resources.extend(agent_namespace_rbac.chart(scratch_app_factory(), namespace).to_json())
+    return resources
 
-    def config_map(name: str, key: str) -> Any:
-        return yaml.safe_load(find_resource(docs, "ConfigMap", name)["data"][key])
 
-    presets = config_map("app-config", "config.yaml")["sandbox_presets"]
+def _rendering(docs: list[dict[str, Any]]) -> Rendering:
+    presets = config_map_yaml(docs, "app-config", "config.yaml")["sandbox_presets"]
     bindings = [doc for doc in docs if doc["kind"] == "PolicyBinding"]
     assert len({doc["metadata"]["name"] for doc in bindings}) == len(bindings)
     return Rendering(
@@ -84,13 +84,17 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
 
 
 @pytest.fixture(scope="module")
-def serviceaccount_rendering(scratch_app_factory: Callable[[], App]) -> Rendering:
-    return _rendering(scratch_app_factory, identity_catalog=False)
+def serviceaccount_rendering(
+    static_resources: list[dict[str, Any]], staging_manifests: list[dict[str, Any]]
+) -> Rendering:
+    return _rendering(static_resources + staging_manifests)
 
 
 @pytest.fixture(scope="module")
-def identity_rendering(scratch_app_factory: Callable[[], App]) -> Rendering:
-    return _rendering(scratch_app_factory, identity_catalog=True)
+def identity_rendering(
+    static_resources: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+) -> Rendering:
+    return _rendering(static_resources + identity_catalog_manifests)
 
 
 @pytest.fixture(scope="module", params=[False, True], ids=["serviceaccount-catalog", "identity-catalog"])
@@ -98,6 +102,62 @@ def rendering(request: pytest.FixtureRequest) -> Rendering:
     return cast(
         Rendering, request.getfixturevalue("identity_rendering" if request.param else "serviceaccount_rendering")
     )
+
+
+def test_public_coder_and_haku_configured_diagnostics_are_secret_free(static_resources: list[dict[str, Any]]) -> None:
+    """Configured public diagnostics do not widen secret or exec access."""
+    read = {"get", "list", "watch"}
+    metadata_role = find_resource(static_resources, "ClusterRole", "agent-readable-namespace-metadata")
+    assert all(set(rule["verbs"]) == read for rule in metadata_role["rules"])
+    assert not {
+        "secrets",
+        "externalsecrets",
+        "secretstores",
+        "clustersecretstores",
+        "pushsecrets",
+        "clusterpushsecrets",
+        "pods/log",
+        "pods/exec",
+        "pods/attach",
+        "pods/portforward",
+    } & {resource for rule in metadata_role["rules"] for resource in rule["resources"]}
+
+    for name in (
+        "agent-clickhouse-diagnostics-reader",
+        "agent-haku-console-metadata-reader",
+        "agent-public-coder-extended-diagnostics-reader",
+    ):
+        role = find_resource(static_resources, "Role", name)
+        binding = find_resource(static_resources, "RoleBinding", name)
+        assert binding["roleRef"]["name"] == role["metadata"]["name"]
+        assert all(set(rule["verbs"]) == read for rule in role["rules"]), name
+        assert not {"secrets", "pods/log", "pods/exec"} & {
+            resource for rule in role["rules"] for resource in rule["resources"]
+        }, name
+
+    # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
+    haku_cluster_binding = find_resource(static_resources, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
+    assert {(s["kind"], s["name"], s.get("namespace")) for s in haku_cluster_binding["subjects"]} >= {
+        ("Group", "oidc-ksbx-groups:haku", None),
+        ("Group", "haku:access-profile:haku", None),
+        ("ServiceAccount", "haku", "haku-sandbox"),
+    }
+
+    grants = Rbac(static_resources).binding_rules(haku_cluster_binding)
+    required = {
+        Permission(None, group, resource, verb)
+        for group, resource in (
+            ("kustomize.toolkit.fluxcd.io", "kustomizations"),
+            ("redis.redis.opstreelabs.in", "redisreplications"),
+        )
+        for verb in read
+    }
+    assert not uncovered(required, grants)
+    # Authorization reviews query the apiserver and do not persist an object.
+    assert {grant for grant in grants if grant.verb not in read} <= {
+        Permission(None, "authorization.k8s.io", resource, "create")
+        for resource in ("subjectaccessreviews", "localsubjectaccessreviews")
+    }
 
 
 def test_namespace_diagnostics_cover_static_and_managed_bindings(rendering: Rendering) -> None:
@@ -155,6 +215,42 @@ def test_finance_spend_policy_role_is_named_get_only(rendering: Rendering) -> No
     assert rendering.rbac.bound({role}) == {Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")}
 
 
+def test_launch_accounts_receive_their_scoped_roles(rendering: Rendering) -> None:
+    # Expand the ServiceAccountGrant through its actual KubernetesRoleSets. An additional
+    # binding or an accidental promotion to a ClusterRoleBinding must be visible here.
+    shared = {
+        BoundRole("ClusterRole", "cluster-diagnostics-reader", None),
+        BoundRole("Role", "agent-haku-console-metadata-reader", "haku-console"),
+        BoundRole("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
+        BoundRole("Role", "ducktape-flux-reader", "ducktape-flux"),
+        BoundRole("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
+        BoundRole("Role", "public-coder-agent-reader", "public-coder-agent"),
+    }
+    for namespace, classification in NAMESPACE_DIAGNOSTICS.items():
+        shared.add(BoundRole("ClusterRole", "agent-readable-namespace-metadata", namespace))
+        if classification is AgentReadable.LOGS:
+            shared.add(BoundRole("ClusterRole", "agent-readable-namespace-logs", namespace))
+    inventory = {
+        BoundRole("ClusterRole", "public-coder-agent-node-reader", None),
+        BoundRole("ClusterRole", "public-coder-agent-cluster-metadata-reader", None),
+    }
+    credentials = {
+        BoundRole("Role", "claude-ai-coinbase-reader", _NAMESPACE),
+        BoundRole("Role", "ovh-billing-reader", _NAMESPACE),
+        BoundRole("Role", "plaid-finance-diagnostics-reader", "plaid-mcp"),
+    }
+    expected = {
+        "public-coder": shared | inventory,
+        "finance-agent": shared
+        | inventory
+        | credentials
+        | {BoundRole("Role", "plaid-spend-finance-config-reader", "plaid-mcp")},
+        "haku": shared | credentials | {BoundRole("Role", "haku-sandbox-admin", "haku-sandbox")},
+    }
+    for account, roles in expected.items():
+        assert rendering.rbac.account_roles(_ACCOUNTS_NAMESPACE, account) == roles, account
+
+
 def test_agent_permission_superset_and_finance_parity(rendering: Rendering) -> None:
     public = rendering.launch("public-coder")
     haku = rendering.launch("haku")
@@ -163,6 +259,7 @@ def test_agent_permission_superset_and_finance_parity(rendering: Rendering) -> N
     assert not uncovered(public, finance)
     assert uncovered(finance, public) == {
         Permission(_NAMESPACE, "", "secrets", "get", "coinbase-api-credentials"),
+        Permission(_NAMESPACE, "", "secrets", "get", "ovh-billing-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
 
@@ -260,6 +357,10 @@ def test_agent_permission_denials(rendering: Rendering) -> None:
     denied.add(Permission(None, "", "nodes/proxy", "get"))
     for name, permissions in profiles.items():
         assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
+        ovh_billing = Permission(_NAMESPACE, "", "secrets", "get", "ovh-billing-credentials")
+        assert bool(uncovered({ovh_billing}, permissions)) == (name in {"public-coder", "claude-ai", "haku-agent"}), (
+            name
+        )
         assert uncovered(denied, permissions) == denied, name
         if name == "claude-ai":
             sandbox_writes = {
@@ -272,12 +373,11 @@ def test_agent_permission_denials(rendering: Rendering) -> None:
 
 def test_egress_proxy_impersonates_only_and_every_account(rendering: Rendering) -> None:
     """The proxy's resolved bindings, wildcards and ClusterRoles included, let it impersonate only
-    ServiceAccounts of the accounts namespace (`test_identity_catalog` checks the Role that says
-    so), and each rendered account credential names one it may impersonate."""
+    ServiceAccounts of the accounts namespace, and each rendered account credential names one
+    it may impersonate."""
     proxy = rendering.rbac.identity("ServiceAccount", egress.NAME, _NAMESPACE)
     impersonation = {permission for permission in proxy if permission.verb in {"impersonate", "*"}}
-    assert impersonation
-    assert not uncovered(impersonation, {Permission(_ACCOUNTS_NAMESPACE, "", "serviceaccounts", "impersonate")})
+    assert impersonation == {Permission(_ACCOUNTS_NAMESPACE, "", "serviceaccounts", "impersonate")}
     accounts = {
         Permission(account["namespace"], "", "serviceaccounts", "impersonate", account["name"])
         for source in rendering.rbac.credentials.values()

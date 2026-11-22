@@ -100,7 +100,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width
 
         root = build_tree(changes)
         root = sort_tree(root, sort_by=sort_mode)
-        config = RenderConfig(columns=columns, bar_width=bar_width, sort_by=sort_mode, max_depth=max_depth)
+        config = RenderConfig(columns=columns, bar_width=bar_width, max_depth=max_depth)
         diff_tree = DiffTree(root, config=config)
         console = Console()
         console.print(diff_tree)

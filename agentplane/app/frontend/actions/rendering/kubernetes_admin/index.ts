@@ -37,9 +37,14 @@ const renderers: ReadonlyArray<readonly [string, ActionPresentation]> = [
   ...additionalKubernetesRenderers,
 ];
 
-export const kubernetesAdminRenderers: ReadonlyMap<string, ActionPresentation> = new Map(
+const kubernetesAdminRenderers: ReadonlyMap<string, ActionPresentation> = new Map(
   renderers.map(([name, actionPresentation]) => [
     name,
     { ...actionPresentation, fallbackLabel: fallbackLabels.get(name) ?? actionPresentation.fallbackLabel },
   ])
 );
+
+export const kubernetesAdminPresentationGroup: readonly [string, typeof kubernetesAdminRenderers] = [
+  "kubernetes_admin",
+  kubernetesAdminRenderers,
+];

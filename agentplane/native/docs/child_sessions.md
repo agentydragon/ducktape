@@ -76,7 +76,7 @@ captures exposed asynchronous journal writes. This test establishes recovery of 
 not a zero-loss guarantee for crashes immediately after a result receipt. Parent model history is
 also not a substitute for a child's complete transcript.
 
-## Codex app-server (0.166.0)
+## Codex app-server (0.171.0)
 
 [`test_v2_discovery.py`](../codex/test_v2_discovery.py) includes separate v1 and v2 cases:
 

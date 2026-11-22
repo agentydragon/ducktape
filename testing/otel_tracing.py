@@ -9,8 +9,8 @@ Usage in conftest.py:
 
     from testing.otel_tracing import configure_tracing
 
-    def pytest_configure(config):
-        configure_tracing(config)
+    def pytest_configure():
+        configure_tracing()
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from util.otel import JsonlSpanExporter
 logger = logging.getLogger(__name__)
 
 
-def configure_tracing(config=None, filename: str = "otel_spans.jsonl") -> None:
+def configure_tracing(filename: str = "otel_spans.jsonl") -> None:
     """Set up OTel with streaming JSONL exporter. Call from pytest_configure."""
     dest = undeclared_outputs_dir() / filename
     exporter = JsonlSpanExporter(dest)

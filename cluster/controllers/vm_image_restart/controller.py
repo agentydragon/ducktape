@@ -20,13 +20,12 @@ from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cluster.controllers.vm_image_restart.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from cluster.controllers.vm_image_restart.kubernetes_watch import watch_kubevirt_resource
 from cluster.controllers.vm_image_restart.settings import Settings
 
 CONTROLLER = "vm-image-restart"
 OPT_IN_ANNOTATION = "ducktape.org/auto-restart-template-changes"
 STATE_KEY = "state"
-WATCH_TIMEOUT_SECONDS = 300
 RECONCILE_RETRY_SECONDS = 30
 MAX_RESTART_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = (15, 60, 180)
@@ -93,44 +92,6 @@ def _ready(vmi: dict[str, Any]) -> bool:
         condition.get("type") == "Ready" and condition.get("status") == "True"
         for condition in vmi.get("status", {}).get("conditions", [])
     )
-
-
-async def _next_reconcile_delay(
-    core: CoreApi,
-    settings: Settings,
-    *,
-    vm_cache: Mapping[str, dict[str, Any]],
-    vmi_cache: Mapping[str, dict[str, Any]],
-) -> float | None:
-    """Return the next retry/timeout timer; normal reconciles are watch-triggered."""
-    state = await _read_state(core, settings)
-    if state is None or state.phase != "Restarting":
-        return None
-
-    deadlines = [state.started_at + ROLLOUT_TIMEOUT]
-    vm = vm_cache.get(settings.target_vm_name)
-    if vm is None:
-        return max(0.0, (deadlines[0] - _utcnow()).total_seconds())
-    vmi = vmi_cache.get(settings.target_vm_name)
-    if vmi is not None:
-        metadata = vmi.get("metadata", {})
-        generation = int(vm.get("status", {}).get("desiredGeneration") or vm["metadata"].get("generation", 0))
-        observed_generation = int(vm.get("status", {}).get("observedGeneration", 0))
-        vmi_image = _container_disk_image(vmi.get("spec", {}))
-        restart_still_needed = (
-            _restart_required(vm)
-            and (observed_generation < generation or vmi_image != state.image)
-            and (vmi_image != state.image or _ready(vmi))
-        )
-        if (
-            metadata.get("uid") == state.old_vmi_uid
-            and not metadata.get("deletionTimestamp")
-            and restart_still_needed
-            and state.attempts < MAX_RESTART_ATTEMPTS
-        ):
-            deadlines.append(state.next_attempt_at)
-
-    return max(0.0, (min(deadlines) - _utcnow()).total_seconds())
 
 
 async def _read_state(core: CoreApi, settings: Settings) -> RestartState | None:
@@ -236,8 +197,9 @@ async def _finish(
 
 
 async def _request_restart(
-    *, vm_api: VMApi, core: CoreApi, settings: Settings, vm: dict[str, Any], state: RestartState, vmi: dict[str, Any]
-) -> None:
+    *, vm_api: VMApi, core: CoreApi, settings: Settings, vm: dict[str, Any], state: RestartState
+) -> bool:
+    """Return whether the rollout remains active after this restart request."""
     attempts = state.attempts
     if attempts >= MAX_RESTART_ATTEMPTS:
         await _finish(
@@ -249,15 +211,16 @@ async def _request_restart(
             reason="VMImageRestartFailed",
             message=f"gave up after {attempts} VMI restart requests; the desired image is {state.image}",
         )
-        return
+        return False
 
     now = _utcnow()
     if now < state.next_attempt_at:
-        return
+        return True
     attempts += 1
     backoff = RETRY_BACKOFF_SECONDS[min(attempts - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
     state.attempts = attempts
-    state.old_vmi_uid = vmi.get("metadata", {}).get("uid")
+    if not state.old_vmi_uid:
+        raise ValueError("cannot request a VMI restart without its UID")
     state.next_attempt_at = now + timedelta(seconds=backoff)
     state.message = f"requested graceful VMI restart {attempts}/{MAX_RESTART_ATTEMPTS}"
     # Persist before deleting so a controller pod restart cannot issue an unbounded series
@@ -270,7 +233,9 @@ async def _request_restart(
             namespace=settings.target_namespace,
             plural="virtualmachineinstances",
             name=settings.target_vm_name,
-            body=client.V1DeleteOptions(grace_period_seconds=RESTART_GRACE_SECONDS),
+            body=client.V1DeleteOptions(
+                grace_period_seconds=RESTART_GRACE_SECONDS, preconditions=client.V1Preconditions(uid=state.old_vmi_uid)
+            ),
         )
     except ApiException as exc:
         state.message = f"restart request {attempts}/{MAX_RESTART_ATTEMPTS} failed: {exc.reason or exc.status}"
@@ -286,16 +251,15 @@ async def _request_restart(
                 reason="VMImageRestartFailed",
                 message=state.message,
             )
-        else:
-            await _event(
-                core, settings, vm, reason="VMImageRestartRetrying", message=state.message, event_type="Warning"
-            )
-        return
+            return False
+        await _event(core, settings, vm, reason="VMImageRestartRetrying", message=state.message, event_type="Warning")
+        return True
 
     message = f"requested graceful VMI restart for template generation {state.generation} ({state.image})"
     state.message = message
     await _write_state(core, settings, state)
     await _event(core, settings, vm, reason="VMImageRestartRequested", message=message)
+    return True
 
 
 async def reconcile(
@@ -305,20 +269,21 @@ async def reconcile(
     *,
     vm_cache: Mapping[str, dict[str, Any]],
     vmi_cache: Mapping[str, dict[str, Any]],
-) -> None:
+) -> datetime | None:
+    """Reconcile the watched VM and return its next timer deadline, if any."""
     vm = vm_cache.get(settings.target_vm_name)
     if vm is None:
-        return
+        return None
     annotations = vm.get("metadata", {}).get("annotations", {})
     if annotations.get(OPT_IN_ANNOTATION) != "true":
-        return
+        return None
 
     generation = int(vm.get("status", {}).get("desiredGeneration") or vm["metadata"].get("generation", 0))
     observed_generation = int(vm.get("status", {}).get("observedGeneration", 0))
     desired_image = _container_disk_image(vm.get("spec", {}).get("template", {}).get("spec", {}))
     if not desired_image:
         logger.error("%s/%s has no rootdisk containerDisk image", settings.target_namespace, settings.target_vm_name)
-        return
+        return None
 
     vmi = vmi_cache.get(settings.target_vm_name)
     state = await _read_state(core, settings)
@@ -345,24 +310,18 @@ async def reconcile(
 
     if state is None:
         if not restart_required or (observed_generation >= generation and vmi_image == desired_image):
-            return
+            return None
         state = _new_state(generation, desired_image, vmi_uid)
         await _write_state(core, settings, state)
-        if vmi is None:
-            return
 
     if state.phase == "Ready":
-        return
+        return None
+    applied = observed_generation >= generation and not restart_required
+    ready = vmi is not None and _ready(vmi)
     if state.phase == "Failed":
         # KubeVirt keeps retrying a `runStrategy: Always` VMI after transient image-pull or
         # scheduling failures. Record the eventual recovery without issuing another restart.
-        if (
-            vmi is not None
-            and vmi_image == desired_image
-            and _ready(vmi)
-            and observed_generation >= generation
-            and not restart_required
-        ):
+        if applied and ready and vmi_image == desired_image:
             await _finish(
                 core=core,
                 settings=settings,
@@ -372,9 +331,10 @@ async def reconcile(
                 reason="VMImageRestartRecovered",
                 message=f"KubeVirt recovered the VMI on template generation {generation} ({desired_image})",
             )
-        return
+        return None
 
-    if now - state.started_at >= ROLLOUT_TIMEOUT:
+    deadline = state.started_at + ROLLOUT_TIMEOUT
+    if now >= deadline:
         await _finish(
             core=core,
             settings=settings,
@@ -387,47 +347,22 @@ async def reconcile(
                 f"{int(ROLLOUT_TIMEOUT.total_seconds() // 60)} minutes"
             ),
         )
-        return
+        return None
 
     if vmi is None:
-        return
+        return deadline
 
-    old_uid = state.old_vmi_uid
-    if old_uid is None:
+    image_matches = vmi_image == state.image
+    if state.old_vmi_uid is None:
         state.old_vmi_uid = vmi_uid
-        if vmi_image == state.image:
-            # The VMI appeared after the controller began watching. Let a matching new image
-            # finish booting before considering another restart for any remaining staged fields.
+        if image_matches:
+            # Give a newly observed VMI time to boot before restarting for other staged fields.
             state.next_attempt_at = now + timedelta(seconds=60)
         await _write_state(core, settings, state)
-        old_uid = vmi_uid
 
-    if vmi_uid != old_uid:
-        if vmi_image == state.image:
-            if _ready(vmi) and observed_generation >= generation and not restart_required:
-                await _finish(
-                    core=core,
-                    settings=settings,
-                    vm=vm,
-                    state=state,
-                    phase="Ready",
-                    reason="VMImageRestartReady",
-                    message=f"replacement VMI is Ready on template generation {generation} ({state.image})",
-                )
-            else:
-                state.old_vmi_uid = vmi_uid
-                state.next_attempt_at = now + timedelta(seconds=60)
-                await _write_state(core, settings, state)
-            return
-        # KubeVirt recreated a VMI but it still reflects the old template. A further
-        # graceful restart is allowed only within the same bounded attempt budget.
-        state.old_vmi_uid = vmi_uid
-        state.next_attempt_at = now
-        await _write_state(core, settings, state)
-        await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state, vmi=vmi)
-        return
-
-    if _ready(vmi) and observed_generation >= generation and vmi_image == state.image and not restart_required:
+    replaced = vmi_uid != state.old_vmi_uid
+    if applied and ready and image_matches:
+        subject = "replacement VMI" if replaced else "VMI"
         await _finish(
             core=core,
             settings=settings,
@@ -435,19 +370,27 @@ async def reconcile(
             state=state,
             phase="Ready",
             reason="VMImageRestartReady",
-            message=f"VMI is Ready on template generation {generation} ({state.image})",
+            message=f"{subject} is Ready on template generation {generation} ({state.image})",
         )
-        return
+        return None
 
-    if vmi_image == state.image and not _ready(vmi):
-        # A VMI already using the new image can still be pulling or booting. `Always` handles
-        # retrying failed launches; restarting it while it is coming up would create a loop.
-        return
-
+    # Let a matching VMI finish booting. `Always` handles failed launches.
+    if replaced:
+        state.old_vmi_uid = vmi_uid
+        # A replacement on the old template can be restarted within the same attempt budget.
+        state.next_attempt_at = now + timedelta(seconds=60) if image_matches else now
+        await _write_state(core, settings, state)
     if vmi.get("metadata", {}).get("deletionTimestamp"):
-        return
-    if restart_required and (observed_generation < generation or vmi_image != state.image):
-        await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state, vmi=vmi)
+        return deadline
+    restart_needed = restart_required and (not image_matches or (ready and observed_generation < generation))
+    request_now = not image_matches if replaced else restart_needed
+    if request_now:
+        still_active = await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state)
+        if not still_active:
+            return None
+    if restart_needed and state.attempts < MAX_RESTART_ATTEMPTS:
+        return min(deadline, state.next_attempt_at)
+    return deadline
 
 
 async def _run_reconcile_loop(
@@ -463,8 +406,8 @@ async def _run_reconcile_loop(
         await changed.wait()
         changed.clear()
         try:
-            await reconcile(vm_api, core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
-            delay = await _next_reconcile_delay(core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
+            deadline = await reconcile(vm_api, core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
+            delay = None if deadline is None else max(0.0, (deadline - _utcnow()).total_seconds())
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -490,33 +433,18 @@ async def main() -> None:
 
         vm_cache: dict[str, dict[str, Any]] = {}
         vmi_cache: dict[str, dict[str, Any]] = {}
-        field_selector = f"metadata.name={settings.target_vm_name}"
-
-        def watched_kind(plural: str, store: dict[str, dict[str, Any]]) -> WatchedKind:
-            return WatchedKind(
-                name=plural,
-                list=vm_api.list_namespaced_custom_object,
-                args=("kubevirt.io", "v1", settings.target_namespace, plural),
-                kwargs={"field_selector": field_selector, "_request_timeout": (10, WATCH_TIMEOUT_SECONDS + 30)},
-                key=lambda obj: str(obj["metadata"]["name"]),
-                names=lambda: set(store),
-                apply=lambda name, obj: apply_to(store, name, obj),
+        async with asyncio.TaskGroup() as tasks:
+            for plural, store in (("virtualmachines", vm_cache), ("virtualmachineinstances", vmi_cache)):
+                tasks.create_task(
+                    watch_kubevirt_resource(
+                        vm_api, settings.target_namespace, plural, settings.target_vm_name, store, changed
+                    ),
+                    name=f"list-watch-{plural}",
+                )
+            tasks.create_task(
+                _run_reconcile_loop(vm_api, core, settings, changed, vm_cache=vm_cache, vmi_cache=vmi_cache),
+                name="reconcile",
             )
-
-        async def on_change(_kind: WatchedKind) -> None:
-            changed.set()
-
-        informer = ListWatch(
-            kinds=(watched_kind("virtualmachines", vm_cache), watched_kind("virtualmachineinstances", vmi_cache)),
-            resync_seconds=WATCH_TIMEOUT_SECONDS,
-            on_change=on_change,
-        )
-        informer_task = asyncio.create_task(informer.run(), name="kubevirt-vm-informer")
-        try:
-            await _run_reconcile_loop(vm_api, core, settings, changed, vm_cache=vm_cache, vmi_cache=vmi_cache)
-        finally:
-            informer_task.cancel()
-            await asyncio.gather(informer_task, return_exceptions=True)
 
 
 if __name__ == "__main__":

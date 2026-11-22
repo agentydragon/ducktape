@@ -17,6 +17,11 @@ for label changes, and live Tana names beside recorded node IDs for node moves. 
 The view can render the saved arguments immediately and keep showing them if the lookup fails.
 The page and Web Push worker both use the operator-authenticated Action Service facade.
 
+Pending GitHub file pushes show a per-file diff in the expanded Actions card and detail view
+when the old text is available. The comparison identifies the branch commit it read.
+GitHub resolves the branch again when it runs the push. Files always offer their complete
+proposed contents.
+
 Calendar approvals can resolve an event or series title, schedule, scope and Google Calendar link
 through the operator facade. A missing preview leaves the request's calendar and event IDs
 visible. Calendar receipts use recorded results, with the complete request and response available
@@ -63,6 +68,28 @@ The Thread page uses Dispatcher placement to identify the exact Environment befo
 Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
 is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
+The open Thread watches the Dispatcher's bounded Session workset for active commands, recent
+delivery issues, and recent admissions or cancellations. A fresh browser can see these receipts
+while History is still unavailable. Local command rows and loaded settled History take precedence
+over duplicate receipts.
+An unresolved delivery issue can remain alongside a pending History command. The browser retains
+the last workset while disconnected and reports clipped groups and expired receipt coverage.
+When a reason is abbreviated, the browser reads the full retained reason by command ID.
+
+An operator can acknowledge a failed or unknown Dispatcher delivery issue. The App stores the
+preference for the verified OIDC operator, Thread, command ID, and exact receipt revision. Another
+browser signed in as that operator sees it when it opens or returns focus to the Thread. A newer
+receipt revision needs separate attention. When the workset clips issues, Older delivery issues
+opens the paginated receipt history, where retained failures can still be acknowledged.
+The selected Thread shares acknowledgement state between the conversation and Delivery history.
+Opening the archive loads one page at a time. Acknowledging a receipt updates both views.
+The browser checks saved local terminal rows against bounded Dispatcher batch reads before
+hiding an equivalent acknowledged notice, including after it leaves the recent workset. Without
+an exact server revision the notice remains visible. History and saved command data are unchanged.
+Delivery history remains available independently of the History projection and includes previous
+acknowledgements. When an exact revision has expired or was superseded, the interface reports that
+loss of evidence.
+
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can
@@ -97,6 +124,16 @@ not yet present on Identities.
 An operator can set, rename, or clear a Thread name from the thread view. An unnamed Thread displays
 its ID as a placeholder; clearing the name restores that placeholder.
 
+## Thread command outcomes
+
+The thread shows command failures, refusals, unconfirmed Dispatcher receipts and unknown delivery
+outcomes below the command, including the reason when available. For an attempted command without
+a receipt, reload, reconnect and Retry first read its Dispatch by ID. The full command and Session must
+match the saved record. A missing live Dispatch allows the browser to retry a Session-addressed command
+with its original ID and payload. An incomplete or contradictory receipt, or a lookup error, leaves
+the command unconfirmed. Older commands with uncertain or Sandbox-addressed destinations offer
+Check status and retain their original input.
+
 ## Composer activity
 
 The composer shows the controller's next idle-suspension deadline from the current live Sandbox
@@ -104,6 +141,16 @@ snapshot, with a client-side countdown and the full deadline on hover. A stale s
 timing as unavailable; a Sandbox that has not appeared yet shows no autosuspend state. Model activity
 and turn completion remain separate signals; when Dispatcher confirms idle and their relative ages
 match within a minute, the composer combines them while keeping the exact idle timestamp on hover.
+
+## Command delivery updates
+
+When the Dispatch watch disconnects, the thread warns that queued and delivering states may
+be stale. Stream errors appear immediately. Each connection has one minute to reach its
+first checkpoint before the browser reports a timeout and retries. A clean closure gets a
+three-second grace period for expected watch lease renewals. The warning clears when the
+browser applies and saves a `CaughtUp` checkpoint or has no commands left to watch. Previously
+saved receipts remain visible, and History continues to supply command outcomes. A warning
+about expired deletion coverage remains after recovery.
 
 ## Runtime diagnostics
 

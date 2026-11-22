@@ -1,19 +1,14 @@
 """Deployment order for the GitLab evaluation instance and its proof integrations."""
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY
-from cluster.cdk8s.gitlab_spike import runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 GITOPS_NAME = "gitlab-spike-gitops"
@@ -63,11 +58,7 @@ def dependencies(
         timeout="20m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(external_secrets, cnpg, seaweedfs, valkey, piraeus),
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
     )
 
 
@@ -98,24 +89,4 @@ def gitops(
         timeout="15m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(bootstrap, tofu_controller, forgejo),
-    )
-
-
-def integrations(chart: Chart, directory: RenderedDirectory, gitops: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        INTEGRATIONS_NAME,
-        directory,
-        timeout="10m",
-        # The source and demo cannot become ready before the manual seed and first image.
-        wait=False,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name=runner.NAME,
-                namespace=runner.NAMESPACE,
-            )
-        ],
-        depends_on=flux_kustomization_depends_on_many(gitops),
     )

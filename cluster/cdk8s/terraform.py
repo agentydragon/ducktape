@@ -62,11 +62,6 @@ def gitops_module(name: str) -> ArtifactGeneratorSpecArtifacts:
     return artifact(f"tf-gitops-{name}", f"{ducktape_flux.TF_GITOPS_ROOT}/{name}")
 
 
-def gitops_state_schema(name: str) -> str:
-    """The default Postgres backend schema for `tf/gitops/<name>`."""
-    return name.replace("-", "_")
-
-
 def secret_env(name: str, key: SecretKey) -> TerraformSpecRunnerPodTemplateSpecEnv:
     """The tofu-controller CRD's own env struct: its schema, not `k8s.EnvVar`."""
     return TerraformSpecRunnerPodTemplateSpecEnv(
@@ -170,7 +165,7 @@ def gitops_terraform(
         scope,
         id,
         name=name,
-        schema=gitops_state_schema(name),
+        schema=db.gitops_state_schema(name),
         source_ref=TerraformSpecSourceRef(
             kind=TerraformSpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=flux.NAMESPACE
         ),

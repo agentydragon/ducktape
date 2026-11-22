@@ -11,8 +11,8 @@ from grocy_mcp.grocy_fixtures import grocy_base_url, grocy_container
 from testing.otel_tracing import configure_tracing
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    configure_tracing(config)
+def pytest_configure() -> None:
+    configure_tracing()
 
 
 @pytest.hookimpl(hookwrapper=True)

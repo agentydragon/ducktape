@@ -244,9 +244,11 @@ barman-cloud backups and continuous WAL archiving with a 30-day retention policy
 They are stored in SeaweedFS in the same OVH failure domain; offsite backup remains
 open in <plan.md>.
 
-All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
-in the same `tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`).
-PG advisory locks auto-release on runner-pod death — no more stale-Lease problem.
+Crossplane's OpenTofu provider manages state for the migrated GitOps roots. Its
+Workspaces and the remaining tofu-controller runners use the same PostgreSQL backend.
+Reflector mirrors the credentials into `flux-system`. Each GitOps root keeps its
+schema through a controller handoff or module rename. Infra-drift plans the bootstrap
+root against its existing `main` schema.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
@@ -442,8 +444,8 @@ applications").
   SSH key, read grant on `ducktape` and token-mint Secret are no longer provisioned
   (`tf/gitops/forgejo-agentydragon-repos`, restore from `d36a089448`), and neither is its
   rotated Forgejo tea token (`secrets/codex-pod-forgejo-tea-token.yaml`, last rotated
-  2026-09-03). The two LiteLLM virtual keys `codex-pod` and `codex-pod-messages`
-  (`cluster/cdk8s/litellm/crossplane_keys.py`) are still provisioned.
+  2026-09-03). Its two LiteLLM virtual keys, `codex-pod` and
+  `codex-pod-messages`, are also no longer provisioned.
 - **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's

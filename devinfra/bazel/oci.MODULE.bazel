@@ -1,6 +1,15 @@
 # Python OCI image layering (aspect_rules_py)
 bazel_dep(name = "aspect_rules_py", version = "1.12.1")
 
+# The ownership mutation in py_image_layer drops the common rule attributes
+# forwarded to every other expanded target. Drop the patch when the pinned
+# rules pass tags through to that target.
+single_version_override(
+    module_name = "aspect_rules_py",
+    patch_strip = 1,
+    patches = ["//patches:aspect_rules_py_image_layer_tags.patch"],
+)
+
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_distroless", version = "0.9.4")
@@ -264,17 +273,10 @@ apt.install(
     ],
 )
 
-# CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
-# dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
+# git on debian:trixie-slim for the CPAP sync, which pushes to the cpap-data Forgejo repo.
 apt.install(
     dependency_set = "trixie_cpap_sync",
-    packages = [
-        "git",
-        "iproute2",
-        "isc-dhcp-client",
-        "iw",
-        "wpasupplicant",
-    ],
+    packages = ["git"],
     suites = [
         "trixie",
         "trixie-security",

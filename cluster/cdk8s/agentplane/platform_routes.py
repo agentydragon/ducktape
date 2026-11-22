@@ -29,7 +29,8 @@ from agentplane.net.peertls.config import (
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
 )
-from cluster.cdk8s.agentplane import egress, environment_service, history_service, llm_ingress, notifications, telemetry
+from cluster.cdk8s.agentplane import egress, environment_service, history_service, llm_ingress, notifications
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -40,15 +41,6 @@ class Route:
     service: ServiceRef
     transport: PlatformRouteTransport
     service_prefixes: tuple[str, ...]
-
-    @property
-    def listen_port(self) -> int:
-        # Full gRPC methods select routes on the shared local listener.
-        return PLATFORM_ROUTES_PORT
-
-    @property
-    def local_target(self) -> str:
-        return f"127.0.0.1:{self.listen_port}"
 
 
 def egress_rules(namespace: str) -> Route:
@@ -100,7 +92,7 @@ def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy."""
     return Route(
         "telemetry",
-        telemetry.ALLOY_OTLP_GRPC,
+        alloy_endpoints.OTLP_GRPC,
         PlaintextRouteTransport(),
         (
             "/opentelemetry.proto.collector.trace.v1.TraceService/",
@@ -110,7 +102,7 @@ def telemetry_route() -> Route:
     )
 
 
-def routes(namespace: str) -> tuple[Route, ...]:
+def runner_routes(namespace: str) -> tuple[Route, ...]:
     return (
         telemetry_route(),
         egress_rules(namespace),
@@ -121,23 +113,21 @@ def routes(namespace: str) -> tuple[Route, ...]:
     )
 
 
-def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> PlatformRoutes:
+def listener(*routes: Route, listen_host: str = "127.0.0.1") -> PlatformRoutes:
     """The sidecar's shared `platform_routes` listener and its method-selected routes."""
     return PlatformRoutes(
         listen_address=f"{listen_host}:{PLATFORM_ROUTES_PORT}",
         routes={
             route.name: PlatformRoute(
-                service_prefixes=route.service_prefixes,
-                upstream=f"{route.service.fqdn}:{route.service.pod_port}",
-                transport=route.transport,
+                service_prefixes=route.service_prefixes, upstream=route.service.authority, transport=route.transport
             )
-            for route in routes(namespace)
+            for route in routes
         },
     )
 
 
-def telemetry_endpoint(*, host: str = "127.0.0.1") -> str:
-    """The OTLP/gRPC endpoint on the shared listener, in the caller's network namespace."""
+def listener_url(*, host: str = "127.0.0.1") -> str:
+    """The shared platform route listener, in the caller's network namespace."""
     return f"http://{host}:{PLATFORM_ROUTES_PORT}"
 
 
@@ -147,7 +137,7 @@ class PlatformRouteFences(Construct):
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, clients: Pods) -> None:
         super().__init__(scope, id)
-        fenced_routes = routes(namespace)
+        fenced_routes = runner_routes(namespace)
         NetworkPolicy(
             self,
             "clients",

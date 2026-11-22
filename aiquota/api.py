@@ -1,9 +1,10 @@
 """Bearer-authenticated HTTP API for the aiquota provider adapters.
 
-The API deliberately keeps provider responses in process memory only.  It is
-safe to use beside a credential-refresh owner (for example CLIProxyAPI): its
-provider settings disable refreshes, so this process never mutates credential
-files or persists quota snapshots.
+Provider responses are cached in process memory; the optional ClickHouse sink
+appends each snapshot to analytics storage. With `cli_proxy_api.url` set (the
+deployed configuration) the Claude and Codex adapters reach their providers
+through CLIProxyAPI, which owns credential refresh, so this process never reads
+or writes credential files.
 """
 
 from __future__ import annotations
@@ -32,9 +33,18 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
 from starlette.middleware.sessions import SessionMiddleware
 
-from aiquota.cache import _assemble, _instantiate
+from aiquota.cache import _assemble, _instantiate_accounts
 from aiquota.config import Config
-from aiquota.models import AllQuotas, FetchSuccess, HistorySnapshot, QuotaSnapshot, RawUpstreamResponse
+from aiquota.models import (
+    AllQuotas,
+    FetchError,
+    FetchSuccess,
+    HistoryObservation,
+    HistorySnapshot,
+    QuotaSnapshot,
+    RawUpstreamResponse,
+    account_capture_key,
+)
 from aiquota.providers.base import SupportsHistory
 from aiquota.render.view_model import AllQuotasView, to_view
 
@@ -204,7 +214,7 @@ class CollectorMetrics:
         )
         self.provider_success = Gauge(
             "aiquota_provider_scrape_success",
-            "Whether the latest provider fetch succeeded",
+            "Whether every latest account fetch for the provider succeeded",
             ["provider"],
             registry=self.registry,
         )
@@ -273,9 +283,16 @@ class BackgroundCollector:
             self.metrics.polls.labels(result="error").inc()
             logger.exception("aiquota quota fetch failed")
             return
-        for provider in snapshot.quotas.providers:
-            self.metrics.provider_success.labels(provider=provider.provider).set(
-                1 if isinstance(provider.last_output.result, FetchSuccess) else 0
+        self.metrics.provider_success.clear()
+        for name in {provider.provider for provider in snapshot.quotas.providers}:
+            self.metrics.provider_success.labels(provider=name).set(
+                int(
+                    all(
+                        isinstance(p.last_output.result, FetchSuccess)
+                        for p in snapshot.quotas.providers
+                        if p.provider == name
+                    )
+                )
             )
         if self._sink is None:
             self.metrics.polls.labels(result="success").inc()
@@ -323,27 +340,20 @@ class HistoryCollector:
 
     async def poll_once(self) -> None:
         try:
-            rows = await self._sink.write_history(await self._fetcher.fetch_history())
+            snapshot = await self._fetcher.fetch_history()
+            rows = await self._sink.write_history(snapshot)
         except httpx.HTTPError, OSError:
             self.metrics.history_polls.labels(result="error").inc()
             logger.exception("aiquota history collection failed")
             return
-        self.metrics.history_polls.labels(result="success").inc()
+        self.metrics.history_polls.labels(result="partial" if snapshot.errors else "success").inc()
         self.metrics.history_rows.inc(rows)
 
 
 class _CapturingClientFactory:
     """Provider HTTP client factory which captures only the declared endpoint bodies."""
 
-    def __init__(
-        self,
-        *,
-        claude_proxy: str | None,
-        claude_proxy_ca: Path | None,
-        transport: httpx.AsyncBaseTransport | None = None,
-    ) -> None:
-        self._claude_proxy = claude_proxy
-        self._claude_proxy_ca = claude_proxy_ca
+    def __init__(self, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._transport = transport
         self.responses: dict[str, RawUpstreamResponse] = {}
 
@@ -390,26 +400,12 @@ class _CapturingClientFactory:
         kwargs: dict[str, object] = {
             "timeout": timeout,
             "event_hooks": {"response": [capture]},
-            # Do not inherit a pod-wide HTTPS_PROXY. The legacy Claude
-            # credential-substitution proxy is used only for the direct-token
-            # fallback; CLIProxyAPI management calls must go directly to the
-            # in-cluster service.
+            # Do not inherit a pod-wide HTTPS_PROXY: CLIProxyAPI management
+            # calls must go directly to the in-cluster service.
             "trust_env": False,
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
-        # Route only direct Claude provider requests through the legacy
-        # credential-substitution proxy. Management calls have a local
-        # `/api-call` response URL even when their capture key names a Claude
-        # endpoint, so the key alone cannot select the proxy.
-        is_direct_claude_endpoint = capture_key == "claude_profile_direct" or (
-            capture_key in {"claude", "claude_prepaid_balance"}
-            and any(url.startswith("https://api.anthropic.com/") for url in response_urls)
-        )
-        if is_direct_claude_endpoint and self._claude_proxy:
-            kwargs["proxy"] = self._claude_proxy
-            if self._claude_proxy_ca is not None:
-                kwargs["verify"] = str(self._claude_proxy_ca)
         return httpx.AsyncClient(**kwargs)  # type: ignore[arg-type]
 
 
@@ -417,18 +413,10 @@ class QuotaAPIService:
     """In-memory, coalesced quota collector with no disk-backed cache."""
 
     def __init__(
-        self,
-        config: Config,
-        *,
-        cache_ttl: timedelta = timedelta(seconds=120),
-        claude_proxy: str | None = None,
-        claude_proxy_ca: Path | None = None,
-        cli_proxy_api_key: str | None = None,
+        self, config: Config, *, cache_ttl: timedelta = timedelta(seconds=120), cli_proxy_api_key: str | None = None
     ) -> None:
         self._config = config
         self._cache_ttl = cache_ttl
-        self._claude_proxy = claude_proxy
-        self._claude_proxy_ca = claude_proxy_ca
         self._cli_proxy_api_key = cli_proxy_api_key
         self._snapshot: QuotaSnapshot | None = None
         self._lock = asyncio.Lock()
@@ -441,17 +429,49 @@ class QuotaAPIService:
             if not force_refresh and self._is_fresh(self._snapshot):
                 assert self._snapshot is not None
                 return self._snapshot
-            factory = self._client_factory()
-            providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
+            factory = _CapturingClientFactory()
+            providers = await _instantiate_accounts(self._config, factory, self._cli_proxy_api_key)
             outputs = await asyncio.gather(*(provider.fetch() for provider in providers))
-            prior = {quota.provider: quota for quota in self._snapshot.quotas.providers} if self._snapshot else {}
-            quotas = AllQuotas(
-                providers=[
-                    _assemble(provider.name, output, prior.get(provider.name))
-                    for provider, output in zip(providers, outputs, strict=True)
-                ],
-                fetched_at=datetime.now(UTC),
+            prior = (
+                {(quota.provider, quota.account_id): quota for quota in self._snapshot.quotas.providers}
+                if self._snapshot
+                else {}
             )
+            assembled = [
+                _assemble(
+                    provider.name,
+                    output,
+                    prior.get((provider.name, provider.account_id)),
+                    account_id=provider.account_id,
+                    account_label=provider.account_label,
+                    plan_type=provider.plan_type,
+                    account_tier=provider.account_tier,
+                )
+                for provider, output in zip(providers, outputs, strict=True)
+            ]
+            # Discovery can fail before a credential can be identified. Keep any
+            # previously identified accounts as stale rather than transferring
+            # their last success to an unknown or different account.
+            unidentified_errors = {
+                q.provider: q.last_output
+                for q in assembled
+                if q.account_id is None and isinstance(q.last_output.result, FetchError)
+            }
+            present = {(q.provider, q.account_id) for q in assembled}
+            for key, previous in prior.items():
+                if key[1] is not None and key not in present and key[0] in unidentified_errors:
+                    assembled.append(
+                        _assemble(
+                            previous.provider,
+                            unidentified_errors[key[0]],
+                            previous,
+                            account_id=previous.account_id,
+                            account_label=previous.account_label,
+                            plan_type=previous.plan_type,
+                            account_tier=previous.account_tier,
+                        )
+                    )
+            quotas = AllQuotas(providers=assembled, fetched_at=datetime.now(UTC))
             self._snapshot = QuotaSnapshot(quotas=quotas, raw_responses=factory.responses)
             return self._snapshot
 
@@ -462,21 +482,28 @@ class QuotaAPIService:
         runs on its own schedule and must not make a `/v1/quotas` caller wait.
         """
 
-        factory = self._client_factory()
-        providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
+        factory = _CapturingClientFactory()
+        providers = await _instantiate_accounts(self._config, factory, self._cli_proxy_api_key)
+        history_providers = [provider for provider in providers if isinstance(provider, SupportsHistory)]
         batches = await asyncio.gather(
-            *(provider.fetch_history() for provider in providers if isinstance(provider, SupportsHistory))
+            *(provider.fetch_history() for provider in history_providers), return_exceptions=True
         )
+        observations: list[HistoryObservation] = []
+        errors = [
+            f"{provider.name}: account discovery failed"
+            for provider in providers
+            if provider.name == "codex" and not isinstance(provider, SupportsHistory)
+        ]
+        for provider, batch in zip(history_providers, batches, strict=True):
+            if isinstance(batch, BaseException):
+                logger.warning("%s history fetch failed: %s", provider.name, type(batch).__name__)
+                errors.append(f"{provider.name}: {type(batch).__name__}")
+                continue
+            observations.extend(
+                observation.model_copy(update={"account_id": provider.account_id}) for observation in batch
+            )
         return HistorySnapshot(
-            observations=[observation for batch in batches for observation in batch],
-            fetched_at=datetime.now(UTC),
-            raw_responses=factory.responses,
-        )
-
-    def _client_factory(self) -> _CapturingClientFactory:
-        return _CapturingClientFactory(
-            claude_proxy=(self._claude_proxy if not self._config.cli_proxy_api.url else None),
-            claude_proxy_ca=(self._claude_proxy_ca if not self._config.cli_proxy_api.url else None),
+            observations=observations, fetched_at=datetime.now(UTC), raw_responses=factory.responses, errors=errors
         )
 
     def _is_fresh(self, snapshot: QuotaSnapshot | None) -> bool:
@@ -619,20 +646,30 @@ def create_app(
         )
 
     @app.get("/v1/providers/{provider}/raw", dependencies=[Depends(_require_api_auth)])
-    async def provider_raw(provider: str) -> JSONResponse:
+    async def provider_raw(provider: str, account_id: str | None = None) -> JSONResponse:
         snapshot = await read_snapshot()
-        if provider not in {quota.provider for quota in snapshot.quotas.providers}:
-            raise HTTPException(status_code=404, detail="unknown provider", headers=_CACHE_CONTROL)
-        return raw_response(provider, provider, snapshot)
+        selected = select_account(provider, account_id, snapshot)
+        return raw_response(provider, account_capture_key(provider, selected), snapshot)
 
     @app.get("/v1/providers/{provider}/prepaid-balance/raw", dependencies=[Depends(_require_api_auth)])
-    async def provider_prepaid_balance_raw(provider: str) -> JSONResponse:
+    async def provider_prepaid_balance_raw(provider: str, account_id: str | None = None) -> JSONResponse:
         snapshot = await read_snapshot()
         if provider not in {quota.provider for quota in snapshot.quotas.providers}:
             raise HTTPException(status_code=404, detail="unknown provider", headers=_CACHE_CONTROL)
         if provider != "claude":
             raise HTTPException(status_code=404, detail="unknown provider endpoint", headers=_CACHE_CONTROL)
-        return raw_response(provider, "claude_prepaid_balance", snapshot)
+        selected = select_account(provider, account_id, snapshot)
+        return raw_response(provider, account_capture_key("claude_prepaid_balance", selected), snapshot)
+
+    def select_account(provider: str, account_id: str | None, snapshot: QuotaSnapshot) -> str | None:
+        matching = [q for q in snapshot.quotas.providers if q.provider == provider]
+        if account_id is not None:
+            matching = [q for q in matching if q.account_id == account_id]
+        if not matching:
+            raise HTTPException(status_code=404, detail="unknown provider account", headers=_CACHE_CONTROL)
+        if len(matching) != 1:
+            raise HTTPException(status_code=400, detail="account_id is required", headers=_CACHE_CONTROL)
+        return matching[0].account_id
 
     def raw_response(provider: str, capture_key: str, snapshot: QuotaSnapshot) -> JSONResponse:
         raw = snapshot.raw_responses.get(capture_key)

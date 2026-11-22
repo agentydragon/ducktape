@@ -35,6 +35,7 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
     scenario_identity,
 )
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME, NATIVE_CLIENT_SVID_SECRET
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
 from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
@@ -244,7 +245,7 @@ async def deployed_session_command_cannot_cross_deletion(
 ) -> None:
     artifact = undeclared_outputs_dir() / "session-deletion"
     artifact.mkdir()
-    app, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
+    app, _, _ = await service_caller(cluster, NATIVE_CLIENT_NAME, certificate_secret=NATIVE_CLIENT_SVID_SECRET)
     gateway, _, _ = await service_caller(cluster, "sessions", certificate_secret="sessions-client-workload-tls")
     name = f"systest-deletion-{uuid4().hex[:8]}"
     session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
@@ -532,30 +533,6 @@ async def _wait_identity_and_binding_deleted(cluster: Cluster, identity: Scenari
     await wait_absent("policybinding", f"{identity['name']}.identity")
 
 
-def _app_pod_selector(deployment: dict[str, Any]) -> str:
-    match_labels = deployment["spec"]["selector"].get("matchLabels", {})
-    assert match_labels, deployment["spec"]["selector"]
-    return ",".join(f"{key}={value}" for key, value in sorted(match_labels.items()))
-
-
-async def _wait_app_replicas(cluster: Cluster, expected: int) -> None:
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            deployment = json.loads(await cluster.kubectl("get", "deployment", "app", "-o", "json"))
-            ready = deployment.get("status", {}).get("readyReplicas", 0)
-            pods = json.loads(await cluster.kubectl("get", "pods", "-l", _app_pod_selector(deployment), "-o", "json"))[
-                "items"
-            ]
-            assert ready == expected, (ready, expected)
-            assert len(pods) == expected, (pods, expected)
-
-
-async def _wait_app_down(cluster: Cluster) -> None:
-    await _wait_app_replicas(cluster, 0)
-
-
 async def _wait_retained_turn(history: history_service_pb2_grpc.HistoryServiceAsyncStub, session: str) -> int:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
@@ -633,7 +610,9 @@ async def _create_retained_turn(
 async def managed_cli_reads_retained_history_with_identity_uid_scope(
     cluster: Cluster, scripted: ScriptedUpstream
 ) -> None:
-    """The mounted CLI reads its own retained Session with app down and cannot cross Identity UIDs."""
+    """The mounted CLI reads its own retained Session without the App and cannot cross Identity UIDs."""
+    app_resources = await cluster.kubectl("get", "deployment/app", "service/app", "--ignore-not-found", "-o", "name")
+    assert not app_resources, f"the native History case requires the App to be absent: {app_resources}"
     artifact = undeclared_outputs_dir() / f"managed-cli-history-{uuid4().hex[:8]}"
     artifact.mkdir()
     evidence: dict[str, object] = {"passed": False}
@@ -643,7 +622,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
 
     persist()
     async with scripted.case_scope():
-        app, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
+        app, _, _ = await service_caller(cluster, NATIVE_CLIENT_NAME, certificate_secret=NATIVE_CLIENT_SVID_SECRET)
         gateway, _, _ = await service_caller(cluster, "sessions", certificate_secret="sessions-client-workload-tls")
         async with (
             forward(cluster) as dispatcher_target,
@@ -762,58 +741,49 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                 )
                 persist()
 
-                app_deployment = json.loads(await cluster.kubectl("get", "deployment", "app", "-o", "json"))
-                original_replicas = app_deployment.get("spec", {}).get("replicas", 1)
-                try:
-                    await cluster.kubectl("scale", "deployment/app", "--replicas=0")
-                    await _wait_app_down(cluster)
-
-                    async def run_cli(*args: str) -> dict[str, Any]:
-                        output = await cluster.exec(
-                            current_pod, CLI, "--json", *args, container=ENVIRONMENT_RUNTIME_CONTAINER
-                        )
-                        page: dict[str, Any] = json.loads(output)
-                        return page
-
-                    summary = await run_cli("history", "get-session-summary", current_session)
-                    assert summary.get("sessionId") == current_session, summary
-                    own_page = await run_cli("history", "read-session-events", current_session, "--limit", "1000")
-                    assert current_marker in json.dumps(own_page), own_page
-                    assert own_page.get("entries"), own_page
-
-                    async def refused_history(session_id: str) -> dict[str, Any]:
-                        output = await cluster.exec(
-                            current_pod,
-                            "sh",
-                            "-c",
-                            '"$@" 2>&1 || true',
-                            "history-client",
-                            CLI,
-                            "--json",
-                            "history",
-                            "read-session-events",
-                            session_id,
-                            container=ENVIRONMENT_RUNTIME_CONTAINER,
-                        )
-                        result: dict[str, Any] = json.loads(output)
-                        return result
-
-                    other_page = await refused_history(other_session)
-                    old_page = await refused_history(old_session)
-                    for target_session, page in ((other_session, other_page), (old_session, old_page)):
-                        assert page.get("error", {}).get("code") == "NOT_FOUND", (target_session, page)
-                        assert page.get("error", {}).get("source") == "service", (target_session, page)
-                    evidence.update(
-                        {
-                            "app_ready_replicas_after_scale_down": 0,
-                            "current_identity_history_summary": summary,
-                            "current_identity_own_read": own_page,
-                            "other_identity_read_refusal": other_page,
-                            "old_identity_uid_read_refusal": old_page,
-                            "passed": True,
-                        }
+                async def run_cli(*args: str) -> dict[str, Any]:
+                    output = await cluster.exec(
+                        current_pod, CLI, "--json", *args, container=ENVIRONMENT_RUNTIME_CONTAINER
                     )
-                    persist()
-                finally:
-                    await cluster.kubectl("scale", "deployment/app", f"--replicas={original_replicas}")
-                    await _wait_app_replicas(cluster, original_replicas)
+                    page: dict[str, Any] = json.loads(output)
+                    return page
+
+                summary = await run_cli("history", "get-session-summary", current_session)
+                assert summary.get("sessionId") == current_session, summary
+                own_page = await run_cli("history", "read-session-events", current_session, "--limit", "1000")
+                assert current_marker in json.dumps(own_page), own_page
+                assert own_page.get("entries"), own_page
+
+                async def refused_history(session_id: str) -> dict[str, Any]:
+                    output = await cluster.exec(
+                        current_pod,
+                        "sh",
+                        "-c",
+                        '"$@" 2>&1 || true',
+                        "history-client",
+                        CLI,
+                        "--json",
+                        "history",
+                        "read-session-events",
+                        session_id,
+                        container=ENVIRONMENT_RUNTIME_CONTAINER,
+                    )
+                    result: dict[str, Any] = json.loads(output)
+                    return result
+
+                other_page = await refused_history(other_session)
+                old_page = await refused_history(old_session)
+                for target_session, page in ((other_session, other_page), (old_session, old_page)):
+                    assert page.get("error", {}).get("code") == "NOT_FOUND", (target_session, page)
+                    assert page.get("error", {}).get("source") == "service", (target_session, page)
+                evidence.update(
+                    {
+                        "app_deployment_and_service_absent": True,
+                        "current_identity_history_summary": summary,
+                        "current_identity_own_read": own_page,
+                        "other_identity_read_refusal": other_page,
+                        "old_identity_uid_read_refusal": old_page,
+                        "passed": True,
+                    }
+                )
+                persist()

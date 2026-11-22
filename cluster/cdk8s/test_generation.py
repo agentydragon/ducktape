@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import App, Chart
 
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import (
@@ -15,10 +15,8 @@ from cluster.cdk8s.flux import (
     PatchTarget,
     SecretGeneratorArgs,
     artifact_directory,
-    flux_kustomization,
-    kustomizations_chart,
 )
-from cluster.cdk8s.generation import config_map_chart, write_directory
+from cluster.cdk8s.generation import config_map_chart, sops_decryption, write_directory
 
 _ARTIFACT = artifact("test-app", "test/app")
 
@@ -62,57 +60,33 @@ def test_patch_charts_are_listed_as_patches_not_resources(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
-    ("siblings", "decrypted"),
-    [((), False), (("test-config.yaml",), False), (("test-config.yaml", "test-secret.sops.yaml"), True)],
+    ("siblings", "files", "encrypted"),
+    [
+        ((), (), False),
+        (("config.yaml", "secret.sops.yaml"), (), True),
+        (("config.yaml",), ("credentials.yaml=source.sops.yaml",), True),
+        ((), ("credentials.sops.yaml=source.yaml",), False),
+    ],
 )
-def test_flux_decrypts_exactly_when_a_sibling_is_sops(
-    scratch_app: App, tmp_path: Path, siblings: Sequence[str], decrypted: bool
+def test_sops_decryption_follows_input_filenames(
+    siblings: Sequence[str], files: Sequence[str], encrypted: bool
 ) -> None:
-    chart = kustomizations_chart(scratch_app)
-    flux_kustomization(chart, "test-app", write_directory(tmp_path, _ARTIFACT, _chart("first"), siblings=siblings))
-    (rendered,) = Cdk8sTesting.synth(chart)
-    assert ("decryption" in rendered["spec"]) is decrypted
-
-
-def test_sops_secret_generator_enables_flux_decryption_and_keeps_yaml_key(scratch_app: App, tmp_path: Path) -> None:
-    directory = write_directory(
-        tmp_path,
-        _ARTIFACT,
-        _chart("first"),
-        namespace="test-ns",
-        secret_generator=[
-            SecretGeneratorArgs(name="test-secret", namespace="test-ns", files=["credentials.yaml=source.sops.yaml"])
-        ],
-    )
-
-    kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
-    assert directory.decryption == SOPS_DECRYPTION
-    assert kustomization["secretGenerator"] == [
-        {"name": "test-secret", "namespace": "test-ns", "files": ["credentials.yaml=source.sops.yaml"]}
-    ]
-
-    chart = kustomizations_chart(scratch_app)
-    flux_kustomization(chart, "test-app", directory)
-    (rendered,) = Cdk8sTesting.synth(chart)
-    assert rendered["spec"]["decryption"]["provider"] == "sops"
-    assert SOPS_DECRYPTION.secret_ref is not None
-    assert rendered["spec"]["decryption"]["secretRef"]["name"] == SOPS_DECRYPTION.secret_ref.name
+    generators = [SecretGeneratorArgs(name="credentials", namespace="test-ns", files=list(files))] if files else []
+    assert sops_decryption(siblings, secret_generators=generators) == (SOPS_DECRYPTION if encrypted else None)
 
 
 def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="also copies"):
-        write_directory(tmp_path, artifact("test-app", "test/app", "test/base"), _chart("first"))
+        write_directory(tmp_path, artifact("test-app", "test/app", "test/base"))
 
 
 def test_writer_accepts_a_copied_component_the_directory_includes(tmp_path: Path) -> None:
-    write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), _chart("first"), components=["../pins"])
+    write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), components=["../pins"])
     assert yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())["components"] == ["../pins"]
 
 
 def test_directory_generator_options_are_written_under_kustomizes_key(tmp_path: Path) -> None:
-    write_directory(
-        tmp_path, _ARTIFACT, _chart("first"), generator_options=GeneratorOptions(disable_name_suffix_hash=True)
-    )
+    write_directory(tmp_path, _ARTIFACT, generator_options=GeneratorOptions(disable_name_suffix_hash=True))
     kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
     assert kustomization["generatorOptions"] == {"disableNameSuffixHash": True}
 

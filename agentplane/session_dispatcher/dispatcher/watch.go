@@ -28,7 +28,7 @@ func subscribeWatch(hub *wakeups.Hub, channels ...string) (<-chan struct{}, func
 	return changed, unsubscribe, nil
 }
 
-func dispatchWatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.DispatchFilter, error) {
+func dispatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.DispatchFilter, error) {
 	if filter == nil || len(filter.GetCommandIds()) > maxFilterCommands {
 		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required and must name at most 1000 commands")
 	}
@@ -56,7 +56,13 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	if err != nil {
 		return err
 	}
-	filter, err := dispatchWatchFilter(request.GetFilter())
+	if sessionID := request.GetWorksetSessionId(); sessionID != "" {
+		if request.GetFilter() != nil {
+			return status.Error(codes.InvalidArgument, "dispatch workset cannot be combined with a filter")
+		}
+		return s.watchDispatchWorkset(ctx, caller, sessionID, request.GetResumeToken(), stream)
+	}
+	filter, err := dispatchFilter(request.GetFilter())
 	if err != nil {
 		return err
 	}

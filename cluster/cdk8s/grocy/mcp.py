@@ -20,7 +20,7 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, public_web_pki
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
@@ -151,13 +151,13 @@ def _server(scope: Construct, household: str) -> None:
                             name="server",
                             image=_IMAGE,
                             image_pull_policy="Always",
-                            ports=[http.port.k8s_container_port(), metrics.port.k8s_container_port()],
+                            ports=[http.k8s_container_port(), metrics.k8s_container_port()],
                             env=[
                                 *(
                                     key.env_var(env_name(ServerSettings, *path))
                                     for path, key in _secret_settings(household).items()
                                 ),
-                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                                public_web_pki.SSL_CERT_FILE,
                                 k8s.EnvVar(name="LOG_LEVEL", value="INFO"),
                                 k8s.EnvVar(name=CONFIG_FILE_ENV, value=f"{_CONFIG_DIR}/{_CONFIG_FILE}"),
                             ],
@@ -170,9 +170,7 @@ def _server(scope: Construct, household: str) -> None:
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                ),
+                                public_web_pki.VOLUME_MOUNT,
                             ],
                             readiness_probe=k8s.Probe(
                                 tcp_socket=k8s.TcpSocketAction(port=probe_port),
@@ -188,7 +186,7 @@ def _server(scope: Construct, household: str) -> None:
                     ],
                     volumes=[
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)),
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                        public_web_pki.VOLUME,
                     ],
                 ),
             ),
@@ -199,9 +197,7 @@ def _server(scope: Construct, household: str) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=http.name, namespace=namespace, labels=http.labels),
         spec=k8s.ServiceSpec(
-            selector=http.pods.selector,
-            ports=[http.port.k8s_service_port(), metrics.port.k8s_service_port()],
-            type="ClusterIP",
+            selector=http.pods.selector, ports=[http.k8s_service_port(), metrics.k8s_service_port()], type="ClusterIP"
         ),
     )
     ServiceMonitor(

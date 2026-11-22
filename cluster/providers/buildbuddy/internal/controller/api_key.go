@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -130,7 +130,10 @@ func (e *apiKeyExternal) Observe(ctx context.Context, cr *v1alpha1.APIKey) (mana
 	if err != nil {
 		return managed.ExternalObservation{}, err
 	}
-	upToDate := key.Label == cr.Spec.ForProvider.Label && equalStrings(key.Capabilities, wantedCapabilities) && key.VisibleToDevelopers == cr.Spec.ForProvider.VisibleToDevelopers
+	capabilitiesMatch := slices.EqualFunc(capabilities, wantedCapabilities, func(observed v1alpha1.APIKeyCapability, wanted string) bool {
+		return string(observed) == wanted
+	})
+	upToDate := key.Label == cr.Spec.ForProvider.Label && capabilitiesMatch && key.VisibleToDevelopers == cr.Spec.ForProvider.VisibleToDevelopers
 	if upToDate {
 		cr.Status.SetConditions(xpv2.Available())
 	}
@@ -325,7 +328,7 @@ func desiredCapabilities(capabilities []v1alpha1.APIKeyCapability) ([]string, er
 		seen[capability] = struct{}{}
 		result = append(result, string(capability))
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result, nil
 }
 
@@ -338,7 +341,7 @@ func observedCapabilities(capabilities []string) ([]v1alpha1.APIKeyCapability, e
 		}
 		result = append(result, value)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	slices.Sort(result)
 	return result, nil
 }
 
@@ -355,22 +358,6 @@ func supportedCapability(capability v1alpha1.APIKeyCapability) bool {
 	default:
 		return false
 	}
-}
-
-func equalStrings(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	left = append([]string(nil), left...)
-	right = append([]string(nil), right...)
-	sort.Strings(left)
-	sort.Strings(right)
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func newAPIKeyReconciler(mgr ctrl.Manager, connector managed.TypedExternalConnector[*v1alpha1.APIKey]) *managed.Reconciler {

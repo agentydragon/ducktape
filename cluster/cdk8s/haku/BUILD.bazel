@@ -40,6 +40,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
@@ -81,9 +82,9 @@ py_library(
         ":database",
         ":migration",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/cnpg:health",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
@@ -123,6 +124,7 @@ py_library(
         ":namespace",
         ":ui_egress",
         "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:manifest_roots",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -196,6 +198,15 @@ py_library(
 )
 
 py_library(
+    name = "mailbox_endpoint",
+    srcs = ["mailbox_endpoint.py"],
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/authentik:__pkg__",
+    ],
+)
+
+py_library(
     name = "mailbox",
     srcs = ["mailbox.py"],
     visibility = [
@@ -203,6 +214,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        ":mailbox_endpoint",
         ":namespace",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:container_resources",
@@ -218,7 +230,6 @@ py_library(
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cert_manager:certificate",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "@pypi//cdk8s",
@@ -239,6 +250,7 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",

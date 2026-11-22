@@ -34,8 +34,8 @@ failed attempts retry every five checks. A different card advertising `ez Share`
 does not trigger recovery. MAC checks prevent accidental recovery of another
 card; they cannot authenticate hardware against deliberate MAC spoofing.
 
-On the first run after this migration, the fresh repo is re-seeded with the card's
-full history (~17+ min over the card's WiFi; the old PVC-era data was discarded).
+The first run against an empty repo re-seeds the card's full history (~17+ min over the
+card's WiFi).
 
 ## Background
 
@@ -63,15 +63,14 @@ full history (~17+ min over the card's WiFi; the old PVC-era data was discarded)
   keeps the nightly transfer at KBs + the new files.
 - `sync.py` — the policy: clone, read the committed `sync_meta.json` manifest
   (path → size + card timestamp), download card entries that don't match their
-  manifest entry, then commit + push if anything changed. Direct WiFi
-  association remains available for manual laptop runs; the cluster passes an
-  empty `--wifi-interface` and uses the in-cluster gateway VM. The manifest replaces the
-  PVC-era stat check (git discards mtimes); recording the _stored_ byte count
+  manifest entry, then commit + push if anything changed. It never touches a
+  network interface: the cluster reaches the card through the gateway VM's
+  `cpap-card` Service, and a laptop run must already be on the card's WiFi. The manifest
+  replaces the PVC-era stat check (git discards mtimes); recording the _stored_ byte count
   makes mid-write downloads self-heal on the next run.
 - Image: `git.allegedly.works/ducktape-ci/cpap-sync` (`//cpap:image`,
-  `debian:trixie-slim` + `wpa_supplicant` + `iw` + `iproute2` + `dhclient` + `git` + `ca-certificates` via
-  apt manifest), built by `push-images.yml`, tagged `devel-*` for Flux image
-  automation.
+  `debian:trixie-slim` + `git` from the apt manifest), built by `push-images.yml`,
+  tagged `devel-*` for Flux image automation.
 - Cluster: `cluster/k8s/cpap-sync/` — CronJob and KubeVirt gateway VM on
   `optiplex`, a selector-backed `cpap-card` Service, and a Cilium egress policy
   that grants the sync workload only DNS, the card bridge, and Forgejo's
@@ -94,8 +93,7 @@ namespace, which ESO copies into `cpap-sync`:
 ```bash
 kubectl -n cpap-sync get secret cpap-data-git-write -o jsonpath='{.data.username}' | base64 -d  # etc.
 GIT_USERNAME=cpap-data GIT_PASSWORD=... bazelisk run //cpap:sync_bin -- \
-  --git-url https://git.allegedly.works/cpap-data/cpap-data.git \
-  --wifi-interface ''   # '' = already on the card's WiFi; otherwise CPAP_WIFI_PASSWORD is required
+  --git-url https://git.allegedly.works/cpap-data/cpap-data.git   # machine already on the card's WiFi
 ```
 
 Useful if the in-cluster initial seed push ever fails: any machine on the

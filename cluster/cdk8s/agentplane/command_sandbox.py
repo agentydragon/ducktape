@@ -17,7 +17,6 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoute, PlatformRoutes
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
@@ -83,21 +82,11 @@ class CommandSandbox(Construct):
         self.runner_zone = runner_zone
         self.image_pull_secret_name = image_pull_secret_name
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
-        rules = platform_routes.egress_rules(env.namespace)
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
             self,
             env,
             name=f"{NAME}-egress-sidecar",
-            platform_routes=PlatformRoutes(
-                listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
-                routes={
-                    rules.name: PlatformRoute(
-                        service_prefixes=rules.service_prefixes,
-                        upstream=f"{rules.service.fqdn}:{rules.service.port.number}",
-                        transport=rules.transport,
-                    )
-                },
-            ),
+            platform_routes=platform_routes.listener(platform_routes.egress_rules(env.namespace)),
             proxy_transport=sidecar_config.TLSProxyTransport(
                 ca_file=_SIDECAR_TRUST_DIR / cluster_ca.BUNDLE_KEY,
                 auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
@@ -189,7 +178,7 @@ def workload(
             env,
             [
                 *sandbox_pod.proxy_environment(),
-                k8s.EnvVar(name="AGENTPLANE_EGRESS_GRPC_URL", value=f"http://{PLATFORM_ROUTES_LISTEN_ADDRESS}"),
+                k8s.EnvVar(name="AGENTPLANE_EGRESS_GRPC_URL", value=platform_routes.listener_url()),
             ],
         ),
         resources=resources,

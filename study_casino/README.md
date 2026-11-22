@@ -12,7 +12,7 @@ winnings are never re-gambled. React PWA installable on Windows (Edge/Chrome) an
 - `games.py` / `rng.py`: server-side slots, roulette, blackjack rules and audited RNG
 - `credit_award.py`, `credit_constants.py`: millicredit accounting, streak/daily bonus (credit
   system v2) and its tunables
-- `state.py` / `actions.py` / `events.py`: wire models (reads, action results, event reads)
+- `state.py` / `actions.py` / `events.py`: wire models (reads, action results, game outcomes)
 - `export_schema.py`: schema-only app printing OpenAPI to `:frontend_openapi_json`; the frontend
   generates and compiles `//study_casino/frontend/lib:schema_zod`
   (`schema_zod.js` and `.d.ts`)
@@ -63,8 +63,8 @@ import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/c
 
 - Active timers live in client `localStorage`; completion and backfill actions create session rows,
   and `/actions/import` can also restore them.
-- Every action carries a `client_action_id`; a retry returns the original `ledger_events` row
-  without replaying the mutation.
+- Every action carries a `client_action_id`; a retry returns the original result (stored on its
+  `ledger_events` row) without replaying the mutation.
 - Historical rows keep their literals: `game_events` before 2026-05-07 have
   `source="client_reported"` (`server_resolved` after), pre-cutover `ledger_events` have
   `source="legacy_client_sync"`; both stay in `models.py` (`GameEventSource`, `LedgerEventSource`)

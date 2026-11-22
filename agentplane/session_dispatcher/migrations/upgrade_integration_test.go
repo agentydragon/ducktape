@@ -98,17 +98,22 @@ func TestPreviousImageStartupAndSQLWritesRemainCompatible(t *testing.T) {
 	if afterUpdate <= beforeUpdate {
 		t.Fatalf("previous image update version = %d, prior = %d", afterUpdate, beforeUpdate)
 	}
-	if _, err := db.ExecContext(t.Context(), "DELETE FROM dispatch WHERE command_id='uncertain-command'"); err != nil {
-		t.Fatal("previous image delete:", err)
+	// The old cleanup issues this statement even after a new replica retained
+	// the Session. Its update above is visible and its delete must keep the body.
+	for range 2 {
+		if _, err := db.ExecContext(t.Context(), "DELETE FROM dispatch WHERE sandbox_uid='00000000-0000-0000-0000-000000000001'"); err != nil {
+			t.Fatal("previous image cleanup:", err)
+		}
 	}
-	var tombstoneVersion int64
+	var retainedVersion int64
+	var command, admission []byte
 	var state string
-	if err := db.QueryRowContext(t.Context(), `SELECT version,state FROM dispatch_tombstone
-		WHERE command_id='uncertain-command'`).Scan(&tombstoneVersion, &state); err != nil {
-		t.Fatal("read previous image tombstone:", err)
+	if err := db.QueryRowContext(t.Context(), `SELECT command,admission,state,version FROM dispatch
+		WHERE command_id='uncertain-command'`).Scan(&command, &admission, &state, &retainedVersion); err != nil {
+		t.Fatal("read command after previous image cleanup:", err)
 	}
-	if tombstoneVersion <= afterUpdate || state != "FAILED" {
-		t.Fatalf("previous image tombstone version/state = %d/%q, after update %d", tombstoneVersion, state, afterUpdate)
+	if !bytes.Equal(command, []byte{0x08, 0x01}) || !bytes.Equal(admission, []byte{0x08, 0x02}) || state != "FAILED" || retainedVersion != afterUpdate {
+		t.Fatalf("previous image cleanup changed evidence: command=%x admission=%x state=%q version=%d (was %d)", command, admission, state, retainedVersion, afterUpdate)
 	}
 }
 
@@ -563,4 +568,48 @@ func TestSamplerActivityUpgradePreservesHostedLeaseAndOldWrites(t *testing.T) {
 	if _, err := old.Up(t.Context()); err != nil {
 		t.Fatalf("previous image startup: %v", err)
 	}
+}
+
+func TestInterruptedReceiptIndexBuildResumes(t *testing.T) {
+	db := openMigrationDatabase(t)
+	ctx := t.Context()
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 29); err != nil {
+		t.Fatal(err)
+	}
+	insertRetainedEvidence(t, db)
+	// A concurrent build creates its catalog entry before scanning the existing rows.
+	// Force an error in its scan to leave the same invalid artifact as an interrupted build.
+	if _, err := db.ExecContext(ctx, "CREATE INDEX CONCURRENTLY ix_dispatch_active_session_position ON dispatch ((1/(length(command_id)-length(command_id))))"); err == nil {
+		t.Fatal("expected concurrent index build to fail")
+	}
+	var valid bool
+	if err := db.QueryRowContext(ctx, "SELECT indisvalid FROM pg_index WHERE indexrelid='ix_dispatch_active_session_position'::regclass").Scan(&valid); err != nil || valid {
+		t.Fatalf("interrupted index validity = %v, %v", valid, err)
+	}
+	// This build had already completed before the interruption.
+	if _, err := db.ExecContext(ctx, "CREATE INDEX CONCURRENTLY ix_dispatch_session_position ON dispatch (session_id, position)"); err != nil {
+		t.Fatal(err)
+	}
+	var previousOID, currentOID int64
+	const completedOID = "SELECT 'ix_dispatch_session_position'::regclass::oid"
+	if err := db.QueryRowContext(ctx, completedOID).Scan(&previousOID); err != nil {
+		t.Fatal(err)
+	}
+	if err := Up(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, completedOID).Scan(&currentOID); err != nil || currentOID != previousOID {
+		t.Fatalf("completed index OID = %d, want %d: %v", currentOID, previousOID, err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_index WHERE indisvalid AND indexrelid IN (
+		'ix_dispatch_session_position'::regclass, 'ix_dispatch_active_session_position'::regclass,
+		'ix_dispatch_recent_session_state_version'::regclass, 'ix_dispatch_tombstone_session_state_version'::regclass)`).Scan(&count); err != nil || count != 4 {
+		t.Fatalf("valid receipt indexes = %d, want 4: %v", count, err)
+	}
+	assertRetainedEvidence(t, db)
 }

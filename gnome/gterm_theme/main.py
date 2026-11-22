@@ -1,18 +1,14 @@
-"""GNOME Terminal theme follower — copies a named profile's colors to a mutable "Auto" profile."""
+"""GNOME Terminal theme follower — copies a source profile's colors to a mutable "Auto" profile."""
 
 import ast
 import subprocess
-import uuid
 from uuid import UUID
-from xml.etree import ElementTree
 
-import dbus
 from absl import app, flags, logging
 from gi.repository import Gio
 
-_PROFILE = flags.DEFINE_string("profile", None, "Name or UUID of profile to set everywhere")
-
-AUTO_PROFILE_NAME = "Auto"
+_PROFILE = flags.DEFINE_string("profile", None, "UUID of the source profile")
+_TARGET_PROFILE = flags.DEFINE_string("target_profile", None, "UUID of the target profile")
 
 
 class GSettingsProfiles:
@@ -23,20 +19,6 @@ class GSettingsProfiles:
     def profile_uuids(self) -> set[UUID]:
         """Get all profile UUIDs from gsettings."""
         return {UUID(x) for x in self.settings.get_strv("list")}
-
-    @profile_uuids.setter
-    def profile_uuids(self, uuids: set[UUID]) -> None:
-        """Set the profile UUIDs in gsettings."""
-        self.settings.set_strv("list", [str(uuid) for uuid in uuids])
-
-    @property
-    def default_profile_uuid(self) -> UUID:
-        """Get the default profile UUID from gsettings."""
-        return UUID(self.settings.get_string("default"))
-
-    @default_profile_uuid.setter
-    def default_profile_uuid(self, profile_uuid: UUID) -> None:
-        self.settings.set_string("default", str(profile_uuid))
 
 
 class ProfileDConf:
@@ -64,17 +46,6 @@ class ProfileDConf:
             raise TypeError(f"Unsupported dconf value type: {type(value)}")
         except subprocess.CalledProcessError as e:
             raise KeyError(f"Reading '{property_name}' from {self.profile_uuid} failed") from e
-
-    @property
-    def visible_name(self) -> str:
-        v = self.read_property("visible-name")
-        assert isinstance(v, str)
-        return v
-
-    @visible_name.setter
-    def visible_name(self, name: str) -> None:
-        assert isinstance(name, str), "Name must be a string"
-        self.write_property("visible-name", name)
 
     def write_property(self, property_name: str, value: bool | str | list[str]) -> None:
         """Write a property to the profile."""
@@ -118,90 +89,19 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         target_dconf.write_property(prop, value)
 
 
-def get_profile_uuid_by_name_mapping(gsettings_profiles: GSettingsProfiles) -> dict[str, UUID]:
-    """Build a mapping of profile names to UUIDs."""
-    uuid_by_name: dict[str, UUID] = {}
-
-    for profile_uuid in gsettings_profiles.profile_uuids:
-        try:
-            name = ProfileDConf(profile_uuid).visible_name
-        except (KeyError, AssertionError, ValueError) as e:
-            logging.warning(f"Cannot get name for profile {profile_uuid}: {e}")
-            continue
-        if name in uuid_by_name:
-            logging.warning(f"Duplicate profile {name}: {uuid_by_name[name]} and {profile_uuid}")
-            continue
-        uuid_by_name[name] = profile_uuid
-
-    return uuid_by_name
-
-
-def create_auto_profile(gsettings_profiles: GSettingsProfiles):
-    auto_uuid = uuid.uuid4()
-
-    gsettings_profiles.profile_uuids = gsettings_profiles.profile_uuids | {auto_uuid}
-
-    auto_dconf = ProfileDConf(auto_uuid)
-    auto_dconf.visible_name = AUTO_PROFILE_NAME
-    return auto_uuid
-
-
-def create_or_update_auto_profile(source_profile_name: str, gsettings_profiles: GSettingsProfiles) -> UUID:
-    """Create or update the auto profile with colors from the specified theme."""
-    uuid_by_name = get_profile_uuid_by_name_mapping(gsettings_profiles)
-
-    # Check if auto profile exists
-    auto = [name for name in uuid_by_name if name.startswith(AUTO_PROFILE_NAME)]
-    if len(auto) > 1:
-        raise ValueError(f"Multiple Auto profiles found: {auto}")
-    if len(auto) == 1:
-        auto_uuid = uuid_by_name[auto[0]]
-        logging.info(f"Found existing Auto profile: {auto_uuid}")
-    else:
-        auto_uuid = create_auto_profile(gsettings_profiles)
-        logging.info(f"Created new Auto profile: {auto_uuid}")
-
-    logging.info(f"Applying {source_profile_name} colors to Auto profile")
-    copy_profile_colors(uuid_by_name[source_profile_name], auto_uuid)
-    ProfileDConf(auto_uuid).write_property("visible-name", f"{AUTO_PROFILE_NAME} ({source_profile_name})")
-
-    return auto_uuid
-
-
-# Copying colors into a static profile is not yet fully tested. Keep this alternative
-# so we can revive switching profiles in every open window if needed.
-def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
-    bus = dbus.SessionBus()
-
-    obj = bus.get_object("org.gnome.Terminal", "/org/gnome/Terminal/window")
-    iface = dbus.Interface(obj, "org.freedesktop.DBus.Introspectable")
-
-    tree = ElementTree.fromstring(iface.Introspect())
-    windows = [child.attrib["name"] for child in tree if child.tag == "node"]
-    logging.info(f"requesting new uuid: {new_uuid}")
-
-    def _get_window_profile_uuid(window_actions_iface):
-        description = window_actions_iface.Describe("profile")
-        return UUID(description[2][0])
-
-    for window in windows:
-        obj = bus.get_object("org.gnome.Terminal", f"/org/gnome/Terminal/window/{window}")
-        window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
-        original_uuid = _get_window_profile_uuid(window_actions_iface)
-        logging.info(f"talking to {obj}, starting profile uuid: {original_uuid}")
-        window_actions_iface.SetState("profile", str(new_uuid), [])
-        uuid_after = _get_window_profile_uuid(window_actions_iface)
-        logging.info(f"new uuid after action: {uuid_after}")
-        assert uuid_after == new_uuid
-
-
 def _main(_):
-    gsettings_profiles = GSettingsProfiles()
-    auto_uuid = create_or_update_auto_profile(_PROFILE.value, gsettings_profiles)
-    gsettings_profiles.default_profile_uuid = auto_uuid
+    profiles = GSettingsProfiles()
+    source_uuid = UUID(_PROFILE.value)
+    target_uuid = UUID(_TARGET_PROFILE.value)
+    profile_uuids = profiles.profile_uuids
+    for role, profile_uuid in (("Source", source_uuid), ("Target", target_uuid)):
+        if profile_uuid not in profile_uuids:
+            raise ValueError(f"{role} profile {profile_uuid} is not in the GNOME Terminal profile list")
+    copy_profile_colors(source_uuid, target_uuid)
 
 
 def main():
     # Entrypoint used by the console_script. Enforce required flag and run.
     flags.mark_flag_as_required(_PROFILE.name)
+    flags.mark_flag_as_required(_TARGET_PROFILE.name)
     app.run(_main)

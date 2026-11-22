@@ -205,6 +205,8 @@ const (
 )
 
 type Caller struct {
+	Issuer    string
+	Subject   string
 	Kind      CallerKind
 	Principal string
 }
@@ -532,7 +534,7 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 
 func (a *Auth) caller(r *http.Request) (*Caller, int, string) {
 	if session, ok := SessionFromContext(r.Context()); ok && session.Login != nil {
-		return &Caller{Kind: CallerOperator, Principal: session.Login.Username}, 0, ""
+		return &Caller{Kind: CallerOperator, Principal: session.Login.Username, Issuer: session.Login.Issuer, Subject: session.Login.Subject}, 0, ""
 	}
 	fields := strings.Fields(r.Header.Get("Authorization"))
 	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
@@ -565,7 +567,7 @@ func (a *Auth) idTokenCaller(ctx context.Context, raw string) (*Caller, int, str
 	if !ok {
 		return nil, http.StatusUnauthorized, "OIDC identity is not accepted"
 	}
-	return &Caller{Kind: CallerOperator, Principal: login.Username}, 0, ""
+	return &Caller{Kind: CallerOperator, Principal: login.Username, Issuer: login.Issuer, Subject: login.Subject}, 0, ""
 }
 
 // unverifiedIssuer reads a JWT's `iss` only to pick its verifier, which checks it; "" if unreadable.

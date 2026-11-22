@@ -328,7 +328,7 @@ func TestPinnedIDTokenAuthenticatesTheOperatorWithoutACookie(t *testing.T) {
 			w := httptest.NewRecorder()
 			next.ServeHTTP(w, r)
 			if tc.accept {
-				if w.Code != http.StatusNoContent || got == nil || *got != (Caller{Kind: CallerOperator, Principal: "test-operator"}) {
+				if w.Code != http.StatusNoContent || got == nil || *got != (Caller{Kind: CallerOperator, Principal: "test-operator", Issuer: pinnedTestIssuer, Subject: "test-operator-subject"}) {
 					t.Fatalf("status=%d caller=%+v", w.Code, got)
 				}
 			} else if w.Code != http.StatusUnauthorized || got != nil {
@@ -382,7 +382,7 @@ func TestDiscoveredIDTokenAuthenticatesTheOperator(t *testing.T) {
 	}
 	r := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	r.Header.Set("Authorization", "Bearer "+raw)
-	if caller, status, _ := a.caller(r); caller == nil || *caller != (Caller{Kind: CallerOperator, Principal: "test-operator"}) {
+	if caller, status, _ := a.caller(r); caller == nil || *caller != (Caller{Kind: CallerOperator, Principal: "test-operator", Issuer: issuer, Subject: "test-operator-subject"}) {
 		t.Fatalf("caller=%+v status=%d", caller, status)
 	}
 }

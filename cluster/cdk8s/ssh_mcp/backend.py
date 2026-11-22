@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -11,19 +11,22 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     EnvValue,
+    HostAlias,
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
+    Secret,
     Service,
     Volume,
-    k8s,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import actions
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
@@ -32,11 +35,9 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 )
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.ssh_mcp.config import (
-    BEARER_SECRET_KEY,
-    BEARER_SECRET_NAME,
+    BEARER,
     CONFIG_DIR,
     CONFIG_MAP_NAME,
     NAME,
@@ -53,7 +54,6 @@ IMAGE_NAME = "git.allegedly.works/ducktape-ci/ssh-mcp"
 PLACEHOLDER_TAG = "unset"
 _CPU_REQUEST_MILLIS = 50
 _MEMORY_LIMIT_MIB = 512
-_BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(BEARER_SECRET_KEY)
 _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
     ("keys-atlas", "ssh-mcp-keys-atlas", f"{CONFIG_DIR}/keys-atlas"),
@@ -122,9 +122,9 @@ class SshMcp(Construct):
         mint_bearer_secret(
             self,
             "bearer-external-secret",
-            name=_BEARER.secret.name,
-            namespace=_BEARER.secret.namespace,
-            key=_BEARER.key,
+            name=BEARER.secret.name,
+            namespace=BEARER.secret.namespace,
+            key=BEARER.key,
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         )
 
@@ -145,23 +145,28 @@ class SshMcp(Construct):
             replicas=1,
             select=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
+            host_aliases=[
+                HostAlias(ip=mesh.hosts[destination.name].nebula_ip, hostnames=[destination.host])
+                for destination in config.destinations
+                if isinstance(destination, NebulaDestination)
+            ],
             automount_service_account_token=False,
             enable_service_links=False,
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
-        deployment.add_container(
+        server = deployment.add_container(
             name="server",
             image=f"{IMAGE_NAME}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             env_variables={
                 "SSH_MCP_CONFIG_FILE": EnvValue.from_value(f"{CONFIG_DIR}/settings.yaml"),
-                "SSH_MCP_BEARER_TOKEN": _BEARER.env_value(self, "bearer-secret-ref"),
+                "SSH_MCP_BEARER_TOKEN": BEARER.env_value(self, "bearer-secret-ref"),
                 "SSH_MCP_HOST": EnvValue.from_value("0.0.0.0"),
                 "SSH_MCP_PORT": EnvValue.from_value(str(SERVICE.pod_port)),
             },
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(_MEMORY_LIMIT_MIB)),
@@ -178,36 +183,14 @@ class SshMcp(Construct):
         )
         # The home switch is reachable from the home-LAN node. Keep the backend
         # there so its egress follows the same routed path as the tofu runner.
-        pod_policy.place(
-            deployment, node_scheduling.Placement(node_selector={"topology.kubernetes.io/zone": "home-lan"})
-        )
+        pod_policy.place(deployment, node_scheduling.Placement(node_selector=node_scheduling.HOME_LAN_NODE_SELECTOR))
         config_volume = Volume.from_config_map(self, "config-volume", config_map)
-        deployment.containers[0].mount(CONFIG_DIR, config_volume, read_only=True)
-        # cdk8s_plus has no optional SecretVolumeSource builder. Keep the optionality in
-        # typed Kubernetes structs: target keys may be absent while the service stays up.
-        for name, secret, mount_path in _KEY_VOLUMES:
-            ApiObject.of(deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/volumes/-",
-                    k8s.Volume(name=name, secret=k8s.SecretVolumeSource(secret_name=secret, optional=True)),
-                )
-            )
-            ApiObject.of(deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/containers/0/volumeMounts/-",
-                    k8s.VolumeMount(name=name, mount_path=mount_path, read_only=True),
-                )
-            )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/hostAliases",
-                [
-                    k8s.HostAlias(ip=mesh.hosts[destination.name].nebula_ip, hostnames=[destination.host])
-                    for destination in config.destinations
-                    if isinstance(destination, NebulaDestination)
-                ],
-            )
-        )
+        server.mount(CONFIG_DIR, config_volume, read_only=True)
+        # Targets can acquire their keys after the server starts.
+        for name, secret_name, mount_path in _KEY_VOLUMES:
+            secret = Secret.from_secret_name(self, f"{name}-secret", secret_name)
+            volume = Volume.from_secret(self, name, secret, name=name, optional=True)
+            server.mount(mount_path, volume, read_only=True)
         pod_policy.harden(deployment)
         return deployment
 
@@ -217,7 +200,7 @@ class SshMcp(Construct):
             "service",
             metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAMESPACE),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_network_policy(self, config: SshMcpConfig, mesh: Mesh) -> None:
@@ -226,11 +209,7 @@ class SshMcp(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             endpoint_selector=SERVICE.pods.selector,
-            ingress=[
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "actions"), ports=[SERVICE.pod_port]
-                )
-            ],
+            ingress=[actions.service(STAGING_NAMESPACE).pods.admit(SERVICE.pod_port)],
             egress=_egress(mesh, config),
         )
 

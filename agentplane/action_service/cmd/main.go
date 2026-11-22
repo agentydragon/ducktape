@@ -595,7 +595,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, rpc.NewOperatorService(requests, hub, admission, linkages, rpc.IntegrationPreviews{
-		Gmail: supervisors["gmail"], Tana: supervisors["tana"], GoogleCalendar: supervisors["google_calendar"], Grocy: supervisors["grocy_sf"],
+		GitHub: supervisors["github"], Gmail: supervisors["gmail"], Tana: supervisors["tana"], GoogleCalendar: supervisors["google_calendar"], Grocy: supervisors["grocy_sf"],
 	}))
 	// The callback is public: its single-use state, not a bearer, authorizes completion.
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))

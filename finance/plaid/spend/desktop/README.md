@@ -41,8 +41,7 @@ the existing forecast/pace warning also shown in the expanded view. Green means 
 120% or when the allowance is exhausted. The sparkline uses backend-calculated daily history, with a dotted line at
 the current leash and gaps for unknown coverage. Each segment uses the same pace thresholds and colors as the panel text.
 Its displayed time span, vertical baseline, leash line, and leash line color are
-configurable separately from the rolling-average period. The menu rounds larger available balances; when rounding hides a
-fraction, expand **Balance details** for the exact amount.
+configurable separately from the rolling-average period. The menu rounds larger available balances.
 
 ## Wire contract
 

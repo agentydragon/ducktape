@@ -1,6 +1,6 @@
 """The rotator's configuration schema: the roster `rotate.py --config` reads.
 
-Kept apart from `rotate.py` so the cdk8s generator (cluster/cdk8s/authentik/jwt_rotation.py),
+Kept apart from `rotate.py` so the cdk8s generator (cluster/cdk8s/authentik/jwt_roster.py),
 which builds the roster from these models, imports pydantic and nothing of the runtime.
 """
 
@@ -115,6 +115,10 @@ class Rotation(BaseModel):
         if self.probe and not self.k8s_secret:
             raise ValueError(f"{self.name}: probe requires k8s_secret (the sops file cannot be read back)")
         return self
+
+    @property
+    def output_paths(self) -> list[Path]:
+        return [self.sops_file, self.k8s_secret.path] if self.k8s_secret else [self.sops_file]
 
     @property
     def expected_issuer(self) -> str:

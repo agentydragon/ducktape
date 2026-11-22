@@ -8,7 +8,6 @@ import pytest_bazel
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.litellm.config import model_entry
 from model_catalog.catalog import (
-    ANTHROPIC_API_LATEST_ROUTES,
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     CHATGPT_RESPONSES,
@@ -49,7 +48,7 @@ def test_staging_picker_does_not_widen_its_key() -> None:
     central_only = (
         set(STAGING_APP_MODELS.central_sampler) - set(STAGING_APP_MODELS.claude) - set(STAGING_APP_MODELS.codex)
     )
-    assert central_only == set(ANTHROPIC_API_LATEST_ROUTES)
+    assert central_only == set(ANTHROPIC_API_ROUTES)
     assert not central_only.intersection(admitted)
 
 
@@ -107,12 +106,10 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert direct.model.limits is not None
     assert subscription.id != direct.id
     assert model_entry(subscription)["litellm_params"]["api_key"] != model_entry(direct)["litellm_params"]["api_key"]
-    assert subscription.reasoning_efforts
-    assert not direct.reasoning_efforts
 
 
 def test_latest_direct_anthropic_routes_publish_function_calling() -> None:
-    for route in ANTHROPIC_API_LATEST_ROUTES:
+    for route in ANTHROPIC_API_ROUTES:
         assert model_entry(route)["model_info"]["supports_function_calling"] == route.supports_function_calling
 
 

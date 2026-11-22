@@ -57,7 +57,7 @@ image_manifest(
 image_manifest(
     name = "deletion_image_manifest",
     testonly = True,
-    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | HARNESSES_IMAGES | DELETION_TEST_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | HARNESSES_IMAGES | DELETION_TEST_DISK_IMAGE,
     pki = PKI_IMAGES,
 )
 
@@ -82,7 +82,7 @@ image_manifest(
 image_manifest(
     name = "firecracker_image_manifest",
     testonly = True,
-    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | RUNNER_DISK_IMAGE,
     guest = FIRECRACKER_GUEST_IMAGES,
     pki = PKI_IMAGES,
     vm = GENERIC_DEVICE_PLUGIN_IMAGE,
@@ -249,17 +249,17 @@ py_test(
     data = [
         "//agentplane/crds",
         K3S_BINARY,
-        ":pod_image_manifest",
+        ":pod_native_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
+        "//agentplane/system_tests/suites:pod_native_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
         "test.runner-recycling-key": k3s_recycling_key(vm = False),
@@ -267,9 +267,6 @@ py_test(
     tags = K3S_TAGS + ["manual"],
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
@@ -281,7 +278,7 @@ py_test(
     ],
 )
 
-# This suite scales Dispatcher and deletes controller Pods on its own stack.
+# This suite scales Dispatcher and deletes controller Pods on its own native stack.
 py_test(
     name = "test_dispatcher",
     size = "enormous",
@@ -289,17 +286,17 @@ py_test(
     data = [
         "//agentplane/crds",
         K3S_BINARY,
-        ":pod_image_manifest",
+        ":pod_native_image_manifest",
+        ":pod_native_manifests.json",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :pod_native_manifests.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
         "test.runner-recycling-key": k3s_recycling_key(vm = False),
@@ -315,6 +312,7 @@ py_test(
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:native_auth",
         "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/scenarios:dispatcher",
         "@pypi//grpcio",
@@ -374,11 +372,11 @@ py_test(
         "//agentplane/app/testing:client",
         "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:app_sandbox",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/vm:host_qemu",
+        "//agentplane/system_tests/vm:pytest_plugin",
         "//agentplane/system_tests/vm:shutdown_diagnostic",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
@@ -425,7 +423,6 @@ py_test(
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:native_platform",
@@ -436,6 +433,7 @@ py_test(
         "//agentplane/system_tests/scenarios:vm_workspace_ownership",
         "//agentplane/system_tests/vm:block_storage",
         "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:pytest_plugin",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -480,7 +478,6 @@ py_test(
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:offered_models",
@@ -488,6 +485,7 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/vm:pytest_plugin",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -532,7 +530,6 @@ py_test(
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:offered_models",
@@ -540,6 +537,7 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/vm:pytest_plugin",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -605,7 +603,6 @@ py_library(
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:runtime_proxy",
         "//agentplane/system_tests/scenarios:session_instructions",
-        "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:thread_history",
         "@pypi//pytest",
@@ -620,15 +617,15 @@ py_test(
         "//agentplane/crds",
         K3S_BINARY,
         ":deletion_image_manifest",
+        ":pod_native_manifests.json",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :pod_native_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :deletion_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -765,9 +762,45 @@ py_test(
     ],
 )
 
+# Storage mutates its own template and requires a stack with no other Sandboxes.
+py_test(
+    name = "test_pod_storage",
+    size = "enormous",
+    srcs = ["test_pod_storage.py"],
+    data = [
+        "//agentplane/crds",
+        K3S_BINARY,
+        ":pod_native_image_manifest",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "//agentplane/system_tests/suites:pod_native_manifests.json",
+        "@cert_manager_v1_21_2_release//file",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = False),
+    },
+    tags = K3S_TAGS,
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:storage",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
-    name = "pod_native_deployment",
-    srcs = ["pod_native_deployment.py"],
+    name = "native_deployment",
+    srcs = ["native_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:fixture_database",
@@ -788,7 +821,7 @@ py_library(
     name = "suite_recipe",
     srcs = ["suite_recipe.py"],
     deps = [
-        ":pod_native_deployment",
+        ":native_deployment",
         "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",

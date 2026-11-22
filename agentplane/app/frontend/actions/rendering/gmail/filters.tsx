@@ -2,7 +2,7 @@ import { Code, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps } from "../entry";
+import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps, useCompactPane } from "../entry";
 import { expandsForRejectedArguments, type ActionPresentation } from "../presentation";
 import { defineResultPreview, type ResultPreviewProps } from "../result_entry";
 import {
@@ -99,13 +99,23 @@ function FilterView({ result, context }: ResultPreviewProps<z.infer<typeof filte
 type FilterID = { id: string };
 function FilterTarget({ id, requestId }: { id: string; requestId?: string }): JSX.Element {
   const summaries = useGmailSummaries(requestId);
+  const compact = useCompactPane();
   const rule = filterResult.safeParse(summaries?.filters.find((filter) => filter.id === id));
-  return rule.success ? (
-    <FilterView result={rule.data} />
-  ) : (
+  if (rule.success && !compact) return <FilterView result={rule.data} />;
+  const recordedId = (
     <Text size="sm">
       Filter <Code>{id}</Code>
     </Text>
+  );
+  if (!rule.success) return recordedId;
+  const { criteria, action } = rule.data;
+  return (
+    <Stack gap={2}>
+      {recordedId}
+      <EmailField name="From" value={criteria.from} />
+      {!criteria.from && <EmailField name="Subject contains" value={criteria.subject} />}
+      <EmailField name="Forwards to" value={action.forward} />
+    </Stack>
   );
 }
 
@@ -159,7 +169,7 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
     "filters_get",
     {
       fallbackLabel: "Read Gmail filter",
-      pane: { collapsed: null, opened: getFilterPreview },
+      pane: { collapsed: getFilterPreview, opened: getFilterPreview },
       call: defineCallPreview(idArguments, filterResult, GetFilterCall),
       details: { arguments: getFilterPreview, result: defineResultPreview(filterResult, FilterView) },
     },
@@ -170,7 +180,9 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
       fallbackLabel: "Create Gmail filter",
       pane: {
         collapsed: definePreview(filterCreateArguments, ({ args }) => (
-          <Text size="sm">{args.action.forward ? "Forwards matching mail" : "Changes labels on matching mail"}</Text>
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            {args.action.forward ? `Forward matching mail to ${args.action.forward}` : "Change labels on matching mail"}
+          </Text>
         )),
         opened: filterCreatePreview,
       },
@@ -190,7 +202,7 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
     {
       fallbackLabel: "Delete Gmail filter",
       pane: {
-        collapsed: definePreview(filterDeleteArguments, () => <Text size="sm">Removes a rule for future mail.</Text>),
+        collapsed: filterDeletePreview,
         opened: filterDeletePreview,
       },
       details: { arguments: filterDeletePreview, emptyResult: <Text size="sm">Filter deleted.</Text> },

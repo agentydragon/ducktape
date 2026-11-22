@@ -19,7 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -28,6 +28,7 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3_HTTP_URL
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
@@ -241,7 +242,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             "storageProvider": "s3",
             "bucket": _NAME,
             "region": "auto",
-            "endpoint": "http://seaweedfs-s3.seaweedfs.svc:8333",
+            "endpoint": S3_HTTP_URL,
             "forcePathStyle": True,
             "accessKeyId": storage.access_key.value_from(),
             "secretAccessKey": storage.secret_key.value_from(),
@@ -296,7 +297,7 @@ def chart(app: App) -> Chart:
         cpu_limit=Cpu.millis(500),
         memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         storage_size=Size.gibibytes(2),
     )
     _helm_release(chart, storage=storage)

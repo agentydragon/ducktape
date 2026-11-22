@@ -65,10 +65,8 @@ DockerExecUser = Annotated[str | None, Field(description="Username inside contai
 
 
 def _get_running_container(ctx: Context) -> aiodocker.docker.DockerContainer:
-    """Get the aiodocker container handle for the current session, or raise."""
+    """Get the aiodocker container handle for the current session."""
     session = session_state_from_ctx(ctx)
-    if session.container_id is None:
-        raise RuntimeError("No container available")
     return session.docker_client.containers.container(session.container_id)
 
 

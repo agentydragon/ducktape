@@ -39,7 +39,7 @@ from litellm_team_crds.io.crossplane.m.litellm import (
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.litellm.database import NAMESPACE
+from cluster.cdk8s.litellm.endpoint import API_BASE, NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.reflector import mirror_annotations
@@ -47,7 +47,6 @@ from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LAN
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/crossplane-keys"
 NAME = "litellm-crossplane-keys"
-_LITELLM_API_BASE = "http://litellm.litellm.svc.cluster.local:4000"
 _PROVIDER_CONFIG_SECRET = "litellm-crossplane-provider-credentials"
 
 
@@ -111,17 +110,11 @@ def _publish_key(
     reader: ServiceAccount,
     key_name: str,
     connection_secret: str,
-    target_secret: str,
-    data_key: str = "api-key",
     annotations: Mapping[str, str] | None = None,
 ) -> None:
+    target_secret = f"litellm-key-{key_name}"
     store = single_secret_store(
-        chart,
-        f"crossplane-key-{key_name}",
-        reader=reader,
-        source_namespace=NAMESPACE,
-        source_secret=connection_secret,
-        consumer_namespace=NAMESPACE,
+        chart, f"crossplane-key-{key_name}", reader=reader, source_namespace=NAMESPACE, source_secret=connection_secret
     )
     ExternalSecret(
         chart,
@@ -129,7 +122,7 @@ def _publish_key(
         metadata=ApiObjectMetadata(name=target_secret, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(store),
-        data=[remote_data(connection_secret, "attribute.key", secret_key=data_key)],
+        data=[remote_data(connection_secret, "attribute.key", secret_key="api-key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
             metadata=ExternalSecretSpecTargetTemplateMetadata(annotations=dict(annotations or {})), type="Opaque"
@@ -144,8 +137,6 @@ class _DynamicKey:
     consumer: str
     max_budget: int | None = None
     budget_duration: str | None = None
-    target_secret: str | None = None
-    data_key: str = "api-key"
     annotations: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -164,7 +155,6 @@ def chart(app: App) -> Chart:
         reader=reader,
         source_namespace=NAMESPACE,
         source_secret="litellm-master-key",
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
@@ -175,7 +165,7 @@ def chart(app: App) -> Chart:
         data=[remote_data("litellm-master-key", "api-key", secret_key="api_key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
-            type="Opaque", data={"credentials": ('{"api_base":"' + _LITELLM_API_BASE + '","api_key":"{{ .api_key }}"}')}
+            type="Opaque", data={"credentials": ('{"api_base":"' + API_BASE + '","api_key":"{{ .api_key }}"}')}
         ),
     )
 
@@ -228,17 +218,6 @@ def chart(app: App) -> Chart:
             consumer="agentplane-staging",
         ),
         _DynamicKey(
-            name="codex-pod",
-            models=_lane_models("gpt6_oai_lane_models"),
-            consumer="codex-pod",
-            max_budget=50,
-            budget_duration="30d",
-            annotations={
-                "description": "LiteLLM virtual key for the codex-pod agent (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY",
-                **mirror_annotations(["codex-pod"]),
-            },
-        ),
-        _DynamicKey(
             name="public-coder-agent",
             models=_lane_models(
                 "gpt6_codex_client_models",
@@ -251,17 +230,6 @@ def chart(app: App) -> Chart:
             annotations={
                 "description": "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells; Gemini chat models, plus embeddings",
                 **mirror_annotations(["public-coder-agent", "haku-console"]),
-            },
-        ),
-        _DynamicKey(
-            name="codex-pod-messages",
-            models=_lane_models("gpt6_codex_client_models"),
-            consumer="codex-pod codex-claude",
-            target_secret="litellm-codex-pod-messages-key",
-            data_key="CODEX_LITELLM_KEY",
-            annotations={
-                "description": "GPT-6-only LiteLLM Messages key for codex-pod; reflected as CODEX_LITELLM_KEY",
-                **mirror_annotations(["codex-pod"]),
             },
         ),
         _DynamicKey(
@@ -298,13 +266,7 @@ def chart(app: App) -> Chart:
             ),
         )
         _publish_key(
-            chart,
-            reader=reader,
-            key_name=key.name,
-            connection_secret=connection_secret,
-            target_secret=key.target_secret or f"litellm-key-{key.name}",
-            data_key=key.data_key,
-            annotations=key.annotations,
+            chart, reader=reader, key_name=key.name, connection_secret=connection_secret, annotations=key.annotations
         )
 
     for name, models, consumer, team in (

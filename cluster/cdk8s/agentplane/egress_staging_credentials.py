@@ -42,15 +42,15 @@ from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.haku import mailbox
+from cluster.cdk8s.haku import mailbox, mailbox_endpoint
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
+from cluster.cdk8s.platform_sessions import app as platform_sessions
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.public_coder.egress import add_gateway_resources
-from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
 # service account whose app password it holds.
@@ -71,11 +71,6 @@ ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 QUEST_SCHEDULER_READ_POLICY = "quest-scheduler-read"
 THRIVE_READ_POLICY = "thrive-read"
-PLATFORM_SESSIONS_API = ServiceRef(
-    name="platform-sessions",
-    port=Port(name="http", number=8080),
-    pods=Pods(namespace="platform-sessions", labels=(("app", "platform-sessions-gateway"),)),
-)
 PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
 # reads (actions_staging_policies.py), so a binding to one set grants both.
@@ -95,6 +90,31 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
         source="github-agentydragon-agent",
         key="token",
         store=EXTERNAL_CREDS_STORE,
+    )
+    archive = "gaffer-private-archive"
+    _present(
+        construct,
+        archive,
+        namespace=namespace,
+        credential=archive,
+        description="Read source archives of agentydragon/gaffer-private with a repository-scoped GitHub App token.",
+        secret=archive,
+        key="token",
+        target=_BEARER,
+        rules=[
+            _rule(
+                archive,
+                "api.github.com",
+                method=PolicySetSpecRulesMethods.GET,
+                paths=["/repos/agentydragon/gaffer-private/tarball/*"],
+            ),
+            # GitHub redirects private archives to a signed URL on codeload.
+            Rule.egress(
+                hosts=["codeload.github.com"],
+                methods=[PolicySetSpecRulesMethods.GET],
+                paths=["/agentydragon/gaffer-private/legacy.tar.gz/*"],
+            ),
+        ],
     )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _forgejo_finance_agent(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -120,7 +140,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
             authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.
             activitywatch.READ.egress(),  # _activitywatch_read: bearer read sidecar.
             AIQUOTA_SERVICE.egress(),  # _aiquota_read: public Gateway and internal Service routes.
-            PLATFORM_SESSIONS_API.egress(),  # _quest_scheduler_read: public Gateway's read-only API backend.
+            platform_sessions.SERVICE.egress(),  # _quest_scheduler_read: public Gateway's read-only API backend.
             clickhouse.HTTP.egress(),  # _aiquota_read: typed history.
             mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
             plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
@@ -157,12 +177,7 @@ def _copy_secret(
         source=source,
         key=key,
         store=single_secret_store(
-            scope,
-            f"agentplane-staging-{store}",
-            reader=reader,
-            source_namespace=source_namespace,
-            source_secret=source,
-            consumer_namespace=credentials_namespace,
+            scope, f"agentplane-staging-{store}", reader=reader, source_namespace=source_namespace, source_secret=source
         ),
     )
 
@@ -500,7 +515,7 @@ def _activitywatch_read(
         key="token",
     )
     credential = "activitywatch-read"
-    host = "activitywatch-read.allegedly.works"
+    host = activitywatch.READ_HOSTNAME
     _present(
         scope,
         ACTIVITYWATCH_READ_POLICY,
@@ -711,7 +726,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         key="jwt",
     )
     credential = "haku-mailbox"
-    host = "haku-mailbox.allegedly.works"
+    host = mailbox_endpoint.PUBLIC_HOSTNAME
     _present(
         scope,
         HAKU_MAILBOX_POLICY,

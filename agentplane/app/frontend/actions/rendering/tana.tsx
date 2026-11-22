@@ -1,4 +1,4 @@
-import { Badge, Code, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Code, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
@@ -9,7 +9,7 @@ import { TextBlock } from "../../ui/text_block";
 import { tanaTitles } from "../schemas/tana_titles";
 import { definePreview, type PreviewProps } from "./entry";
 import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
-import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
+import { type ActionPresentation, type CardDecisionProps, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview, type ResultPreviewContext } from "./result_entry";
 
 const calendarNodeArguments = z.strictObject({
@@ -126,20 +126,20 @@ const moveReceipt = defineResultPreview(moveResult, ({ result }) => (
 
 const moveNodePresentation: ActionPresentation = {
   fallbackLabel: "Move Tana node",
-  pane: { opened: moveNode },
+  pane: { collapsed: moveNode, opened: moveNode },
   details: { arguments: moveNode, result: moveReceipt },
 };
 
 const id = z.string().min(1);
 const noArguments = z.strictObject({});
 const nodeArguments = z.strictObject({ nodeId: id });
-const readArguments = nodeArguments.extend({ maxDepth: z.number().min(0).max(10).default(1) });
+const readArguments = nodeArguments.extend({ maxDepth: z.int().min(0).max(10).default(1) });
 const childrenArguments = nodeArguments.extend({
-  limit: z.number().min(1).max(200).default(100),
-  offset: z.number().min(0).default(0),
+  limit: z.int().min(1).max(200).default(100),
+  offset: z.int().min(0).default(0),
 });
 const openArguments = nodeArguments.extend({ openType: z.enum(["current", "panel", "tab"]).default("current") });
-const tagsArguments = z.strictObject({ workspaceId: id, limit: z.number().min(1).max(200).default(200) });
+const tagsArguments = z.strictObject({ workspaceId: id, limit: z.int().min(1).max(200).default(200) });
 const tagSchemaArguments = z.strictObject({
   tagId: id,
   includeEditInstructions: z.boolean().optional(),
@@ -203,17 +203,48 @@ function requestView<S extends z.ZodType>(
   name: string,
   schema: S,
   view: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode,
-  result: ResultPreview
+  result: ResultPreview,
+  summary: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode = view
 ): ActionPresentation {
   const preview = definePreview(schema, function TanaRequest({ args, requestId }) {
     const names = useIntegrationPreviewNames("tana", requestId);
     return view(args, names);
   });
-  return { fallbackLabel: tanaTitles.get(name), pane: { opened: preview }, details: { arguments: preview, result } };
+  const collapsed = definePreview(schema, function TanaSummary({ args, requestId }) {
+    const names = useIntegrationPreviewNames("tana", requestId);
+    return summary(args, names);
+  });
+  return {
+    fallbackLabel: tanaTitles.get(name),
+    pane: { collapsed, opened: preview },
+    details: { arguments: preview, result },
+  };
+}
+
+function readView<S extends z.ZodType>(
+  name: string,
+  schema: S,
+  view: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode,
+  result: ResultPreview,
+  summary: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode
+): ActionPresentation {
+  return {
+    ...requestView(name, schema, view, result, summary),
+    offersCardDecisionButtons: (args) => schema.safeParse(args).success,
+  };
+}
+
+function readNodeLink(nodeId: string, names: ReadonlyMap<string, string> | undefined): JSX.Element {
+  const href = `https://app.tana.inc?nodeid=${encodeURIComponent(nodeId)}`;
+  return (
+    <Anchor href={href} target="_blank" rel="noreferrer" inherit>
+      {names?.get(nodeId)?.trim() || <Code>{nodeId}</Code>}
+    </Anchor>
+  );
 }
 
 function nodeLink(nodeId: string, names: ReadonlyMap<string, string> | undefined): JSX.Element {
-  return <TanaNodeLink id={nodeId} name={names?.get(nodeId)} />;
+  return <TanaNodeLink id={nodeId} name={names?.get(nodeId)?.trim()} />;
 }
 
 function nodeLinks(ids: string[], names: ReadonlyMap<string, string> | undefined): ReactNode {
@@ -223,6 +254,48 @@ function nodeLinks(ids: string[], names: ReadonlyMap<string, string> | undefined
       {nodeLink(nodeId, names)}
     </span>
   ));
+}
+
+function tanaDecision<S extends z.ZodType>(schema: S, targets: (args: z.infer<S>) => string[] | undefined) {
+  return function TanaDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
+    const parsed = schema.safeParse(args);
+    const ids = parsed.success ? targets(parsed.data) : undefined;
+    const names = useIntegrationPreviewNames("tana", ids ? requestId : undefined);
+    return ids?.every((id) => names?.get(id)?.trim()) ? buttons : fallback;
+  };
+}
+
+const checkDecision = tanaDecision(nodeArguments, ({ nodeId }) => [nodeId]);
+const tagDecision = tanaDecision(tagArguments, ({ nodeId, tagIds }) => {
+  const [tagId] = tagIds;
+  return tagIds.length === 1 && tagId !== undefined && tagId !== nodeId ? [nodeId, tagId] : undefined;
+});
+
+function checkPresentation(name: "check_node" | "uncheck_node", result: ResultPreview): ActionPresentation {
+  return {
+    ...requestView(
+      name,
+      nodeArguments,
+      (args, names) => <Line>{nodeLink(args.nodeId, names)} · Syncs the mapped field if configured</Line>,
+      result
+    ),
+    liveCardDecision: { component: checkDecision, collapsed: true },
+  };
+}
+
+function tagChange(
+  args: z.infer<typeof tagArguments>,
+  names: ReadonlyMap<string, string> | undefined,
+  compact = false
+): JSX.Element {
+  const tags = compact ? args.tagIds.slice(0, 2) : args.tagIds;
+  return (
+    <Line>
+      {args.action === "add" ? "Add" : "Remove"} {nodeLinks(tags, names)}
+      {tags.length < args.tagIds.length && ` and ${args.tagIds.length - tags.length} more`}{" "}
+      {args.action === "add" ? "to" : "from"} {nodeLink(args.nodeId, names)}
+    </Line>
+  );
 }
 
 function workspaceName(workspaceId: string, names: ReadonlyMap<string, string> | undefined): ReactNode {
@@ -591,37 +664,49 @@ const importReceipt = textResult(
   }
 );
 
-export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["get_or_create_calendar_node", calendarNodePresentation],
   ["move_node", moveNodePresentation],
   [
     "read_node",
-    requestView(
-      "read_node",
-      readArguments,
-      (args, names) => (
-        <Line>
-          {nodeLink(args.nodeId, names)} ·{" "}
-          {args.maxDepth === 0
-            ? "Only this node"
-            : `Up to ${args.maxDepth} ${args.maxDepth === 1 ? "level" : "levels"} of descendants`}
-        </Line>
+    {
+      ...readView(
+        "read_node",
+        readArguments,
+        (args, names) => (
+          <Line>
+            {readNodeLink(args.nodeId, names)} ·{" "}
+            {args.maxDepth === 0
+              ? "Only this node"
+              : `Up to ${args.maxDepth} ${args.maxDepth === 1 ? "level" : "levels"} of descendants`}
+          </Line>
+        ),
+        readReceipt,
+        (args, names) => (
+          <Line>
+            {readNodeLink(args.nodeId, names)} · {args.maxDepth === 0 ? "Only this node" : "Include descendants"}
+          </Line>
+        )
       ),
-      readReceipt
-    ),
+      compactCardExpands: (args) => {
+        const parsed = readArguments.safeParse(args);
+        return !parsed.success || parsed.data.maxDepth > 0;
+      },
+    },
   ],
   [
     "get_children",
-    requestView(
+    readView(
       "get_children",
       childrenArguments,
       (args, names) => (
         <Line>
-          {nodeLink(args.nodeId, names)} · Up to {args.limit} direct children
+          {readNodeLink(args.nodeId, names)} · Up to {args.limit} direct {args.limit === 1 ? "child" : "children"}
           {args.offset > 0 && `, after the first ${args.offset}`}
         </Line>
       ),
-      childrenReceipt
+      childrenReceipt,
+      (args, names) => <Line>Direct children of {readNodeLink(args.nodeId, names)}</Line>
     ),
   ],
   [
@@ -640,15 +725,15 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
     "list_workspaces",
     {
-      fallbackLabel: tanaTitles.get("list_workspaces"),
-      pane: { opened: definePreview(noArguments, () => null) },
+      fallbackLabel: "List loaded Tana workspaces",
       details: { arguments: definePreview(noArguments, () => null), result: workspacesReceipt },
       compactCardExpands: expandsForRejectedArguments(noArguments),
+      offersCardDecisionButtons: (args) => noArguments.safeParse(args).success,
     },
   ],
   [
     "list_tags",
-    requestView(
+    readView(
       "list_tags",
       tagsArguments,
       (args, names) => (
@@ -656,23 +741,31 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           Up to {args.limit} tags in {workspaceName(args.workspaceId, names)} and linked workspaces
         </Line>
       ),
-      tagsReceipt
+      tagsReceipt,
+      (args, names) => <Line>{workspaceName(args.workspaceId, names)} and linked workspaces</Line>
     ),
   ],
   [
     "get_tag_schema",
-    requestView(
-      "get_tag_schema",
-      tagSchemaArguments,
-      (args, names) => (
-        <Stack gap={4}>
-          <Line>{nodeLink(args.tagId, names)}</Line>
-          {args.includeInheritedFields && <Line>Include inherited fields</Line>}
-          {args.includeEditInstructions && <Line>Include edit instructions</Line>}
-        </Stack>
+    {
+      ...readView(
+        "get_tag_schema",
+        tagSchemaArguments,
+        (args, names) => (
+          <Stack gap={4}>
+            <Line>{readNodeLink(args.tagId, names)}</Line>
+            {args.includeInheritedFields && <Line>Include inherited fields</Line>}
+            {args.includeEditInstructions && <Line>Include edit instructions</Line>}
+          </Stack>
+        ),
+        tagSchemaReceipt,
+        (args, names) => <Line>{readNodeLink(args.tagId, names)}</Line>
       ),
-      tagSchemaReceipt
-    ),
+      compactCardExpands: (args) => {
+        const parsed = tagSchemaArguments.safeParse(args);
+        return !parsed.success || Boolean(parsed.data.includeEditInstructions || parsed.data.includeInheritedFields);
+      },
+    },
   ],
   [
     "edit_node",
@@ -686,7 +779,20 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.description && changes("Description", args.description)}
         </Stack>
       ),
-      editReceipt
+      editReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>{nodeLink(args.nodeId, names)}</Line>
+          {args.name && <Line>{args.name.replace_all ? "Replace all matches in the name" : "Edit name"}</Line>}
+          {args.description && (
+            <Line>
+              {args.description.replace_all
+                ? "Replace all matches in the description"
+                : "Replace one match in the description"}
+            </Line>
+          )}
+        </Stack>
+      )
     ),
   ],
   [
@@ -698,38 +804,13 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
       trashReceipt
     ),
   ],
-  [
-    "check_node",
-    requestView(
-      "check_node",
-      nodeArguments,
-      (args, names) => <Line>{nodeLink(args.nodeId, names)} · Syncs the mapped field if configured</Line>,
-      checkedReceipt
-    ),
-  ],
-  [
-    "uncheck_node",
-    requestView(
-      "uncheck_node",
-      nodeArguments,
-      (args, names) => <Line>{nodeLink(args.nodeId, names)} · Syncs the mapped field if configured</Line>,
-      uncheckedReceipt
-    ),
-  ],
+  ["check_node", checkPresentation("check_node", checkedReceipt)],
+  ["uncheck_node", checkPresentation("uncheck_node", uncheckedReceipt)],
   [
     "tag",
     {
-      ...requestView(
-        "tag",
-        tagArguments,
-        (args, names) => (
-          <Line>
-            {args.action === "add" ? "Add" : "Remove"} {nodeLinks(args.tagIds, names)}{" "}
-            {args.action === "add" ? "on" : "from"} {nodeLink(args.nodeId, names)}
-          </Line>
-        ),
-        taggingReceipt
-      ),
+      ...requestView("tag", tagArguments, tagChange, taggingReceipt, (args, names) => tagChange(args, names, true)),
+      liveCardDecision: { component: tagDecision, collapsed: true },
       outcome: (value) => {
         const parsed = taggingResult.safeParse(value);
         if (!parsed.success) return undefined;
@@ -764,7 +845,15 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           </Stack>
         );
       },
-      checkboxReceipt
+      checkboxReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>
+            {args.showCheckbox ? "Show" : "Hide"} the done checkbox for {nodeLink(args.tagId, names)}
+          </Line>
+          {args.doneStateMapping && <Line>Map to {nodeLink(args.doneStateMapping.fieldId, names)}</Line>}
+        </Stack>
+      )
     ),
   ],
   [
@@ -784,7 +873,21 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.showCheckbox && <Line>Show a done checkbox</Line>}
         </Stack>
       ),
-      createTagReceipt
+      createTagReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>
+            <strong>{args.name}</strong> in {workspaceName(args.workspaceId, names)}
+          </Line>
+          {(!!args.extendsTagIds?.length || args.showCheckbox) && (
+            <Line>
+              {!!args.extendsTagIds?.length && <>Extends {nodeLinks(args.extendsTagIds, names)}</>}
+              {!!args.extendsTagIds?.length && args.showCheckbox && " · "}
+              {args.showCheckbox && "Show a done checkbox"}
+            </Line>
+          )}
+        </Stack>
+      )
     ),
   ],
   [
@@ -808,7 +911,16 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.isMultiValue && <Line>Allows multiple values</Line>}
         </Stack>
       ),
-      addFieldReceipt
+      addFieldReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>
+            <strong>{args.name}</strong> ({args.dataType}) on {nodeLink(args.tagId, names)}
+          </Line>
+          {args.sourceTagId && <Line>References {nodeLink(args.sourceTagId, names)}</Line>}
+          {!!args.options?.length && <Line>{args.options.length} choices</Line>}
+        </Stack>
+      )
     ),
   ],
   [
@@ -829,7 +941,19 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           )}
         </Stack>
       ),
-      fieldContentReceipt
+      fieldContentReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          {fieldValueTarget(args, names)}
+          <Line>
+            {args.content === null
+              ? "Clear the field"
+              : args.mode === "append"
+                ? "Append text"
+                : "Replace the field with text"}
+          </Line>
+        </Stack>
+      )
     ),
   ],
   [
@@ -859,7 +983,10 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           <PastePreview content={args.content} />
         </Stack>
       ),
-      importReceipt
+      importReceipt,
+      (args, names) => <Line>Import pasted content under {nodeLink(args.parentNodeId, names)}</Line>
     ),
   ],
 ]);
+
+export const tanaPresentationGroup: readonly [string, typeof tanaRenderers] = ["tana", tanaRenderers];

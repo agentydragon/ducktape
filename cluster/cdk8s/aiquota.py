@@ -38,12 +38,15 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from aiquota.config import CLIProxyAPISettings, Config
-from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
-from aiquota.providers.claude import ClaudeSettings
-from aiquota.providers.codex import CodexSettings
-from aiquota.providers.openai_platform import OpenAIPlatformSettings
-from aiquota.providers.zai import ZaiSettings
+from aiquota.config import (
+    AnthropicPlatformSettings,
+    ClaudeSettings,
+    CLIProxyAPISettings,
+    CodexSettings,
+    Config,
+    OpenAIPlatformSettings,
+    ZaiSettings,
+)
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
@@ -56,6 +59,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 )
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.platform_sessions import app as platform_sessions
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
@@ -70,17 +74,15 @@ NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomizatio
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
-_PLATFORM_SESSIONS_URL = "http://platform-sessions.platform-sessions.svc:8080"
 _PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-aiquota-bearer"
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
-# authenticated usage requests. Haku's existing egress proxy still owns the legacy Claude
-# setup token.
+# authenticated usage requests.
 _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
-    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/openai"),
-    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/anthropic"),
+    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{platform_sessions.SERVICE.url}/proxy/openai"),
+    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{platform_sessions.SERVICE.url}/proxy/anthropic"),
     zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
@@ -182,10 +184,7 @@ class Aiquota(Construct):
                 name=_API_NAME,
                 namespace=NAMESPACE,
                 labels=SERVICE.pods.selector,
-                annotations={
-                    "description": "AI subscription quotas and OpenAI Platform credits.",
-                    "secret.reloader.stakater.com/reload": _PLATFORM_SESSIONS_READ_TOKEN,
-                },
+                annotations={"description": "AI subscription quotas and OpenAI Platform credits."},
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
@@ -203,7 +202,7 @@ class Aiquota(Construct):
             name=_API_NAME,
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             env_variables={
                 env_name(Settings, "api_bearer_token"): _BEARER.env_value(self, "bearer-ref"),
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
@@ -289,7 +288,7 @@ class Aiquota(Construct):
                 },
             ),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_service_monitor(self) -> None:

@@ -1,10 +1,10 @@
-import { Stack, Text } from "@mantine/core";
-import type { JSX } from "react";
+import { Code, Stack, Text } from "@mantine/core";
+import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
 import { TextBlock } from "../../ui/text_block";
 import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
-import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps } from "./entry";
+import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps, useCompactPane } from "./entry";
 import {
   draftHref,
   EmailField,
@@ -20,7 +20,7 @@ import { draftResult, mailReadRenderers, DraftTarget, messageHeader } from "./gm
 import { labelRenderers } from "./gmail/labels";
 import { filterRenderers } from "./gmail/filters";
 import { useIntegrationPreviewNames } from "./integration_previews";
-import { type ActionPresentation } from "./presentation";
+import { type ActionPresentation, type CardDecisionProps, expandsForDetails } from "./presentation";
 import { defineResultPreview, type ResultPreviewProps } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -55,7 +55,7 @@ function DraftFields({
       <EmailField name="Cc" value={args.cc?.join(", ")} />
       <EmailField name="Bcc" value={args.bcc?.join(", ")} />
       {short ? (
-        <Text size="sm" lineClamp={3} style={{ ...wrap, whiteSpace: "pre-wrap" }}>
+        <Text size="sm" lineClamp={1} style={{ ...wrap, whiteSpace: "pre-wrap" }}>
           {args.body || "(empty body)"}
         </Text>
       ) : (
@@ -65,12 +65,13 @@ function DraftFields({
   );
 }
 
-function DraftCollapsed({ args }: PreviewProps<DraftArguments>): JSX.Element {
+function DraftCollapsed({ args, requestId }: PreviewProps<DraftArguments>): JSX.Element {
   return (
     <Stack gap={4}>
       <Text size="sm" fw={600} style={wrap}>
         {args.subject || "(no subject)"}
       </Text>
+      {args.thread_id && <DraftReply id={args.thread_id} requestId={requestId} />}
       <DraftFields args={args} short />
     </Stack>
   );
@@ -80,7 +81,7 @@ function DraftReply({ id, requestId }: { id: string; requestId?: string }): JSX.
   const names = useIntegrationPreviewNames("gmail", requestId);
   return (
     <Text size="sm">
-      Reply in thread <ThreadTarget id={id} subject={names?.get(id)} />
+      Reply in thread <ThreadTarget id={id} subject={names?.get(id)?.trim()} linkInCompact />
     </Text>
   );
 }
@@ -114,12 +115,20 @@ function DraftCallArguments({ args, requestId }: PreviewProps<DraftArguments>): 
 const searchArguments = listArguments.extend({ labelIds: z.array(z.string()).nullish() });
 
 function SearchScope({ args, requestId }: PreviewProps<z.infer<typeof searchArguments>>): JSX.Element {
-  const summaries = useGmailSummaries(needsLabelLookup(args) ? requestId : undefined);
+  const compact = useCompactPane();
+  const summaries = useGmailSummaries(!compact && needsLabelLookup(args) ? requestId : undefined);
   return (
     <Stack gap={4}>
       {args.q ? <EmailField name="Query" value={args.q} /> : <Text size="sm">All threads</Text>}
-      <EmailField name="All labels" value={args.labelIds?.map((id) => labelName(id, summaries?.labels)).join(", ")} />
-      {args.maxResults != null && <Text size="sm">Up to {args.maxResults} threads</Text>}
+      {!compact && (
+        <>
+          <EmailField
+            name="All labels"
+            value={args.labelIds?.map((id) => labelName(id, summaries?.labels)).join(", ")}
+          />
+          {args.maxResults != null && <Text size="sm">Up to {args.maxResults} threads</Text>}
+        </>
+      )}
       {args.includeSpamTrash && <Text size="sm">Includes spam and trash</Text>}
       {args.pageToken && <Text size="sm">Continues a previous search</Text>}
     </Stack>
@@ -188,10 +197,7 @@ const searchPresentation: ActionPresentation = {
   fallbackLabel: "Gmail: Search threads",
   pane: { collapsed: searchPreview, opened: searchPreview },
   details: { arguments: searchPreview, result: defineResultPreview(searchResult, ThreadResults) },
-  compactCardExpands: (args) => {
-    const parsed = searchArguments.safeParse(args);
-    return !parsed.success || needsLabelLookup(parsed.data);
-  },
+  compactCardExpands: expandsForDetails(searchArguments, (args) => !!args.labelIds?.length || args.maxResults != null),
   offersCardDecisionButtons: (args) => {
     const parsed = searchArguments.safeParse(args);
     return parsed.success && !needsLabelLookup(parsed.data);
@@ -199,28 +205,40 @@ const searchPresentation: ActionPresentation = {
 };
 
 function LabelChanges({ add, remove }: { add?: string[] | null; remove?: string[] | null }): JSX.Element {
+  const compact = useCompactPane();
+  const summarize = (labels?: string[] | null): string | undefined =>
+    compact && labels && labels.length > 2
+      ? `${labels.slice(0, 2).join(", ")} + ${labels.length - 2} more`
+      : labels?.join(", ");
   return (
     <>
-      <EmailField name="Add" value={add?.join(", ")} />
-      <EmailField name="Remove" value={remove?.join(", ")} />
+      <EmailField name="Add" value={summarize(add)} />
+      <EmailField name="Remove" value={summarize(remove)} />
     </>
   );
 }
 
 function ThreadsRelabel({ args, requestId }: PreviewProps<z.infer<typeof modifyThreadLabelsArguments>>): JSX.Element {
   const names = useIntegrationPreviewNames("gmail", requestId);
+  const compact = useCompactPane();
   return (
     <Stack gap={4}>
       <LabelChanges add={args.add} remove={args.remove} />
-      {args.add?.length ? (
+      {!compact && args.add?.length ? (
         <Text size="sm" c="dimmed">
-          Creates any missing labels in Add.
+          Creates missing labels and shows them in the sidebar and message lists.
         </Text>
       ) : null}
       {!args.add?.length && !args.remove?.length && <Text size="sm">No label changes specified.</Text>}
       {args.thread_ids.map((id, index) => (
         <Text size="sm" key={index}>
-          <ThreadTarget id={id} subject={names?.get(id)} />
+          <ThreadTarget id={id} subject={names?.get(id)} linkInCompact />
+          {!compact && names?.get(id) && (
+            <>
+              {" "}
+              · <Code>{id}</Code>
+            </>
+          )}
         </Text>
       ))}
     </Stack>
@@ -234,14 +252,36 @@ const relabelResult = z.object({
   removed: z.array(labelRef),
 });
 const relabelPreview = definePreview(modifyThreadLabelsArguments, ThreadsRelabel);
+
+function RelabelDecision({ args, requestId, buttons, fallback }: CardDecisionProps): ReactNode {
+  const parsed = modifyThreadLabelsArguments.safeParse(args);
+  const thread = parsed.success && parsed.data.thread_ids.length === 1 ? parsed.data.thread_ids[0] : undefined;
+  const names = useIntegrationPreviewNames("gmail", thread === undefined ? undefined : requestId);
+  if (thread === undefined || !names?.get(thread)?.trim() || !parsed.success) return fallback;
+  const labels = [...(parsed.data.add ?? []), ...(parsed.data.remove ?? [])];
+  const complete =
+    labels.length > 0 &&
+    labels.length <= 4 &&
+    new Set(labels).size === labels.length &&
+    labels.every((label) => label.length <= 80 && !!label.trim() && !/[,\r\n]/.test(label));
+  return complete ? buttons : fallback;
+}
+
 const relabelPresentation: ActionPresentation = {
   fallbackLabel: "Change Gmail thread labels",
+  liveCardDecision: { component: RelabelDecision },
   pane: {
-    collapsed: definePreview(modifyThreadLabelsArguments, ({ args }) => (
-      <Text size="sm">
-        {args.thread_ids.length} {args.thread_ids.length === 1 ? "thread" : "threads"}
-      </Text>
-    )),
+    collapsed: definePreview(modifyThreadLabelsArguments, function RelabelSummary(props) {
+      const { args } = props;
+      return args.thread_ids.length === 1 ? (
+        <ThreadsRelabel {...props} />
+      ) : (
+        <Stack gap={4}>
+          <Text size="sm">{args.thread_ids.length} threads</Text>
+          <LabelChanges add={args.add} remove={args.remove} />
+        </Stack>
+      );
+    }),
     opened: relabelPreview,
   },
   details: {
@@ -259,7 +299,7 @@ const relabelPresentation: ActionPresentation = {
 };
 
 const draftPresentation: ActionPresentation = {
-  fallbackLabel: "Gmail: Draft email",
+  fallbackLabel: "Gmail: Create unsent draft",
   call: defineCallPreview(draftArguments, draftResult, DraftCall),
   pane: { collapsed: definePreview(draftArguments, DraftCollapsed), opened: draftPreview },
   details: {
@@ -273,10 +313,7 @@ const draftPresentation: ActionPresentation = {
       </Text>
     )),
   },
-  offersCardDecisionButtons: (args) => {
-    const parsed = draftArguments.safeParse(args);
-    return parsed.success && !parsed.data.thread_id;
-  },
+  offersCardDecisionButtons: (args) => draftArguments.safeParse(args).success,
 };
 
 const draftUpdateArguments = draftArguments.extend({ draft_id: z.string().min(1) });
@@ -308,14 +345,24 @@ const draftDeletePreview = definePreview(draftDeleteArguments, ({ args, requestI
   </Text>
 ));
 
-export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   ["drafts_create", draftPresentation],
   [
     "drafts_update",
     {
       fallbackLabel: "Replace Gmail draft",
       call: defineCallPreview(draftUpdateArguments, draftResult, DraftUpdateCall),
-      pane: { collapsed: definePreview(draftUpdateArguments, DraftCollapsed), opened: draftUpdatePreview },
+      pane: {
+        collapsed: definePreview(draftUpdateArguments, (props) => (
+          <Stack gap={4}>
+            <Text size="sm">
+              Replace <DraftTarget id={props.args.draft_id} requestId={props.requestId} />
+            </Text>
+            <DraftCollapsed {...props} />
+          </Stack>
+        )),
+        opened: draftUpdatePreview,
+      },
       details: { arguments: draftUpdatePreview, result: draftPresentation.details?.result },
     },
   ],
@@ -324,9 +371,7 @@ export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     {
       fallbackLabel: "Delete Gmail draft",
       pane: {
-        collapsed: definePreview(draftDeleteArguments, () => (
-          <Text size="sm">Permanently delete one unsent draft.</Text>
-        )),
+        collapsed: draftDeletePreview,
         opened: draftDeletePreview,
       },
       details: { arguments: draftDeletePreview, emptyResult: <Text size="sm">Unsent draft deleted.</Text> },
@@ -338,3 +383,5 @@ export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
   ["threads_list", searchPresentation],
   ["threads_modify_labels", relabelPresentation],
 ]);
+
+export const gmailPresentationGroup: readonly [string, typeof gmailRenderers] = ["gmail", gmailRenderers];

@@ -28,6 +28,7 @@ py_library(
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/forgejo_registry:__pkg__",
     ],
     deps = [
@@ -36,7 +37,10 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:volume_claim",
@@ -65,7 +69,9 @@ py_test(
     deps = [
         ":app",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -83,9 +89,9 @@ py_test(
         ":app",
         ":busybox_image",
         ":mitmproxy_image",
+        "//cluster/cdk8s:conftest",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//cryptography",
         "@pypi//docker",
         "@pypi//mitmproxy",

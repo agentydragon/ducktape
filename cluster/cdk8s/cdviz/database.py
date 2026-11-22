@@ -6,25 +6,15 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesPasswordSecret,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-    DatabaseSpecExtensions,
-    DatabaseSpecExtensionsEnsure,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.namespaces import Vpa
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/database"
@@ -50,7 +40,7 @@ def chart(app: App) -> Chart:
                 name=role, login=True, password_secret=ClusterSpecManagedRolesPasswordSecret(name=secret.name)
             )
         )
-    cluster.cluster(
+    postgres = cluster.cluster(
         chart,
         "cluster",
         ref=config.DATABASE,
@@ -62,17 +52,14 @@ def chart(app: App) -> Chart:
         managed=ClusterSpecManaged(roles=roles),
         wal_archive=True,
     )
-    Database(
+    cluster.Database(
         chart,
         "database",
         metadata=ApiObjectMetadata(name=config.DATABASE_NAME, namespace=config.NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=config.DATABASE.name),
-            name=config.DATABASE_NAME,
-            owner=config.DATABASE_NAME,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[DatabaseSpecExtensions(name="timescaledb", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-        ),
+        cluster=postgres,
+        name=config.DATABASE_NAME,
+        owner=config.DATABASE_NAME,
+        extensions=[DatabaseSpecExtensions(name=timescale.EXTENSION, ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
     backup.CnpgBackup(chart, "backup", ref=config.DATABASE, retention="30d", adopt_existing=False)
     return chart
@@ -90,15 +77,6 @@ def cdviz_database(
         "cdviz-database",
         directory,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1",
-                kind="Database",
-                current=(
-                    f"{CNPG_DATABASE_READY} && has(status.extensions) && "
-                    "status.extensions.exists(e, e.name == 'timescaledb' && e.applied)"
-                ),
-            )
-        ],
+        health_check_exprs=[database_health(extension=timescale.EXTENSION)],
         depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets, seaweedfs),
     )

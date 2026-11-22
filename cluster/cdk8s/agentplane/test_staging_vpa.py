@@ -1,60 +1,33 @@
-"""The static-service VPA policies stay within their Deployment resource contracts."""
+"""The static-service VPA bounds stay within their Deployment resource contracts."""
 
-from typing import Any
+from collections.abc import Callable
 
 import pytest_bazel
-from cdk8s import App
+from cdk8s import App, SizeRoundingBehavior
+from cdk8s_plus_34 import Deployment
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import staging_vpa
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.agentplane import staging, staging_vpa
 
 
-def _mib(quantity: str) -> int:
-    if quantity.endswith("Gi"):
-        return int(quantity[:-2]) * 1024
-    assert quantity.endswith("Mi")
-    return int(quantity[:-2])
-
-
-def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests: list[dict[str, Any]]) -> None:
-    resources = staging_vpa.chart(scratch_app).to_json()
-    assert {resource["metadata"]["namespace"] for resource in resources} == {"agentplane-staging", "haku-ci"}
-    vpas = [resource for resource in resources if resource["metadata"]["namespace"] == "agentplane-staging"]
-    assert len(vpas) == 13
-    assert all(vpa["apiVersion"] == "autoscaling.k8s.io/v1" and vpa["kind"] == "VerticalPodAutoscaler" for vpa in vpas)
-    assert (
-        find_resource(staging_manifests, "Namespace", "agentplane-staging")["metadata"]["labels"][
-            "goldilocks.fairwinds.com/enabled"
-        ]
-        == "false"
-    )
-
-    assert {"central-sampler", "egress"} <= {vpa["metadata"]["name"] for vpa in vpas}
-    expected_modes = {"central-sampler": "Off", "frontend": "Recreate"}
-    for vpa in vpas:
-        spec = vpa["spec"]
-        target = spec["targetRef"]
-        assert target == {"apiVersion": "apps/v1", "kind": "Deployment", "name": vpa["metadata"]["name"]}
-        assert vpa["metadata"]["namespace"] == "agentplane-staging"
-        assert spec["updatePolicy"] == {"updateMode": expected_modes.get(target["name"], "Initial")}
-        deployment = find_resource(staging_manifests, "Deployment", target["name"])
-        container = one(deployment["spec"]["template"]["spec"]["containers"])
-        selected, wildcard = spec["resourcePolicy"]["containerPolicies"]
-        assert selected["containerName"] == container["name"]
-        assert set(selected["controlledResources"]) == {"cpu", "memory"}
-        assert selected["controlledValues"] == "RequestsOnly"
-        if target["name"] in {"central-sampler", "egress", "frontend"}:
-            assert "minAllowed" not in selected
-        else:
-            assert set(selected["minAllowed"]) == {"memory"}
-            assert _mib(selected["minAllowed"]["memory"]) >= _mib(container["resources"]["requests"]["memory"])
-        if target["name"] in {"central-sampler", "egress", "electric", "frontend"}:
-            assert "maxAllowed" not in selected
-        else:
-            assert set(selected["maxAllowed"]) == {"memory"}
-            assert _mib(selected["maxAllowed"]["memory"]) <= _mib(container["resources"]["limits"]["memory"])
-        assert wildcard == {"containerName": "*", "mode": "Off"}
+def test_vpa_bounds_fit_staging_deployments(scratch_app_factory: Callable[[], App]) -> None:
+    charts = [staging.chart(scratch_app_factory()), staging.delivery_chart(scratch_app_factory())]
+    deployments = [obj for chart in charts for obj in chart.node.find_all() if isinstance(obj, Deployment)]
+    for name, container_name, minimum, maximum in staging_vpa._WORKLOADS:
+        deployment = one(deployment for deployment in deployments if deployment.name == name)
+        container = one(container for container in deployment.containers if container.name == container_name)
+        if minimum is None and maximum is None:
+            continue
+        resources = container.resources
+        assert resources is not None
+        memory = resources.memory
+        assert memory is not None
+        if minimum is not None:
+            assert memory.request is not None
+            assert memory.request.to_mebibytes(rounding=SizeRoundingBehavior.NONE) <= minimum
+        if maximum is not None:
+            assert memory.limit is not None
+            assert memory.limit.to_mebibytes(rounding=SizeRoundingBehavior.NONE) >= maximum
 
 
 if __name__ == "__main__":

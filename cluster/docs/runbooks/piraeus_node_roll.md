@@ -139,7 +139,7 @@ manual repair, use the read-only `GetAdminLockStatus` and verify no repair is
 active.
 
 Refresh long-lived FUSE clients while the old endpoint still exists, then check
-that requests no longer depend on it. The [retirement caveat](rolling_seaweedfs_volume_pvc.md#caveat-retiring-a-volume-server-refresh-fuse-clients-before-you-delete-it)
+that requests no longer depend on it. The [stale-mount lesson](../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md)
 describes the cached-location failure: an alive-but-empty server still proxies
 reads, so a stale client never re-resolves. A rolling restart that lands on the
 same node keeps its CSI mount staged; scale the consumer to zero and back to

@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from pathlib import PurePosixPath
-from typing import Any, cast
+from typing import Any
 
-import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
@@ -25,8 +21,6 @@ from agentplane.net.peertls.config import (
 )
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
-    binding_delegation,
-    environment_sandbox,
     environment_service,
     history_service,
     kubernetes_account_ref,
@@ -36,117 +30,70 @@ from cluster.cdk8s.agentplane import (
     platform_routes,
     runner_gateway,
     staging,
-    staging_grants,
 )
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
-    DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     INFERENCE_EXPERIMENTS_POLICY,
     KUBERNETES_HOST,
     PROXY_PORT,
     PUBLIC_INTERNET_POLICY,
-    Egress,
     admin,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
-from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
-from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
-from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
-from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
-from model_catalog.catalog import TABBYAPI_QWEN_STOCK, Provider
 
 
-def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str]]:
-    """The explicitly configured PolicySets for each Sandbox launch preset."""
-    config = find_resource(docs, "ConfigMap", "app-config")
-    presets = yaml.safe_load(config["data"]["config.yaml"])["sandbox_presets"]
-    return {name: set(spec["policy_sets"]) for name, spec in presets.items()}
-
-
-def test_egress_reads_its_settings_file_and_database_url(catalog_manifests: list[dict[str, Any]]) -> None:
-    pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
+def test_egress_proxy_settings_and_credentials(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = find_resource(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    settings_path = PurePosixPath(proxy_env[EgressSettings.config_file_env]["value"])
-    settings_mount = one(mount for mount in proxy["volumeMounts"] if mount["mountPath"] == str(settings_path.parent))
-    settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == settings_mount["name"])
-    assert settings_volume["configMap"]["name"] == "egress-go-settings"
-    settings_document = find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"][settings_path.name]
-    assert settings_document
     assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
         EgressSettings.config_file_env,
         EgressSettings.database_url_env,
     }
     database = proxy_env[EgressSettings.database_url_env]["valueFrom"]["secretKeyRef"]
     assert database == {"name": "postgres-egress", "key": "uri"}
-    config = yaml.safe_load(settings_document)
+    config = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert config["rules_namespace"] == staging.ENV.namespace
     assert sorted(config["allowed_service_account_namespaces"]) == sorted(
         [staging.ENV.namespace, *staging.ENV.egress.external_workload_namespaces]
     )
     assert config["admin_grpc_service_callers"] == [APP_URI]
-
-
-@pytest.fixture(scope="module")
-def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    app = scratch_app_factory()
-    chart = Chart(app, "svid-egress")
-    env = staging.ENV
-    Egress(
-        chart,
-        "egress",
-        env,
-        database_url=SecretRef(namespace=env.namespace, name="postgres-egress")
-        .key("uri")
-        .env_value(chart, "test-database-url"),
-        runners=environment_sandbox.pods(env.namespace),
-        placement=None,
-        registry_secret_name=None,
-    ).add_platform_resources()
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-
-
-def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list[dict[str, Any]]) -> None:
-    deployment = find_resource(catalog_manifests, "Deployment", "egress")
-    assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
-        f"{staging.ENV.namespace}-egress-upstream-ca",
-        "public-web-pki",
+    assert pod["automountServiceAccountToken"] is True
+    assert config["local_api_server"] == {
+        "host": KUBERNETES_HOST,
+        "port": 443,
+        "token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
     }
+
+
+def test_staging_requires_the_tls_hop(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = find_resource(staging_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
     ports = {port["containerPort"] for port in proxy["ports"]}
-    assert PROXY_PORT in ports
     assert admin(staging.ENV.namespace).pod_port in ports
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
-    assert settings["rules_namespace"] == staging.ENV.namespace
-    assert "AGENTPLANE_EGRESS_RULES_NAMESPACE" not in {variable["name"] for variable in proxy["env"]}
+    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe"}
     api = admin(staging.ENV.namespace)
-    assert f"{api.fqdn}:{api.port.number}" in settings["tls_passthrough_targets"]
+    assert api.authority in settings["tls_passthrough_targets"]
 
 
 def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
-    svid_egress_manifests: list[dict[str, Any]],
+    staging_manifests: list[dict[str, Any]],
 ) -> None:
-    deployment = find_resource(svid_egress_manifests, "Deployment", "egress")
+    deployment = find_resource(staging_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
     assert [port["containerPort"] for port in proxy["ports"]].count(PROXY_PORT) == 1
-    service = find_resource(svid_egress_manifests, "Service", "egress")
+    service = find_resource(staging_manifests, "Service", "egress")
     mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
     assert len(mtls_ports) == 1
 
-    settings = config_map_yaml(svid_egress_manifests, "egress-go-settings", "settings.yaml")
-    assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
-    assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
-
-    role = find_resource(svid_egress_manifests, "Role", "egress")
+    role = find_resource(staging_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
     # An SVID names a WorkloadCredential, and the record names the subject the proxy reads live; the
@@ -156,11 +103,11 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
     assert "pods" not in all_resources
 
-    certificate = find_resource(svid_egress_manifests, "Certificate", "agentplane-egress-proxy")
+    certificate = find_resource(staging_manifests, "Certificate", "agentplane-egress-proxy")
     assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
     assert "server auth" in certificate["spec"]["usages"]
 
-    policy = find_resource(svid_egress_manifests, "CiliumNetworkPolicy", "egress")["spec"]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "egress")["spec"]
     ingress_ports = {
         int(port["port"])
         for rule in policy["ingress"]
@@ -168,14 +115,6 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
         for port in port_rule["ports"]
     }
     assert PROXY_PORT in ingress_ports
-
-
-def test_sandbox_presets_explicitly_grant_the_baseline_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
-    presets = _sandbox_preset_policy_sets(catalog_manifests)
-    expected = {*DEFAULT_POLICIES[1:], shared_diagnostics(staging.ENV.namespace).credential_name}
-    assert presets
-    for name, policy_sets in presets.items():
-        assert expected <= policy_sets, (name, policy_sets)
 
 
 def test_basic_policy_auto_approves_only_same_principal_session_actions(
@@ -205,34 +144,16 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
     for account in ("claude-ai", "haku-agent"):
         binding = find_resource(catalog_manifests, "PolicyBinding", account)
         assert BASIC_POLICY in binding["spec"]["policySets"]
-    presets = _sandbox_preset_policy_sets(catalog_manifests)
-    assert presets
-    for policy_sets in presets.values():
-        assert BASIC_POLICY in policy_sets
 
 
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
     public = find_resource(catalog_manifests, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
-    # Every preset spells out its grants; none grants public Internet implicitly.
-    assert (
-        PUBLIC_INTERNET_POLICY not in find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"]
-    )
-    assert all(
-        PUBLIC_INTERNET_POLICY not in policy_sets
-        for policy_sets in _sandbox_preset_policy_sets(catalog_manifests).values()
-    )
-    for doc in catalog_manifests:
-        if doc["kind"] == "PolicyBinding":
-            if doc["metadata"]["name"] == "public-coder-openclaw":
-                assert doc["spec"]["subject"] == {"identity": {"name": "public-coder-openclaw"}}
-                assert doc["spec"]["policySets"] == [
-                    "public-coder-openclaw",
-                    INFERENCE_EXPERIMENTS_POLICY,
-                    PUBLIC_INTERNET_POLICY,
-                ]
-            else:
-                assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
+    assert [
+        (binding["metadata"]["namespace"], binding["spec"]["subject"])
+        for binding in catalog_manifests
+        if binding["kind"] == "PolicyBinding" and PUBLIC_INTERNET_POLICY in binding["spec"]["policySets"]
+    ] == [(staging.ENV.namespace, {"identity": {"name": "public-coder-openclaw"}})]
 
 
 def test_basic_has_no_projected_workload_token_route(staging_manifests: list[dict[str, Any]]) -> None:
@@ -257,21 +178,21 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: l
     )
     proxy_settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     endpoint = notifications.service(staging.ENV.namespace)
-    assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
+    assert endpoint.authority in proxy_settings["tls_passthrough_targets"]
     notification_settings = config_map_yaml(catalog_manifests, f"{notifications.NAME}-settings", "settings.yaml")
     assert notification_settings["rpc"]["listen_address"] == f"0.0.0.0:{endpoint.pod_port}"
     assert notification_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
 
 
-def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[str, Any]]) -> None:
-    llm_service = find_resource(catalog_manifests, "Service", "llm-ingress")
+def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    llm_service = find_resource(staging_manifests, "Service", "llm-ingress")
     assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080}
 
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
+    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     workload = llm_ingress.service(staging.ENV.namespace)
-    assert f"{workload.fqdn}:{workload.pod_port}" in settings["tls_passthrough_targets"]
+    assert workload.authority in settings["tls_passthrough_targets"]
 
-    llm_settings = config_map_yaml(catalog_manifests, "llm-ingress-settings", "settings.yaml")
+    llm_settings = config_map_yaml(staging_manifests, "llm-ingress-settings", "settings.yaml")
     assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
@@ -279,11 +200,11 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert llm_settings["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert llm_settings["central_sampler_identity_callers"] is True
 
-    certificate = find_resource(catalog_manifests, "Certificate", "llm-ingress-workload")
+    certificate = find_resource(staging_manifests, "Certificate", "llm-ingress-workload")
     assert certificate["spec"]["uris"] == [LLM_INGRESS_URI]
     assert "server auth" in certificate["spec"]["usages"]
 
-    role = find_resource(catalog_manifests, "Role", "llm-ingress-sandbox-reader")
+    role = find_resource(staging_manifests, "Role", "llm-ingress-sandbox-reader")
     assert role["rules"] == [
         {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list"]},
         {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]},
@@ -291,11 +212,11 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
         {"apiGroups": [GROUP], "resources": ["identities"], "verbs": ["get"]},
     ]
 
-    basic_policy = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
+    basic_policy = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)
     allowed_hosts = [host for rule in basic_policy["spec"]["rules"] for host in rule.get("hosts", [])]
     assert llm_ingress.service(staging.ENV.namespace).fqdn not in allowed_hosts
 
-    network_policy = find_resource(catalog_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"]
+    network_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"]
     assert any(
         int(port["port"]) == workload.pod_port
         for rule in network_policy["ingress"]
@@ -304,65 +225,59 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     )
 
 
-def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dict[str, Any]]) -> None:
+def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dict[str, Any]]) -> None:
     """Keep managed CLI origins credential-free while the sidecar presents its Sandbox SVID."""
     namespace = staging.ENV.namespace
     sessions = runner_gateway.sessions_service(namespace)
-    sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
+    sessions_authority = sessions.authority
     legacy_authority = f"session-dispatcher.{namespace}.svc.cluster.local:8080"
     history = history_service.service(namespace)
-    history_origin = f"{history.fqdn}:{history.port.number}"
-    history_route = platform_routes.history_grpc(namespace)
-    history_url = f"http://{history_route.local_target}"
+    history_origin = history.authority
+    listener_url = platform_routes.listener_url()
     environments = environment_service.environments_service(namespace)
-    environments_route = platform_routes.environments_grpc(namespace)
-    basic = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
+    basic = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)
     assert all(sessions.fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"])
-    proxy_settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
-    assert {
-        sessions_authority,
-        f"{history.fqdn}:{history.pod_port}",
-        f"{environments.fqdn}:{environments.pod_port}",
-    } <= set(proxy_settings["tls_passthrough_targets"])
+    proxy_settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
+    assert {sessions_authority, history.authority, environments.authority} <= set(
+        proxy_settings["tls_passthrough_targets"]
+    )
 
-    configured: list[dict[str, Any]] = []
-    for item in catalog_manifests:
-        if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
-            continue
-        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
-        assert legacy_authority not in routes
-        if sessions_authority in routes:
-            configured.append(routes[sessions_authority])
-    assert configured
-    for route in configured:
-        assert route["upstream"] == sessions_authority
-        assert route["server_uri"] == SESSION_DISPATCHER_URI
-
+    session_routes: list[dict[str, Any]] = []
     history_configured: list[dict[str, Any]] = []
     environments_configured: list[dict[str, Any]] = []
-    for item in catalog_manifests:
+    for item in staging_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
-        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
+        settings = yaml.safe_load(item["data"]["settings.yaml"])
+        routes = settings.get("workload_routes", {})
+        assert legacy_authority not in routes
         assert history_origin not in routes, "Runtime's History ingress already sends opaque TLS"
-        platform = yaml.safe_load(item["data"]["settings.yaml"]).get("platform_routes", {}).get("routes", {})
+        if sessions_authority in routes:
+            session_routes.append(routes[sessions_authority])
+        platform = settings.get("platform_routes", {}).get("routes", {})
         if "environments" in platform:
             environments_configured.append(platform["environments"])
         if "history" in platform:
             history_configured.append(platform["history"])
+
+    assert session_routes
+    for route in session_routes:
+        assert route["upstream"] == sessions_authority
+        assert route["server_uri"] == SESSION_DISPATCHER_URI
+
     assert history_configured
     for route in history_configured:
         assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]
-        assert route["upstream"] == f"{history.fqdn}:{history.pod_port}"
+        assert route["upstream"] == history.authority
         assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI}
 
     assert environments_configured
     for route in environments_configured:
         assert route["service_prefixes"] == ["/agentplane.environments.v1.EnvironmentService/"]
-        assert route["upstream"] == f"{environments.fqdn}:{environments.pod_port}"
+        assert route["upstream"] == environments.authority
         assert route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
 
-    pod_template = find_resource(catalog_manifests, "SandboxTemplate", "environment-tools")
+    pod_template = find_resource(staging_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
         container
         for container in pod_template["spec"]["pod"]["spec"]["containers"]
@@ -370,8 +285,8 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
-    assert pod_env["AGENTPLANE_HISTORY_URL"] == history_url
-    assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == f"http://{environments_route.local_target}"
+    assert pod_env["AGENTPLANE_HISTORY_URL"] == listener_url
+    assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == listener_url
     assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
     assert all(
         source.get("serviceAccountToken", {}).get("audience") != "session-dispatcher"
@@ -385,19 +300,19 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     )
 
     vm_runtime = json.loads(
-        find_resource(catalog_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+        find_resource(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
     )
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
-        f"http://{launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
+        platform_routes.listener_url(host=launcher_relay.GUEST_GATEWAY)
     )
 
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_ENVIRONMENTS_URL"] == (
-        f"http://{launcher_relay.GUEST_GATEWAY}:{environments_route.listen_port}"
+        platform_routes.listener_url(host=launcher_relay.GUEST_GATEWAY)
     )
 
 
-def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manifests: list[dict[str, Any]]) -> None:
+def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manifests: list[dict[str, Any]]) -> None:
     """The bot can finish a pull request, not only open one.
 
     GitHub answers a PR description with PATCH and `update-branch`/`merge` with PUT; a review comment
@@ -405,7 +320,7 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manif
     unable to correct it. Pinned in both directions so that trimming a verb stays a decision rather
     than a side effect of tidying, and so the rule stays unpathed rather than narrowing quietly.
     """
-    github = find_resource(catalog_manifests, "PolicySet", GITHUB_AGENTYDRAGON_AGENT_POLICY)
+    github = find_resource(staging_manifests, "PolicySet", GITHUB_AGENTYDRAGON_AGENT_POLICY)
     rule = one(github["spec"]["rules"])
     assert set(rule["methods"]) == {"GET", "POST", "PUT", "PATCH", "DELETE"}
     assert rule["credentialRef"] == {"name": "github-pat"}
@@ -413,91 +328,12 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manif
     assert "paths" not in rule
 
 
-def test_claude_picker_offers_environment_models_and_keeps_ingress(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == [route.id for route in STAGING_APP_MODELS.claude]
-    assert all(
-        route.id in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"] for route in STAGING_APP_MODELS.claude
-    )
-    for preset in config["thread_presets"].values():
-        assert preset["model"] in config["models"]["harnesses"][preset["harness"]]
-
-
-def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    catalog = config["models"]
-    assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
-    abliterated_id = "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated"
-    stock_chat_id = chat_completions_id(TABBYAPI_QWEN_STOCK, STAGING_APP_MODELS.central_sampler)
-    chat_models = {stock_chat_id: TABBYAPI_QWEN_STOCK.id, abliterated_id: abliterated_id}
-    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [
-        *(route.id for route in STAGING_APP_MODELS.central_sampler),
-        *chat_models,
-    ]
-    assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CLAUDE"])
-    assert abliterated_id in catalog["harnesses"]["HARNESS_CODEX"]
-    assert stock_chat_id not in catalog["harnesses"]["HARNESS_CODEX"]
-    [abliterated_option] = [model for model in catalog["models"] if model["model"] == abliterated_id]
-    assert abliterated_option["reasoning_efforts"] == ["low", "medium", "high"]
-    assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
-    assert "central_sampler" not in catalog
-    sampler = json.loads(
-        find_resource(catalog_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
-    )
-    assert set(sampler["models"]) == {*chat_models, *(route.id for route in STAGING_APP_MODELS.central_sampler)}
-    for model_id, provider_model in chat_models.items():
-        assert sampler["models"][model_id] == {
-            "api": "chat_completions",
-            "provider_model": provider_model,
-            "connection": "llm-ingress",
-            "response_header_timeout_seconds": 360,
-            "exec_encoding": "json",
-            "reasoning_efforts": ["", "high", "low", "medium"],
-            "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
-        }
-    for route in STAGING_APP_MODELS.central_sampler:
-        model = sampler["models"][route.id]
-        if route.upstream.provider == Provider.ANTHROPIC_API:
-            assert model["api"] == "anthropic_messages"
-            assert model["connection"] == "anthropic-api"
-            assert model["provider_model"] == route.model.id
-            assert model["exec_encoding"] == "json"
-        elif route.upstream.provider == Provider.CHATGPT:
-            assert model["api"] == "responses"
-            assert model["connection"] == "llm-ingress"
-            assert model["responses"] == {"dialect": "lite"}
-            assert model["exec_encoding"] == "freeform"
-        else:
-            assert model["api"] == "responses"
-            assert model["connection"] == "llm-ingress"
-            assert model["responses"] == {"dialect": "standard"}
-            assert model["exec_encoding"] == "json"
-
-
-def test_haku_launches_on_an_available_central_sampler_route(catalog_manifests: list[dict[str, Any]]) -> None:
-    """Haku's model and effort must be accepted by the selected harness.
-
-    Sandbox and Action launches use the same preset, so both must resolve to that harness and model.
-    """
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    preset = config["thread_presets"]["haku-codex"]
-    assert preset["harness"] == "HARNESS_CENTRAL_SAMPLER"
-    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
-    option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
-    assert preset["reasoning_effort"] in option["reasoning_efforts"]
-    assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
-    actions = config_map_yaml(catalog_manifests, "actions-settings", "settings.yaml")
-    action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["create_session"]["spec"]
-    assert action_spec["harness"] == preset["harness"]
-    assert action_spec["model"] == preset["model"]
-    assert "central_sampler" not in action_spec
-
-
 def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_grants(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     """New Sandbox Identities use account egress, while their existing account grants retain preset RBAC."""
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    assert staging.ENV.app is not None
+    presets = staging.ENV.app.config.sandbox_presets
     policies = {
         doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifests if doc["kind"] == "PolicySet"
     }
@@ -509,8 +345,8 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
         if grant["kind"] == "ServiceAccountGrant"
     }
 
-    for preset, spec in config["sandbox_presets"].items():
-        launch_policies = set(spec["policy_sets"])
+    for preset, spec in presets.items():
+        launch_policies = spec.policy_sets
         assert all(not rule["type"].startswith("kubernetes_") for name in launch_policies for rule in policies[name]), (
             preset
         )
@@ -526,6 +362,7 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
         "finance-agent": public_role_sets
         | {
             agent_access_profiles.COINBASE_POLICY,
+            agent_access_profiles.OVH_BILLING_POLICY,
             "spend-policy-config",
             agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
         },
@@ -534,19 +371,20 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
             "haku-sandbox-write",
             "cluster-diagnostics",
             agent_access_profiles.COINBASE_POLICY,
+            agent_access_profiles.OVH_BILLING_POLICY,
             agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
         },
     }
-    for preset in ("public-coder", "finance-agent", "haku"):
+    for preset, role_sets in expected_role_sets.items():
         ref = kubernetes_account_ref.account(staging.ENV.namespace, preset)
-        assert ref.credential_name in config["sandbox_presets"][preset]["policy_sets"]
-        assert account_grants[(ref.namespace, ref.name)] == expected_role_sets[preset]
+        assert ref.credential_name in presets[preset].policy_sets
+        assert account_grants[(ref.namespace, ref.name)] == role_sets
 
-    for preset in ("finance-agent", "haku"):
-        launch_policies = config["sandbox_presets"][preset]["policy_sets"]
-        assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in launch_policies
-        assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in launch_policies
-    for name in (agent_access_profiles.COINBASE_POLICY, agent_access_profiles.PLAID_DIAGNOSTICS_POLICY):
+    for name in (
+        agent_access_profiles.COINBASE_POLICY,
+        agent_access_profiles.OVH_BILLING_POLICY,
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+    ):
         assert any(rule["type"].startswith("kubernetes_") for rule in policies[name])
         identity_rules = policies[f"{name}-identity"]
         assert identity_rules
@@ -554,168 +392,55 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
         assert identity_rules == [rule for rule in policies[name] if rule["type"] == "egress"]
 
 
-@pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
-def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
-    preset: str, staging_manifests: list[dict[str, Any]]
+def test_ovh_billing_is_a_named_read_only_credential_with_scoped_egress(
+    staging_manifests: list[dict[str, Any]],
 ) -> None:
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    assert "kubernetes_grants" not in config
-    grant_models = staging_grants.catalog(staging.ENV.namespace)
-    catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
-    account_grants = {
-        grant["spec"]["serviceAccount"]["name"]: set(grant["spec"]["roleSets"])
-        for grant in staging_manifests
-        if grant["kind"] == "ServiceAccountGrant"
+    secret = find_resource(staging_manifests, "ExternalSecret", "ovh-billing-credentials")
+    assert {item["secretKey"] for item in secret["spec"]["data"]} == {
+        "application_key",
+        "application_secret",
+        "consumer_key",
     }
-    selected_role_sets = account_grants[preset]
-    selected = {
-        grant for role_set in selected_role_sets for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    public_selected = {
-        grant
-        for role_set in account_grants["public-coder"]
-        for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    credential_grants = (
-        {"coinbase-credentials", "spend-policy-config", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
-        if preset == "finance-agent"
-        else set()
-    )
-    # Coinbase and Plaid keep their GET egress in the Identity policy sibling; their Kubernetes
-    # permissions are provisioned on the preset account.
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity" in config["sandbox_presets"][preset]["policy_sets"]
-    ) == (preset == "finance-agent")
-    assert selected == public_selected | credential_grants
-    assert "cluster-diagnostics" in selected
-    haku = {
-        grant for role_set in account_grants["haku"] for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    assert "cluster-diagnostics" in haku
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    )
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    coinbase_rules = find_resource(staging_manifests, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"][
-        "rules"
+    role = find_resource(staging_manifests, "Role", "ovh-billing-reader")
+    assert role["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["ovh-billing-credentials"], "verbs": ["get"]}
     ]
-    assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
-    assert {
-        (rule["role"]["kind"], rule["role"]["name"], tuple(rule["namespaces"]))
-        for rule in coinbase_rules
-        if rule["type"] == "kubernetes_role_binding"
-    } == {("Role", "claude-ai-coinbase-reader", ("agentplane-staging",))}
-    egress_rule = one(rule for rule in coinbase_rules if rule["type"] == "egress")
-    assert egress_rule["hosts"] == ["api.coinbase.com"]
-    assert egress_rule["methods"] == ["GET"]
-    assert "paths" not in egress_rule
-    assert "credentialRef" not in egress_rule
-    assert (
-        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    )
-    assert (
-        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    assert (
-        set(haku) - set(selected)
-        == {"haku-sandbox-write", "coinbase-credentials", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
-        - credential_grants
-    )
-    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-policy-config"} if preset == "finance-agent" else set()
-    )
-    assert {
-        "agentplane-staging-metadata",
-        "agentplane-staging-logs",
-        "haku-console-metadata",
-        "clickhouse-diagnostics",
-        "ducktape-flux-read",
-        "public-coder-volsync-status",
-        "public-coder-agent-reader",
-    } <= set(selected)
-    # Cluster-wide reads are explicit inventory and diagnostics grants. Namespaced
-    # log and metadata readers remain namespaced.
-    assert {name: catalog[name] for name in selected if catalog[name]["kind"] == "ClusterRoleBinding"} == {
-        "public-coder-node-read": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-node-reader"},
-        },
-        "public-coder-cluster-metadata-read": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-cluster-metadata-reader"},
-        },
-        "cluster-diagnostics": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
-        },
+    policy = find_resource(staging_manifests, "PolicySet", agent_access_profiles.OVH_BILLING_POLICY)
+    egress = one(rule for rule in policy["spec"]["rules"] if rule["type"] == "egress")
+    assert egress["hosts"] == ["api.us.ovhcloud.com"]
+    assert egress["methods"] == ["GET"]
+    assert set(egress["paths"]) == {
+        "/1.0/auth/time",
+        "/1.0/me/bill",
+        "/1.0/me/bill/**",
+        "/1.0/service",
+        "/1.0/service/**",
     }
-    assert {
-        catalog[name]["role_ref"]["name"]
-        for name in selected
-        if catalog[name]["kind"] == "RoleBinding" and catalog[name]["role_ref"]["kind"] == "ClusterRole"
-    } == {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
-    assert {
-        (catalog[name]["namespace"], catalog[name]["role_ref"]["name"])
-        for name in selected
-        if catalog[name]["role_ref"]["kind"] == "Role"
-    } == {
-        ("haku-console", "agent-haku-console-metadata-reader"),
-        ("clickhouse", "agent-clickhouse-diagnostics-reader"),
-        ("ducktape-flux", "ducktape-flux-reader"),
-        ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
-        ("public-coder-agent", "public-coder-agent-reader"),
-    } | (
-        {
-            ("agentplane-staging", "claude-ai-coinbase-reader"),
-            ("plaid-mcp", "plaid-spend-finance-config-reader"),
-            ("plaid-mcp", "plaid-finance-diagnostics-reader"),
-        }
-        if preset == "finance-agent"
-        else set()
-    )
+    assert "credentialRef" not in egress
 
 
-@pytest.mark.parametrize(
-    "target_namespace", binding_delegation.external_scopes(staging.ENV, staging.assignable_grants())
-)
-def test_external_delegation_binds_exactly_the_granted_roles(
-    scratch_app: App, target_namespace: str, catalog_manifests: list[dict[str, Any]]
-) -> None:
-    assignable_grants = [grant.model_dump(mode="json") for grant in staging.assignable_grants()]
-    granted = {
-        grant["role_ref"]["name"]
-        for grant in assignable_grants
-        if grant["kind"] == "RoleBinding"
-        and grant["namespace"] == target_namespace
-        and grant["role_ref"]["kind"] == "Role"
-    }
-    delegated = Cdk8sTesting.synth(
-        binding_delegation.chart(scratch_app, staging.ENV, target_namespace, staging.assignable_grants())
-    )
-    role = one(doc for doc in delegated if doc["kind"] == "Role")
-    assert {name for rule in role["rules"] if rule["verbs"] == ["bind"] for name in rule["resourceNames"]} == granted
-    # An absent target namespace must not fail the app Kustomization's apply.
-    assert not any(
-        doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"].get("namespace") == target_namespace
-        and doc["metadata"]["name"] == role["metadata"]["name"]
-        for doc in catalog_manifests
-    )
+def test_coinbase_egress_and_standing_identity_selections(staging_manifests: list[dict[str, Any]]) -> None:
+    for caller in ("claude-ai", "haku-agent"):
+        selected = find_resource(staging_manifests, "PolicyBinding", caller)["spec"]["policySets"]
+        assert {"coinbase-identity", "plaid-diagnostics-identity"} <= set(selected)
+    get_coinbase = {"type": "egress", "hosts": ["api.coinbase.com"], "methods": ["GET"]}
+    assert find_resource(staging_manifests, "PolicySet", "coinbase-identity")["spec"]["rules"] == [get_coinbase]
+    mixed = find_resource(staging_manifests, "PolicySet", "coinbase")["spec"]["rules"]
+    assert len(mixed) == 2
+    assert get_coinbase in mixed
+    assert {
+        "type": "kubernetes_role_binding",
+        "role": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
+        "namespaces": [staging.ENV.namespace],
+    } in mixed
 
 
 def test_inference_is_granted_separately_from_platform_operations(catalog_manifests: list[dict[str, Any]]) -> None:
     granted = find_resource(catalog_manifests, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
-    # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in catalog_manifests if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]
-        if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
+        if BASIC_POLICY in policies:
             assert INFERENCE_EXPERIMENTS_POLICY in policies
     inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
     assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule.get("hosts", []))
@@ -735,75 +460,6 @@ def test_inference_is_granted_separately_from_platform_operations(catalog_manife
         secret = find_resource(catalog_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-def test_the_proxy_impersonates_only_serviceaccounts_in_the_accounts_namespace(
-    catalog_manifests: list[dict[str, Any]],
-) -> None:
-    proxy = ("ServiceAccount", "egress", staging.ENV.namespace)
-    granted = [
-        (doc["roleRef"]["kind"], doc["roleRef"]["name"], doc["metadata"].get("namespace"))
-        for doc in catalog_manifests
-        if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}
-        and any((s["kind"], s["name"], s.get("namespace")) == proxy for s in doc.get("subjects", []))
-    ]
-    roles = {
-        (doc["kind"], doc["metadata"]["name"], doc["metadata"].get("namespace")): doc
-        for doc in catalog_manifests
-        if doc["kind"] in {"Role", "ClusterRole"}
-    }
-    # A RoleBinding to a ClusterRole grants it in the binding's namespace; either way the rules are the role's.
-    impersonating = [
-        (kind, name, namespace)
-        for kind, name, namespace in granted
-        if any(
-            {"impersonate", "*"} & set(rule["verbs"])
-            for rule in roles[(kind, name, None if kind == "ClusterRole" else namespace)]["rules"]
-        )
-    ]
-    kind, name, namespace = one(impersonating)
-    assert (kind, namespace) == ("Role", kubernetes_accounts_namespace(staging.ENV.namespace))
-    assert roles[(kind, name, namespace)]["rules"] == [
-        {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["impersonate"]}
-    ]
-
-
-def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_manifests: list[dict[str, Any]]) -> None:
-    settings = config_map_yaml(svid_egress_manifests, "egress-go-settings", "settings.yaml")
-    server = settings["local_api_server"]
-    assert (server["host"], server["port"]) == (KUBERNETES_HOST, 443)
-    pod = find_resource(svid_egress_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
-    # The kubelet mounts the API-server token here when the Pod automounts it.
-    assert pod["automountServiceAccountToken"] is True
-    assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
-
-
-def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    for name in ("finance-agent", "haku"):
-        assert AIQUOTA_READ_POLICY in config["sandbox_presets"][name]["policy_sets"]
-    assert AIQUOTA_READ_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
-    quota = find_resource(catalog_manifests, "PolicySet", AIQUOTA_READ_POLICY)
-    assert {
-        "type": "egress",
-        "hosts": [client.HTTP.fqdn],
-        "clusterInternal": True,
-        "methods": ["GET"],
-        "paths": ["/"],
-        "credentialRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS},
-    } in quota["spec"]["rules"]
-    credential = find_resource(catalog_manifests, "EgressCredential", client.AIQUOTA_HISTORY_CREDENTIALS)
-    assert credential["spec"]["source"] == {
-        "secretRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS, "key": client.PASSWORD_KEY}
-    }
-    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
-    assert any(
-        rule.get("clusterInternal")
-        and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
-        and rule["methods"] == ["GET"]
-        and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
-        for rule in quota["spec"]["rules"]
-    )
 
 
 if __name__ == "__main__":

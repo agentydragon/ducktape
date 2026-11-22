@@ -1,5 +1,5 @@
 import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type JSX, useEffect } from "react";
+import { type JSX, type ReactNode, useEffect } from "react";
 
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
@@ -17,6 +17,7 @@ import { Operation } from "../../../proto/command_pb";
 import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCommand } };
+export type LocalNotice = (command: LocalCommand) => { acknowledged: boolean; action?: JSX.Element } | undefined;
 
 function isCommandEntity(entity: ThreadEntity): entity is CommandEntity {
   return entity.entity.case === "command";
@@ -31,10 +32,12 @@ function subject(operation: Operation | PendingCommand["operation"]["case"]): Co
 }
 
 function commandIssue(value: LocalCommand, errors: ReadonlyMap<string, CommandIssue>): CommandIssue | undefined {
+  const issue = errors.get(value.command.commandId);
+  if (issue) return issue;
   if (value.destination.kind === "reconcile-only" && !value.admission && !value.dispatch && !value.interruptResult) {
     return { kind: "unconfirmed", message: "Saved by an older app version. Waiting for History evidence." };
   }
-  return errors.get(value.command.commandId);
+  return undefined;
 }
 
 function progressStage(
@@ -97,12 +100,14 @@ export function LocalControlCommands({
   store,
   errors,
   deliver,
+  localNotice,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
+  localNotice: LocalNotice;
 }): JSX.Element | null {
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
   const rows = useThreadSync().useCommandRows(controls.map((value) => value.command.commandId));
@@ -115,6 +120,7 @@ export function LocalControlCommands({
       store={store}
       errors={errors}
       deliver={deliver}
+      localNotice={localNotice}
     />
   );
 }
@@ -128,6 +134,7 @@ export function PendingInputMessages({
   errors,
   store,
   deliver,
+  localNotice,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
@@ -136,6 +143,7 @@ export function PendingInputMessages({
   errors: ReadonlyMap<string, CommandIssue>;
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
+  localNotice: LocalNotice;
 }): JSX.Element | null {
   const inputCommands = commands.filter((value) => value.command.operation.case === "submitInput");
   const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
@@ -174,13 +182,19 @@ export function PendingInputMessages({
         const id = value.command.commandId;
         const row = byId.get(id);
         const commandRow = row && isCommandEntity(row) ? row : null;
+        const notice = row ? undefined : localNotice(value);
+        if (notice?.acknowledged) return null;
         const outcome = commandRow?.entity.value.outcome ?? null;
         const issue = row ? undefined : commandIssue(value, errors);
         const dispatchState = value.dispatch?.state;
         const dispatchAdmitted =
           dispatchState !== undefined && normalizeDeliveryState(dispatchState) === DeliveryState.RUNNER_ADMITTED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
-        const canAct = value.destination.kind === "session" && !admitted && value.dispatch === null;
+        const canAct =
+          (value.attempted || value.destination.kind === "session") &&
+          !admitted &&
+          value.dispatch === null &&
+          !value.interruptResult;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
           outcome === ThreadCommandOutcome.FAILED ||
@@ -199,19 +213,25 @@ export function PendingInputMessages({
             pending={(outcome === null || outcome === ThreadCommandOutcome.PENDING) && !failed && !noop}
             progress={
               effected ? undefined : (
-                <CommandOutcome
-                  stage={stage}
-                  subject="input"
-                  reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
-                  local
-                  unsent={!value.attempted}
-                />
+                <>
+                  <CommandOutcome
+                    stage={stage}
+                    subject="input"
+                    reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
+                    local
+                    unsent={!value.attempted}
+                  />
+                  {notice?.action}
+                </>
               )
             }
             action={
               canAct
                 ? value.attempted
-                  ? { label: "Retry", onClick: () => void deliver(value) }
+                  ? {
+                      label: value.destination.kind === "reconcile-only" ? "Check status" : "Retry",
+                      onClick: () => void deliver(value),
+                    }
                   : { label: "Cancel", onClick: () => store.cancelUnsent(id) }
                 : undefined
             }
@@ -253,6 +273,7 @@ function LocalControlRows({
   store,
   errors,
   deliver,
+  localNotice,
 }: {
   rows: ThreadEntity[];
   entities: ThreadEntity[];
@@ -260,6 +281,7 @@ function LocalControlRows({
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
+  localNotice: LocalNotice;
 }): JSX.Element {
   useEffect(() => {
     store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
@@ -270,6 +292,8 @@ function LocalControlRows({
       {commands
         .filter((value) => !projectedIds.has(value.command.commandId))
         .map((value) => {
+          const notice = localNotice(value);
+          if (notice?.acknowledged) return null;
           const operation = value.command.operation;
           const admitted = value.admission !== null;
           const issue = commandIssue(value, errors);
@@ -294,7 +318,7 @@ function LocalControlRows({
                   local
                   unsent={!value.attempted}
                 />
-                {value.destination.kind === "session" &&
+                {(value.attempted || value.destination.kind === "session") &&
                   !admitted &&
                   value.dispatch === null &&
                   !value.interruptResult && (
@@ -305,10 +329,15 @@ function LocalControlRows({
                         value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
                       }
                     >
-                      {value.attempted ? "Retry" : "Cancel"}
+                      {value.attempted
+                        ? value.destination.kind === "reconcile-only"
+                          ? "Check status"
+                          : "Retry"
+                        : "Cancel"}
                     </Button>
                   )}
               </Group>
+              {notice?.action}
             </ControlCommandFrame>
           );
         })}
@@ -316,7 +345,7 @@ function LocalControlRows({
   );
 }
 
-function ControlCommandFrame({ id, children }: { id: string; children: JSX.Element | JSX.Element[] }): JSX.Element {
+function ControlCommandFrame({ id, children }: { id: string; children: ReactNode }): JSX.Element {
   return (
     <Box className="agentplane-control-command-row" data-command-id={id}>
       <Paper p="xs" withBorder className="agentplane-control-command-card">

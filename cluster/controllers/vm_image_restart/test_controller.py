@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiException
 
-from cluster.controllers.vm_image_restart import controller
+from cluster.controllers.vm_image_restart import controller, kubernetes_watch
 from cluster.controllers.vm_image_restart.settings import Settings
 
 _NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
@@ -47,7 +50,7 @@ class FakeVMApi:
 
 class FakeCoreApi:
     def __init__(self, state: controller.RestartState | None = None) -> None:
-        self.state = _encode_state(state) if state is not None else None
+        self.state = state.model_dump_json(by_alias=True, exclude_none=True) if state is not None else None
         self.events: list[client.CoreV1Event] = []
 
     async def read_namespaced_config_map(self, name: str, namespace: str) -> client.V1ConfigMap:
@@ -94,35 +97,17 @@ def _rootdisk(image: str) -> dict[str, Any]:
     return {"name": "rootdisk", "containerDisk": {"image": image}}
 
 
-def _state(
-    *,
-    generation: int = 2,
-    image: str = _NEW_IMAGE,
-    old_uid: str | None = "old-vmi",
-    attempts: int = 0,
-    phase: Literal["Restarting", "Ready", "Failed"] = "Restarting",
-    started_at: datetime = _NOW,
-    next_attempt_at: datetime = _NOW,
-    finished_at: datetime | None = None,
-    message: str = "waiting for the new VMI",
-) -> controller.RestartState:
+def _state(*, attempts: int = 0, started_at: datetime = _NOW) -> controller.RestartState:
     return controller.RestartState(
-        generation=generation,
-        image=image,
-        old_vmi_uid=old_uid,
+        generation=2,
+        image=_NEW_IMAGE,
+        old_vmi_uid="old-vmi",
         attempts=attempts,
-        phase=phase,
+        phase="Restarting",
         started_at=started_at,
-        next_attempt_at=next_attempt_at,
-        finished_at=finished_at,
-        message=message,
+        next_attempt_at=_NOW,
+        message="waiting for the new VMI",
     )
-
-
-def _encode_state(state: controller.RestartState | None) -> str | None:
-    if state is None:
-        return None
-    return state.model_dump_json(by_alias=True, exclude_none=True)
 
 
 def _stored_state(core: FakeCoreApi) -> controller.RestartState:
@@ -139,7 +124,7 @@ def _freeze_time(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(controller, "_utcnow", lambda: _NOW)
 
 
-async def test_initial_restart_persists_attempt_and_gracefully_deletes_vmi() -> None:
+async def test_graceful_restart_tracks_the_replacement_to_ready() -> None:
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE))
     core = FakeCoreApi()
 
@@ -152,25 +137,23 @@ async def test_initial_restart_persists_attempt_and_gracefully_deletes_vmi() -> 
     state = _stored_state(core)
     assert state.phase == "Restarting"
     assert state.attempts == 1
-    assert state.old_vmi_uid == "old-vmi"
+    assert vm_api.delete_calls[0]["body"].preconditions.uid == state.old_vmi_uid == "old-vmi"
     assert _event_reasons(core) == ["VMImageRestartRequested"]
 
-
-async def test_replacement_is_ready_only_after_new_vmi_is_ready_on_desired_image() -> None:
-    vm_api = FakeVMApi(_vm(observed_generation=2, restart_required=False), _vmi(uid="new-vmi", image=_NEW_IMAGE))
-    core = FakeCoreApi(_state())
-
+    vm_api.vm = _vm(observed_generation=2, restart_required=False)
+    vm_api.vmi = _vmi(uid="new-vmi", image=_NEW_IMAGE)
     await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     assert _stored_state(core).phase == "Ready"
-    assert _event_reasons(core) == ["VMImageRestartReady"]
-    assert vm_api.delete_calls == []
+    assert _event_reasons(core) == ["VMImageRestartRequested", "VMImageRestartReady"]
+    assert len(vm_api.delete_calls) == 1
 
 
-async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() -> None:
+@pytest.mark.parametrize("uid", ["old-vmi", "replacement-vmi"])
+async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi(uid: str) -> None:
     vm_api = FakeVMApi(
         _vm(generation=3, observed_generation=2, image="registry.invalid/appliance:newer"),
-        _vmi(uid="old-vmi", image=_OLD_IMAGE, ready=False, deleting=True),
+        _vmi(uid=uid, image=_OLD_IMAGE, ready=False, deleting=True),
     )
     core = FakeCoreApi(_state(attempts=2))
 
@@ -180,34 +163,60 @@ async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() ->
     assert state.generation == 3
     assert state.image == "registry.invalid/appliance:newer"
     assert state.attempts == 0
-    assert state.old_vmi_uid == "old-vmi"
+    assert state.old_vmi_uid == uid
     assert vm_api.delete_calls == []
 
 
-async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("ready", [False, True], ids=["booting", "ready-with-staged-template"])
+async def test_matching_replacement_waits_for_readiness_or_restart_grace(ready: bool) -> None:
+    vm_api = FakeVMApi(_vm(), _vmi(uid="new-vmi", image=_NEW_IMAGE, ready=ready))
+    core = FakeCoreApi(_state())
+
+    deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+
+    assert vm_api.delete_calls == []
+    state = _stored_state(core)
+    assert state.old_vmi_uid == "new-vmi"
+    assert deadline == (state.next_attempt_at if ready else state.started_at + controller.ROLLOUT_TIMEOUT)
+    if ready:
+        assert state.next_attempt_at > _NOW
+
+
+async def test_restart_retries_stop_and_kubevirt_can_recover_afterward(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = [_NOW]
     monkeypatch.setattr(controller, "_utcnow", lambda: clock[0])
     error = ApiException(status=503, reason="apiserver unavailable")
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE), delete_errors=[error, error, error])
     core = FakeCoreApi()
 
-    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+    deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
     assert len(vm_api.delete_calls) == 1
     assert _stored_state(core).attempts == 1
+    assert deadline == _stored_state(core).next_attempt_at
 
     # The persisted backoff prevents another delete at the same time.
     await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
     assert len(vm_api.delete_calls) == 1
 
-    while _stored_state(core).phase != "Failed":
+    for _ in range(1, controller.MAX_RESTART_ATTEMPTS):
         clock[0] = _stored_state(core).next_attempt_at + timedelta(seconds=1)
-        await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+        deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     state = _stored_state(core)
     assert len(vm_api.delete_calls) == controller.MAX_RESTART_ATTEMPTS
     assert state.attempts == controller.MAX_RESTART_ATTEMPTS
     assert state.phase == "Failed"
+    assert deadline is None
     assert _event_reasons(core)[-1] == "VMImageRestartFailed"
+
+    clock[0] = _NOW + controller.ROLLOUT_TIMEOUT + timedelta(minutes=1)
+    vm_api.vm = _vm(observed_generation=2, restart_required=False)
+    vm_api.vmi = _vmi(uid="recovered-vmi", image=_NEW_IMAGE)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+
+    assert _stored_state(core).phase == "Ready"
+    assert _event_reasons(core)[-1] == "VMImageRestartRecovered"
+    assert len(vm_api.delete_calls) == controller.MAX_RESTART_ATTEMPTS
 
 
 async def test_rollout_timeout_marks_state_failed_without_an_extra_delete() -> None:
@@ -222,29 +231,56 @@ async def test_rollout_timeout_marks_state_failed_without_an_extra_delete() -> N
     assert vm_api.delete_calls == []
 
 
-async def test_failed_rollout_records_later_kubevirt_recovery() -> None:
-    failed = _state(
-        attempts=controller.MAX_RESTART_ATTEMPTS,
-        phase="Failed",
-        started_at=_NOW - timedelta(minutes=31),
-        finished_at=_NOW - timedelta(minutes=1),
-        message="gave up waiting",
-    )
-    vm_api = FakeVMApi(_vm(observed_generation=2, restart_required=False), _vmi(uid="recovered-vmi", image=_NEW_IMAGE))
-    core = FakeCoreApi(failed)
-
-    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
-
-    assert _stored_state(core).phase == "Ready"
-    assert _event_reasons(core) == ["VMImageRestartRecovered"]
-    assert vm_api.delete_calls == []
-
-
 async def test_invalid_persisted_state_is_ignored() -> None:
     core = FakeCoreApi()
     core.state = '{"generation":"not-an-integer"}'
 
     assert await controller._read_state(core, _SETTINGS) is None
+
+
+@pytest.mark.parametrize("watch_failure", [False, True], ids=["stream-ended", "watch-error"])
+async def test_watch_relists_and_uses_the_list_resource_version(
+    monkeypatch: pytest.MonkeyPatch, watch_failure: bool
+) -> None:
+    name = _SETTINGS.target_vm_name
+    obj = {"metadata": {"name": name}}
+    store: dict[str, dict[str, Any]] = {}
+    changed = asyncio.Event()
+    api = Mock(spec=client.CustomObjectsApi)
+    api.list_namespaced_custom_object = AsyncMock(
+        side_effect=[
+            {"items": [obj], "metadata": {"resourceVersion": "100"}},
+            {"items": [], "metadata": {"resourceVersion": "200"}},
+        ]
+    )
+    watcher = Mock()
+
+    async def stream(*args: Any, resource_version: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        assert kwargs["field_selector"] == f"metadata.name={name}"
+        assert isinstance(kwargs["timeout_seconds"], int)
+        assert changed.is_set()
+        changed.clear()
+        if resource_version == "100":
+            assert store == {name: obj}
+            updated = {**obj, "status": {"phase": "Running"}}
+            yield {"type": "MODIFIED", "object": updated}
+            assert store == {name: updated}
+            assert changed.is_set()
+            changed.clear()
+            if watch_failure:
+                raise ApiException(status=503)
+        else:
+            assert resource_version == "200"
+            assert store == {}
+            raise asyncio.CancelledError
+
+    watcher.stream = stream
+    monkeypatch.setattr(kubernetes_watch.watch, "Watch", lambda: watcher)
+    with pytest.raises(asyncio.CancelledError):
+        await kubernetes_watch.watch_kubevirt_resource(
+            api, _SETTINGS.target_namespace, "virtualmachineinstances", name, store, changed
+        )
+    assert watcher.stop.call_count == 2
 
 
 if __name__ == "__main__":

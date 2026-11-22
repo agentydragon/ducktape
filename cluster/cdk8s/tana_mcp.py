@@ -23,7 +23,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import external_creds, namespaces, node_scheduling
+from cluster.cdk8s import external_creds, namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
@@ -54,7 +54,7 @@ _RESIGNER_CONFIG = "tana-firebase-resigner-config"
 # The Secret the resigner rewrites: its Role and its config both read this one reference.
 _REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token")
 # The ESO copy of the external-creds Secret of the same name.
-_PAT = SecretRef(namespace=_NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
+_PAT = SecretRef(namespace=_NAMESPACE, name=external_creds.TANA_PAT.secret.name).key(external_creds.TANA_PAT.key)
 _FACADE_OIDC = SecretRef(namespace=_NAMESPACE, name="tana-mcp-facade-oidc")
 # Tana Desktop's own MCP server; it answers only on loopback inside the container.
 _TANA = Port(name="mcp", number=8262)
@@ -107,7 +107,7 @@ def _tana_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="tana-desktop",
                             image="git.allegedly.works/ducktape-ci/tana-desktop:unset",
-                            ports=[_TANA.k8s_container_port(), _NOVNC.port.k8s_container_port()],
+                            ports=[_TANA.k8s_container_port(), _NOVNC.k8s_container_port()],
                             env=[k8s.EnvVar(name="RESOLUTION", value="1280x800x24")],
                             volume_mounts=[k8s.VolumeMount(name="tana-config", mount_path="/home/tana/.config/tana")],
                             resources=container_resources(cpu="200m", memory="1Gi", memory_limit="4Gi"),
@@ -128,7 +128,7 @@ def _tana_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="proxy",
                             image="nginx:alpine",
-                            ports=[MCP_PROXY.port.k8s_container_port()],
+                            ports=[MCP_PROXY.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="nginx-config", mount_path="/etc/nginx/conf.d", read_only=True)
                             ],
@@ -282,24 +282,22 @@ def _facade(chart: Chart) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    volumes=[
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki"))
-                    ],
+                    volumes=[public_web_pki.VOLUME],
                     containers=[
                         k8s.Container(
                             name="server",
                             image="git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset",
                             image_pull_policy="Always",
                             ports=[
-                                _FACADE_HTTP.port.k8s_container_port(),
+                                _FACADE_HTTP.k8s_container_port(),
                                 # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
-                                _FACADE_METRICS.port.k8s_container_port(),
+                                _FACADE_METRICS.k8s_container_port(),
                             ],
                             env_from=[
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_FACADE_CONFIG_MAP))
                             ],
                             env=[
-                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                                public_web_pki.SSL_CERT_FILE,
                                 _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
                                 _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
                                 _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
@@ -307,11 +305,7 @@ def _facade(chart: Chart) -> None:
                                 .key("uri")
                                 .env_var("MCP_FACADE_PERSISTENCE__URL"),
                             ],
-                            volume_mounts=[
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                )
-                            ],
+                            volume_mounts=[public_web_pki.VOLUME_MOUNT],
                             # TODO(vpa-memory-audit): 256Mi -> 512Mi. VPA observed a 259Mi
                             # request / 272Mi upper bound, i.e. already over the old limit.
                             resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
@@ -354,7 +348,7 @@ def _facade(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(name=_FACADE_HTTP.name, namespace=_NAMESPACE, labels=_FACADE_HTTP.labels),
         spec=k8s.ServiceSpec(
             selector=_FACADE_HTTP.pods.selector,
-            ports=[_FACADE_HTTP.port.k8s_service_port(), _FACADE_METRICS.port.k8s_service_port()],
+            ports=[_FACADE_HTTP.k8s_service_port(), _FACADE_METRICS.k8s_service_port()],
             type="ClusterIP",
         ),
     )
@@ -442,7 +436,7 @@ def chart(app: App) -> Chart:
         ),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data(_PAT.secret.name, _PAT.key)],
+        data=[remote_data(external_creds.TANA_PAT.secret.name, external_creds.TANA_PAT.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
@@ -456,7 +450,7 @@ def chart(app: App) -> Chart:
         spec=k8s.ServiceSpec(
             type="ClusterIP",
             selector=MCP_PROXY.pods.selector,
-            ports=[MCP_PROXY.port.k8s_service_port(), _NOVNC.port.k8s_service_port()],
+            ports=[MCP_PROXY.k8s_service_port(), _NOVNC.k8s_service_port()],
         ),
     )
     _facade(chart)

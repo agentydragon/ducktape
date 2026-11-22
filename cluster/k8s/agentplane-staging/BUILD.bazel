@@ -1,3 +1,8 @@
+exports_files(
+    ["github-app.sops.yaml"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+)
+
 # The cluster-wide validators build this directory's Kustomization and inspect its files.
 filegroup(
     name = "manifests",
@@ -9,10 +14,4 @@ filegroup(
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-)
-
-filegroup(
-    name = "image_pins",
-    srcs = glob(["image-pins/**"]),
-    visibility = ["//cluster/validation:__pkg__"],
 )

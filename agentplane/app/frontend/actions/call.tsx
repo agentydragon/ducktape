@@ -1,4 +1,4 @@
-import { Code, Group, Stack, Text } from "@mantine/core";
+import { Box, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
 import { serviceAccountKey } from "../connections/service_accounts";
@@ -9,12 +9,7 @@ import { JsonBlock } from "../ui/text_block";
 import { RawSwitch } from "../ui/raw_switch";
 import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
-import {
-  renderActionCall,
-  renderActionLabel,
-  renderDetailsArguments,
-  type RenderedActionCall,
-} from "./rendering/index";
+import { useActionRendering, type RenderedActionCall } from "./rendering/dispatch";
 
 /** Who asked and when, on one summary line ("claude-ai · 2 minutes ago"), over the request's own
  * verbose identifiers nobody reads at a glance: the UUID, the caller's namespace, and the later
@@ -119,20 +114,30 @@ export function ActionCall({
   /** Precomputed by history so it can hide a result already shown in this view. */
   combinedCall?: RenderedActionCall | null;
 }): JSX.Element {
+  const rendering = useActionRendering();
   const action = actionIdentity(request);
   const args = actionArguments(request);
-  const actionLabel = renderActionLabel(action, args);
-  const prettyArguments = renderDetailsArguments(
+  const actionLabel = rendering.renderActionLabel(action, args, request.id);
+  const prettyArguments = rendering.renderDetailsArguments(
     action,
     args,
     request.id,
     request.state === ActionState.DECISION_PENDING
   );
   const combinedCall =
-    providedCombinedCall === undefined ? renderActionCall(action, args, undefined, request.id) : providedCombinedCall;
-  const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
+    providedCombinedCall === undefined
+      ? rendering.renderActionCall(action, args, undefined, request.id)
+      : providedCombinedCall;
+  const callContent =
+    !raw && combinedCall?.content != null ? (
+      combinedCall.content
+    ) : raw || prettyArguments === undefined ? (
+      <JsonBlock heading="Exact arguments" value={args} />
+    ) : (
+      prettyArguments
+    );
   return (
-    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
+    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="xs">
       <Stack gap={2}>
         {!detailsOnly && (
           <Group justify="space-between" align="flex-start" gap="xs">
@@ -154,37 +159,23 @@ export function ActionCall({
             </Group>
           </Group>
         )}
-        {/* TODO: the caller's own framing renders verbatim as plain text; markdown rendering is a
-            possible later addition. */}
-        {!detailsOnly && <Text size="sm">{request.title}</Text>}
-        {request.description && (
-          <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
-            <Text size="xs" c="dimmed">
-              {request.description}
-            </Text>
-          </ClampedBlock>
+        {!detailsOnly && rendering.shouldRenderRequestTitle(action, args, request.title, actionLabel) && (
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            {request.title}
+          </Text>
+        )}
+        {request.description?.trim() && (
+          <Box style={{ "--ui-disclosure-gutter": "0px", "--ui-disclosure-body-spacing": "0px" }}>
+            <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
+              <Text size="sm" c="dimmed" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+                {request.description}
+              </Text>
+            </ClampedBlock>
+          </Box>
         )}
         <RequestAuditDetails request={request} />
       </Stack>
-      {showCombinedCall && !raw ? (
-        <div>
-          <Text size="sm" fw={600} mb={4}>
-            Call
-          </Text>
-          {combinedCall.content}
-        </div>
-      ) : (
-        <div>
-          {!(prettyArguments === null && !raw) && (
-            <>
-              <Text size="sm" fw={600} mb={4}>
-                Exact arguments
-              </Text>
-              {prettyArguments === undefined || raw ? <JsonBlock value={args} /> : prettyArguments}
-            </>
-          )}
-        </div>
-      )}
+      {callContent}
     </Stack>
   );
 }

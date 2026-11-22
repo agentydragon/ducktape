@@ -5,15 +5,11 @@ from typing import Any
 import pytest_bazel
 import yaml
 from more_itertools import one
+from python.runfiles import Runfiles
 
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
-from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging, workload_tls
-from cluster.cdk8s.testing.manifests import find_resource
-
-
-def test_notifications_and_history_deployments_roll(staging_manifests: list[dict[str, Any]]) -> None:
-    for name in (notifications.NAME, "history-service"):
-        assert find_resource(staging_manifests, "Deployment", name)["spec"]["strategy"]["type"] == "RollingUpdate"
+from agentplane.net.peertls.config import APP_URI
+from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def test_public_notification_routes_are_webhook_only(staging_manifests: list[dict[str, Any]]) -> None:
@@ -45,65 +41,35 @@ def test_only_staging_notifications_admit_gateway(staging_manifests: list[dict[s
     }
 
 
-def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[dict[str, Any]]) -> None:
-    config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
-    assert settings["operator_reader_services"] == [APP_URI]
-    assert [auth["mode"] for auth in settings["rpc"]["auth"]] == ["spiffe"]
-    github = settings.get("github")
-    pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
-    prefix = "AGENTPLANE_NOTIFICATIONS_GITHUB__"
-    server = one(item for item in pod["containers"] if item["name"] == "notifications")
-    variables = {item["name"].removeprefix(prefix): item for item in server["env"] if item["name"].startswith(prefix)}
-    assert set(github) == {
-        "app_id",
-        "api_url",
-        "request_timeout_s",
-        "api_version",
-        "freshness_seconds",
-        "max_body_bytes",
-        "webhook_concurrency",
-    }
-    assert github["api_version"] == "2022-11-28"
-    assert isinstance(github["api_version"], str)
-    assert "database_url" not in settings
-    assert "log_levels" not in settings
-    assert set(variables) == {"PRIVATE_KEY", "WEBHOOK_SECRET"}
-    assert {item["name"] for item in server["env"] if item["name"].startswith("AGENTPLANE_NOTIFICATIONS_")} == {
-        "AGENTPLANE_NOTIFICATIONS_CONFIG_FILE",
-        "AGENTPLANE_NOTIFICATIONS_DATABASE_URL",
-        "AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY",
-        "AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET",
-    }
-    for field, key in [("PRIVATE_KEY", "private-key"), ("WEBHOOK_SECRET", "webhook-secret")]:
-        assert "value" not in variables[field]
-        reference = variables[field]["valueFrom"]["secretKeyRef"]
-        assert reference["key"] == key
-        assert not reference.get("optional", False)
-    assert (
-        variables["PRIVATE_KEY"]["valueFrom"]["secretKeyRef"]["name"]
-        == variables["WEBHOOK_SECRET"]["valueFrom"]["secretKeyRef"]["name"]
+def test_github_credentials_reference_the_staging_secret(
+    staging_manifests: list[dict[str, Any]], runfiles: Runfiles
+) -> None:
+    secret = yaml.safe_load(
+        (runfiles.root() / "ducktape/cluster/k8s/agentplane-staging/github-app.sops.yaml").read_text()
     )
+    deployment = find_resource(staging_manifests, "Deployment", notifications.NAME)
+    assert deployment["metadata"]["namespace"] == secret["metadata"]["namespace"]
+    server = one(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == notifications.NAME)
+    for variable, key in [
+        ("AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY", "private-key"),
+        ("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "webhook-secret"),
+    ]:
+        env = one(item for item in server["env"] if item["name"] == variable)
+        ref = env["valueFrom"]["secretKeyRef"]
+        assert ref["name"] == secret["metadata"]["name"]
+        assert ref["key"] == key
+        assert key in secret["stringData"]
+        assert not ref.get("optional", False)
 
 
 def test_notifications_use_the_configured_backend_targets(staging_manifests: list[dict[str, Any]]) -> None:
-    config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
-    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, f"{notifications.NAME}-settings", "settings.yaml")
+    assert settings["operator_reader_services"] == [APP_URI]
+    assert [auth["mode"] for auth in settings["rpc"]["auth"]] == ["spiffe"]
     actions = action_service.service(staging.ENV.namespace)
-    assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
-    assert "token_file" not in settings["actions"]
+    assert settings["actions"]["url"] == f"https://{actions.authority}/"
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
-    assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
-    assert "token_file" not in settings["session_dispatcher"]
-    assert "runner_gateway" not in settings
-    for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
-        tls = settings[client]["tls"]
-        assert tls["server_uri"] == server_uri
-        assert tls["client_uri"] == NOTIFICATIONS_URI
-        assert tls["cert_file"]
-        assert tls["key_file"]
-        assert tls["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
-
+    assert settings["session_dispatcher"]["target"] == dispatcher.authority
     policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     egress_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")

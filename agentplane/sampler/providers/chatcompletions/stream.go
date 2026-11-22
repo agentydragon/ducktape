@@ -188,6 +188,16 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 		if s.audit.ID == "" || (d.Role != "" && d.Role != "assistant") {
 			return false, malformed("missing response ID or invalid role")
 		}
+		if d.Reasoning != "" {
+			id := s.audit.ID + "#reasoning"
+			if s.reasoning.Len() == 0 {
+				observations = append(observations, startItem(id, eventpb.ItemKind_ITEM_KIND_REASONING, ""))
+			}
+			observations = append(observations, &eventpb.Event{Observation: &eventpb.Event_TextDelta{
+				TextDelta: &eventpb.TextDelta{ItemId: id, Text: protocol.DisplayText(d.Reasoning)},
+			}})
+			s.reasoning.WriteString(d.Reasoning)
+		}
 		if d.Content != "" {
 			if s.text.Len() == 0 {
 				observations = append(observations, startItem(s.audit.ID, eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, ""))
@@ -197,7 +207,6 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 			}})
 			s.text.WriteString(d.Content)
 		}
-		s.reasoning.WriteString(d.Reasoning)
 		for _, fragment := range d.ToolCalls {
 			if fragment.Index == nil || *fragment.Index < 0 || *fragment.Index > len(s.calls) {
 				return false, malformed("invalid tool call index")
@@ -291,6 +300,11 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 		return nil, err
 	}
 	var observations []*eventpb.Event
+	if m.Reasoning != "" {
+		observations = append(observations, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{
+			ItemCompleted: &eventpb.ItemCompleted{ItemId: s.audit.ID + "#reasoning", Outcome: &eventpb.ItemCompleted_Text{Text: protocol.DisplayText(m.Reasoning)}},
+		}})
+	}
 	if m.Content != "" {
 		observations = append(observations, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{
 			ItemCompleted: &eventpb.ItemCompleted{ItemId: s.audit.ID, Outcome: &eventpb.ItemCompleted_Text{Text: protocol.DisplayText(m.Content)}},

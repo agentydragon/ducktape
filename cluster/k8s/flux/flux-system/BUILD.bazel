@@ -3,6 +3,11 @@ exports_files(
     visibility = ["//cluster/cdk8s/providers/source_watcher:__pkg__"],
 )
 
+exports_files(
+    ["gotk-sync.yaml"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 filegroup(
     name = "flux_bootstrap_files",
     srcs = [
@@ -19,5 +24,8 @@ filegroup(
 filegroup(
     name = "flux_system_files",
     srcs = glob(["**"]),
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/k8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
 )

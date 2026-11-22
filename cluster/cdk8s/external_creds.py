@@ -9,11 +9,13 @@ from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAcco
 
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAMESPACE = "ducktape-flux"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
 STORE = SecretStoreRef.cluster("kubernetes-external-creds-secret-store")
+TANA_PAT = SecretRef(namespace=NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,11 @@ CREDENTIALS = (
                 "brave-search-api-key-agentplane-staging-egress-credentials-reader",
             ),
         ),
+    ),
+    Credential(
+        secret_file="ovh-billing-credentials.sops.yaml",
+        secret_name="ovh-billing-credentials",
+        consumers=(ApprovedConsumer("agentplane-staging", "ovh-billing-credentials-agentplane-staging-reader"),),
     ),
     Credential(
         secret_file="coinbase-api-credentials.sops.yaml",
@@ -156,8 +163,8 @@ CREDENTIALS = (
     ),
     Credential(secret_file="sfpl-credentials.sops.yaml", secret_name="sfpl-credentials"),
     Credential(
-        secret_file="tana-agentydragon-gmail-com-account-pat.sops.yaml",
-        secret_name="tana-agentydragon-gmail-com-account-pat",
+        secret_file=f"{TANA_PAT.secret.name}.sops.yaml",
+        secret_name=TANA_PAT.secret.name,
         consumers=(
             ApprovedConsumer("agentplane-staging", "tana-agentydragon-gmail-com-account-pat-agentplane-staging-reader"),
             ApprovedConsumer("tana-mcp", "tana-agentydragon-gmail-com-account-pat-tana-mcp-reader"),
@@ -171,11 +178,10 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "external-creds", disable_resource_name_hashes=True)
     for credential in CREDENTIALS:
         if credential.consumers:
-            role_name = f"{credential.secret_name}-reader"
-            Role(
+            role = Role(
                 chart,
                 f"role-{credential.secret_name}",
-                metadata=ApiObjectMetadata(name=role_name, namespace=NAMESPACE),
+                metadata=ApiObjectMetadata(name=f"{credential.secret_name}-reader", namespace=NAMESPACE),
                 rules=[
                     RolePolicyRule(
                         resources=[
@@ -192,7 +198,7 @@ def chart(app: App) -> Chart:
                     chart,
                     f"binding-{credential.secret_name}-{index}",
                     metadata=ApiObjectMetadata(name=consumer.binding_name, namespace=NAMESPACE),
-                    role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
+                    role=role,
                 ).add_subjects(
                     ServiceAccount.from_service_account_name(
                         chart,

@@ -35,7 +35,7 @@ const listTargets = defineResultPreview(
   )
 );
 
-export const sshRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const sshRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["exec", execPresentation],
   [
     "list_targets",
@@ -46,3 +46,5 @@ export const sshRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     },
   ],
 ]);
+
+export const sshPresentationGroup: readonly [string, typeof sshRenderers] = ["ssh", sshRenderers];

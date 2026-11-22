@@ -41,32 +41,36 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpec,
     ServiceMonitorSpecSelector,
 )
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
+    PrometheusRule,
+    PrometheusRuleSpec,
+    PrometheusRuleSpecGroups,
+)
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, node_scheduling, piraeus
+from cluster.cdk8s import cilium, node_scheduling, piraeus_storage
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine_pool import container_disk_pool_template
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring import alloy_endpoints, mimir
 from cluster.cdk8s.oci_cache import zot
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
+from cluster.cdk8s.service_ref import Port
 
 NAME = "buildbuddy-kvm-worker"
 NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
-_METRICS_PORT = 9090
-_METRICS_PORT_NAME = "metrics"
-_NODE_METRICS_PORT = 9100
-_NODE_METRICS_PORT_NAME = "node-metrics"
+_METRICS = Port(name="metrics", number=9090)
+_NODE_METRICS = Port(name="node-metrics", number=9100)
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
 _VM_SHUTDOWN_GRACE_SECONDS = 87_000
 _MIN_REPLICA_COUNT = 2
+_MAX_REPLICA_COUNT = 8
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
@@ -76,11 +80,9 @@ AUTOSCALER_OUTPUT_DIR = f"{GENERATED_ROOT}/{AUTOSCALER_NAME}"
 # One task can have reservations on several executors. This is a demand proxy,
 # not a count of distinct queued tasks. The assigned CPU gauge is present even
 # before the first task; the queue gauge is created only after a group queues.
-_METRICS_TARGET = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS_PORT_NAME}"'
-_WORKER_PODS = (
-    f'max by (namespace, pod) (kube_pod_info{{namespace="{NAMESPACE}",'
-    f'created_by_kind="VirtualMachineInstance",created_by_name=~"{NAME}-[0-9]+"}})'
-)
+_METRICS_TARGET = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS.name}"'
+_WORKER_POD_INFO = f'kube_pod_info{{namespace="{NAMESPACE}",created_by_kind="VirtualMachineInstance",created_by_name=~"{NAME}-[0-9]+"}}'
+_WORKER_PODS = f"max by (namespace, pod) ({_WORKER_POD_INFO})"
 _UP = f"up{{{_METRICS_TARGET}}}"
 _REGISTERED = f'buildbuddy_health_check_status{{{_METRICS_TARGET},health_check_name="registered_to_scheduler"}}'
 _HEALTHY_WORKERS = (
@@ -111,10 +113,65 @@ _DEMAND_QUERY = (
 # and not retained; that Ubuntu worker used 0.75 GiB when idle. test_firecracker reserves 6 GiB (its EstimatedMemory),
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
+_NESTED_VIRT_FEATURES = ("svm", "vmx")
 # Qualified at fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; future guest images
 # require fresh-boot and workload qualification before changing this manual pin.
 _IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268"
 _HTTPS_HOSTS = ("remote.buildbuddy.io",)
+
+
+def _fresh(selector: str) -> str:
+    return f"({selector} and (time() - timestamp({selector}) < 180))"
+
+
+def _shadow_scaling_rules() -> PrometheusRuleSpecGroups:
+    """Model one extra worker for a waiting KubeVirt-sized action."""
+    guest = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_NODE_METRICS.name}"'
+    fs = f'node_filesystem_avail_bytes{{{guest},mountpoint="/buildbuddy"}}'
+    deleting = f'kube_pod_deletion_timestamp{{namespace="{NAMESPACE}"}}'
+    # Track the four checks independently of any extra checks a later executor may add.
+    checks = "executor_disk_usage|grpc_app_connection|grpc_cache_connection|registered_to_scheduler"
+    health = _fresh(f'buildbuddy_health_check_status{{{_METRICS_TARGET},health_check_name=~"{checks}"}}')
+    per_check = f"min by (namespace, pod, health_check_name) ({health})"
+    per_pod = "by (namespace, pod)"
+    fit_metric = "buildbuddy_kvm_worker:fits_vm_suite"
+
+    def free(resource: str) -> str:
+        available = _fresh(f"buildbuddy_remote_execution_assignable_{resource}{{{_METRICS_TARGET}}}")
+        assigned = _fresh(f"buildbuddy_remote_execution_assigned_{resource}{{{_METRICS_TARGET}}}")
+        return f"(max {per_pod} ({available}) - max {per_pod} ({assigned}))"
+
+    # Boolean comparisons preserve a reported zero. An absent input drops the pod,
+    # so count(fit) measures coverage and sum(fit) counts workers with headroom.
+    # BuildBuddy parses the suite's EstimatedFreeDiskBytes=30GB as 30 GiB.
+    fit = (
+        f"({free('milli_cpu')} >= bool 4000)\n"
+        f"* ({free('ram_bytes')} >= bool {7 * 1024**3})\n"
+        f"* (min {per_pod} ({_fresh(fs)}) >= bool {30 * 1024**3})\n"
+        f"* min {per_pod} ({per_check})\n"
+        f"and (count {per_pod} ({per_check}) == 4)\n"
+        f"and on (namespace, pod) ({_fresh(_REGISTERED)} == 1)\n"
+        f"and on (namespace, pod) ({_fresh(_UP)} == 1)\n"
+        f"and on (namespace, pod) ({_fresh(f'up{{{guest}}}')} == 1)\n"
+        f"and on (namespace, pod) {_fresh(_WORKER_POD_INFO)}\n"
+        f"unless on (namespace, pod) {deleting}"
+    )
+    covered = _fresh(fit_metric)
+    queue = _fresh(f"buildbuddy_remote_execution_queue_length{{{_METRICS_TARGET}}}")
+    waiting = f"sum({queue} and on (namespace, pod) {covered}) > 0"
+    busy = f"sum((max {per_pod} ({_fresh(_ASSIGNED_CPU_METRIC)}) > bool 0) and {covered})"
+    # A missing queue series is normal before a worker's first reservation.
+    # With a queue, hold when an existing worker can fit the suite. Otherwise
+    # propose one more VM. With all queues empty, release idle workers.
+    target = (
+        f"clamp((({_DESIRED_REPLICAS} + (sum({covered}) == bool 0)) and ({waiting}))\n"
+        f"  or ({busy}), {_MIN_REPLICA_COUNT}, {_MAX_REPLICA_COUNT})\n"
+        f"and (count({covered}) == {_DESIRED_REPLICAS})\n"
+        f"or {_DESIRED_REPLICAS}"
+    )
+    return group(
+        f"{NAME}-shadow", [Rule.record(fit_metric, fit), Rule.record("buildbuddy_kvm:shadow_target_workers", target)]
+    )
 
 
 def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVirtualMachineTemplate:
@@ -123,8 +180,6 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
         labels=_WORKER_LABELS,
         image=_IMAGE,
         image_pull_secret=image_pull_secret,
-        # Only OVH nodes carry the SSD pool sized for this disk.
-        node_selector={"topology.kubernetes.io/region": "hil"},
         cpu=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu(
             cores=4,
             model="host-passthrough",
@@ -132,7 +187,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
                 VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpuFeatures(
                     name=feature, policy="optional"
                 )
-                for feature in ("svm", "vmx")
+                for feature in _NESTED_VIRT_FEATURES
             ],
         ),
         # Reserve the observed sustained demand while allowing all four vCPUs to burst.
@@ -171,7 +226,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
                                 )
                             ]
                         )
-                        for feature in ("svm", "vmx")
+                        for feature in _NESTED_VIRT_FEATURES
                     ]
                 )
             )
@@ -226,7 +281,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
                     source=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecSource(blank={}),
                     storage=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorage(
                         access_modes=["ReadWriteOnce"],
-                        storage_class_name=piraeus.SSD_LOCAL_DELETE,
+                        storage_class_name=piraeus_storage.SSD_LOCAL_DELETE,
                         volume_mode="Filesystem",
                         resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResources(
                             requests={
@@ -293,16 +348,8 @@ def chart(app: App) -> Chart:
         "pool-network",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
-        ingress=[
-            IngressRule.from_endpoints(
-                cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT, _NODE_METRICS_PORT]
-            )
-        ],
-        egress=[
-            cilium.dns_egress(resolves=["*"]),
-            EgressRule.to_fqdns(*_HTTPS_HOSTS),
-            EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
-        ],
+        ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
+        egress=[cilium.dns_egress(resolves=["*"]), EgressRule.to_fqdns(*_HTTPS_HOSTS), zot.HTTP.egress()],
     )
     k8s.KubeService(
         chart,
@@ -310,20 +357,7 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name=_METRICS_SERVICE, namespace=NAMESPACE, labels=_WORKER_LABELS),
         spec=k8s.ServiceSpec(
             selector=_WORKER_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=_METRICS_PORT_NAME,
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_number(_METRICS_PORT),
-                    protocol="TCP",
-                ),
-                k8s.ServicePort(
-                    name=_NODE_METRICS_PORT_NAME,
-                    port=_NODE_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_number(_NODE_METRICS_PORT),
-                    protocol="TCP",
-                ),
-            ],
+            ports=[_METRICS.k8s_service_port(), _NODE_METRICS.k8s_service_port()],
             type="ClusterIP",
         ),
     )
@@ -333,7 +367,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
-            endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME), Endpoint.plain(port=_NODE_METRICS_PORT_NAME)],
+            endpoints=[Endpoint.plain(port=_METRICS.name), Endpoint.plain(port=_NODE_METRICS.name)],
         ),
     )
     PrometheusRule(
@@ -342,6 +376,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=PrometheusRuleSpec(
             groups=[
+                _shadow_scaling_rules(),
                 group(
                     NAME,
                     [
@@ -373,7 +408,7 @@ def chart(app: App) -> Chart:
                             description="The autoscaler holds its current size until every requested worker reports metrics.",
                         ),
                     ],
-                )
+                ),
             ]
         ),
     )
@@ -391,7 +426,7 @@ def autoscaler_chart(app: App) -> Chart:
                 api_version=VirtualMachinePool.GVK.api_version, kind=VirtualMachinePool.GVK.kind, name=NAME
             ),
             min_replica_count=_MIN_REPLICA_COUNT,
-            max_replica_count=8,
+            max_replica_count=_MAX_REPLICA_COUNT,
             polling_interval=30,
             fallback=keda.ScaledObjectSpecFallback(
                 failure_threshold=3,
@@ -446,6 +481,7 @@ def buildbuddy_kvm_worker(
     piraeus: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
+    group, version = VirtualMachinePool.GVK.api_version.split("/", 1)
     return flux_kustomization(
         chart,
         NAME,
@@ -456,11 +492,7 @@ def buildbuddy_kvm_worker(
             KustomizationSpecIgnore(
                 paths=["/spec/replicas"],
                 target=KustomizationSpecIgnoreTarget(
-                    group="pool.kubevirt.io",
-                    version="v1beta1",
-                    kind="VirtualMachinePool",
-                    name=NAME,
-                    namespace=NAMESPACE,
+                    group=group, version=version, kind=VirtualMachinePool.GVK.kind, name=NAME, namespace=NAMESPACE
                 ),
             )
         ],

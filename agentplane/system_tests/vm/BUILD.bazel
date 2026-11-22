@@ -74,6 +74,9 @@ py_library(
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:session",
         "//agentplane/system_tests/driver:session_setup",
         "@pypi//protobuf",
     ],
@@ -822,4 +825,17 @@ py_test(
 py_library(
     name = "guest_busybox",
     srcs = ["guest_busybox.py"],
+)
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    deps = [
+        ":guest_logs",
+        ":runtime",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/deployment:virtualization",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
 )

@@ -11,16 +11,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
@@ -28,7 +21,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
@@ -39,6 +32,7 @@ _NAMESPACE = "activitywatch"
 _IMAGE = "git.allegedly.works/ducktape-ci/aw-server:unset"
 _DATA_CLAIM = "data"
 _SERVER_PORT = 5600
+READ_HOSTNAME = "activitywatch-read.allegedly.works"
 _READONLY_CONFIG = ConfigMapArgs(
     name="activitywatch-readonly-proxy", namespace=_NAMESPACE, files=["default.conf=readonly-proxy.conf"]
 )
@@ -176,7 +170,12 @@ def _deployment(scope: Construct) -> None:
 
 def _data_claim(scope: Construct) -> None:
     volume_claim(
-        scope, "piraeus-data", name=_DATA_CLAIM, namespace=_NAMESPACE, storage_class="piraeus-hdd-local", size="10Gi"
+        scope,
+        "piraeus-data",
+        name=_DATA_CLAIM,
+        namespace=_NAMESPACE,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="10Gi",
     )
 
 
@@ -217,18 +216,7 @@ def _network_policy(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         endpoint_selector=_PODS.selector,
         ingress=[
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[CiliumNetworkPolicySpecIngressFromEntities.KUBE_HYPHEN_APISERVER],
-                to_ports=[
-                    CiliumNetworkPolicySpecIngressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_SERVER_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                            )
-                        ]
-                    )
-                ],
-            ),
+            IngressRule.from_entities(Entity.KUBE_APISERVER, ports=[_SERVER_PORT]),
             # Read-only proxy through Authentik embedded outpost (nginx on 5601).
             authentik.SERVER.pods.admit(_READONLY.pod_port),
             # Public write + read routes: the Gateway (Envoy, hostNetwork) reaches the
@@ -272,6 +260,6 @@ def chart(app: App) -> Chart:
     _route(chart, "write-route", backend=_WRITE, hostname="activitywatch-write.allegedly.works")
     # Public read route for the Haku agent. Reaches the bearer-gated read Service, which
     # allows read methods only, so even a leaked read token can't write.
-    _route(chart, "read-route", backend=READ, hostname="activitywatch-read.allegedly.works")
+    _route(chart, "read-route", backend=READ, hostname=READ_HOSTNAME)
     _network_policy(chart)
     return chart

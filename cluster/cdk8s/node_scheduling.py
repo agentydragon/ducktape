@@ -12,15 +12,18 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObject, JsonPatch
+from cdk8s_plus_34 import Deployment, k8s
 
 ZONE_LABEL = "topology.kubernetes.io/zone"
 # The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
 HIL_OVH_ZONE = "hil-ovh"
+HOME_LAN_ZONE = "home-lan"
 # Consolidate the two home zones and update replica counts with #11643.
-HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, "home-lan", "atlas")
+HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, HOME_LAN_ZONE, "atlas")
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
+HOME_LAN_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HOME_LAN_ZONE}
 # NFD reconciles the host's OS release independently of kubelet registration.
 NIXOS_NODE_SELECTOR: Mapping[str, str] = {"feature.node.kubernetes.io/system-os_release.ID": "nixos"}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
@@ -83,26 +86,35 @@ def zone_spread(zones: Sequence[str], labels: Mapping[str, str]) -> k8s.Topology
     )
 
 
-def one_per_host(labels: Mapping[str, str]) -> dict[str, object]:
-    """An untyped `affinity` for Helm values and operator pod templates. Required, so a Pod waits
-    Pending rather than share a host with another Pod matching `labels`."""
-    return {
-        "podAntiAffinity": {
-            "requiredDuringSchedulingIgnoredDuringExecution": [
-                {"labelSelector": {"matchLabels": dict(labels)}, "topologyKey": "kubernetes.io/hostname"}
+def one_per_host(labels: Mapping[str, str], *, node_affinity: k8s.NodeAffinity | None = None) -> k8s.Affinity:
+    """Require separate hosts for Pods matching the selector."""
+    return k8s.Affinity(
+        node_affinity=node_affinity,
+        pod_anti_affinity=k8s.PodAntiAffinity(
+            required_during_scheduling_ignored_during_execution=[
+                k8s.PodAffinityTerm(
+                    label_selector=k8s.LabelSelector(match_labels=dict(labels)), topology_key="kubernetes.io/hostname"
+                )
             ]
-        }
-    }
+        ),
+    )
 
 
-def hostname_spread(labels: Mapping[str, str]) -> k8s.TopologySpreadConstraint:
-    """Spread each revision across two hosts, leaving a replica Pending if only one is eligible."""
+def hostname_spread(labels: Mapping[str, str], *, min_domains: int | None = 2) -> k8s.TopologySpreadConstraint:
+    """Spread each revision across eligible hosts. With the default, only one Pod can schedule on a sole eligible host."""
     return k8s.TopologySpreadConstraint(
         topology_key="kubernetes.io/hostname",
         max_skew=1,
-        min_domains=2,
+        min_domains=min_domains,
         when_unsatisfiable="DoNotSchedule",
         label_selector=k8s.LabelSelector(match_labels=dict(labels)),
         match_label_keys=["pod-template-hash"],
         node_taints_policy="Honor",
+    )
+
+
+def set_topology_spread(deployment: Deployment, constraint: k8s.TopologySpreadConstraint) -> None:
+    """Set the Pod constraint that cdk8s-plus Deployment's scheduling API does not expose."""
+    ApiObject.of(deployment).add_json_patch(
+        JsonPatch.add("/spec/template/spec/topologySpreadConstraints", [constraint])
     )

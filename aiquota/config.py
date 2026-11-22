@@ -4,14 +4,36 @@ from pathlib import Path
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field, SecretStr
 
-from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
-from aiquota.providers.claude import ClaudeSettings
-from aiquota.providers.codex import CodexSettings
-from aiquota.providers.openai_platform import OpenAIPlatformSettings
-from aiquota.providers.zai import ZaiSettings
-
 CONFIG_DIR = Path(user_config_dir("aiquota"))
 DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.toml"
+
+
+class AnthropicPlatformSettings(BaseModel):
+    enabled: bool = False
+    url: str | None = None
+    token_path: Path | None = None
+
+
+class ClaudeSettings(BaseModel):
+    enabled: bool = True
+    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
+
+
+class CodexSettings(BaseModel):
+    enabled: bool = True
+    auth_path: Path = Path.home() / ".codex" / "auth.json"
+
+
+class OpenAIPlatformSettings(BaseModel):
+    enabled: bool = False
+    url: str | None = None
+    token_path: Path | None = None
+
+
+class ZaiSettings(BaseModel):
+    enabled: bool = True
+    # No sensible default — user must point this at a file containing the key.
+    api_key_path: Path | None = None
 
 
 class CLIProxyAPISettings(BaseModel):
@@ -34,6 +56,13 @@ class PollingSettings(BaseModel):
     history_interval_seconds: int | None = Field(default=None, gt=0)
     cache_ttl_seconds: int | None = Field(default=None, ge=0)
     refresh_on_read: bool = True
+
+
+class AccountMetadata(BaseModel):
+    """Optional owner-supplied labels for a provider account."""
+
+    label: str | None = None
+    tier: str | None = None
 
 
 class Config(BaseModel):
@@ -61,6 +90,8 @@ class Config(BaseModel):
     cli_proxy_api: CLIProxyAPISettings = Field(default_factory=CLIProxyAPISettings)
     remote_api: RemoteAPISettings = Field(default_factory=RemoteAPISettings)
     polling: PollingSettings = Field(default_factory=PollingSettings)
+    # Keys are "provider:<provider account id>"; no local account ID is minted.
+    accounts: dict[str, AccountMetadata] = Field(default_factory=dict)
     claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
     codex: CodexSettings = Field(default_factory=CodexSettings)
     openai_platform: OpenAIPlatformSettings = Field(default_factory=OpenAIPlatformSettings)

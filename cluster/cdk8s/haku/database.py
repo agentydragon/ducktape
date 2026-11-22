@@ -8,14 +8,7 @@ it; they retry until the Cluster accepts connections.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-    DatabaseSpecExtensions,
-    DatabaseSpecExtensionsEnsure,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
 from constructs import Construct
 
 from cluster.cdk8s.cnpg import backup, cluster
@@ -30,7 +23,7 @@ class Db(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        cluster.cluster(
+        postgres = cluster.cluster(
             self,
             "cluster",
             ref=POSTGRES,
@@ -51,15 +44,12 @@ class Db(Construct):
         # database (0136 drops it), and the migration role cannot install the extension itself.
         # This Database adopts the one created by `bootstrap.initdb`, hence `retain`: with
         # `delete`, dropping this object would drop the console's whole database.
-        Database(
+        cluster.Database(
             self,
             "database",
             metadata=ApiObjectMetadata(name=f"{POSTGRES.name}-approval-store", namespace=NAMESPACE),
-            spec=DatabaseSpec(
-                cluster=DatabaseSpecCluster(name=POSTGRES.name),
-                name=DATABASE,
-                owner=DATABASE,
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-                extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-            ),
+            cluster=postgres,
+            name=DATABASE,
+            owner=DATABASE,
+            extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
         )

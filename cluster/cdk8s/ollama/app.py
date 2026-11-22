@@ -17,7 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, piraeus_storage
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -78,7 +78,7 @@ def _claims(scope: Construct) -> None:
         "piraeus-models",
         name=_MODELS_CLAIM,
         namespace=NAMESPACE,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         size="200Gi",
     )
     volume_claim(
@@ -86,7 +86,7 @@ def _claims(scope: Construct) -> None:
         "piraeus-ssd-models",
         name=_SSD_MODELS_CLAIM,
         namespace=NAMESPACE,
-        storage_class="piraeus-ssd-local",
+        storage_class=piraeus_storage.SSD_LOCAL,
         size="100Gi",
     )
 
@@ -158,7 +158,7 @@ def _auth_proxy_container() -> k8s.Container:
         image="nginx:1.31-alpine",
         # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
         resources=container_resources(cpu="10m", memory="32Mi", memory_limit="256Mi"),
-        ports=[AUTH_PROXY.port.k8s_container_port()],
+        ports=[AUTH_PROXY.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
             DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),
@@ -228,9 +228,7 @@ def _service(scope: Construct) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels={"app": "ollama"}),
         spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_PODS.selector,
-            ports=[SERVICE.port.k8s_service_port(), AUTH_PROXY.port.k8s_service_port()],
+            type="ClusterIP", selector=_PODS.selector, ports=[SERVICE.k8s_service_port(), AUTH_PROXY.k8s_service_port()]
         ),
     )
 
@@ -421,7 +419,11 @@ def chart(app: App) -> Chart:
 
 
 def ollama(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -446,5 +448,7 @@ def ollama(
             external_secrets_operator,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
             kyverno,
+            # TabbyAPI's PodMonitor.
+            monitoring_crds,
         ),
     )

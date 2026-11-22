@@ -203,40 +203,30 @@ class Dex(Construct):
         mcp_edge_login_secret_name: str,
     ) -> None:
         super().__init__(scope, id)
-        env_variables = {
-            "DEX_CLIENT_ID": _OIDC.key("client-id").env_value(self, "oidc-client-id-ref"),
-            _APP_LOGIN_SECRET_ENV: _OIDC.key("client-secret").env_value(self, "oidc-client-secret-ref"),
-            _MCP_LINKAGE_SECRET_ENV: _MCP_OAUTH.key("client-secret").env_value(self, "mcp-oauth-client-secret-ref"),
-            _MCP_EDGE_LOGIN_SECRET_ENV: SecretRef(namespace=NAMESPACE, name=mcp_edge_login_secret_name)
-            .key("client-secret")
-            .env_value(self, "mcp-edge-oauth-client-secret-ref"),
-        }
-        client_secrets = [_OIDC.name, _MCP_OAUTH.name, mcp_edge_login_secret_name]
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(
-                name=_NAME,
-                namespace=NAMESPACE,
-                labels=_SERVICE.pods.selector,
-                annotations={
-                    # Dex reads its generated config and client secret only at startup.
-                    "secret.reloader.stakater.com/reload": ",".join((config_secret, *client_secrets))
-                },
-            ),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=_SERVICE.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=_SERVICE.pods.selector),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1001, group=1001),
         )
-        deployment.add_container(
+        container = deployment.add_container(
             name="dex",
             image=image,
             # A specific pinned release, not a floating tag -- avoid re-pulling on every restart.
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["dex", "serve", f"{_CONFIG_DIR}/{CONFIG_KEY}"],
-            env_variables=env_variables,
-            ports=[_SERVICE.port.container_port(), HTTPS_PORT.container_port()],
+            env_variables={
+                "DEX_CLIENT_ID": _OIDC.key("client-id").env_value(self, "oidc-client-id-ref"),
+                _APP_LOGIN_SECRET_ENV: _OIDC.key("client-secret").env_value(self, "oidc-client-secret-ref"),
+                _MCP_LINKAGE_SECRET_ENV: _MCP_OAUTH.key("client-secret").env_value(self, "mcp-oauth-client-secret-ref"),
+                _MCP_EDGE_LOGIN_SECRET_ENV: SecretRef(namespace=NAMESPACE, name=mcp_edge_login_secret_name)
+                .key("client-secret")
+                .env_value(self, "mcp-edge-oauth-client-secret-ref"),
+            },
+            ports=[_SERVICE.container_port(), HTTPS_PORT.container_port()],
             readiness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=0, period_seconds=5),
             liveness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=10, period_seconds=30),
             resources=ContainerResources(
@@ -253,15 +243,15 @@ class Dex(Construct):
             items={CONFIG_KEY: PathMapping(path=CONFIG_KEY)},
         )
         tmp_volume = Volume.from_empty_dir(self, "tmp-volume", "tmp")
-        deployment.containers[0].mount(_CONFIG_DIR, config_volume, read_only=True)
-        deployment.containers[0].mount("/tmp", tmp_volume)
+        container.mount(_CONFIG_DIR, config_volume, read_only=True)
+        container.mount("/tmp", tmp_volume)
         tls_volume = Volume.from_secret(self, "tls-volume", Secret.from_secret_name(self, "tls-secret", tls_secret))
-        deployment.containers[0].mount(_TLS_DIR, tls_volume, read_only=True)
+        container.mount(_TLS_DIR, tls_volume, read_only=True)
         pod_policy.harden(deployment)
         Service(
             self,
             "service",
             metadata=ApiObjectMetadata(name=_SERVICE.name, namespace=NAMESPACE),
             selector=deployment,
-            ports=[_SERVICE.port.service_port(), HTTPS_PORT.service_port()],
+            ports=[_SERVICE.service_port(), HTTPS_PORT.service_port()],
         )

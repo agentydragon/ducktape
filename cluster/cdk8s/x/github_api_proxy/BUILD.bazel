@@ -9,6 +9,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "flux_kustomizations",
     srcs = ["flux_kustomizations.py"],
+    tags = ["manual"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
@@ -22,17 +23,21 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
+    tags = ["manual"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
@@ -61,14 +66,15 @@ py_test(
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
+    tags = ["manual"],
     deps = [
         ":proxy",
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

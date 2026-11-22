@@ -1,0 +1,42 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GithubAccessToken
+metadata:
+  name: gaffer-private-archive
+  namespace: flux-system
+spec:
+  appID: ${quote}${githubAppID}${quote}
+  auth:
+    privateKey:
+      secretRef:
+        key: githubAppPrivateKey
+        name: ducktape-automation-github-app
+  installID: ${quote}${githubAppInstallationID}${quote}
+  permissions:
+    contents: read
+  repositories:
+    - gaffer-private
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gaffer-private-archive
+  namespace: flux-system
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: gaffer-private-archive
+  refreshInterval: 30m
+  target:
+    name: gaffer-private-archive
+    template:
+      data:
+        token: "{{ .token }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: agentplane-staging-egress-credentials
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: agentplane-staging-egress-credentials

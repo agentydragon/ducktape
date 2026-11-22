@@ -45,7 +45,8 @@ routing and do not grant additional access. Empty fallbacks mean no configured
 fallback. The Crossplane projection reads this catalog directly when building each
 key's allowed models and each team's ordered fallback list. Lane names bind these
 records to Crossplane keys/teams; keys may combine several lanes. Regenerate the
-manifests with `bb run //cluster/cdk8s:generate_manifests`.
+manifests with `bb run //cluster/cdk8s:generate_manifests`. For remote execution, use the
+[remote generation and patch retrieval recipe](../../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch).
 
 Each environment projects selected routes and explicit `RUNNER_CONTEXT_OVERRIDES`
 into `LlmIngressProps.models`. The runner consumes the shared `ModelConfig` contract

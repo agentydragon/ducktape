@@ -1,8 +1,8 @@
 import Lean.Data.Json
 import EsmSplit.Split
-import EsmSplit.Render
+import EsmSplit.ModulePath
 
-/-! Helpers shared by the executables: the per-check report, writing modules, reading a spec. -/
+/-! Helpers shared by the executables: the per-check report and spec reader. -/
 
 open EsmSplit Lean
 
@@ -17,28 +17,31 @@ def timedCheck (label : String) (p : Unit → Bool) : IO Bool := do
   (← IO.getStdout).flush
   return r
 
-def report (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
-  let t0 ← IO.monoMsNow
-  let order ← IO.lazyPure fun _ => P.evalOrder
-  let exec ← IO.lazyPure fun _ => P.execOrder
-  IO.println s!"  module order  {" → ".intercalate order}"
-  IO.println s!"  statement order  {if exec.length > 40 then s!"[{exec.length} statements]" else toString exec}  ({(← IO.monoMsNow) - t0} ms)"
-  let rs := [← timedCheck "UniqueDefs" fun _ => decide (UniqueDefs B),
-             ← timedCheck "ReadsClosed" fun _ => decide (ReadsClosed B),
-             ← timedCheck "Faithful" fun _ => decide (Faithful B S P),
-             ← timedCheck "Linkable" fun _ => decide (Linkable B P),
-             ← timedCheck "ExportsUnique" fun _ => decide (ExportsUnique B P),
-             ← timedCheck "Hygienic" fun _ => decide (Hygienic B P),
-             ← timedCheck "AssignsHome" fun _ => decide (AssignsHome B P),
-             ← timedCheck "Permutes" fun _ => decide (Permutes B P),
-             ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)]
-  return rs.all id
+structure PlanChecks where
+  layout : Bool
+  order : Bool
 
-def writeModules (B : Bundle) (P : Plan) (dir : System.FilePath) (render : Module → String := (·.render B P)) : IO Unit := do
-  IO.FS.createDirAll dir
-  for m in P.mods do
-    IO.FS.writeFile (dir / m.name) (render m)
-  IO.println s!"  wrote {P.mods.length} modules to {dir}"
+def PlanChecks.ok (checks : PlanChecks) : Bool := checks.layout && checks.order
+
+def report (B : Bundle) (S : Spec) (P : Plan) (verbose := true) : IO PlanChecks := do
+  if verbose then
+    let t0 ← IO.monoMsNow
+    let order ← IO.lazyPure fun _ => P.evalOrder
+    let exec ← IO.lazyPure fun _ => P.execOrder
+    IO.println s!"  module order  {" → ".intercalate order}"
+    IO.println s!"  statement order  {if exec.length > 40 then s!"[{exec.length} statements]" else toString exec}  ({(← IO.monoMsNow) - t0} ms)"
+  let check (name : String) (p : Unit → Bool) : IO Bool :=
+    if verbose then timedCheck name p else IO.lazyPure p
+  let rs := [← check "UniqueDefs" fun _ => decide (UniqueDefs B),
+             ← check "ReadsClosed" fun _ => decide (ReadsClosed B),
+             ← check "Faithful" fun _ => decide (Faithful B S P),
+             ← check "Linkable" fun _ => decide (Linkable B P),
+             ← check "ExportsUnique" fun _ => decide (ExportsUnique B P),
+             ← check "Hygienic" fun _ => decide (Hygienic B P),
+             ← check "AssignsHome" fun _ => decide (AssignsHome B P),
+             ← check "Permutes" fun _ => decide (Permutes B P)]
+  let orderOk ← check "OrderOk" fun _ => decide (OrderOk B P)
+  return ⟨rs.all id, orderOk⟩
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
 Module order follows the sorted keys of the parsed object; `order` is optional and keeps its order;
@@ -47,6 +50,7 @@ def loadSpec (path : System.FilePath) : IO Spec := do
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
   let entry ← IO.ofExcept (j.getObjVal? "entry" >>= Json.getStr?)
   let mods ← IO.ofExcept (j.getObjVal? "modules" >>= Json.getObj?)
+  IO.ofExcept (validateModulePaths (entry :: mods.toList.map (·.1)))
   let modules ← mods.toList.mapM fun (name, v) => do
     let sels ← (← IO.ofExcept v.getArr?).toList.mapM fun x => do
       let s ← IO.ofExcept x.getStr?
@@ -62,5 +66,36 @@ def loadSpec (path : System.FilePath) : IO Spec := do
     | .error _ => pure []
   let sequential := (j.getObjVal? "sequential" >>= Json.getBool?).toOption.getD false
   pure { entry, modules, order, sequential }
+
+/-- Why two statements conflict, as the bits of `Bundle.conflictT`: 1 both touch the world, 2 `j` binds a name `i` reads,
+4 `i` binds a name `j` reads, 8 both bind a name. A pair conflicts if and only if some bit is set. -/
+def conflictReasons (arr : Array Stmt) (tab : Array EsmSplit.NameSet) (i j : Nat) : Nat :=
+  let a := arr.getD i default
+  let b := arr.getD j default
+  (if a.effect && b.effect then 1 else 0)
+    + (if !b.hoisted && b.binds.any (tab.getD i ∅).contains then 2 else 0)
+    + (if !a.hoisted && a.binds.any (tab.getD j ∅).contains then 4 else 0)
+    + (if !a.hoisted && !b.hoisted && a.binds.any b.binds.contains then 8 else 0)
+
+/-- Pairs of statements that conflict and that the plan runs in the opposite order from the bundle (what `OrderOk`
+rejects): how many, five of them, and (if `all`) every one as `(runs first in the output, runs first in the bundle,
+reasons)`. -/
+def conflictInversions (B : Bundle) (P : Plan) (all : Bool := false) :
+    Nat × Array (Nat × Nat) × Array (Nat × Nat × Nat) := Id.run do
+  let arr := B.toArray
+  let tab := B.readsTab
+  let ord := P.execOrder.toArray
+  let mut count := 0
+  let mut sample : Array (Nat × Nat) := #[]
+  let mut every : Array (Nat × Nat × Nat) := #[]
+  for x in [0:ord.size] do
+    for y in [x + 1:ord.size] do
+      let a := ord[x]!
+      let b := ord[y]!
+      if b < a && Bundle.conflictT arr tab b a then
+        count := count + 1
+        if sample.size < 5 then sample := sample.push (a, b)
+        if all then every := every.push (a, b, conflictReasons arr tab b a)
+  return (count, sample, every)
 
 end EsmSplit

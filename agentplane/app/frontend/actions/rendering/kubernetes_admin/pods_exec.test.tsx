@@ -5,13 +5,13 @@ import { describe, expect, it } from "vitest";
 import { ActionIdentitySchema } from "../../../../../action_service/api/contracts/action_service_pb";
 import { CallToolResultView, type CallToolResult } from "../../call_tool_result";
 import { mount, toolResult } from "../../testing/harness";
-import { renderDetailsResult } from "../index";
+import { appActionRendering } from "../index";
 
 const PODS_EXEC = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_exec" });
 
 /** The Pod exec result as the host draws it: the Action's own view, else the generic envelope view. */
 async function drawDetailsResult(result: CallToolResult) {
-  const custom = renderDetailsResult(PODS_EXEC, result);
+  const custom = appActionRendering.renderDetailsResult(PODS_EXEC, result);
   return mount(custom === undefined ? <CallToolResultView result={result} /> : custom);
 }
 

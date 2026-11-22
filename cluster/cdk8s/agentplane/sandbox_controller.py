@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -18,7 +17,6 @@ from cdk8s_plus_34 import (
     RoleBinding,
     RolePolicyRule,
     ServiceAccount,
-    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
@@ -31,7 +29,6 @@ from agentplane.environments.settings import (
     ServiceDelegator,
     Settings,
 )
-from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -41,7 +38,6 @@ from agentplane.net.peertls.config import (
     MTLS,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
-    ClientTLS,
     ServiceSPIFFEID,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -70,18 +66,14 @@ NAME = environment_service.NAME
 _METRICS_PORT = Port(name="metrics", number=8080)
 _HEALTH_PORT = 8081
 _ENVIRONMENT_SERVICE = "/agentplane.environments.v1.EnvironmentService/"
-_ENVIRONMENT_SERVICE_READ_METHODS = (
+_ENVIRONMENT_SERVICE_DELEGATED_METHODS = (
     f"{_ENVIRONMENT_SERVICE}ListEnvironments",
     f"{_ENVIRONMENT_SERVICE}GetEnvironment",
     f"{_ENVIRONMENT_SERVICE}WatchEnvironment",
+    f"{_ENVIRONMENT_SERVICE}ResumeEnvironment",
 )
 OPERATOR_SERVICE_CALLERS = frozenset({APP_URI})
 WAKE_SERVICE_CALLERS = frozenset({APP_URI, NOTIFICATIONS_URI})
-_RESUME_METHOD = f"{_ENVIRONMENT_SERVICE}ResumeEnvironment"
-
-
-def _account(account: ServiceAccountRef) -> str:
-    return f"{account.namespace}/{account.name}"
 
 
 @dataclass(frozen=True)
@@ -93,8 +85,7 @@ class EnvironmentServiceAuthority:
     service_launchers: frozenset[ServiceSPIFFEID]
     service_operators: frozenset[ServiceSPIFFEID]
     wake_service_callers: frozenset[ServiceSPIFFEID]
-    service_delegation_actor: ServiceSPIFFEID | None
-    service_delegation_methods: tuple[str, ...]
+    service_delegation: ServiceDelegation | None
 
 
 def environment_service_authority(
@@ -103,32 +94,26 @@ def environment_service_authority(
     launchers: Iterable[ServiceAccountRef],
     operator_service_callers: frozenset[ServiceSPIFFEID],
     wake_service_callers: frozenset[ServiceSPIFFEID],
-    delegation_actor: ServiceAccountRef | None,
-    extra_delegated_methods: tuple[str, ...] = (),
+    delegate_to_actions: bool,
 ) -> EnvironmentServiceAuthority:
     """Compose only the EnvironmentService slice of the Gateway's existing grants."""
-    launcher_accounts = frozenset(map(_account, launchers))
-    delegated_methods = (
-        tuple(
-            method
-            for method in (*_ENVIRONMENT_SERVICE_READ_METHODS, *extra_delegated_methods)
-            if method.startswith(_ENVIRONMENT_SERVICE)
-        )
-        if delegation_actor is not None
-        else ()
-    )
     return EnvironmentServiceAuthority(
         service_readers=frozenset({APP_URI}),
         service_managers=frozenset({APP_URI}),
         service_launchers=(
             frozenset({ACTIONS_URI})
-            if _account(ServiceAccountRef(namespace=env.namespace, name=actions.NAME)) in launcher_accounts
+            if ServiceAccountRef(namespace=env.namespace, name=actions.NAME) in launchers
             else frozenset()
         ),
         service_operators=operator_service_callers,
         wake_service_callers=wake_service_callers,
-        service_delegation_actor=ACTIONS_URI if delegated_methods else None,
-        service_delegation_methods=delegated_methods,
+        service_delegation=(
+            ServiceDelegation(
+                actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_ENVIRONMENT_SERVICE_DELEGATED_METHODS
+            )
+            if delegate_to_actions
+            else None
+        ),
     )
 
 
@@ -137,11 +122,6 @@ def action_delegation_actor(env: Environment) -> ServiceAccountRef | None:
     if env.actions.orchestration_v1 is None and env.actions.session_delegation is None:
         return None
     return ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
-
-
-def environment_service_delegated_methods(env: Environment) -> tuple[str, ...]:
-    """Explicit resume is delegated only where an Environment Action group is configured."""
-    return (_RESUME_METHOD,) if action_delegation_actor(env) is not None else ()
 
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(64)
@@ -164,7 +144,7 @@ def _add_controller_workload(
     workload = add_service_workload(
         scope,
         env,
-        serves=[endpoint, environment_endpoint],
+        serves=[environment_endpoint, endpoint],
         container=endpoint.name,
         image=image,
         extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
@@ -178,10 +158,7 @@ def _add_controller_workload(
         telemetry_enabled=True,
         registry_secret_name=registry_secret_name,
         service_account=service_account,
-        create_service=False,
     )
-    for key, value in environment_service.ENVIRONMENTS_ROUTING_LABELS.items():
-        workload.deployment.pod_metadata.add_label(key, value)
 
     # Preserve the OpenTelemetry service identity across the deployment rename.
     workload.container.env.add_variable("OTEL_SERVICE_NAME", EnvValue.from_value("sandbox-controller"))
@@ -211,17 +188,6 @@ class SandboxController(Construct):
         self.authority = authority
         namespace = env.namespace
         environments = environment_service.environments_service(namespace)
-        k8s.KubeService(
-            self,
-            "environments-service",
-            metadata=k8s.ObjectMeta(name=environments.name, namespace=namespace, labels=environments.labels),
-            spec=k8s.ServiceSpec(
-                type="ClusterIP",
-                external_i_ps=[],
-                selector=environment_service.ENVIRONMENTS_ROUTING_LABELS,
-                ports=[environments.port.k8s_service_port(), _METRICS_PORT.k8s_service_port()],
-            ),
-        )
         prerequisites = Construct(self, "environments-prerequisites")
         account = ServiceAccount(
             prerequisites,
@@ -267,29 +233,15 @@ class SandboxController(Construct):
             environments_scope, container=environments_workload.container, name="environments-runtime-proxy"
         )
         workload_tls.mount_trust_bundle(environments_scope, environments_workload.container)
-        assert client.cert_file is not None
-        assert client.key_file is not None
-        assert client.ca_file is not None
         serving = EnvironmentService(
-            rpc=workload_listener.Listener(
-                listen_address=f"0.0.0.0:{environments.port.number}",
-                tls=workload_listener.TLS(cert_file=Path(client.cert_file), key_file=Path(client.key_file)),
-                auth=[workload_listener.SPIFFEAuth(ca_file=Path(client.ca_file))],
-            ),
+            rpc=client.spiffe_listener(environments.port.number),
             policy_namespace=namespace,
             service_readers=tuple(sorted(authority.service_readers)),
             service_managers=tuple(sorted(authority.service_managers)),
             service_launchers=tuple(sorted(authority.service_launchers)),
             service_operators=tuple(sorted(authority.service_operators)),
             wake_service_callers=tuple(sorted(authority.wake_service_callers)),
-            service_delegation=(
-                ServiceDelegation(
-                    actors=(ServiceDelegator(spiffe_id=authority.service_delegation_actor),),
-                    methods=authority.service_delegation_methods,
-                )
-                if authority.service_delegation_actor is not None
-                else None
-            ),
+            service_delegation=authority.service_delegation,
             runtime_proxy=RuntimeProxy(
                 runner_security=MTLS(tls=proxy_client),
                 readers=tuple(sorted(runtime_proxy_readers)),
@@ -301,18 +253,12 @@ class SandboxController(Construct):
         )
         environments_settings = Settings(
             environment_service=serving,
-            runner_gateway_tls=ClientTLS(
-                ca_file=Path(client.ca_file),
-                server_uri=SANDBOX_CONTROLLER_URI,
-                cert_file=Path(client.cert_file),
-                key_file=Path(client.key_file),
-                client_uri=SANDBOX_CONTROLLER_URI,
-            ),
+            runner_gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=SANDBOX_CONTROLLER_URI),
             runner_security=MTLS(tls=client),
             namespace=namespace,
             metrics_bind_address=f":{_METRICS_PORT.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
-            runner_gateway_target=environment_service.environments_control_target(namespace),
+            runner_gateway_target=environments.authority,
         )
         SettingsFile(
             environments_scope,
@@ -336,7 +282,7 @@ class SandboxController(Construct):
             environment_callers.append(central_sampler.pods(namespace))
         if self.env.app is not None:
             environment_callers.append(app_component.service(namespace).pods)
-        if self.authority.service_delegation_actor is not None:
+        if self.authority.service_delegation is not None:
             environment_callers.append(actions.service(namespace).pods)
         inbound = [
             cilium.SCRAPERS.admit(_METRICS_PORT.number),
@@ -377,7 +323,7 @@ class SandboxController(Construct):
 
 
 def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, *, role_name: str) -> None:
-    Role(
+    role = Role(
         scope,
         "role",
         metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
@@ -444,8 +390,5 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
         ],
     )
     RoleBinding(
-        scope,
-        "role-binding",
-        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-        role=Role.from_role_name(scope, "role-ref", role_name),
+        scope, "role-binding", metadata=ApiObjectMetadata(name=role_name, namespace=namespace), role=role
     ).add_subjects(service_account)

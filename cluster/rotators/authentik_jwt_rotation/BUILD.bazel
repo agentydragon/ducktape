@@ -1,13 +1,10 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//cluster/rotators:image.bzl", "rotator_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "config",
     srcs = ["config.py"],
-    # cluster/cdk8s/authentik/jwt_rotation.py builds the roster from this model.
+    # cluster/cdk8s/authentik/jwt_roster.py builds the roster from this model.
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/authentik:__pkg__",
@@ -20,6 +17,7 @@ py_library(
     srcs = ["rotate.py"],
     deps = [
         ":config",
+        "//cluster/rotators:git_publish",
         "//cluster/rotators:sops",
         "//cluster/rotators:sops_stamps",
         "@pypi//httpx",
@@ -35,54 +33,19 @@ py_test(
         ":config",
         ":rotate",
         "//:conftest",
-        "//cluster/rotators:sops",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
-aspect_py_binary(
-    name = "rotate_bin",
-    main = "rotate.py",
-    deps = [":rotate"],
-)
-
-# sops binary layer — placed at /usr/local/bin/sops.
-pkg_tar(
-    name = "sops_layer",
-    srcs = ["@sops_linux_amd64//file:sops"],
-    package_dir = "/usr/local/bin",
-)
-
-py_image_layer(
-    name = "layers",
-    binary = ":rotate_bin",
-    group = "65534",
-    owner = "65534",
-)
-
-oci_image(
+rotator_image(
     name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("rotate_bin"),
-    env = py_image_env(binary_name = "rotate_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # The apt layer provides git; sops_layer provides sops; the node and prettier layers
-    # format the written YAML; layers the Python app.
-    tars = [
+    repo_tag = "authentik-jwt-rotation:latest",
+    tool_layers = [
         "@trixie_authentik_rotation//:flat",
-        ":sops_layer",
-        "//devinfra:node_bin_layer",
-        "//devinfra:prettier_cli_layer",
-        "//devinfra:prettier_bin_layer",
-        ":layers",
+        "//cluster/rotators:sops_layer",
     ],
-)
-
-oci_load(
-    name = "load",
-    image = ":image",
-    repo_tags = ["authentik-jwt-rotation:latest"],
 )

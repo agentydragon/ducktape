@@ -21,7 +21,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.litellm.database import NAMESPACE
+from cluster.cdk8s.litellm.endpoint import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
@@ -90,7 +90,6 @@ def _chart(app: App) -> Chart:
         reader=reader,
         source_namespace="langfuse",
         source_secret="langfuse-secrets",
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
@@ -174,7 +173,6 @@ def _chart(app: App) -> Chart:
                 reader=reader,
                 source_namespace="tana-mcp",
                 source_secret=_TANA_REFRESH_TOKEN,
-                consumer_namespace=NAMESPACE,
             )
         ),
         data=[remote_data(_TANA_REFRESH_TOKEN, "refresh_token")],

@@ -22,30 +22,38 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import api_resource, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.gitlab_spike.app import (
+    BOOTSTRAP_CONFIG_MAP,
+    BOOTSTRAP_TOKEN,
+    DEMO_NAMESPACE,
+    NAMESPACE,
+    ROOT_PASSWORD,
+    RUNNER_NAMESPACE,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
-NAMESPACE = "gitlab-spike"
-NAME = "gitlab-spike-bootstrap"
+NAME = BOOTSTRAP_CONFIG_MAP
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/bootstrap"
 
 
 def namespace_chart(app: App) -> Chart:
     chart = Chart(app, "gitlab-spike-namespace", disable_resource_name_hashes=True)
-    for name in (NAMESPACE, "gitlab-spike-ci"):
+    for name in (NAMESPACE, RUNNER_NAMESPACE):
         namespaces.namespace(
             chart, name, name=name, vpa=Vpa.RECOMMEND, labels={"pod-security.kubernetes.io/enforce": "baseline"}
         )
     namespaces.namespace(
         chart,
-        "gitlab-spike-demo",
-        name="gitlab-spike-demo",
+        DEMO_NAMESPACE,
+        name=DEMO_NAMESPACE,
         # Let VPA update the disposable single-replica demo without waiting for another rollout.
-        vpa=VpaProfile.requests_only(Vpa.AUTO, min_replicas=1),
+        vpa=VpaProfile(Vpa.AUTO, min_replicas=1),
         labels={"pod-security.kubernetes.io/enforce": "baseline"},
     )
-    for name, key in (("gitlab-root-password", "password"), ("gitlab-bootstrap-token", "token")):
-        mint_bearer_secret(chart, name, name=name, namespace=NAMESPACE, key=key)
+    for secret_key in (ROOT_PASSWORD, BOOTSTRAP_TOKEN):
+        secret = secret_key.secret
+        mint_bearer_secret(chart, secret.name, name=secret.name, namespace=secret.namespace, key=secret_key.key)
     bootstrap_script = (
         Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/bootstrap.rb"
     ).read_text()

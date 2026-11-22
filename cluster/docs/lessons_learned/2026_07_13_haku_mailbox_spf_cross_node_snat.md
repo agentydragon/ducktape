@@ -57,7 +57,7 @@ forge the source address in a PROXY header.
 
 `cluster/k8s/haku/mailbox/` carries the DaemonSet's public-node selector and host
 port, the internal-only Service shape, the Stalwart trusted proxy range, and the
-network policy relationship; `//cluster/validation:test_mailbox_smtp_ingress` ties the
+network policy relationship; `//cluster/cdk8s/haku:test_mailbox` ties the
 ingress proxy config to the backend Service. The namespace explicitly uses privileged
 Pod Security admission because the baseline profile rejects all host ports;
 `cluster/cdk8s/haku/mailbox.py` comments pair that exception with the required

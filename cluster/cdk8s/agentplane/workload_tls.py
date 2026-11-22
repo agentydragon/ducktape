@@ -17,6 +17,7 @@ from cert_manager_crds.io.cert_manager import (
 )
 from constructs import Construct
 
+from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import TLS, ClientTLS
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
@@ -29,7 +30,34 @@ KEY_FILE = f"{_CERT_PATH}/tls.key"
 TRUST_BUNDLE_FILE = f"{_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}"
 
 
-def mount_trust_bundle(scope: Construct, container: Container) -> Path:
+class MountedCertificate(TLS):
+    """The file-backed form of peer TLS used by these Deployments."""
+
+    cert_file: str
+    key_file: str
+    ca_file: str
+
+    def spiffe_listener(self, port: int) -> listener.Listener:
+        return listener.Listener(
+            listen_address=f"0.0.0.0:{port}",
+            tls=listener.TLS(cert_file=Path(self.cert_file), key_file=Path(self.key_file)),
+            auth=[listener.SPIFFEAuth(ca_file=Path(self.ca_file))],
+        )
+
+    def client_tls(self, server_uri: str, *, client_uri: str) -> ClientTLS:
+        return ClientTLS(
+            ca_file=Path(self.ca_file),
+            server_uri=server_uri,
+            cert_file=Path(self.cert_file),
+            key_file=Path(self.key_file),
+            client_uri=client_uri,
+        )
+
+
+_SERVICE_CERTIFICATE = MountedCertificate(cert_file=CERT_FILE, key_file=KEY_FILE, ca_file=TRUST_BUNDLE_FILE)
+
+
+def mount_trust_bundle(scope: Construct, container: Container) -> None:
     """Mount the workload CA for a caller that verifies service SVIDs or a listener verifying client SVIDs."""
     trust = Volume.from_config_map(
         scope,
@@ -38,18 +66,11 @@ def mount_trust_bundle(scope: Construct, container: Container) -> Path:
         name="workload-trust",
     )
     container.mount(_TRUST_PATH, trust, read_only=True)
-    return Path(TRUST_BUNDLE_FILE)
 
 
 def service_client_tls(server_uri: str, *, client_uri: str) -> ClientTLS:
     """Use the service SVID mounted by `service_certificate` and verify an exact receiver."""
-    return ClientTLS(
-        ca_file=Path(TRUST_BUNDLE_FILE),
-        server_uri=server_uri,
-        cert_file=Path(CERT_FILE),
-        key_file=Path(KEY_FILE),
-        client_uri=client_uri,
-    )
+    return _SERVICE_CERTIFICATE.client_tls(server_uri, client_uri=client_uri)
 
 
 def certificate(scope: Construct, id: str, env: Environment, *, name: str, secret_name: str, uri: str) -> Certificate:
@@ -73,14 +94,16 @@ def certificate(scope: Construct, id: str, env: Environment, *, name: str, secre
     )
 
 
-def service_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
+def service_certificate(
+    scope: Construct, env: Environment, *, container: Container, name: str, uri: str
+) -> MountedCertificate:
     """Mount the service's client-and-server SVID and workload-CA trust bundle."""
     secret_name = f"{name}-workload-tls"
     certificate(scope, "workload-certificate", env, name=f"{name}-workload", secret_name=secret_name, uri=uri)
     return mount_service_certificate(scope, container=container, name=name)
 
 
-def mount_service_certificate(scope: Construct, *, container: Container, name: str) -> TLS:
+def mount_service_certificate(scope: Construct, *, container: Container, name: str) -> MountedCertificate:
     """Mount an existing serving leaf without creating or changing its Certificate."""
     secret_name = f"{name}-workload-tls"
     volume = Volume.from_secret(
@@ -90,11 +113,11 @@ def mount_service_certificate(scope: Construct, *, container: Container, name: s
         name="workload-tls",
     )
     container.mount(_CERT_PATH, volume, read_only=True)
-    ca_file = mount_trust_bundle(scope, container)
-    return TLS(cert_file=CERT_FILE, key_file=KEY_FILE, ca_file=str(ca_file))
+    mount_trust_bundle(scope, container)
+    return _SERVICE_CERTIFICATE
 
 
-def mount_client_certificate(scope: Construct, *, container: Container, name: str) -> TLS:
+def mount_client_certificate(scope: Construct, *, container: Container, name: str) -> MountedCertificate:
     """Mount an existing client leaf without creating or changing its Certificate."""
     cert_path = f"/run/agentplane/{name}-client-tls"
     secret_name = f"{name}-client-workload-tls"
@@ -105,4 +128,6 @@ def mount_client_certificate(scope: Construct, *, container: Container, name: st
         name=f"{name}-client-workload-tls",
     )
     container.mount(cert_path, volume, read_only=True)
-    return TLS(cert_file=f"{cert_path}/tls.crt", key_file=f"{cert_path}/tls.key", ca_file=TRUST_BUNDLE_FILE)
+    return MountedCertificate(
+        cert_file=f"{cert_path}/tls.crt", key_file=f"{cert_path}/tls.key", ca_file=TRUST_BUNDLE_FILE
+    )

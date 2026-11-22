@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
 from model_catalog.catalog import (
     HIDDEN_ALIASES,
@@ -16,17 +14,6 @@ from model_catalog.catalog import (
     RouteAlias,
     shape_mode,
 )
-
-CONFIG_MAP_NAME = "config"
-
-
-@dataclass(frozen=True)
-class ConfigMapSpec:
-    """The generated files belonging to one LiteLLM proxy."""
-
-    name: str
-    namespace: str
-    data: dict[str, object]
 
 
 def model_entry(entry: Route | RouteAlias) -> dict:
@@ -147,7 +134,3 @@ def main_proxy_config() -> dict:
             "disable_spend_logs": True,
         },
     }
-
-
-def proxy_configs() -> tuple[ConfigMapSpec, ...]:
-    return (ConfigMapSpec("litellm", "litellm", {"config.yaml": main_proxy_config()}),)

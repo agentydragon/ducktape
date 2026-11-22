@@ -37,6 +37,7 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring.namespace import NAMESPACE as MONITORING_NAMESPACE
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -56,6 +57,9 @@ SERVICE = ServiceRef(
 DATABASE = cluster.PostgresRef.generated(name="ntfy-db", namespace=NAMESPACE)
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
+ALERTMANAGER_WEBHOOK = SecretRef(namespace=MONITORING_NAMESPACE, name="alertmanager-ntfy-webhook")
+ALERTMANAGER_WEBHOOK_ADDRESS = ALERTMANAGER_WEBHOOK.key("address")
+ALERTMANAGER_WEBHOOK_TOKEN = ALERTMANAGER_WEBHOOK.key("token")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
 # The ExternalSecrets that derive from the SOPS credentials refresh only OnChange, so changing
 # this value is what re-renders them on a deliberate credential rotation
@@ -72,7 +76,7 @@ def _secret_store(scope: Construct) -> None:
             name=SECRET_STORE,
             annotations={"description": "Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager."},
         ),
-        namespaces=[NAMESPACE, "flux-system", "monitoring"],
+        namespaces=[NAMESPACE, "flux-system", MONITORING_NAMESPACE],
         remote_namespace=NAMESPACE,
         service_account=ESO_SERVICE_ACCOUNT,
     )
@@ -126,8 +130,8 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
         scope,
         "alertmanager-webhook-external-secret",
         metadata=ApiObjectMetadata(
-            name="alertmanager-ntfy-webhook",
-            namespace="monitoring",
+            name=ALERTMANAGER_WEBHOOK.name,
+            namespace=ALERTMANAGER_WEBHOOK.namespace,
             annotations={
                 "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
                 **AUTH_GENERATION_ANNOTATION,
@@ -141,7 +145,10 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
             type="Opaque",
-            data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
+            data={
+                ALERTMANAGER_WEBHOOK_ADDRESS.key: f"https://{HOSTNAME}/alerts",
+                ALERTMANAGER_WEBHOOK_TOKEN.key: "{{ .alertmanager_token }}",
+            },
         ),
     )
 
@@ -213,7 +220,7 @@ class Ntfy(Construct):
             image=_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["serve"],
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             env_variables={
                 "NTFY_BASE_URL": EnvValue.from_value(f"https://{HOSTNAME}"),
                 # Run above Linux's privileged-port range with all capabilities dropped.
@@ -243,7 +250,7 @@ class Ntfy(Construct):
             "service",
             metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAMESPACE, labels=SERVICE.labels),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_service_monitor(self) -> None:

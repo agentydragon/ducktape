@@ -86,8 +86,10 @@ The verifier fails on any of these conditions:
 
 - a datasource query returns HTTP 4xx/5xx or a Grafana result error;
 - a panel returns no frames or only empty values;
-- a query request still contains an unresolved Grafana macro or dashboard
-  variable, including `$__rate_interval`, `$__all`, `$node`, or `${topk}`;
+- a query request still contains an unresolved dashboard variable or a
+  frontend-expanded macro, including `$__rate_interval`, `$__all`, `$node`, or
+  `${topk}`. ClickHouse backend macros such as `$__timeFilter` are allowed in
+  requests, but the returned executed SQL must show that they were expanded;
 - a query result is entirely zero without an explicit
   `--allow-all-zero-panel` exception and an explanation in the handoff;
 - the browser sees datasource request failures, page errors, PromQL/LogQL parse
@@ -125,8 +127,10 @@ verification.
    `--grafana-dashboard-manifest <generated-resource-file>`. After import, query
    and render the live dashboard: `DashboardSynchronized=True` does not prove
    datasource references work.
-3. Do not rely on Grafana macros unless the browser request proves that the
-   installed datasource plugin expands them. Fixed windows such as `[5m]` are
+3. Do not rely on Grafana macros unless the browser request or, for ClickHouse
+   backend macros, the returned executed SQL proves that the installed datasource
+   plugin expands them. The verifier rejects ClickHouse dashboard variables until
+   it supports the plugin's interpolation and quoting rules. Fixed windows such as `[5m]` are
    valid and predictable. In particular, never ship a literal
    `$__rate_interval` into a PromQL or LogQL range selector.
 4. Treat `$__all` as a dashboard/UI variable value, not as a value to paste into

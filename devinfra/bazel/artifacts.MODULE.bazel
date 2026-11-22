@@ -192,9 +192,18 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 """,
-    integrity = "sha512-CxDm3+D1cpbGJeHrdzINoG+3wn9BVncP4qpZaaNYkxe8iPtRJOYyCJnnPoVjWRIBvI9vPKbRoifsMSA5xDaUpw==",
+    integrity = "sha512-l66NZkQgdk2C3pbcfULDz42yEUB581MVA6I+Y43Wp4OIqEy73HCdmZ0GTjeAHY2ycuH4N00d9VsLrwT1jxshTw==",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
-    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.166.0-linux-x64.tgz"],
+    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.171.0-linux-x64.tgz"],
+)
+
+# Default to the native Codex CLI release above when updating this source catalog.
+# test_codex_models checks that the native CLI can read the deployment catalog.
+http_file(
+    name = "codex_model_catalog",
+    downloaded_file_path = "models.json",
+    sha256 = "d50b6749506d97e5f334dbabcb666eb1689f423cf3e88cfabdcf3c536b873068",
+    urls = ["https://raw.githubusercontent.com/openai/codex/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/models-manager/models.json"],
 )
 
 # The one browser every Playwright test drives: Chrome for Testing's headless shell. `:executable`

@@ -28,10 +28,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
-CNPG_DATABASE_READY = (
-    "has(status.applied) && status.applied && "
-    "has(status.observedGeneration) && status.observedGeneration == metadata.generation"
-)
 _PATCH_FILE = "patches.k8s.yaml"
 
 
@@ -197,14 +193,12 @@ def sops_decryption(
     resources: Sequence[str], *, secret_generators: Sequence[SecretGeneratorArgs] = ()
 ) -> KustomizationSpecDecryption | None:
     """Return the Flux decryption block for SOPS resource siblings or generator input files."""
-    encrypted_generator = any(
-        file.rsplit("=", maxsplit=1)[-1].endswith(".sops.yaml")
-        for generator in secret_generators
-        for file in generator.files
-    )
-    if not any(resource.endswith(".sops.yaml") for resource in resources) and not encrypted_generator:
-        return None
-    return SOPS_DECRYPTION
+    # In a Kustomize key=filename entry the source filename is last.
+    if any(path.endswith(".sops.yaml") for path in resources) or any(
+        file.endswith(".sops.yaml") for generator in secret_generators for file in generator.files
+    ):
+        return SOPS_DECRYPTION
+    return None
 
 
 def namespace_chart(

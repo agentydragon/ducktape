@@ -4,16 +4,20 @@ Every `ImageRepository` must be listed in some `Receiver`, so a registry webhook
 it immediately — otherwise a new tag is only picked up on the 5-minute `ImageRepository`
 poll. Also checks that no Receiver references one that no longer exists.
 
-Reads the typed resources from `ParsedCluster.build_results` — the kustomize/flux build
-output the validator already produces — and isinstance-dispatches on the parsed variants, so
-it sees exactly what Flux applies and never re-walks source YAML (which would choke on the
-Authentik blueprints' custom `!Find`/`!Env` tags).
+The Receiver check uses typed local renders from `ParsedCluster.rendered_resources`.
+Local owners with `targetNamespace` use Flux dry-run. Other local owners use plain
+Kustomize, which omits Flux-level patches. Both paths omit live decryption and
+post-build variable sources.
 """
 
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from pathlib import Path
+
+import yaml
+from yaml.tokens import FlowMappingEndToken, FlowMappingStartToken
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
@@ -26,28 +30,22 @@ _IMAGE_POLICY_MARKER = re.compile(r'"\$imagepolicy":\s*"([^"]+)"')
 # haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
 # Receiver here may still reference one (cluster/generated/haku/ui-image-webhook), so exempt these
 # from the "Receiver references an undefined ImageRepository" check.
-_HAKU_STATE_IMAGE_REPOS = {"haku-anki", "haku-ui"}
-
-# A non-empty YAML flow mapping in *structural* position — `- {name: cfg}` or `key: {a: 1}`.
-#
-# Two things it deliberately does not match. `{}` survives a re-serialisation unchanged and is
-# the idiomatic spelling of `emptyDir`. And a brace that opens a line belongs to a JSON blob
-# inside a block scalar (`goldilocks.fairwinds.com/vpa-resource-policy: >`), which is a string
-# value: an emitter rewrites the scalar's quoting, never the JSON inside it.
-_FLOW_MAPPING = re.compile(r"^\s*(?:-\s+\{|[\w./-]+:\s*\{)\s*[^}\s]")
+_HAKU_STATE_IMAGE_REPOS = {"haku-sandbox/haku-anki", "haku-sandbox/haku-ui"}
 
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
     webhook_repos: set[str] = set()
 
-    for result in cluster.build_results:
-        for resource in result.resources:
+    for resources in cluster.rendered_resources.values():
+        for resource in resources:
             if isinstance(resource, ImageRepositoryResource):
-                image_repos.add(resource.name)
+                image_repos.add(f"{resource.namespace}/{resource.name}")
             elif isinstance(resource, ReceiverResource):
                 webhook_repos.update(
-                    ref.name for ref in resource.spec.resources if ref.kind == "ImageRepository" and ref.name
+                    f"{ref.namespace or resource.namespace}/{ref.name}"
+                    for ref in resource.spec.resources
+                    if ref.kind == "ImageRepository" and ref.name
                 )
 
     return [
@@ -65,58 +63,36 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
 
 
 def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
-    """Every `$imagepolicy` setter marker names an ImagePolicy that exists.
-
-    The marker is a YAML *comment*, so it survives into none of the parsed resources and
-    nothing else here can see it: a typo'd or renamed policy name leaves the marker inert,
-    Flux silently stops updating that image, and the deployment freezes on whatever tag it
-    last had. That reads as "this image just isn't being rebuilt" — which is how
-    `claude-iron-deployment.yaml` sat un-updated (PR #3882).
-
-    Matched by regex over the source text rather than by parsing, deliberately: the
-    Authentik blueprints' custom `!Find`/`!Env` tags choke a YAML walk of this tree.
+    """Validate files Flux rewrites. A stale setter silently freezes the image (#3882).
+    A nonempty flow mapping anywhere in the file makes Flux and Prettier alternate its
+    spacing, breaking CI after image automation commits directly to devel.
     """
     policies = {
         f"{resource.namespace}:{resource.name}"
-        for result in cluster.build_results
-        for resource in result.resources
+        for resources in cluster.rendered_resources.values()
+        for resource in resources
         if isinstance(resource, ImagePolicyResource)
     }
 
-    return [
-        f"{path.relative_to(k8s_dir)} has an $imagepolicy marker for '{ref}', but no such "
-        "ImagePolicy is defined under cluster/k8s. Flux will silently never update this image."
-        for path in sorted(k8s_dir.rglob("*.yaml"))
-        for ref in _IMAGE_POLICY_MARKER.findall(path.read_text())
-        # A marker may name a field (`namespace:name:tag`); the policy is the first two parts.
-        if ":".join(ref.split(":")[:2]) not in policies
-    ]
-
-
-def check_no_flow_mappings_where_flux_writes(k8s_dir: Path) -> list[str]:
-    """A file Flux rewrites must not contain a flow mapping, because Flux will reformat it.
-
-    `ImageUpdateAutomation` re-serialises the **whole document** when it sets a tag, and its
-    emitter writes `{a: 1}` where prettier writes `{ a: 1 }`. So a flow mapping anywhere in a
-    marked file is a delayed-action formatting failure: the rewrite lands on `devel` as
-    `chore: update images [skip ci]` — no PR, no CI — and the next thing to run prettier over
-    the tree fails. That is the whole-tree `Pre-commit checks` job, so it fails on **every open
-    PR at once**, none of which touched the file.
-
-    Reformatting it back is not a fix; the next image update strips the spaces again. This
-    caught `public-coder-agent` three times on 2026-08-16 before the rule was enforced rather
-    than written down (`cluster/AGENTS.md` § Container Images).
-
-    Source text rather than parsed resources, for the same reason as
-    `check_image_policy_markers`: the marker is a comment, so only the file can be asked.
-    """
-    return [
-        f"{path.relative_to(k8s_dir)}:{number} has a YAML flow mapping and an $imagepolicy "
-        "marker. Flux re-serialises the whole file when it updates the tag and will write it "
-        "without prettier's inner spaces, failing pre-commit on every open PR. Use block style."
-        for path in sorted(k8s_dir.rglob("*.yaml"))
-        if _IMAGE_POLICY_MARKER.search(text := path.read_text())
-        for number, line in enumerate(text.splitlines(), start=1)
-        # The marker is itself a comment containing braces; it is not what Flux reformats.
-        if _FLOW_MAPPING.search(_IMAGE_POLICY_MARKER.sub("", line))
-    ]
+    errors: list[str] = []
+    for path in sorted(k8s_dir.rglob("*.yaml")):
+        text = path.read_text()
+        # Setters are YAML comments. Only scan YAML tokens in files containing a setter.
+        if not (refs := _IMAGE_POLICY_MARKER.findall(text)):
+            continue
+        relative = path.relative_to(k8s_dir)
+        errors.extend(
+            f"{relative} has an $imagepolicy marker for '{ref}', but no such "
+            "ImagePolicy is defined under cluster/k8s. Flux will silently never update this image."
+            for ref in refs
+            # A field-scoped setter has a third component such as ":tag".
+            if ":".join(ref.split(":")[:2]) not in policies
+        )
+        for opening, following in pairwise(yaml.scan(text, Loader=yaml.CSafeLoader)):
+            if isinstance(opening, FlowMappingStartToken) and not isinstance(following, FlowMappingEndToken):
+                errors.append(
+                    f"{relative}:{opening.start_mark.line + 1} has a YAML flow mapping and an $imagepolicy "
+                    "marker. Flux re-serialises the whole file when it updates the tag and will write it "
+                    "without prettier's inner spaces, failing pre-commit on every open PR. Use block style."
+                )
+    return errors

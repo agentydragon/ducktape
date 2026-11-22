@@ -614,6 +614,18 @@ async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None
 
 
 @DESKTOP_AND_MOBILE
+async def test_session_legacy_input_status(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.REMEMBER_LEGACY_INPUT)
+    await app.mount_thread(RUNNING_THREAD)
+    row = view.page.locator('[data-command-id="legacy-input"]')
+    await expect(row).to_contain_text("Dispatcher could not verify the stored command")
+    action = row.get_by_role("button", name="Check status")
+    await action.scroll_into_view_if_needed()
+    await expect(action).to_be_in_viewport(ratio=1)
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
 async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.PENDING_INPUT_ECHO)
     await app.build(Scene.REMEMBER_INPUT_ECHO)
@@ -629,15 +641,29 @@ async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixtu
 
 
 @DESKTOP_AND_MOBILE
-async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.COMMAND_ADMISSION_TIMED_OUT)
+@pytest.mark.parametrize(
+    ("flag", "stage", "summary", "reason"),
+    [
+        (Flag.COMMAND_ADMISSION_TIMED_OUT, "unconfirmed", "Dispatcher receipt unconfirmed", "deadline exceeded"),
+        (Flag.COMMAND_SUBMISSION_REFUSED, "refused", "Command refused", "Permission denied by Dispatcher"),
+    ],
+    ids=["unconfirmed", "refused"],
+)
+async def test_session_pending_failed(
+    view: VisualPage, app: AgentplaneFixture, flag: Flag, stage: str, summary: str, reason: str
+) -> None:
+    await app.set_flag(flag)
     await app.build(Scene.PENDING_COMMANDS)
     await app.build(Scene.REMEMBER_PENDING_INPUT)
     await app.mount_thread(RUNNING_THREAD)
-    await view.page.wait_for_selector('[data-stage="unconfirmed"]', state="attached")
+    outcome = view.page.locator(f'[data-stage="{stage}"]')
+    await expect(outcome).to_contain_text(summary)
+    await expect(outcome).to_contain_text(reason)
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
     await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="local"]', state="attached")
     await view.page.locator(".transcript-user-message-aside").get_by_role("button", name="Retry").wait_for()
+    await outcome.scroll_into_view_if_needed()
+    await expect(outcome).to_be_in_viewport(ratio=1)
     await view.capture()
 
 

@@ -5,14 +5,7 @@ import { Link, useLocation } from "react-router";
 
 import { JsonBlock } from "../ui/text_block";
 import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
-import {
-  actionCompactCardExpands,
-  actionOffersCardDecisionButtons,
-  renderActionLabel,
-  renderPaneCollapsed,
-  renderPaneOpened,
-  shouldRenderPaneRequestTitle,
-} from "./rendering/index";
+import { useActionRendering } from "./rendering/dispatch";
 import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionIdentity } from "./presentation";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
@@ -58,6 +51,7 @@ export function PendingActionList({
   pending: readonly ActionRequest[];
   onNavigate?: () => void;
 }): JSX.Element | null {
+  const rendering = useActionRendering();
   const actions = useContext(ActionRequestsContext);
   const location = useLocation();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -67,22 +61,23 @@ export function PendingActionList({
       {pending.map((request) => {
         const action = actionIdentity(request);
         const args = actionArguments(request);
-        const expands = actionCompactCardExpands(action, args);
+        const expands = rendering.actionCompactCardExpands(action, args);
         const expanded = expands && expandedId === request.id;
         // A card without an expanded version shows all it has at once.
         const unclamped = expanded || !expands;
-        const actionLabel = renderActionLabel(action, args);
-        const collapsedPreview = renderPaneCollapsed(action, args, request.id);
-        const openedPreview = renderPaneOpened(action, args, request.id);
-        const showRequestTitle = shouldRenderPaneRequestTitle(action, args, request.title);
-        const decision = actionOffersCardDecisionButtons(action, args) ? (
+        const actionLabel = rendering.renderActionLabel(action, args, request.id);
+        const collapsedPreview = rendering.renderPaneCollapsed(action, args, request.id);
+        const openedPreview = rendering.renderPaneOpened(action, args, request.id);
+        const showRequestTitle = rendering.shouldRenderRequestTitle(action, args, request.title, actionLabel);
+        const buttons = (
           <ActionDecisionButtons
             size="xs"
             deciding={actions.deciding === request.id}
             title={request.title}
             onDecide={(verdict) => actions.decide(request, verdict)}
           />
-        ) : null;
+        );
+        const decision = rendering.actionOffersCardDecisionButtons(action, args) ? buttons : null;
         const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
         const navigationState = {
           returnTo: {
@@ -93,9 +88,7 @@ export function PendingActionList({
         };
 
         const summary = (
-          <div
-            className={`agentplane-actions-sidebar-request-label${unclamped ? " is-unclamped" : ""}${decision === null ? "" : " offers-card-decision"}`}
-          >
+          <div className={`agentplane-actions-sidebar-request-label${unclamped ? " is-unclamped" : ""}`}>
             <div className="agentplane-actions-sidebar-name">
               {actionLabel === undefined ? `${action.group} / ${action.name}` : actionLabel}
             </div>
@@ -113,19 +106,19 @@ export function PendingActionList({
         return (
           <div className="agentplane-actions-sidebar-request" key={request.id}>
             <div className="agentplane-actions-sidebar-request-heading">
-              {expands ? (
-                <UnstyledButton
-                  className="agentplane-actions-sidebar-summary agentplane-actions-sidebar-expand"
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
-                  aria-expanded={expanded}
-                  onClick={() => setExpandedId(expanded ? null : request.id)}
-                >
-                  {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                  {summary}
-                </UnstyledButton>
-              ) : (
-                <div className="agentplane-actions-sidebar-summary is-static">{summary}</div>
-              )}
+              <div className="agentplane-actions-sidebar-summary">
+                {expands && (
+                  <UnstyledButton
+                    className="agentplane-actions-sidebar-expand"
+                    aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedId(expanded ? null : request.id)}
+                  >
+                    {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  </UnstyledButton>
+                )}
+                {summary}
+              </div>
               <Tooltip label="View full details" withArrow>
                 <Link
                   className="agentplane-actions-sidebar-details"
@@ -138,7 +131,21 @@ export function PendingActionList({
                 </Link>
               </Tooltip>
             </div>
-            {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
+            {!expanded &&
+              (decision !== null ? (
+                <div className="agentplane-actions-sidebar-decision">{decision}</div>
+              ) : (
+                rendering.renderLiveCardDecision(
+                  action,
+                  {
+                    args,
+                    requestId: request.id,
+                    buttons: <div className="agentplane-actions-sidebar-decision">{buttons}</div>,
+                    fallback: null,
+                  },
+                  false
+                )
+              ))}
             {expanded && (
               <Stack className="agentplane-actions-sidebar-preview" gap="xs" data-operation-density="compact">
                 {openedPreview === undefined ? (
@@ -152,11 +159,21 @@ export function PendingActionList({
                   openedPreview
                 )}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
-                  {decision ?? (
-                    <Text size="xs" c="dimmed">
-                      Decisions require full review.
-                    </Text>
-                  )}
+                  {decision ??
+                    rendering.renderLiveCardDecision(
+                      action,
+                      {
+                        args,
+                        requestId: request.id,
+                        buttons,
+                        fallback: (
+                          <Text size="xs" c="dimmed">
+                            Decisions require full review.
+                          </Text>
+                        ),
+                      },
+                      true
+                    )}
                   <Tooltip label="View full details" withArrow>
                     <Link
                       className="agentplane-actions-sidebar-details"

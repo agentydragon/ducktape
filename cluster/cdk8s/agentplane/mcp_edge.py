@@ -25,7 +25,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from agentplane.crd_group import GROUP
 from agentplane.mcp_edge.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ClientTLS, ServerTLSListener
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ServerTLSListener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -78,7 +78,6 @@ class McpEdge(Construct):
         self.tls = tls_service(env.namespace)
         props = env.mcp_edge
 
-        settings_name = f"{NAME}-settings"
         variables = {DATABASE_URL_ENV: database_url}
         workload = add_service_workload(
             self,
@@ -102,14 +101,6 @@ class McpEdge(Construct):
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
-            annotations={
-                "configmap.reloader.stakater.com/reload": settings_name,
-                **(
-                    {"secret.reloader.stakater.com/reload": props.oauth_secret_name}
-                    if props.oauth_secret_name is not None
-                    else {}
-                ),
-            },
         )
         if props.oauth_secret_name is not None:
             oauth_secret = Secret.from_secret_name(self, "oauth-secret", props.oauth_secret_name)
@@ -124,9 +115,6 @@ class McpEdge(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=MCP_EDGE_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         settings_contract = Settings(
             rpc_tls=ServerTLSListener(
                 listen=f"0.0.0.0:{self.tls.pod_port}",
@@ -135,14 +123,8 @@ class McpEdge(Construct):
                 client_ca_file=Path(serving_tls.ca_file),
             ),
             operator_services=[APP_URI],
-            actions_tls=ClientTLS(
-                ca_file=Path(serving_tls.ca_file),
-                server_uri=ACTIONS_URI,
-                cert_file=Path(serving_tls.cert_file),
-                key_file=Path(serving_tls.key_file),
-                client_uri=MCP_EDGE_URI,
-            ),
-            actions_target=f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            actions_tls=serving_tls.client_tls(ACTIONS_URI, client_uri=MCP_EDGE_URI),
+            actions_target=actions.service(env.namespace).authority,
             policy_namespace=env.namespace,
             actions_token_file=None,
             oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
@@ -153,7 +135,7 @@ class McpEdge(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             content=yaml_config(settings_contract),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )

@@ -34,7 +34,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import kustomize_kustomization
@@ -241,7 +241,12 @@ def household_chart(app: App, *, household: str) -> Chart:
     namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO)
     _server(chart, namespace)
     volume_claim(
-        chart, "config-claim", name=_CONFIG_CLAIM, namespace=namespace, storage_class="piraeus-hdd-local", size="1Gi"
+        chart,
+        "config-claim",
+        name=_CONFIG_CLAIM,
+        namespace=namespace,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="1Gi",
     )
     k8s.KubeJob(
         chart,
@@ -292,7 +297,7 @@ def _backup(chart: Chart, namespace: str) -> None:
     name = _BACKUP
     # A direct copy of a live SQLite database can capture inconsistent writes.
     volume_claim(
-        chart, f"{name}-claim", name=name, namespace=namespace, storage_class="piraeus-ssd-2-autodiskful", size="2Gi"
+        chart, f"{name}-claim", name=name, namespace=namespace, storage_class=piraeus_storage.SSD_REPLICATED, size="2Gi"
     )
     ReplicationDestination(
         chart,

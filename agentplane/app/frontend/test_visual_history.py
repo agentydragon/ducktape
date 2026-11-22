@@ -13,6 +13,7 @@ from agentplane.app.frontend.testing.app import (
     SUSPENDED_THREAD,
     UNNAMED_THREAD,
     AgentplaneFixture,
+    Flag,
     Scene,
 )
 from agentplane.app.frontend.testing.visual_assertions import (
@@ -551,14 +552,11 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await expect(detail).to_be_in_viewport(ratio=1)
     await view.capture(name="detail")
     effort_row = page.locator('[data-command-id="progress-effort"]')
-    effort_indicator = effort_row.locator(".agentplane-command-progress-hit")
-    if viewport.has_touch:
-        await effort_indicator.tap()
-        await expect(effort_row.locator('[data-touch-open="true"]')).to_be_visible()
-    else:
-        await effort_indicator.hover()
-    await expect(effort_row.get_by_role("tooltip")).to_be_visible()
-    await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
+    effort_failure = effort_row.get_by_role("alert")
+    await expect(effort_failure).to_have_text("Failed: Not supported by harness")
+    await expect(effort_failure).to_be_visible()
+    await effort_row.scroll_into_view_if_needed()
+    await expect(effort_failure).to_be_in_viewport(ratio=1)
     await view.capture(name="effort_detail")
     applied_input = page.locator('[data-command-id="progress-applied-input"]')
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
@@ -601,19 +599,120 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await view.capture()
 
 
-async def test_dispatcher_reports_why_a_sandbox_wake_failed(view: VisualPage, app: AgentplaneFixture) -> None:
+@DESKTOP_AND_MOBILE
+async def test_dispatch_watch_interruption_and_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.remember_dispatch()
+    await app.set_flag(Flag.DISPATCH_WATCH_UNAVAILABLE)
+    await app.mount_thread(RUNNING_THREAD)
+    page = view.page
+    alert = page.get_by_role("alert").filter(has_text="Command delivery updates disconnected")
+    queued = page.locator('[data-command-id="queued-dispatch"] [data-stage="queued"]')
+    await expect(alert).to_contain_text("Queued or delivering states may be out of date")
+    await expect(alert).to_contain_text("Dispatcher temporarily unavailable")
+    await expect(queued).to_be_visible()
+    await view.capture(name="dispatch_watch_disconnected")
+
+    await app.set_flag(Flag.DISPATCH_WATCH_UNAVAILABLE, on=False)
+    await expect(alert).to_have_count(0)
+    await expect(queued).to_be_visible()
+    await view.capture(name="dispatch_watch_recovered")
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_workset(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.DISPATCH_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    panel = view.page.get_by_role("region", name="Dispatcher delivery")
+    await expect(panel).to_contain_text("Send message · Queued in Dispatcher")
+    await expect(panel).to_contain_text("Model change · Outcome unknown")
+    await expect(panel).to_contain_text("Turn interrupt · Cancelled before delivery")
+    await expect(panel.get_by_role("button", name="Older delivery issues")).to_be_visible()
+    await panel.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="workset", target=panel)
+
+    await panel.get_by_role("button", name="Show full reason").click()
+    await expect(panel).to_contain_text("disconnected execution stream.")
+    await expect(panel.get_by_role("button", name="Show full reason")).to_have_count(0)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="workset_full_reason", target=panel)
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_notice_acknowledgement(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.VERSIONED_DISPATCH_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    panel = view.page.get_by_role("region", name="Dispatcher delivery")
+    unknown = panel.locator('[data-dispatch-command-id="5034baaf-0000-4000-8000-000000000001"]')
+    await expect(unknown).to_contain_text("Model change · Outcome unknown")
+    await expect(panel).to_contain_text("Reasoning effort change · Delivery failed")
+    acknowledge = unknown.get_by_role("button", name="Acknowledge delivery issue", exact=False)
+    await acknowledge.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issues", target=panel)
+    await acknowledge.click()
+    await expect(unknown).to_have_count(0)
+    await expect(panel).to_contain_text("Reasoning effort change · Delivery failed")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issue_acknowledged", target=panel)
+
+    older_issues = panel.get_by_role("button", name="Older delivery issues")
+    await older_issues.focus()
+    await older_issues.press("Enter")
+    history = view.page.get_by_role("dialog", name="Delivery history")
+    await expect(history.get_by_role("tab", name="Retained receipts")).to_have_attribute("aria-selected", "true")
+    await history.get_by_role("tab", name="Acknowledged").click()
+    await expect(history).to_contain_text("Model change · Outcome unknown")
+    await history.get_by_role("button", name="Show full reason").click()
+    await expect(history).to_contain_text("disconnected execution stream.")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issue_history", target=history)
+
+
+@DESKTOP_AND_MOBILE
+async def test_acknowledge_saved_issue_outside_workset(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.SAVED_DELIVERY_ISSUE_OUTSIDE_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    local = view.page.locator('[data-command-id="73343335-0000-4000-8000-000000000001"]')
+    await expect(local).to_contain_text("Please keep the original text.")
+    acknowledge = local.get_by_role("button", name="Acknowledge delivery issue", exact=False)
+    await expect(acknowledge).to_be_visible()
+    await local.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="saved_delivery_issue", target=local)
+    await acknowledge.click()
+    await expect(local).to_have_count(0)
+
+    await view.page.get_by_role("button", name="More").click()
+    await view.page.get_by_role("menuitem", name="Delivery history", exact=True).click()
+    history = view.page.get_by_role("dialog", name="Delivery history")
+    await history.get_by_role("tab", name="Acknowledged").click()
+    await expect(history).to_contain_text("Dispatcher could not deliver the saved input.")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="acknowledged_saved_issue", target=history)
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.PENDING_COMMANDS)
-    await app.remember_failed_dispatch()
+    await app.remember_failed_and_unknown_dispatches()
     await app.mount_thread(RUNNING_THREAD)
     await view.check(context="fixture ready")
     row = view.page.locator('[data-command-id="wake-deadline-dispatch"]')
-    await expect(row.locator('[data-stage="dispatch_failed"]')).to_be_visible()
-    await row.locator(".agentplane-command-progress-hit").hover()
-    tooltip = row.get_by_role("tooltip")
-    await expect(tooltip).to_be_visible()
-    await expect(tooltip).to_contain_text("Sandbox did not become Ready within 10 minutes")
-    await expect(tooltip).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
-    await expect(tooltip).to_be_in_viewport(ratio=1)
+    failure = row.get_by_role("alert")
+    await expect(failure).to_be_visible()
+    await expect(failure).to_contain_text("Sandbox did not become Ready within 10 minutes")
+    await expect(failure).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
+    await row.scroll_into_view_if_needed()
+    await expect(failure).to_be_in_viewport(ratio=1)
+    await view.capture(name="failed")
+    unknown = view.page.locator('[data-command-id="unknown-dispatch"]')
+    status = unknown.get_by_role("status")
+    await expect(status).to_have_text("Outcome unknown: Connection to the runner closed before it returned a receipt")
+    await expect(unknown.get_by_role("alert")).to_have_count(0)
+    await expect(status).to_be_visible()
+    await unknown.scroll_into_view_if_needed()
+    await expect(status).to_be_in_viewport(ratio=1)
     await view.capture()
 
 

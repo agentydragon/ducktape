@@ -1,6 +1,16 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "health",
+    srcs = ["health.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/cnpg:database",
+        "//cluster/cdk8s/providers/flux:kustomization",
+    ],
+)
 
 py_library(
     name = "cluster",
@@ -8,11 +18,29 @@ py_library(
     visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:database",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_cluster",
+    srcs = ["test_cluster.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":cluster",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/providers/cnpg:database",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -24,6 +52,7 @@ py_library(
         ":cluster",
         "//cluster/cdk8s/providers/cnpg:objectstore",
         "//cluster/cdk8s/providers/cnpg:scheduledbackup",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//constructs",

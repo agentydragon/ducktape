@@ -11,7 +11,6 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
@@ -36,16 +35,3 @@ def chart(app: App) -> Chart:
     for secret in (CLAUDE_READER_SECRET, DRIVEFS_ARTIFACTS_SECRET):
         s3.secret_grant(chart, secret=secret, namespace=NAMESPACE)
     return chart
-
-
-def seaweedfs_external_credentials(
-    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "seaweedfs-external-credentials",
-        directory,
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator),
-        timeout="5m",
-        description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
-    )

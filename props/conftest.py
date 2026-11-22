@@ -19,9 +19,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_configure(config: pytest.Config) -> None:
+def pytest_configure() -> None:
     """Configure tracing and the agent password salt."""
-    configure_tracing(config)
+    configure_tracing()
 
     # Agent DB passwords derive from PROPS_AGENT_PASSWORD_SALT, which is required
     # in production (no insecure default). Provide a fixed value for tests; set it

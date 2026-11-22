@@ -7,7 +7,7 @@ Preset and standing-account role grants plus retained cleanup scopes determine t
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 
@@ -25,38 +25,29 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 
 
-def _role_binding_grants(assignable_grants: Sequence[KubernetesGrant]) -> tuple[RoleBindingGrant, ...]:
-    return tuple(grant for grant in assignable_grants if isinstance(grant, RoleBindingGrant))
-
-
-def external_scopes(env: Environment, assignable_grants: Sequence[KubernetesGrant]) -> tuple[str, ...]:
-    """Keep delegation scopes for old bindings after their assignable grant is removed."""
-    scopes = {
-        grant.namespace for grant in _role_binding_grants(assignable_grants)
-    } | env.kubernetes_binding_cleanup_namespaces
-    return tuple(sorted(scopes - {env.namespace}))
+def external_charts(
+    env: Environment, assignable_grants: Sequence[KubernetesGrant]
+) -> dict[str, Callable[[App], Chart]]:
+    """One chart per external namespace, including cleanup scopes that no longer grant any Roles."""
+    roles: dict[str, set[str]] = {namespace: set() for namespace in env.kubernetes_binding_cleanup_namespaces}
+    for grant in assignable_grants:
+        if isinstance(grant, RoleBindingGrant):
+            names = roles.setdefault(grant.namespace, set())
+            if grant.role_ref.kind == "Role":
+                names.add(grant.role_ref.name)
+    return {
+        namespace: partial(_chart, env=env, target_namespace=namespace, role_names=sorted(roles[namespace]))
+        for namespace in sorted(roles.keys() - {env.namespace})
+    }
 
 
 def directory(env: Environment, target_namespace: str) -> str:
     return f"{GENERATED_ROOT}/agentplane/binding-delegation/{env.namespace}/{target_namespace}"
 
 
-def _role_name(env: Environment) -> str:
-    return f"{env.namespace}-external-bindings"
-
-
-def chart(app: App, env: Environment, target_namespace: str, assignable_grants: Sequence[KubernetesGrant]) -> Chart:
-    if target_namespace not in external_scopes(env, assignable_grants):
-        raise ValueError(f"{target_namespace!r} is not an external managed binding scope")
+def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequence[str]) -> Chart:
     scope = Chart(app, f"{env.namespace}-binding-delegation-{target_namespace}", disable_resource_name_hashes=True)
-    role_name = _role_name(env)
-    role_names = sorted(
-        {
-            grant.role_ref.name
-            for grant in _role_binding_grants(assignable_grants)
-            if grant.namespace == target_namespace and grant.role_ref.kind == "Role"
-        }
-    )
+    role_name = f"{env.namespace}-external-bindings"
     k8s.KubeRole(
         scope,
         "role",
@@ -83,44 +74,35 @@ def chart(app: App, env: Environment, target_namespace: str, assignable_grants: 
     return scope
 
 
-def write_manifests(root: Path, env: Environment, assignable_grants: Sequence[KubernetesGrant]) -> None:
-    for target_namespace in external_scopes(env, assignable_grants):
+def write_manifests(root: Path, env: Environment, charts: Mapping[str, Callable[[App], Chart]]) -> None:
+    for target_namespace, build in charts.items():
         output_dir = directory(env, target_namespace)
-        manifest = write_charts(
-            root,
-            output_dir,
-            partial(chart, env=env, target_namespace=target_namespace, assignable_grants=assignable_grants),
-        )
+        manifest = write_charts(root, output_dir, build)
         write_yaml(root / output_dir / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
 
 
 def add_flux_kustomizations(
     flux_chart: Chart,
     env: Environment,
-    target_dependencies: Mapping[str, Kustomization | None],
-    assignable_grants: Sequence[KubernetesGrant],
+    target_dependencies: Mapping[str, Kustomization],
+    target_namespaces: Iterable[str],
 ) -> None:
     """Each target owner gates its delegation; bootstrap roots have no generated owner."""
-    scopes = external_scopes(env, assignable_grants)
-    if missing := set(scopes) - target_dependencies.keys():
-        raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    bootstrap_scopes = {"flux-system", "ducktape-flux"}
-    if missing := {scope for scope in scopes if scope not in bootstrap_scopes and target_dependencies[scope] is None}:
-        raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    if unexpected := {
-        scope for scope in scopes if scope in bootstrap_scopes and target_dependencies[scope] is not None
-    }:
-        raise ValueError(f"bootstrap namespaces have no generated Flux dependency: {sorted(unexpected)}")
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
     )
-    for target_namespace in scopes:
-        dependency = target_dependencies[target_namespace]
+    for target_namespace in target_namespaces:
+        # Bootstrap creates these namespaces before the generated owners reconcile.
+        depends_on = (
+            None
+            if target_namespace in {"ducktape-flux", "flux-system"}
+            else [flux_kustomization_depends_on(target_dependencies[target_namespace])]
+        )
         flux_kustomization(
             flux_chart,
             f"{env.namespace}-binding-delegation-{target_namespace}",
             source,
             path=f"./{directory(env, target_namespace)}",
-            depends_on=[flux_kustomization_depends_on(dependency)] if dependency is not None else None,
+            depends_on=depends_on,
             description=f"Delegates managed RoleBinding reconciliation in {target_namespace}.",
         )

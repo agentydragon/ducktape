@@ -61,16 +61,17 @@ def _probe_ca_files(container: Body) -> Iterator[str]:
 
 
 def _bundle(volume: Body, file: str) -> str:
-    """The ConfigMap a mounted volume serves `file` from."""
-    if "configMap" in volume:
-        return str(volume["configMap"]["name"])
-    return str(
-        one(
-            source["configMap"]["name"]
-            for source in volume["projected"]["sources"]
-            if "configMap" in source and any(item["path"] == file for item in source["configMap"].get("items", []))
-        )
+    """Resolve the CA filename to the ConfigMap and key that supply it."""
+    sources = volume["projected"]["sources"] if "projected" in volume else [volume]
+    name, key = one(
+        (config["name"], item["key"])
+        for source in sources
+        if (config := source.get("configMap"))
+        for item in config.get("items", [{"key": cluster_ca.BUNDLE_KEY, "path": cluster_ca.BUNDLE_KEY}])
+        if item["path"] == file
     )
+    assert key == cluster_ca.BUNDLE_KEY, (name, key, file)
+    return str(name)
 
 
 def _container_trust(container: Body, volumes: Mapping[str, Body], config_maps: Mapping[str, Body]) -> set[str]:
@@ -125,40 +126,93 @@ def test_every_deployment_verifies_agentplane_svids_against_the_workload_ca_alon
     assert {name: bundles for name, bundles in trust.items() if bundles != {cluster_ca.WORKLOAD_BUNDLE}} == {}
 
 
-def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(staging_manifests: list[Body]) -> None:
-    pod = find_resource(staging_manifests, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
-    container = one(pod["containers"])
+def _service_container(documents: list[Body], name: str) -> tuple[Body, dict[PurePosixPath, Body]]:
+    pod = find_resource(documents, "Deployment", name, namespace=staging.ENV.namespace)["spec"]["template"]["spec"]
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
-    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    settings = yaml.safe_load(one(find_resource(staging_manifests, "ConfigMap", "mcp-edge-settings")["data"].values()))
+    container = one(pod["containers"])
+    return container, {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+
+
+def _assert_mounted_tls(
+    documents: list[Body], mounts: dict[PurePosixPath, Body], tls: Body, uri: str, *, ca_field: str = "ca_file"
+) -> None:
+    secrets = set()
+    for field, key in (("cert_file", "tls.crt"), ("key_file", "tls.key")):
+        path = PurePosixPath(tls[field])
+        directory = max((root for root in mounts if root in path.parents), key=lambda root: len(root.parts))
+        volume = mounts[directory]["secret"]
+        relative = str(path.relative_to(directory))
+        if "items" in volume:
+            assert one(item for item in volume["items"] if item["path"] == relative)["key"] == key
+        else:
+            assert relative == key
+        secrets.add(volume["secretName"])
+    secret = one(secrets)
+    cert = one(
+        doc
+        for doc in documents
+        if doc["kind"] == "Certificate"
+        and doc["metadata"]["namespace"] == staging.ENV.namespace
+        and doc["spec"]["secretName"] == secret
+    )
+    assert cert["spec"]["uris"] == [uri]
+    ca = PurePosixPath(tls[ca_field])
+    assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
+
+
+def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(staging_manifests: list[Body]) -> None:
+    container, mounts = _service_container(staging_manifests, "mcp-edge")
+    settings = config_map_yaml(staging_manifests, "mcp-edge-settings", "settings.yaml")
     tls = settings["rpc_tls"]
     assert settings["operator_services"] == [APP_URI]
-    for field in ("cert_file", "key_file"):
-        path = PurePosixPath(tls[field])
-        secret_name = mounts[path.parent]["secret"]["secretName"]
-        certificate = one(
-            doc
-            for doc in staging_manifests
-            if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
-        )
-        assert certificate["spec"]["uris"] == [MCP_EDGE_URI]
-    ca = PurePosixPath(tls["client_ca_file"])
-    assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
-    port = int(tls["listen"].rsplit(":", 1)[1])
-    assert any(p["containerPort"] == port for p in container["ports"])
-    assert any(
-        p["targetPort"] == port for p in find_resource(staging_manifests, "Service", "mcp-edge")["spec"]["ports"]
+    _assert_mounted_tls(staging_manifests, mounts, tls, MCP_EDGE_URI, ca_field="client_ca_file")
+    tls_port = int(tls["listen"].rsplit(":", 1)[1])
+    listeners = {"http": settings["http_port"], "grpc-tls": tls_port}
+    service = find_resource(staging_manifests, "Service", "mcp-edge")
+    assert {p["name"]: p["targetPort"] for p in service["spec"]["ports"]} == listeners
+    assert {p["name"]: p["containerPort"] for p in container["ports"]} == listeners
+
+    # Gateway and scrape traffic may reach HTTP. Only the staging App may reach TLS.
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "mcp-edge")["spec"]
+    app_peer = {
+        "matchLabels": {"app.kubernetes.io/name": "app", "k8s:io.kubernetes.pod.namespace": staging.ENV.namespace}
+    }
+    http_ports = [{"ports": [{"port": str(settings["http_port"]), "protocol": "TCP"}]}]
+    ingress = policy["ingress"]
+    assert any(rule.get("toPorts") == http_ports for rule in ingress)
+    assert [rule for rule in ingress if rule.get("toPorts") != http_ports] == [
+        {"fromEndpoints": [app_peer], "toPorts": [{"ports": [{"port": str(tls_port), "protocol": "TCP"}]}]}
+    ]
+
+
+def test_policy_service_exposes_its_tls_listener_to_the_app(staging_manifests: list[Body]) -> None:
+    container, mounts = _service_container(staging_manifests, "policy-controller")
+    settings = config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml")
+    tls = settings["grpc_tls"]
+    assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
+    _assert_mounted_tls(staging_manifests, mounts, tls, POLICY_CONTROLLER_URI, ca_field="client_ca_file")
+
+    tls_port = int(tls["listen"].removeprefix(":"))
+    metrics = int(settings["metrics_bind_address"].removeprefix(":"))
+    health = int(settings["health_probe_bind_address"].removeprefix(":"))
+    exposed = {"metrics": metrics, "grpc-tls": tls_port}
+    assert {p["name"]: p["containerPort"] for p in container["ports"]} == {**exposed, "health": health}
+    service = find_resource(staging_manifests, "Service", "policy-controller")
+    assert {p["name"]: p["targetPort"] for p in service["spec"]["ports"]} == exposed
+    app = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    assert int(app["policy_service_target"].rsplit(":", 1)[1]) == one(
+        p["port"] for p in service["spec"]["ports"] if p["name"] == "grpc-tls"
     )
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "policy-controller")["spec"]
+    assert {p["port"] for rule in policy["ingress"] for group in rule["toPorts"] for p in group["ports"]} == {
+        str(metrics),
+        str(tls_port),
+    }
 
 
 def test_notifications_calls_backends_with_its_mounted_service_svid(staging_manifests: list[Body]) -> None:
-    pod = find_resource(staging_manifests, "Deployment", "notifications")["spec"]["template"]["spec"]
-    container = one(pod["containers"])
-    volumes = {volume["name"]: volume for volume in pod["volumes"]}
-    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    settings = yaml.safe_load(
-        one(find_resource(staging_manifests, "ConfigMap", "notifications-settings")["data"].values())
-    )
+    _, mounts = _service_container(staging_manifests, "notifications")
+    settings = config_map_yaml(staging_manifests, "notifications-settings", "settings.yaml")
     for peer, server_uri in {
         "actions": ACTIONS_URI,
         "history_service": HISTORY_SERVICE_URI,
@@ -167,24 +221,12 @@ def test_notifications_calls_backends_with_its_mounted_service_svid(staging_mani
         assert "token_file" not in settings[peer]
         tls = settings[peer]["tls"]
         assert tls["server_uri"] == server_uri
-        for field in ("cert_file", "key_file"):
-            path = PurePosixPath(tls[field])
-            secret_name = mounts[path.parent]["secret"]["secretName"]
-            certificate = one(
-                doc
-                for doc in staging_manifests
-                if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
-            )
-            assert certificate["spec"]["uris"] == [tls["client_uri"]] == [NOTIFICATIONS_URI]
-        ca = PurePosixPath(tls["ca_file"])
-        assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
+        assert tls["client_uri"] == NOTIFICATIONS_URI
+        _assert_mounted_tls(staging_manifests, mounts, tls, NOTIFICATIONS_URI)
 
 
 def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -> None:
-    pod = find_resource(staging_manifests, "Deployment", "app")["spec"]["template"]["spec"]
-    container = one(pod["containers"])
-    volumes = {volume["name"]: volume for volume in pod["volumes"]}
-    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+    _, mounts = _service_container(staging_manifests, "app")
     settings = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     for name, server_uri in (
         ("egress_admin", EGRESS_PROXY_URI),
@@ -200,17 +242,7 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
         assert tls["server_uri"] == server_uri
         assert tls["client_uri"] == APP_URI
         assert f"{name}_token_file" not in settings
-        for field in ("cert_file", "key_file"):
-            path = PurePosixPath(tls[field])
-            secret_name = mounts[path.parent]["secret"]["secretName"]
-            certificate = one(
-                doc
-                for doc in staging_manifests
-                if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
-            )
-            assert certificate["spec"]["uris"] == [tls["client_uri"]]
-        ca = PurePosixPath(tls["ca_file"])
-        assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
+        _assert_mounted_tls(staging_manifests, mounts, tls, APP_URI)
 
     port = int(settings["connection_service_url"].rstrip("/").rsplit(":", 1)[1])
     edge_service = find_resource(staging_manifests, "Service", "mcp-edge")
@@ -311,27 +343,26 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
     ]
     assert {uri for certificate in certificates for uri in certificate["spec"]["uris"]} == service_uris
 
-    deployments = {
-        doc["metadata"]["name"]: doc["spec"]["template"]["spec"]
-        for doc in staging_manifests
-        if doc["kind"] == "Deployment"
-    }
+    mounted_secrets: set[tuple[str, str]] = set()
+    for deployment in (doc for doc in staging_manifests if doc["kind"] == "Deployment"):
+        pod = deployment["spec"]["template"]["spec"]
+        read_only = {
+            mount["name"]
+            for container in pod["containers"]
+            for mount in container.get("volumeMounts", [])
+            if mount.get("readOnly")
+        }
+        mounted_secrets.update(
+            (deployment["metadata"]["namespace"], volume["secret"]["secretName"])
+            for volume in pod.get("volumes", [])
+            if volume["name"] in read_only and "secret" in volume
+        )
+
     mounted_uris: set[str] = set()
-    # Several leaves may carry one service URI while replacement credentials are
-    # prepared. Check all usages without letting an unused leaf hide a mounted one.
+    # Several leaves may carry one service URI while replacement credentials are prepared.
     for certificate in certificates:
         assert {"digital signature", "client auth", "server auth"} <= set(certificate["spec"]["usages"])
-        secret_name = certificate["spec"]["secretName"]
-        if any(
-            volume.get("secret", {}).get("secretName") == secret_name
-            and any(
-                mount["name"] == volume["name"] and mount["readOnly"]
-                for container in pod["containers"]
-                for mount in container.get("volumeMounts", [])
-            )
-            for pod in deployments.values()
-            for volume in pod.get("volumes", [])
-        ):
+        if (certificate["metadata"]["namespace"], certificate["spec"]["secretName"]) in mounted_secrets:
             mounted_uris.update(certificate["spec"]["uris"])
     assert mounted_uris == service_uris, (
         f"Service URIs without a read-only mounted Certificate: {service_uris - mounted_uris}"

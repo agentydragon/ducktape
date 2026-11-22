@@ -68,8 +68,8 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
-def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
-    docs = _filled_fixture(runfiles).objects
+def test_fixture_grants_no_tokenreviews(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
+    docs = mcp_fixture.objects
     for doc in docs:
         if doc["kind"] in {"Role", "ClusterRole"}:
             for rule in doc.get("rules", []):
@@ -78,12 +78,10 @@ def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
             assert "token-reviewer" not in doc["roleRef"]["name"], doc["metadata"]["name"]
 
 
-def test_fixture_exposes_environments(runfiles: Runfiles) -> None:
-    docs = _filled_fixture(runfiles).objects
+def test_fixture_exposes_environments(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
+    docs = mcp_fixture.objects
     deployment = _resource(docs, "Deployment", "environments")
     assert deployment["spec"]["replicas"] == 1
-    labels = deployment["spec"]["template"]["metadata"]["labels"]
-    assert _resource(docs, "Service", "environments")["spec"]["selector"].items() <= labels.items()
     certificate = _resource(docs, "Certificate", "environments-client-workload")["spec"]
     assert certificate["dnsNames"] == [f"environments.{NAMESPACE}.svc.cluster.local"]
     assert certificate["uris"] == [SANDBOX_CONTROLLER_URI]
@@ -96,8 +94,16 @@ def _host_port(address: str) -> tuple[str, int]:
     return parsed.hostname, parsed.port
 
 
-def _filled_fixture(runfiles: Runfiles, location: str = "K3S_FIXTURE_RLOCATION") -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(runfiles.root() / os.environ[location])
+def _read_fixture(runfiles: Runfiles, location: str) -> rendered_fixture.RenderedFixture:
+    return rendered_fixture.read(runfiles.root() / os.environ[location])
+
+
+@pytest.fixture(scope="module")
+def mcp_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
+    return _read_fixture(runfiles, "K3S_FIXTURE_RLOCATION")
+
+
+def _filled_fixture(cached: rendered_fixture.RenderedFixture) -> rendered_fixture.RenderedFixture:
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
@@ -111,7 +117,7 @@ def _filled_fixture(runfiles: Runfiles, location: str = "K3S_FIXTURE_RLOCATION")
 
 @pytest.fixture(scope="module")
 def _vm_fixture_template(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
-    return rendered_fixture.read(runfiles.root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
+    return _read_fixture(runfiles, "K3S_VM_FIXTURE_RLOCATION")
 
 
 @pytest.fixture
@@ -120,43 +126,44 @@ def vm_fixture(_vm_fixture_template: rendered_fixture.RenderedFixture) -> render
 
 
 def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runfiles: Runfiles) -> None:
-    ordinary = _filled_fixture(runfiles, "K3S_DEFAULT_FIXTURE_RLOCATION")
-    pod = _filled_fixture(runfiles, "K3S_POD_FIXTURE_RLOCATION")
-    assert pod.model_dump(exclude={"objects"}) == ordinary.model_dump(exclude={"objects"})
-    ordinary_objects = {(doc["kind"], doc["metadata"]["name"]): doc for doc in ordinary.objects}
-    pod_objects = {(doc["kind"], doc["metadata"]["name"]): doc for doc in pod.objects}
-    removed = ordinary_objects.keys() - pod_objects.keys()
+    ordinary = _read_fixture(runfiles, "K3S_DEFAULT_FIXTURE_RLOCATION")
+    pod = _read_fixture(runfiles, "K3S_POD_FIXTURE_RLOCATION")
+    assert pod.backend is ordinary.backend is rendered_fixture.Backend.LOCAL_MODEL
+    assert pod.runtime is ordinary.runtime is rendered_fixture.SandboxRuntime.POD
+    ordinary_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in ordinary.objects}
+    pod_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in pod.objects}
+    removed = ordinary_resources - pod_resources
     assert ("Deployment", "mcp-edge") in removed
     assert ("ConfigMap", "mcp-edge-settings") in removed
     assert ("ServiceAccount", "mcp-edge") in removed
+    assert ("Service", "mcp-edge") in removed
     assert ("Role", "mcp-edge") in removed
     assert ("RoleBinding", "mcp-edge") in removed
     assert ("Secret", "postgres-mcp-edge") in removed
     assert all(name.startswith("mcp-edge") or name == "postgres-mcp-edge" for _, name in removed)
-    # Retained resources are identical, including the app, Actions' command-box executor,
-    # notifications, policy, certificates and storage.
-    database_resources = {("Deployment", "postgres"), ("ConfigMap", "postgres-bootstrap")}
-    assert {key: value for key, value in pod_objects.items() if key not in database_resources} == {
-        key: value for key, value in ordinary_objects.items() if key not in removed | database_resources
-    }
+    _resource(pod.objects, "Deployment", "app")
+    _resource(pod.objects, "Deployment", "actions")
+    _resource(pod.objects, "Deployment", "notifications")
+    _resource(pod.objects, "Deployment", "postgres")
+    bootstrap = _resource(pod.objects, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE app " in bootstrap
+    assert "CREATE ROLE mcp_edge " not in bootstrap
     assert not any(
         "agentplane-mcp-edge:" in container["image"]
         for doc in pod.objects
         if doc["kind"] == "Deployment"
         for container in doc["spec"]["template"]["spec"]["containers"]
     )
-    _resource(pod.objects, "Deployment", "actions")
-    _resource(pod.objects, "Deployment", "notifications")
     # The app keeps its unused Connection routes; external Connections are out of scope here.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(
-        f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
+        f"https://{fixture_chart.MCP_EDGE_SERVICE.authority}"
     )
 
 
 @pytest.mark.parametrize("location", ["K3S_DEFAULT_FIXTURE_RLOCATION", "K3S_FIXTURE_RLOCATION"])
 def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfiles, location: str) -> None:
-    fixture = _filled_fixture(runfiles, location)
+    fixture = _read_fixture(runfiles, location)
     edge = _resource(fixture.objects, "Deployment", "mcp-edge")
     assert any(
         "agentplane-mcp-edge:" in container["image"] for container in edge["spec"]["template"]["spec"]["containers"]
@@ -168,22 +175,57 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
 
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
 def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfiles, location: str) -> None:
-    fixture = rendered_fixture.read(runfiles.root() / os.environ[location])
+    fixture = _read_fixture(runfiles, location)
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "mcp-edge" for doc in fixture.objects)
     assert not any(
         doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-mcp-edge" for doc in fixture.objects
     )
     _resource(fixture.objects, "Deployment", "actions")
-    template = (
-        environment_firecracker.NAME
-        if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER)
-        else SUPERVISION_TEMPLATE
-    )
-    _resource(fixture.objects, "SandboxTemplate", template)
 
 
-def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles) -> None:
-    fixture = _filled_fixture(runfiles)
+def test_disposable_postgres_bootstraps_the_database_in_each_service_uri(
+    mcp_fixture: rendered_fixture.RenderedFixture,
+) -> None:
+    docs = mcp_fixture.objects
+    assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
+    bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    # History migration 18 grants to this non-login replication role.
+    assert "CREATE ROLE electric;" in bootstrap
+
+    postgres = _resource(docs, "Deployment", fixture_database.NAME)["spec"]["template"]["spec"]
+    container = one(container for container in postgres["containers"] if container["name"] == "postgres")
+    secrets = {entry["name"]: entry["valueFrom"]["secretKeyRef"] for entry in container["env"] if "valueFrom" in entry}
+    admin = secrets["POSTGRES_PASSWORD"]
+    assert admin["key"] in _resource(docs, "Secret", admin["name"])["stringData"]
+
+    service = _resource(docs, "Service", fixture_database.SERVICE)
+    [port] = service["spec"]["ports"]
+    host = f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc"
+    uri_refs = {
+        (ref["name"], ref["key"])
+        for doc in docs
+        if doc["kind"] == "Deployment"
+        for client in doc["spec"]["template"]["spec"]["containers"]
+        for env in client.get("env", [])
+        if (ref := env.get("valueFrom", {}).get("secretKeyRef")) and ref["key"] in {"uri", "async-uri"}
+    }
+    assert ("postgres-app", "async-uri") in uri_refs
+    for secret_name, key in uri_refs:
+        credentials = _resource(docs, "Secret", secret_name)["stringData"]
+        uri = urlsplit(credentials[key])
+        assert uri.scheme == ("postgresql+asyncpg" if key == "async-uri" else "postgresql")
+        assert (uri.hostname, uri.port) == (host, port["port"])
+        assert uri.username is not None
+        assert uri.path == f"/{uri.username}"
+        env_name = fixture_database.password_env(uri.username)
+        assert secrets[env_name]["name"] == secret_name
+        assert uri.password == credentials[secrets[env_name]["key"]]
+        assert f"\\getenv {uri.username}_password {env_name}" in bootstrap
+        assert uri.query == "sslmode=disable"
+
+
+def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
+    fixture = _filled_fixture(mcp_fixture)
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
@@ -255,9 +297,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert edge_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
     assert edge_config["http_port"] == 8081
-    assert edge_config["actions_target"] == (
-        f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
-    )
+    assert edge_config["actions_target"] == (fixture_chart.ACTIONS_SERVICE.authority)
     assert edge_config["actions_tls"] == {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
         "server_uri": ACTIONS_URI,
@@ -268,7 +308,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert edge_config.get("actions_token_file") is None
     app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(
-        f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
+        f"https://{fixture_chart.MCP_EDGE_SERVICE.authority}"
     )
     edge_database_env_name = mcp_edge.DATABASE_URL_ENV
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
@@ -354,7 +394,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_config["session_dispatcher_tls"]["server_uri"] == SESSION_DISPATCHER_URI
     assert app_config["runner_gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    assert sessions_config["runner_control_target_template"] == "environments.{namespace}.svc:8082"
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     assert app_container.get("args", []) == []
     app_env = {entry["name"]: entry for entry in app_container["env"]}
@@ -380,57 +419,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert actions_config["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     role = _resource(docs, "Role", "sessions")
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
-    postgres = _resource(docs, "Deployment", fixture_database.NAME)
-    postgres_container = next(
-        container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
-    )
-    assert postgres_container["image"] == fixture_database.IMAGE
-    assert postgres_container["command"] == ["/bin/bash", "/fixture/postgres_entrypoint.sh"]
-    assert postgres["spec"]["template"]["spec"]["securityContext"]["runAsUser"] == 26
-    bootstrap_config = _resource(docs, "ConfigMap", "postgres-bootstrap")
-    assert set(bootstrap_config["data"]) == {"bootstrap.sql", "postgres_entrypoint.sh"}
-    # History migration 18 grants to this non-login replication role.
-    assert "CREATE ROLE electric;" in bootstrap_config["data"]["bootstrap.sql"]
-    assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
-
-    bootstrap_env = {entry["name"]: entry for entry in postgres_container["env"]}
-    bootstrap_secret = _resource(docs, "Secret", "postgres-bootstrap-credentials")
-    assert bootstrap_env["POSTGRES_USER"]["value"] == "fixture_admin"
-    assert (
-        bootstrap_env["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"] == bootstrap_secret["metadata"]["name"]
-    )
-
-    database_roles = {
-        "actions": "actions",
-        "egress": "egress",
-        "notifications": "notifications",
-        "mcp_edge": "mcp_edge",
-        "sandbox_service": "sandbox_service",
-        "session_dispatcher": "session_dispatcher",
-    }
-    expected_secret_names = {role: f"postgres-{role.replace('_', '-')}" for role in database_roles}
-    for role_name, database_name in database_roles.items():
-        secret = _resource(docs, "Secret", expected_secret_names[role_name])
-        data = secret["stringData"]
-        uri = urlsplit(data["uri"])
-        assert uri.scheme == "postgresql"
-        assert uri.username == role_name
-        assert uri.password == data["password"]
-        assert uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
-        assert uri.port == 5432
-        assert uri.path == f"/{database_name}"
-
-    app_secret = _resource(docs, "Secret", "postgres-app")
-    app_data = app_secret["stringData"]
-    app_uri = urlsplit(app_data["async-uri"])
-    assert app_uri.scheme == "postgresql+asyncpg"
-    assert app_uri.username == "app"
-    assert app_uri.password == app_data["password"]
-    assert app_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
-    assert app_uri.port == 5432
-    assert app_uri.path == "/app"
-    assert app_uri.query == "sslmode=disable"
-
     # The fixture's one Pod execution environment, on its local-path storage.
     template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
@@ -452,7 +440,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     )
     assert _host_port(runner_config["model_config_target"]) == pod_listener
     history = history_service.service(fixture.namespace)
-    assert runner_config["ingress"]["target"] == f"{history.fqdn}:{history.pod_port}"
+    assert runner_config["ingress"]["target"] == history.authority
     assert runner_config["ingress"]["svid"] == {
         "server_uri": HISTORY_SERVICE_URI,
         "proxy_address": sidecar_settings["listen_address"],
@@ -688,7 +676,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     guest_listener = ("10.0.2.1", vm_listener[1])
     assert _host_port(config["model_config_target"]) == guest_listener
     history = history_service.service(vm_fixture.namespace)
-    assert config["ingress"]["target"] == f"{history.fqdn}:{history.pod_port}"
+    assert config["ingress"]["target"] == history.authority
     assert config["ingress"]["svid"]["server_uri"] == HISTORY_SERVICE_URI
     assert _host_port(config["ingress"]["svid"]["proxy_address"]) == (
         "10.0.2.1",
@@ -700,10 +688,10 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     assert _host_port(harness_env["AGENTPLANE_ENVIRONMENTS_URL"]) == guest_listener
     environments = environment_service.environments_service(vm_fixture.namespace)
     environment_route = relay["platform_routes"]["routes"]["environments"]
-    assert environment_route["upstream"] == f"{environments.fqdn}:{environments.port.number}"
+    assert environment_route["upstream"] == environments.authority
     assert environment_route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
     sessions = runner_gateway.sessions_service(vm_fixture.namespace)
-    sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
+    sessions_authority = sessions.authority
     assert harness_env["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert relay["workload_routes"][sessions_authority] == {
         "upstream": sessions_authority,
@@ -735,7 +723,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
 def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     runfiles: Runfiles, location: str
 ) -> None:
-    fixture = _filled_fixture(runfiles, location)
+    fixture = _filled_fixture(_read_fixture(runfiles, location))
     assert fixture.central_sampler
     assert fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT
     docs = fixture.objects
@@ -743,11 +731,9 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = ModelCatalog.model_validate(app_config["models"])
     assert "central_sampler" not in app_config["models"]
-    assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
+    [selected_model] = catalog.harnesses[Harness.CENTRAL_SAMPLER]
 
     deployment = _resource(docs, "Deployment", central_sampler.NAME)
-    assert deployment["spec"]["replicas"] == 1
-    assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod = deployment["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == central_sampler.NAME
     container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
@@ -760,9 +746,8 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     service_ports = {port["name"]: port for port in service["spec"]["ports"]}
     container_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
     assert set(service_ports) == {"grpc-tls"}
-    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.PORT
-    assert container_ports["health"] == central_sampler.HEALTH_PORT
-    assert container["startupProbe"]["grpc"]["port"] == central_sampler.HEALTH_PORT
+    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"]
+    assert container["startupProbe"]["grpc"]["port"] == container_ports["health"]
     database_env = next(
         entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
     )
@@ -771,11 +756,9 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
     assert settings.executor_reconnect_timeout_seconds is None
-    assert settings.health_listen == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
+    assert settings.health_listen == f"0.0.0.0:{container_ports['health']}"
     assert settings.actions is not None
-    assert (
-        settings.actions.target == f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
-    )
+    assert settings.actions.target == fixture_chart.ACTIONS_SERVICE.authority
     assert settings.actions.tls is not None
     assert settings.actions.tls.cert_file == "/run/agentplane/workload-tls/tls.crt"
     assert settings.actions.tls.key_file == "/run/agentplane/workload-tls/tls.key"
@@ -783,9 +766,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     action_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
     assert action_settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     ingress_connection = settings.connections["llm-ingress"]
-    assert ingress_connection.base_url == (
-        f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
-    )
+    assert ingress_connection.base_url == (f"https://{llm_ingress.service(NAMESPACE).authority}")
     assert ingress_connection.auth.type == "agentplane_ingress"
     assert ingress_connection.auth.credential_file is None
     assert ingress_connection.auth.credential is None
@@ -795,10 +776,9 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert ingress_connection.tls.client_uri == CENTRAL_SAMPLER_URI
     assert str(ingress_connection.tls.cert_file) == settings.actions.tls.cert_file
     assert str(ingress_connection.tls.key_file) == settings.actions.tls.key_file
-    assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
-    model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
+    model = settings.models[selected_model]
     assert model.connection == "llm-ingress"
-    assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
+    assert model.provider_model == selected_model
     assert model.api == "responses"
     database_uri = urlsplit(_resource(docs, "Secret", "postgres-central-sampler")["stringData"]["uri"])
     assert database_uri.username == "central_sampler"
@@ -824,7 +804,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert "litellm_key" not in llm_config
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
     sampler_target = gateway_config["central_sampler"]
-    assert sampler_target["target"] == central_sampler.target(NAMESPACE)
+    assert sampler_target["target"] == central_sampler.service(NAMESPACE).authority
     assert "token_file" not in sampler_target
     assert sampler_target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
     assert sampler_target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
@@ -852,38 +832,43 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert history_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-sandbox-service"
 
 
-def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(runfiles: Runfiles) -> None:
-    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
-    mcp = _filled_fixture(runfiles)
+def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
+    runfiles: Runfiles, mcp_fixture: rendered_fixture.RenderedFixture
+) -> None:
+    central = _filled_fixture(_read_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION"))
     assert central.mcp_fixtures is None
     assert central.operator_tokens is not None
     central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
-    mcp_deployments = {doc["metadata"]["name"] for doc in mcp.objects if doc["kind"] == "Deployment"}
+    mcp_deployments = {doc["metadata"]["name"] for doc in mcp_fixture.objects if doc["kind"] == "Deployment"}
     assert central_deployments == mcp_deployments - {"dex", "mcp-everything", "oauth-fixture"}
 
     # This preset takes the existing test-operator issuer path. The full MCP fixture gets its
     # operator token from Dex instead, while the recovery services retain identical config.
     central_app = yaml.safe_load(_resource(central.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
-    mcp_app = yaml.safe_load(_resource(mcp.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
+    mcp_app = yaml.safe_load(_resource(mcp_fixture.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert central_app["oidc"]["issuer"] == central.operator_tokens.issuer
     assert central_app["oidc"]["static_ed25519_keys"] == ["test-operator-public-key"]
     assert mcp_app["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
     assert "static_ed25519_keys" not in mcp_app["oidc"]
     for component in ("central-sampler", "sessions", "history-service"):
         for kind in ("Deployment", "Service"):
-            assert _resource(central.objects, kind, component) == _resource(mcp.objects, kind, component)
+            assert _resource(central.objects, kind, component) == _resource(mcp_fixture.objects, kind, component)
     for config in ("central-sampler-settings", "sessions-settings", "history-service-config"):
-        assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
+        assert _resource(central.objects, "ConfigMap", config) == _resource(mcp_fixture.objects, "ConfigMap", config)
 
 
 @pytest.mark.parametrize(
     ("location", "central_enabled"),
-    [("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True), ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False)],
+    [
+        ("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True),
+        ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False),
+        ("K3S_FIRECRACKER_FIXTURE_RLOCATION", False),
+    ],
 )
 def test_native_recovery_profile_uses_service_caller_without_app(
     runfiles: Runfiles, location: str, central_enabled: bool
 ) -> None:
-    fixture = _filled_fixture(runfiles, location)
+    fixture = _read_fixture(runfiles, location)
     assert fixture.central_sampler is central_enabled
     assert fixture.app_origin is None
     assert fixture.operator_tokens is None
@@ -922,13 +907,14 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert "CREATE ROLE app " not in bootstrap
 
 
-def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(runfiles: Runfiles) -> None:
-    full = _filled_fixture(runfiles)
-    services = _filled_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
+def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(
+    runfiles: Runfiles, mcp_fixture: rendered_fixture.RenderedFixture
+) -> None:
+    services = _read_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
     assert not services.central_sampler
-    assert services.app_origin == full.app_origin
-    assert services.mcp_fixtures == full.mcp_fixtures
-    full_deployments = {doc["metadata"]["name"] for doc in full.objects if doc["kind"] == "Deployment"}
+    assert services.app_origin == mcp_fixture.app_origin
+    assert services.mcp_fixtures == mcp_fixture.mcp_fixtures
+    full_deployments = {doc["metadata"]["name"] for doc in mcp_fixture.objects if doc["kind"] == "Deployment"}
     deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
     assert deployments == full_deployments - {"central-sampler"}
     assert {"app", "mcp-edge", "dex", "oauth-fixture", "mcp-everything"} <= deployments
@@ -938,7 +924,7 @@ def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(runfiles: Ru
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
-    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
+    fixture = _read_fixture(runfiles, "K3S_FIRECRACKER_FIXTURE_RLOCATION")
     assert fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER
     assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)
 

@@ -30,17 +30,8 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
-from vpa_crds.io.k8s.autoscaling import (
-    VerticalPodAutoscaler,
-    VerticalPodAutoscalerSpec,
-    VerticalPodAutoscalerSpecResourcePolicy,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
-    VerticalPodAutoscalerSpecTargetRef,
-    VerticalPodAutoscalerSpecUpdatePolicy,
-)
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
@@ -57,6 +48,7 @@ from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -232,15 +224,8 @@ def _readonly_provisioner(scope: Construct) -> None:
     )
 
 
-def _probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
-    return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_SERVICE.pod_port)),
-        initial_delay_seconds=initial_delay_seconds,
-        period_seconds=period_seconds,
-    )
-
-
 def _deployment(scope: Construct) -> None:
+    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_SERVICE.pod_port))
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -271,18 +256,16 @@ def _deployment(scope: Construct) -> None:
                     # ordinary application I/O away from etcd disks.
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     affinity=node_scheduling.PREFER_WORKERS,
-                    volumes=[
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki"))
-                    ],
+                    volumes=[public_web_pki.VOLUME],
                     containers=[
                         k8s.Container(
                             name="app",
                             image=f"git.allegedly.works/ducktape-ci/study-casino:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[_SERVICE.port.k8s_container_port()],
+                            ports=[_SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="STUDY_CASINO_IMAGE_TAG", value=_PLACEHOLDER_TAG),
-                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                                public_web_pki.SSL_CERT_FILE,
                                 # CNPG's URI selects this role and database; the store selects
                                 # psycopg when it opens SQLAlchemy's generic PostgreSQL URI.
                                 POSTGRES.app_secret.key("uri").env_var("STUDY_CASINO_DATABASE_URL"),
@@ -299,14 +282,10 @@ def _deployment(scope: Construct) -> None:
                                 _OIDC.key("rng_secret").env_var("STUDY_CASINO_RNG_SECRET"),
                                 k8s.EnvVar(name="STUDY_CASINO_RNG_KEY_ID", value="study-casino-rng-v1"),
                             ],
-                            volume_mounts=[
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                )
-                            ],
+                            volume_mounts=[public_web_pki.VOLUME_MOUNT],
                             resources=container_resources(cpu="25m", memory="64Mi", memory_limit="256Mi"),
-                            readiness_probe=_probe(3, 10),
-                            liveness_probe=_probe(15, 20),
+                            readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=3, period_seconds=10),
+                            liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=15, period_seconds=20),
                         )
                     ],
                 ),
@@ -367,7 +346,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
     _route(chart)
     k8s.KubeRoleBinding(
@@ -386,29 +365,8 @@ def chart(app: App) -> Chart:
 
 def vpa_chart(app: App) -> Chart:
     chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
-    VerticalPodAutoscaler(
-        chart,
-        _NAME,
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=VerticalPodAutoscalerSpec(
-            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=_NAME),
-            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
-            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
-                container_policies=[
-                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
-                        container_name="app",
-                        controlled_resources=["cpu", "memory"],
-                        controlled_values="RequestsOnly",
-                        min_allowed={
-                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
-                                "224Mi"
-                            )
-                        },
-                    ),
-                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
-                ]
-            ),
-        ),
+    requests_only_vpa(
+        chart, _NAME, namespace=_NAMESPACE, container_name="app", update_mode="Initial", min_memory_mib=224
     )
     return chart
 

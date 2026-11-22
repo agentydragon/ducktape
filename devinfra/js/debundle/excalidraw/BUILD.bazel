@@ -54,6 +54,7 @@ esbuild(
     sourcemap = False,
     splitting = True,
     target = ["es2022"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = [":app"],
 )
 
@@ -108,7 +109,10 @@ run_binary(
     ],
     out_dirs = ["chunks"],
     tool = ":gen_inputs_bin",
-    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/perf:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
 )
 
 # Chunks and their JS list share bazel-bin, the root the generated config's
@@ -163,6 +167,13 @@ debundle_apply(
     tree_modules = "spec/modules",
     tree_source_root = ":source",
     tree_vendor_marks = "spec/vendor_marks.yaml",
+)
+
+filegroup(
+    name = "spec_graphs",
+    srcs = [":debundle"],
+    output_group = "dependency_graphs",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
 py_test(

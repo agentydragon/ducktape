@@ -29,8 +29,12 @@ def vm_test(
         properties = {
             "dockerNetwork": "bridge",
             "test.EstimatedCPU": "4",
-            "test.EstimatedFreeDiskBytes": "50GB",
-            "test.EstimatedMemory": "7GiB",
+            "test.EstimatedFreeDiskBytes": "30GB",
+            # Both KubeVirt cases passed with a 5 GiB cap and swap disabled:
+            # https://app.buildbuddy.io/invocation/3019fd35-3795-41dd-823f-2714ae254ef8
+            # At 4 GiB both failed and the test cgroup recorded 79 s of full memory stalls:
+            # https://app.buildbuddy.io/invocation/7ff14002-8aac-4ec0-adc0-0ee5f306b5e6
+            "test.EstimatedMemory": "5GiB",
         } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties
     else:
         # The two routes share one PyCompile output. Scope VM sizing to TestRunner
@@ -81,7 +85,6 @@ def vm_test(
             "//:conftest",
             "//agentplane/proto:session_pb2",
             "//agentplane/system_tests:conftest",
-            "//agentplane/system_tests/deployment:pytest_plugin",
             "//agentplane/system_tests/driver:case_batch",
             "//agentplane/system_tests/driver:cluster",
             "//agentplane/system_tests/driver:dispatcher_transport",
@@ -92,6 +95,7 @@ def vm_test(
             "//agentplane/system_tests/driver:tracing",
             "//agentplane/system_tests/scenarios:vm_sandbox",
             "//agentplane/system_tests/vm:configuration",
+            "//agentplane/system_tests/vm:pytest_plugin",
             "//agentplane/system_tests/vm:trace_contract",
             "//devinfra/testing:undeclared_outputs",
             "//util:net",

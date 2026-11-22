@@ -8,15 +8,12 @@ retries until its preconditions hold (migration.py).
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import NAMESPACE, Db
@@ -77,11 +74,7 @@ def haku_console(
         # would take the console's approval ledger with them.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         # Nothing downstream reconciles until CNPG accepts connections.
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         depends_on=flux_kustomization_depends_on_many(
             # The Cluster CRD and CNPG's failurePolicy: Fail webhook.
             cnpg,

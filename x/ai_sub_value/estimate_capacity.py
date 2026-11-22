@@ -15,7 +15,7 @@ from typing import Any
 import numpy
 from scipy.optimize import nnls
 
-from x.ai_sub_value.analyze import Poll, discontinuity, read_rows
+from x.ai_sub_value.analyze import Poll, discontinuity, read_rows, require_single_quota_account
 from x.ai_sub_value.bootstrap import BlockMethod, compare_blocks, resample_coefficients, resampling_units
 from x.ai_sub_value.plan_history import (
     CodexPlanPeriod,
@@ -570,6 +570,7 @@ def build_estimates(
     scoped_quota_rows: list[dict[str, Any]] | None = None,
     codex_plan_periods: list[CodexPlanPeriod] | None = None,
 ) -> dict[str, Any]:
+    require_single_quota_account(quota_rows + (scoped_quota_rows or []))
     groups: dict[tuple[str, int, str, CodexPlanPeriod | None], list[Poll]] = defaultdict(list)
     reported_plan_types: dict[tuple[str, int, str, CodexPlanPeriod | None], set[str]] = defaultdict(set)
     seen = set()

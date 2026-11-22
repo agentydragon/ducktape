@@ -6,13 +6,24 @@ import { z } from "zod";
 import type { GetGmailResourceSummariesResponse } from "../../../../../action_service/api/contracts/operator_action_service_pb";
 import { GmailIcon } from "../../../ui/brand_icons";
 import { getGmailResourceSummaries } from "../../client";
+import { useCompactPane } from "../entry";
 
 export const gmail = "https://mail.google.com/mail/u/0/";
 export const threadHref = (id: string) => `${gmail}#all/${encodeURIComponent(id)}`;
 export const draftHref = (id: string) => `${gmail}#drafts?compose=${encodeURIComponent(id)}`;
 export const wrap = { overflowWrap: "anywhere" } as const;
 
-export function GmailLink({ href, children }: { href: string; children: ReactNode }): JSX.Element {
+export function GmailLink({
+  href,
+  children,
+  linkInCompact = false,
+}: {
+  href: string;
+  children: ReactNode;
+  linkInCompact?: boolean;
+}): JSX.Element {
+  const compact = useCompactPane();
+  if (compact && !linkInCompact) return <>{children}</>;
   return (
     <Anchor href={href} target="_blank" rel="noreferrer" inherit style={wrap}>
       <GmailIcon />
@@ -21,8 +32,20 @@ export function GmailLink({ href, children }: { href: string; children: ReactNod
   );
 }
 
-export function ThreadTarget({ id, subject }: { id: string; subject?: string | null }): JSX.Element {
-  return <GmailLink href={threadHref(id)}>{subject || <Code>{id}</Code>}</GmailLink>;
+export function ThreadTarget({
+  id,
+  subject,
+  linkInCompact,
+}: {
+  id: string;
+  subject?: string | null;
+  linkInCompact?: boolean;
+}): JSX.Element {
+  return (
+    <GmailLink href={threadHref(id)} linkInCompact={linkInCompact}>
+      {subject || <Code>{id}</Code>}
+    </GmailLink>
+  );
 }
 
 export const systemLabels: ReadonlyMap<string, string> = new Map([

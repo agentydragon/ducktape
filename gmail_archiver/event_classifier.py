@@ -1,7 +1,6 @@
 """Email template recognizer and structured data extractor using OpenAI API."""
 
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -12,8 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.models import Email
 from openai_utils.json_schema import openai_json_schema
-
-logger = logging.getLogger(__name__)
 
 
 class DBSASFGroupReminderData(BaseModel):

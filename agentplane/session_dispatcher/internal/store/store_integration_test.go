@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -50,12 +50,12 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	rows, err := store.ListDispatchesForCaller(ctx, "session-a", "", nil, ServiceAccountCaller{Privileged: true})
+	rows, err := store.ListDispatchesForCaller(ctx, storeDispatchFilter("session-a"), ServiceAccountCaller{Privileged: true})
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}
 	for _, row := range rows {
-		if row.State != QueueState {
+		if row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 			t.Fatalf("accepted command was unexpectedly cancelled: %+v", row)
 		}
 	}
@@ -311,7 +311,7 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 	}
 }
 
-func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
+func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 	ctx := context.Background()
 	store, _ := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
@@ -344,8 +344,7 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", deliveryOwner); err != nil || !marked {
 		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
 	}
-	// Both Dispatcher replicas must wake for the committed cleanup, then read the
-	// durable tombstones because the dispatch rows are deleted in the same transaction.
+	// Both replicas must wake to read the settled outcomes.
 	subscribers := make([]<-chan struct{}, 0, 2)
 	for range 2 {
 		hub := testWatchHub(t, store)
@@ -366,8 +365,15 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 			t.Fatalf("replica %d missed Sandbox deletion wakeup", replica)
 		}
 	}
-	if _, err := store.GetDispatch(ctx, "deleted-queued"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("deleted row visible: %v", err)
+	if uids, err := store.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
+		t.Fatalf("cleanup still scans deleted Environment: %v, %v", uids, err)
+	}
+	if work, err := store.SessionsWithPendingWork(ctx); err != nil || len(work) != 0 {
+		t.Fatalf("retained commands scheduled for delivery: %v, %v", work, err)
+	}
+	row, err := store.GetDispatch(ctx, "deleted-queued")
+	if err != nil || !proto.Equal(row.Command, input("deleted-queued", "q")) {
+		t.Fatalf("retained queued input: %+v, %v", row, err)
 	}
 	for commandID, want := range map[string]struct{ state, reason string }{
 		"deleted-queued":         {FailedState, "sandbox_deleted"},
@@ -375,13 +381,9 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 		"test-deleted-cancelled": {CancelledState, "test-prior-cancellation"},
 		interrupt.GetCommandId(): {AdmittedState, ""},
 	} {
-		var state string
-		var reason sql.NullString
-		if err := store.DB.QueryRowContext(ctx, `SELECT state,reason FROM dispatch_tombstone WHERE command_id=$1`, commandID).Scan(&state, &reason); err != nil {
-			t.Fatal(err)
-		}
-		if state != want.state || reason.String != want.reason {
-			t.Fatalf("retained deletion %s = %s/%s, want %s/%s", commandID, state, reason.String, want.state, want.reason)
+		row, err := store.GetDispatch(ctx, commandID)
+		if err != nil || row.State != want.state || row.Reason != want.reason {
+			t.Fatalf("retained command %s = %+v, %v; want %s/%s", commandID, row, err, want.state, want.reason)
 		}
 	}
 }
@@ -556,7 +558,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 				want = UnknownState
 			}
 			var state string
-			if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+			if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
 				t.Fatal(err)
 			}
 			if state != want {
@@ -609,16 +611,8 @@ func TestDeletedAdmittedInputRetainsKnownAdmissionWithUnknownEffect(t *testing.T
 	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	var admissionBytes []byte
-	if err := store.DB.QueryRowContext(ctx, "SELECT state, admission FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state, &admissionBytes); err != nil {
-		t.Fatal(err)
-	}
-	retained := &eventlogpb.EventEntry{}
-	if err := proto.Unmarshal(admissionBytes, retained); err != nil {
-		t.Fatal(err)
-	}
-	if state != UnknownState || !proto.Equal(retained, admission) {
-		t.Fatalf("deleted admitted input = %s with admission %v, want %s with admission %v", state, retained, UnknownState, admission)
+	row, err := store.GetDispatch(ctx, head.CommandID)
+	if err != nil || row.State != UnknownState || !proto.Equal(row.Admission, admission) || !proto.Equal(row.Command, head.Command) {
+		t.Fatalf("retained input = %+v, %v; want original command and admission with unknown effect", row, err)
 	}
 }

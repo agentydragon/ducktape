@@ -1,49 +1,30 @@
-"""Exercise the PrometheusRule expressions with upstream promtool."""
+"""Exercise the deployed platform monitoring rules with upstream promtool."""
 
-import subprocess
-from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import (
-    App,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.monitoring import rules
+from cluster.cdk8s.testing.promtool import PromtoolRules
+
+
+@pytest.fixture(scope="module")
+def rule_files(runfiles: Runfiles) -> dict[str, dict[str, Any]]:
+    path = runfiles.root() / "ducktape/cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml"
+    return {
+        f"{doc['metadata']['name']}.yaml": doc["spec"]
+        for doc in yaml.safe_load_all(path.read_text())
+        if doc["kind"] == "PrometheusRule"
+    }
 
 
 @pytest.mark.parametrize(
-    ("rule_files", "tests"),
-    [
-        pytest.param(
-            {"client-certificate-expiry-alerts": "client-cert.yaml"},
-            "client_certificate_rules.yaml",
-            id="client-certificate-expiry",
-        ),
-        pytest.param(
-            {"github-quota-alerts": "github-quota.yaml", "roaming-node-alerts": "roaming-node.yaml"},
-            "github_quota_rules.yaml",
-            id="github-quota",
-        ),
-        pytest.param({"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml", id="disk-usage"),
-        pytest.param({"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml", id="io-pressure"),
-        pytest.param({"roaming-node-alerts": "roaming-node.yaml"}, "alloy_roaming_rules.yaml", id="alloy-roaming"),
-        pytest.param({"roaming-node-alerts": "roaming-node.yaml"}, "roaming_node_rules.yaml", id="roaming-node"),
-    ],
+    "case", ["client_certificate", "github_quota", "disk_usage", "io_pressure", "alloy_roaming", "roaming_node"]
 )
-def test_prometheus_rules(
-    runfiles: Runfiles, promtool: Path, scratch_app: App, tmp_path: Path, rule_files: dict[str, str], tests: str
-) -> None:
-    manifests = {manifest["metadata"]["name"]: manifest for manifest in Cdk8sTesting.synth(rules.chart(scratch_app))}
-    for manifest_name, rule_file in rule_files.items():
-        (tmp_path / rule_file).write_text(yaml.safe_dump(manifests[manifest_name]["spec"]))
-    (tmp_path / "tests.yaml").write_text(
-        (runfiles.root() / f"ducktape/cluster/cdk8s/monitoring/testdata/{tests}").read_text()
-    )
-    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
+def test_prometheus_rules(promtool: PromtoolRules, rule_files: dict[str, dict[str, Any]], case: str) -> None:
+    promtool(f"ducktape/cluster/cdk8s/monitoring/testdata/{case}_rules.yaml", rule_files)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.gateway import https_route
@@ -28,6 +28,8 @@ from cluster.cdk8s.vpa_policy import (
 
 NAME = "gitlab-spike"
 NAMESPACE = NAME
+RUNNER_NAMESPACE = "gitlab-spike-ci"
+DEMO_NAMESPACE = "gitlab-spike-demo"
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/app"
 HOSTNAME = "gitlab-spike.allegedly.works"
 REGISTRY_HOSTNAME = "registry-gitlab-spike.allegedly.works"
@@ -156,16 +158,7 @@ def _values() -> dict[str, object]:
         "registry": {
             "storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"},
             # Spread each ReplicaSet across eligible hosts while allowing the HPA to scale beyond the host count.
-            "topologySpreadConstraints": [
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "DoNotSchedule",
-                    "nodeTaintsPolicy": "Honor",
-                    "labelSelector": {"matchLabels": REGISTRY.pods.selector},
-                    "matchLabelKeys": ["pod-template-hash"],
-                }
-            ],
+            "topologySpreadConstraints": [node_scheduling.hostname_spread(REGISTRY.pods.selector, min_domains=None)],
             "deployment": {
                 "annotations": _vpa_annotations(
                     # Registry's HPA uses CPU utilization, which depends on the request.
@@ -196,7 +189,7 @@ def _values() -> dict[str, object]:
             "gitaly": {
                 "persistence": {
                     "enabled": True,
-                    "storageClass": "piraeus-hdd-local",
+                    "storageClass": piraeus_storage.HDD_LOCAL,
                     "accessMode": "ReadWriteOnce",
                     "size": "50Gi",
                 },

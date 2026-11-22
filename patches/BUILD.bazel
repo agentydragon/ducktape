@@ -1,5 +1,6 @@
 exports_files(
     [
+        "aspect_rules_py_image_layer_tags.patch",
         "rules_lean_4_35.patch",
         "rules_tf_check_terraform_mirror.patch",
         "rules_tf_check_tofu_mirror.patch",

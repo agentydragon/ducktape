@@ -1,3 +1,4 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -36,4 +37,31 @@ py_test(
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "git_publish",
+    srcs = ["git_publish.py"],
+    visibility = [
+        "//cluster/rotators/authentik_jwt_rotation:__pkg__",
+        "//cluster/rotators/forgejo_token_rotation:__pkg__",
+    ],
+)
+
+py_test(
+    name = "test_git_publish",
+    srcs = ["test_git_publish.py"],
+    deps = [
+        ":git_publish",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+pkg_tar(
+    name = "sops_layer",
+    srcs = ["@sops_linux_amd64//file:sops"],
+    package_dir = "/usr/local/bin",
+    visibility = ["//cluster/rotators:__subpackages__"],
 )

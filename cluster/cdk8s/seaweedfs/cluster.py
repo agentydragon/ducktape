@@ -11,10 +11,8 @@ The unit also carries the filer DB (`filer_db.py`), the s3 gateway's config Secr
 (`s3_config.py`) and `stateful_infra`'s PriorityClass, whose charts `write_manifests` writes
 into the same file as this one.
 
-Hand-written beside the output: `filer.toml` and the directory's `kustomization.yaml`,
-whose configMapGenerator + replacement fill `spec.filer.config` from it (the TOML lives
-in its own file so it can be syntax-checked outside YAML string escaping), and the SOPS
-siblings it lists.
+The filer config is kept in filer.toml so it can be syntax-checked independently. The
+operator projects spec.filer.config into the ConfigMap mounted by the filer.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from python.runfiles import Runfiles
 from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
     AdminScript,
     AdminScriptSpec,
@@ -87,12 +86,12 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
     SeaweedSpecVolumeTopologyTolerations,
 )
 
-from cluster.cdk8s import node_scheduling, stateful_infra
+from cluster.cdk8s import node_scheduling, piraeus_storage, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME
 
-NAME = "seaweedfs"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster"
 # The operator's API group, which a ResourceReferenceGrant names on both sides.
 GROUP = "seaweed.seaweedfs.com"
@@ -130,7 +129,7 @@ _HOSTNAME = "kubernetes.io/hostname"
 
 def _component_labels(component: str) -> dict[str, str]:
     """The operator's pod labels for one component: the anti-affinity and the PDB select on them."""
-    return {"app.kubernetes.io/component": component, "app.kubernetes.io/name": NAME}
+    return {"app.kubernetes.io/component": component, "app.kubernetes.io/name": CLUSTER_NAME}
 
 
 def _volume_topology(
@@ -188,7 +187,7 @@ def _volume_topology(
                 required_during_scheduling_ignored_during_execution=[
                     SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
                         label_selector=SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                            match_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")}
+                            match_labels={"app.kubernetes.io/instance": CLUSTER_NAME, **_component_labels("volume")}
                         ),
                         topology_key=_HOSTNAME,
                     )
@@ -211,7 +210,7 @@ def seaweed(scope: Construct) -> Seaweed:
     return Seaweed(
         scope,
         "seaweed",
-        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
+        metadata=ApiObjectMetadata(name=CLUSTER_NAME, namespace=namespace.NAME),
         spec=SeaweedSpec(
             # 4.x is required for the Bucket CR's access wiring: the filer's gRPC server
             # unconditionally registers `iam_pb.SeaweedIdentityAccessManagement` starting at
@@ -238,7 +237,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # cluster/docs/lessons_learned/2026_10_19_seaweedfs_master_persistence.md.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
-                    storage_class_name="piraeus-ssd-local",
+                    storage_class_name=piraeus_storage.SSD_LOCAL,
                     mount_path="/data",
                     resources=SeaweedSpecMasterPersistenceResources(
                         requests={"storage": SeaweedSpecMasterPersistenceResourcesRequests.from_string("4Gi")}
@@ -323,7 +322,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "hdd-piraeus-103656": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1700Gi",
-                    storage_class="piraeus-hdd-local",
+                    storage_class=piraeus_storage.HDD_LOCAL,
                     disk="hdd",
                     max_volume_counts=2000,
                     node_selector={
@@ -335,7 +334,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "hdd-piraeus-103711": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1700Gi",
-                    storage_class="piraeus-hdd-local",
+                    storage_class=piraeus_storage.HDD_LOCAL,
                     disk="hdd",
                     max_volume_counts=2000,
                     node_selector={
@@ -347,7 +346,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "hdd-piraeus-102453": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="2500Gi",  # This node has a larger HDD pool.
-                    storage_class="piraeus-hdd-local",
+                    storage_class=piraeus_storage.HDD_LOCAL,
                     disk="hdd",
                     max_volume_counts=2000,
                     node_selector={
@@ -362,7 +361,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "ssd-piraeus": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
-                    storage_class="piraeus-ssd-local",
+                    storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns1001419"},
@@ -370,7 +369,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "ssd-piraeus-104952": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
-                    storage_class="piraeus-ssd-local",
+                    storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns104952", "storage.allegedly.works/piraeus-ready": "true"},
@@ -378,7 +377,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "ssd-piraeus-104963": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
-                    storage_class="piraeus-ssd-local",
+                    storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns104963", "storage.allegedly.works/piraeus-ready": "true"},
@@ -395,8 +394,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # replica count but worth closing (it is the SSOT for all SeaweedFS data; see
                 # the 2026_05_27 filer-metadata-loss lesson).
                 replicas=2,
-                # Filled in from filer.toml by the directory's kustomization (module docstring).
-                config="",
+                config=(Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/seaweedfs/filer.toml").read_text(),
                 env=[
                     # Soft heap ceiling ~90% of the memory limit below; see the sizing note at
                     # requests/limits. Go's GC (GOGC=100) otherwise ignores the cgroup limit
@@ -550,13 +548,13 @@ def _tenants_grant(scope: Construct) -> None:
                 ResourceReferenceGrantSpecFrom(group=GROUP, kind=kind, namespace_selector=tenants)
                 for kind in ("Bucket", "S3Identity", "S3Credentials")
             ],
-            to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=NAME)],
+            to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=CLUSTER_NAME)],
         ),
     )
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, CLUSTER_NAME, disable_resource_name_hashes=True)
     seaweed(chart)
     AdminScript(
         chart,
@@ -567,7 +565,7 @@ def chart(app: App) -> Chart:
             annotations={"description": "Hourly copy-only repair of SeaweedFS volume replica placement."},
         ),
         spec=AdminScriptSpec(
-            cluster_ref=AdminScriptSpecClusterRef(name=NAME),
+            cluster_ref=AdminScriptSpecClusterRef(name=CLUSTER_NAME),
             schedule="17 * * * *",
             time_zone="Etc/UTC",
             suspend=False,

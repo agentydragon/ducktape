@@ -6,7 +6,7 @@ The process trust bundle also includes Dex's CA for HTTP clients used by MCP sce
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -16,12 +16,9 @@ from agentplane.system_tests.deployment import rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import Backend, LocalModel, PublicLiteLLM, SandboxRuntime
 from agentplane.system_tests.deployment.stack import Stack, StackInputs, running_stack
 from agentplane.system_tests.deployment.virtualization import RuntimeFactory
+from agentplane.system_tests.driver import scripted_upstream
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.firecracker.runtime import runtime as firecracker_runtime
 from agentplane.system_tests.k3s.baseline import node_ip
-from agentplane.system_tests.vm import guest_logs
-from agentplane.system_tests.vm.runtime import runtime as vm_runtime
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # All suites use the same scenario hooks, including batched-case duration reporting.
 # gazelle:include_dep //agentplane/system_tests:conftest
@@ -33,6 +30,15 @@ def scripted_listener() -> Iterator[Listener]:
     """Retain the scripted model's binding until the deployment and all scenarios stop."""
     with listen_tcp(host=node_ip()) as listener:
         yield listener
+
+
+@pytest.fixture
+async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
+    """The model behind this target's LLM ingress, played by the scenario. One per test, so a request
+    a scenario leaves unanswered fails that scenario."""
+    upstream = scripted_upstream.ScriptedUpstream()
+    async with upstream.serving(listener=scripted_listener.socket):
+        yield upstream
 
 
 def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
@@ -67,17 +73,17 @@ def stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
 
 
 @pytest.fixture(scope="session")
-def runtime_factory(stack_inputs: StackInputs) -> Iterator[RuntimeFactory | None]:
-    """Select the declared runtime without changing pytest's plugin set."""
+def runtime_factory(request: pytest.FixtureRequest, stack_inputs: StackInputs) -> RuntimeFactory | None:
+    """Resolve the runtime declared in the manifest from the suite's pytest fixtures."""
     match stack_inputs.fixture.runtime:
         case SandboxRuntime.POD:
-            yield None
+            return None
         case SandboxRuntime.KUBEVIRT:
-            with pytest.MonkeyPatch.context() as environment:
-                environment.setenv(guest_logs.CONSOLES_ENV, str(undeclared_outputs_dir() / "vm-artifacts/consoles"))
-                yield vm_runtime
+            fixture_name = "kubevirt_runtime_factory"
         case SandboxRuntime.FIRECRACKER:
-            yield firecracker_runtime
+            fixture_name = "firecracker_runtime_factory"
+    factory: RuntimeFactory = request.getfixturevalue(fixture_name)
+    return factory
 
 
 @pytest.fixture(scope="session")

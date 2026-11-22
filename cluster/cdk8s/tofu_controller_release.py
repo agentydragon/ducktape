@@ -24,10 +24,13 @@ from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
+VPA_NAME = f"{NAME}-vpa"
+VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 # GHCR, not the Forgejo registry: the Forgejo pull credential's user is created by a Terraform
 # this controller applies, so a Forgejo-hosted controller or runner could never start on a fresh
@@ -81,4 +84,10 @@ def chart(app: App) -> Chart:
             spec=ImageRepositorySpec(image=RUNNER_IMAGE, interval="5m"),
         ),
     )
+    return chart
+
+
+def vpa_chart(app: App) -> Chart:
+    chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
+    requests_only_vpa(chart, NAME, namespace=NAMESPACE, container_name=NAME, update_mode="Initial")
     return chart

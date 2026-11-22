@@ -54,6 +54,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -76,12 +77,15 @@ py_library(
     data = [
         "tabbyapi-chat-template.jinja",
         "tabbyapi-config.yml",
-        "tabbyapi_serve.py",
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":tabby_endpoint",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -94,21 +98,4 @@ py_library(
     name = "tabby_endpoint",
     srcs = ["tabby_endpoint.py"],
     visibility = ["//cluster/cdk8s/litellm:__pkg__"],
-)
-
-py_library(
-    name = "tabbyapi_serve",
-    srcs = ["tabbyapi_serve.py"],
-    deps = ["@pypi//starlette"],
-)
-
-py_test(
-    name = "test_tabbyapi_serve",
-    srcs = ["test_tabbyapi_serve.py"],
-    deps = [
-        ":tabbyapi_serve",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
-    ],
 )

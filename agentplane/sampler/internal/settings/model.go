@@ -106,9 +106,8 @@ func (c ModelConfig) Validate() error {
 }
 
 func (c ModelConfig) Compatible(other ModelConfig) bool {
-	// Matching wire formats do not establish that another model can consume retained
-	// signed thinking, encrypted reasoning or compaction items. Keep the provider
-	// model fixed until the adapter has an explicit cross-model continuation contract.
+	// Test whether two routes are aliases for the same provider contract. The RPC
+	// separately checks settled conversations eligible for a cross-model switch.
 	if c.Connection != other.Connection || c.ProviderModel != other.ProviderModel || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
 		return false
 	}

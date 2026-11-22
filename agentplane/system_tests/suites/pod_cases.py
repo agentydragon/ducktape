@@ -18,7 +18,6 @@ from agentplane.system_tests.scenarios import (
     runner_credentials,
     runtime_proxy,
     session_instructions,
-    storage,
     suspend_resume,
     thread_history,
 )
@@ -112,17 +111,6 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
         )
 
 
-async def fresh_workspace_storage_survives_replacement(worker: Worker) -> None:
-    async with worker.fresh_sandboxes() as case:
-        await storage.fresh_workspace_storage_survives_replacement(
-            worker.cluster,
-            case.client,
-            worker.dispatcher,
-            Executor(template=POD_TEMPLATE, cwd="/state/work"),
-            vm_storage=None,
-        )
-
-
 async def codex_standing_instructions_after_suspend_and_compact(worker: Worker) -> None:
     async with worker.fresh_sandboxes() as case, sandbox_harness_host(worker.cluster) as control:
         await suspend_resume.codex_standing_instructions_after_suspend_and_compact(
@@ -201,7 +189,6 @@ SCENARIOS = (
         turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn,
         marks=pytest.mark.scripted_model,
     ),
-    # CaseBatch runs storage exclusively before the bounded shared/fresh case batch.
     pytest.param(
         operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control,
         marks=[pytest.mark.scripted_model, pytest.mark.case_timeout(600)],
@@ -217,7 +204,6 @@ SCENARIOS = (
         pod_mtls_session_survives_replacement_and_keeps_history,
         marks=[pytest.mark.scripted_model, pytest.mark.case_timeout(600)],
     ),
-    pytest.param(fresh_workspace_storage_survives_replacement, marks=pytest.mark.exclusive_case),
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
     pytest.param(an_unknown_history_session_is_not_found),

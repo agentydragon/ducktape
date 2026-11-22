@@ -21,9 +21,11 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:volume_claim",
+        "//cluster/cdk8s/agentplane:platform_routes",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/litellm:endpoint",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
@@ -55,7 +57,6 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
-        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -79,7 +80,6 @@ py_library(
 
 py_test(
     name = "test_app",
-    # Synth imports the console's Settings, and with it the console runtime.
     size = "medium",
     srcs = ["test_app.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -88,17 +88,13 @@ py_test(
         ":app",
         ":egress",
         "//:conftest",
-        "//cluster/cdk8s:agent_rbac_base",
-        "//cluster/cdk8s:agent_shared_rbac",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/clickhouse:installation",
-        "//cluster/cdk8s/haku:charts",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

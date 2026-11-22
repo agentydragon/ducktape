@@ -38,9 +38,12 @@ class Port:
     def k8s_container_port(self) -> k8s.ContainerPort:
         return k8s.ContainerPort(name=self.name, container_port=self.number, protocol="TCP")
 
-    def k8s_service_port(self) -> k8s.ServicePort:
+    def k8s_service_port(self, *, target_port: int | None = None) -> k8s.ServicePort:
         return k8s.ServicePort(
-            name=self.name, port=self.number, target_port=k8s.IntOrString.from_number(self.number), protocol="TCP"
+            name=self.name,
+            port=self.number,
+            target_port=k8s.IntOrString.from_number(self.number if target_port is None else target_port),
+            protocol="TCP",
         )
 
 
@@ -97,6 +100,11 @@ class _Service:
         return f"{self.host}.cluster.local"
 
     @property
+    def authority(self) -> str:
+        """Fully qualified host and Service port for clients and proxy route matching."""
+        return f"{self.fqdn}:{self.port.number}"
+
+    @property
     def url(self) -> str:
         return f"http://{self.host}:{self.port.number}"
 
@@ -115,18 +123,16 @@ class ServiceRef(_Service):
     def container_port(self) -> ContainerPort:
         return Port(name=self.port.name, number=self.pod_port).container_port()
 
+    def k8s_container_port(self) -> k8s.ContainerPort:
+        return Port(name=self.port.name, number=self.pod_port).k8s_container_port()
+
     def service_port(self) -> ServicePort:
         """This port on the Service, targeting the Pods' port."""
         return ServicePort(name=self.port.name, port=self.port.number, target_port=self.pod_port, protocol=Protocol.TCP)
 
     def k8s_service_port(self) -> k8s.ServicePort:
         """`service_port` as a `k8s.ServicePort`."""
-        return k8s.ServicePort(
-            name=self.port.name,
-            port=self.port.number,
-            target_port=k8s.IntOrString.from_number(self.pod_port),
-            protocol="TCP",
-        )
+        return self.port.k8s_service_port(target_port=self.pod_port)
 
     def egress(self) -> CiliumNetworkPolicySpecEgress:
         """The client's rule. Cilium matches after socket-LB translation, so it names the Pods' port."""

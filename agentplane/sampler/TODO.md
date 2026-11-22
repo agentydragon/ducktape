@@ -1,5 +1,13 @@
 # TODO — sampler
 
+## Define model continuation compatibility
+
+Decide who owns same-API model transition policy and where to configure it. Establish compatibility
+for provider accounts, connections, model families, dialects, and tool encodings, including how to
+identify the source contract after its route is retired. Test which providers can replay ordinary
+history, encrypted reasoning and opaque compaction items after a switch. Use that evidence to
+decide when a switch can proceed and what recovery to offer when a retained context cannot move.
+
 ## Evaluate sampler-managed compaction for Messages and Responses
 
 Consider offering the Chat Completions approach as a per-route alternative to provider-native

@@ -6,17 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ConfigMap,
-    ContainerResources,
-    Cpu,
-    CpuResources,
-    EnvValue,
-    MemoryResources,
-    PathMapping,
-    Secret,
-    Volume,
-)
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources, PathMapping, Secret, Volume
 from constructs import Construct
 
 from agentplane.net.peertls.config import (
@@ -28,7 +18,7 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.sampler.settings import Settings
 from agentplane.session_instructions.platform_instructions import SessionRuntime
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     central_sampler,
@@ -49,7 +39,6 @@ from cluster.cdk8s.settings_file import SettingsFile
 from util.settings_contract import env_name
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset"
-_CONFIG_PATH = "/etc/agentplane-central-sampler/settings.json"
 _LOGS_PATH = "/var/log/central-sampler"
 
 
@@ -95,9 +84,9 @@ class CentralSampler(Construct):
             # The sandbox exec-server resolves this binary through its normal PATH.
             executor_codex="codex",
             logs=Path(_LOGS_PATH),
-            history_target=f"{self.history_ingress.fqdn}:{self.history_ingress.pod_port}",
+            history_target=self.history_ingress.authority,
             history_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=CENTRAL_SAMPLER_URI),
-            gateway_target=environment_service.environments_control_target(namespace),
+            gateway_target=environment_service.environments_service(namespace).authority,
             gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=CENTRAL_SAMPLER_URI),
             max_live_sessions=props.max_live_sessions,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
@@ -111,13 +100,8 @@ class CentralSampler(Construct):
             "settings",
             metadata=ApiObjectMetadata(name=f"{central_sampler.NAME}-settings", namespace=namespace),
             content=json_config(settings.model_dump(mode="json", exclude_none=True)),
-            path=_CONFIG_PATH,
+            path="/etc/agentplane-central-sampler/settings.json",
         )
-        settings_volume = Volume.from_config_map(
-            self, "settings-volume", settings_file.config_map, name=f"{central_sampler.NAME}-settings"
-        )
-        config_env = Settings.config_file_env
-        database_env = env_name(Settings, "database_url")
         workload = add_service_workload(
             self,
             env,
@@ -126,9 +110,8 @@ class CentralSampler(Construct):
             image=_IMAGE,
             extra_ports=[Port(name="health", number=central_sampler.HEALTH_PORT).container_port()],
             env_variables={
-                config_env: EnvValue.from_value(_CONFIG_PATH),
-                database_env: database_url,
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                env_name(Settings, "database_url"): database_url,
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             },
             readiness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=20, period_seconds=30),
@@ -140,23 +123,16 @@ class CentralSampler(Construct):
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
             ),
             termination_grace=Duration.seconds(60),
-            # Provider Secret files are reread per request; rotating them must not restart the shared host.
-            annotations={"configmap.reloader.stakater.com/reload": f"{settings_file.config_map.name},public-web-pki"},
-            replica_profile=props.replicas or env.replicas,
+            replica_profile=props.replicas,
             placement=placement,
             registry_secret_name=registry_secret_name,
         )
-        workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
+        settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
         workload_tls.service_certificate(
             self, env, container=workload.container, name=central_sampler.NAME, uri=CENTRAL_SAMPLER_URI
         )
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         for connection_name, secret_key in props.connection_credentials.items():
             connection = props.connections.get(connection_name)
             if connection is None:
@@ -174,6 +150,14 @@ class CentralSampler(Construct):
                 items={secret_key.key: PathMapping(path=credential_file.name)},
             )
             workload.container.mount(str(credential_file.parent), credential_volume, read_only=True)
+
+        # The sampler rereads provider keys on every request. Roll it for startup-only
+        # settings and credentials, but let kubelet project rotated provider keys in place.
+        if props.connection_credentials:
+            workload.deployment.metadata.add_annotation(
+                "secrets.exclude.reloader.stakater.com/reload",
+                ",".join(sorted({key.secret.name for key in props.connection_credentials.values()})),
+            )
 
     def add_platform_resources(self) -> None:
         """Add the API admission and egress rules used by the sampler runtime."""

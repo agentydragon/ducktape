@@ -18,10 +18,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, cast
+from pathlib import PurePosixPath
+from typing import Annotated
 
 import jsii
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
@@ -44,6 +45,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.api_objects import api_objects_in
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
+
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 SOPS_DECRYPTION = KustomizationSpecDecryption(
     provider=KustomizationSpecDecryptionProvider.SOPS,
@@ -61,6 +65,11 @@ class RenderedDirectory:
     decryption: KustomizationSpecDecryption | None
 
 
+def literal_artifact_path(path: str) -> bool:
+    """A repository-relative path naming one file or directory in a Flux artifact copy."""
+    return not any(part in {"", ".", ".."} for part in path.split("/")) and not any(char in path for char in "*?[]{}")
+
+
 def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
     """The repo-relative directories `artifact` copies, in copy order. The first is its consumer's
     Kustomization directory; later ones are shared bases and Components that Kustomization
@@ -70,48 +79,32 @@ def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
     not copied to the same path, or a file copy outside the first directory -- since the
     Kustomization's `path` would otherwise silently point at the wrong directory.
     """
-    copies = artifact.copy
-    if not copies:
-        raise ValueError(f"{artifact.name=} copies nothing")
-    first = copies[0]
-    first_directory = first.to.removeprefix("@artifact/").removesuffix("/")
-    if (
-        not first_directory
-        or any(part in {"", ".", ".."} for part in first_directory.split("/"))
-        or first.to != f"@artifact/{first_directory}/"
-        or first.from_ != f"@repo/{first_directory}/**"
-        or first.exclude is not None
-        or first.strategy is not None
-    ):
-        raise ValueError(f"{artifact.name=}: not a whole-directory copy: {first.from_=} {first.to=}")
-
-    directories = [first_directory]
-    for copy in copies[1:]:
-        directory = copy.to.removeprefix("@artifact/").removesuffix("/")
+    directories: list[str] = []
+    for copy in artifact.copy:
+        source = copy.from_.removeprefix("@repo/")
+        destination = copy.to.removeprefix("@artifact/")
         if (
-            directory
-            and not any(part in {"", ".", ".."} for part in directory.split("/"))
-            and copy.to == f"@artifact/{directory}/"
-            and copy.from_ == f"@repo/{directory}/**"
+            copy.from_.startswith("@repo/")
+            and copy.to.startswith("@artifact/")
             and copy.exclude is None
             and copy.strategy is None
         ):
-            directories.append(directory)
-            continue
-        if (
-            not copy.from_.startswith("@repo/")
-            or any(character in copy.from_ for character in "*?[]{}")
-            or any(part in {"", ".", ".."} for part in copy.from_.removeprefix("@repo/").split("/"))
-            or any(character in copy.to for character in "*?[]{}")
-            or not copy.to.startswith(f"@artifact/{first_directory}/")
-            or copy.to.endswith("/")
-            or any(part in {"", ".", ".."} for part in copy.to.removeprefix("@artifact/").split("/"))
-            or copy.exclude is not None
-            or copy.strategy is not None
-        ):
-            raise ValueError(
-                f"{artifact.name=}: not a whole-directory or in-directory file copy: {copy.from_=} {copy.to=}"
-            )
+            directory = destination.removesuffix("/")
+            if destination.endswith("/") and literal_artifact_path(directory) and source == f"{directory}/**":
+                directories.append(directory)
+                continue
+            if (
+                directories
+                and literal_artifact_path(source)
+                and literal_artifact_path(destination)
+                and destination.startswith(f"{directories[0]}/")
+            ):
+                continue
+        raise ValueError(
+            f"{artifact.name=}: expected a whole directory or a file inside the first directory: {copy.from_=} {copy.to=}"
+        )
+    if not directories:
+        raise ValueError(f"{artifact.name=} copies nothing")
     return directories
 
 
@@ -130,9 +123,7 @@ class _WaitExcludesHealthChecks:
         self._chart = chart
 
     def validate(self) -> list[str]:
-        rendered = (
-            cast(ApiObject, node).to_json() for node in self._chart.node.find_all() if ApiObject.is_api_object(node)
-        )
+        rendered = (obj.to_json() for obj in api_objects_in(self._chart))
         return [
             f"Kustomization/{obj['metadata']['name']}: wait: true ignores healthChecks; drop the list or set wait off"
             for obj in rendered
@@ -154,13 +145,12 @@ def kustomizations_chart(app: App) -> Chart:
 def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecHealthChecks]:
     """One `healthChecks` entry per object of the listed kinds in `chart`, ordered by `kinds`:
     each entry is the object's own apiVersion/kind/name/namespace, never retyped."""
-    # `Chart.api_objects` is direct children only; objects usually sit inside a Construct.
-    api_objects = [cast(ApiObject, node) for node in chart.node.find_all() if ApiObject.is_api_object(node)]
+    selected = (obj for obj in api_objects_in(chart) if obj.kind in kinds)
     return [
         KustomizationSpecHealthChecks(
             api_version=obj.api_version, kind=obj.kind, name=obj.name, namespace=obj.metadata.namespace
         )
-        for obj in sorted((obj for obj in api_objects if obj.kind in kinds), key=lambda obj: kinds.index(obj.kind))
+        for obj in sorted(selected, key=lambda obj: kinds.index(obj.kind))
     ]
 
 
@@ -212,6 +202,7 @@ def flux_kustomization(
             raise ValueError(f"{name=}: a rendered directory derives its decryption; got {decryption=}")
         decryption = source.decryption
         source = source.artifact
+    metadata_annotations = dict(annotations or {})
     match source:
         case ArtifactGeneratorSpecArtifacts():
             if path is not None:
@@ -219,13 +210,15 @@ def flux_kustomization(
             source_ref = KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=NAMESPACE
             )
-            path = f"./{artifact_directory(source)}"
+            directory = artifact_directory(source)
+            path = f"./{directory}"
+            if PurePosixPath(directory).is_relative_to(PARKED_ROOT):
+                metadata_annotations["ducktape.org/parked"] = "true"
         case KustomizationSpecSourceRef():
             if path is None:
                 raise ValueError(f"{name=}: a direct sourceRef needs an explicit path")
             source_ref = source
 
-    metadata_annotations = dict(annotations or {})
     if description is not None:
         metadata_annotations["description"] = description
 
@@ -398,18 +391,18 @@ def kustomize_kustomization(
     cluster/docs/cdk8s.md) -- that's specific to that use, not a property of this
     field; a generated Component directory would work the same way.
 
-    A generated ConfigMap has no namespace unless its entry or `namespace` gives it one, and
-    the API server rejects it ("namespace not specified"), which fails the whole Flux apply of
-    the directory while every hand-authored object in it looks correct. So an entry without
-    one raises, unless `namespaced_by_overlay` says this is a base only overlays that set the
-    namespace include.
+    Each generated ConfigMap or Secret needs a namespace from its entry, the Kustomization,
+    or a consuming overlay. An unplaced resource can fail the whole Flux apply.
     """
-    unplaced = [entry.name for entry in config_map_generator if not entry.namespace]
-    if unplaced and not namespace and not namespaced_by_overlay:
-        raise ValueError(f"configMapGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
-    unplaced = [entry.name for entry in secret_generator if not entry.namespace]
-    if unplaced and not namespace and not namespaced_by_overlay:
-        raise ValueError(f"secretGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
+    if not namespace and not namespaced_by_overlay:
+        unplaced = [
+            f"{kind}/{entry.name}"
+            for kind, entries in (("ConfigMap", config_map_generator), ("Secret", secret_generator))
+            for entry in entries
+            if not entry.namespace
+        ]
+        if unplaced:
+            raise ValueError(f"Generated resources have no namespace: {', '.join(unplaced)}")
     manifest = _KustomizeKustomization(
         namespace=namespace,
         resources=resources,

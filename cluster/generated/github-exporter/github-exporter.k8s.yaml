@@ -50,7 +50,6 @@ kind: Deployment
 metadata:
   annotations:
     description: GitHub API rate-limit exporter for the agentydragon account.
-    secret.reloader.stakater.com/reload: github-exporter-agentydragon-token
   labels:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-exporter
@@ -184,7 +183,6 @@ kind: Deployment
 metadata:
   annotations:
     description: GitHub API rate-limit exporter for the agentydragon-agent account.
-    secret.reloader.stakater.com/reload: github-exporter-agentydragon-agent-token
   labels:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-exporter
@@ -296,7 +294,6 @@ kind: Deployment
 metadata:
   annotations:
     description: GitHub GraphQL rate-limit exporter for the agentydragon account.
-    secret.reloader.stakater.com/reload: github-exporter-agentydragon-token
   labels:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-graphql-rate-exporter
@@ -405,7 +402,6 @@ kind: Deployment
 metadata:
   annotations:
     description: GitHub GraphQL rate-limit exporter for the agentydragon-agent account.
-    secret.reloader.stakater.com/reload: github-exporter-agentydragon-agent-token
   labels:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-graphql-rate-exporter

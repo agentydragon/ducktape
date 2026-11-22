@@ -234,6 +234,15 @@ grafana_dashboard(
 )
 
 grafana_dashboard(
+    name = "tabbyapi",
+    srcs = ["tabbyapi.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+grafana_dashboard(
     name = "flux_cluster",
     srcs = ["flux_cluster.py"],
     deps = [

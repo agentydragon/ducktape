@@ -119,7 +119,7 @@ def chart(app: App) -> Chart:
                             image=IMAGE,
                             security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                             args=["connect", "--config", f"{_CONFIG}/collector.toml"],
-                            ports=[config.COLLECTOR.port.k8s_container_port()],
+                            ports=[config.COLLECTOR.k8s_container_port()],
                             liveness_probe=k8s.Probe(
                                 http_get=k8s.HttpGetAction(
                                     path="/healthz", port=k8s.IntOrString.from_number(config.COLLECTOR.port.number)
@@ -163,7 +163,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=config.COLLECTOR.name, namespace=config.NAMESPACE, labels=config.COLLECTOR.labels),
-        spec=k8s.ServiceSpec(selector=config.COLLECTOR.pods.selector, ports=[config.COLLECTOR.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=config.COLLECTOR.pods.selector, ports=[config.COLLECTOR.k8s_service_port()]),
     )
     ServiceMonitor(
         chart,

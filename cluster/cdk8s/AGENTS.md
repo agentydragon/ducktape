@@ -51,7 +51,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   afterwards are still checked (fleet rules run at App synth). `haku/charts.py`'s
   `*_chart(app)` is the same shape. The entry point holds no environment data.
 - **References, not names**: `Service(selector=deployment)`,
-  `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; network rules target a
+  `Volume.from_config_map(config_map)`, `RoleBinding(..., role=role)`; network rules target a
   workload via the owning module's exported constant
   (`cilium.endpoint_labels(namespace, egress.NAME)`). Helpers return the object they build.
 - **A name carries only what its namespace does not**: in namespace `atuin`, `server`,
@@ -85,9 +85,10 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   may hold a props-driven construct (tested with synthetic props); the cluster's
   instantiation lives here. Generally, config is typed by its consumer's schema; where
   that schema is another artifact, mirror it in a model tied by a test — e.g. a
-  tofu-controller module's inputs are a frozen pydantic model mirroring `variables.tf`
-  (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since tofu only warns on
-  undeclared variables.
+  GitOps OpenTofu module's inputs are a frozen Pydantic model mirroring `variables.tf`.
+  Pass the model to `gitops_workspace(variables=...)` for Crossplane or
+  `gitops_terraform(variables=...)` for tofu-controller. The generated-manifest test checks
+  the supplied variables against the module because OpenTofu only warns on undeclared names.
   Put authoring explanations in Python comments, not prose prepended to serialized
   ConfigMap values. Keep syntax required by the consumer, such as parser directives.
 - **What the generator knows, it renders** as a Python constant. Flux `postBuild`
@@ -95,10 +96,21 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   `dependsOn` edge per consumer, and the committed manifests see only
   `${VAR}`.
 - **Cluster-wide behavior is configured once where it runs; objects carry only
-  exceptions.** Reloader runs `autoReloadAll`, ignores Jobs/CronJobs (`reloader.py`), and
-  reads only workload metadata (not the pod template): a workload that must not restart
-  says `"false"` there; others say nothing. Alloy discovers every
-  ServiceMonitor/PodMonitor/PrometheusRule without a selector — no label for it.
+  exceptions.** Reloader runs [`autoReloadAll`](reloader.py). When a container reads a
+  ConfigMap or Secret through an environment variable or a mounted volume, omit the
+  reload annotation. Reloader discovers that reference. A named `…/reload` list can
+  add a trigger for a resource the Pod does not reference. It still allows automatic
+  reloads for other referenced resources.
+  - Put workload overrides on the Deployment or StatefulSet metadata. Use
+    `reloader.stakater.com/auto: "false"` to opt out of automatic reloads. For a
+    ConfigMap or Secret whose changes should never trigger a rollout for any consumer,
+    put `reloader.stakater.com/ignore: "true"` on that resource. If only one workload
+    rereads mounted credentials at runtime, list those Secrets in its
+    `secrets.exclude.reloader.stakater.com/reload` annotation.
+  - The cluster excludes Jobs, CronJobs and the ClickHouse namespace. See the
+    [controller configuration](reloader.py) for the reasons.
+  - Alloy discovers every ServiceMonitor/PodMonitor/PrometheusRule without a selector —
+    no label for it.
 - **One shape per job** (build a kind, a field variant, amend a pod spec, declare a Flux
   node). Find how the tree already does it before writing a helper; a second shape for the
   same job is a review finding even if both work.
@@ -106,7 +118,9 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   `dns_egress`, ...), generic shapes in `providers/cilium/network_policy.py`
   (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
   `node_scheduling.py`, `pod_policy.py`, `volume_claim.volume_claim`,
-  `api_resource.custom_resource`. Parameterize only variation call sites actually have.
+  `api_resource.custom_resource`. For typed container requests and limits, use
+  `container_resources.container_resources` for CPU and memory or `quantities` for a
+  map that includes other resources. Parameterize only variation call sites actually have.
 - **A value feeding two artifacts lives once** (web-push hosts: one tuple in
   `agentplane/staging.py` feeds both the Action Service allowlist and its egress rule).
   Derive both; never a test reading both.
@@ -162,7 +176,7 @@ node or pass its timing fields and predecessors.
   differs from ours). The same _fact_ twice becomes one local; the same _value_
   everywhere (SOPS `decryption`) may become a module constant.
 - **A retained component function lives with its directory's generator once fully generated**
-  (`kube_api_proxy.kube_api_proxy`, `valkey.valkey`); until then in
+  (`monitoring/loki.py`'s `loki`, `monitoring/mimir.py`'s `mimir`); until then in
   `<area>/flux_kustomizations.py`, moving as part of the conversion. No interim flattening
   of those packages.
 - **Output routing is by `spec.path`**; Kustomizations whose `path` isn't their own
@@ -229,9 +243,11 @@ helper, class or indirection.
   in memory, asserts every written file (including
   `cluster/k8s/flux/kustomizations.k8s.yaml`) equals the committed one, and that
   `cluster/generated` holds nothing else. No keep-lists: data deps carry both trees.
-- **Invariants live beside the generator**: tests over the in-memory synth
-  (`agentplane/testing/fixtures.py`'s `staging_manifests`) or fleet rules (`fleet_rules.py`,
-  attached to every App `generation.write_app` writes, seeing all its charts). Every object
+- **Invariants live beside the generator**: inspect cdk8s objects directly when their public
+  properties expose the behavior under test. Synthesize only when checking serialized output
+  or running an external consumer. Whole-environment tests can use
+  `agentplane/testing/fixtures.py`'s `staging_manifests`. Fleet rules (`fleet_rules.py`)
+  attach to every App `generation.write_app` writes and see all its charts. Every object
   of a kind → fleet rule; one construct's shape → test in its package; a relation holding
   by construction (selector is the Deployment, ConfigMap rendered from `Settings`) → no
   test.
@@ -260,8 +276,8 @@ whose object is gone or now passes.
 
 ## Gotchas
 
-- `Chart.api_objects` is direct children only: walk `chart.node.find_all()` filtered by
-  `ApiObject.is_api_object`.
+- Use `api_objects_in(scope)` from `api_objects.py` to include resources nested inside constructs.
+  `Chart.api_objects` lists direct children only.
 - `cdk8s.Testing.synth(chart)` is `chart.to_json()`, which validates the whole app, so
   `add_validation` rules run in tests. In a `test_*.py`, `from cdk8s import Testing` gets
   collected by pytest: import `Testing as Cdk8sTesting` with a comment saying why.
@@ -293,7 +309,7 @@ whose object is gone or now passes.
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and suffixes
   the rest, regardless of storage version. Tofu-controller v0.17.0 only serves v1alpha2,
   so its generated `Terraform` class renders v1alpha2
-  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import`).
+  (`//cluster/cdk8s:test_tofu_controller_release`).
 
 ## Typed constructs over raw dicts
 

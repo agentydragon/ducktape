@@ -201,13 +201,12 @@ def format_pace(pace: PaceResult | None) -> str | None:
     return f"{sign}{abs(round(pace.deviation))} pp"
 
 
-def format_pace_forecast(pace: PaceResult | None, reset_seconds: float) -> str | None:
+def format_pace_forecast(pace: PaceResult | None) -> str | None:
     if pace is None or not pace.stable or pace.projected_at_reset is None:
         return None
     projected = pace.projected_at_reset
     if projected > 100.5 and pace.seconds_to_exhaust is not None:
-        shortfall = reset_seconds - pace.seconds_to_exhaust
-        return f"exhausts ~{format_duration(shortfall)} before reset"
+        return f"0% in ~{format_duration(pace.seconds_to_exhaust)}"
     if projected < 95:
         return f"leaves ~{round(100 - projected)}% unused at reset"
     return "on pace"

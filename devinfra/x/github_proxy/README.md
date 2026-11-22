@@ -17,6 +17,13 @@ Layout:
 - `debug/github_graphql_exhaustion/`: the #5213 investigation.
 - `../github_api_capture/`: capture reporting scripts.
 
+Builds and tests are opt-in while the proxy is parked:
+
+```sh
+bbr build //devinfra/x/github_proxy/central:image
+bbr test //devinfra/x/github_proxy/central:tests //cluster/cdk8s/x/github_api_proxy:test_proxy
+```
+
 Reviving needs: re-add the generator to `cluster/cdk8s/generate_manifests.py`, regenerate the
 Flux and image-automation outputs, restore `image_targets.json` and
 `cluster/cdk8s/external_secrets/config.py` entries, mint new client credentials, and import

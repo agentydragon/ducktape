@@ -1,5 +1,10 @@
 load("//devinfra/tf:defs.bzl", "tf_module")
 
+exports_files(
+    ["variables.tf"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
 tf_module(
     name = "gitlab-spike",
     providers = {

@@ -67,6 +67,31 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+    csiAttacher:
+      resources:
+        requests:
+          cpu: 15m
+          memory: 48Mi
+    csiLivenessProbe:
+      resources:
+        requests:
+          cpu: 15m
+          memory: 40Mi
+    csiNodeDriverRegistrar:
+      resources:
+        requests:
+          cpu: 15m
+          memory: 40Mi
+    csiProvisioner:
+      resources:
+        requests:
+          cpu: 15m
+          memory: 64Mi
+    csiResizer:
+      resources:
+        requests:
+          cpu: 15m
+          memory: 80Mi
     fsGroupPolicy: ReadWriteOnceWithFSType
     mountService:
       affinity:

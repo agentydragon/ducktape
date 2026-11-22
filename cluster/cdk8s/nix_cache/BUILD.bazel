@@ -1,4 +1,3 @@
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -26,6 +25,8 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:volume_claim",
@@ -34,7 +35,6 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/github_secrets_sync:workspace",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:database",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/rotators/attic_jwt_rotation:config",

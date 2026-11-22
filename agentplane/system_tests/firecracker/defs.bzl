@@ -38,7 +38,11 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
             "dockerNetwork": "bridge",
             "test.EstimatedCPU": "4",
             "test.EstimatedFreeDiskBytes": "20GB",
-            "test.EstimatedMemory": "6GB",
+            # Both Firecracker cases passed with a 5 GiB cap and swap disabled, peaking at 4.44 GiB:
+            # https://app.buildbuddy.io/invocation/3019fd35-3795-41dd-823f-2714ae254ef8
+            # At 4 GiB both passed but the test cgroup recorded 34 s of full memory stalls:
+            # https://app.buildbuddy.io/invocation/7ff14002-8aac-4ec0-adc0-0ee5f306b5e6
+            "test.EstimatedMemory": "5GiB",
         } | KVM_EXEC_PROPERTIES | {
             "test.Pool": pool,
             "test.recycle-runner": "true" if recycle else "false",
@@ -50,14 +54,13 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
         deps = [
             "//:conftest",
             "//agentplane/system_tests/k3s:recycling_probe",
-            "//agentplane/app/testing:client",
-            "//agentplane/session_dispatcher/dispatcher:testing_client",
-            "//agentplane/system_tests:app_fixtures",
+            "//agentplane/system_tests/driver:native_fixtures",
+            "//agentplane/system_tests/driver:native_platform",
             "//agentplane/system_tests:conftest",
-            "//agentplane/system_tests/deployment:pytest_plugin",
             "//agentplane/system_tests/driver:cluster",
             "//agentplane/system_tests/driver:sandbox",
             "//agentplane/system_tests/driver:scripted_upstream",
+            "//agentplane/system_tests/firecracker:pytest_plugin",
             "//agentplane/system_tests/scenarios:firecracker",
             "//agentplane/system_tests/scenarios:workload_trust",
             "@pypi//pytest",

@@ -9,8 +9,9 @@ from pathlib import Path
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.home_lan import HOME_LAN
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from ssh_mcp_server.server import SshSettings, TargetConfig
+from ssh_mcp_server.settings import SshSettings, TargetConfig
 
 NAME = "ssh-mcp"
 NAMESPACE = NAME
@@ -20,8 +21,7 @@ SERVICE = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 MCP_URL = f"{SERVICE.url}/mcp"
-BEARER_SECRET_NAME = "ssh-mcp-bearer"
-BEARER_SECRET_KEY = "bearer-token"
+BEARER = SecretRef(namespace=NAMESPACE, name="ssh-mcp-bearer").key("bearer-token")
 CONFIG_MAP_NAME = "config"
 CONFIG_DIR = "/etc/ssh-mcp"
 

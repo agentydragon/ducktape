@@ -1,40 +1,41 @@
 """Kubernetes resource models and parsing utilities.
 
-`parse_k8s_resources` is a small kind-discriminated parser: it returns the typed subclass
-for the kinds checks care about (ImageRepository, ImagePolicy, Receiver, secret stores, and
-selected workloads); every other kind stays as the generic `K8sResource` base. Consumers
-isinstance-narrow to the variant they need.
+`parse_k8s_resources` selects typed views for resources inspected by validation checks.
+SandboxTemplate dispatch also uses the API group because the two groups have different shapes.
+Other resources use the generic `K8sResource` base.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from pathlib import Path
+from typing import Any, NotRequired, TypedDict
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasPath, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+
+class CamelCaseModel(BaseModel):
+    """Accept Kubernetes camelCase fields and Python field names in validation models."""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
 
 
 class K8sMetadata(BaseModel):
     """Kubernetes resource metadata."""
-
-    model_config = ConfigDict(extra="ignore")
 
     name: str = ""
     namespace: str = ""
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class Condition(BaseModel):
+class Condition(CamelCaseModel):
     """A standard Kubernetes status condition.
 
     Used by controllers across the cluster (Flux Kustomizations, HelmReleases,
     Deployments via `Available`/`Progressing`, CNPG `Cluster.Ready`, etc.) to
     report observed state. Consumers usually filter by `type` and check
     `status` ("True"/"False"/"Unknown")."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     type: str
     status: str  # "True" / "False" / "Unknown"
@@ -45,7 +46,7 @@ class Condition(BaseModel):
 class K8sResource(BaseModel):
     """Parsed Kubernetes resource from YAML (generic base; see module docstring)."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    model_config = ConfigDict(populate_by_name=True)
 
     kind: str
     api_version: str = Field(default="", alias="apiVersion")
@@ -60,27 +61,24 @@ class K8sResource(BaseModel):
         return self.metadata.namespace
 
 
-class PodContainer(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodContainer(CamelCaseModel):
     image: str | None = None
 
 
-class ContainerDisk(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class ContainerDisk(CamelCaseModel):
     image: str | None = None
 
 
-class PodVolume(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class ImageVolumeSource(BaseModel):
+    reference: str
 
+
+class PodVolume(CamelCaseModel):
     container_disk: ContainerDisk | None = None
+    image: ImageVolumeSource | None = None
 
 
-class PodSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodSpec(CamelCaseModel):
     containers: list[PodContainer] = Field(default_factory=list)
     init_containers: list[PodContainer] = Field(default_factory=list)
     volumes: list[PodVolume] = Field(default_factory=list)
@@ -93,18 +91,15 @@ class PodSpec(BaseModel):
             for volume in self.volumes
             if volume.container_disk and volume.container_disk.image
         )
+        images.extend(volume.image.reference for volume in self.volumes if volume.image)
         return images
 
 
-class PodTemplateSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodTemplateSpec(CamelCaseModel):
     spec: PodSpec = Field(default_factory=PodSpec)
 
 
-class PodTemplateWorkloadSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class PodTemplateWorkloadSpec(CamelCaseModel):
     template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
 
 
@@ -112,33 +107,15 @@ class PodTemplateWorkloadResource(K8sResource):
     spec: PodTemplateWorkloadSpec = Field(default_factory=PodTemplateWorkloadSpec)
 
     @property
-    def pod_specs(self) -> list[PodSpec]:
-        return [self.spec.template.spec]
+    def images(self) -> list[str]:
+        return self.spec.template.spec.images
 
 
-class CronJobJobTemplate(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
+class CronJobResource(PodTemplateWorkloadResource):
+    spec: PodTemplateWorkloadSpec = Field(validation_alias=AliasPath("spec", "jobTemplate", "spec"))
 
 
-class CronJobSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    job_template: CronJobJobTemplate = Field(default_factory=CronJobJobTemplate)
-
-
-class CronJobResource(K8sResource):
-    spec: CronJobSpec = Field(default_factory=CronJobSpec)
-
-    @property
-    def pod_specs(self) -> list[PodSpec]:
-        return [self.spec.job_template.template.spec]
-
-
-class SandboxTemplateSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class SandboxTemplateSpec(CamelCaseModel):
     pod_template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
 
 
@@ -146,21 +123,48 @@ class SandboxTemplateResource(K8sResource):
     spec: SandboxTemplateSpec = Field(default_factory=SandboxTemplateSpec)
 
     @property
-    def pod_specs(self) -> list[PodSpec]:
-        return [self.spec.pod_template.spec]
+    def images(self) -> list[str]:
+        return self.spec.pod_template.spec.images
+
+
+class FirecrackerTemplateSpec(CamelCaseModel):
+    pod: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
+    boot_image: str | None = None
+    runner_image: str | None = None
+
+
+class AgentplaneSandboxTemplateSpec(BaseModel):
+    pod: PodTemplateSpec | None = None
+    vm: PodTemplateWorkloadSpec | None = None
+    firecracker: FirecrackerTemplateSpec | None = None
+
+
+class AgentplaneSandboxTemplateResource(K8sResource):
+    spec: AgentplaneSandboxTemplateSpec = Field(default_factory=AgentplaneSandboxTemplateSpec)
+
+    @property
+    def images(self) -> list[str]:
+        if self.spec.pod is not None:
+            return self.spec.pod.spec.images
+        if self.spec.vm is not None:
+            return self.spec.vm.template.spec.images
+        if firecracker := self.spec.firecracker:
+            # The controller mounts these as OCI image volumes on the launcher Pod.
+            volumes = [image for image in (firecracker.boot_image, firecracker.runner_image) if image]
+            return [*firecracker.pod.spec.images, *volumes]
+        return []
 
 
 class ImageRepositoryResource(K8sResource):
-    """An image-automation `ImageRepository`: `image_automation` matches them to Receiver references by name."""
+    """An image-automation `ImageRepository`: `image_automation` matches them to namespaced Receiver references."""
 
 
 class SecretRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     name: str = ""
 
 
-class RbacRule(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, alias_generator=to_camel)
+class RbacRule(CamelCaseModel):
+    model_config = ConfigDict(extra="forbid")
 
     api_groups: list[str] = Field(default_factory=list)
     resources: list[str] = Field(default_factory=list)
@@ -173,8 +177,19 @@ class RoleResource(K8sResource):
     rules: list[RbacRule] = Field(default_factory=list)
 
 
-class RbacRoleRef(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, alias_generator=to_camel)
+class AgentplanePolicyRule(BaseModel):
+    type: str
+    namespaces: list[str] = Field(default_factory=list)
+
+
+class AgentplanePolicySetResource(K8sResource):
+    """Delegation checks read namespaced role bindings from both Agentplane policy resource kinds."""
+
+    rules: list[AgentplanePolicyRule] = Field(validation_alias=AliasPath("spec", "rules"))
+
+
+class RbacRoleRef(CamelCaseModel):
+    model_config = ConfigDict(extra="forbid")
 
     api_group: str
     kind: str
@@ -185,22 +200,18 @@ class RoleBindingResource(K8sResource):
     role_ref: RbacRoleRef | None = Field(default=None, alias="roleRef")
 
 
-class SecretStoreKubernetesProvider(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
+class SecretStoreKubernetesProvider(CamelCaseModel):
     remote_namespace: str = ""
+    auth: dict[str, Any] = Field(default_factory=dict)
 
 
 class SecretStoreProvider(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     kubernetes: SecretStoreKubernetesProvider | None = None
 
 
 class SecretStoreSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SecretStoreResource(K8sResource):
@@ -210,28 +221,26 @@ class SecretStoreResource(K8sResource):
 class ExternalSecretResource(K8sResource):
     """An External Secrets `ExternalSecret`: `checks` looks up the ones a namespace has by name."""
 
-
-class GitRepositorySpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    provider: str | None = None
-    secret_ref: SecretRef | None = None
+    spec: dict[str, Any] = Field(default_factory=dict)
 
 
-class GitRepositoryResource(K8sResource):
-    spec: GitRepositorySpec = Field(default_factory=GitRepositorySpec)
+class ClusterExternalSecretResource(K8sResource):
+    spec: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImagePolicyResource(K8sResource):
     """An image-automation `ImagePolicy`: what a `$imagepolicy` setter marker names."""
 
 
-class _ArtifactGeneratorArtifact(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+_ArtifactCopy = TypedDict("_ArtifactCopy", {"from": str, "to": str})
+
+
+class _ArtifactGeneratorArtifact(TypedDict):
     name: str
+    copy: NotRequired[list[_ArtifactCopy]]
 
 
 class ArtifactGeneratorSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     artifacts: list[_ArtifactGeneratorArtifact] = Field(default_factory=list)
 
 
@@ -244,13 +253,12 @@ class ArtifactGeneratorResource(K8sResource):
 
 
 class ReceiverResourceRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     kind: str = ""
     name: str = ""
+    namespace: str | None = None
 
 
 class ReceiverSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
     resources: list[ReceiverResourceRef] = []
 
 
@@ -264,14 +272,18 @@ class SopsMetadata(BaseModel):
     without a `decryption` block. Inner fields (mac, age recipients, lastmodified)
     are ignored — model them only if a future check consumes them."""
 
-    model_config = ConfigDict(extra="ignore")
-
 
 class SecretResource(K8sResource):
     """A `Secret`. `sops` is set when the source document carries a SOPS metadata
     block, i.e. the rendered Secret is still ENC[...] ciphertext."""
 
     sops: SopsMetadata | None = None
+
+
+class FluxControllerResource(K8sResource):
+    """A HelmRelease or Terraform object whose readiness gates its Flux owner."""
+
+    suspended: bool = Field(default=False, validation_alias=AliasPath("spec", "suspend"))
 
 
 class CiliumPolicyResource(K8sResource):
@@ -287,7 +299,6 @@ class CiliumPolicyResource(K8sResource):
 
 
 _KIND_MODELS: dict[str, type[K8sResource]] = {
-    "GitRepository": GitRepositoryResource,
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
     "ArtifactGenerator": ArtifactGeneratorResource,
@@ -299,6 +310,7 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "Secret": SecretResource,
     "SecretStore": SecretStoreResource,
     "ClusterSecretStore": SecretStoreResource,
+    "ClusterExternalSecret": ClusterExternalSecretResource,
     "ExternalSecret": ExternalSecretResource,
     "CiliumNetworkPolicy": CiliumPolicyResource,
     "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,
@@ -306,22 +318,35 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "DaemonSet": PodTemplateWorkloadResource,
     "Deployment": PodTemplateWorkloadResource,
     "Job": PodTemplateWorkloadResource,
-    "SandboxTemplate": SandboxTemplateResource,
     "StatefulSet": PodTemplateWorkloadResource,
     "VirtualMachine": PodTemplateWorkloadResource,
 }
 
 
-def parse_k8s_resources(docs: Iterable[object]) -> list[K8sResource]:
-    """Parse YAML documents into K8s resources (typed subclass per kind), skipping non-resources."""
+_GROUP_KIND_MODELS: dict[tuple[str, str], type[K8sResource]] = {
+    ("helm.toolkit.fluxcd.io", "HelmRelease"): FluxControllerResource,
+    ("infra.contrib.fluxcd.io", "Terraform"): FluxControllerResource,
+    ("agentplane.allegedly.works", "PolicySet"): AgentplanePolicySetResource,
+    ("agentplane.allegedly.works", "KubernetesRoleSet"): AgentplanePolicySetResource,
+    ("agentplane.allegedly.works", "SandboxTemplate"): AgentplaneSandboxTemplateResource,
+    ("extensions.agents.x-k8s.io", "SandboxTemplate"): SandboxTemplateResource,
+}
+
+
+def _resource_model(doc: dict) -> type[K8sResource]:
+    kind = doc["kind"]
+    group = (doc.get("apiVersion") or "").rpartition("/")[0]
+    return _GROUP_KIND_MODELS.get((group, kind), _KIND_MODELS.get(kind, K8sResource))
+
+
+def parse_k8s_resources(docs: Iterable[object], *, kinds: set[str] | None = None) -> list[K8sResource]:
+    """Build typed views of matching Kubernetes resources, skipping non-resource documents."""
     return [
-        _KIND_MODELS.get(doc["kind"], K8sResource).model_validate(doc)
+        _resource_model(doc).model_validate(doc)
         for doc in docs
-        if isinstance(doc, dict) and doc.get("kind")
+        if isinstance(doc, dict) and (kind := doc.get("kind")) and (kinds is None or kind in kinds)
     ]
 
 
-def parse_k8s_resource_file(yaml_file: Path) -> list[K8sResource]:
-    """Parse a YAML file and extract all K8s resources."""
-    with yaml_file.open() as f:
-        return parse_k8s_resources(yaml.safe_load_all(f))
+def load_k8s_resources(data: bytes | str, *, kinds: set[str] | None = None) -> list[K8sResource]:
+    return parse_k8s_resources(yaml.load_all(data, Loader=yaml.CSafeLoader), kinds=kinds)

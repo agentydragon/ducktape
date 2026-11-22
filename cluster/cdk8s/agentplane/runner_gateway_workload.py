@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
-from pathlib import Path
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
@@ -30,7 +29,6 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -39,7 +37,6 @@ from agentplane.net.peertls.config import (
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
-    ClientTLS,
     ServiceSPIFFEID,
 )
 from agentplane.session_dispatcher.settings import CentralSamplerTarget, ServiceDelegation, ServiceDelegator, Settings
@@ -58,12 +55,12 @@ from cluster.cdk8s.agentplane import (
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -80,7 +77,7 @@ def add_service(scope: Construct, env: Environment) -> None:
         scope,
         "sessions-service",
         metadata=k8s.ObjectMeta(name=sessions.name, namespace=env.namespace, labels=sessions.labels),
-        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[sessions.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[sessions.k8s_service_port()]),
     )
 
 
@@ -99,6 +96,9 @@ def _add_dispatcher_workload(
     memory_limit: Size | None,
     service_account: ServiceAccount,
 ) -> ServiceWorkload:
+    health = TlsGrpcHealth(
+        port=endpoint.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=SESSION_DISPATCHER_URI
+    )
     workload = add_service_workload(
         scope,
         env,
@@ -106,28 +106,9 @@ def _add_dispatcher_workload(
         container=endpoint.name,
         image=image,
         env_variables={database_env: database_url, **(container_env or {})},
-        readiness=tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=SESSION_DISPATCHER_URI,
-            initial_delay_seconds=3,
-            period_seconds=10,
-        ),
-        liveness=tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=SESSION_DISPATCHER_URI,
-            initial_delay_seconds=20,
-            period_seconds=30,
-        ),
-        startup=tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=SESSION_DISPATCHER_URI,
-            initial_delay_seconds=0,
-            period_seconds=5,
-            failure_threshold=60,
-        ),
+        readiness=health.readiness(),
+        liveness=health.liveness(),
+        startup=health.startup(),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(100)),
             memory=MemoryResources(request=memory_request, limit=memory_limit),
@@ -235,26 +216,14 @@ class RunnerGateway(Construct):
             sessions, container=sessions_workload.container, name="sessions"
         )
         client = workload_tls.mount_client_certificate(sessions, container=sessions_workload.container, name="sessions")
-        assert client.cert_file is not None
-        assert client.key_file is not None
-        assert client.ca_file is not None
         central_sampler_target = (
             CentralSamplerTarget(
-                target=central_sampler.target(namespace),
-                tls=ClientTLS(
-                    ca_file=Path(client.ca_file),
-                    server_uri=CENTRAL_SAMPLER_URI,
-                    cert_file=Path(client.cert_file),
-                    key_file=Path(client.key_file),
-                    client_uri=GATEWAY_SESSIONS_URI,
-                ),
+                target=central_sampler.service(namespace).authority,
+                tls=client.client_tls(CENTRAL_SAMPLER_URI, client_uri=GATEWAY_SESSIONS_URI),
             )
             if env.central_sampler is not None
             else None
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         dispatcher_service_delegation = None
         if delegation_actor is not None:
             dispatcher_service_delegation = ServiceDelegation(
@@ -276,19 +245,9 @@ class RunnerGateway(Construct):
             sandbox_namespace=namespace,
             policy_namespace=namespace,
             kubernetes_client_qps=-1,
-            rpc=workload_listener.Listener(
-                listen_address=f"0.0.0.0:{endpoint.pod_port}",
-                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
-            gateway_tls=ClientTLS(
-                ca_file=Path(client.ca_file),
-                server_uri=SANDBOX_CONTROLLER_URI,
-                cert_file=Path(client.cert_file),
-                key_file=Path(client.key_file),
-                client_uri=GATEWAY_SESSIONS_URI,
-            ),
-            runner_control_target_template=environment_service.environments_control_target(namespace),
+            rpc=serving_tls.spiffe_listener(endpoint.pod_port),
+            gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
+            runner_control_target_template=environment_service.environments_service(namespace).authority,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,
             dispatcher_service_delegation=dispatcher_service_delegation,
@@ -348,7 +307,7 @@ class RunnerGateway(Construct):
 
 
 def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, *, role_name: str) -> None:
-    Role(
+    role = Role(
         scope,
         "role",
         metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
@@ -373,10 +332,7 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
         ],
     )
     RoleBinding(
-        scope,
-        "rolebinding",
-        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-        role=Role.from_role_name(scope, "role-ref", role_name),
+        scope, "rolebinding", metadata=ApiObjectMetadata(name=role_name, namespace=namespace), role=role
     ).add_subjects(service_account)
 
 
@@ -390,16 +346,11 @@ def serving_chart(
     }
     orchestration = actions.orchestration_callers(env)
     session_delegation = actions.session_delegation_callers(env)
-    dispatcher_database_url = (
-        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
-        .key("uri")
-        .env_value(chart, "dispatcher-database-url")
-    )
     RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        database_url=dispatcher_database_url,
+        database_url=Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace),
         sessions_image=_SESSIONS_IMAGE,
         dispatcher_callers=callers | orchestration | session_delegation,
         orchestration_callers=orchestration,
