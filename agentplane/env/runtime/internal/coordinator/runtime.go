@@ -480,7 +480,6 @@ func (r *Runtime) finishClose() error {
 		desired.SealUID = sealedUID
 		desired.IncarnationUID = sealedUID
 	}
-	r.admissionOpen = false
 	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
 		r.mu.Unlock()
 		r.transitionMu.Unlock()
