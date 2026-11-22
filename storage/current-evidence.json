@@ -1,0 +1,201 @@
+{
+  "source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
+  "measurement_utc": "2026-11-22T10:57:24+00:00",
+  "commitments_utc": "2026-11-22T10:58:25+00:00",
+  "followup_utc": "2026-11-22T11:01:25.292610+00:00",
+  "observed_pool_count": 9,
+  "scope": "OVH HDD pools, their SeaweedFS and ClickHouse filesystems, and selected S3 accounting and cache workloads. Pool names are assigned labels.",
+  "pool_baseline_window_days": 7,
+  "reserve_fraction": 0.1,
+  "pools": [
+    {
+      "pool": "A",
+      "capacity_gb": 3992.19,
+      "physical_used_pct": 43.11,
+      "physical_used_pct_7d_earlier": 38.37,
+      "physical_used_pct_7d_max": 43.11,
+      "physical_samples_7d": 10080,
+      "physical_growth_gb_7d": 189.23,
+      "physical_free_gb": 2271.16,
+      "metadata_used_pct": 15.2,
+      "collector_sample_age_seconds": 46,
+      "committed_gb": 3731.25,
+      "committed_pct": 93.5,
+      "commitment_margin_gb_at_10pct_reserve": -138.28,
+      "capacity_add_gb_at_10pct_reserve": 153.64,
+      "diskful_definitions": 12,
+      "seaweed_current_gib": 2500,
+      "seaweed_fs_used_gib": 1198.4,
+      "seaweed_fs_capacity_gib": 2459.68,
+      "seaweed_fs_used_pct": 48.7,
+      "seaweed_deleted_gb": 58.7,
+      "ch_resize_only_margin_gb": 76.47,
+      "resize_prior_targets": {
+        "seaweed_target_gib": 2500,
+        "reserve_margin_gb": 76.47,
+        "seaweed_used_pct_of_nominal_size": 47.9
+      },
+      "resize_to_max_targets": {
+        "seaweed_target_gib": 2500.0,
+        "reserve_margin_gb": 76.47,
+        "seaweed_used_pct_of_nominal_size": 47.9
+      }
+    },
+    {
+      "pool": "B",
+      "capacity_gb": 1987.51,
+      "physical_used_pct": 61.74,
+      "physical_used_pct_7d_earlier": 54.99,
+      "physical_used_pct_7d_max": 61.75,
+      "physical_samples_7d": 10080,
+      "physical_growth_gb_7d": 134.16,
+      "physical_free_gb": 760.42,
+      "metadata_used_pct": 10.67,
+      "collector_sample_age_seconds": 42,
+      "committed_gb": 2600.6,
+      "committed_pct": 130.8,
+      "commitment_margin_gb_at_10pct_reserve": -811.84,
+      "capacity_add_gb_at_10pct_reserve": 902.05,
+      "diskful_definitions": 14,
+      "seaweed_current_gib": 1700,
+      "seaweed_fs_used_gib": 883.09,
+      "seaweed_fs_capacity_gib": 1672.24,
+      "seaweed_fs_used_pct": 52.8,
+      "seaweed_deleted_gb": 18.63,
+      "ch_resize_only_margin_gb": -597.09,
+      "resize_prior_targets": {
+        "seaweed_target_gib": 1180,
+        "reserve_margin_gb": -38.75,
+        "seaweed_used_pct_of_nominal_size": 74.8
+      },
+      "resize_to_max_targets": {
+        "seaweed_target_gib": 1143,
+        "reserve_margin_gb": 0.98,
+        "seaweed_used_pct_of_nominal_size": 77.3
+      }
+    },
+    {
+      "pool": "C",
+      "capacity_gb": 1991.81,
+      "physical_used_pct": 66.09,
+      "physical_used_pct_7d_earlier": 58.37,
+      "physical_used_pct_7d_max": 66.09,
+      "physical_samples_7d": 10079,
+      "physical_growth_gb_7d": 153.77,
+      "physical_free_gb": 675.42,
+      "metadata_used_pct": 11.43,
+      "collector_sample_age_seconds": 25,
+      "committed_gb": 2310.69,
+      "committed_pct": 116.0,
+      "commitment_margin_gb_at_10pct_reserve": -518.07,
+      "capacity_add_gb_at_10pct_reserve": 575.63,
+      "diskful_definitions": 11,
+      "seaweed_current_gib": 1700,
+      "seaweed_fs_used_gib": 979.72,
+      "seaweed_fs_capacity_gib": 1672.24,
+      "seaweed_fs_used_pct": 58.6,
+      "seaweed_deleted_gb": 49.19,
+      "ch_resize_only_margin_gb": -518.07,
+      "resize_prior_targets": {
+        "seaweed_target_gib": 1290,
+        "reserve_margin_gb": -77.83,
+        "seaweed_used_pct_of_nominal_size": 75.9
+      },
+      "resize_to_max_targets": {
+        "seaweed_target_gib": 1217,
+        "reserve_margin_gb": 0.55,
+        "seaweed_used_pct_of_nominal_size": 80.5
+      }
+    }
+  ],
+  "buckets": {
+    "rows": [
+      {
+        "name": "langfuse",
+        "bytes": 578738150520,
+        "prior_bytes": 525172541376,
+        "sample_utc": "2026-11-22T10:57:41Z",
+        "object_count": 681771
+      },
+      {
+        "name": "mimir-blocks",
+        "bytes": 295156195076,
+        "prior_bytes": 262302581304,
+        "sample_utc": "2026-11-22T10:52:41Z",
+        "object_count": 66044
+      },
+      {
+        "name": "loki",
+        "bytes": 115283424052,
+        "prior_bytes": 117858315872,
+        "sample_utc": "2026-11-22T10:57:41Z",
+        "object_count": 1132718
+      }
+    ],
+    "status_with_usage": 36,
+    "status_total": 38,
+    "status_total_reported_bytes": 1504286152396,
+    "historical_reference": "evidence.json"
+  },
+  "clickhouse": {
+    "replicas": [
+      {
+        "used_gb": 139.06,
+        "used_pct": 26.4
+      },
+      {
+        "used_gb": 139.13,
+        "used_pct": 26.4
+      }
+    ],
+    "claim_gib": 500,
+    "candidate_claim_gib": 300,
+    "declared_reduction_gb_per_owner": 214.75
+  },
+  "cache": {
+    "zot_fs_used_gb": 3.57,
+    "zot_manifest_reads_24h_approx": 2430,
+    "zot_successful_manifest_gets_24h": 1100,
+    "zot_successful_blob_response_bytes_24h": 35779811880,
+    "zot_allocated_gb_by_copy": [50.21, 50.48],
+    "attic_allocated_gb_by_copy": [85.92, 86.96],
+    "zot_gc_enabled_devel": true,
+    "zot_gc_interval_hours_devel": 24
+  },
+  "source_configuration": {
+    "seaweed_claims": "cluster/cdk8s/seaweedfs/cluster.py",
+    "pool_and_claim_metrics": "cluster/cdk8s/monitoring/rules.py",
+    "lvm_collector": "cluster/cdk8s/piraeus-lvm-metrics.sh",
+    "mimir_retention_days": 365,
+    "loki_retention_days": 90,
+    "zot_config": "cluster/k8s/oci-cache/config.json",
+    "langfuse_expiry_issue": 15022,
+    "clickhouse_retention_issue": 15330
+  },
+  "queries": {
+    "pool_pct": "max by (node, storage_pool) (lvm_thin_pool_data_percent)",
+    "pool_size": "max by (node, storage_pool) (lvm_thin_pool_data_size_bytes)",
+    "pool_meta": "max by (node, storage_pool) (lvm_thin_pool_metadata_percent)",
+    "pool_age": "time() - max by (node, storage_pool) (lvm_thin_pool_collector_last_success_timestamp_seconds)",
+    "pool_then": "max by (node, storage_pool) (lvm_thin_pool_data_percent offset 7d)",
+    "pool_range_max": "max by (node, storage_pool) (max_over_time(lvm_thin_pool_data_percent[7d]))",
+    "pool_range_count": "max by (node, storage_pool) (count_over_time(lvm_thin_pool_data_percent[7d]))",
+    "pvc_capacity": "max by (namespace,persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes)",
+    "pvc_used": "max by (namespace,persistentvolumeclaim) (kubelet_volume_stats_used_bytes)",
+    "seaweed_deleted": "max by (pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"deleted_bytes\"})",
+    "pool_committed": "disk_usage:pool_committed_bytes",
+    "definitions": "disk_usage:volume_capacity_bytes{storage_pool=\"hdd\"}",
+    "allocations": "disk_usage:volume_allocated_bytes{storage_pool=\"hdd\"}",
+    "zot_manifest_gets": "sum(count_over_time({namespace=\"oci-cache\",container=\"zot\"} |= \"HTTP API\" | json | message=\"HTTP API\" | method=\"GET\" | path=~\"/v2/.*/manifests/.*\" | statusCode=\"200\" | __error__=\"\" [24h]))",
+    "zot_blob_bytes": "sum(sum_over_time({namespace=\"oci-cache\",container=\"zot\"} |= \"HTTP API\" | json | message=\"HTTP API\" | method=\"GET\" | path=~\"/v2/.*/blobs/.*\" | statusCode=~\"200|206\" | unwrap bodySize | __error__=\"\" [24h]))",
+    "zot_manifest_reads": "sum(increase(zot_repo_downloads_total{namespace=\"oci-cache\"}[24h]))",
+    "zot_copies": "disk_usage:volume_allocated_bytes{namespace=\"oci-cache\",persistentvolumeclaim=\"zot-cache\"}"
+  },
+  "model": {
+    "limits": "90% of each local thin pool's capacity less diskful LINSTOR volume-definition sizes. This is a final-state declaration model. It holds all other declarations fixed and retains GitLab, both ClickHouse replicas and SeaweedFS's application replication.",
+    "clickhouse": "The replacement model removes one 500 GiB definition and adds 300 GiB at each of the two current hosts. GitOps decline or temporary dual definitions, catch-up traffic, volume placement, evacuation, compaction, and filesystem format overhead are outside the model.",
+    "seaweed": "Individually derive the largest allowed Seaweed claim on each host after ClickHouse resize by taking the floor in GiB. Divide the observed filesystem bytes used by nominal candidate claim bytes; a formatted filesystem would have less usable space.",
+    "change": "Seven-day physical growth is the change in LVM data percent multiplied by the current data LV size. Point-to-point; no time-to-exhaustion estimate.",
+    "deletions": "SeaweedFS reports deleted bytes on its volume servers. The counter does not measure available space or bytes LVM would actually recover."
+  }
+}

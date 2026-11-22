@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Cluster storage · remediation and inventory</title>
+    <title>Cluster storage</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -69,7 +69,8 @@
       } from "@mantine/core";
       import { html, mount } from "../report.js";
       import { StorageRemediation } from "./remediation.js";
-      import { useState } from "react";
+      import { CurrentStorage } from "./current.js?v=20261122105825";
+      import { useEffect, useState } from "react";
       import { BarChart } from "@mantine/charts";
       const buckets = [
         {
@@ -1381,7 +1382,7 @@
           bucket: bucket.name,
           GiB: bucket.bytes / 2 ** 30,
         }));
-      function Report() {
+      function HistoricalInventory() {
         const [search, setSearch] = useState("");
         const [backend, setBackend] = useState("");
         const [sort, setSort] = useState("size");
@@ -1399,13 +1400,7 @@
           backupExpanded ||
           (Boolean(search) && visibleBuckets.some((bucket) => bucket.backup));
         const setBackupOpen = setBackupExpanded;
-        return html`<${Container}
-          component=${"main"}
-          size="74rem"
-          py="xl"
-          style=${{ overflowWrap: "anywhere" }}
-        >
-          <${StorageRemediation} />
+        return html`<section>
           <header id="prior-inventory">
             <${Text} component="p" my="sm">
               ${"Previous inventory · 9 November 2026 UTC; measurements below have not been refreshed."}
@@ -1932,6 +1927,46 @@
               ${" Raw payloads and private volume identities remain local. Logical usage, filesystem capacity and thin-pool allocation are never added together. Missing sizes remain unknown. Ready CRs do not prove live consumers, backup restoration or migration acceptance. "}
             <//>
           <//>
+        </section>`;
+      }
+      function Report() {
+        const historical = ![
+          "",
+          "#hdd-pools",
+          "#current-actions",
+          "#bucket-growth",
+          "#historical-analysis",
+        ].includes(window.location.hash);
+        useEffect(() => {
+          if (historical)
+            document
+              .getElementById(window.location.hash.slice(1))
+              ?.scrollIntoView();
+        }, [historical]);
+        return html`<${Container}
+          component="main"
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <${CurrentStorage} />
+          <section id="historical-analysis">
+            <${Accordion}
+              variant="separated"
+              my="xl"
+              defaultValue=${historical ? "historical-analysis" : null}
+            >
+              <${Accordion.Item} value="historical-analysis">
+                <${Accordion.Control}
+                  >Earlier storage analysis · 9–10 November 2026<//
+                >
+                <${Accordion.Panel}>
+                  <${StorageRemediation} />
+                  <${HistoricalInventory} />
+                <//>
+              <//>
+            <//>
+          </section>
           <${Box} c="dimmed" component="footer" mt="xl">
             ${" Latest snapshot only; previous versions remain in Git history. Pages updates after the gh-pages PR merges. "}
           <//>
