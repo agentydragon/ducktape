@@ -5,16 +5,21 @@ import type { LocalCommands } from "./local_commands";
 
 /** Run while the browser offers paginated, payload-readable receipt history for this Session.
  * This observer only reads the server. Submission and same-ID recovery have their own owner. */
-export function watchCommandOwnership(store: LocalCommands, readReceipts: ReadDispatchReceipts): () => void {
+export function watchCommandOwnership(
+  store: LocalCommands,
+  readReceipts: ReadDispatchReceipts,
+  connection: AbortSignal
+): () => void {
   const stop = new AbortController();
+  const signal = AbortSignal.any([stop.signal, connection]);
   const checked = new Map<string, boolean>();
   let running = false;
 
   async function check(): Promise<void> {
-    if (running || stop.signal.aborted || !navigator.onLine) return;
+    if (running || signal.aborted || !navigator.onLine) return;
     running = true;
     try {
-      while (!stop.signal.aborted && navigator.onLine) {
+      while (!signal.aborted && navigator.onLine) {
         const candidates = store.ownershipCandidates();
         for (const id of checked.keys()) if (!candidates.has(id)) checked.delete(id);
         const batch: string[] = [];
@@ -27,14 +32,14 @@ export function watchCommandOwnership(store: LocalCommands, readReceipts: ReadDi
         if (batch.length === 0) return;
         let results: readonly BatchGetDispatchesResponse_Result[];
         try {
-          results = await readReceipts(batch, stop.signal);
+          results = await readReceipts(batch, signal);
         } catch {
           // A mixed rollout or outage leaves the authored copy intact. Retry on reconnect/focus.
           continue;
         }
         const requested = new Set(batch);
         for (const result of results) {
-          if (stop.signal.aborted) return;
+          if (signal.aborted) return;
           if (!requested.delete(result.commandId)) continue;
           store.transferToDispatcher(result);
         }

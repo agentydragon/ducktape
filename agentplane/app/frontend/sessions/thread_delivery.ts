@@ -57,10 +57,10 @@ export function useThreadDelivery(sessionId: string, worksetEnabled: boolean): T
     (ids, signal) => readDispatchReceipts(sessionId, ids, signal),
     [sessionId]
   );
-  const canTransfer = workset.snapshot?.sessionId === sessionId && !workset.stale;
+  const connection = workset.snapshot?.sessionId === sessionId ? workset.connection : null;
   useLayoutEffect(() => {
-    if (canTransfer) return watchCommandOwnership(store, readReceipts);
-  }, [canTransfer, readReceipts, store]);
+    if (connection && !connection.aborted) return watchCommandOwnership(store, readReceipts, connection);
+  }, [connection, readReceipts, store]);
   const [archiveIssues, setArchiveIssues] = useState<readonly DispatchWorksetItem[]>(NO_ISSUES);
   const registerArchiveIssues = useCallback<ThreadDeliveryState["registerArchiveIssues"]>((issues) => {
     setArchiveIssues(issues);

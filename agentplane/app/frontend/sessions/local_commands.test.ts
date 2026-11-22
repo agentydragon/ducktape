@@ -489,30 +489,36 @@ function currentReceipt(dispatch: Dispatch) {
   });
 }
 
-it("keeps the original when a matching receipt arrives after leaving its thread scope", async () => {
-  const store = new LocalCommands("thread");
-  store.remember(COMMAND);
-  store.markAttempted(COMMAND.commandId);
-  const key = "agentplane.pending:thread:input-1";
-  const saved = localStorage.getItem(key);
-  const member = dispatch(COMMAND, DeliveryState.FAILED, "2026-10-14T12:00:00Z");
-  const row = currentReceipt({ ...member, operation: Operation.SUBMIT_INPUT, command: COMMAND, receiptVersion: 3n });
-  let release: () => void = () => undefined;
-  const held = new Promise<void>((resolve) => (release = resolve));
-  const lookup = vi.fn(async (_ids: readonly string[], _signal: AbortSignal) => {
-    await held;
-    return [row];
-  });
-  const stop = watchCommandOwnership(store, lookup);
-  await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce());
-  const [ids, signal] = lookup.mock.calls[0];
-  expect(ids).toEqual([COMMAND.commandId]);
-  stop();
-  expect(signal.aborted).toBe(true);
-  release();
-  await lookup.mock.results[0].value;
-  expect(localStorage.getItem(key)).toBe(saved);
-});
+it.each(["leave the thread", "renew the workset"])(
+  "keeps the original when a matching receipt arrives after we %s",
+  async (cause) => {
+    const store = new LocalCommands("thread");
+    store.remember(COMMAND);
+    store.markAttempted(COMMAND.commandId);
+    const key = "agentplane.pending:thread:input-1";
+    const saved = localStorage.getItem(key);
+    const member = dispatch(COMMAND, DeliveryState.FAILED, "2026-10-14T12:00:00Z");
+    const row = currentReceipt({ ...member, operation: Operation.SUBMIT_INPUT, command: COMMAND, receiptVersion: 3n });
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const lookup = vi.fn(async (_ids: readonly string[], _signal: AbortSignal) => {
+      await held;
+      return [row];
+    });
+    const connection = new AbortController();
+    const stop = watchCommandOwnership(store, lookup, connection.signal);
+    await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce());
+    const [ids, signal] = lookup.mock.calls[0];
+    expect(ids).toEqual([COMMAND.commandId]);
+    if (cause === "renew the workset") connection.abort();
+    else stop();
+    expect(signal.aborted).toBe(true);
+    release();
+    await lookup.mock.results[0].value;
+    stop();
+    expect(localStorage.getItem(key)).toBe(saved);
+  }
+);
 
 it("transfers a protected UNKNOWN receipt while keeping its exact text and subsequent observations in memory", async () => {
   const store = new LocalCommands("thread");
@@ -524,7 +530,7 @@ it("transfers a protected UNKNOWN receipt while keeping its exact text and subse
     .mockResolvedValue([
       currentReceipt({ ...member, command: COMMAND, operation: Operation.SUBMIT_INPUT, receiptVersion: 3n }),
     ]);
-  const stop = watchCommandOwnership(store, check);
+  const stop = watchCommandOwnership(store, check, new AbortController().signal);
   try {
     await vi.waitFor(() => expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]));
     expect(store.getSnapshot().commands[0]?.command).toMatchObject({
@@ -584,7 +590,7 @@ it("transfers only current originals in a mixed batch and keeps authored bytes f
       result: { case: "notFound", value: {} },
     }),
   ]);
-  const stop = watchCommandOwnership(store, read);
+  const stop = watchCommandOwnership(store, read, new AbortController().signal);
   try {
     await vi.waitFor(() => expect(localStorage.getItem("agentplane.pending:thread:live")).toBeNull());
     expect(localStorage.getItem(legacyKey)).toBe(legacyBytes);
@@ -615,7 +621,7 @@ it("requires protected page membership and an exact original before removing loc
     await vi.waitFor(() => expect(lookup).toHaveBeenCalledTimes(times));
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
-  const stop = watchCommandOwnership(store, lookup);
+  const stop = watchCommandOwnership(store, lookup, new AbortController().signal);
   try {
     await waitCheck(1);
     for (const [i, receipt] of [
