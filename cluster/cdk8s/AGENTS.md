@@ -103,7 +103,9 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   - Put workload overrides on the Deployment or StatefulSet metadata. Use
     `reloader.stakater.com/auto: "false"` to opt out of automatic reloads. For a
     ConfigMap or Secret whose changes should never trigger a rollout for any consumer,
-    put `reloader.stakater.com/ignore: "true"` on that resource.
+    put `reloader.stakater.com/ignore: "true"` on that resource. If only one workload
+    rereads mounted credentials at runtime, list those Secrets in its
+    `secrets.exclude.reloader.stakater.com/reload` annotation.
   - The cluster excludes Jobs, CronJobs and the ClickHouse namespace. See the
     [controller configuration](reloader.py) for the reasons.
   - Alloy discovers every ServiceMonitor/PodMonitor/PrometheusRule without a selector —

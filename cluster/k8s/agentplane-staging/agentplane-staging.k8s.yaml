@@ -3698,6 +3698,8 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    secrets.exclude.reloader.stakater.com/reload: agentplane-staging-anthropic-api-key
   labels:
     app.kubernetes.io/name: central-sampler
   name: central-sampler
