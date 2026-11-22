@@ -2,20 +2,17 @@
 managed accounts' EgressCredentials and PolicySets only in its policy namespace, and the status of every
 policy kind it reports on."""
 
-from pathlib import PurePosixPath
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
-from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
+from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml
 
 
 @pytest.fixture(scope="module")
@@ -32,61 +29,24 @@ def _allowed(permissions: set[Permission], group: str, resource: str, *verbs: st
     }
 
 
-def _settings(documents: list[dict[str, Any]]) -> dict[str, Any]:
-    config = find_resource(documents, "ConfigMap", "policy-controller-settings")
-    return cast(dict[str, Any], yaml.safe_load(one(config["data"].values())))
-
-
-def test_policy_controller_serves_policyservice_only_over_tls(staging_manifests: list[dict[str, Any]]) -> None:
-    settings = _settings(staging_manifests)
-    tls = settings["grpc_tls"]
-    assert tls["listen"] == f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}"
-    assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
-    assert "client_ca_file" in tls
-    deployment = find_resource(staging_manifests, "Deployment", policy_controller.NAME, namespace=STAGING_NAMESPACE)
-    pod = deployment["spec"]["template"]["spec"]
-    container = one(pod["containers"])
-    container_ports = {port["containerPort"] for port in container["ports"]}
-    assert container_ports == {8080, 8081, 8083}
-    volumes = {v["name"]: v for v in pod["volumes"]}
-    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    for field in ("cert_file", "key_file"):
-        path = PurePosixPath(tls[field])
-        secret_name = mounts[path.parent]["secret"]["secretName"]
-        certificate = one(
-            doc
-            for doc in staging_manifests
-            if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
-        )
-        assert certificate["spec"]["uris"] == [POLICY_CONTROLLER_URI]
-    service = find_resource(staging_manifests, "Service", policy_controller.NAME, namespace=STAGING_NAMESPACE)
-    service_ports = {port["port"] for port in service["spec"]["ports"]}
-    assert service_ports == {policy_controller.metrics(STAGING_NAMESPACE).port.number, 8083}
-    network_policy = find_resource(
-        staging_manifests, "CiliumNetworkPolicy", policy_controller.NAME, namespace=STAGING_NAMESPACE
-    )["spec"]
-    ingress_ports = {
-        port["port"]
-        for rule in network_policy["ingress"]
-        for group in rule.get("toPorts", [])
-        for port in group["ports"]
-    }
-    assert ingress_ports == {"8080", "8083"}
+@pytest.fixture(scope="module")
+def settings(staging_manifests: list[dict[str, Any]]) -> Settings:
+    return Settings.model_validate(config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml"))
 
 
 def test_service_account_writes_are_scoped_to_the_accounts_namespace(
-    staging_manifests: list[dict[str, Any]], controller_permissions: set[Permission]
+    settings: Settings, controller_permissions: set[Permission]
 ) -> None:
-    accounts_namespace = _settings(staging_manifests)["accounts_namespace"]
+    accounts_namespace = settings.accounts_namespace
     assert accounts_namespace != STAGING_NAMESPACE
     assert _allowed(controller_permissions, "", "serviceaccounts", "create", "delete") == {accounts_namespace}
 
 
 @pytest.mark.parametrize("resource", ["egresscredentials", "policysets"])
 def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
-    staging_manifests: list[dict[str, Any]], controller_permissions: set[Permission], resource: str
+    settings: Settings, controller_permissions: set[Permission], resource: str
 ) -> None:
-    policy_namespace = _settings(staging_manifests)["policy_namespace"]
+    policy_namespace = settings.policy_namespace
     # Server-side apply creates or patches.
     assert _allowed(controller_permissions, GROUP, resource, "create", "patch") == {policy_namespace}
     assert not _allowed(controller_permissions, GROUP, resource, "delete", "deletecollection")
@@ -96,9 +56,9 @@ def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
     "status", ["policybindings/status", "serviceaccountgrants/status", "managedserviceaccounts/status"]
 )
 def test_controller_may_apply_the_status_it_reports(
-    staging_manifests: list[dict[str, Any]], controller_permissions: set[Permission], status: str
+    settings: Settings, controller_permissions: set[Permission], status: str
 ) -> None:
-    policy_namespace = _settings(staging_manifests)["policy_namespace"]
+    policy_namespace = settings.policy_namespace
     # Server-side apply of a status subresource is a patch.
     assert policy_namespace in _allowed(controller_permissions, GROUP, status, "patch")
 

@@ -184,6 +184,31 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
     ]
 
 
+def test_policy_service_exposes_its_tls_listener_to_the_app(staging_manifests: list[Body]) -> None:
+    container, mounts = _service_container(staging_manifests, "policy-controller")
+    settings = config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml")
+    tls = settings["grpc_tls"]
+    assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
+    _assert_mounted_tls(staging_manifests, mounts, tls, POLICY_CONTROLLER_URI, ca_field="client_ca_file")
+
+    tls_port = int(tls["listen"].removeprefix(":"))
+    metrics = int(settings["metrics_bind_address"].removeprefix(":"))
+    health = int(settings["health_probe_bind_address"].removeprefix(":"))
+    exposed = {"metrics": metrics, "grpc-tls": tls_port}
+    assert {p["name"]: p["containerPort"] for p in container["ports"]} == {**exposed, "health": health}
+    service = find_resource(staging_manifests, "Service", "policy-controller")
+    assert {p["name"]: p["targetPort"] for p in service["spec"]["ports"]} == exposed
+    app = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    assert int(app["policy_service_target"].rsplit(":", 1)[1]) == one(
+        p["port"] for p in service["spec"]["ports"] if p["name"] == "grpc-tls"
+    )
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "policy-controller")["spec"]
+    assert {p["port"] for rule in policy["ingress"] for group in rule["toPorts"] for p in group["ports"]} == {
+        str(metrics),
+        str(tls_port),
+    }
+
+
 def test_notifications_calls_backends_with_its_mounted_service_svid(staging_manifests: list[Body]) -> None:
     _, mounts = _service_container(staging_manifests, "notifications")
     settings = config_map_yaml(staging_manifests, "notifications-settings", "settings.yaml")

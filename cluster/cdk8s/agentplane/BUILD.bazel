@@ -1378,14 +1378,12 @@ py_test(
         ":policy_controller",
         "//:conftest",
         "//agentplane:crd_group",
-        "//agentplane/net/peertls:config",
+        "//agentplane/policy_controller:settings",
         "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/testing:manifests",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
