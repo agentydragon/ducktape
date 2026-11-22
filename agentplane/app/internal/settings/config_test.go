@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const validSettingsYAML = `
@@ -68,10 +69,7 @@ const dispatcherTokenSetting = "session_dispatcher_token_file: /run/dispatcher/t
 
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
-	path := t.TempDir() + "/app.yaml"
-	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
-		t.Fatal(err)
-	}
+	path := configtest.WriteSettings(t, contents)
 	t.Setenv("AGENTPLANE_CONFIG_FILE", path)
 	t.Setenv("AGENTPLANE_DATABASE_URL", "postgresql://app@postgres/agentplane")
 	return path

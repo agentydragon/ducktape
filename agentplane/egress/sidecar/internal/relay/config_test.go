@@ -1,22 +1,13 @@
 package relay
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
-
-func writeSettingsFile(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
 
 func settingsFileEnv(path string) func(string) string {
 	return func(name string) string {
@@ -28,7 +19,7 @@ func settingsFileEnv(path string) func(string) string {
 }
 
 func TestLoadConfigReadsNestedProxySettings(t *testing.T) {
-	path := writeSettingsFile(t, `
+	path := configtest.WriteSettings(t, `
 proxy:
   address: egress.example:9001
   transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}
@@ -68,7 +59,7 @@ func TestLoadConfigAcceptsAnEmptySharedRouteTable(t *testing.T) {
 proxy: {address: p.example:8888, transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}}
 platform_routes: {routes: {}}
 `
-	config, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content)))
+	config, err := loadConfig(settingsFileEnv(configtest.WriteSettings(t, content)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +69,7 @@ platform_routes: {routes: {}}
 }
 
 func TestLoadConfigReadsSpiffeAuthAndTransport(t *testing.T) {
-	path := writeSettingsFile(t, `
+	path := configtest.WriteSettings(t, `
 proxy:
   address: egress.example:8888
   transport:
@@ -175,7 +166,7 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 		"workload route requires valid SPIFFE URI": required + "workload_routes: {'rules.test:443': {upstream: 'rules.test:8443', server_uri: 'spiffe:///rules'}}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			config, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content)))
+			config, err := loadConfig(settingsFileEnv(configtest.WriteSettings(t, content)))
 			if err == nil {
 				err = config.validate()
 			}
