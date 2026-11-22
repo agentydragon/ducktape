@@ -23,6 +23,7 @@ from opentofu_workspace_crds.io.upbound.opentofu import (
     WorkspaceSpecForProviderVars,
     WorkspaceSpecProviderConfigRef,
 )
+from pydantic import BaseModel
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -83,7 +84,7 @@ def gitops_workspace(
     management_policies: Sequence[str],
     external_name: str = "default",
     kubernetes_identity: str | None = None,
-    variables: Sequence[WorkspaceSpecForProviderVars] = (),
+    variables: BaseModel | None = None,
     env: Sequence[WorkspaceSpecForProviderEnv] = (),
 ) -> Workspace:
     """Use PostgreSQL state; callers choose the workspace, lifecycle and Kubernetes identity."""
@@ -115,7 +116,11 @@ def gitops_workspace(
                 source="Inline",
                 module=inline_module(f"tf/gitops/{name}"),
                 plan_args=["-lock-timeout=5m"],
-                vars=list(variables) or None,
+                vars=[
+                    WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()
+                ]
+                if variables is not None
+                else None,
                 env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
             ),
         ),

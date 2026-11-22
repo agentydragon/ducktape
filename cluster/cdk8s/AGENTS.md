@@ -85,9 +85,10 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   may hold a props-driven construct (tested with synthetic props); the cluster's
   instantiation lives here. Generally, config is typed by its consumer's schema; where
   that schema is another artifact, mirror it in a model tied by a test — e.g. a
-  tofu-controller module's inputs are a frozen pydantic model mirroring `variables.tf`
-  (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since tofu only warns on
-  undeclared variables.
+  GitOps OpenTofu module's inputs are a frozen Pydantic model mirroring `variables.tf`.
+  Pass the model to `gitops_workspace(variables=...)` for Crossplane or
+  `gitops_terraform(variables=...)` for tofu-controller. `test_terraform_vars.py` checks
+  the field names because OpenTofu only warns on undeclared variables.
   Put authoring explanations in Python comments, not prose prepended to serialized
   ConfigMap values. Keep syntax required by the consumer, such as parser directives.
 - **What the generator knows, it renders** as a Python constant. Flux `postBuild`

@@ -1436,6 +1436,7 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//pydantic",
         "@rules_python//python/runfiles",
     ],
 )
@@ -1461,7 +1462,6 @@ py_library(
         ":opentofu",
         ":route53",
         ":secret_ref",
-        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
         "@pypi//pydantic",
     ],
