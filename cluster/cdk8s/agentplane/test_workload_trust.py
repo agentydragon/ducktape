@@ -61,16 +61,17 @@ def _probe_ca_files(container: Body) -> Iterator[str]:
 
 
 def _bundle(volume: Body, file: str) -> str:
-    """The ConfigMap a mounted volume serves `file` from."""
-    if "configMap" in volume:
-        return str(volume["configMap"]["name"])
-    return str(
-        one(
-            source["configMap"]["name"]
-            for source in volume["projected"]["sources"]
-            if "configMap" in source and any(item["path"] == file for item in source["configMap"].get("items", []))
-        )
+    """Resolve the CA filename to the ConfigMap and key that supply it."""
+    sources = volume["projected"]["sources"] if "projected" in volume else [volume]
+    name, key = one(
+        (config["name"], item["key"])
+        for source in sources
+        if (config := source.get("configMap"))
+        for item in config.get("items", [{"key": cluster_ca.BUNDLE_KEY, "path": cluster_ca.BUNDLE_KEY}])
+        if item["path"] == file
     )
+    assert key == cluster_ca.BUNDLE_KEY, (name, key, file)
+    return str(name)
 
 
 def _container_trust(container: Body, volumes: Mapping[str, Body], config_maps: Mapping[str, Body]) -> set[str]:
