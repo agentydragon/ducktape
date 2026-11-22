@@ -1,34 +1,40 @@
 """The gateway and provider workloads agree on their connections and storage."""
 
 import json
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
+from cdk8s import App, Chart
 
 from cluster.cdk8s.platform_sessions import app, config, remote
 from cluster.cdk8s.testing.manifests import find_resource
 
 
-def test_remote_workloads_share_connections_but_not_legacy_storage(
-    scratch_app: App, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(config, "MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC", False)
-    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
+@pytest.fixture(scope="module")
+def direct_workloads(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config, "MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC", False)
+        return remote.chart(scratch_app_factory(), record_upstream_traffic=False).to_json()
 
-    gateway = find_resource(objects, "Deployment", "gateway")["spec"]
+
+def test_remote_workloads_share_connections_but_not_legacy_storage(
+    scratch_app: App, direct_workloads: list[dict[str, Any]]
+) -> None:
+    gateway = find_resource(direct_workloads, "Deployment", "gateway")["spec"]
     gateway_pod = gateway["template"]["spec"]
     gateway_container = gateway_pod["containers"][0]
     # The Go gateway uses its default listener port.
     listener_ports = {port["name"]: port["containerPort"] for port in gateway_container["ports"]}
     assert listener_ports == {"http": 8080}
-    gateway_service = find_resource(objects, "Service", "gateway")["spec"]
+    gateway_service = find_resource(direct_workloads, "Service", "gateway")["spec"]
     [gateway_port] = gateway_service["ports"]
     assert gateway_port["targetPort"] == "http"
     assert gateway_service["selector"] == gateway["template"]["metadata"]["labels"]
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
-    public_objects = Cdk8sTesting.synth(app.chart(scratch_app))
+    public_objects = app.chart(scratch_app).to_json()
     public_service = find_resource(public_objects, "Service", app.NAME)
     assert public_service["spec"]["selector"] == gateway_service["selector"]
     [public_port] = public_service["spec"]["ports"]
@@ -42,19 +48,19 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert "myquest-canary" not in json.loads(remote.CONFIG.data["connections.json"])
     assert {
-        find_resource(objects, "Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
+        find_resource(direct_workloads, "Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
     } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
     assert (
         sum(
             item["kind"] == "ImagePolicy" and item["metadata"]["name"] == remote.SHARED_PROVIDERS_IMAGE
-            for item in objects
+            for item in direct_workloads
         )
         == 1
     )
     for instance, connection in connections.items():
         name = remote._provider_name(instance)
-        provider = find_resource(objects, "Deployment", instance)["spec"]
+        provider = find_resource(direct_workloads, "Deployment", instance)["spec"]
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
         assert next(volume for volume in provider_pod["volumes"] if volume["name"] == "config")["configMap"][
@@ -67,7 +73,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
         ]
         assert claims == [f"{name}-piraeus"]
-        claim = find_resource(objects, "PersistentVolumeClaim", f"{name}-piraeus")
+        claim = find_resource(direct_workloads, "PersistentVolumeClaim", f"{name}-piraeus")
         assert claim["spec"]["storageClassName"] == "piraeus-ssd-2-autodiskful"
         assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
         mount = next(mount for mount in provider_pod["containers"][0]["volumeMounts"] if mount["name"] == "data")
@@ -78,23 +84,22 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(
 
         origin = urlsplit(connection["origin"])
         host = origin.hostname
-        service = find_resource(objects, "Service", instance)["spec"]
+        service = find_resource(direct_workloads, "Service", instance)["spec"]
         assert service["selector"] == provider["template"]["metadata"]["labels"]
         ports = {port["name"]: port for port in service["ports"]}
         assert set(ports) == {"https", "grpc"}
         assert origin.port == ports["https"]["port"]
         assert connection["control_target"] == f"{host}:{ports['grpc']['port']}"
-        assert find_resource(objects, "Certificate", instance)["spec"]["dnsNames"] == [host]
-        monitor = find_resource(objects, "PodMonitor", instance)["spec"]
+        assert find_resource(direct_workloads, "Certificate", instance)["spec"]["dnsNames"] == [host]
+        monitor = find_resource(direct_workloads, "PodMonitor", instance)["spec"]
         assert monitor["selector"]["matchLabels"] == service["selector"]
         [endpoint] = monitor["podMetricsEndpoints"]
         assert endpoint["port"] == "metrics"
         assert endpoint["port"] in {port["name"] for port in provider_pod["containers"][0]["ports"]}
 
 
-def test_scheduler_has_one_owner_of_state(scratch_app: App) -> None:
-    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
-    deployments = [item for item in objects if item["kind"] == "Deployment"]
+def test_scheduler_has_one_owner_of_state(direct_workloads: list[dict[str, Any]]) -> None:
+    deployments = [item for item in direct_workloads if item["kind"] == "Deployment"]
     owners = [
         item
         for item in deployments
@@ -113,7 +118,7 @@ def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(scrat
     for instance, provider_type in (("myquest-canary", "myquest"), ("other-canary", "openai")):
         chart = Chart(scratch_app, instance)
         remote._provider_workload(chart, instance, provider_type=provider_type, record_upstream_traffic=False)
-        deployment = next(item for item in Cdk8sTesting.synth(chart) if item["kind"] == "Deployment")
+        deployment = next(item for item in chart.to_json() if item["kind"] == "Deployment")
         provider = deployment["spec"]["template"]["spec"]["containers"][0]
         health = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}}
         assert provider["readinessProbe"] == provider["livenessProbe"] == health
@@ -126,7 +131,7 @@ def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(scrat
 
 
 def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: App) -> None:
-    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=True))
+    objects = remote.chart(scratch_app, record_upstream_traffic=True).to_json()
 
     for instance in (item for item in remote.PROVIDERS if item not in {"myquest", "myquest-canary"}):
         name = remote._provider_name(instance)
@@ -152,19 +157,15 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         assert not any(mount["name"] == "captures" for mount in containers["provider"]["volumeMounts"])
 
 
-def test_disabled_recording_keeps_capture_claims_without_proxy(
-    scratch_app: App, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(config, "MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC", False)
-    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
+def test_disabled_recording_keeps_capture_claims_without_proxy(direct_workloads: list[dict[str, Any]]) -> None:
     for instance in remote.PROVIDERS:
         name = remote._provider_name(instance)
-        pod = find_resource(objects, "Deployment", instance)["spec"]["template"]["spec"]
+        pod = find_resource(direct_workloads, "Deployment", instance)["spec"]["template"]["spec"]
         assert [item["name"] for item in pod["containers"]] == ["provider"]
         assert not any(item["name"] == "HTTPS_PROXY" for item in pod["containers"][0]["env"])
         assert any(
             item["kind"] == "PersistentVolumeClaim" and item["metadata"]["name"] == f"{name}-captures"
-            for item in objects
+            for item in direct_workloads
         )
 
 
@@ -188,7 +189,7 @@ def test_myquest_recording_switch_is_canary_only(
     assert integration["id"] == "myquest-canary"
     assert integration["type"] == "myquest"
 
-    objects = Cdk8sTesting.synth(remote.chart(scratch_app))
+    objects = remote.chart(scratch_app).to_json()
     gateway = find_resource(objects, "Deployment", "gateway")["spec"]["template"]["spec"]
     [gateway_container] = gateway["containers"]
     refs = {
