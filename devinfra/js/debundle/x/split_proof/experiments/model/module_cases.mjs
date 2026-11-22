@@ -2,6 +2,15 @@
 // the same and end the same way. `end` is how both must end, when that is the point of the case.
 export const moduleCases = [
   {
+    name: "var destructuring exports each binding and retains the original receiver",
+    end: "normal",
+    files: {
+      "state.mjs": `var source = { a: 5, b: 7 };
+        export var { a: source, b } = source;`,
+      "main.mjs": `import {source, b} from "./state.mjs"; console.log(source, b);`,
+    },
+  },
+  {
     name: "a live binding is seen after the exporter assigns it",
     files: {
       "main.mjs": `

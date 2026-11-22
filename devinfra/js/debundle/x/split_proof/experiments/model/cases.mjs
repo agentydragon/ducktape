@@ -159,6 +159,14 @@ export const inheritanceSplitCases = [
 
 export const cases = [
   {
+    name: "var destructuring evaluates its RHS once and writes earlier targets before a getter throws",
+    end: "normal",
+    source: `let calls = 0;
+      function rhs() { calls++; return { first: 4, get second() { console.log(a); throw 3; } }; }
+      try { var { first: a, second: b } = rhs(); } catch (e) { console.log(calls, a, b, e); }
+      try { var { x } = null; } catch (e) { console.log("null rejected", x); }`,
+  },
+  {
     name: "getter on a prototype three levels up sees the receiver",
     source: `
       const base = { get who() { return this.name; }, name: "base" };

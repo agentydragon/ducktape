@@ -28,6 +28,12 @@ random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 | Opaque statements and function bodies                             | [`opaque_cases.mjs`](opaque_cases.mjs): binding/property access, callbacks, explicit throws, allocation, construction, engine-error propagation        | Opaque parameter destructuring calls a captured model function, returning normally or throwing into a model catch.                                   |
 | Opaque closure-only moves                                         | `opaque_cases.mjs`: constructor closure                                                                                                                | A closure captures an uninitialized binding, crosses an independent declaration, and is invoked after initialization. Both callback endings execute. |
 
+Flat, nonempty `var` object patterns with static keys and identifier targets use the
+ordinary property-read interpreter. The model keeps the RHS value through all reads,
+including getters and exceptions, and hoists the target bindings. The objects generator
+destructures two to four renamed keys per seed and observes all the resulting values.
+Handwritten cases cover null, throwing getters, rebinding the receiver and exports.
+
 [`generate.mjs`](generate.mjs) generates the whole-program families above without
 discarding units or retrying after `unknown`. Every seed must complete in Node and the
 model, and must execute in an accepted reordered split whose verdict names the proved
