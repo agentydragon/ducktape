@@ -56,7 +56,6 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
-        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -90,11 +89,11 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
