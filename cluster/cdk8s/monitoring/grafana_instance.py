@@ -48,6 +48,7 @@ _DASHBOARD_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monit
 _NAME = "grafana"
 HOSTNAME = "grafana.allegedly.works"
 GRAFANA_BASE_URL = f"https://{HOSTNAME}"
+MIMIR_DATASOURCE_UID = "mimir"
 # Adopt Tempo's existing Grafana identity so saved references continue to resolve.
 TEMPO_DATASOURCE_UID = "f99d1a97-7e72-4887-9277-0b105a5ccf44"
 # Adopt the existing Grafana UID, originally derived from the Loki CR's metadata.uid.
@@ -222,7 +223,7 @@ def _datasources(chart: Chart) -> None:
         "mimir",
         GrafanaDatasourceSpecDatasource(
             name="Mimir",
-            uid="mimir",
+            uid=MIMIR_DATASOURCE_UID,
             type="prometheus",
             access="proxy",
             url=f"{mimir.GATEWAY_URL}/prometheus",
@@ -315,11 +316,15 @@ def dashboard(
     )
 
 
+_MIMIR_INPUT = (("DS_MIMIR", MIMIR_DATASOURCE_UID),)
+_LOKI_AND_MIMIR_INPUTS = (("DS_LOKI", LOKI_DATASOURCE_UID), *_MIMIR_INPUT)
+
+
 @dataclass(frozen=True)
 class LocalDashboard:
     name: str
     folder: str
-    datasources: tuple[tuple[str, str], ...]
+    datasources: tuple[tuple[str, str], ...] = _MIMIR_INPUT
 
 
 @dataclass(frozen=True)
@@ -335,29 +340,27 @@ type Dashboard = LocalDashboard | GrafanaComDashboard
 
 
 _DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
-    LocalDashboard("authentik", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("buildbuddy-executor-pool", "CI", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard(
-        "zot-cache-image-pulls", "Cluster & Platform", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))
-    ),
-    LocalDashboard("interface-flap-frequency", "Network", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
-    LocalDashboard("node-memory", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("cluster-storage-io", "Storage", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
-    LocalDashboard("s3-operations", "Storage", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("cluster-disk-usage", "Storage", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("piraeus-storage", "Storage", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("storage-service-details", "Storage", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("io-pressure", "Storage", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("home-network-overview", "Network", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
-    LocalDashboard("cpap-gateway-disk", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("tabbyapi", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("flux-cluster", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("rugged-power", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("authentik", "Cluster & Platform"),
+    LocalDashboard("buildbuddy-executor-pool", "CI"),
+    LocalDashboard("zot-cache-image-pulls", "Cluster & Platform", _LOKI_AND_MIMIR_INPUTS),
+    LocalDashboard("interface-flap-frequency", "Network", _LOKI_AND_MIMIR_INPUTS),
+    LocalDashboard("node-memory", "Nodes & Hardware"),
+    LocalDashboard("cluster-storage-io", "Storage", _LOKI_AND_MIMIR_INPUTS),
+    LocalDashboard("s3-operations", "Storage"),
+    LocalDashboard("cluster-disk-usage", "Storage"),
+    LocalDashboard("piraeus-storage", "Storage"),
+    LocalDashboard("storage-service-details", "Storage"),
+    LocalDashboard("io-pressure", "Storage"),
+    LocalDashboard("home-network-overview", "Network", _LOKI_AND_MIMIR_INPUTS),
+    LocalDashboard("cpap-gateway-disk", "Cluster & Platform"),
+    LocalDashboard("tabbyapi", "Cluster & Platform"),
+    LocalDashboard("flux-cluster", "Cluster & Platform"),
+    LocalDashboard("rugged-power", "Nodes & Hardware"),
     GrafanaComDashboard("cert-manager", "Cluster & Platform", (("datasource", "Mimir"),), 20842, 3),
     GrafanaComDashboard("cloudnative-pg", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 20417, 3),
-    LocalDashboard("cilium-agent", "Network", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("etcd", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
-    LocalDashboard("gpu", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("cilium-agent", "Network"),
+    LocalDashboard("etcd", "Cluster & Platform"),
+    LocalDashboard("gpu", "Nodes & Hardware"),
     # Node Exporter Full includes hwmon thresholds and fan-speed panels for every node-exporter target.
     GrafanaComDashboard("node-exporter-full", "Nodes & Hardware", (("ds_prometheus", "Mimir"),), 1860, 45),
 )
