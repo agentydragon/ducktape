@@ -43,7 +43,7 @@ def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[
     settings = config_map_yaml(staging_manifests, f"{notifications.NAME}-settings", "settings.yaml")
     assert settings["operator_reader_services"] == [APP_URI]
     assert [auth["mode"] for auth in settings["rpc"]["auth"]] == ["spiffe"]
-    github = settings.get("github")
+    github = settings["github"]
     pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     prefix = "AGENTPLANE_NOTIFICATIONS_GITHUB__"
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
