@@ -620,12 +620,23 @@ def test_policy_bindings_resolve_sets(documents: list[dict[str, Any]]) -> None:
     assert not missing, "\n".join(missing)
 
 
+@pytest.fixture(scope="module")
+def owner_specs(active_api_objects: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        doc["metadata"]["name"]: doc["spec"]
+        for doc in active_api_objects
+        if doc["kind"] == "Kustomization" and doc["metadata"].get("namespace") == "ducktape-flux"
+    }
+
+
 def test_parked_haku_backup_and_shared_services_remain_configured(
-    generated: Path, active_api_objects: list[dict[str, Any]], parsed_yaml_documents: YamlDocuments
+    generated: Path,
+    active_api_objects: list[dict[str, Any]],
+    parsed_yaml_documents: YamlDocuments,
+    owner_specs: dict[str, dict[str, Any]],
 ) -> None:
-    owners = {doc["metadata"]["name"] for doc in active_api_objects if doc["kind"] == "Kustomization"}
     # Keep Haku's namespace and the public coder's namespace and access Roles alive.
-    assert {"haku-namespace", "public-coder-agent-access"} <= owners
+    assert {"haku-namespace", "public-coder-agent-access"} <= owner_specs.keys()
     assert any(
         doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active_api_objects
     )
@@ -641,11 +652,10 @@ def test_parked_haku_backup_and_shared_services_remain_configured(
 
 
 def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
-    active_api_objects: list[dict[str, Any]],
+    active_api_objects: list[dict[str, Any]], owner_specs: dict[str, dict[str, Any]]
 ) -> None:
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
     claude = [doc for doc in active_api_objects if doc["metadata"].get("namespace") == "claude-sandbox"]
-    owners = {doc["metadata"]["name"] for doc in active_api_objects if doc["kind"] == "Kustomization"}
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
     assert str(quota["spec"]["hard"]["pods"]) == "0"
     fence = next(
@@ -658,21 +668,13 @@ def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
     assert not any(
         doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active_api_objects
     )
-    assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owners
+    assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owner_specs.keys()
 
 
-def test_openclaw_cutover_waits_for_agentplane_credentials(parsed_yaml_documents: YamlDocuments) -> None:
-    owners = {
-        doc["metadata"]["name"]: doc
-        for path, docs in parsed_yaml_documents.items()
-        if path.name.endswith(".k8s.yaml")
-        for doc in docs
-        if doc["kind"] == "Kustomization"
-    }
-    app = owners["public-coder-agent-app"]["spec"]
+def test_openclaw_cutover_waits_for_agentplane_credentials(owner_specs: dict[str, dict[str, Any]]) -> None:
+    app = owner_specs["public-coder-agent-app"]
     assert "agentplane-staging" in {dependency["name"] for dependency in app["dependsOn"]}
-    assert app["deletionPolicy"] == "Orphan"
-    checks = owners["agentplane-staging"]["spec"]["healthChecks"]
+    checks = owner_specs["agentplane-staging"]["healthChecks"]
     assert {c["name"] for c in checks if c["kind"] == "ExternalSecret"} >= {
         "public-coder-clickhouse",
         "public-coder-matrix",
@@ -680,7 +682,9 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(parsed_yaml_documents
     }
 
 
-def test_public_coder_pause_retains_state_after_devbox_retirement(parsed_yaml_documents: YamlDocuments) -> None:
+def test_public_coder_pause_retains_state_after_devbox_retirement(
+    parsed_yaml_documents: YamlDocuments, owner_specs: dict[str, dict[str, Any]]
+) -> None:
     roots = (Path(PARKED_ROOT, "public-coder-agent"), Path(GENERATED_ROOT, "agents/public-coder-agent"))
     objects = [
         doc
@@ -699,16 +703,10 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(parsed_yaml_do
     assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in objects)
     # VolSync owns its cache PVC; keep the backup source rather than deleting its owner.
     assert any(doc["kind"] == "ReplicationSource" for doc in objects)
-    owners = {
-        doc["metadata"]["name"]: doc["spec"]
-        for docs in parsed_yaml_documents.values()
-        for doc in docs
-        if doc.get("kind") == "Kustomization" and "spec" in doc
-    }
     for name in ("public-coder-agent-access", "public-coder-agent-app", "public-coder-agent-backup"):
-        assert owners[name]["deletionPolicy"] == "Orphan"
-    assert owners["public-coder-agent-app"].get("suspend", False) is True
-    assert owners["public-coder-agent-backup"]["suspend"] is True
+        assert owner_specs[name]["deletionPolicy"] == "Orphan"
+    assert owner_specs["public-coder-agent-app"].get("suspend", False) is True
+    assert owner_specs["public-coder-agent-backup"]["suspend"] is True
 
 
 if __name__ == "__main__":
