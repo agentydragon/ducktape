@@ -129,15 +129,12 @@ def moduleBinding (id : Json) : Except String Name := do
   unless (← field id "k") == "T" do throw "expected a module binding"
   return x
 
-/-- Lower one declaration with the binder and initializer rules of the calling fragment. -/
-private def declarationWith (binder : Json → Except String Name) (initializer : Name → Json → Except String Expr)
-    (j : Json) : Except String (Name × Stmt) := do
-  unless (← field j "type") == "VariableDeclaration" do throw "expected a variable declaration"
-  let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
+private def declaratorWith (binder : Json → Except String Name) (initializer : Name → Json → Except String Expr)
+    (kind : String) (d : Json) : Except String (Name × Stmt) := do
   unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
   let x ← d.getObjVal? "id" >>= binder
   let init ← d.getObjVal? "init"
-  match ← field j "kind", init with
+  match kind, init with
   | "var", .null => return (x, .varDecl x)
   | "let", .null => return (x, .decl .let_ x .undef)
   | "var", e => return (x, .decl .var x (← initializer x e))
@@ -145,6 +142,12 @@ private def declarationWith (binder : Json → Except String Name) (initializer 
   | "const", .null => throw "const declaration needs an initializer"
   | "const", e => return (x, .decl .const x (← initializer x e))
   | kind, _ => throw s!"unsupported declaration {kind}"
+
+private def declarationWith (binder : Json → Except String Name) (initializer : Name → Json → Except String Expr)
+    (j : Json) : Except String (Name × Stmt) := do
+  unless (← field j "type") == "VariableDeclaration" do throw "expected a variable declaration"
+  let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
+  declaratorWith binder initializer (← field j "kind") d
 
 /-- Decode an emitted declaration. Retained references to module bindings keep their source
 annotation and resolve by name in the emitted module's scope. -/
@@ -196,18 +199,34 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let name ← if id == .null then pure nameHint else localBinding id
     let body ← j.getObjVal? "body"
     let stmts ← if (← field body "type") == "BlockStatement" then
-      (← body.getObjValAs? (List Json) "body").mapM (linkedStatement imports true)
+      linkedFunctionBody imports body
     else if arrow then
       pure [.ret (← linkedExpr imports true "" body)]
     else throw "expected a function body block"
     return .func (.mk name (if arrow then .arrow else .normal) (id != .null) params stmts)
   | _ => throw s!"unsupported linked expression {kind}"
 
+/-- Keep every declarator in its enclosing statement list. Function instantiation hoists
+all its vars, and block instantiation creates the lexical bindings before initialization. -/
+private partial def linkedFunctionBody (imports : List Name) (block : Json) : Except String (List Stmt) := do
+  let mut result := #[]
+  for stmt in ← block.getObjValAs? (Array Json) "body" do
+    if (← field stmt "type") == "VariableDeclaration" then
+      let ds ← stmt.getObjValAs? (Array Json) "declarations"
+      if ds.isEmpty then throw "expected at least one declarator"
+      let kind ← field stmt "kind"
+      for d in ds do
+        let (_, s) ← declaratorWith localBinding (linkedExpr imports true) kind d
+        result := result.push s
+    else
+      result := result.push (← linkedStatement imports true stmt)
+  return result.toList
+
 /-- A block introduces a fresh lexical scope each time it executes. Function `var`s
 still hoist through it via `Stmt.varNames`. -/
 private partial def linkedFunctionBlock (imports : List Name) (j : Json) : Except String Stmt := do
   unless (← field j "type") == "BlockStatement" do throw "expected a statement block"
-  return .block (← (← j.getObjValAs? (List Json) "body").mapM (linkedStatement imports true))
+  return .block (← linkedFunctionBody imports j)
 
 private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j : Json) :
     Except String Stmt := do
