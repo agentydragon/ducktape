@@ -6,8 +6,6 @@ metadata:
   labels:
     app.kubernetes.io/name: wayback-cache-filler
     app.kubernetes.io/component: filler
-  annotations:
-    reloader.stakater.com/auto: "true"
 spec:
   # Consider KEDA from a verified backlog signal; cap against Archive.org's
   # upstream rate limits rather than cluster capacity.

@@ -8,8 +8,6 @@ metadata:
   namespace: google-workspace-mcp
   labels:
     app.kubernetes.io/name: google-workspace-mcp
-  annotations:
-    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
