@@ -268,9 +268,11 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":scenarios",
         ":service",
         "//finance/augur/api:catalog",
         "//finance/augur/api:config",
+        "//finance/augur/api:portfolio",
         "//finance/augur/api:product_service",
         "//finance/augur/api:wire",
         "//finance/augur/model:exogenous",
