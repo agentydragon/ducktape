@@ -372,6 +372,12 @@
             <${Text} size="sm">
               ${`Since the previous source pin, ${plan.refresh.added_go_files} Go paths were added, ${plan.refresh.removed_go_files} were removed and ${plan.refresh.changed_go_blobs} had changed contents. Native Executor, its compatibility backend and shared configuration decoding now have explicit package owners.`}
             <//>
+            <${Text} size="sm">
+              ${`Follow-up at ${plan.follow_on.source_sha.slice(0, 10)}. ${plan.follow_on.go_files.toLocaleString()} tracked Go files in ${plan.follow_on.go_packages} packages. ${plan.follow_on.finding}`}
+              <${Anchor} href=${plan.follow_on.change_pr} ml="xs"
+                >Executor ownership change<//
+              >
+            <//>
             <${Group} component="nav" gap="md"
               ><${Anchor} href="#trees">${"Current and goal trees"}<//
               ><${Anchor} href="#coverage">${"Component decisions"}<//

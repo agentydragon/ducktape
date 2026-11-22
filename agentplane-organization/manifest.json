@@ -7,16 +7,19 @@
   "summary": "Complete tracked Go inventory and remaining ownership decisions. The Sessions configuration loader passed a fresh focused check.",
   "files": {
     "index.html": {
-      "sha256": "a6586837a8f07b3320c38cbba46cbf3c93b4f21b6c78a04230c81adb693744cd"
+      "sha256": "4b2f7ad9fc2ac9217d8915cfb01f570e9826acf4a7b8dee8096f8d77e1285693"
     },
     "go-files.json": {
       "sha256": "73f4581cf9b9710b48449374228c64c6e23a2f08cbccfa51113f99b9e93b02ae"
     },
     "go-plan.json": {
-      "sha256": "ca8314ac2fb3e1d541ade9205ad37df870a709b7c2824a221e4e8afeb4a75fff"
+      "sha256": "c0a95025e89bd274f16d4d1a1e5c60e571a563a06e1f58bf5d25d582a844a7f6"
     }
   },
   "validation_invocations": [
     "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06"
-  ]
+  ],
+  "follow_on_source_commit": "d1402061eace1ef26e4b2ce526bb010814dce398",
+  "follow_on_go_files": 1514,
+  "follow_on_go_packages": 285
 }

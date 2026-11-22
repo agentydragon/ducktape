@@ -10770,5 +10770,20 @@
       "invocation": "https://app.buildbuddy.io/invocation/b49101a6-3912-4296-b446-fc650a8aff06"
     },
     "source_probe": "The Sessions Python and Go declarations agree on 15 serialized top-level keys. The existing Go configuration target passed with test result caching disabled. A shared behavioral corpus is still needed."
+  },
+  "follow_on": {
+    "source_sha": "d1402061eace1ef26e4b2ce526bb010814dce398",
+    "go_files": 1514,
+    "go_packages": 285,
+    "added_go_files": [
+      "agentplane/env/runtime/execution/adapter/probe.go",
+      "agentplane/env/runtime/execution/adapter/probe_test.go"
+    ],
+    "renamed_go_package": {
+      "from": "agentplane/env/runtime/execution/codexexecserver",
+      "to": "agentplane/env/runtime/execution/backend"
+    },
+    "change_pr": "https://github.com/agentydragon/ducktape/pull/19100",
+    "finding": "Two adapter files add the Codex fallback readiness probe and its tests. The codexexecserver package moved to backend, which owns lifecycle and readiness for both native and Codex execution. The trees and ledger below retain the earlier 1,512-file census."
   }
 }
