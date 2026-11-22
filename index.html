@@ -173,9 +173,9 @@
                 ><${Anchor} href="ci-test-cost/">CI test cost<//><//
               >
               <${Text} component="p" my="sm"
-                >A bounded fresh-action sample and remaining investigations into
-                test selection, fixture reuse, and setup and teardown. CI
-                speedups remain unmeasured.<//
+                >Fresh TestRunner process-hours by PR and devel cohort. The
+                largest PR cost was in Agentplane frontend tests. The report
+                checks the new Action harness dependency boundary.<//
               >
               <${ManifestStamp} src="ci-test-cost/manifest.json" />
               <${Text} component="p" my="sm"
@@ -188,27 +188,12 @@
               <${Title} order=${2} mt="md" mb="sm">
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
-              <${Text} component="p" my="sm">
-                ${"On 22 November, 63 of 72 sampled heads reached required green. Median 5m16s, p90 11m45s. Two KVM pilots closed after both candidates lengthened their measured finish times."}
-                <${Anchor} href="latency/#kvm-pilot-results"
-                  >KVM pilot results<//
-                >
-                ${" · The KVM worker pool now admits "}
-                <${Anchor} href="latency/#kvm-placement">wyrm2<//>
-                ${"."} ${" The "}<${Anchor} href="latency/#kvm-work-disk"
-                  >work-disk comparison<//
-                >${" measures SSD and HDD on that host. The "}
-                <${Anchor} href="latency/#kvm-retained-vm-ssd"
-                  >SSD retention trial<//
-                >
-                ${" measures time and writes in the required VM suite."}
-                ${" The "}<${Anchor} href="latency/#kvm-scale-up-signal"
-                  >scale-up replay<//
-                >${" checks for spare capacity when the input calls for more workers."}
-                ${" The "}
-                <${Anchor} href="latency/#kvm-test-memory">test memory<//>
-                ${" section compares cgroup footprints and disposable memory caps."}
-              <//>
+              <${Text} component="p" my="sm"
+                >15–21 November UTC. 126 of 168 sampled PR heads reached
+                required green at a median of 3m 06s and p90 of 9m 36s. The
+                report quantifies Bazel-gate headroom and checks KVM clock
+                rollout and closed pilots.<//
+              >
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
                 <${Anchor} href=${"latency/evidence.json"}> ${"evidence"} <//>
@@ -220,9 +205,11 @@
               <${Title} order=${2} mt="md" mb="sm">
                 <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
               <//>
-              <${Text} component="p" my="sm">
-                ${"13–19 November UTC: Four of 350 sampled heads had verified intermittent red CI. The report shows their daily frequency and VM flakes recovered inside Bazel. Nineteen of 63 mainline failures shared a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry because a recycled Docker runner could not rebuild its baseline."}
-              <//>
+              <${Text} component="p" my="sm"
+                >15–21 November UTC. 13 of 168 sampled heads remained red and
+                two Bazel jobs recovered on the same tested source. A 22
+                November sample adds one verified frontend timeout recovery.<//
+              >
               <${ManifestStamp} src=${"reliability/manifest.json"} />
               <${Text} component="p" my="sm">
                 <${Anchor} href=${"reliability/evidence.json"}>
@@ -240,9 +227,10 @@
                   ${"Visual reliability"}
                 <//>
               <//>
-              <${Text} component="p" my="sm">
-                ${" Inspected gallery images, viewport identity, browser fixture failures, baseline provenance, and unchanged-source repeats. "}
-              <//>
+              <${Text} component="p" my="sm"
+                >Editor placeholder geometry failure, visual History cache
+                exposure and current Chart.js patch applicability.<//
+              >
               <${ManifestStamp} src=${"visual-reliability/manifest.json"} />
               <${Text} component="p" my="sm">
                 <${Anchor} href=${"visual-reliability/evidence.json"}>

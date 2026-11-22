@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI test cost and fixture audit</title>
+    <title>CI test cost</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -45,187 +45,241 @@
   </head>
   <body>
     <div id="report-content"></div>
-    <noscript
-      >This report uses JavaScript for its layout and disclosures.</noscript
-    >
+    <noscript>This report uses JavaScript for charts and disclosures.</noscript>
     <script type="module">
+      import { useState } from "react";
       import {
         Accordion,
-        Alert,
         Anchor,
+        Box,
         Code,
         Container,
         Group,
+        SegmentedControl,
         Stack,
+        Table,
         Text,
+        TextInput,
         Title,
       } from "@mantine/core";
-      import { html, mount, ManifestStamp } from "../report.js";
-      const response = await fetch("./evidence.json");
+      import { BarChart } from "@mantine/charts";
+      import { html, mount } from "../report.js";
+      const evidenceSha =
+        "9d66361afbddddfd9f9181ea005b818f105530bcec7d8dfd15fb5c95a613f206";
+      const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
-      const e = await response.json();
+      const bytes = await response.arrayBuffer();
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const receivedSha = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (receivedSha !== evidenceSha)
+        throw new Error("Evidence does not match this report");
+      const e = JSON.parse(new TextDecoder().decode(bytes));
       const gh = "https://github.com/agentydragon/ducktape";
+      const archive =
+        gh + "/blob/" + e.previous_report_commit + "/ci-test-cost/index.html";
+      const link = (href, label) => html`<${Anchor} href=${href}>${label}<//>`;
+      const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
       const source = (path, label) =>
-        html`<${Anchor} href=${`${gh}/blob/${e.source_devel_commit}/${path}`}
-          >${label}<//
+        link(`${gh}/blob/${e.source_devel_commit}/${path}`, label);
+      const inv = (id, label) =>
+        link(
+          "https://app.buildbuddy.io/invocation/" + id,
+          label || id.slice(0, 8),
+        );
+      const table = (headers, rows, width = 560) =>
+        html` <${Table.ScrollContainer}
+          minWidth=${width}
+          type="native"
+          maw="100%"
+        >
+          <${Table} striped verticalSpacing="sm">
+            <${Table.Thead}
+              ><${Table.Tr}
+                >${headers.map((header) => html`<${Table.Th} key=${header}>${header}<//>`)}<//
+              ><//
+            >
+            <${Table.Tbody}
+              >${rows.map((row, i) => html`<${Table.Tr} key=${i}>${row.map((value, j) => html`<${Table.Td} key=${j}>${value}<//>`)}<//>`)}<//
+            >
+          <//>
+        <//>`;
+      const disclosure = (label, contents) =>
+        html` <${Accordion}
+          variant="contained"
+          mt="sm"
+          defaultValue=${location.hash && label.startsWith("Earlier") ? label : null}
+          ><${Accordion.Item} value=${label}>
+            <${Accordion.Control}>${label}<//
+            ><${Accordion.Panel}>${contents}<//>
+          <//><//
         >`;
-      const run = (id) =>
-        html`<${Anchor} href=${`${gh}/actions/runs/${id}`}>${id}<//>`;
+      const minutes = (s) =>
+        s == null
+          ? "—"
+          : `${Math.floor(Math.round(s) / 60)}m ${String(Math.round(s) % 60).padStart(2, "0")}s`;
+      const header = (title, lede) =>
+        html` <header>
+          ${link("../", "Ducktape reports")}
+          <${Title} order=${1} my="sm">${title}<//>
+          <${Text} size="lg">${lede}<//>
+          <${Text} mt="sm" size="sm" c="dimmed"
+            >Inspected devel <${Code}>${e.source_devel_commit}<//><//
+          >
+        </header>`;
+      const footer = () =>
+        html`<footer>
+          <${Group} gap="md">
+            ${link("./evidence.json", "Reviewed evidence")}
+            ${link("./manifest.json", "Manifest")}
+            ${link(archive, "Previous snapshot")} ${link("../", "All reports")}
+          <//>
+        </footer>`;
+
       function Report() {
+        const [cohort, setCohort] = useState("PR pull_request");
+        const groupRows = e.groups.filter((g) => g.cohort === cohort);
+        const ranks = e.targets.filter((t) => t.cohort === cohort).slice(0, 10);
+        const covered = e.runs.filter((r) => r.cohort === cohort);
+        const active = covered.filter((r) => r.fresh_actions > 0);
+        const hours = (s) => (s / 3600).toFixed(2);
         return html`<${Container}
           component="main"
-          size="76rem"
+          size="73rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
         >
           <${Stack} gap="xl">
-            <header>
-              <${Anchor} href="../">Ducktape reports<//>
-              <${Text} c="dimmed" mt="md">CI test cost · remaining work<//>
-              <${Title} order=${1} my="sm">CI test cost: remaining work<//>
-              <${Text} size="lg"
-                >Investigate test selection, fixture reuse, and the setup and
-                scheduling on the path to CI feedback.<//
-              >
-              <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /> · Audit source
-                <${Code}>${e.source_devel_commit}<//><//
-              >
-            </header>
-            <${Alert}
-              title="Preserve correctness and measure the required gate"
-              color="blue"
-            >
-              Test selection, action runtime and CI feedback use different
-              clocks. Compare the same cases and inputs, preserve isolation, and
-              measure the critical path before claiming a saving.
-            <//>
+            ${header("CI test cost", "On 22 November through 10:00 UTC, Agentplane frontend tests consumed about 13.2 of 18.1 TestRunner process-hours across 15 sampled successful PR Bazel checks. The separate 14-run devel sample spent more process time on Agentplane system tests than on any other group.")}
             <section>
-              <${Title} order=${2}>1. Trace test selection and shared setup<//>
-              <${Text} my="sm">
-                At the audit source, the
-                ${" "}${source("devinfra/js/debundle/e2e/defs.bzl", "Debundle E2E macro")}${" "}
-                declared a Rust test target per source and staged the same
-                executable and harness. A value-flow and E2E change in
-                ${" "}<${Anchor} href=${`${gh}/pull/17071`}>PR #17071<//>${" "}
-                selected 302 test targets and executed 282 in
-                ${" "}${run("43986348052")}; Bazel reported 368.809s elapsed and
-                a 350.48s critical path. Execution records contained 510 new
-                TestRunner actions in the E2E package. Shared production inputs
-                are a plausible invalidation path, but that observation does not
-                prove any dependency is unnecessary.
+              <${Title} order=${2}>Where fresh test work accumulated<//>
+              <${Text} my="sm"
+                >The chart adds process intervals across distinct originating
+                executions. Shards and parallel tests overlap in CI elapsed
+                time. The selected PRs and devel workflows exercise different
+                test populations.<//
+              >
+              <${SegmentedControl}
+                my="sm"
+                aria-label="Execution cohort"
+                value=${cohort}
+                onChange=${setCohort}
+                data=${[
+                  { value: "PR pull_request", label: "PR checks" },
+                  { value: "devel push", label: "devel pushes" },
+                ]}
+              />
+              <${Text} my="sm"
+                >${active.length} of ${covered.length} checked invocations
+                returned a timed originating TestRunner action.
+                ${active.reduce((sum, r) => sum + r.fresh_actions, 0)} such
+                actions ·
+                ${hours(active.reduce((sum, r) => sum + r.process_s, 0))}
+                process-hours.<//
+              >
+              <${Box}
+                role="img"
+                data-chart="test-process-hours"
+                aria-label="TestRunner process-hours by package group"
+              >
+                <${BarChart}
+                  h=${groupRows.length * 48 + 36}
+                  orientation="vertical"
+                  dataKey="group"
+                  data=${groupRows.map((g) => ({ group: g.group, "Process-hours": Number(hours(g.process_s)) }))}
+                  series=${[{ name: "Process-hours", color: "blue.7" }]}
+                  yAxisProps=${{ width: 112, tick: { fontSize: 11 } }}
+                  xAxisLabel="Process-hours"
+                />
               <//>
-              <${Text} my="sm">
-                Replay a real test-only edit and a production value-flow edit
-                with bazel-diff, inspect the configured path from each changed
-                input to each selected test, and remove a dependency only when
-                the test does not use it. Other groupings remain untested:
-                compare the complete case inventory and outcomes, cache misses,
-                action and CPU costs, and whole-invocation critical path.
-                Preserve independent temporary workspaces and enough
-                parallelism, and account for edits invalidating an entire group.
-                A different action graph alone does not establish faster
-                feedback.
-              <//>
-            </section>
-            <section>
-              <${Title} order=${2}>2. Finish registry fixture reuse<//>
-              <${Text} my="sm">
-                The Props registry reuse proposal, ${" "}<${Anchor}
-                  href=${`${gh}/pull/17125`}
-                  >PR #17125<//
-                >, keeps a bounded owned blob volume while starting a fresh
-                registry for pushes, authentication and manifest cleanup.
-                Registry lifecycle and Optimize tests passed uncached on PR head
-                <${Code}>e02143fd<//> in ${" "}<${Anchor}
-                  href="https://app.buildbuddy.io/invocation/cbe0ab57-9bbf-48a2-83a3-219694c958bb"
-                  >this BuildBuddy run<//
-                >. The lifecycle test confirmed that blobs remain available with
-                a fresh container while manifests and unfinished uploads are
-                removed. A controlled pair of uncached, instrumented Optimize
-                runs on the same worker and volume found all eight image blobs
-                absent on the first push and present on the second; the second
-                push uploaded none. This demonstrates warm blob reuse for that
-                pair, not a general CI time saving.
-              <//>
-              <${Text} my="sm">
-                Measure end-to-end cold and warm costs, including snapshot
-                transfer, cleanup and recovery, before wider enrollment. A
-                second zero-wait lease acquisition fails; determine whether
-                competing owners can occur and whether the fixture should fall
-                back to an uncached registry. The proposal leaves snapshot save
-                policy unset. A recycled runner, a retained snapshot and a live
-                fixture are different lifetimes; do not assume one implies
-                another. ${" "}<${Anchor} href="./followup-evidence.json"
-                  >Validation evidence<//
-                >.
-              <//>
+              ${disclosure(
+                "Highest-cost targets and sample invocations",
+                table(
+                  [
+                    "Target label",
+                    "Actions",
+                    "Process-hours",
+                    "Median action",
+                    "Longest sample",
+                  ],
+                  ranks.map((t) => [
+                    html`<${Code}>${t.label}<//>`,
+                    t.n,
+                    hours(t.process_s),
+                    minutes(t.median_s),
+                    inv(t.largest.invocation, minutes(t.largest.seconds)),
+                  ]),
+                  800,
+                ),
+              )}
             </section>
             <section>
               <${Title} order=${2}
-                >3. Measure setup and teardown on the critical path<//
+                >Evaluate the Action harness split before reshaping browser
+                shards<//
               >
-              <${Text} my="sm">
-                One historical devel push ${" "}${run("43954366125")}${" "}
-                selected 2,072 tests but executed 49; Bazel reported 457.931s
-                elapsed and a 375.30s critical path. Selection and fresh
-                execution are different counts. The ${" "}<${Anchor}
-                  href=${e.previous_report}
-                  >prior latency report<//
-                >${" "} traces physical setup, case and cleanup phases in a
-                different source and observation window. Do not add spans from
-                concurrent suites or call scheduler delay test execution.
-              <//>
-              <${Text} my="sm">
-                Run a same-source paired full selector with a frozen case list,
-                cold and compatible-warm fixtures, cleanup verification,
-                physical execution identity and required-gate timing. Trace
-                queue to worker start, preparation, process and upload,
-                including nested fixture phases. Record the next-slowest test
-                and non-test gates. The historical sample suggests where to
-                investigate; it does not measure the resulting feedback
-                improvement.
-              <//>
+              <${Text} my="sm"
+                >The former
+                <${Code}>//agentplane/app/frontend:visual_actions<//>
+                contributed 144 actions and 5.71 process-hours. Thread Browser
+                contributed 160 actions and 3.42 process-hours. #18979 moved
+                Action visuals into the Action package and their own harness.
+                The sample spans that change. Its aggregate ranking alone cannot
+                estimate the new selection rate. ${pr(18979)} ·
+                ${source("agentplane/app/frontend/actions/BUILD.bazel#L419", "Current Action visual target")}
+                ·
+                ${source("agentplane/app/BUILD.bazel#L344", "Current 16-shard Thread Browser target")}<//
+              >
+              <${Text} my="sm"
+                >A Bazel somepath query at the inspected tree linked History
+                visuals to the general harness and Action operation visuals to
+                their own harness. The Action operation target had no path to
+                the general harness entry point.
+                ${inv(e.selection_probe.invocation, "Dependency graph probe")}<//
+              >
+              <${Text} my="sm"
+                >Use an Action-only, a Thread-only and a shared-fixture edit to
+                compare before/after bazel-diff selections and uncached actions.
+                Compare case IDs and capture counts before treating any dropped
+                action as savings. The earlier browser sharding experiment
+                provides a wall-time control.
+                ${link("../latency/#shard-replay", "Browser sharding trial")} ·
+                ${source("devinfra/ci/bazel_ci.py#L208", "Target selection")}<//
+              >
             </section>
-            <${Accordion} variant="contained">
-              <${Accordion.Item} value="methods">
-                <${Accordion.Control}>Provenance, sample and limitations<//>
-                <${Accordion.Panel}>
-                  <${Text} my="sm">${e.method}<//>
-                  <${Text} my="sm">
-                    The original audit covers 16–17 November 2026 UTC and is
-                    pinned to the source above. Historical evidence includes
-                    concluded work and separately pinned follow-up experiments.
-                    A gRPC invocation search timed out; direct authenticated
-                    HTTPS GetExecution reads worked. Two initial 500 responses
-                    persisted on retry. More failed reads and unavailable GitHub
-                    logs remain in the evidence list. An empty execution
-                    response is not proof that a test was skipped or cached. The
-                    selected successful runs exclude failed and cancelled
-                    attempts and are vulnerable to correlated development
-                    activity; do not extrapolate rates. Repository branch
-                    settings and service capacity can change after the audit.
-                  <//>
-                  <${Group}>
-                    <${Anchor} href="./evidence.json">Original evidence<//>
-                    <${Anchor} href="./followup-evidence.json"
-                      >Follow-up evidence<//
-                    >
-                    <${Anchor} href="./manifest.json">Manifest<//>
-                    <${Anchor} href=${e.previous_report}
-                      >Prior latency snapshot<//
-                    >
-                    ${source("devinfra/ci/bazel_ci.py", "CI selection")}
-                  <//>
-                <//>
-              <//>
-            <//>
-            <footer>
-              <${Text} size="sm" c="dimmed"
-                >Measurements are historical observations, not estimates of
-                current end-to-end CI savings.<//
+            <section>
+              <${Title} order=${2}
+                >Keep Props registry reuse behind a measured benefit<//
               >
-            </footer>
+              <${Text} my="sm"
+                >#17125 remains open. The exact current PR head merges cleanly
+                in a Git simulation against inspected devel. Its November checks
+                predate the base changes. An older controlled pair proved that
+                eight retained blobs avoided 264.9 MB of repeated upload, while
+                lifecycle tests exercised fresh metadata and lease contention.
+                The current 29-run CI sample yielded no originating Props
+                TestRunner actions, so it cannot quantify the affected fleet
+                frequency. Validate fresh and retained runs under contention
+                before using the optimization as a CI priority.
+                ${link(e.registry_candidate.url, "Registry candidate")} ·
+                ${link("./followup-evidence.json", "Original lifecycle and controlled blob evidence")}<//
+              >
+            </section>
+            <section>
+              <${Title} order=${2}>Earlier changes and sample limits<//>
+              <${Text} my="sm"
+                >Cluster synthesis already has a reusable tree artifact and the
+                Debundle memory guard is opt-in. The old Debundle target
+                grouping had no measured elapsed-time advantage. Future cost
+                work needs same-input selection and gate timing before counting
+                a PR speedup. ${pr(17131)} · ${pr(17117)} ·
+                ${link(archive, "Original cost audit and experiments")}<//
+              >
+              ${disclosure("Collection method", html`<${Text}>Sampled 15 successful Bazel checks from the latency report's partial-day PR cohort and 14 successful devel CI runs by deterministic head hash. BuildBuddy execution receipts use CI run ID and attempt-derived test invocation IDs. Distinct NEW TestRunner links with positive executionStart to executionCompleted clocks enter totals. Empty replies leave selection, cache reuse and absent work unresolved. The selected successes omit failed and cancelled workflows.<//>`)}
+            </section>
+
+            ${footer()}
           <//>
         <//>`;
       }

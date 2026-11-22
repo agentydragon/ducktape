@@ -2,8 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CI reliability · 13–19 November 2026</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CI reliability</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -45,19 +45,17 @@
   </head>
   <body>
     <div id="report-content"></div>
-    <noscript
-      >This report uses JavaScript for its tables, filters and charts.</noscript
-    >
+    <noscript>This report uses JavaScript for charts and disclosures.</noscript>
     <script type="module">
       import { useState } from "react";
       import {
         Accordion,
-        Alert,
         Anchor,
+        Box,
         Code,
         Container,
         Group,
-        Paper,
+        SegmentedControl,
         Stack,
         Table,
         Text,
@@ -66,35 +64,32 @@
       } from "@mantine/core";
       import { BarChart } from "@mantine/charts";
       import { html, mount } from "../report.js";
-      // This must match evidence_sha256 in the publication manifest.
       const evidenceSha =
-        "2ea9831b45d6cc273d9b4ecf896233fdac76831986f2b3706bf21913e10b6299";
-      const evidenceUrl = `./evidence.json?v=${evidenceSha}`;
-      const manifestUrl = `./manifest.json?v=${evidenceSha}`;
-
-      async function loadEvidence() {
-        const response = await fetch(evidenceUrl, { cache: "no-cache" });
-        if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
-
-        const bytes = await response.arrayBuffer();
-        const digest = await crypto.subtle.digest("SHA-256", bytes);
-        const receivedSha = Array.from(new Uint8Array(digest), (byte) =>
-          byte.toString(16).padStart(2, "0"),
-        ).join("");
-        if (receivedSha !== evidenceSha)
-          throw new Error("Evidence does not match this report");
-
-        return JSON.parse(new TextDecoder().decode(bytes));
-      }
-
-      const e = await loadEvidence().catch(() => null);
+        "fe5ae00d77912347e1cf27824ecda8c25ca4787f7f7a0f1e2170e7a7ca22250e";
+      const response = await fetch(`./evidence.json?v=${evidenceSha}`);
+      if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const receivedSha = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (receivedSha !== evidenceSha)
+        throw new Error("Evidence does not match this report");
+      const e = JSON.parse(new TextDecoder().decode(bytes));
       const gh = "https://github.com/agentydragon/ducktape";
-      const bb = "https://app.buildbuddy.io/invocation/";
-      const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
+      const archive =
+        gh + "/blob/" + e.previous_report_commit + "/reliability/index.html";
+      const link = (href, label) => html`<${Anchor} href=${href}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
-      const inv = (id, label = id.slice(0, 8)) => link(bb + id, label);
-      const table = (heads, rows, width = 620) =>
-        html`<${Table.ScrollContainer}
+      const source = (path, label) =>
+        link(`${gh}/blob/${e.source_devel_commit}/${path}`, label);
+      const inv = (id, label) =>
+        link(
+          "https://app.buildbuddy.io/invocation/" + id,
+          label || id.slice(0, 8),
+        );
+      const table = (headers, rows, width = 560) =>
+        html` <${Table.ScrollContainer}
           minWidth=${width}
           type="native"
           maw="100%"
@@ -102,29 +97,62 @@
           <${Table} striped verticalSpacing="sm">
             <${Table.Thead}
               ><${Table.Tr}
-                >${heads.map((head) => html`<${Table.Th} key=${head}>${head}<//>`)}<//
+                >${headers.map((header) => html`<${Table.Th} key=${header}>${header}<//>`)}<//
               ><//
             >
             <${Table.Tbody}
-              >${rows.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((c, j) => html`<${Table.Td} key=${j}>${c}<//>`)}<//>`)}<//
+              >${rows.map((row, i) => html`<${Table.Tr} key=${i}>${row.map((value, j) => html`<${Table.Td} key=${j}>${value}<//>`)}<//>`)}<//
             >
           <//>
         <//>`;
-      const links = (items) =>
-        html`<${Group} gap="md"
-          >${items.map(({ url, label }) => html`<span key=${url}>${link(url, label)}</span>`)}<//
+      const disclosure = (label, contents) =>
+        html` <${Accordion}
+          variant="contained"
+          mt="sm"
+          defaultValue=${location.hash && label.startsWith("Earlier") ? label : null}
+          ><${Accordion.Item} value=${label}>
+            <${Accordion.Control}>${label}<//
+            ><${Accordion.Panel}>${contents}<//>
+          <//><//
         >`;
+      const minutes = (s) =>
+        s == null
+          ? "—"
+          : `${Math.floor(Math.round(s) / 60)}m ${String(Math.round(s) % 60).padStart(2, "0")}s`;
+      const header = (title, lede) =>
+        html` <header>
+          ${link("../", "Ducktape reports")}
+          <${Title} order=${1} my="sm">${title}<//>
+          <${Text} size="lg">${lede}<//>
+          <${Text} mt="sm" size="sm" c="dimmed"
+            >Inspected devel <${Code}>${e.source_devel_commit}<//><//
+          >
+        </header>`;
+      const footer = () =>
+        html`<footer>
+          <${Group} gap="md">
+            ${link("./evidence.json", "Reviewed evidence")}
+            ${link("./manifest.json", "Manifest")}
+            ${link(archive, "Previous snapshot")} ${link("../", "All reports")}
+          <//>
+        </footer>`;
+
       function Report() {
         const [query, setQuery] = useState("");
-        const findings = e.findings.filter((f) =>
-          [f.title, f.classification, ...f.paragraphs]
-            .join(" ")
-            .toLowerCase()
-            .includes(query.trim().toLowerCase()),
-        );
-        const p = e.pull_requests;
-        const m = e.mainline;
-        const k = e.kvm_cutover;
+        const retryNames = [
+          "Disconnected Bazel invocation",
+          "No failed test verdict available",
+          "Sandbox frontend timeout",
+        ];
+        const retries = e.retries
+          .map((r, i) => ({ ...r, case: retryNames[i] }))
+          .filter((r) =>
+            [r.case, r.pr, r.day]
+              .join(" ")
+              .toLowerCase()
+              .includes(query.trim().toLowerCase()),
+          );
+        const sandbox = e.sandbox_confirmed;
         return html`<${Container}
           component="main"
           size="73rem"
@@ -132,148 +160,84 @@
           style=${{ overflowWrap: "anywhere" }}
         >
           <${Stack} gap="xl">
-            <header>
-              ${link("../", "Ducktape reports")}
-              <${Title} order=${1} my="sm"
-                >CI reliability · 13–19 November 2026<//
-              >
-              <${Text} size="lg"
-                >Four of 350 sampled PR heads showed red, then went green on
-                identical tested inputs with a fresh target recovery. All four
-                occurred on 18 November. On 20 November the new VM retry policy
-                absorbed a failure in one of 16 fresh PR verdicts.${" "}
-                ${link("#vm-cutover", "VM retry details")}<//
-              >
-            </header>
+            ${header("CI reliability", "Across 168 sampled PR heads on 15–21 November UTC, 126 reached required green, 13 remained red and 29 were cancelled. Two Bazel jobs recovered on the same tested source and neither exposed a verified target pair. The partial 22 November sample adds one verified target recovery in 24 heads.")}
             <section id="pr-health">
-              <${Title} order=${2}
-                >PR heads with a verified intermittent failure<//
-              >
+              <${Title} order=${2}>Daily required-check outcomes<//>
               <${Text} my="sm"
-                >13–19 November UTC · 50 heads sampled each day. Seven distinct
-                targets failed or timed out, then passed. Unretried reds make
-                this a lower bound. Each affected head counts once. Zero means
-                no verified case in that day's sample.<//
+                >24 heads per UTC day. 22 November is partial through 10:00 UTC.
+                Green includes successful reruns. Cancellations can include
+                superseded heads. Each head counts once.<//
               >
-              <div
+              <${Box}
                 role="img"
-                aria-label="Daily count of PR heads with a verified red-to-green target recovery"
+                data-chart="pr-outcomes"
+                aria-label="Daily counts of green, red and cancelled PR heads"
               >
                 <${BarChart}
-                  h=${220}
-                  data=${e.flake_trend.daily.map((d) => ({ day: d.day.slice(8), heads: d.confirmed }))}
+                  h=${245}
+                  type="stacked"
+                  withLegend
                   dataKey="day"
-                  series=${[{ name: "heads", color: "orange.7" }]}
+                  data=${e.daily.map((d) => ({ day: d.day.slice(8) + (d.day.endsWith("-22") ? "*" : ""), Green: d.outcomes.green || 0, Red: d.outcomes.red || 0, Cancelled: d.outcomes.cancelled || 0 }))}
+                  series=${[
+                    { name: "Green", color: "teal.7" },
+                    { name: "Red", color: "red.7" },
+                    { name: "Cancelled", color: "gray.6" },
+                  ]}
                   yAxisProps=${{ allowDecimals: false, width: 32 }}
                   yAxisLabel="Heads"
                 />
-              </div>
-              <${Accordion} variant="contained" mt="md">
-                <${Accordion.Item} value="daily"
-                  ><${Accordion.Control}>Daily counts and denominators<//>
-                  <${Accordion.Panel}
-                    >${table(
-                      [
-                        "UTC day",
-                        "Verified intermittent",
-                        "Eligible",
-                        "Sampled",
-                        "Green",
-                        "Red",
-                        "Superseded",
-                        "Cancelled",
-                        "Incomplete",
-                        "Unknown",
-                      ],
-                      p.daily.map((d, i) => [
-                        d.day,
-                        e.flake_trend.daily[i].confirmed,
-                        d.eligible,
-                        d.sampled,
-                        d.green,
-                        d.red,
-                        d.superseded,
-                        d.cancelled,
-                        d.incomplete,
-                        d.unknown,
-                      ]),
-                    )}<//
-                  >
-                <//>
-                <${Accordion.Item} value="heads"
-                  ><${Accordion.Control}
-                    >Same-tested-SHA recoveries in the PR sample<//
-                  >
-                  <${Accordion.Panel}
-                    >${table(
-                      [
-                        "PR",
-                        "Tested SHA",
-                        "First invocation",
-                        "Retry invocation",
-                      ],
-                      p.same_commit_recoveries.map((r) => [
-                        pr(r.pr),
-                        html`<${Code}>${r.tested}<//>`,
-                        inv(r.first),
-                        inv(r.retry),
-                      ]),
-                    )}<//
-                  >
-                <//>
               <//>
-              <${Text} size="sm" mt="md"
-                >Five of 61 initially red heads recovered on the same tested
-                SHA. Four had a verified target pair. The fifth lacks a verified
-                intermittent target pair. There were 242 first-pass greens, 44
-                superseded heads and three cancellations. The five recoveries
-                took 3m 30s to 19m 49s from the first red check completing to
-                the retry completing. Median 7m 35s. These intervals include the
-                wait before starting the retry.<//
-              >
-              <${Text} size="sm" mt="sm">${p.method}<//>
-            </section>
-            <section id="vm-cutover">
-              <${Title} order=${2}
-                >Flakes absorbed by Bazel · VM retry rollout<//
-              >
-              <${Text} mt="sm"
-                >On 20 November, one of 16 fresh required VM verdicts in the
-                sampled PR jobs failed on attempt one and passed on attempt two.
-                The required job stayed green. A separate devel census found one
-                such recovery in 13 fresh VM verdicts. Both hit the
-                recycled-runner rebuild guard.<//
-              >
-              <${Text} my="sm"
-                >The VM suite gained a second attempt on 20 November, after the
-                seven-day chart window. We inspected${" "}
-                ${e.flake_trend.post_shadow_vm.inspected_jobs} required Bazel
-                jobs across 67 post-shadow PR heads. Cached passes and jobs
-                without fresh VM results are excluded. ${pr(18265)} ·
-                ${inv("6e111092-663c-58b6-98b1-3368720d6d9f", "PR attempt evidence")}
-                · ${pr(17940)} retry policy<//
-              >
-              <${Text} my="sm">${k.summary}<//>
-              ${table(["Post-cutover devel", "Count", "Unit"], k.counts, 340)}
-              <${Title} order=${3} mt="md"
-                >A recycled runner rebuild failed before either case started<//
-              >
-              <${Stack} gap="sm" mt="sm"
-                >${k.mechanism.map((s) => html`<${Text} key=${s}>${s}<//>`)}${links(k.links)}<//
-              >
-              <${Accordion} variant="contained" mt="md">
-                <${Accordion.Item} value="vm-shadow" id="vm-shadow">
-                  <${Accordion.Control}
-                    >Earlier paired TCG and KVM measurements<//
-                  >
-                  <${Accordion.Panel}
-                    >${k.history.map((x) => html`<${Text} mb="sm" key=${x}>${x}<//>`)}${links(k.history_links)}<//
-                  >
-                <//>
-              <//>
+              ${disclosure(
+                "Daily counts and denominators",
+                table(
+                  [
+                    "UTC day",
+                    "Eligible",
+                    "Sampled",
+                    "Green",
+                    "Red",
+                    "Cancelled",
+                    "Verified recoveries",
+                  ],
+                  e.daily.map((d) => [
+                    d.day + (d.day.endsWith("-22") ? " (partial)" : ""),
+                    d.eligible_heads,
+                    d.sampled,
+                    d.outcomes.green || 0,
+                    d.outcomes.red || 0,
+                    d.outcomes.cancelled || 0,
+                    e.verified_target_recoveries_by_day[d.day] || 0,
+                  ]),
+                ),
+              )}
             </section>
             <section id="priorities">
-              <${Title} order=${2}>Failure mechanisms and priorities<//>
+              <${Title} order=${2}>Investigate the sandbox page timeout<//>
+              <${Text} my="sm"
+                >On #18803, the retained History Threads test exceeded Vitest’s
+                5-second deadline. The same tested SHA and configuration then
+                passed with a fresh remote result. CI took 5m 12s from the
+                failed check finishing to the passing rerun completing. The
+                failed log ends at the test deadline. It does not identify which
+                awaited transition was active. ${pr(18803)} ·
+                ${inv(sandbox.failure, "Failed result")} ·
+                ${inv(sandbox.pass, "Uncached pass")}<//
+              >
+              <${Text} my="sm"
+                >The current case covers ready-to-suspended state, menu gating,
+                wake-on-send and retained rows after inventory removal. Rerun
+                the full target and record the duration of render, tooltip and
+                rerender checkpoints if it recurs. Keep the original assertion
+                coverage and deadline while identifying the waiting phase.
+                ${source("agentplane/app/frontend/sandboxes/sandbox_page.test.tsx#L792", "Current test")}<//
+              >
+              <${Text} my="sm"
+                >A fresh RBE control at the inspected devel SHA passed the full
+                target. This verifies the current case still runs and leaves
+                recurrence unresolved.
+                ${inv(e.current_source_control.invocation, "Current-source control")}<//
+              >
               <${TextInput}
                 label="Filter findings"
                 placeholder="Search failure mechanisms"
@@ -281,153 +245,99 @@
                 onChange=${(event) => setQuery(event.currentTarget.value)}
                 my="md"
               />
-              <${Text} size="sm" c="dimmed" mb="sm" aria-live="polite"
-                >${findings.length} of ${e.findings.length} findings<//
-              >
-              <${Stack} gap="md">
-                ${findings.map(
-                  (f) =>
-                    html`<${Paper}
-                      withBorder
-                      p="lg"
-                      key=${f.id}
-                      data-finding=${f.id}
-                    >
-                      <${Stack} gap="sm">
-                        <${Title} order=${3}>${f.title}<//>
-                        <${Text} fw=${600}>${f.frequency}<//>
-                        ${f.paragraphs.map((x) => html`<${Text} key=${x}>${x}<//>`)}
-                        ${links(f.links)}
-                      <//>
-                    <//>`,
-                )}
-                ${findings.length ? null : html`<${Text}>No findings match this filter.<//>`}
-              <//>
-            </section>
-            <section id="intermittent-targets">
-              <${Title} order=${2}>PR target recoveries with fresh results<//>
-              <${Text} my="sm">${e.pr_targets.summary}<//>
-              <${Text} my="sm">${e.pr_targets.scope}<//>
-              <${Accordion} variant="contained">
-                <${Accordion.Item} value="retry-targets"
-                  ><${Accordion.Control}>Verified target and head pairs<//>
-                  <${Accordion.Panel}
-                    >${table(
-                      [
-                        "PR",
-                        "Target",
-                        "Failed attempt",
-                        "Passing attempt",
-                        "Observed phase",
-                      ],
-                      e.pr_targets.pairs.map((r) => [
-                        pr(r.pr),
-                        html`<${Code}>${r.label}<//>`,
-                        inv(r.first),
-                        inv(r.retry),
-                        r.phase,
-                      ]),
-                      760,
-                    )}<//
-                  >
-                <//>
-              <//>
-            </section>
-            <section id="populations">
-              <${Title} order=${2}>Mainline and merge-time evidence<//>
-              <${Text} my="sm">${m.method}<//>
-              ${table(["Bazel test exit", "Invocations"], Object.entries(m.exit_counts), 335)}
-              <${Title} order=${3} mt="md"
-                >BuildBuddy target-tracking candidates<//
-              >
-              <${Text} my="sm">${e.target_stats.method}<//>
               ${table(
-                ["Target", "Indexed runs", "Failed runs", "Likely flaky runs"],
-                e.target_stats.rows.map((r) => [
-                  html`<${Code}>${r.label}<//>`,
-                  r.runs,
-                  r.failed,
-                  r.likely,
+                ["UTC day", "Recovery", "Evidence"],
+                retries.map((r) => [
+                  r.day,
+                  r.case,
+                  html`<${Group} gap="sm"
+                    >${r.pr ? pr(r.pr) : link(r.url, "GitHub run")}
+                    ${r.attempts.map((a) => html`<span key=${a.number}>${link(a.url, `Attempt ${a.number}`)}</span>`)}<//
+                  >`,
                 ]),
               )}
-              <${Title} order=${3} mt="md" id="merges"
-                >Required checks visible at merge time<//
+              ${retries.length ? null : html`<${Text} mt="sm" aria-live="polite">No findings match this filter.<//>`}
+            </section>
+            <section id="vm-cutover">
+              <${Title} order=${2}>VM rebuild fix needs more fresh exposure<//>
+              <${Text} my="sm"
+                >On 22 November through 10:00 UTC, four fresh VM verdicts passed
+                on attempt one across 15 green Bazel PR checks and 14 successful
+                devel CI runs. Thirteen VM results were cached, and 12
+                invocations did not yield a VM test result. The earlier 20
+                November cohorts recorded one Bazel retry recovery in 16 fresh
+                PR verdicts and one in 13 devel verdicts. Both earlier failures
+                hit the recycled-runner namespace guard before scenario
+                execution. ${pr(18295)} ·
+                ${link(archive + "#vm-cutover", "Earlier VM exposure and failed attempts")}<//
               >
-              <${Text} my="sm">${e.merges.summary}<//>
-              <${Accordion} variant="contained">
-                <${Accordion.Item} value="merge-candidates"
-                  ><${Accordion.Control}>PRs with a red check at merge<//>
-                  <${Accordion.Panel}
-                    >${table(
-                      [
-                        "PR",
-                        "Merged UTC",
-                        "Red job",
-                        "Bazel child",
-                        "Failure evidence",
-                      ],
-                      e.merges.red.map((r) => [
-                        pr(r.pr),
-                        r.merged,
-                        link(r.job, "Bazel gate"),
-                        inv(r.inv),
-                        r.diagnosis,
-                      ]),
-                      710,
-                    )}<//
-                  >
-                <//>
-              <//>
+              <${Text} my="sm"
+                >Track first-attempt failures per fresh VM verdict and match
+                them to recycled baseline rebuilds. Fresh passes alone do not
+                establish that the relevant rebuild path ran in all four
+                tests.<//
+              >
+            </section>
+            <section id="populations">
+              <${Title} order=${2}>Mainline target index<//>
+              <${Text} my="sm"
+                >15–21 November UTC. BuildBuddy indexed one Bazel FLAKY VM
+                verdict. Its likely-flaky heuristic also marks failures
+                bracketed by passing runs, including across different revisions
+                and configurations. The four visual-operation failed rows
+                include three build failures. A geometry assertion failed in the
+                other run.
+                ${link("../visual-reliability/", "Visual test diagnosis")}<//
+              >
+              ${table(
+                [
+                  "Target",
+                  "Indexed runs",
+                  "Failed",
+                  "Bazel FLAKY",
+                  "Likely flaky",
+                ],
+                e.mainline_target_index.map((r) => [
+                  html`<${Code}>${r.label}<//>`,
+                  r.totalRuns,
+                  r.failedRuns,
+                  r.flakyRuns || 0,
+                  r.likelyFlakyRuns || 0,
+                ]),
+                720,
+              )}
             </section>
             <section id="continuity">
-              <${Title} order=${2}
-                >Earlier interventions and open measurements<//
+              <${Title} order=${2}>Sampling and earlier investigations<//>
+              <${Text} my="sm"
+                >The daily head sample and exact-check join follow the
+                ${link("../latency/#method-current", "latency method")}. A
+                verified recovery requires the exact same tested SHA,
+                configuration and an explicit non-cached failing and passing
+                target result. Unretried reds limit recurrence estimates. The
+                current sample tracks workflow attempts. Earlier merge-time
+                classifications retain their original windows.<//
               >
-              <${Accordion} variant="contained" mt="sm">
-                ${e.continuity.map(
-                  (r) =>
-                    html`<${Accordion.Item} key=${r.title} value=${r.title}>
-                      <${Accordion.Control}>${r.title}<//>
-                      <${Accordion.Panel}
-                        ><${Text} mb="sm">${r.body}<//>${links(r.links)}<//
-                      >
-                    <//>`,
-                )}
-              <//>
+              ${disclosure(
+                "Earlier reliability findings",
+                html`<${Group} gap="md">
+                  <span id="vm-shadow"
+                    >${link(archive + "#vm-shadow", "Managed TCG and KVM comparison")}</span
+                  >
+                  <span id="vm-forensics"
+                    >${source("agentplane/system_tests/debug/vm_boot_stalls/vm_runtime_connection_2026_11_17.md", "VM runtime connection forensics")}</span
+                  >
+                  ${link(archive + "#merges", "Earlier merge-time red checks")}
+                  ${link(archive + "#priorities", "Runtime proxy, browser readiness and source regressions")}
+                <//>`,
+              )}
             </section>
-            <section id="limits">
-              <${Title} order=${2}>Coverage<//>
-              <${Stack} gap="sm" mt="sm"
-                >${e.limits.map((s) => html`<${Text} key=${s}>${s}<//>`)}<//
-              >
-            </section>
-            <footer>
-              ${links([
-                { url: evidenceUrl, label: "Reviewed evidence" },
-                { url: manifestUrl, label: "Publication manifest" },
-                { url: "../latency/", label: "CI latency" },
-                { url: "../", label: "All reports" },
-              ])}
-            </footer>
-          <//>
-        <//>`;
-      }
-      function EvidenceUnavailable() {
-        return html`<${Container} component="main" size="sm" py="xl">
-          <${Stack} gap="md">
-            <${Title} order=${1}>CI reliability<//>
-            <${Alert} color="red" title="Report data unavailable">
-              The evidence for this report version could not be loaded. Reload
-              the report to try again.
-            <//>
-            <${Group}>
-              ${link("./", "Reload report")} ${link("../", "All reports")}
-            <//>
-          <//>
-        <//>`;
-      }
 
-      mount(e ? Report : EvidenceUnavailable);
+            ${footer()}
+          <//>
+        <//>`;
+      }
+      mount(Report);
     </script>
   </body>
 </html>
