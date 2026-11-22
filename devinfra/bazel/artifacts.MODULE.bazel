@@ -192,14 +192,13 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 """,
-    integrity = "sha512-CxDm3+D1cpbGJeHrdzINoG+3wn9BVncP4qpZaaNYkxe8iPtRJOYyCJnnPoVjWRIBvI9vPKbRoifsMSA5xDaUpw==",
+    integrity = "sha512-l66NZkQgdk2C3pbcfULDz42yEUB581MVA6I+Y43Wp4OIqEy73HCdmZ0GTjeAHY2ycuH4N00d9VsLrwT1jxshTw==",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
-    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.166.0-linux-x64.tgz"],
+    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.171.0-linux-x64.tgz"],
 )
 
 # Default to the native Codex CLI release above when updating this source catalog.
-# Intentional divergence: 0.171.0 supplies GPT-6.2 metadata while the native app-server
-# remains on 0.166.0. test_codex_models checks that the native CLI can read it.
+# test_codex_models checks that the native CLI can read the deployment catalog.
 http_file(
     name = "codex_model_catalog",
     downloaded_file_path = "models.json",
