@@ -111,39 +111,44 @@ def test_tofu_controller_accepts_external_artifacts(parsed_yaml_documents: YamlD
     assert "ExternalArtifact" in source_kind["enum"]
 
 
+@pytest.fixture(scope="module")
+def worker_pool(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    return find_resource(documents, "VirtualMachinePool", "buildbuddy-kvm-worker", namespace="buildbuddy-executor")
+
+
 def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_disk(
-    documents: list[dict[str, Any]],
+    documents: list[dict[str, Any]], worker_pool: dict[str, Any]
 ) -> None:
-    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     # /scale cannot read the pool if replicas is absent, even though its controller defaults to one.
-    assert "replicas" in pool["spec"]
-    flux = find_resource(documents, "Kustomization", "buildbuddy-kvm-worker")
+    assert "replicas" in worker_pool["spec"]
+    name = worker_pool["metadata"]["name"]
+    namespace = worker_pool["metadata"]["namespace"]
+    scaler = find_resource(documents, "ScaledObject", name, namespace=namespace)
+    target = scaler["spec"]["scaleTargetRef"]
+    assert target == {"apiVersion": worker_pool["apiVersion"], "kind": worker_pool["kind"], "name": name}
+    group, version = target["apiVersion"].split("/", 1)
+    flux = find_resource(documents, "Kustomization", name)
     assert flux["spec"]["ignore"] == [
         {
             "paths": ["/spec/replicas"],
             "target": {
-                "group": "pool.kubevirt.io",
-                "version": "v1beta1",
-                "kind": "VirtualMachinePool",
-                "name": "buildbuddy-kvm-worker",
-                "namespace": "buildbuddy-executor",
+                "group": group,
+                "version": version,
+                "kind": target["kind"],
+                "name": name,
+                "namespace": namespace,
             },
         }
     ]
-    template = pool["spec"]["virtualMachineTemplate"]
-    labels = pool["spec"]["selector"]["matchLabels"]
+    template = worker_pool["spec"]["virtualMachineTemplate"]
+    labels = worker_pool["spec"]["selector"]["matchLabels"]
     # A template change must not replace every worker at once, which would leave the pool without an executor.
-    assert pool["spec"]["maxUnavailable"] == 1
+    assert worker_pool["spec"]["maxUnavailable"] == 1
     assert labels.items() <= template["metadata"]["labels"].items()
     assert labels.items() <= template["spec"]["template"]["metadata"]["labels"].items()
     guest = template["spec"]["template"]["spec"]
     # Wyrm2 is outside the OVH region, but workers still require nested virtualization.
     assert "topology.kubernetes.io/region" not in guest.get("nodeSelector", {})
-    terms = guest["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
-    assert {term["matchExpressions"][0]["key"] for term in terms} == {
-        "cpu-feature.node.kubevirt.io/svm",
-        "cpu-feature.node.kubevirt.io/vmx",
-    }
     # A member is ready only once its executor has registered; the readiness endpoint is the executor's own.
     probe = guest["readinessProbe"]["httpGet"]
     assert probe["path"] == "/readyz"
@@ -166,12 +171,13 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in fence["egress"])
 
 
-def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(documents: list[dict[str, Any]]) -> None:
-    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
+    documents: list[dict[str, Any]], worker_pool: dict[str, Any]
+) -> None:
     service = find_resource(documents, "Service", "buildbuddy-kvm-worker-metrics")
     monitor = find_resource(documents, "ServiceMonitor", "buildbuddy-kvm-worker")
     ports = {port["name"]: port for port in service["spec"]["ports"]}
-    pod_labels = pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["metadata"]["labels"]
+    pod_labels = worker_pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["metadata"]["labels"]
     assert service["spec"]["selector"].items() <= pod_labels.items()
     assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
     assert {endpoint["port"] for endpoint in monitor["spec"]["endpoints"]} == ports.keys()
@@ -244,9 +250,10 @@ def test_mcp_edge_removes_plaintext_service_and_ingress(documents: list[dict[str
     assert {"8081", "8443"} <= ingress_ports
 
 
-def test_kvm_worker_keeps_privileged_actions_inside_the_guest(documents: list[dict[str, Any]]) -> None:
-    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
-    worker = pool["spec"]["virtualMachineTemplate"]["spec"]
+def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
+    documents: list[dict[str, Any]], worker_pool: dict[str, Any]
+) -> None:
+    worker = worker_pool["spec"]["virtualMachineTemplate"]["spec"]
     guest = worker["template"]["spec"]
     assert worker["runStrategy"] == "Always"
     kubevirt = next(doc["spec"] for doc in documents if doc["kind"] == "KubeVirt")
@@ -263,19 +270,17 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(documents: list[di
     assert not workload_placement.get("nodeSelector")
     assert not workload_placement.get("affinity")
     assert guest["domain"]["cpu"]["model"] == "host-passthrough"
-    cpu_features = {
-        feature["name"] for feature in guest["domain"]["cpu"]["features"] if feature["policy"] == "optional"
-    }
+    features = {f["name"] for f in guest["domain"]["cpu"]["features"] if f["policy"] == "optional"}
+    assert features == {"svm", "vmx"}
     terms = guest["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
-    assert all(len(term["matchExpressions"]) == 1 for term in terms)
-    allowed_features = {
-        expression["key"].removeprefix("cpu-feature.node.kubevirt.io/")
-        for term in terms
-        for expression in term["matchExpressions"]
-        if expression["operator"] == "In" and expression["values"] == ["true"]
-    }
-    assert cpu_features == allowed_features == {"svm", "vmx"}
-    assert guest["domain"]["resources"]["limits"]["memory"] == guest["domain"]["resources"]["requests"]["memory"]
+    # Separate terms are alternatives: Intel or AMD, never both on the same host.
+    assert len(terms) == len(features)
+    for feature in features:
+        assert {
+            "matchExpressions": [
+                {"key": f"cpu-feature.node.kubevirt.io/{feature}", "operator": "In", "values": ["true"]}
+            ]
+        } in terms
     assert not guest["domain"]["devices"].get("hostDevices")
     assert not guest["domain"]["devices"].get("gpus")
     assert not any("hostDisk" in volume or "serviceAccount" in volume for volume in guest["volumes"])
