@@ -1592,9 +1592,11 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
   const container = await render();
   await sendDispatches([]);
 
+  const row = pendingRow(container, waiting.commandId);
   await vi.waitFor(() =>
-    expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="unknown"]')).not.toBeNull()
+    expect(row.querySelector('[role="status"]')?.textContent).toBe("Outcome unknown: sandbox_deleted")
   );
+  expect(row.querySelector('[role="alert"]')).toBeNull();
 });
 
 it("opens compact command detail on touch and closes on blur or Escape", async () => {
@@ -1769,9 +1771,7 @@ it("shows the failure and reason for a server-only command", async () => {
     requestedValue: undefined,
   });
   const pending = pendingRow(section, "test-entity");
-  expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
-    "Failed: model unavailable"
-  );
+  expect(pending.querySelector('[role="alert"]')?.textContent).toBe("Failed: model unavailable");
   expect(pending.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
