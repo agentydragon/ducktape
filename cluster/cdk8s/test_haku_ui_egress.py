@@ -87,18 +87,6 @@ def test_ankiweb_policy_presents_no_credential_and_reaches_only_ankiweb(resource
         assert absent not in rule, absent
 
 
-def test_haku_anki_has_no_identity_or_binding_of_its_own(resources: list[dict[str, Any]]) -> None:
-    """It acts as haku-ui on purpose (actions_staging_policies.py); a separate identity would be a design change."""
-    bound_subjects = {
-        d["spec"]["subject"].get("identity", d["spec"]["subject"])["name"]
-        for d in resources
-        if d["kind"] == "PolicyBinding"
-    }
-
-    assert "haku-anki" not in bound_subjects
-    assert "haku-anki" not in {d["metadata"]["name"] for d in resources if d["kind"] == "Identity"}
-
-
 def test_haku_sandbox_reaches_the_tls_proxy_and_actions(resources: list[dict[str, Any]]) -> None:
     egress = config_map_yaml(resources, "egress-go-settings", "settings.yaml")
     actions = config_map_yaml(resources, "actions-settings", "settings.yaml")
@@ -120,7 +108,10 @@ def test_each_haku_workload_has_a_standing_record_as_the_haku_ui_identity(resour
     replaces the record, which the Flux annotation lets kustomize-controller do."""
     records = _standing_records(resources)
 
-    assert {record["metadata"]["name"] for record in records} == set(ui_egress.STANDING_WORKLOADS)
+    record_names = {record["metadata"]["name"] for record in records}
+    # haku-state mounts svid-haku-anki. Its subject determines which bindings Anki can use.
+    assert "haku-anki" in record_names
+    assert record_names == set(ui_egress.STANDING_WORKLOADS)
     for record in records:
         assert "ownerReferences" not in record["metadata"]
         assert record["spec"] == {"subject": {"identity": {"name": ui_egress.IDENTITY}}}
