@@ -14,7 +14,7 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
-from cluster.cdk8s.seaweedfs.endpoints import S3
+from cluster.cdk8s.seaweedfs.endpoints import S3_AUTHORITY
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mimir"
@@ -41,7 +41,7 @@ PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 def _s3(bucket: str) -> dict[str, object]:
     # Credentials injected via global.extraEnvFrom; expanded by -config.expand-env=true.
     return {
-        "endpoint": S3.short_authority,
+        "endpoint": S3_AUTHORITY,
         "bucket_name": bucket,
         "region": "us-east-1",
         "insecure": True,

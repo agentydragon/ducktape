@@ -12,3 +12,6 @@ S3 = ServiceRef(
         labels=(("app.kubernetes.io/component", "s3"), ("app.kubernetes.io/name", CLUSTER_NAME)),
     ),
 )
+# Clients take either an HTTP URL or a bare authority with a separate TLS setting.
+S3_AUTHORITY = f"{S3.host}:{S3.port.number}"
+S3_HTTP_URL = f"http://{S3_AUTHORITY}"

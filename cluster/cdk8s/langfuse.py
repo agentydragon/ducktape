@@ -28,7 +28,7 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
-from cluster.cdk8s.seaweedfs.endpoints import S3
+from cluster.cdk8s.seaweedfs.endpoints import S3_HTTP_URL
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
@@ -242,7 +242,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             "storageProvider": "s3",
             "bucket": _NAME,
             "region": "auto",
-            "endpoint": S3.url,
+            "endpoint": S3_HTTP_URL,
             "forcePathStyle": True,
             "accessKeyId": storage.access_key.value_from(),
             "secretAccessKey": storage.secret_key.value_from(),

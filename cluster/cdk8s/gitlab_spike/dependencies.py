@@ -28,7 +28,7 @@ from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
-from cluster.cdk8s.seaweedfs.endpoints import S3
+from cluster.cdk8s.seaweedfs.endpoints import S3_AUTHORITY, S3_HTTP_URL
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/dependencies"
@@ -175,7 +175,7 @@ def _object_storage(chart: Chart) -> None:
                 "  accesskey: '{{ .access_key }}'\n"
                 "  secretkey: '{{ .secret_key }}'\n"
                 "  region: us-east-1\n"
-                f"  regionendpoint: {S3.url}\n"
+                f"  regionendpoint: {S3_HTTP_URL}\n"
                 f"  bucket: {name}\n"
                 "  pathstyle: true\n"
                 "  checksum_disabled: true\n"
@@ -191,7 +191,7 @@ def _object_storage(chart: Chart) -> None:
                 "region: us-east-1\n"
                 "aws_access_key_id: '{{ .access_key }}'\n"
                 "aws_secret_access_key: '{{ .secret_key }}'\n"
-                f"endpoint: {S3.url}\n"
+                f"endpoint: {S3_HTTP_URL}\n"
                 "path_style: true\n"
                 "aws_signature_version: 4\n"
             )
@@ -231,8 +231,8 @@ def _object_storage(chart: Chart) -> None:
                     "access_key = {{ .access_key }}\n"
                     "secret_key = {{ .secret_key }}\n"
                     "bucket_location = us-east-1\n"
-                    f"host_base = {S3.short_authority}\n"
-                    f"host_bucket = {S3.short_authority}\n"
+                    f"host_base = {S3_AUTHORITY}\n"
+                    f"host_bucket = {S3_AUTHORITY}\n"
                     "use_https = False\n"
                     "signature_v2 = False\n"
                     "multipart_chunk_size_mb = 128\n"

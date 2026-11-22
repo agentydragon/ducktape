@@ -30,7 +30,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
-from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME, S3
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME, S3, S3_HTTP_URL
 
 
 def restic_egress(labels: Mapping[str, str]) -> k8s.NetworkPolicySpec:
@@ -192,7 +192,7 @@ class ResticBackup(Construct):
                 merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
                 template_from=[
                     ExternalSecretSpecTargetTemplateTemplateFrom(
-                        literal=f"RESTIC_REPOSITORY: s3:{S3.url}/{bucket}\nAWS_DEFAULT_REGION: us-east-1\n"
+                        literal=f"RESTIC_REPOSITORY: s3:{S3_HTTP_URL}/{bucket}\nAWS_DEFAULT_REGION: us-east-1\n"
                     )
                 ],
             ),

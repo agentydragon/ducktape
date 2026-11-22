@@ -16,7 +16,7 @@ from cluster.cdk8s.monitoring import alloy_endpoints, grafana_helmrepository
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
-from cluster.cdk8s.seaweedfs.endpoints import S3
+from cluster.cdk8s.seaweedfs.endpoints import S3, S3_HTTP_URL
 from cluster.cdk8s.vpa_policy import (
     VPA_RESOURCE_POLICY_ANNOTATION,
     ContainerPolicy,
@@ -59,7 +59,7 @@ def _loki_values() -> dict[str, object]:
             "commonConfig": {"replication_factor": 2},
             "storage": {
                 "type": "s3",
-                "s3": {"endpoint": S3.url, "region": "us-east-1", "s3ForcePathStyle": True, "insecure": True},
+                "s3": {"endpoint": S3_HTTP_URL, "region": "us-east-1", "s3ForcePathStyle": True, "insecure": True},
                 "bucketNames": {"chunks": NAME, "ruler": NAME, "admin": NAME},
             },
             "schemaConfig": {
