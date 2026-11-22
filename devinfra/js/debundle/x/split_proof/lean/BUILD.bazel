@@ -196,6 +196,7 @@ lean_binary(
             "Experiments/CoreJS/ClassParents.lean",
             "Experiments/CoreJS/HeritageMove.lean",
             "Experiments/CoreJS/HeritageCertificate.lean",
+            "Experiments/CoreJS/RecordOrigin.lean",
             "Experiments/CoreJS/Frame.lean",
             "Experiments/CoreJS/Fuel.lean",
             "Experiments/CoreJS/LinkedCells.lean",
