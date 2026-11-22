@@ -1391,7 +1391,7 @@ py_test(
 
 py_test(
     name = "test_sandbox_controller",
-    # Synthesizes the staging chart to check its settings file and projected token wiring.
+    # Synthesizes the staging chart to check its service configuration, permissions and mounted certificates.
     size = "medium",
     srcs = ["test_sandbox_controller.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -1420,7 +1420,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
