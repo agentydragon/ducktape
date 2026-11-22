@@ -39,17 +39,10 @@ def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
     return ConfigMapArgs(name=_CONFIG_MAP_NAME, namespace=NAMESPACE, data={"nginx.conf": nginx_conf})
 
 
-def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
-    return k8s.Probe(
-        tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_number(SERVICE.pod_port)),
-        initial_delay_seconds=initial_delay_seconds,
-        period_seconds=period_seconds,
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
+    health = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(SERVICE.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -80,8 +73,8 @@ def chart(app: App) -> Chart:
                             resources=container_resources(
                                 cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="128Mi"
                             ),
-                            liveness_probe=_tcp_probe(initial_delay_seconds=5, period_seconds=10),
-                            readiness_probe=_tcp_probe(initial_delay_seconds=2, period_seconds=5),
+                            liveness_probe=k8s.Probe(tcp_socket=health, initial_delay_seconds=5, period_seconds=10),
+                            readiness_probe=k8s.Probe(tcp_socket=health, initial_delay_seconds=2, period_seconds=5),
                         )
                     ],
                     volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME))],
