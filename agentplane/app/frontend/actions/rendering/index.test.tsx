@@ -61,7 +61,7 @@ describe("Action presentation slots", () => {
     expect((await mount(renderPaneOpened(action, fan))).textContent).toContain("fan.greenhouse");
     expect(actionOffersCardDecisionButtons(action, fan)).toBe(false);
     const generic = { domain: "fan", service: "set_percentage", entity_id: ["fan.greenhouse", "fan.study"] };
-    expect((await mount(renderActionLabel(action, generic))).textContent).toContain("Call Home Assistant service");
+    expect((await mount(renderActionLabel(action, generic))).textContent).toContain("Call fan · set percentage");
     expect((await mount(renderActionLabel(action, { ...fan, future: true }))).textContent).toContain(
       "Call Home Assistant service"
     );

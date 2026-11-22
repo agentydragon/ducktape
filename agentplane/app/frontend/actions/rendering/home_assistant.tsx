@@ -224,9 +224,9 @@ const serviceArgs = z.strictObject({
   result_attribute_keys: parameters.or(stringList),
   ws_command: text,
 });
-function serviceSummary(args: z.infer<typeof serviceArgs>): string | undefined {
+function serviceSummary(args: z.infer<typeof serviceArgs>): string {
   // Entity IDs are unambiguous even when a friendly name cannot be looked up.
-  if (typeof args.entity_id !== "string") return undefined;
+  if (typeof args.entity_id !== "string") return `Call ${words(args.domain)} · ${words(args.service)}`;
   if (args.service === "turn_on" || args.service === "turn_off") {
     return `Turn ${args.service === "turn_on" ? "on" : "off"} ${args.entity_id}`;
   }
@@ -235,21 +235,16 @@ function serviceSummary(args: z.infer<typeof serviceArgs>): string | undefined {
   if (args.domain === "fan" && args.service === "set_percentage" && typeof percentage === "number") {
     return `Set ${args.entity_id} to ${percentage}%`;
   }
-  return undefined;
+  return `Call ${words(args.domain)} · ${words(args.service)} for ${args.entity_id}`;
 }
 
 const serviceLabel = definePreview(serviceArgs, ({ args }) => (
   <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-    {serviceSummary(args) ?? "Call Home Assistant service"}
+    {serviceSummary(args)}
   </Text>
 ));
 const servicePreview = definePreview(serviceArgs, ({ args }) => (
   <Review>
-    {!serviceSummary(args) && (
-      <Text size="sm" fw={600}>
-        {words(args.domain)} · {words(args.service)}
-      </Text>
-    )}
     {(typeof args.entity_id === "string" ? [args.entity_id] : args.entity_id)?.map((id) => (
       <Text size="sm" key={id}>
         <EntityName id={id} />
