@@ -1591,7 +1591,6 @@ py_library(
     name = "talos_cloud_controller_manager",
     srcs = ["talos_cloud_controller_manager.py"],
     deps = [
-        ":flux",
         ":generation",
         ":helm",
         ":manifest_roots",
@@ -2025,7 +2024,6 @@ py_library(
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":disruption_budget",
-        ":flux",
         ":gateway",
         ":manifest_roots",
         ":namespaces",

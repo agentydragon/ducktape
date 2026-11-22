@@ -26,7 +26,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 )
 
 from cluster.cdk8s import disruption_budget, namespaces, node_scheduling, pod_policy, probes
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
@@ -160,17 +159,4 @@ def _redirect(
         else HttpRouteSpecRulesFiltersRequestRedirectPath(
             type=HttpRouteSpecRulesFiltersRequestRedirectPathType.REPLACE_FULL_PATH, replace_full_path=path
         ),
-    )
-
-
-def website(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        _NAME,
-        directory,
-        timeout="5m",
-        # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kyverno),
     )

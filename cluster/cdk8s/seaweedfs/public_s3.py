@@ -42,7 +42,6 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 
 from cluster.cdk8s import disruption_budget, node_scheduling
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
@@ -269,26 +268,3 @@ def chart(app: App) -> Chart:
     _iam(chart)
     _gateway(chart)
     return chart
-
-
-def seaweedfs_public_s3(
-    chart: Chart,
-    directory: RenderedDirectory,
-    seaweedfs_operator: Kustomization,
-    kyverno: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "seaweedfs-public-s3",
-        directory,
-        depends_on=flux_kustomization_depends_on_many(
-            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
-            seaweedfs_operator,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
-            kyverno,
-            # ServiceMonitor.
-            monitoring_crds,
-        ),
-        timeout="5m",
-    )

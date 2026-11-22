@@ -36,7 +36,6 @@ py_library(
     srcs = ["policies.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/kyverno:mutatingpolicy",
         "//cluster/cdk8s/providers/kyverno:validatingpolicy",
