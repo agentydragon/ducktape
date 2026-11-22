@@ -151,10 +151,8 @@ precaution based on a suspected, not proven, diskless-primary reattachment issue
 
 - A decommissioned or indefinitely suspended app whose source ducktape does **not** own
   (third-party image/chart/tool) moves whole to `cluster/parked/<name>/`, layout unchanged.
-  Its Flux Kustomization stays in the central chart with `spec.suspend: true` and annotation
-  `ducktape.org/parked: "true"` (required for `cluster/parked/` paths by
-  `test_flux_kustomizations_under_parked_path_are_annotated` in
-  `cdk8s/test_generate_manifests.py`).
+  Its Flux Kustomization stays in the central chart with `spec.suspend: true`.
+  `flux_kustomization` sets `ducktape.org/parked: "true"` from the artifact's directory.
 - Ducktape-owned code (`<project>/deploy/`, e.g. `props/deploy/`) keeps its manifests beside
   its source, active or suspended.
 - `cluster/parked` is outside the manifest roots: `cluster/validation` skips it, image

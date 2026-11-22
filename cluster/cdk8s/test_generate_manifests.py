@@ -537,18 +537,6 @@ def test_namespace_readers_can_reconcile_before_the_application(parsed_yaml_docu
         assert spec["dependsOn"] == [{"name": roles["name"], "namespace": roles["namespace"]}], spec["path"]
 
 
-def test_flux_kustomizations_under_parked_path_are_annotated(parsed_yaml_documents: YamlDocuments) -> None:
-    flux_chart = Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")
-    missing = sorted(
-        doc["metadata"]["name"]
-        for doc in parsed_yaml_documents[flux_chart]
-        if doc.get("kind") == "Kustomization"
-        and Path(doc["spec"]["path"].removeprefix("./")).is_relative_to(PARKED_ROOT)
-        and doc["metadata"].get("annotations", {}).get("ducktape.org/parked") != "true"
-    )
-    assert not missing, f"Kustomizations under {PARKED_ROOT}/ lack the parked annotation: {missing}"
-
-
 def test_goldilocks_explicit_decision(active_yaml_documents: YamlDocuments) -> None:
     update_mode = "goldilocks.fairwinds.com/vpa-update-mode"
     enabled = "goldilocks.fairwinds.com/enabled"
