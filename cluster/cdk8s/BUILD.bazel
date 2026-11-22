@@ -1053,7 +1053,6 @@ py_library(
         ":stateful_infra",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -2238,6 +2237,23 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_piraeus_storage",
+    srcs = ["test_piraeus_storage.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":descheduler",
+        ":piraeus",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
