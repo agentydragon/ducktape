@@ -178,8 +178,7 @@ Deployment carries the placeholder tag `unset`, and a hand-written
 `image-pins/kustomization.yaml` Kustomize `Component` (referenced by the generated
 `kustomization.yaml`'s `components:`) carries the marker and overrides the tag at
 `kustomize build` time. The marker form and its incident: <../cdk8s/AGENTS.md>
-§ `image-pins/kustomization.yaml`. A test asserts no generated file contains
-`$imagepolicy`. Where a tag is also data a Pod reads (the console reports its own and its
+§ `image-pins/kustomization.yaml`. Where a tag is also data a Pod reads (the console reports its own and its
 static shell's image tags), it lives in a hand-written sibling ConfigMap carrying the
 marker (`haku/console/{image,static}-metadata.yaml`), listed as a resource in the root
 Kustomization and referenced by name from the workload. A KubeVirt `VirtualMachine`'s
