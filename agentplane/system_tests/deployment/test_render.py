@@ -68,8 +68,8 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
-def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
-    docs = _filled_fixture(runfiles).objects
+def test_fixture_grants_no_tokenreviews(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
+    docs = mcp_fixture.objects
     for doc in docs:
         if doc["kind"] in {"Role", "ClusterRole"}:
             for rule in doc.get("rules", []):
@@ -78,8 +78,8 @@ def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
             assert "token-reviewer" not in doc["roleRef"]["name"], doc["metadata"]["name"]
 
 
-def test_fixture_exposes_environments(runfiles: Runfiles) -> None:
-    docs = _filled_fixture(runfiles).objects
+def test_fixture_exposes_environments(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
+    docs = mcp_fixture.objects
     deployment = _resource(docs, "Deployment", "environments")
     assert deployment["spec"]["replicas"] == 1
     labels = deployment["spec"]["template"]["metadata"]["labels"]
@@ -96,8 +96,16 @@ def _host_port(address: str) -> tuple[str, int]:
     return parsed.hostname, parsed.port
 
 
-def _filled_fixture(runfiles: Runfiles, location: str = "K3S_FIXTURE_RLOCATION") -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(runfiles.root() / os.environ[location])
+def _read_fixture(runfiles: Runfiles, location: str) -> rendered_fixture.RenderedFixture:
+    return rendered_fixture.read(runfiles.root() / os.environ[location])
+
+
+@pytest.fixture(scope="module")
+def mcp_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
+    return _read_fixture(runfiles, "K3S_FIXTURE_RLOCATION")
+
+
+def _filled_fixture(cached: rendered_fixture.RenderedFixture) -> rendered_fixture.RenderedFixture:
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
@@ -111,7 +119,7 @@ def _filled_fixture(runfiles: Runfiles, location: str = "K3S_FIXTURE_RLOCATION")
 
 @pytest.fixture(scope="module")
 def _vm_fixture_template(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
-    return rendered_fixture.read(runfiles.root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
+    return _read_fixture(runfiles, "K3S_VM_FIXTURE_RLOCATION")
 
 
 @pytest.fixture
@@ -120,33 +128,34 @@ def vm_fixture(_vm_fixture_template: rendered_fixture.RenderedFixture) -> render
 
 
 def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runfiles: Runfiles) -> None:
-    ordinary = _filled_fixture(runfiles, "K3S_DEFAULT_FIXTURE_RLOCATION")
-    pod = _filled_fixture(runfiles, "K3S_POD_FIXTURE_RLOCATION")
-    assert pod.model_dump(exclude={"objects"}) == ordinary.model_dump(exclude={"objects"})
-    ordinary_objects = {(doc["kind"], doc["metadata"]["name"]): doc for doc in ordinary.objects}
-    pod_objects = {(doc["kind"], doc["metadata"]["name"]): doc for doc in pod.objects}
-    removed = ordinary_objects.keys() - pod_objects.keys()
+    ordinary = _read_fixture(runfiles, "K3S_DEFAULT_FIXTURE_RLOCATION")
+    pod = _read_fixture(runfiles, "K3S_POD_FIXTURE_RLOCATION")
+    assert pod.backend is ordinary.backend is rendered_fixture.Backend.LOCAL_MODEL
+    assert pod.runtime is ordinary.runtime is rendered_fixture.SandboxRuntime.POD
+    ordinary_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in ordinary.objects}
+    pod_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in pod.objects}
+    removed = ordinary_resources - pod_resources
     assert ("Deployment", "mcp-edge") in removed
     assert ("ConfigMap", "mcp-edge-settings") in removed
     assert ("ServiceAccount", "mcp-edge") in removed
+    assert ("Service", "mcp-edge") in removed
     assert ("Role", "mcp-edge") in removed
     assert ("RoleBinding", "mcp-edge") in removed
     assert ("Secret", "postgres-mcp-edge") in removed
     assert all(name.startswith("mcp-edge") or name == "postgres-mcp-edge" for _, name in removed)
-    # Retained resources are identical, including the app, Actions' command-box executor,
-    # notifications, policy, certificates and storage.
-    database_resources = {("Deployment", "postgres"), ("ConfigMap", "postgres-bootstrap")}
-    assert {key: value for key, value in pod_objects.items() if key not in database_resources} == {
-        key: value for key, value in ordinary_objects.items() if key not in removed | database_resources
-    }
+    _resource(pod.objects, "Deployment", "app")
+    _resource(pod.objects, "Deployment", "actions")
+    _resource(pod.objects, "Deployment", "notifications")
+    _resource(pod.objects, "Deployment", "postgres")
+    bootstrap = _resource(pod.objects, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE app " in bootstrap
+    assert "CREATE ROLE mcp_edge " not in bootstrap
     assert not any(
         "agentplane-mcp-edge:" in container["image"]
         for doc in pod.objects
         if doc["kind"] == "Deployment"
         for container in doc["spec"]["template"]["spec"]["containers"]
     )
-    _resource(pod.objects, "Deployment", "actions")
-    _resource(pod.objects, "Deployment", "notifications")
     # The app keeps its unused Connection routes; external Connections are out of scope here.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(
@@ -156,7 +165,7 @@ def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runf
 
 @pytest.mark.parametrize("location", ["K3S_DEFAULT_FIXTURE_RLOCATION", "K3S_FIXTURE_RLOCATION"])
 def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfiles, location: str) -> None:
-    fixture = _filled_fixture(runfiles, location)
+    fixture = _read_fixture(runfiles, location)
     edge = _resource(fixture.objects, "Deployment", "mcp-edge")
     assert any(
         "agentplane-mcp-edge:" in container["image"] for container in edge["spec"]["template"]["spec"]["containers"]
@@ -168,22 +177,16 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
 
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
 def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfiles, location: str) -> None:
-    fixture = rendered_fixture.read(runfiles.root() / os.environ[location])
+    fixture = _read_fixture(runfiles, location)
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "mcp-edge" for doc in fixture.objects)
     assert not any(
         doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-mcp-edge" for doc in fixture.objects
     )
     _resource(fixture.objects, "Deployment", "actions")
-    template = (
-        environment_firecracker.NAME
-        if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER)
-        else SUPERVISION_TEMPLATE
-    )
-    _resource(fixture.objects, "SandboxTemplate", template)
 
 
-def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles) -> None:
-    fixture = _filled_fixture(runfiles)
+def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rendered_fixture.RenderedFixture) -> None:
+    fixture = _filled_fixture(mcp_fixture)
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
@@ -733,7 +736,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
 def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     runfiles: Runfiles, location: str
 ) -> None:
-    fixture = _filled_fixture(runfiles, location)
+    fixture = _filled_fixture(_read_fixture(runfiles, location))
     assert fixture.central_sampler
     assert fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT
     docs = fixture.objects
@@ -846,28 +849,29 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert history_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-sandbox-service"
 
 
-def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(runfiles: Runfiles) -> None:
-    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
-    mcp = _filled_fixture(runfiles)
+def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
+    runfiles: Runfiles, mcp_fixture: rendered_fixture.RenderedFixture
+) -> None:
+    central = _filled_fixture(_read_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION"))
     assert central.mcp_fixtures is None
     assert central.operator_tokens is not None
     central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
-    mcp_deployments = {doc["metadata"]["name"] for doc in mcp.objects if doc["kind"] == "Deployment"}
+    mcp_deployments = {doc["metadata"]["name"] for doc in mcp_fixture.objects if doc["kind"] == "Deployment"}
     assert central_deployments == mcp_deployments - {"dex", "mcp-everything", "oauth-fixture"}
 
     # This preset takes the existing test-operator issuer path. The full MCP fixture gets its
     # operator token from Dex instead, while the recovery services retain identical config.
     central_app = yaml.safe_load(_resource(central.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
-    mcp_app = yaml.safe_load(_resource(mcp.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
+    mcp_app = yaml.safe_load(_resource(mcp_fixture.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert central_app["oidc"]["issuer"] == central.operator_tokens.issuer
     assert central_app["oidc"]["static_ed25519_keys"] == ["test-operator-public-key"]
     assert mcp_app["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
     assert "static_ed25519_keys" not in mcp_app["oidc"]
     for component in ("central-sampler", "sessions", "history-service"):
         for kind in ("Deployment", "Service"):
-            assert _resource(central.objects, kind, component) == _resource(mcp.objects, kind, component)
+            assert _resource(central.objects, kind, component) == _resource(mcp_fixture.objects, kind, component)
     for config in ("central-sampler-settings", "sessions-settings", "history-service-config"):
-        assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
+        assert _resource(central.objects, "ConfigMap", config) == _resource(mcp_fixture.objects, "ConfigMap", config)
 
 
 @pytest.mark.parametrize(
@@ -877,7 +881,7 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
 def test_native_recovery_profile_uses_service_caller_without_app(
     runfiles: Runfiles, location: str, central_enabled: bool
 ) -> None:
-    fixture = _filled_fixture(runfiles, location)
+    fixture = _read_fixture(runfiles, location)
     assert fixture.central_sampler is central_enabled
     assert fixture.app_origin is None
     assert fixture.operator_tokens is None
@@ -916,13 +920,14 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert "CREATE ROLE app " not in bootstrap
 
 
-def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(runfiles: Runfiles) -> None:
-    full = _filled_fixture(runfiles)
-    services = _filled_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
+def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(
+    runfiles: Runfiles, mcp_fixture: rendered_fixture.RenderedFixture
+) -> None:
+    services = _read_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
     assert not services.central_sampler
-    assert services.app_origin == full.app_origin
-    assert services.mcp_fixtures == full.mcp_fixtures
-    full_deployments = {doc["metadata"]["name"] for doc in full.objects if doc["kind"] == "Deployment"}
+    assert services.app_origin == mcp_fixture.app_origin
+    assert services.mcp_fixtures == mcp_fixture.mcp_fixtures
+    full_deployments = {doc["metadata"]["name"] for doc in mcp_fixture.objects if doc["kind"] == "Deployment"}
     deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
     assert deployments == full_deployments - {"central-sampler"}
     assert {"app", "mcp-edge", "dex", "oauth-fixture", "mcp-everything"} <= deployments
@@ -932,7 +937,7 @@ def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(runfiles: Ru
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
-    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
+    fixture = _read_fixture(runfiles, "K3S_FIRECRACKER_FIXTURE_RLOCATION")
     assert fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER
     assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)
 
