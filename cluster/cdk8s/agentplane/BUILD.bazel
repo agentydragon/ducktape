@@ -1231,6 +1231,7 @@ py_test(
         ":egress_credentials",
         ":egress_staging_credentials",
         "//:conftest",
+        "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/testing:manifests",
