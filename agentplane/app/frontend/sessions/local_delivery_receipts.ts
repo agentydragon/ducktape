@@ -45,9 +45,14 @@ export function useLocalIssueReceipts(
   // Read exact revisions for saved issues outside the workset. Visible issues already have their revision.
   const worksetIssues = JSON.stringify((snapshot?.recentIssues ?? NO_ISSUES).map(noticeKey));
   const canRead = snapshot !== null && !view.stale;
-  const generation = useMemo(() => ({}), [canRead, localIds, readReceipts, view.coverageLost, worksetIssues]);
+  // A changed workset revision or lost coverage invalidates earlier evidence even if the selected IDs match.
+  const generation = useMemo(
+    () => ({ canRead, localIds, readReceipts, coverageLost: view.coverageLost, worksetIssues }),
+    [canRead, localIds, readReceipts, view.coverageLost, worksetIssues]
+  );
   const [result, setResult] = useState<{ generation: typeof generation; evidence: LocalDeliveryEvidence } | null>(null);
   useEffect(() => {
+    const { canRead, localIds, readReceipts } = generation;
     const ids = JSON.parse(localIds) as string[];
     if (!canRead || ids.length === 0) return;
     let request: AbortController | undefined;
@@ -86,6 +91,6 @@ export function useLocalIssueReceipts(
       request?.abort();
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [canRead, generation, localIds, readReceipts]);
+  }, [generation]);
   return result?.generation === generation ? result.evidence : NO_EVIDENCE;
 }
