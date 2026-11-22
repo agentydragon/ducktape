@@ -1790,9 +1790,17 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert source.runner.commands.empty()
 
 
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
 async def test_transferred_commands_show_unknown_and_failed_delivery_after_reload(
-    thread_browser: ThreadBrowser, sandbox: SandboxCluster, monkeypatch: pytest.MonkeyPatch
+    review_thread_browser: ThreadBrowser,
+    review_view: VisualPage,
+    viewport_name: str,
+    sandbox: SandboxCluster,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    thread_browser = review_thread_browser
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
@@ -1808,7 +1816,8 @@ async def test_transferred_commands_show_unknown_and_failed_delivery_after_reloa
     monkeypatch.setattr(source.runner, "admit", hold)
     try:
         ids = []
-        for text in ("Admission in flight during deletion", "Still queued during deletion"):
+        originals = ("Admission in flight during deletion", "Still queued during deletion")
+        for text in originals:
             composer = message_composer(page)
             await composer.fill(text)
             async with page.expect_response("**/upstream/dispatcher/v1/sessions/*:submitInput") as sent:
@@ -1833,13 +1842,15 @@ async def test_transferred_commands_show_unknown_and_failed_delivery_after_reloa
             body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=sandbox.uid)),
         )
         await page.reload()
-        panel = page.get_by_role("region", name="Dispatcher delivery")
-        for command_id, state in zip(ids, ("Outcome unknown", "Delivery failed"), strict=True):
-            row = panel.locator(f'[data-dispatch-command-id="{command_id}"]')
-            await expect(row.get_by_text(f"Send message · {state}", exact=True)).to_be_visible()
+        for command_id, original, state in zip(ids, originals, ("Outcome unknown", "Delivery failed"), strict=True):
+            row = page.locator(f'[data-command-id="{command_id}"]')
+            await expect(row).to_have_count(1)
+            await expect(row.get_by_text(original, exact=True)).to_be_visible()
+            await expect(row.get_by_role("button", name=f"{state} · delivery details")).to_be_visible()
             await expect(
-                row.get_by_role("button", name=f"Acknowledge delivery issue for command {command_id}")
+                row.get_by_role("button", name=f"Dismiss delivery issue for command {command_id}")
             ).to_be_visible()
+        await review_view.capture(label=f"Transferred command delivery after reload on {viewport_name}")
         assert attempted.empty()
         assert source.runner.commands.empty()
     finally:
