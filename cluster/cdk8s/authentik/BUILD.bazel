@@ -49,7 +49,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
-        "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",
     ],
 )

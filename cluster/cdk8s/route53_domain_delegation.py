@@ -6,7 +6,7 @@ from cdk8s import App, Chart
 from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel, ConfigDict
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.route53 import HOSTED_ZONES
 from cluster.cdk8s.secret_ref import SecretRef
@@ -14,10 +14,8 @@ from cluster.cdk8s.secret_ref import SecretRef
 NAME = "crossplane-dns-records"
 OUTPUT_DIR = f"{GENERATED_ROOT}/route53-domain-delegation"
 TF_MODULE_NAME = "route53-domain-delegation"
-PROVIDER_CONFIG_NAME = "crossplane-dns-records"
-WORKSPACE_NAME = TF_MODULE_NAME
 # Keep the existing backend schema through the root rename so Crossplane uses the same state.
-STATE_SCHEMA = terraform.gitops_state_schema("dns-records")
+STATE_SCHEMA = "dns_records"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 _NAMESPACE = "flux-system"
 
@@ -36,10 +34,9 @@ def chart(app: App) -> Chart:
     opentofu.gitops_workspace(
         chart,
         "workspace",
-        name=WORKSPACE_NAME,
-        provider_config_name=PROVIDER_CONFIG_NAME,
+        name=TF_MODULE_NAME,
+        provider_config_name=NAME,
         schema=STATE_SCHEMA,
-        directory=f"tf/gitops/{TF_MODULE_NAME}",
         management_policies=["Observe", "Create", "Update"],
         variables=[WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()],
         env=[

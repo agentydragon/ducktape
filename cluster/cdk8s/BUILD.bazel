@@ -1032,7 +1032,6 @@ py_library(
     deps = [
         ":manifest_roots",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1044,7 +1043,6 @@ py_library(
     deps = [
         ":manifest_roots",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1463,7 +1461,6 @@ py_library(
         ":opentofu",
         ":route53",
         ":secret_ref",
-        ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
         "@pypi//pydantic",
@@ -1476,7 +1473,6 @@ py_library(
     data = ["//tf/gitops/forgejo-agentydragon:inline_source"],
     deps = [
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -2005,7 +2001,6 @@ py_library(
     deps = [
         ":manifest_roots",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )

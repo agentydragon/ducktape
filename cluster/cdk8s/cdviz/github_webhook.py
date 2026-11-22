@@ -6,7 +6,7 @@ from cdk8s import App, Chart
 from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel, ConfigDict
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.cdviz import config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -43,8 +43,6 @@ def chart(app: App) -> Chart:
         "workspace",
         name=NAME,
         provider_config_name=WORKSPACE_NAME,
-        schema=terraform.gitops_state_schema(NAME),
-        directory=f"tf/gitops/{NAME}",
         management_policies=["Observe", "Create", "Update"],
         # Creating a named workspace initializes backend state before the provider's first state-list observation.
         external_name=NAME,
