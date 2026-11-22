@@ -75,6 +75,5 @@ configMapGenerator:
               token_name_key: token-name
               token_last_eight_key: token-last-eight
         github_repo: agentydragon/ducktape
-        sops_config: .sops.yaml
         git_author_name: forgejo-token-rotation
         git_author_email: noreply@allegedly.works
