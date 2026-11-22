@@ -335,7 +335,6 @@ py_test(
         ":k8s",
         "//:conftest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

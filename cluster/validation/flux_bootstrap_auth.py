@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cluster.validation.k8s import GitRepositoryResource, K8sResource, parse_k8s_resource_file
+from cluster.validation.k8s import GitRepositoryResource, K8sResource, load_k8s_resources
 
 
 def _resource_key(resource: K8sResource) -> tuple[str, str]:
@@ -14,7 +14,7 @@ def _resource_key(resource: K8sResource) -> tuple[str, str]:
 def _sops_managed_secret_keys(k8s_dir: Path) -> set[tuple[str, str]]:
     keys: set[tuple[str, str]] = set()
     for sops_file in k8s_dir.rglob("*.sops.yaml"):
-        for resource in parse_k8s_resource_file(sops_file):
+        for resource in load_k8s_resources(sops_file.read_bytes()):
             if resource.kind == "Secret":
                 keys.add(_resource_key(resource))
     return keys
@@ -25,7 +25,9 @@ def _bootstrap_gitrepositories(k8s_dir: Path) -> list[GitRepositoryResource]:
     if not bootstrap_sync.exists():
         return []
     return [
-        resource for resource in parse_k8s_resource_file(bootstrap_sync) if isinstance(resource, GitRepositoryResource)
+        resource
+        for resource in load_k8s_resources(bootstrap_sync.read_bytes())
+        if isinstance(resource, GitRepositoryResource)
     ]
 
 
