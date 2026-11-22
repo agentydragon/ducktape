@@ -2,7 +2,7 @@
 
 `gh-pages` is the publication branch for
 <https://agentydragon.github.io/ducktape/>. It holds independent, latest-only
-report snapshots. The CI reports are:
+report snapshots. The [report index](index.html) links each review and its observation window.
 
 - **Agentplane test architecture:** [current required suites](agentplane-test-architecture/index.html), [fixture ownership](agentplane-test-architecture/index.html#pytest-fixtures), [case inventory and evidence](agentplane-test-architecture/evidence.json), [manifest](agentplane-test-architecture/manifest.json). Current Pod coverage spans 15 App scenarios, eight native platform checks and one native workspace replacement. Earlier benchmarks retain their original test inventories and revisions.
 
