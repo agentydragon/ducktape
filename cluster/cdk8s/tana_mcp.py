@@ -23,7 +23,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import external_creds, namespaces, node_scheduling
+from cluster.cdk8s import external_creds, namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
@@ -282,9 +282,7 @@ def _facade(chart: Chart) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    volumes=[
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki"))
-                    ],
+                    volumes=[public_web_pki.VOLUME],
                     containers=[
                         k8s.Container(
                             name="server",
@@ -299,7 +297,7 @@ def _facade(chart: Chart) -> None:
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_FACADE_CONFIG_MAP))
                             ],
                             env=[
-                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                                public_web_pki.SSL_CERT_FILE,
                                 _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
                                 _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
                                 _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
@@ -307,11 +305,7 @@ def _facade(chart: Chart) -> None:
                                 .key("uri")
                                 .env_var("MCP_FACADE_PERSISTENCE__URL"),
                             ],
-                            volume_mounts=[
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                )
-                            ],
+                            volume_mounts=[public_web_pki.VOLUME_MOUNT],
                             # TODO(vpa-memory-audit): 256Mi -> 512Mi. VPA observed a 259Mi
                             # request / 272Mi upper bound, i.e. already over the old limit.
                             resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),

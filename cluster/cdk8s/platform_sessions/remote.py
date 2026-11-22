@@ -32,7 +32,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 
-from cluster.cdk8s import node_scheduling, piraeus_storage, pod_policy
+from cluster.cdk8s import node_scheduling, piraeus_storage, pod_policy, public_web_pki
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.container_resources import container_resources
@@ -613,7 +613,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             env_from=[k8s.EnvFromSource(secret_ref=k8s.SecretEnvSource(name="platform-sessions-oidc"))],
             env=[
                 k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value=f"https://{PUBLIC_HOSTNAME}"),
-                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                public_web_pki.SSL_CERT_FILE,
                 _config_env(
                     "PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json", config_map=CANARY_CONFIG
                 ),
@@ -627,13 +627,13 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="provider-credentials", mount_path=_TOKEN_DIR, read_only=True),
-                k8s.VolumeMount(name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True),
+                public_web_pki.VOLUME_MOUNT,
                 k8s.VolumeMount(name="bearers", mount_path="/var/run/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="trust", mount_path="/var/run/provider-trust", read_only=True),
             ],
         ),
         [
-            k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+            public_web_pki.VOLUME,
             provider_credentials,
             k8s.Volume(
                 name="bearers",

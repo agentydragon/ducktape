@@ -15,6 +15,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",

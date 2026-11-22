@@ -6,17 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ConfigMap,
-    ContainerResources,
-    Cpu,
-    CpuResources,
-    EnvValue,
-    MemoryResources,
-    PathMapping,
-    Secret,
-    Volume,
-)
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources, PathMapping, Secret, Volume
 from constructs import Construct
 
 from agentplane.net.peertls.config import (
@@ -28,7 +18,7 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.sampler.settings import Settings
 from agentplane.session_instructions.platform_instructions import SessionRuntime
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     central_sampler,
@@ -128,7 +118,7 @@ class CentralSampler(Construct):
             env_variables={
                 config_env: EnvValue.from_value(_CONFIG_PATH),
                 database_env: database_url,
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             },
             readiness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=20, period_seconds=30),
@@ -150,12 +140,7 @@ class CentralSampler(Construct):
         workload_tls.service_certificate(
             self, env, container=workload.container, name=central_sampler.NAME, uri=CENTRAL_SAMPLER_URI
         )
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         for connection_name, secret_key in props.connection_credentials.items():
             connection = props.connections.get(connection_name)
             if connection is None:

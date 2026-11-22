@@ -26,7 +26,7 @@ from agentplane.crd_group import GROUP
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import central_sampler, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
@@ -106,7 +106,7 @@ class LlmIngress(Construct):
             container="ingress",
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             env_variables={
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
                 # The only real model credential in this service; runners never mount it.
                 Settings.litellm_key_env: SecretRef(
                     namespace=env.namespace, name=env.llm_ingress.litellm_key_secret_name
@@ -126,12 +126,7 @@ class LlmIngress(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         reader_role_name = f"{_NAME}-sandbox-reader"
         reader_role = Role(
             self,

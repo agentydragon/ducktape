@@ -62,6 +62,7 @@ py_library(
         ":crossplane",
         ":flux",
         ":manifest_roots",
+        ":public_web_pki",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
         "//cluster/cdk8s/providers/crossplane:provider",
@@ -217,7 +218,18 @@ py_library(
     srcs = ["rotator_cron_job.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":public_web_pki",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "public_web_pki",
+    srcs = ["public_web_pki.py"],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
+    deps = [
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -822,6 +834,7 @@ py_library(
         ":namespaces",
         ":pod_policy",
         ":probes",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
         ":vpa_policy",
@@ -942,6 +955,7 @@ py_library(
         ":gateway",
         ":manifest_roots",
         ":namespaces",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
         ":vpa_policy",
@@ -1118,6 +1132,7 @@ py_library(
         ":mcp_oauth_state",
         ":namespaces",
         ":node_scheduling",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
         ":vpa_policy",
@@ -1894,6 +1909,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
         ":vm_image_restart",

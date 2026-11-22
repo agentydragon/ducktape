@@ -48,7 +48,14 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import agent_access_profiles as access, disruption_budget, node_scheduling, pod_policy, service_ref
+from cluster.cdk8s import (
+    agent_access_profiles as access,
+    disruption_budget,
+    node_scheduling,
+    pod_policy,
+    public_web_pki,
+    service_ref,
+)
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
@@ -177,7 +184,7 @@ class Console(Construct):
         image_metadata = ConfigMap.from_config_map_name(self, "image-metadata-ref", IMAGE_METADATA_CONFIG_MAP)
         return dict(
             [
-                ("SSL_CERT_FILE", EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt")),
+                ("SSL_CERT_FILE", EnvValue.from_value(public_web_pki.CA_FILE)),
                 (env_name(Settings, "image_tag"), EnvValue.from_config_map(image_metadata, _IMAGE_TAG_KEY)),
                 # Capability tier: the launch-routine action. The console builds both the fire
                 # URL and the claude.ai/code deep-link from this routine (trigger) id; the bearer
@@ -268,12 +275,7 @@ class Console(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, container)
         config.mount_into(container, env=CONFIG_FILE_ENV)
         static_metadata = ConfigMap.from_config_map_name(self, "static-metadata-ref", STATIC_METADATA_CONFIG_MAP)
         container.mount(
