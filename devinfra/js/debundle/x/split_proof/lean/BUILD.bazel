@@ -144,6 +144,7 @@ lean_binary(
         "Experiments/CoreJS/ClassParents.lean",
         "Experiments/CoreJS/HeritageMove.lean",
         "Experiments/CoreJS/HeritageCertificate.lean",
+        "Experiments/CoreJS/FromESTree.lean",
         "Experiments/CoreJS/Decode.lean",
         "Experiments/CoreJS/Eval.lean",
         "Experiments/CoreJS/Fragment.lean",

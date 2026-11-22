@@ -96,6 +96,8 @@ Run the structural checks and the CoreJS checker on each complete candidate spli
 
 ### Proof track
 
+**Derive CoreJS from the annotated AST.** The checker and interpreter share the first Lean lowering rules for declarations, primitive literals, binding reads and local named exports. Extend expression and statement coverage against the existing JavaScript lowerer and Node. Before migrating opaque fallback, check exactly which cells a deferred body captures, its part number and the handling of direct eval, module identity and top-level await. Replay Excalidraw on the AST alone before retiring the external checker input.
+
 **N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units.
 
 The active [footprint soundness work](docs/footprint_soundness.md) establishes a compositional contract for checked Effects output, starting with binding-only statements and keeping unsupported analysis rules outside the proved slice.
