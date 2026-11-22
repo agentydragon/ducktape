@@ -98,7 +98,7 @@ Two tracks. The proof track is ordered: each step needs the one before. The engi
 
 On 2026-11-22 the pairing covered all 9,707 body units in the archived review tree. The archived pairing assigns three occurrences of the same call to output positions that put two owners out of source order. Reassigning those occurrences in a scratch pairing preserved every output position and let the current adapter represent the full body-unit schedule. The calls have identical source syntax and resolve to the same callee. This checks placement representability only. Independently, the reviewed entry exposes all 268 original export names and 266 extra names. Recheck both the schedule and the public interface before treating this tree as a certification candidate.
 
-Strict replay of the isolated first production statement reaches the test of a conditional initializer and rejects it with `statement 0: unsupported linked expression BinaryExpression`. The comparison uses loose inequality (`!=`). Establish which operand types the model handles before admitting that comparison, then replay the same statement.
+Strict replay of the isolated first production statement reaches the operand of a `typeof` comparison and rejects it with `statement 0: unsupported global window`. The remaining question is how the model represents the host's global bindings. A browser can provide `window` while other environments leave it absent. Certification of this check must account for the requested environments and the value read if the binding exists.
 
 ### Excalidraw (public intermediate milestone)
 

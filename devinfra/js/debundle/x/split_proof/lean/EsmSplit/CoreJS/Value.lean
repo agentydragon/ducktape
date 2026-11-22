@@ -527,6 +527,10 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .gt => .bool <$> relational (fun x y => decide (x > y)) (fun x y => decide (y < x)) a b
   | .ge => .bool <$> relational (fun x y => decide (x ≥ y)) (fun x y => !decide (x < y)) a b
 
+/-- String operands of loose inequality compare their contents without coercion. -/
+theorem binop_ne_strings (a b : String) :
+    binop .ne (.str a) (.str b) = .ok (.bool (!(a == b))) := rfl
+
 def unop (s : State W) (op : UnOp) (v : Val) : Except Abort Val :=
   match op with
   | .neg => (fun x => .num (-x)) <$> toNumber v

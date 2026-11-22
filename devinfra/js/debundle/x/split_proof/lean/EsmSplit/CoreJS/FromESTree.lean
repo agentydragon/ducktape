@@ -172,6 +172,12 @@ private def localBinding (id : Json) : Except String Name := do
   unless (← field id "k") == "L" do throw "expected a function-local binding"
   return name
 
+/-- These expressions produce strings whenever they complete normally. Loose inequality
+between two such operands never invokes numeric or object coercion. -/
+private def stringOperand : Expr → Bool
+  | .str _ | .unary .typeof _ => true
+  | _ => false
+
 mutual
 
 private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -182,7 +188,19 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "Identifier" => reference imports inFunction j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
-    unary (← field j "operator") argument (fun _ => linkedExpr imports inFunction "" argument)
+    let op ← field j "operator"
+    let lower := linkedExpr imports inFunction ""
+    if op == "typeof" then return .unary .typeof (← lower argument)
+    unary op argument (fun _ => lower argument)
+  | "BinaryExpression" =>
+    let op ← field j "operator"
+    unless op == "!=" do throw s!"unsupported linked binary operator {op}"
+    let lower := linkedExpr imports inFunction ""
+    let left ← lower (← j.getObjVal? "left")
+    let right ← lower (← j.getObjVal? "right")
+    unless stringOperand left && stringOperand right do
+      throw "linked != requires two string operands (string literals or typeof expressions)"
+    return .binary .ne left right
   | "ConditionalExpression" =>
     let lower := linkedExpr imports inFunction ""
     return .cond (← lower (← j.getObjVal? "test")) (← lower (← j.getObjVal? "consequent"))
