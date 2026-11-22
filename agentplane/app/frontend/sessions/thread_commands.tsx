@@ -325,6 +325,7 @@ function LocalControlRows({
               key={value.command.commandId}
               id={value.command.commandId}
               description={controlDescription(operation)}
+              modelChange={operation.case === "changeModel"}
               progress={
                 notice?.progress ?? (
                   <CommandOutcome
@@ -371,6 +372,7 @@ function LocalControlRows({
 function ControlCommandBubble({
   id,
   description,
+  modelChange,
   progress,
   action,
   entity,
@@ -378,6 +380,7 @@ function ControlCommandBubble({
 }: {
   id: string;
   description: string;
+  modelChange: boolean;
   progress?: ReactNode;
   action?: ReactNode;
   entity?: ThreadEntity;
@@ -389,6 +392,7 @@ function ControlCommandBubble({
       bubbleAttributes={{
         className: "agentplane-control-command-bubble transcript-inspection-owner",
         "data-has-action": action ? "true" : undefined,
+        "data-model-change": modelChange ? "true" : undefined,
         onClick: entity ? revealEvidenceOnTap : undefined,
       }}
       aside={
@@ -421,7 +425,7 @@ export function ProjectedControlCommand({
   const command = row.entity.value;
   const description =
     command.operation === Operation.CHANGE_MODEL && command.requestedValue
-      ? `Change model to ${command.requestedValue}`
+      ? modelChangeDescription(command.requestedValue)
       : command.operation === Operation.CHANGE_REASONING_EFFORT && command.requestedValue
         ? `Set reasoning effort to ${command.requestedValue}`
         : deliveryOperationLabel(command.operation);
@@ -431,6 +435,7 @@ export function ProjectedControlCommand({
         id={row.entityId}
         entity={row}
         description={description}
+        modelChange={command.operation === Operation.CHANGE_MODEL}
         progress={
           deliveryProgress !== undefined ? (
             deliveryProgress
@@ -450,10 +455,14 @@ export function ProjectedControlCommand({
   );
 }
 
+function modelChangeDescription(model: string): string {
+  return `Set model: ${model}`;
+}
+
 function controlDescription(operation: PendingCommand["operation"]): string {
   switch (operation.case) {
     case "changeModel":
-      return `Change model to ${operation.value.model}`;
+      return modelChangeDescription(operation.value.model);
     case "changeReasoningEffort":
       return `Set reasoning effort to ${operation.value.effort}`;
     case "interruptTurn":
@@ -542,6 +551,7 @@ export function OutstandingDispatchCommands({
             key={id}
             id={id}
             description={original ? controlDescription(original) : deliveryOperationLabel(item.operation)}
+            modelChange={item.operation === Operation.CHANGE_MODEL}
             progress={progress}
           />
         );

@@ -308,6 +308,14 @@
   background-color: transparent;
 }
 
+.agentplane-control-command-bubble > .transcript-verbatim {
+  text-align: right;
+}
+
+.agentplane-control-command-bubble[data-model-change="true"] > .transcript-verbatim {
+  font-style: italic;
+}
+
 .agentplane-control-command-bubble:has(> .transcript-inspection-toggle) {
   padding-right: 2.25rem;
 }

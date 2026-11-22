@@ -2462,7 +2462,7 @@ it("moves a local control into chronological history once projected and retains 
   expect(settled.closest("[data-history-row-key]")).not.toBeNull();
   expect(settled.querySelector('[data-stage="local"]')).toBeNull();
   expect(settled.querySelector(".agentplane-command-check")).not.toBeNull();
-  expect(settled.textContent).toContain("Change model to next-model");
+  expect(settled.textContent).toContain("Set model: next-model");
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
   online.mockRestore();
 });
@@ -2475,7 +2475,7 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
     requestedValue: "next-model",
   });
   const pending = pendingRow(section, "test-entity");
-  expect(pending.textContent).toContain("Change model to next-model");
+  expect(pending.textContent).toContain("Set model: next-model");
   expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     "Runner accepted · waiting for model change"
   );
@@ -2522,7 +2522,7 @@ it("renders a server-only no-op control as a settled label, not a progress light
     requestedValue: "current-model",
   });
   const row = pendingRow(section, "test-entity");
-  expect(row.textContent).toContain("Change model to current-model");
+  expect(row.textContent).toContain("Set model: current-model");
   expect(row.querySelector(".agentplane-command-progress")).toBeNull();
   expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
   expect((await openDeliveryDetails(row)).textContent).toContain("model already selected");
