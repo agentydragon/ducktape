@@ -60,9 +60,11 @@ function rng(seed) {
 const top = (n) => `\u0001${n}\u0002`; // a module-scope name, renamed and imported per module
 const local = (n) => `\u0003${n}\u0004`; // a name local to the unit
 const literal = (n) => `\u0005${n}\u0006`; // the bundle's spelling of a name, inside a string; the name is still used
+/* eslint-disable no-control-regex -- Match the generator’s reserved name markers. */
 const TOP = /\u0001([^\u0002]+)\u0002/g;
 const LOCAL = /\u0003([^\u0004]+)\u0004/g;
 const LITERAL = /\u0005([^\u0006]+)\u0006/g;
+/* eslint-enable no-control-regex */
 const mentioned = (src) => [...src.matchAll(TOP), ...src.matchAll(LITERAL)].map((m) => m[1]);
 
 const LITERALS = ["1", "2", "7", '"s"', "[1, 2, 3]", "{ k: 1 }", "true", "null"];
@@ -1291,7 +1293,7 @@ async function main() {
     writeFileSync(premisesJson, JSON.stringify(premises));
     try {
       writeFileSync(bundleJson, JSON.stringify(frontBundle(bundleFile)));
-    } catch (error) {
+    } catch {
       refused++;
       return;
     }
@@ -1328,7 +1330,7 @@ async function main() {
       const certJson = path.join(dir, `t${t}`, "cert.json");
       try {
         writeFileSync(outputJson, JSON.stringify(frontTree(treeDir, "entry.js")));
-      } catch (error) {
+      } catch {
         refused++;
         continue;
       }

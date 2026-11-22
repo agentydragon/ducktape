@@ -30,14 +30,15 @@ const source = await readFile(file, "utf8");
 const goal = /(theorem plan_valid : Valid bundle spec plan := by )[^\n]*/;
 if (!goal.test(source)) throw new Error("no `theorem plan_valid … := by …` line in the file");
 
-function attempt(strategy, dir) {
-  return new Promise(async (resolve) => {
-    const attemptFile = path.join(dir, "Attempt.lean");
-    await writeFile(attemptFile, source.replace(goal, `$1${strategy}`));
+async function attempt(strategy, dir) {
+  const attemptFile = path.join(dir, "Attempt.lean");
+  await writeFile(attemptFile, source.replace(goal, `$1${strategy}`));
+  return new Promise((resolve, reject) => {
     const started = Date.now();
     const child = spawn("lake", ["env", "lean", "--json", attemptFile], { cwd: leanProject });
     let out = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    child.on("error", reject);
     child.stdout.on("data", (d) => (out += d));
     child.on("close", (code, signal) => {
       clearTimeout(timer);

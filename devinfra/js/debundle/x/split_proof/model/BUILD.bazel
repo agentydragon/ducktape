@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/lint:linters.bzl", "eslint_test")
 
 # The CoreJS model against Node. The test that runs it is `corejs_differential_test` in
 # //devinfra/js/debundle/x/split_proof/translation, beside the generator it takes programs from.
@@ -19,4 +20,16 @@ js_library(
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
+)
+
+# Include first-party runfile helpers as lint sources.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(["*.mjs"]),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
 )

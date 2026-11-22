@@ -130,6 +130,7 @@ function check(seed, families) {
       declared.add(name);
     }
     assert(
+      // eslint-disable-next-line no-control-regex -- Validate the generator’s reserved name markers.
       !/[\u0001-\u0004]/.test(unit.src.replace(/\u0001[^\u0002]*\u0002|\u0003[^\u0004]*\u0004/g, "")),
       `seed ${seed}: a stray marker`
     );

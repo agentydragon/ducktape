@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/lint:linters.bzl", "eslint_test")
 
 # The golden cases for the effect analysis. The tests that run them are `effects_cases_test` and
 # `effects_permutations_test` in //devinfra/js/debundle/x/split_proof/translation, beside the checker's other
@@ -19,4 +20,16 @@ js_library(
         "targeted.mjs",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+# Include first-party runfile helpers as lint sources.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(["**/*.mjs"]),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
 )
