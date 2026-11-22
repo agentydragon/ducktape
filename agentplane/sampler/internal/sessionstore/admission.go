@@ -16,6 +16,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var (
+	ErrSessionBlocked        = errors.New("session is blocked")
+	ErrInterruptTurnInactive = errors.New("interrupt target is not the active turn")
+	ErrInterruptOwnerMissing = errors.New("interrupt target has no sampler owner")
+)
+
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session, *Conversation) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerKey == "" {
 		return nil, protocol.ErrInvalid
@@ -54,7 +60,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			return err
 		}
 		if session.Blocked {
-			return protocol.ErrPrecondition
+			return ErrSessionBlocked
 		}
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
@@ -91,8 +97,11 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			}
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
-			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {
-				return protocol.ErrPrecondition
+			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() {
+				return ErrInterruptTurnInactive
+			}
+			if conversation.Owner == nil {
+				return ErrInterruptOwnerMissing
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_interrupt(id,conversation_id,generation,target_turn,result)
 				VALUES($1,$2,$3,$4,NULL)`, uuid.New(), conversation.ID, conversation.Generation, interrupt.GetTurnId()); err != nil {

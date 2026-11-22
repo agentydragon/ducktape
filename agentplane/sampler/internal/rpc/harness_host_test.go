@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -11,12 +12,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	sampleradminpb "github.com/agentydragon/ducktape/agentplane/sampler/api/sampleradminpb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -86,9 +89,6 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	if _, err := h.ChangeReasoningEffort(ctx, &harnesshostpb.ChangeReasoningEffortRequest{SessionId: request.SessionId, CommandId: "effort", Effort: "high"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.InterruptTurn(ctx, &harnesshostpb.InterruptTurnRequest{SessionId: request.SessionId, CommandId: "stale", TurnId: "stale"}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("stale interrupt=%v", err)
-	}
 	session, err := h.Sampler.Store.GetSession(t.Context(), request.SessionId, peertls.SessionsURI)
 	if err != nil {
 		t.Fatal(err)
@@ -99,6 +99,13 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	}
 	if _, err := h.Sampler.Store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
+	}
+	_, staleErr := h.InterruptTurn(ctx, &harnesshostpb.InterruptTurnRequest{SessionId: session.ID, CommandId: "stale", TurnId: "earlier-turn"})
+	if status.Code(staleErr) != codes.FailedPrecondition {
+		t.Fatalf("stale interrupt=%v", staleErr)
+	}
+	if _, err := h.Sampler.Store.GetCommand(ctx, session.ID, "stale"); !errors.Is(err, protocol.ErrMissing) {
+		t.Fatalf("stale interrupt admission=%v, want missing", err)
 	}
 	if _, err := h.InterruptTurn(ctx, &harnesshostpb.InterruptTurnRequest{SessionId: session.ID, CommandId: "interrupt", TurnId: "input"}); err != nil {
 		t.Fatal(err)
@@ -113,6 +120,97 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	hidden, err := h.ListSessions(grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.ActionsURI), &hostTransport{}), &harnesshostpb.ListSessionsRequest{})
 	if err != nil || len(hidden.GetSessions()) != 0 {
 		t.Fatalf("cross-owner list=%v err=%v", hidden, err)
+	}
+	if err := h.Sampler.Store.Release(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	_, unownedErr := h.InterruptTurn(ctx, &harnesshostpb.InterruptTurnRequest{SessionId: session.ID, CommandId: "unowned", TurnId: "input"})
+	if status.Code(unownedErr) != codes.FailedPrecondition || status.Convert(unownedErr).Message() == status.Convert(staleErr).Message() {
+		t.Fatalf("unowned interrupt=%v, want FailedPrecondition with a different reason from %v", unownedErr, staleErr)
+	}
+}
+
+func TestHarnessHostBlockedAdmissionPreservesRetryAndKeepsRecoveryEvidencePrivate(t *testing.T) {
+	h, _ := newHostFixture(t)
+	ctx := serviceContext(t, peertls.SessionsURI)
+	request := hostCreateRequest()
+	if _, err := h.CreateSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	input := &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "first", Text: "hello"}
+	admitted, err := h.SubmitInput(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := h.Sampler.Store.GetSession(ctx, request.SessionId, peertls.SessionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := h.Sampler.Store.Claim(ctx, session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Sampler.Store.NextCommand(ctx, owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	const privateEvidence = "private test executor output"
+	if err := h.Sampler.Store.FailExecution(ctx, owner, session.ID, &input.CommandId, errors.New(privateEvidence)); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := h.Sampler.Store.GetSession(ctx, session.ID, peertls.SessionsURI)
+	if err != nil || blocked == nil || !blocked.Blocked || blocked.BlockedReason == nil || !strings.Contains(*blocked.BlockedReason, privateEvidence) {
+		t.Fatalf("blocked session=%+v err=%v, want retained evidence", blocked, err)
+	}
+	_, err = h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: session.ID, CommandId: "second", Text: "continue"})
+	if status.Code(err) != codes.FailedPrecondition || strings.Contains(status.Convert(err).Message(), privateEvidence) {
+		t.Fatalf("blocked session admission=%v, want FailedPrecondition without retained evidence", err)
+	}
+	if _, err := h.Sampler.Store.GetCommand(ctx, session.ID, "second"); !errors.Is(err, protocol.ErrMissing) {
+		t.Fatalf("new command admission=%v, want missing", err)
+	}
+	retry, err := h.SubmitInput(ctx, input)
+	if err != nil || !proto.Equal(admitted.GetAdmission(), retry.GetAdmission()) {
+		t.Fatalf("exact retry while blocked=%v err=%v", retry, err)
+	}
+}
+
+func TestSamplerRefusesUnsupportedEffortAndCompaction(t *testing.T) {
+	h, _ := newHostFixture(t)
+	h.Sampler.Settings.Models["fixed-effort"] = samplersettings.ModelConfig{
+		Connection: "provider", ProviderModel: "fixed-effort", API: protocol.APIStyleAnthropicMessages,
+		AnthropicMessages: &anthropic.Config{MaxTokens: 1024}, ExecEncoding: protocol.ExecEncodingJSON,
+		ReasoningEfforts: []string{"low", "high"},
+	}
+	h.Sampler.Settings.AdminServiceCallers = []string{peertls.SessionsURI}
+	admin := SamplerAdmin{Sampler: *h.Sampler}
+	ctx := serviceContext(t, peertls.SessionsURI)
+	request := hostCreateRequest()
+	request.Spec.Model = "fixed-effort"
+	request.Spec.ReasoningEffort = "low"
+	if _, err := h.CreateSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	_, unsupported := h.ChangeReasoningEffort(ctx, &harnesshostpb.ChangeReasoningEffortRequest{SessionId: request.SessionId, CommandId: "unsupported", Effort: "medium"})
+	_, fixed := h.ChangeReasoningEffort(ctx, &harnesshostpb.ChangeReasoningEffortRequest{SessionId: request.SessionId, CommandId: "fixed", Effort: "high"})
+	_, compact := admin.Compact(ctx, &sampleradminpb.CompactRequest{SessionId: request.SessionId, CommandId: "compact"})
+	for _, refusal := range []struct {
+		commandID string
+		err       error
+		want      codes.Code
+	}{
+		{"unsupported", unsupported, codes.InvalidArgument},
+		{"fixed", fixed, codes.FailedPrecondition},
+		{"compact", compact, codes.FailedPrecondition},
+	} {
+		if status.Code(refusal.err) != refusal.want {
+			t.Errorf("%s=%v, want %s", refusal.commandID, refusal.err, refusal.want)
+		}
+		if _, err := h.Sampler.Store.GetCommand(ctx, request.SessionId, refusal.commandID); !errors.Is(err, protocol.ErrMissing) {
+			t.Errorf("%s admission=%v, want missing", refusal.commandID, err)
+		}
+	}
+	if status.Convert(fixed).Message() == status.Convert(compact).Message() {
+		t.Fatalf("fixed effort and unavailable compaction share a reason: %v", fixed)
 	}
 }
 
