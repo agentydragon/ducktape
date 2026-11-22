@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePosixPath
 from typing import Any
 
 import pytest_bazel
@@ -46,23 +45,28 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
-def test_egress_reads_its_settings_file_and_database_url(staging_manifests: list[dict[str, Any]]) -> None:
+def test_egress_proxy_settings_and_credentials(staging_manifests: list[dict[str, Any]]) -> None:
     pod = find_resource(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    settings_document = one(find_resource(staging_manifests, "ConfigMap", "egress-go-settings")["data"].values())
     assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
         EgressSettings.config_file_env,
         EgressSettings.database_url_env,
     }
     database = proxy_env[EgressSettings.database_url_env]["valueFrom"]["secretKeyRef"]
     assert database == {"name": "postgres-egress", "key": "uri"}
-    config = yaml.safe_load(settings_document)
+    config = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert config["rules_namespace"] == staging.ENV.namespace
     assert sorted(config["allowed_service_account_namespaces"]) == sorted(
         [staging.ENV.namespace, *staging.ENV.egress.external_workload_namespaces]
     )
     assert config["admin_grpc_service_callers"] == [APP_URI]
+    assert pod["automountServiceAccountToken"] is True
+    assert config["local_api_server"] == {
+        "host": KUBERNETES_HOST,
+        "port": 443,
+        "token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
+    }
 
 
 def test_staging_requires_the_tls_hop(staging_manifests: list[dict[str, Any]]) -> None:
@@ -458,16 +462,6 @@ def test_inference_is_granted_separately_from_platform_operations(catalog_manife
         secret = find_resource(catalog_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-def test_the_local_api_server_bearer_is_the_proxys_mounted_token(catalog_manifests: list[dict[str, Any]]) -> None:
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
-    server = settings["local_api_server"]
-    assert (server["host"], server["port"]) == (KUBERNETES_HOST, 443)
-    pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
-    # The kubelet mounts the API-server token here when the Pod automounts it.
-    assert pod["automountServiceAccountToken"] is True
-    assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
 
 
 def test_aiquota_read_limits_egress_and_the_history_credential(catalog_manifests: list[dict[str, Any]]) -> None:

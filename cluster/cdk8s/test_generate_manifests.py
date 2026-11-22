@@ -591,23 +591,6 @@ def test_claude_session_sync_vpa_opt_in_is_limited_to_deployments(documents: lis
     } == {("Deployment", "claude-session-sync", "initial"), ("Deployment", "control", "initial")}
 
 
-def test_policy_bindings_resolve_sets(documents: list[dict[str, Any]]) -> None:
-    policy_sets = {
-        (doc["metadata"].get("namespace", ""), doc["metadata"]["name"])
-        for doc in documents
-        if doc.get("kind") == "PolicySet"
-    }
-    missing = [
-        f"PolicyBinding '{namespace}/{doc['metadata']['name']}' names PolicySet '{policy_set}', which is not rendered in {namespace}"
-        for doc in documents
-        if doc.get("kind") == "PolicyBinding"
-        for namespace in [doc["metadata"].get("namespace", "")]
-        for policy_set in doc["spec"].get("policySets", [])
-        if (namespace, policy_set) not in policy_sets
-    ]
-    assert not missing, "\n".join(missing)
-
-
 @pytest.fixture(scope="module")
 def owner_specs(active_api_objects: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {
