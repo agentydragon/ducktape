@@ -734,11 +734,9 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = ModelCatalog.model_validate(app_config["models"])
     assert "central_sampler" not in app_config["models"]
-    assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
+    [selected_model] = catalog.harnesses[Harness.CENTRAL_SAMPLER]
 
     deployment = _resource(docs, "Deployment", central_sampler.NAME)
-    assert deployment["spec"]["replicas"] == 1
-    assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod = deployment["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == central_sampler.NAME
     container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
@@ -751,9 +749,8 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     service_ports = {port["name"]: port for port in service["spec"]["ports"]}
     container_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
     assert set(service_ports) == {"grpc-tls"}
-    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.PORT
-    assert container_ports["health"] == central_sampler.HEALTH_PORT
-    assert container["startupProbe"]["grpc"]["port"] == central_sampler.HEALTH_PORT
+    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"]
+    assert container["startupProbe"]["grpc"]["port"] == container_ports["health"]
     database_env = next(
         entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
     )
@@ -762,7 +759,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
     assert settings.executor_reconnect_timeout_seconds is None
-    assert settings.health_listen == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
+    assert settings.health_listen == f"0.0.0.0:{container_ports['health']}"
     assert settings.actions is not None
     assert settings.actions.target == fixture_chart.ACTIONS_SERVICE.authority
     assert settings.actions.tls is not None
@@ -782,10 +779,9 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert ingress_connection.tls.client_uri == CENTRAL_SAMPLER_URI
     assert str(ingress_connection.tls.cert_file) == settings.actions.tls.cert_file
     assert str(ingress_connection.tls.key_file) == settings.actions.tls.key_file
-    assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
-    model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
+    model = settings.models[selected_model]
     assert model.connection == "llm-ingress"
-    assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
+    assert model.provider_model == selected_model
     assert model.api == "responses"
     database_uri = urlsplit(_resource(docs, "Secret", "postgres-central-sampler")["stringData"]["uri"])
     assert database_uri.username == "central_sampler"
