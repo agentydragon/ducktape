@@ -13,7 +13,7 @@ executor:
   max_concurrent_tasks: 1
   runner_pool:
     # Allow 2 GiB of paused runners alongside a KVM test estimated at 5 GiB.
-    # Reject a larger runner before it can evict smaller reusable runners.
+    # Discard a larger completed runner before it can evict smaller reusable runners.
     max_runner_memory_usage_bytes: 2147483648
     max_total_memory_usage_bytes: 2147483648
   max_task_timeout: 24h
