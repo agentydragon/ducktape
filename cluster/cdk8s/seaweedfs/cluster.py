@@ -87,7 +87,7 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
     SeaweedSpecVolumeTopologyTolerations,
 )
 
-from cluster.cdk8s import node_scheduling, stateful_infra
+from cluster.cdk8s import node_scheduling, piraeus_storage, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
@@ -238,7 +238,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # cluster/docs/lessons_learned/2026_10_19_seaweedfs_master_persistence.md.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
-                    storage_class_name="piraeus-ssd-local",
+                    storage_class_name=piraeus_storage.SSD_LOCAL,
                     mount_path="/data",
                     resources=SeaweedSpecMasterPersistenceResources(
                         requests={"storage": SeaweedSpecMasterPersistenceResourcesRequests.from_string("4Gi")}
@@ -323,7 +323,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "hdd-piraeus-103656": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1700Gi",
-                    storage_class="piraeus-hdd-local",
+                    storage_class=piraeus_storage.HDD_LOCAL,
                     disk="hdd",
                     max_volume_counts=2000,
                     node_selector={
@@ -335,7 +335,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "hdd-piraeus-103711": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1700Gi",
-                    storage_class="piraeus-hdd-local",
+                    storage_class=piraeus_storage.HDD_LOCAL,
                     disk="hdd",
                     max_volume_counts=2000,
                     node_selector={
@@ -347,7 +347,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "hdd-piraeus-102453": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="2500Gi",  # This node has a larger HDD pool.
-                    storage_class="piraeus-hdd-local",
+                    storage_class=piraeus_storage.HDD_LOCAL,
                     disk="hdd",
                     max_volume_counts=2000,
                     node_selector={
@@ -362,7 +362,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "ssd-piraeus": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
-                    storage_class="piraeus-ssd-local",
+                    storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns1001419"},
@@ -370,7 +370,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "ssd-piraeus-104952": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
-                    storage_class="piraeus-ssd-local",
+                    storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns104952", "storage.allegedly.works/piraeus-ready": "true"},
@@ -378,7 +378,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 "ssd-piraeus-104963": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
-                    storage_class="piraeus-ssd-local",
+                    storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns104963", "storage.allegedly.works/piraeus-ready": "true"},

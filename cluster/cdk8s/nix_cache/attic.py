@@ -22,7 +22,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling
+from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
@@ -242,7 +242,12 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
         ),
     )
     volume_claim(
-        scope, "local-storage", name=_NEXT_STORAGE, namespace=NAMESPACE, storage_class="piraeus-hdd-2", size="100Gi"
+        scope,
+        "local-storage",
+        name=_NEXT_STORAGE,
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.HDD_REPLICATED,
+        size="100Gi",
     )
     k8s.KubeDeployment(
         scope,

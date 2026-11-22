@@ -16,7 +16,7 @@ from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, disruption_budget, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, disruption_budget, namespaces, node_scheduling, piraeus_storage, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -81,7 +81,7 @@ def _database(chart: Chart) -> None:
             )
         },
         # Both PostgreSQL instances use single-copy local HDD volumes.
-        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
+        profile=cluster.OVH_PIRAEUS_HDD,
         size="40Gi",
         resize_in_use_volumes=False,
         instances=2,
@@ -99,7 +99,7 @@ def _data_claim(chart: Chart) -> None:
     # credential's one owner (Recreate strategy, one replica); losing the file means pairing again.
     # One small file: two DRBD copies, following the Pod onto its node.
     volume_claim(
-        chart, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="64Mi"
+        chart, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_REPLICATED, size="64Mi"
     )
 
 

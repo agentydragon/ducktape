@@ -29,7 +29,7 @@ from kubevirt_storageprofile_crds.io.kubevirt.cdi import (
     StorageProfileSpecClaimPropertySetsVolumeMode,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -37,7 +37,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/cdi"
 _FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
 # storage class -> (clone strategy, [(access mode, volume mode)])
 _STORAGE_PROFILES = {
-    "piraeus-hdd-local": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
+    piraeus_storage.HDD_LOCAL: ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
     "seaweedfs-ovh-ssd": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
 }
 
@@ -53,7 +53,7 @@ def chart(app: App) -> Chart:
         spec=CdiSpec(
             config=CdiSpecConfig(
                 feature_gates=["HonorWaitForFirstConsumer", "WebhookPvcRendering"],
-                scratch_space_storage_class="piraeus-hdd-local",
+                scratch_space_storage_class=piraeus_storage.HDD_LOCAL,
                 pod_resource_requirements=CdiSpecConfigPodResourceRequirements(
                     requests={
                         "cpu": CdiSpecConfigPodResourceRequirementsRequests.from_string("100m"),

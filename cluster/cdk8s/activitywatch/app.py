@@ -20,7 +20,7 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
@@ -177,7 +177,12 @@ def _deployment(scope: Construct) -> None:
 
 def _data_claim(scope: Construct) -> None:
     volume_claim(
-        scope, "piraeus-data", name=_DATA_CLAIM, namespace=_NAMESPACE, storage_class="piraeus-hdd-local", size="10Gi"
+        scope,
+        "piraeus-data",
+        name=_DATA_CLAIM,
+        namespace=_NAMESPACE,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="10Gi",
     )
 
 

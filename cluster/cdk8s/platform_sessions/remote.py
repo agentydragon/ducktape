@@ -32,7 +32,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 
-from cluster.cdk8s import node_scheduling, pod_policy
+from cluster.cdk8s import node_scheduling, piraeus_storage, pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.container_resources import container_resources
@@ -284,7 +284,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         f"{name}-piraeus",
         name=f"{name}-piraeus",
         namespace=NAMESPACE,
-        storage_class="piraeus-ssd-2-autodiskful",
+        storage_class=piraeus_storage.SSD_REPLICATED,
         size="1Gi",
         annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
@@ -295,7 +295,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         f"{name}-captures",
         name=f"{name}-captures",
         namespace=NAMESPACE,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         size="20Gi",
         annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )

@@ -8,6 +8,7 @@ py_library(
     visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",

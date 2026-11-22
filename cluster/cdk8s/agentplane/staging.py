@@ -58,6 +58,7 @@ from cluster.cdk8s import (
     ha_mcp,
     kubectl_passthrough_mcp,
     node_scheduling,
+    piraeus_storage,
     tana_mcp,
 )
 from cluster.cdk8s.agentplane import (
@@ -692,7 +693,7 @@ ENV = Environment(
     ),
     vm_sandboxes=True,
     firecracker_sandboxes=True,
-    vm_storage_class="piraeus-ssd-2-autodiskful",
+    vm_storage_class=piraeus_storage.SSD_REPLICATED,
     vm_resources=STAGING_VM_RESOURCES,
     vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd"),
 )

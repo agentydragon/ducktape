@@ -52,7 +52,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
+from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling, piraeus_storage
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
@@ -82,8 +82,6 @@ _KEEPER = ServiceRef(
 _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
-_PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
-_PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
 _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
@@ -417,7 +415,7 @@ def clickhouse_chart(app: App) -> Chart:
                         reclaim_policy=ClickHouseInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
                         # Raw responses are retained for one year; the generous HDD
                         # volume leaves headroom for MergeTree parts and future tenants.
-                        spec=_claim_spec("500Gi", storage_class=_PIRAEUS_HDD_STORAGE_CLASS),
+                        spec=_claim_spec("500Gi", storage_class=piraeus_storage.HDD_LOCAL),
                     )
                 ],
             ),
@@ -490,7 +488,7 @@ def keeper_chart(app: App) -> Chart:
                     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
                         name=data_claim,
                         reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
-                        spec=_claim_spec("2Gi", storage_class=_PIRAEUS_SSD_STORAGE_CLASS),
+                        spec=_claim_spec("2Gi", storage_class=piraeus_storage.SSD_LOCAL),
                     )
                 ],
             ),

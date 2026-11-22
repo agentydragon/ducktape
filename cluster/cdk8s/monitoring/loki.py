@@ -8,7 +8,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -126,7 +126,7 @@ def _loki_values() -> dict[str, object]:
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
-            "persistence": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
+            "persistence": {"storageClass": piraeus_storage.HDD_LOCAL, "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             "extraEnv": [{"name": "GOMEMLIMIT", "value": "1536MiB"}],
             "resources": {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "500m", "memory": "2Gi"}},

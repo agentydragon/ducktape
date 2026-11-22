@@ -19,7 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -296,7 +296,7 @@ def chart(app: App) -> Chart:
         cpu_limit=Cpu.millis(500),
         memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
-        storage_class="piraeus-hdd-local",
+        storage_class=piraeus_storage.HDD_LOCAL,
         storage_size=Size.gibibytes(2),
     )
     _helm_release(chart, storage=storage)

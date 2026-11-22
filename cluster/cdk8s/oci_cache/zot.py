@@ -14,7 +14,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -49,7 +49,7 @@ def _deployment(chart: Chart) -> None:
         "cache-pvc",
         name="zot-cache",
         namespace=_NAMESPACE,
-        storage_class="piraeus-hdd-2",
+        storage_class=piraeus_storage.HDD_REPLICATED,
         size="100Gi",
         annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )

@@ -31,7 +31,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
 )
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -128,7 +128,7 @@ def _database(scope: Construct) -> None:
 
 def _media_claim(scope: Construct) -> None:
     volume_claim(
-        scope, "media", name=_MEDIA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="5Gi"
+        scope, "media", name=_MEDIA_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_REPLICATED, size="5Gi"
     )
 
 

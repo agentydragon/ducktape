@@ -12,7 +12,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import piraeus, stateful_infra
+from cluster.cdk8s import piraeus_storage, stateful_infra
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -62,7 +62,7 @@ def _values() -> dict[str, object]:
                                     "config": {
                                         "PodsWithPVC": {
                                             "protectedStorageClasses": [
-                                                {"name": name} for name in sorted(piraeus.NODE_LOCAL_STORAGE_CLASSES)
+                                                {"name": name} for name in sorted(piraeus_storage.LOCAL_CLASSES)
                                             ]
                                         }
                                     },

@@ -10,7 +10,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.gateway import https_route
@@ -198,7 +198,7 @@ def _values() -> dict[str, object]:
             "gitaly": {
                 "persistence": {
                     "enabled": True,
-                    "storageClass": "piraeus-hdd-local",
+                    "storageClass": piraeus_storage.HDD_LOCAL,
                     "accessMode": "ReadWriteOnce",
                     "size": "50Gi",
                 },

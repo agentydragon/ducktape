@@ -31,6 +31,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:vpa_policy",
@@ -82,6 +83,7 @@ py_library(
     deps = [
         ":app",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:valkey",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",

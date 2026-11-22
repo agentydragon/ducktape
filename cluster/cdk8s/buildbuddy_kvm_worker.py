@@ -44,7 +44,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, node_scheduling, piraeus
+from cluster.cdk8s import cilium, node_scheduling, piraeus_storage
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
@@ -223,7 +223,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
                     source=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecSource(blank={}),
                     storage=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorage(
                         access_modes=["ReadWriteOnce"],
-                        storage_class_name=piraeus.SSD_LOCAL_DELETE,
+                        storage_class_name=piraeus_storage.SSD_LOCAL_DELETE,
                         volume_mode="Filesystem",
                         resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResources(
                             requests={
