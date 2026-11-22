@@ -10,40 +10,35 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 from python.runfiles import Runfiles
 
-from cluster.validation.k8s import K8sResource, load_k8s_resources
+from cluster.validation.k8s import CamelCaseModel, K8sResource, load_k8s_resources
 
 KUSTOMIZATION_FILE_NAMES = ("kustomization.yaml", "kustomization.yml", "Kustomization")
 
 
-class _CamelCaseModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class GeneratorInputs(CamelCaseModel):
+    files: list[str] = Field(default_factory=list)
+    envs: list[Path] = Field(default_factory=list)
 
 
-class GeneratorInputs(_CamelCaseModel):
-    files: list[str] = []
-    envs: list[Path] = []
-
-
-class PatchEntry(_CamelCaseModel):
+class PatchEntry(CamelCaseModel):
     path: Path | None = None
 
 
-class KustomizeFile(_CamelCaseModel):
+class KustomizeFile(CamelCaseModel):
     """Parsed kustomization.yaml — Pydantic coerces YAML string paths to Path objects."""
 
     path: Path = Field(
         description="Absolute path to the kustomization file itself (injected by parser), or where "
         "kustomize-controller writes the one it generates (`flux_generated_kustomization`)"
     )
-    resources: list[Path] = []
-    patches: list[PatchEntry] = []
-    config_map_generator: list[GeneratorInputs] = []
-    secret_generator: list[GeneratorInputs] = []
-    configurations: list[Path] = []
+    resources: list[Path] = Field(default_factory=list)
+    patches: list[PatchEntry] = Field(default_factory=list)
+    config_map_generator: list[GeneratorInputs] = Field(default_factory=list)
+    secret_generator: list[GeneratorInputs] = Field(default_factory=list)
+    configurations: list[Path] = Field(default_factory=list)
 
     def _resolve(self, rel: Path) -> Path:
         return (self.path.parent / rel).resolve()

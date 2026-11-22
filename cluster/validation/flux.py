@@ -7,36 +7,29 @@ from pathlib import Path
 
 import durationpy
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import BaseModel, Field
 
 from cluster.cdk8s.manifest_roots import MANIFEST_ROOTS
-from cluster.validation.k8s import Condition, SecretRef
+from cluster.validation.k8s import CamelCaseModel, Condition, SecretRef
 
 
 class DependsOn(BaseModel):
     """Flux Kustomization dependency reference."""
 
-    model_config = ConfigDict(extra="ignore")
-
     name: str
     namespace: str | None = None
 
 
-class SourceRef(BaseModel):
+class SourceRef(CamelCaseModel):
     """Flux Kustomization spec.sourceRef — the GitRepository/OCIRepository/ExternalArtifact it reconciles from."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     kind: str = ""
     name: str = ""
     namespace: str | None = None
 
 
-class HealthCheck(BaseModel):
+class HealthCheck(CamelCaseModel):
     """Flux Kustomization health check reference."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     api_version: str = ""
     kind: str = ""
@@ -44,23 +37,19 @@ class HealthCheck(BaseModel):
     namespace: str = ""
 
 
-class Decryption(BaseModel):
+class Decryption(CamelCaseModel):
     """Flux Kustomization spec.decryption — declares how Flux decrypts SOPS
     Secrets under the path. A SOPS-encrypted Secret needs both `provider: sops`
     and a `secretRef.name` pointing at the age-key Secret: without the provider
     Flux applies ENC[...] ciphertext literally; without the secretRef it has no
     key to decrypt with. Both fail silently."""
 
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
-
     provider: str = ""
     secret_ref: SecretRef | None = None
 
 
-class FluxKustomizationSpec(BaseModel):
+class FluxKustomizationSpec(CamelCaseModel):
     """Parsed spec from a Flux Kustomization CR."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     path: str = ""
     # Namespace of this Kustomization CR (from metadata.namespace), populated by
@@ -70,8 +59,8 @@ class FluxKustomizationSpec(BaseModel):
     namespace: str = ""
     target_namespace: str | None = None
     manifest_path: Path | None = Field(default=None, exclude=True)
-    depends_on: list[DependsOn] = []
-    health_checks: list[HealthCheck] = []
+    depends_on: list[DependsOn] = Field(default_factory=list)
+    health_checks: list[HealthCheck] = Field(default_factory=list)
     source_ref: SourceRef | None = None
     retry_interval: str | None = None
     wait: bool = False
@@ -98,12 +87,11 @@ def parse_go_duration(s: str | None) -> float:
     return durationpy.from_str(s).total_seconds()
 
 
-class _HistoryMetadata(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class _HistoryMetadata(CamelCaseModel):
     revision: str = ""
 
 
-class FluxReconcileHistoryEntry(BaseModel):
+class FluxReconcileHistoryEntry(CamelCaseModel):
     """One entry in `Kustomization.status.history` (Flux 2.7+). Each entry summarises
     reconcile attempts against a single `(revision, build digest)`:
 
@@ -121,8 +109,6 @@ class FluxReconcileHistoryEntry(BaseModel):
     - The error message per failed attempt is not in history — fetch the
       current condition's message or a `Warning` Event for that.
     """
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     last_reconciled: datetime | None = None
     last_reconciled_duration: str | None = None
@@ -176,17 +162,13 @@ class FluxKustomizationStatus(FluxStatus):
 
 
 class _ObjectMeta(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     name: str
     namespace: str = ""
     annotations: dict[str, str] = Field(default_factory=dict)
 
 
-class _FluxKustomizationDoc(BaseModel):
+class _FluxKustomizationDoc(CamelCaseModel):
     """Top-level structure of a Flux Kustomization YAML document."""
-
-    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     api_version: str
     kind: str
