@@ -7,7 +7,13 @@ import {
   type Dispatch,
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { CommandProgress, waitingReasonLabel, type CommandStage, type CommandSubject } from "./command_progress";
+import {
+  CommandProgress,
+  unknownDeliveryStage,
+  waitingReasonLabel,
+  type CommandStage,
+  type CommandSubject,
+} from "./command_progress";
 import { noticeKey, type NoticeAttention } from "./command_notice_attention";
 import { readFullDispatchReason, type ReadDispatchReceipts, type ReasonLookup } from "./dispatch_workset";
 
@@ -108,7 +114,6 @@ const receiptStage: Partial<Record<DeliveryState, CommandStage>> = {
   [DeliveryState.RUNNER_ADMITTED]: "admitted",
   [DeliveryState.FAILED]: "dispatch_failed",
   [DeliveryState.CANCELLED_IN_DISPATCHER]: "cancelled",
-  [DeliveryState.UNKNOWN]: "unknown",
 };
 
 export function DispatchReceiptProgress({
@@ -126,7 +131,10 @@ export function DispatchReceiptProgress({
       Runner accepted the command
     </Text>
   );
-  const stage = receiptStage[item.state] ?? "unknown";
+  const stage =
+    item.state === DeliveryState.UNKNOWN
+      ? unknownDeliveryStage(item.reason, item.journalAdmitted)
+      : (receiptStage[item.state] ?? "unknown");
   return (
     <Group gap={4} wrap="nowrap" className="agentplane-command-delivery">
       <CommandProgress

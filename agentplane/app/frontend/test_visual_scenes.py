@@ -649,7 +649,7 @@ async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixtu
     ("flag", "stage", "summary", "reason"),
     [
         (Flag.COMMAND_ADMISSION_TIMED_OUT, "unconfirmed", "Dispatcher receipt unconfirmed", "deadline exceeded"),
-        (Flag.COMMAND_SUBMISSION_REFUSED, "refused", "Command refused", "Permission denied by Dispatcher"),
+        (Flag.COMMAND_SUBMISSION_REFUSED, "refused", "Submission refused", "Permission denied by Dispatcher"),
     ],
     ids=["unconfirmed", "refused"],
 )
@@ -662,6 +662,12 @@ async def test_session_pending_failed(
     await app.mount_thread(RUNNING_THREAD)
     outcome = view.page.locator(f'[data-stage="{stage}"]')
     await expect(outcome).to_have_text(summary)
+    await expect(outcome).to_have_role("alert" if stage == "refused" else "status")
+    lights = outcome.locator(".agentplane-command-light")
+    await expect(lights).to_have_count(4)
+    await expect(lights.nth(0)).to_have_attribute("data-state", "failed" if stage == "refused" else "uncertain")
+    for index in range(1, 4):
+        await expect(lights.nth(index)).to_have_attribute("data-state", "future")
     await outcome.get_by_role("button", name=f"{summary} · delivery details").click()
     details = view.page.get_by_role("dialog", name="Delivery details")
     await expect(details).to_contain_text(reason)

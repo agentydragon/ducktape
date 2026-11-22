@@ -553,10 +553,11 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await view.capture(name="detail")
     effort_row = page.locator('[data-command-id="progress-effort"]')
     effort_failure = effort_row.get_by_role("alert")
-    await expect(effort_failure).to_have_text("Failed")
+    await expect(effort_failure).to_have_text("Execution failed")
+    await _expect_command_lights(effort_row, ["done", "done", "done", "failed"])
     await effort_row.scroll_into_view_if_needed()
     await expect(effort_failure).to_be_in_viewport(ratio=1)
-    effort_details = effort_row.get_by_role("button", name="Failed · delivery details")
+    effort_details = effort_row.get_by_role("button", name="Execution failed · delivery details")
     if viewport.has_touch:
         await effort_details.tap()
     else:
@@ -688,6 +689,13 @@ async def test_dispatcher_notice_acknowledgement(view: VisualPage, app: Agentpla
     await view.capture(name="delivery_issue_history", target=history)
 
 
+async def _expect_command_lights(row: Locator, states: list[str]) -> None:
+    lights = row.locator(".agentplane-command-light")
+    await expect(lights).to_have_count(len(states))
+    for index, state in enumerate(states):
+        await expect(lights.nth(index)).to_have_attribute("data-state", state)
+
+
 async def _expect_delivery_gutter(row: Locator) -> None:
     bubble = row.locator(".transcript-user-bubble")
     aside = row.locator(".transcript-user-message-aside")
@@ -722,6 +730,7 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await expect(history.get_by_text("The previous deployment is healthy.", exact=False)).to_be_visible()
     await expect(phase).to_have_count(1)
     await expect(phase.get_by_role("status")).to_have_text("Outcome unknown")
+    await _expect_command_lights(phase, ["done", "done", "done", "uncertain"])
     await expect(continuation.get_by_text("continue", exact=True)).to_be_visible()
     model_text = model.locator(".transcript-verbatim")
     await expect(model_text).to_have_text("Set model: chatgpt-sub/oai-responses/gpt-6.2-sol")
@@ -769,7 +778,11 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await model.scroll_into_view_if_needed()
     await expect(model.locator(".transcript-user-bubble")).to_have_css("background-color", "rgba(0, 0, 0, 0)")
     await _expect_delivery_gutter(model)
-    await expect(model.get_by_role("status")).to_have_text("Outcome unknown")
+    model_status = model.get_by_role("status")
+    await expect(model_status).to_have_text("Outcome unknown")
+    await expect(model_status).to_have_accessible_name("Outcome unknown · latest delivery attempt returned an error")
+    await expect(model.get_by_role("alert")).to_have_count(0)
+    await _expect_command_lights(model, ["done", "failed", "future", "future"])
     if viewport.has_touch:
         model_bubble = await model.locator(".transcript-user-bubble").bounding_box()
         queued_bubble = await queued.locator(".transcript-user-bubble").bounding_box()
@@ -866,6 +879,13 @@ async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: Visua
     failure = row.get_by_role("alert")
     await expect(failure).to_be_visible()
     await expect(failure).to_have_text("Delivery failed")
+    await _expect_command_lights(row, ["done", "failed", "future", "future"])
+    unknown = view.page.locator('[data-command-id="unknown-dispatch"]')
+    status = unknown.get_by_role("status")
+    await expect(status).to_have_text("Outcome unknown")
+    await _expect_command_lights(unknown, ["done", "uncertain", "future", "future"])
+    await row.scroll_into_view_if_needed()
+    await view.capture(name="delivery_failure_and_unknown")
     await failure.get_by_role("button", name="Delivery failed · delivery details").click()
     details = view.page.get_by_role("dialog", name="Delivery details")
     await expect(details).to_contain_text("Sandbox did not become Ready within 10 minutes")
@@ -875,9 +895,6 @@ async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: Visua
     await view.capture(name="failed")
     await view.page.keyboard.press("Escape")
     await expect(details).to_have_count(0)
-    unknown = view.page.locator('[data-command-id="unknown-dispatch"]')
-    status = unknown.get_by_role("status")
-    await expect(status).to_have_text("Outcome unknown")
     await expect(unknown.get_by_role("alert")).to_have_count(0)
     await status.get_by_role("button", name="Outcome unknown · delivery details").click()
     await expect(details).to_contain_text("Connection to the runner closed before it returned a receipt")

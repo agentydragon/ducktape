@@ -3,7 +3,7 @@ import { type JSX, type ReactNode, useEffect } from "react";
 
 import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
-import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
+import { CommandProgress, unknownDeliveryStage, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { type CommandIssue } from "./command_delivery";
 import type { LocalCommands, LocalCommand, PendingCommand } from "./local_commands";
@@ -55,11 +55,12 @@ function commandIssue(value: LocalCommand, errors: ReadonlyMap<string, CommandIs
   return undefined;
 }
 
+function missingLocalReceipt(receipt: LocalCommand["dispatch"]): boolean {
+  return receipt?.reason === "sandbox_deleted" && !receipt.updatedAt && receipt.operation === Operation.UNSPECIFIED;
+}
+
 function localReceiptReason(receipt: LocalCommand["dispatch"]): string | undefined {
-  if (receipt?.reason === "sandbox_deleted" && !receipt.updatedAt && receipt.operation === Operation.UNSPECIFIED) {
-    return "Dispatcher did not return a receipt for this command";
-  }
-  return receipt?.reason;
+  return missingLocalReceipt(receipt) ? "Dispatcher did not return a receipt for this command" : receipt?.reason;
 }
 
 function progressStage(
@@ -71,8 +72,13 @@ function progressStage(
   if (outcome === ThreadCommandOutcome.EFFECTED) return "effected";
   if (outcome === ThreadCommandOutcome.FAILED) return "failed";
   if (outcome === ThreadCommandOutcome.NOOP) return "noop";
+  const state = receipt ? normalizeDeliveryState(receipt.state) : undefined;
+  if (state === DeliveryState.UNKNOWN) {
+    if (!admitted && receipt && missingLocalReceipt(receipt)) return "unconfirmed";
+    return unknownDeliveryStage(receipt?.reason, admitted);
+  }
   if (admitted) return "admitted";
-  switch (receipt ? normalizeDeliveryState(receipt.state) : undefined) {
+  switch (state) {
     case DeliveryState.QUEUED_IN_DISPATCHER:
       return "queued";
     case DeliveryState.DELIVERING_TO_RUNNER:
@@ -83,8 +89,6 @@ function progressStage(
       return "dispatch_failed";
     case DeliveryState.CANCELLED_IN_DISPATCHER:
       return "cancelled";
-    case DeliveryState.UNKNOWN:
-      return "unknown";
     default:
       return receipt ? "unknown" : (issue?.kind ?? "local");
   }
@@ -222,7 +226,9 @@ export function PendingInputMessages({
           outcome === ThreadCommandOutcome.FAILED ||
           stage === "dispatch_failed" ||
           stage === "cancelled" ||
-          stage === "unknown";
+          stage === "unknown" ||
+          stage === "delivery_error_unknown" ||
+          stage === "admitted_unknown";
         const noop = outcome === ThreadCommandOutcome.NOOP || stage === "noop";
         const effected = outcome === ThreadCommandOutcome.EFFECTED;
         const outcomeReason = commandRow?.entity.value.outcomeReason ?? null;
@@ -320,6 +326,7 @@ function LocalControlRows({
           const operation = value.command.operation;
           const admitted = value.admission !== null;
           const issue = commandIssue(value, errors);
+          const stage = progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue);
           return (
             <ControlCommandBubble
               key={value.command.commandId}
@@ -329,10 +336,10 @@ function LocalControlRows({
               progress={
                 notice?.progress ?? (
                   <CommandOutcome
-                    stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
+                    stage={stage}
                     subject={subject(operation.case)}
                     reason={
-                      admitted
+                      stage === "admitted"
                         ? undefined
                         : (localReceiptReason(value.dispatch) ?? value.interruptResult?.reason ?? issue?.message)
                     }

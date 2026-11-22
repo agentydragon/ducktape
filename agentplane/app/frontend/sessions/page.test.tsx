@@ -1522,7 +1522,7 @@ it.each([
   expect(progressLabel(container, queued.commandId)).toBe(expectedLabel);
   expect(
     [...row.querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))
-  ).toEqual(["done", "done", "waiting", "future"]);
+  ).toEqual(["done", "waiting", "future", "future"]);
   expect(buttonIn(row, "Retry")).toBeUndefined();
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 });
@@ -2225,7 +2225,7 @@ it("follows the dispatches of queued commands only until they settle", async () 
   await vi.waitFor(() => expect(watch.signal?.aborted).toBe(true));
 });
 
-it("calls a command the Dispatcher holds no row for unknown, as after Sandbox deletion", async () => {
+it("keeps a missing Dispatcher receipt unconfirmed, as after Sandbox deletion", async () => {
   const waiting = message("row-deleted-with-sandbox");
   new LocalCommands(THREAD.metadata.threadId).remember(waiting);
   vi.mocked(submitInput).mockResolvedValue({
@@ -2242,7 +2242,10 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
   await sendDispatches([]);
 
   const row = pendingRow(container, waiting.commandId);
-  await vi.waitFor(() => expect(row.querySelector('[role="status"]')?.textContent).toBe("Outcome unknown"));
+  await vi.waitFor(() =>
+    expect(row.querySelector('[role="status"]')?.textContent).toBe("Dispatcher receipt unconfirmed")
+  );
+  expect(row.querySelector(".agentplane-command-light")?.getAttribute("data-state")).toBe("uncertain");
   expect((await openDeliveryDetails(row)).textContent).toContain(
     "Dispatcher did not return a receipt for this command"
   );
@@ -2330,7 +2333,7 @@ it("checks an ambiguous submission against the stored command without resending 
     [...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) =>
       light.getAttribute("data-state")
     )
-  ).toEqual(["done", "waiting", "future", "future"]);
+  ).toEqual(["waiting", "future", "future", "future"]);
   expect(pendingRow(container, "hung").querySelectorAll("[data-state=waiting]")).toHaveLength(1);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
@@ -2509,7 +2512,7 @@ it.each([
   const row = pendingRow(section, "test-entity");
   expect(row.querySelector(".agentplane-control-command-bubble")?.textContent).toBe(description);
   const gutter = row.querySelector(".transcript-user-message-aside");
-  expect(gutter?.querySelector('[role="alert"]')?.textContent).toBe("Failed");
+  expect(gutter?.querySelector('[role="alert"]')?.textContent).toBe("Execution failed");
   expect(gutter?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
   expect((await openDeliveryDetails(row)).textContent).toContain("Command refused");
 });
@@ -2569,7 +2572,7 @@ it.each([
     outcome === "effected" ? 1 : 0
   );
   expect(bubble?.parentElement?.querySelector('[role="alert"]')?.textContent).toBe(
-    outcome === "failed" ? "Failed" : undefined
+    outcome === "failed" ? "Execution failed" : undefined
   );
   if (outcome === "failed")
     expect((await openDeliveryDetails(bubble!.parentElement!)).textContent).toContain("runner unavailable");

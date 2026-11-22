@@ -14,11 +14,45 @@ export type CommandStage =
   | "dispatch_failed"
   | "cancelled"
   | "unknown"
+  | "delivery_error_unknown"
+  | "admitted_unknown"
   | "noop"
   | "refused";
 export type CommandSubject = "input" | "model" | "effort" | "other";
 
 type LightState = "done" | "waiting" | "uncertain" | "failed" | "future";
+
+/** Submission, Dispatcher delivery, runner admission, and observed effect, in that order. */
+const stageLights: Record<CommandStage, readonly [step: number, state: LightState]> = {
+  local: [1, "waiting"],
+  unconfirmed: [1, "uncertain"],
+  refused: [1, "failed"],
+  queued: [2, "waiting"],
+  delivering: [2, "waiting"],
+  dispatch_failed: [2, "failed"],
+  cancelled: [2, "future"],
+  unknown: [2, "uncertain"],
+  delivery_error_unknown: [2, "failed"],
+  admitted: [4, "waiting"],
+  admitted_unknown: [4, "uncertain"],
+  failed: [4, "failed"],
+  effected: [4, "done"],
+  noop: [4, "done"],
+};
+
+/** deliveryFailure records non-retryable gRPC codes as "runner <Code>: <message>".
+ * The error can be local to the delivery router or at its remote destination. It says
+ * that attempt errored, without proving that the runner rejected the original command. */
+const deliveryAttemptError =
+  /^runner (?:Canceled|Unknown|InvalidArgument|NotFound|AlreadyExists|PermissionDenied|ResourceExhausted|FailedPrecondition|OutOfRange|Unimplemented|Internal|DataLoss|Unauthenticated): /;
+
+export function unknownDeliveryStage(
+  reason: string | undefined,
+  admitted: boolean
+): "unknown" | "delivery_error_unknown" | "admitted_unknown" {
+  if (admitted) return "admitted_unknown";
+  return reason && deliveryAttemptError.test(reason) ? "delivery_error_unknown" : "unknown";
+}
 
 /** Reasons the Dispatcher gives as `<reason>: <detail>`, where the detail names the failure it met. */
 export function waitingReasonLabel(reason: string | null | undefined): string | null | undefined {
@@ -79,12 +113,14 @@ export function CommandProgress({
     delivering: "Dispatcher is sending to runner",
     admitted: `Runner accepted · waiting for ${waitingFor}`,
     effected: subject === "input" ? "Agent confirmed message" : "Applied",
-    failed: "Failed",
-    dispatch_failed: "Dispatcher could not deliver",
+    failed: "Execution failed",
+    dispatch_failed: "Delivery failed",
     cancelled: "Cancelled before delivery",
     unknown: "Outcome unknown",
+    delivery_error_unknown: "Outcome unknown",
+    admitted_unknown: "Outcome unknown",
     noop: "No-op",
-    refused: "Command refused",
+    refused: "Submission refused",
   };
   const reasonLabel = waitingReasonLabel(reason);
   const label =
@@ -95,25 +131,11 @@ export function CommandProgress({
         : stage === "queued" && reasonLabel
           ? reasonLabel
           : `${labels[stage]}${reasonLabel ? `: ${reasonLabel}` : ""}`;
-  const failed = stage === "failed" || stage === "dispatch_failed" || stage === "refused";
-  const uncertain = stage === "unconfirmed" || stage === "unknown";
-  // The first light means submitted, not proof that another browser saved it locally.
-  const current =
-    stage === "local" || stage === "unconfirmed" || stage === "refused"
-      ? 2
-      : stage === "queued" || stage === "delivering" || stage === "dispatch_failed" || stage === "cancelled"
-        ? 3
-        : 4;
+  const terminalFailure = stage === "failed" || stage === "dispatch_failed" || stage === "refused";
+  const deliveryError = stage === "delivery_error_unknown";
+  const [current, light] = stageLights[stage];
   const lights: LightState[] = [1, 2, 3, 4].map((step) =>
-    step < current
-      ? "done"
-      : step > current
-        ? "future"
-        : failed || stage === "cancelled"
-          ? "failed"
-          : uncertain
-            ? "uncertain"
-            : "waiting"
+    step < current ? "done" : step > current ? "future" : light
   );
   const indicator =
     stage === "noop" ? null : stage === "effected" ? (
@@ -125,20 +147,21 @@ export function CommandProgress({
         ))}
       </span>
     );
-  if (failed || uncertain || stage === "noop" || (stage === "cancelled" && reasonLabel) || details) {
-    const summary =
-      stage === "dispatch_failed"
-        ? "Delivery failed"
-        : stage === "queued"
-          ? "Queued"
-          : stage === "delivering"
-            ? "Sending"
-            : labels[stage];
+  if (
+    terminalFailure ||
+    deliveryError ||
+    light === "uncertain" ||
+    stage === "noop" ||
+    stage === "cancelled" ||
+    details
+  ) {
+    const summary = stage === "queued" ? "Queued" : stage === "delivering" ? "Sending" : labels[stage];
     return (
       <span
         className={`agentplane-command-progress-inline ${stage === "noop" ? "agentplane-command-noop" : "agentplane-command-progress"}`}
         data-stage={stage}
-        role={failed ? "alert" : "status"}
+        role={terminalFailure ? "alert" : "status"}
+        aria-label={deliveryError ? "Outcome unknown · latest delivery attempt returned an error" : undefined}
       >
         {indicator}
         {reasonLabel || details ? (
