@@ -437,14 +437,17 @@ def generate_manifests(root: Path) -> None:
     talos_cloud_controller_manager_artifact = artifact(
         "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
     )
-    talos_cloud_controller_manager.talos_cloud_controller_manager(
+    flux.flux_kustomization(
         flux_chart,
+        talos_cloud_controller_manager.NAME,
         write_directory(
             root,
             talos_cloud_controller_manager_artifact,
             talos_cloud_controller_manager.helmrepository_chart,
             siblings=[talos_cloud_controller_manager.write_helmrelease(root)],
         ),
+        interval="30m",
+        target_namespace=talos_cloud_controller_manager.NAMESPACE,
     )
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
     user_agentydragon_kustomization = flux.flux_kustomization(
@@ -500,8 +503,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart, buildbuddy_executor_artifact, kubevirt_kustomization, kyverno_kustomization
     )
     kyverno_policies_artifact = artifact("kyverno-policies", kyverno_policies.OUTPUT_DIR)
-    kyverno_policies_kustomization = kyverno_policies.kyverno_policies(
-        flux_chart, write_directory(root, kyverno_policies_artifact, *kyverno_policies.CHARTS), kyverno_kustomization
+    kyverno_policies_kustomization = flux.flux_kustomization(
+        flux_chart,
+        kyverno_policies_artifact.name,
+        write_directory(root, kyverno_policies_artifact, *kyverno_policies.CHARTS),
+        depends_on=[flux.flux_kustomization_depends_on(kyverno_kustomization)],
+        interval="5m",
+        timeout="2m",
     )
     keda_artifact = artifact("keda", keda.OUTPUT_DIR)
     keda_kustomization = flux.flux_kustomization(
@@ -650,9 +658,12 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
-    seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
+    seaweedfs_operator_kustomization = flux.flux_kustomization(
         flux_chart,
+        seaweedfs_operator_release.NAME,
         write_directory(root, seaweedfs_operator_artifact, seaweedfs_namespace.chart, seaweedfs_operator_release.chart),
+        suspend=False,
+        timeout="5m",
     )
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
@@ -994,13 +1005,17 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR, website.PINS_DIR)
-    website.website(
+    flux.flux_kustomization(
         flux_chart,
+        website_artifact.name,
         write_directory(
             root, website_artifact, website.chart, components=[posixpath.relpath(website.PINS_DIR, website.OUTPUT_DIR)]
         ),
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+        depends_on=flux.flux_kustomization_depends_on_many(
+            external_secrets_operator_kustomization, kyverno_kustomization
+        ),
     )
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy_kustomization = flux.flux_kustomization(
@@ -1399,15 +1414,18 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_external_credentials_artifact = artifact(
         "seaweedfs-external-credentials", seaweedfs_external_credentials.OUTPUT_DIR
     )
-    seaweedfs_external_credentials.seaweedfs_external_credentials(
+    flux.flux_kustomization(
         flux_chart,
+        seaweedfs_external_credentials_artifact.name,
         write_directory(
             root,
             seaweedfs_external_credentials_artifact,
             seaweedfs_external_credentials.chart,
             siblings=["claude-reader-credentials.sops.yaml", "drivefs-artifacts-credentials.sops.yaml"],
         ),
-        seaweedfs_operator_kustomization,
+        depends_on=[flux.flux_kustomization_depends_on(seaweedfs_operator_kustomization)],
+        timeout="5m",
+        description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
     )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
     seaweedfs_loom_gym_bucket.seaweedfs_loom_gym_bucket(
@@ -1592,12 +1610,19 @@ def generate_manifests(root: Path) -> None:
         flux_chart, oci_cache_artifact, monitoring_crds_kustomization, piraeus_cluster_kustomization
     )
     seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", seaweedfs_public_s3.OUTPUT_DIR)
-    seaweedfs_public_s3.seaweedfs_public_s3(
+    flux.flux_kustomization(
         flux_chart,
+        seaweedfs_public_s3_artifact.name,
         write_directory(root, seaweedfs_public_s3_artifact, seaweedfs_public_s3.chart),
-        seaweedfs_operator_kustomization,
-        kyverno_kustomization,
-        monitoring_crds_kustomization,
+        depends_on=flux.flux_kustomization_depends_on_many(
+            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
+            seaweedfs_operator_kustomization,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno_kustomization,
+            # ServiceMonitor.
+            monitoring_crds_kustomization,
+        ),
+        timeout="5m",
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_kustomization = flux.flux_kustomization(
