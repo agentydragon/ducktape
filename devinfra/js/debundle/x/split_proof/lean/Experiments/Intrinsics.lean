@@ -22,7 +22,7 @@ declaration is treated as touching the world (`Effects.footprints`); for a stati
 units that read it. Not seen: a patch through an alias or a computed name in code that is not run, a standard
 function forwarded through a spread or called through a computed name, `Object.defineProperty(globalThis, …)`, a
 patch by another script loaded before or during the bundle, one through a value the world returned, and state the
-engine keeps (`RegExp.$1`). `experiments/effects/debug/p1_known_gaps` has a program for each.
+engine keeps (`RegExp.$1`). `effects/debug/p1_known_gaps` has a program for each.
 
 **Premise P3: the world defines no hooks.** The world (the environment and every module outside the bundle) adds no
 accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made. So a
@@ -43,7 +43,7 @@ A standard function may also run the program's code through a protocol: it calls
 argument (`iterates`), reads the properties of an argument, so that a getter runs (`readsContents`, `copiesRest`), or calls a
 method by name (`callsMethods`: `test` calls `exec`, `replace` calls the `Symbol.replace` of its pattern). A row says
 which, and nothing else runs. A protocol the row does not list is a limit of the rules:
-`experiments/effects/debug/general_known_gaps` has a program for each one known.
+`effects/debug/general_known_gaps` has a program for each one known.
 
 Not listed means a world call. A row is added when a real bundle needs it, with the reason it is safe.
 -/
@@ -306,7 +306,7 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
 ]
 
 /-- Every own property of the standard objects, as `Path.member` (`prim.member` for what a string, number, boolean,
-symbol or bigint has), generated from Node by `experiments/effects/gen_members.mjs`. -/
+symbol or bigint has), generated from Node by `effects/gen_members.mjs`. -/
 def members : Std.HashSet String := Std.HashSet.ofList memberPaths
 
 /-- Globals that name an intrinsic object or function. Everything else undeclared is the environment. -/

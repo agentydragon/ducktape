@@ -15,7 +15,7 @@ import Std.Data.HashSet
 
     lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--move-report <file>] [--force]
 
-`bundle.json` is acorn's ESTree with trusted scope/literal metadata (`experiments/lowering/dump.mjs`). Lean computes the footprints
+`bundle.json` is acorn's ESTree with trusted scope/literal metadata (`lowering/dump.mjs`). Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
 Lean file whose `by decide +kernel` makes the kernel certify the same facts.
 The bundle may import from outside modules; those are loaded first, in their order, as in the bundle.

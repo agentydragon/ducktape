@@ -2,7 +2,7 @@
 //
 //   node run_splits.mjs <bundle> <strategy> [--step N] [--seeds N] [--jobs N] [--footprints f.jsonl] [--out results.jsonl]
 //
-//   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (experiments/lowering/bundles/<bundle>.{json,mjs})
+//   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (../../lowering/bundles/<bundle>.{json,mjs})
 //   strategy  halves | cuts | cuts_entry_first | blocks | random
 //             cuts:   every single cut point c = step, 2*step, … (two modules [0, c) and [c, n))
 //             cuts_entry_first: the same cuts, but the first module is the entry
@@ -19,12 +19,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { topLevelStatements } from "../translation/scope_metadata.mjs";
+import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { spec as makeSpec } from "./gen_spec.mjs";
 import { smoke } from "./smoke.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const lowering = path.join(here, "../lowering/bundles");
+const lowering = path.join(here, "../../lowering/bundles");
 const lowersplit = path.join(here, "../../lean/.lake/build/bin/lowersplit");
 const lower = path.join(here, "../../lean/.lake/build/bin/lower");
 

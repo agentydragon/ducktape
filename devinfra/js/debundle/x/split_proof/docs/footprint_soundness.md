@@ -128,8 +128,8 @@ and fuel bounds and compares the entire final state on successful execution.
 | Objects, closures, control flow, classes                                                            | CoreJS semantics and selected locality results               | Soundness of the corresponding Effects summaries                                 |
 | Intrinsics and unknown-code fallback                                                                | Handwritten and generated regression coverage                | Per-rule semantic contracts and conservative fallback proofs                     |
 
-The [`model` coverage matrix](../experiments/model/README.md) and
-[`effects` tests](../experiments/effects/README.md) describe executable evidence.
+The [`model` coverage matrix](../model/README.md) and
+[`effects` tests](../effects/README.md) describe executable evidence.
 Passing those tests is not a footprint soundness proof.
 
 For a flat `var` object pattern with a named RHS, the conditional

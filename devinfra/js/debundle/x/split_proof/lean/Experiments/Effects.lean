@@ -36,7 +36,7 @@ into escapes, with its closure.
 **Fail safe.** A construct this file does not understand, or a unit that exhausts its budget, is a call into the world
 that also escapes everything the unit mentions. More precision is added by understanding a construct. A wrong
 understanding is one way to get a wrong answer; another is a give-up that forgets what the code it skipped can reach.
-The reordered programs of `experiments/effects` (checked against Node) and `experiments/translation/fuzz.mjs` hunt
+The reordered programs of `effects` (checked against Node) and `translation/fuzz.mjs` hunt
 for both.
 
 **What is a footprint.** The writes of a unit are the objects its run assigned to or changed. They are reported as
