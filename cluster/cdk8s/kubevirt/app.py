@@ -3,7 +3,9 @@ plane, and the Flux Kustomization that waits for that plane."""
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+import json
+
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirt,
@@ -16,6 +18,7 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirtSpecConfigurationPermittedHostDevicesUsbSelectors,
     KubeVirtSpecConfigurationSmbios,
     KubeVirtSpecCustomizeComponents,
+    KubeVirtSpecCustomizeComponentsPatches,
     KubeVirtSpecInfra,
     KubeVirtSpecInfraNodePlacement,
     KubeVirtSpecInfraNodePlacementTolerations,
@@ -33,6 +36,18 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "kubevirt"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/app"
 _IF_NOT_PRESENT = "IfNotPresent"
+
+
+def _hostname_spread_patch(deployment: str) -> KubeVirtSpecCustomizeComponentsPatches:
+    spread = node_scheduling.hostname_spread({"kubevirt.io": deployment})
+    # JsonPatch renders the typed Kubernetes value. KubeVirt also decodes virt-api
+    # customizations as JSON Patch when checking whether to autoscale replicas.
+    operation = JsonPatch.apply(
+        {"op": "add", "path": "/spec/template/spec/topologySpreadConstraints"}, JsonPatch.add("/value", [spread])
+    )
+    return KubeVirtSpecCustomizeComponentsPatches(
+        resource_name=deployment, resource_type="Deployment", type="json", patch=json.dumps([operation])
+    )
 
 
 def chart(app: App) -> Chart:
@@ -75,7 +90,9 @@ def chart(app: App) -> Chart:
                     version="v0.1.0",
                 ),
             ),
-            customize_components=KubeVirtSpecCustomizeComponents(),
+            customize_components=KubeVirtSpecCustomizeComponents(
+                patches=[_hostname_spread_patch(deployment) for deployment in ("virt-api", "virt-controller")]
+            ),
             image_pull_policy=_IF_NOT_PRESENT,
             infra=KubeVirtSpecInfra(
                 node_placement=KubeVirtSpecInfraNodePlacement(
