@@ -48,7 +48,7 @@ _ZONES = node_scheduling.HOME_AND_OVH_ZONES
 def add_vpa(scope: Construct, namespace: str) -> VerticalPodAutoscaler:
     """Size the relay's requests while Goldilocks stays disabled for runner Jobs."""
     return requests_only_vpa(
-        scope, NAME, namespace=namespace, container_name=sidecar_config.CONTAINER_NAME, update_mode="Initial"
+        scope, NAME, namespace=namespace, container_name=sidecar_config.CONTAINER_NAME, update_mode="Recreate"
     )
 
 
