@@ -8,6 +8,16 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "endpoints",
+    srcs = ["endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:service_ref",
+    ],
+)
+
+py_library(
     name = "namespace",
     srcs = ["namespace.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -23,6 +33,7 @@ py_library(
     data = ["filer.toml"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":endpoints",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
@@ -82,7 +93,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":cluster",
+        ":endpoints",
         ":public_s3",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -163,6 +174,7 @@ py_library(
     srcs = ["public_s3.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":endpoints",
         ":s3",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:disruption_budget",
@@ -174,7 +186,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/providers/seaweedfs:s3policy",
         "//cluster/cdk8s/providers/seaweedfs:s3policybinding",
-        "//cluster/cdk8s/seaweedfs:cluster",
         "//cluster/cdk8s/seaweedfs:drivefs_artifacts_bucket",
         "//cluster/cdk8s/seaweedfs:external_credentials",
         "//cluster/cdk8s/seaweedfs:loom_gym_bucket",
@@ -190,6 +201,7 @@ py_library(
     srcs = ["s3.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":endpoints",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
@@ -210,6 +222,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":cluster",
+        ":endpoints",
         ":namespace",
         ":s3",
         "//:conftest",

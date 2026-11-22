@@ -45,14 +45,8 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
-from cluster.cdk8s.seaweedfs import (
-    cluster,
-    drivefs_artifacts_bucket,
-    external_credentials,
-    loom_gym_bucket,
-    namespace,
-    s3,
-)
+from cluster.cdk8s.seaweedfs import drivefs_artifacts_bucket, external_credentials, loom_gym_bucket, namespace, s3
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-s3"
@@ -112,7 +106,7 @@ def _iam(scope: Construct) -> None:
         "claude-reader-policy",
         metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicySpec(
-            seaweed_ref=S3PolicySpecSeaweedRef(name=cluster.NAME),
+            seaweed_ref=S3PolicySpecSeaweedRef(name=CLUSTER_NAME),
             reclaim_policy=S3PolicySpecReclaimPolicy.RETAIN,
             statements=[
                 S3PolicySpecStatements(
@@ -147,7 +141,7 @@ def _iam(scope: Construct) -> None:
         "claude-reader-policy-binding",
         metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicyBindingSpec(
-            seaweed_ref=S3PolicyBindingSpecSeaweedRef(name=cluster.NAME),
+            seaweed_ref=S3PolicyBindingSpecSeaweedRef(name=CLUSTER_NAME),
             policy_ref=S3PolicyBindingSpecPolicyRef(name=_CLAUDE_READER_POLICY),
             subjects=[
                 S3PolicyBindingSpecSubjects(kind=S3PolicyBindingSpecSubjectsKind.S3_IDENTITY, name=_CLAUDE_READER)

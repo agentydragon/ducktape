@@ -37,6 +37,7 @@ from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
@@ -237,7 +238,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # injected via additionalConfigFromEnvs below.
                 "storage": {
                     "STORAGE_TYPE": "minio",
-                    "MINIO_ENDPOINT": "seaweedfs-s3.seaweedfs.svc:8333",
+                    "MINIO_ENDPOINT": S3.short_authority,
                     "MINIO_BUCKET": _NAME,
                     "MINIO_LOCATION": "us-east-1",
                     "MINIO_USE_SSL": False,

@@ -105,8 +105,13 @@ class _Service:
         return f"{self.fqdn}:{self.port.number}"
 
     @property
+    def short_authority(self) -> str:
+        """Service host and port using the Pod DNS search path."""
+        return f"{self.host}:{self.port.number}"
+
+    @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port.number}"
+        return f"http://{self.short_authority}"
 
 
 @dataclass(frozen=True)

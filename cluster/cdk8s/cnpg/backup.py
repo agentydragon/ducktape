@@ -32,9 +32,7 @@ from constructs import Construct
 
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.seaweedfs import s3
-
-_S3_ENDPOINT = "http://seaweedfs-s3.seaweedfs.svc:8333"
-
+from cluster.cdk8s.seaweedfs.endpoints import S3
 
 # Base backups start within [01:00, 05:00) UTC, each Cluster at its own minute (`_schedule`).
 _WINDOW_START_MINUTE = 60
@@ -110,7 +108,7 @@ class CnpgBackup(Construct):
                 retention_policy=retention,
                 configuration=ObjectStoreSpecConfiguration(
                     destination_path=f"s3://{bucket}/",
-                    endpoint_url=_S3_ENDPOINT,
+                    endpoint_url=S3.url,
                     s3_credentials=ObjectStoreSpecConfigurationS3Credentials(
                         access_key_id=ObjectStoreSpecConfigurationS3CredentialsAccessKeyId(
                             name=storage.access_key.secret.name, key=storage.access_key.key

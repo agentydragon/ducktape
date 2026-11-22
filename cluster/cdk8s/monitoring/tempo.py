@@ -11,6 +11,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, mimir
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3
 
 NAME = "tempo"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/tempo"
@@ -55,10 +56,7 @@ def chart(app: App) -> Chart:
                     }
                 },
                 "storage": {
-                    "trace": {
-                        "backend": "s3",
-                        "s3": {"endpoint": "seaweedfs-s3.seaweedfs.svc:8333", "bucket": NAME, "insecure": True},
-                    }
+                    "trace": {"backend": "s3", "s3": {"endpoint": S3.short_authority, "bucket": NAME, "insecure": True}}
                 },
                 # Metrics-generator: powers TraceQL metrics queries (rate(), count_over_time(), etc.)
                 # in Grafana's Explore Traces app. Without this, queries over "recent" (not yet
