@@ -1905,6 +1905,20 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_cpap_sync",
+    srcs = ["test_cpap_sync.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":cpap_sync",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "cpap_sync",
     srcs = ["cpap_sync.py"],
