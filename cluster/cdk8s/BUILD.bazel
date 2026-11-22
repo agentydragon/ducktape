@@ -192,7 +192,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":namespaces",
         "//cluster/cdk8s/cnpg:backup",
@@ -206,7 +205,6 @@ py_library(
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -2045,7 +2043,6 @@ py_library(
     srcs = ["tofu_state.py"],
     deps = [
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":namespaces",
         ":secret_ref",
@@ -2054,7 +2051,6 @@ py_library(
         "//cluster/cdk8s/cnpg:health",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
