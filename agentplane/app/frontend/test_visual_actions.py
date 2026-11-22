@@ -3325,7 +3325,6 @@ async def test_action_presentations(
     read_limit = TANA_READ_LIMITS.get(example.key)
     if read_limit is not None:
         await expect(sidebar).not_to_contain_text(read_limit)
-    await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
@@ -3388,7 +3387,6 @@ async def test_action_presentations(
         await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
-        await wait_for_stable(page)
         await capture("sidebar-expanded", sidebar)
         await expect(sidebar.get_by_role("link", name="Details", exact=True)).to_be_visible()
     else:
@@ -3441,7 +3439,6 @@ async def test_action_presentations(
 
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
-    await wait_for_stable(page)
     await capture("pending-detail", pending)
     if example.key == "home_assistant.ha_config_set_automation":
         await expect(pending.get_by_text("Study Lighting", exact=False)).to_be_visible()
@@ -3498,14 +3495,12 @@ async def test_action_presentations(
     await expect(receipt.locator(".ui-code-block-placeholder")).to_have_count(0)
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
-    await wait_for_stable(page)
     await capture("detail-result", receipt)
 
     history = page.locator("[data-action-visual=history]")
     details = history.get_by_role("button", name="Receipt details", exact=True)
     await expect(details).to_have_attribute("aria-expanded", "false")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
-    await wait_for_stable(page)
     await capture("history", history)
 
     await details.click()
@@ -3525,7 +3520,6 @@ async def test_action_presentations(
     if example.key in {"google_calendar.get_event", "google_calendar.update_event"}:
         await expect(history.get_by_text(str(example.arguments["event_id"]), exact=True)).to_have_count(0)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
-    await wait_for_stable(page)
     await capture("history-expanded", history)
 
     if gmail_labeled_read:
