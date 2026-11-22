@@ -9,9 +9,9 @@ bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_dif
   //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_inheritance_differential_test
 ```
 
-The fixed sample uses seeds 1–12. The broad suite partitions those seeds across
-two Bazel shards; each shard also runs the handwritten cases and retains the
-configured random-plan budget. Appended `--test_arg=--count --test_arg=N`,
+The broad and binding suites use seeds 1–12. The broad suite partitions those
+seeds across two Bazel shards, each with the handwritten cases and configured
+random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 `--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override its arguments.
 
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
@@ -118,16 +118,28 @@ Handwritten cases cover chains, both prototype links, constructor-prototype muta
 invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
 invocation restrictions, and opaque base bodies. The separate `corejs_inheritance_differential_test` (`--inheritance-only`) runs
 these cases and the generated `inheritance` family, executing a default-constructor
-chain for each of the same 12 seeds. The chain cases reorder independent prefix
-allocations.
+chain for each of 24 seeds across two shards. The chain cases reorder independent
+prefix allocations.
 
 The guarded heritage cases move an anonymous subclass declaration across local
-allocations. An anonymous plain base class and an earlier subclass remain in the
-prefix. The handwritten plan and every generated seed must reach
+allocations. Each seed composes an anonymous base and subclass from methods,
+getters, setters and subclass statics. It varies lexical blocks, the intervening
+prefix of inert, allocating or derived declarations, and the number and kinds of
+crossed allocations. The observations exercise the selected class members,
+prefix statements and crossed initializers. They check constructor values with
+positive and negative inputs and both prototype links. At the default seed
+count, each shard checks that successful runs cover multiple shapes in every
+dimension.
+
+The handwritten plan and every generated positive must reach
 `moves (certified class heritage)` with a normal-equivalence verdict, agree in
-the four Node and CoreJS executions, and match the final model-state hash.
-Negative cases exercise a superclass reassignment, a function superclass, and
-a crossed declaration that reads the moving subclass.
+the four Node and CoreJS executions, and match the final model-state hash. A
+seeded mutation of each positive adds a base static, aliases or writes the
+superclass, names the pivot, or inserts a crossed assignment. These controls
+reach the heritage guard with valid structural plans and checked footprints.
+They must get a negative guard result while continuing to match runtime
+observations and the final model-state hash. A handwritten control checks the
+structural rejection of a crossed read of the moving subclass.
 
 The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
 case labels, CoreJS batch boundaries, and module-order/split subprocess boundaries for timeout diagnosis. The inheritance
