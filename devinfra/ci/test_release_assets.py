@@ -23,15 +23,7 @@ def test_a_resolved_asset_is_the_streams_path_under_bb_out() -> None:
 
 
 def test_release_paths_follow_ssot_order() -> None:
-    release = Release(
-        pkg="p",
-        targets="//:a //:b",
-        filenames="a.whl b.zip",
-        tests="",
-        bazel_flags="",
-        release_metadata="false",
-        metadata_platform="",
-    )
+    release = Release(pkg="p", assets=(("//:a", "a.whl"), ("//:b", "b.zip")))
     by_label = {"//:a": [out(f"{BIN}/a.whl")], "//:b": [out(f"{BIN}/b.zip", label="//:b")]}
     assert release_paths(release, by_label) == [f"bb-out/{BIN}/a.whl", f"bb-out/{BIN}/b.zip"]
 

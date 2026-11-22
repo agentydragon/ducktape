@@ -45,15 +45,9 @@ from urllib.parse import quote
 from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci import publication_cli, publication_evidence
 from devinfra.ci.release_assets import Release, load_releases, resolve_asset_output
-from devinfra.ci.release_content_hash import release_content_hash_from_digests
-
-TAG_HASH_LENGTH = 12
+from devinfra.ci.release_content_hash import content_tag, release_content_hash_from_digests
 
 REPO = "agentydragon/ducktape"
-
-
-def content_tag(pkg: str, content_hash: str) -> str:
-    return f"{pkg}-{content_hash[:TAG_HASH_LENGTH]}"
 
 
 def content_hash(release: Release, by_label: Mapping[str, list[Output]]) -> str | None:
