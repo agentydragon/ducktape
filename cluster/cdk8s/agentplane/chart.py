@@ -119,7 +119,8 @@ def environment_chart(
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}
-    environment_launchers = actions.orchestration_callers(env)
+    orchestration_callers = actions.orchestration_callers(env)
+    delegation_actor = sandbox_controller.action_delegation_actor(env)
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
@@ -131,11 +132,8 @@ def environment_chart(
         database_url=Database.HISTORY.url(chart, namespace=env.namespace),
         # The app reads Threads; the Notification Service reads command receipts; orchestration_v1
         # and session_delegation use the explicitly configured Action delegation actor.
-        callers=app_caller
-        | notifications_caller
-        | actions.orchestration_callers(env)
-        | actions.session_delegation_callers(env),
-        delegation_actor=sandbox_controller.action_delegation_actor(env),
+        callers=app_caller | notifications_caller | orchestration_callers | actions.session_delegation_callers(env),
+        delegation_actor=delegation_actor,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -216,11 +214,10 @@ def environment_chart(
         environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
         authority=sandbox_controller.environment_service_authority(
             env,
-            launchers=environment_launchers,
+            launchers=orchestration_callers,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
             wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
-            delegation_actor=sandbox_controller.action_delegation_actor(env),
-            extra_delegated_methods=sandbox_controller.environment_service_delegated_methods(env),
+            delegate_to_actions=delegation_actor is not None,
         ),
         runtime_proxy_readers=(),
         placement=node_scheduling.HIL_OVH,
@@ -234,9 +231,7 @@ def environment_chart(
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
         environment_service_endpoint=(
-            environment_service.environments_service(env.namespace)
-            if sandbox_controller.action_delegation_actor(env) is not None
-            else None
+            environment_service.environments_service(env.namespace) if delegation_actor is not None else None
         ),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,

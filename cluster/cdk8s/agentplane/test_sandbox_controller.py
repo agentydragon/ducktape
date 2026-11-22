@@ -214,8 +214,9 @@ def test_actions_service_launcher_requires_its_existing_namespaced_launcher_gran
         launchers=() if launcher is None else (launcher,),
         operator_service_callers=frozenset(),
         wake_service_callers=frozenset(),
-        delegation_actor=None,
+        delegate_to_actions=False,
     )
+    assert authority.service_delegation is None
     assert authority.service_launchers == (frozenset({ACTIONS_URI}) if allowed else frozenset())
     assert ACTIONS_URI not in authority.service_managers
     assert ACTIONS_URI not in authority.service_operators
