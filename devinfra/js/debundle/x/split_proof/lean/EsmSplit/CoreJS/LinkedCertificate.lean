@@ -47,6 +47,16 @@ private partial def stmtEq : MatchEq Stmt
   | .expr a, .expr b => (exprEq a b).map fun h => ⟨congrArg Stmt.expr h.down⟩
   | .ret a, .ret b => (exprEq a b).map fun h => ⟨congrArg Stmt.ret h.down⟩
   | .throw a, .throw b => (exprEq a b).map fun h => ⟨congrArg Stmt.throw h.down⟩
+  | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
+  | .tryCatch body param handler, .tryCatch body' param' handler' => do
+    let ⟨b⟩ ← stmtEq body body'
+    let ⟨p⟩ ← scalarEq param param'
+    let ⟨h⟩ ← stmtEq handler handler'
+    return ⟨b ▸ p ▸ h ▸ rfl⟩
+  | .tryFinally body finalizer, .tryFinally body' finalizer' => do
+    let ⟨b⟩ ← stmtEq body body'
+    let ⟨f⟩ ← stmtEq finalizer finalizer'
+    return ⟨b ▸ f ▸ rfl⟩
   | .decl kind name init, .decl kind' name' init' => do
     let ⟨k⟩ ← scalarEq kind kind'
     let ⟨n⟩ ← scalarEq name name'

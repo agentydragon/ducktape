@@ -13,7 +13,15 @@ const literal = (value) => ({ type: "Literal", value });
 const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
 const expression = (expression) => ({ type: "ExpressionStatement", expression });
 const returns = (argument) => ({ type: "ReturnStatement", argument });
+const throws = (argument) => ({ type: "ThrowStatement", argument });
 const block = (body) => ({ type: "BlockStatement", body });
+const tryStatement = (body, handler = null, finalizer = null) => ({
+  type: "TryStatement",
+  block: body,
+  handler,
+  finalizer,
+});
+const catchClause = (param, body) => ({ type: "CatchClause", param, body });
 const arrow = (params, body) => ({
   type: "ArrowFunctionExpression",
   params,
@@ -25,6 +33,15 @@ const variable = (kind, name, init) => ({
   type: "VariableDeclaration",
   kind,
   declarations: [{ type: "VariableDeclarator", id: id(name), init }],
+});
+const property = (key, value) => ({
+  type: "Property",
+  key: id(key),
+  value,
+  kind: "init",
+  method: false,
+  shorthand: false,
+  computed: false,
 });
 const importNamed = (source, bindings) => ({
   type: "ImportDeclaration",
@@ -112,37 +129,88 @@ function prepare(dir, { source, provider, extras = {}, sourceName = "source.mjs"
   return { sourceFile, providerFile, specFile };
 }
 
+function generatedTryCase(seed) {
+  switch (seed % 4) {
+    case 0: {
+      const value = seed + 20;
+      return {
+        body: [
+          tryStatement(block([throws(literal(value))]), catchClause(id("caught"), block([returns(id("caught"))]))),
+        ],
+        expectedValue: value,
+      };
+    }
+    case 1:
+      return {
+        body: [
+          tryStatement(block([throws(literal(seed + 30))]), catchClause(null, block([returns(literal(seed + 21))]))),
+        ],
+        expectedValue: seed + 21,
+      };
+    case 2: {
+      const value = seed + 20;
+      return {
+        body: [
+          variable("let", "local", literal(value)),
+          tryStatement(
+            block([throws(id("local"))]),
+            catchClause(
+              id("caught"),
+              block([block([variable("const", "nested", id("caught")), returns(id("nested"))])])
+            )
+          ),
+        ],
+        expectedValue: value,
+      };
+    }
+    case 3:
+      return {
+        body: [tryStatement(block([returns(literal(seed + 20))]), null, block([returns(literal(seed + 24))]))],
+        expectedValue: seed + 24,
+      };
+    default:
+      assert.fail(`unexpected generated try/catch seed ${seed}`);
+  }
+}
+
 function generatedCase(seed) {
   const publicFactory = `create${seed}`;
   const sameValueFactory = `sameValue${seed}`;
   const localFactory = `imported${seed}`;
   const resultName = `publicResult${seed}`;
   const plainResultName = `plainResult${seed}`;
+  const tryResultName = `tryResult${seed}`;
   const loaderName = `loader${seed}`;
   const movedName = `moved${seed}`;
+  const tryCallableName = `tryCallable${seed}`;
   const ballastName = `ballast${seed}`;
   const plainName = `plain${seed}`;
   const fragment = `fragment-${seed}.mjs`;
   const providerMode = seed % 3;
   const hasSecondMovedDeclaration = seed % 2 === 1;
+  const generatedTry = generatedTryCase(seed);
   const callback = providerMode === 0 ? arrow([], id(movedName)) : arrow([], literal(seed + 70 + providerMode));
   const sourceBody = [
     importNamed("./provider.mjs", [[publicFactory, localFactory]]),
     variable("const", ballastName, literal(seed)),
     variable(seed % 2 === 0 ? "const" : "var", loaderName, call(id(localFactory), [callback])),
     variable("const", movedName, arrow([], literal(seed + 20))),
+    variable("const", tryCallableName, arrow([], block(generatedTry.body))),
     ...(hasSecondMovedDeclaration ? [variable("const", `fragmentValue${seed}`, literal(seed + 40))] : []),
     variable("const", plainName, arrow([], literal(seed + 60))),
+    variable("const", tryResultName, call(id(tryCallableName))),
     exportNamed([
       [loaderName, resultName],
       [plainName, plainResultName],
+      [tryResultName, tryResultName],
     ]),
   ];
   const movedIndex = 3;
-  const extraIndex = 4;
-  const plainIndex = hasSecondMovedDeclaration ? 5 : 4;
+  const tryIndex = 4;
+  const extraIndex = 5;
+  const plainIndex = hasSecondMovedDeclaration ? 6 : 5;
   const exportedIndex = sourceBody.length - 1;
-  const fragmentIndices = [movedIndex, ...(hasSecondMovedDeclaration ? [extraIndex] : [])];
+  const fragmentIndices = [movedIndex, tryIndex, ...(hasSecondMovedDeclaration ? [extraIndex] : [])];
   const fragmentSet = new Set(fragmentIndices);
   const entryIndices = sourceBody.map((_, index) => index).filter((index) => !fragmentSet.has(index));
   const spec = {
@@ -180,8 +248,10 @@ function generatedCase(seed) {
     localFactory,
     resultName,
     plainResultName,
+    tryResultName,
     providerMode,
     expectedValue: providerMode === 0 ? seed + 20 : providerMode === 1 ? seed + 71 : seed + 72,
+    expectedTryValue: generatedTry.expectedValue,
   };
 }
 
@@ -197,18 +267,22 @@ function eagerProvider() {
 }
 
 // Generated aliases, layouts and provider-body shapes exercise the ordinary
-// source-file CLI. The entry also owns a separate callable returning a primitive.
+// source-file CLI. The entry calls a moved try-body function during initialization.
 for (let seed = 0; seed < 8; seed++) {
   const fixture = generatedCase(seed);
   const dir = path.join(root, `generated-${seed}`);
   const files = prepare(dir, fixture);
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  const exportNames = [fixture.resultName, fixture.plainResultName];
+  const exportNames = [fixture.resultName, fixture.plainResultName, fixture.tryResultName];
   const original = observe(files.sourceFile, exportNames);
   assert.deepEqual(
     original,
-    { [fixture.resultName]: fixture.expectedValue, [fixture.plainResultName]: seed + 60 },
+    {
+      [fixture.resultName]: fixture.expectedValue,
+      [fixture.plainResultName]: seed + 60,
+      [fixture.tryResultName]: fixture.expectedTryValue,
+    },
     `seed ${seed}`
   );
   if (fixture.providerMode === 1 && verdict.status === "rejected") {
@@ -258,6 +332,90 @@ for (let seed = 0; seed < 8; seed++) {
     assert.equal(mutated.verdict.status, "rejected", mutated.log);
     assert(mutated.verdict.reason, JSON.stringify(mutated.verdict));
   }
+}
+
+// The catch binding is visible inside its handler, including a nested block.
+// A normal callback skips the handler and still reads the function parameter.
+{
+  const dir = path.join(root, "linked-function-catch-scope");
+  const fragment = "worker.mjs";
+  const sourceBody = [
+    variable(
+      "const",
+      "worker",
+      functionExpression(
+        [id("callback"), id("value")],
+        block([
+          tryStatement(
+            block([expression(call(id("callback")))]),
+            catchClause(id("value"), block([block([variable("const", "nested", id("value")), returns(id("nested"))])]))
+          ),
+          returns(id("value")),
+        ])
+      )
+    ),
+    variable("const", "caughtResult", call(id("worker"), [arrow([], block([throws(literal(17))])), literal(9)])),
+    variable("const", "normalResult", call(id("worker"), [arrow([], block([])), literal(9)])),
+    exportNamed([
+      ["caughtResult", "caughtResult"],
+      ["normalResult", "normalResult"],
+    ]),
+  ];
+  const files = prepare(dir, {
+    source: program(sourceBody),
+    provider: program([]),
+    spec: {
+      entry: "entry.mjs",
+      order: [fragment],
+      sequential: true,
+      modules: { "entry.mjs": ["#1", "#2", "#3"], [fragment]: ["#0"] },
+    },
+  });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  const original = observe(files.sourceFile, ["caughtResult", "normalResult"]);
+  assert.deepEqual(original, { caughtResult: 17, normalResult: 9 });
+  assert.deepEqual(observe(path.join(out, "entry.mjs"), ["caughtResult", "normalResult"]), original);
+}
+
+// Destructuring catch parameters remain outside this lowering's supported
+// subset, even though the source itself is valid and has a normal result.
+{
+  const dir = path.join(root, "unsupported-catch-pattern");
+  const fragment = "worker.mjs";
+  const catchPattern = {
+    type: "ObjectPattern",
+    properties: [property("value", id("value"))],
+  };
+  const sourceBody = [
+    variable(
+      "const",
+      "worker",
+      functionExpression(
+        [],
+        block([tryStatement(block([throws(literal(1))]), catchClause(catchPattern, block([returns(literal(7))])))])
+      )
+    ),
+    variable("const", "result", call(id("worker"))),
+    exportNamed([["result", "result"]]),
+  ];
+  const files = prepare(dir, {
+    source: program(sourceBody),
+    provider: program([]),
+    spec: {
+      entry: "entry.mjs",
+      order: [fragment],
+      sequential: true,
+      modules: { "entry.mjs": ["#1", "#2"], [fragment]: ["#0"] },
+    },
+  });
+  assert.deepEqual(observe(files.sourceFile, "result"), { result: 7 });
+  const out = path.join(dir, "out");
+  const refused = lower(files.sourceFile, files.specFile, out);
+  assert.equal(refused.verdict.status, "rejected", refused.log);
+  assert.match(refused.verdict.reason ?? "", /expected an identifier/i, refused.log);
+  assert(!existsSync(out), "an unsupported catch pattern publishes no modules");
 }
 
 // The provider's own import graph is discovered, copied beside the split and
