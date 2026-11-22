@@ -1,3 +1,4 @@
+# gazelle:resolve py cluster.cdk8s.monitoring.blackbox_exporter //cluster/cdk8s/monitoring:blackbox_exporter
 # gazelle:resolve py third_party.containers.loki_test //third_party/containers:loki_test
 # gazelle:resolve py third_party.containers.alloy_config //third_party/containers:alloy_config
 # gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
@@ -9,6 +10,8 @@
 # gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 # gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_REFERENCE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -425,13 +428,13 @@ py_library(
     srcs = ["gateway_probe.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":blackbox_exporter",
         ":namespace",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/monitoring:blackbox_exporter",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -442,11 +445,15 @@ py_library(
     ],
 )
 
+write_file(
+    name = "blackbox_exporter_src",
+    out = "blackbox_exporter.py",
+    content = ["IMAGE = " + repr(BLACKBOX_EXPORTER_REFERENCE + "@" + BLACKBOX_EXPORTER_DIGEST)],
+)
+
 py_library(
     name = "blackbox_exporter",
-    srcs = ["blackbox_exporter.py"],
-    data = ["//devinfra:image_pins.json"],
-    deps = ["@rules_python//python/runfiles"],
+    srcs = [":blackbox_exporter_src"],
 )
 
 py_library(
@@ -454,13 +461,13 @@ py_library(
     srcs = ["home_application_probes.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":blackbox_exporter",
         ":namespace",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/monitoring:blackbox_exporter",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
