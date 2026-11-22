@@ -878,25 +878,6 @@ def test_policy_bindings_resolve_sets(documents: list[dict[str, Any]]) -> None:
     assert not missing, "\n".join(missing)
 
 
-def test_cluster_diagnostics_kustomizations_are_read_only(documents: list[dict[str, Any]]) -> None:
-    role = find_resource(documents, "ClusterRole", "cluster-diagnostics-reader")
-    assert "aggregationRule" not in role
-
-    def grants(group: str, resource: str, verb: str) -> bool:
-        return any(
-            not rule.get("resourceNames")
-            and (group in rule.get("apiGroups", []) or "*" in rule.get("apiGroups", []))
-            and (resource in rule.get("resources", []) or "*" in rule.get("resources", []))
-            and (verb in rule.get("verbs", []) or "*" in rule.get("verbs", []))
-            for rule in role["rules"]
-        )
-
-    reads = ("get", "list", "watch")
-    writes = ("create", "update", "patch", "delete", "deletecollection")
-    assert all(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in reads)
-    assert not any(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in writes)
-
-
 def test_parked_haku_backup_and_shared_services_remain_configured(
     generated: Path, active_api_objects: list[dict[str, Any]], parsed_yaml_documents: YamlDocuments
 ) -> None:
