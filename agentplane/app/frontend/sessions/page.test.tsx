@@ -2166,7 +2166,7 @@ it("reads an older original on a fresh Session page while the History window is 
     command: message("older"),
   });
   const container = await render(threadState({ windowError: "History unavailable" }));
-  await act(async () => button(container, "Delivery history").click());
+  await act(async () => buttonIn(container, "Delivery history")!.click());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(dialog.textContent).toContain("newer");
   expect(getDispatch).not.toHaveBeenCalled();
