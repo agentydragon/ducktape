@@ -1,7 +1,6 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//cluster/rotators:image.bzl", "rotator_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -47,12 +46,6 @@ py_test(
     ],
 )
 
-aspect_py_binary(
-    name = "rotate_bin",
-    main = "rotate.py",
-    deps = [":rotate"],
-)
-
 # Local/operator-only tool (needs SOPS decrypt access to cluster secrets) —
 # deliberately not a dep of ":layers"/":image" below, so it never ships in the
 # attic-jwt-rotation container image.
@@ -81,13 +74,6 @@ aspect_py_binary(
     deps = [":sync_pubkeys"],
 )
 
-# sops binary layer — placed at /usr/local/bin/sops.
-pkg_tar(
-    name = "sops_layer",
-    srcs = ["@sops_linux_amd64//file:sops"],
-    package_dir = "/usr/local/bin",
-)
-
 # kubectl binary layer — placed at /usr/local/bin/kubectl.
 # The rotator exec's the running attic pod to mint JWTs:
 # `kubectl exec deploy/attic-next -- atticadm make-token …` (so atticadm runs in its
@@ -98,33 +84,11 @@ pkg_tar(
     package_dir = "/usr/local/bin",
 )
 
-py_image_layer(
-    name = "layers",
-    binary = ":rotate_bin",
-    group = "65534",
-    owner = "65534",
-)
-
-oci_image(
+rotator_image(
     name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("rotate_bin"),
-    env = py_image_env(binary_name = "rotate_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # sops_layer provides sops, kubectl_layer provides kubectl, and layers provides
-    # the Python app. No git binary: rotate.py goes through pygit2.
-    tars = [
-        ":sops_layer",
+    repo_tag = "attic-jwt-rotation:latest",
+    tool_layers = [
+        "//cluster/rotators:sops_layer",
         ":kubectl_layer",
-        "//devinfra:node_bin_layer",
-        "//devinfra:prettier_cli_layer",
-        "//devinfra:prettier_bin_layer",
-        ":layers",
     ],
-)
-
-oci_load(
-    name = "load",
-    image = ":image",
-    repo_tags = ["attic-jwt-rotation:latest"],
 )
