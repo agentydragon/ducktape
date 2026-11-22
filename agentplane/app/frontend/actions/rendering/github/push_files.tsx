@@ -1,5 +1,5 @@
 import { type JSX, useMemo } from "react";
-import { Code, Stack, Text } from "@mantine/core";
+import { Box, Code, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { formatPatch, OMIT_HEADERS, structuredPatch, type StructuredPatch } from "diff";
 import { filesPushed, GitHubLink, repositoryHref } from "./receipts";
@@ -8,7 +8,7 @@ import { getGitHubPushFilesPreview } from "../../client";
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../../../util/frontend/clamped_block";
-import { Disclosure, DisclosureBody } from "../../../../../../util/frontend/disclosure";
+import { Disclosure } from "../../../../../../util/frontend/disclosure";
 import { OperationSection } from "../../../ui/operation_section";
 import { TextBlock } from "../../../ui/text_block";
 import { CodeBlock, type Language } from "../../../../../../util/frontend/code_block";
@@ -110,9 +110,9 @@ function PushedFileBlock({
           </Text>
         }
       >
-        <DisclosureBody>
+        <Box py="var(--operation-section-padding)">
           <PushedFileContent file={file} patch={comparison?.patch} hasBaseline={before !== undefined} />
-        </DisclosureBody>
+        </Box>
       </Disclosure>
     </OperationSection>
   );

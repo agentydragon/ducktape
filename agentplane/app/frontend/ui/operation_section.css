@@ -13,7 +13,6 @@
 }
 
 .agentplane-operation-section[data-layout="disclosure"] {
-  --ui-disclosure-body-spacing: var(--operation-section-padding);
   padding-block: 0;
 }
 

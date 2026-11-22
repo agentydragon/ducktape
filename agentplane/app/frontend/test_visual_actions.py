@@ -3634,6 +3634,9 @@ async def test_github_push_compact_diff(view: VisualPage, app: AgentplaneFixture
     unverified_file = sidebar.get_by_role("button", name="docs/verify.md · 26 B", exact=True)
     await expect(changed_file).to_have_attribute("aria-expanded", "false")
     await expect(unverified_file).to_have_attribute("aria-expanded", "false")
+    await unverified_file.scroll_into_view_if_needed()
+    await expect(changed_file).to_be_in_viewport(ratio=1)
+    await expect(unverified_file).to_be_in_viewport(ratio=1)
     await view.capture("files", target=sidebar)
 
     await changed_file.click()
