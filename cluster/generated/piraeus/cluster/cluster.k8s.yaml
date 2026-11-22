@@ -4087,6 +4087,37 @@ spec:
         enabled: true
         podTemplate:
           spec:
+            containers:
+              - name: linstor-csi
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
+              - name: csi-attacher
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 32Mi
+              - name: csi-livenessprobe
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 32Mi
+              - name: csi-provisioner
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 64Mi
+              - name: csi-snapshotter
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
+              - name: csi-resizer
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
             nodeSelector:
               storage.allegedly.works/piraeus-ready: "true"
               topology.kubernetes.io/region: hil
