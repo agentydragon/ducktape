@@ -174,7 +174,7 @@
   
   Codex
     Reset time passed · awaiting updated usage
-    Paid credits: 500 credits
+    500 credits
     5h: 100% used  ↻ awaiting update
     7d: 100% used  ↻ 23h 58m          exhausted
   '''
@@ -199,7 +199,7 @@
     7d:  96% used  ↻ 1d 15h  0% in ~5h 22m
   
   Codex
-    Paid credits: 45,191 credits
+    45,191 credits
     Banked resets: 2 · next known expiry Nov 30
     7d:   4% used  ↻ 6d 19h
   
@@ -228,7 +228,7 @@
 # name: test_renders_shared_fixture[paid_credits]
   '''
   Codex
-    Paid credits: 2,746 credits
+    2,746 credits
     Banked resets: 0
     5h: 100% used  ↻ 1h 30m  exhausted
     7d:  38% used  ↻ 3d 14h  leaves ~22% unused at reset
@@ -272,7 +272,7 @@
   '''
   Codex
     Reset time passed · awaiting updated usage
-    Paid credits: 2,746 credits
+    2,746 credits
     5h: 100% used  ↻ awaiting update
   '''
 # ---
@@ -311,7 +311,7 @@
   
   Codex
     Stale data · last observed 15m ago
-    Paid credits: 500 credits
+    500 credits
     5h: 100% used  ↻ 1h 45m
   '''
 # ---

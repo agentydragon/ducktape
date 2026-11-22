@@ -471,9 +471,8 @@ def _credit_rows(
     result = selection.result
     if result is not None and result.paid_credits is not None:
         credits = result.paid_credits
-        balances.append(
-            BalanceView(label="Paid credits", value=format_paid_credit_balance(credits.balance, credits.unlimited))
-        )
+        value = format_paid_credit_balance(credits.balance, credits.unlimited)
+        balances.append(BalanceView(label="" if value.endswith(" credits") else "Paid credits", value=value))
     if openai is not None:
         exact = format_exact_usd(openai.total_available_usd)
         summary = format_summary_usd(openai.total_available_usd)
