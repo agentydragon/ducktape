@@ -47,11 +47,8 @@ def programLiteral (p : Program) : Except String String := term (Lean.toExpr p)
 /-- Prove both obligations by evaluating the real module graphs with an arbitrary host world.
 `cbv` produces kernel-checkable equations for definitions with well-founded recursion. -/
 macro "verify_linked_programs " fuel:num : tactic => `(tactic|
-  constructor
-  · apply of_evaluation $fuel <;> intro w <;> first | rfl | cbv <;> rfl
-  · apply sameExports_of_match
-    intro w
-    first | rfl | cbv <;> rfl)
+  constructor <;> (first | apply of_evaluation $fuel | apply sameExports_of_match) <;>
+    intro w <;> first | rfl | cbv <;> rfl)
 
 /-- The generated module proves an all-world, fuel-independent claim for these two programs.
 The caller accepts only successful elaboration and kernel checking of the complete file. -/
