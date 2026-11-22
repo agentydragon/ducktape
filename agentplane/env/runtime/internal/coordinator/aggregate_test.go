@@ -75,28 +75,26 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	defer cancel()
 	failure := errors.New("aggregate status read failed")
 	for _, tc := range []struct {
-		name            string
-		status          lifecycle.Status
-		readErr         error
-		fenceCtx        context.Context
-		generation      uint64
-		sessionsStarted bool
-		wantSettled     bool
-		wantErr         error
-		wantCode        codes.Code
+		name        string
+		status      lifecycle.Status
+		readErr     error
+		fenceCtx    context.Context
+		generation  uint64
+		wantSettled bool
+		wantErr     error
+		wantCode    codes.Code
 	}{
-		{name: "pending", status: lifecycle.Status{Generation: generation}, fenceCtx: ctx, generation: generation, sessionsStarted: true},
-		{name: "already stopped at deadline", status: lifecycle.Status{Generation: generation, NativeStopped: true}, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true},
-		{name: "stale status", status: lifecycle.Status{Generation: generation - 1, NativeStopped: true}, fenceCtx: ctx, generation: generation, sessionsStarted: true},
-		{name: "aggregate error before deadline", status: lifecycle.Status{Generation: generation, Error: "native cleanup failed"}, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true},
-		{name: "status read error before deadline", readErr: failure, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true, wantErr: failure},
-		{name: "generation superseded before read error", readErr: failure, fenceCtx: expired, generation: generation - 1, sessionsStarted: true, wantSettled: true, wantCode: codes.Aborted},
-		{name: "deadline without status", status: lifecycle.Status{Generation: generation}, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true, wantErr: context.DeadlineExceeded},
-		{name: "no Session component", readErr: failure, fenceCtx: expired, generation: generation, wantSettled: true},
+		{name: "pending", status: lifecycle.Status{Generation: generation}, fenceCtx: ctx, generation: generation},
+		{name: "already stopped at deadline", status: lifecycle.Status{Generation: generation, NativeStopped: true}, fenceCtx: expired, generation: generation, wantSettled: true},
+		{name: "stale status", status: lifecycle.Status{Generation: generation - 1, NativeStopped: true}, fenceCtx: ctx, generation: generation},
+		{name: "aggregate error before deadline", status: lifecycle.Status{Generation: generation, Error: "native cleanup failed"}, fenceCtx: expired, generation: generation, wantSettled: true},
+		{name: "status read error before deadline", readErr: failure, fenceCtx: expired, generation: generation, wantSettled: true, wantErr: failure},
+		{name: "generation superseded before read error", readErr: failure, fenceCtx: expired, generation: generation - 1, wantSettled: true, wantCode: codes.Aborted},
+		{name: "deadline without status", status: lifecycle.Status{Generation: generation}, fenceCtx: expired, generation: generation, wantSettled: true, wantErr: context.DeadlineExceeded},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(tc.status), err: tc.readErr}
-			settled, err := r.closeNativeStopSettled(ctx, probe, tc.generation, tc.sessionsStarted, tc.fenceCtx)
+			settled, err := r.closeNativeStopSettled(ctx, probe, tc.generation, tc.fenceCtx)
 			if settled != tc.wantSettled {
 				t.Fatalf("settled = %t, want %t; err=%v", settled, tc.wantSettled, err)
 			}
@@ -123,7 +121,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 		err     error
 	}, 1)
 	go func() {
-		settled, err := r.closeNativeStopSettled(ctx, probe, generation, true, expired)
+		settled, err := r.closeNativeStopSettled(ctx, probe, generation, expired)
 		result <- struct {
 			settled bool
 			err     error

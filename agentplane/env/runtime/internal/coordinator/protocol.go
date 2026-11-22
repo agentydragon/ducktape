@@ -210,12 +210,8 @@ func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage)
 }
 
 func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) error {
-	return r.waitForNativeStop(ctx, generation, false)
-}
-
-func (r *Runtime) waitForNativeStop(ctx context.Context, generation uint64, closing bool) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
-		return r.observeNativeStop(ctx, r.lifecycleState, generation, closing)
+		return r.observeNativeStop(ctx, r.lifecycleState, generation, false)
 	})
 }
 
