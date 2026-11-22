@@ -8,5 +8,6 @@ pkg_tar(
     mode = "0755",
     package_dir = "/usr/local/bin",
     remap_paths = {"release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64": "firecracker"},
+    tags = ["manual"],
     visibility = ["//devinfra/x/firecracker:__subpackages__"],
 )
