@@ -26,6 +26,7 @@ private partial def exprEq : MatchEq Expr
   | .bool a, .bool b => (scalarEq a b).map fun h => ⟨congrArg Expr.bool h.down⟩
   | .var a, .var b => (scalarEq a b).map fun h => ⟨congrArg Expr.var h.down⟩
   | .obj a, .obj b => (listEq propEq a b).map fun h => ⟨congrArg Expr.obj h.down⟩
+  | .arr a, .arr b => (listEq exprEq a b).map fun h => ⟨congrArg Expr.arr h.down⟩
   | .unary op a, .unary op' b => do
     let ⟨o⟩ ← scalarEq op op'
     let ⟨v⟩ ← exprEq a b

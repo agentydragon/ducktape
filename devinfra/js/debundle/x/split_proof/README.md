@@ -70,6 +70,8 @@ In linked programs, a conditional expression evaluates its test once and runs th
 
 Linked object literals may contain distinct identifier or string keys and values that are supported primitive literals or binding reads. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. Computed keys, `__proto__`, methods, accessors, and spread are outside this fragment.
 
+Linked array literals may be empty or contain any linked expression in each element slot. Elements evaluate left to right. Array holes and spread elements are outside this fragment.
+
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
 
 Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. For `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
