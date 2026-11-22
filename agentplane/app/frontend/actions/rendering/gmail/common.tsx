@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { GetGmailResourceSummariesResponse } from "../../../../../action_service/api/contracts/operator_action_service_pb";
 import { GmailIcon } from "../../../ui/brand_icons";
 import { getGmailResourceSummaries } from "../../client";
+import { useCompactPane } from "../entry";
 
 export const gmail = "https://mail.google.com/mail/u/0/";
 export const threadHref = (id: string) => `${gmail}#all/${encodeURIComponent(id)}`;
@@ -13,6 +14,8 @@ export const draftHref = (id: string) => `${gmail}#drafts?compose=${encodeURICom
 export const wrap = { overflowWrap: "anywhere" } as const;
 
 export function GmailLink({ href, children }: { href: string; children: ReactNode }): JSX.Element {
+  const compact = useCompactPane();
+  if (compact) return <>{children}</>;
   return (
     <Anchor href={href} target="_blank" rel="noreferrer" inherit style={wrap}>
       <GmailIcon />

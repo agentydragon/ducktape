@@ -59,7 +59,6 @@ const calendarNodePresentation: ActionPresentation = {
   fallbackLabel: "Get or create Tana calendar node",
   pane: { collapsed: calendarNode },
   details: { arguments: calendarNode, result: calendarResult },
-  offersCardDecisionButtons: (args) => calendarNodeArguments.safeParse(args).success,
   compactCardExpands: expandsForRejectedArguments(calendarNodeArguments),
 };
 
@@ -126,7 +125,7 @@ const moveReceipt = defineResultPreview(moveResult, ({ result }) => (
 
 const moveNodePresentation: ActionPresentation = {
   fallbackLabel: "Move Tana node",
-  pane: { opened: moveNode },
+  pane: { collapsed: moveNode, opened: moveNode },
   details: { arguments: moveNode, result: moveReceipt },
 };
 
@@ -203,13 +202,22 @@ function requestView<S extends z.ZodType>(
   name: string,
   schema: S,
   view: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode,
-  result: ResultPreview
+  result: ResultPreview,
+  summary: (args: z.infer<S>, names: ReadonlyMap<string, string> | undefined) => ReactNode = view
 ): ActionPresentation {
   const preview = definePreview(schema, function TanaRequest({ args, requestId }) {
     const names = useIntegrationPreviewNames("tana", requestId);
     return view(args, names);
   });
-  return { fallbackLabel: tanaTitles.get(name), pane: { opened: preview }, details: { arguments: preview, result } };
+  const collapsed = definePreview(schema, function TanaSummary({ args, requestId }) {
+    const names = useIntegrationPreviewNames("tana", requestId);
+    return summary(args, names);
+  });
+  return {
+    fallbackLabel: tanaTitles.get(name),
+    pane: { collapsed, opened: preview },
+    details: { arguments: preview, result },
+  };
 }
 
 function nodeLink(nodeId: string, names: ReadonlyMap<string, string> | undefined): JSX.Element {
@@ -686,7 +694,20 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.description && changes("Description", args.description)}
         </Stack>
       ),
-      editReceipt
+      editReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>{nodeLink(args.nodeId, names)}</Line>
+          {args.name && changes("Name", args.name)}
+          {args.description && (
+            <Line>
+              {args.description.replace_all
+                ? "Replace all matches in the description"
+                : "Replace one match in the description"}
+            </Line>
+          )}
+        </Stack>
+      )
     ),
   ],
   [
@@ -784,7 +805,16 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.showCheckbox && <Line>Show a done checkbox</Line>}
         </Stack>
       ),
-      createTagReceipt
+      createTagReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>
+            <strong>{args.name}</strong> in {workspaceName(args.workspaceId, names)}
+          </Line>
+          {!!args.extendsTagIds?.length && <Line>Extends {nodeLinks(args.extendsTagIds, names)}</Line>}
+          {args.showCheckbox && <Line>Show a done checkbox</Line>}
+        </Stack>
+      )
     ),
   ],
   [
@@ -808,7 +838,16 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           {args.isMultiValue && <Line>Allows multiple values</Line>}
         </Stack>
       ),
-      addFieldReceipt
+      addFieldReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>
+            <strong>{args.name}</strong> ({args.dataType}) on {nodeLink(args.tagId, names)}
+          </Line>
+          {args.sourceTagId && <Line>References {nodeLink(args.sourceTagId, names)}</Line>}
+          {!!args.options?.length && <Line>{args.options.length} choices</Line>}
+        </Stack>
+      )
     ),
   ],
   [
@@ -829,7 +868,19 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           )}
         </Stack>
       ),
-      fieldContentReceipt
+      fieldContentReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          {fieldValueTarget(args, names)}
+          <Line>
+            {args.content === null
+              ? "Clear the field"
+              : args.mode === "append"
+                ? "Append text"
+                : "Replace the field with text"}
+          </Line>
+        </Stack>
+      )
     ),
   ],
   [
@@ -859,7 +910,8 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           <PastePreview content={args.content} />
         </Stack>
       ),
-      importReceipt
+      importReceipt,
+      (args, names) => <Line>Import pasted content under {nodeLink(args.parentNodeId, names)}</Line>
     ),
   ],
 ]);

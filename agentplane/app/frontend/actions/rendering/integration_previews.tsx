@@ -1,6 +1,7 @@
 import { Anchor, Code } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import type { JSX } from "react";
+import { useCompactPane } from "./entry";
 
 import { getIntegrationPreviewNames } from "../client";
 
@@ -29,7 +30,20 @@ export function LiveResourceLink({
   href: string;
   showResolvedId?: boolean;
 }): JSX.Element {
+  const compact = useCompactPane();
   if (!name) return <Code>{id}</Code>;
+  if (compact)
+    return (
+      <>
+        {name}
+        {showResolvedId && (
+          <>
+            {" "}
+            <Code>{id}</Code>
+          </>
+        )}
+      </>
+    );
   return (
     <>
       <Anchor href={href} target="_blank" rel="noreferrer" inherit>

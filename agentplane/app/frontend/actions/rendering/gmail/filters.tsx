@@ -159,7 +159,7 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
     "filters_get",
     {
       fallbackLabel: "Read Gmail filter",
-      pane: { collapsed: null, opened: getFilterPreview },
+      pane: { collapsed: getFilterPreview, opened: getFilterPreview },
       call: defineCallPreview(idArguments, filterResult, GetFilterCall),
       details: { arguments: getFilterPreview, result: defineResultPreview(filterResult, FilterView) },
     },
@@ -170,7 +170,9 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
       fallbackLabel: "Create Gmail filter",
       pane: {
         collapsed: definePreview(filterCreateArguments, ({ args }) => (
-          <Text size="sm">{args.action.forward ? "Forwards matching mail" : "Changes labels on matching mail"}</Text>
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            {args.action.forward ? `Forward matching mail to ${args.action.forward}` : "Change labels on matching mail"}
+          </Text>
         )),
         opened: filterCreatePreview,
       },
@@ -190,7 +192,7 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
     {
       fallbackLabel: "Delete Gmail filter",
       pane: {
-        collapsed: definePreview(filterDeleteArguments, () => <Text size="sm">Removes a rule for future mail.</Text>),
+        collapsed: filterDeletePreview,
         opened: filterDeletePreview,
       },
       details: { arguments: filterDeletePreview, emptyResult: <Text size="sm">Filter deleted.</Text> },

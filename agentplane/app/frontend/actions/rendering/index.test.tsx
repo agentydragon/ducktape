@@ -1447,6 +1447,41 @@ describe("card decision buttons capability", () => {
     expect(actionOffersCardDecisionButtons(search, { labelIds: ["Label_19"] })).toBe(false);
   });
 
+  it("limits compact Grocy creation to the one fully displayed record", async () => {
+    const action = identity("grocy_sf", "locations_create");
+    const location = { name: "Chest freezer", is_freezer: true, description: "Basement" };
+    const args = { items: [location] };
+    const collapsed = await mount(renderPaneCollapsed(action, args));
+    expect(collapsed.textContent).toContain("Chest freezer");
+    expect(collapsed.textContent).toContain("Adjusts due dates");
+    expect(collapsed.textContent).toContain("Basement");
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionCompactCardExpands(action, args)).toBe(false);
+    for (const items of [[location, { name: "Another location" }], [{ ...location, inherited_permissions: true }]]) {
+      expect(actionOffersCardDecisionButtons(action, { items })).toBe(false);
+      expect(actionCompactCardExpands(action, { items })).toBe(true);
+    }
+  });
+
+  it("keeps Grocy and Tana changes with unresolved referenced resources in full review", () => {
+    const transfer = identity("grocy_sf", "stock_transfer");
+    expect(
+      actionOffersCardDecisionButtons(transfer, {
+        product: 24,
+        amount: 2,
+        qu: 7,
+        from_location: 3,
+        to_location: 4,
+      })
+    ).toBe(false);
+    expect(
+      actionOffersCardDecisionButtons(identity("tana", "get_or_create_calendar_node"), {
+        workspaceId: "workspace-123",
+        granularity: "day",
+      })
+    ).toBe(false);
+  });
+
   it("offers card decisions for complete PR calls and rejects unknown actions", () => {
     const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");

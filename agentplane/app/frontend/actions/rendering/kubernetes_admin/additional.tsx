@@ -416,7 +416,7 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
     {
       fallbackLabel: "Run Kubernetes Pod",
       label: runLabel,
-      pane: { opened: runArguments },
+      pane: { collapsed: runArguments },
       details: { arguments: runArguments, result: kubernetesResourcesResult },
       outcome: (value) => {
         const parsed = kubernetesResourcesSchema.safeParse(value);
@@ -425,6 +425,7 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
           : undefined;
       },
       offersCardDecisionButtons: (args) => podRun.safeParse(args).success,
+      compactCardExpands: expandsForRejectedArguments(podRun),
     },
   ],
   [
@@ -432,9 +433,10 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
     {
       fallbackLabel: "Read or set Kubernetes resource scale",
       label: scaleLabel,
-      pane: { opened: scaleArguments },
+      pane: { collapsed: scaleArguments },
       details: { arguments: scaleArguments, result: scaleResult },
       offersCardDecisionButtons: (args) => scale.safeParse(args).success,
+      compactCardExpands: expandsForRejectedArguments(scale),
     },
   ],
 ];

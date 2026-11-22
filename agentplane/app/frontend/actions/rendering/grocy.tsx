@@ -427,7 +427,22 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     {
       fallbackLabel: "Edit Grocy products",
       call: editProductCall,
-      pane: { opened: edits },
+      pane: {
+        collapsed: definePreview(editProductArguments, ({ args, requestId }) => (
+          <GrocyReview requestId={requestId}>
+            <Stack gap={4}>
+              {args.items.slice(0, 2).map((item, i) => (
+                <Line key={i}>
+                  {displayRef(item.product, "products")}
+                  {item.name != null && <> → {item.name}</>}
+                </Line>
+              ))}
+              {args.items.length > 2 && <Line>{args.items.length - 2} more products</Line>}
+            </Stack>
+          </GrocyReview>
+        )),
+        opened: edits,
+      },
       details: { arguments: edits, pendingPreviewOnly: true, result: editProductReceipt },
       outcome: (result) => {
         const parsed = editProductResult.safeParse(result);

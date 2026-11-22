@@ -274,6 +274,74 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
   expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).not.toBeNull();
 });
 
+it("shows compact decisions only for a fully displayed mutation", async () => {
+  const container = await mount(
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
+  );
+  const calendar = create(ActionIdentitySchema, { group: "google_calendar", name: "create_event" });
+  const simple = { summary: "Office closure", start: { date: "2026-11-26" }, end: { date: "2026-11-27" } };
+  const makeRequest = (i: number, args: ActionRequest["arguments"]) => ({
+    ...request(ActionState.DECISION_PENDING, i),
+    action: calendar,
+    arguments: args,
+  });
+  const requests = [
+    makeRequest(1, simple),
+    makeRequest(2, { ...simple, calendar_id: "shared@example.test" }),
+    makeRequest(3, { ...simple, description: "Agenda to review" }),
+    makeRequest(4, { ...simple, send_updates: "all" }),
+  ];
+  await send(requests);
+
+  const cards = container.querySelectorAll(".agentplane-actions-sidebar-request");
+  expect(cards[0]?.textContent).toContain("Office closure");
+  expect(cards[0]?.textContent).toContain("Primary calendar");
+  expect(cards[0]?.textContent).toContain("Use calendar defaults");
+  expect(cards[0]?.querySelector('button[aria-label^="Approve "]')).not.toBeNull();
+  expect(cards[0]?.querySelector('button[aria-label^="Deny "]')).not.toBeNull();
+  expect(cards[0]?.querySelector("button[aria-expanded]")).toBeNull();
+
+  for (const card of [...cards].slice(1)) {
+    expect(card.querySelector('button[aria-label^="Approve "]')).toBeNull();
+    const disclosure = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+    if (!disclosure) throw new Error("missing disclosure for a request requiring review");
+    await act(async () => disclosure.click());
+    expect(card.querySelector('button[aria-label^="Approve "]')).toBeNull();
+  }
+  expect(cards[3]?.textContent).toContain("send_updates");
+});
+
+it("shows draft decisions only after opening the complete new draft", async () => {
+  const container = await mount(
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
+  );
+  await send([
+    {
+      ...request(ActionState.DECISION_PENDING, 1),
+      action: create(ActionIdentitySchema, { group: "gmail", name: "drafts_create" }),
+      arguments: {
+        to: ["reviewer@example.test"],
+        bcc: ["archive@example.test"],
+        subject: "Release notes",
+        body: "First line\nSecond line\nThird line\nLast line",
+      },
+    },
+  ]);
+  const card = container.querySelector(".agentplane-actions-sidebar-request");
+  expect(card?.querySelector('button[aria-label^="Approve "]')).toBeNull();
+  const disclosure = card?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+  if (!disclosure) throw new Error("missing draft disclosure");
+  await act(async () => disclosure.click());
+  const preview = card?.querySelector(".agentplane-actions-sidebar-preview");
+  expect(preview?.textContent).toContain("Last line");
+  expect(preview?.textContent).toContain("archive@example.test");
+  expect(preview?.querySelector('button[aria-label^="Approve "]')).not.toBeNull();
+});
+
 it("shows the first two pending requests in the closed-sidebar strip and the rest behind its expansion", async () => {
   const container = await mount(
     <ActionsTestApp>

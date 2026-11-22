@@ -1664,6 +1664,7 @@ EXAMPLES = (
         "  status: {phase: Pending}\n"
         "- apiVersion: v1\n  kind: Service\n  metadata: {name: preview-web, namespace: apps}\n",
         "Pod applied",
+        compact_card_expands=False,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -1673,6 +1674,7 @@ EXAMPLES = (
         "apiVersion: autoscaling/v1\nkind: Scale\nmetadata: {name: web, namespace: apps}\n"
         "spec: {replicas: 0}\nstatus: {replicas: 2}\n",
         "Observed replicas · 2",
+        compact_card_expands=False,
     ),
     ActionExample(
         "github",
@@ -2657,6 +2659,7 @@ EXAMPLES = (
         {"items": [{"name": "Farmers market", "description": "Saturday"}]},
         [{"kind": "ok", "created_object_id": 3}],
         "Created Farmers market",
+        compact_card_expands=False,
     ),
     ActionExample(
         "grocy_sf",
@@ -2700,6 +2703,7 @@ EXAMPLES = (
         {"items": [{"name": "Chest freezer", "is_freezer": True}]},
         [{"kind": "ok", "created_object_id": 4}],
         "Created Chest freezer",
+        compact_card_expands=False,
     ),
     ActionExample(
         "grocy_sf",
@@ -2715,6 +2719,7 @@ EXAMPLES = (
         {"items": [{"name": "Breakfast", "description": "Morning staples"}]},
         [{"kind": "ok", "created_object_id": 5}],
         "Created Breakfast",
+        compact_card_expands=False,
     ),
     ActionExample(
         "grocy_sf",
@@ -2730,6 +2735,7 @@ EXAMPLES = (
         {"items": [{"name": "Bottle", "name_plural": "Bottles"}]},
         [{"kind": "ok", "created_object_id": 6}],
         "Created Bottle",
+        compact_card_expands=False,
     ),
     ActionExample(
         "grocy_sf",
@@ -3233,6 +3239,36 @@ async def test_action_presentations(
     await sidebar.scroll_into_view_if_needed()
     await expect(sidebar.locator(".agentplane-actions-sidebar-name")).to_be_visible()
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    if example.key == "google_calendar.delete_event":
+        await expect(sidebar).to_contain_text("Facilities coordination")
+        await expect(sidebar).to_contain_text("Only this occurrence")
+    elif example.key == "google_calendar.update_event":
+        await expect(sidebar).to_contain_text("Facilities calendar")
+        await expect(sidebar).to_contain_text("Entire recurring series")
+        await expect(sidebar).to_contain_text("Remove all attendees")
+    elif example.key == "grocy_sf.shopping_list_item_edit":
+        await expect(sidebar).to_contain_text("Kefir")
+        await expect(sidebar).to_contain_text("Mark done")
+    elif example.key == "tana.move_node":
+        await expect(sidebar).to_contain_text("Draft notes")
+        await expect(sidebar).to_contain_text("Website project")
+    elif example.key == "orchestration_v1.launch_sandbox":
+        await expect(sidebar).to_contain_text("review-box")
+        await expect(sidebar).to_contain_text("docs-read")
+        await expect(sidebar).to_contain_text("Send inbox messages")
+    elif example.key == "gmail.threads_modify_labels":
+        await expect(sidebar).to_contain_text("2 threads")
+        await expect(sidebar).to_contain_text("Reviewed")
+        await expect(sidebar).to_contain_text("Needs review")
+    if example.key in {
+        "grocy_sf.locations_create",
+        "grocy_sf.product_groups_create",
+        "grocy_sf.quantity_units_create",
+        "grocy_sf.shopping_lists_create",
+        "kubernetes_admin.pods_run",
+        "kubernetes_admin.resources_scale",
+    }:
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)

@@ -35,9 +35,8 @@ export interface ActionPresentation {
     envelopeResult?: ResultPreview;
     nativeResult?: ResultPreview | null;
   };
-  /** Card decision buttons are a capability of their own: a custom view does not grant them. The Action decides per
-      invocation, from the complete arguments, whether what the compact card shows is enough to decide on. */
-  offersCardDecisionButtons?: (args: unknown) => boolean;
+  /** A custom view does not grant decision buttons. The Action checks whether the current card shows the complete call. */
+  offersCardDecisionButtons?: (args: unknown, expanded: boolean) => boolean;
   /** Whether this invocation's compact card has an expanded version; omitted, it does. Return false only when the
       closed card already shows everything the opened one would, so arguments the schemas reject keep it for their
       recorded-data view. */

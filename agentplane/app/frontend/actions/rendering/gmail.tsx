@@ -65,12 +65,13 @@ function DraftFields({
   );
 }
 
-function DraftCollapsed({ args }: PreviewProps<DraftArguments>): JSX.Element {
+function DraftCollapsed({ args, requestId }: PreviewProps<DraftArguments>): JSX.Element {
   return (
     <Stack gap={4}>
       <Text size="sm" fw={600} style={wrap}>
         {args.subject || "(no subject)"}
       </Text>
+      {args.thread_id && <DraftReply id={args.thread_id} requestId={requestId} />}
       <DraftFields args={args} short />
     </Stack>
   );
@@ -237,11 +238,17 @@ const relabelPreview = definePreview(modifyThreadLabelsArguments, ThreadsRelabel
 const relabelPresentation: ActionPresentation = {
   fallbackLabel: "Change Gmail thread labels",
   pane: {
-    collapsed: definePreview(modifyThreadLabelsArguments, ({ args }) => (
-      <Text size="sm">
-        {args.thread_ids.length} {args.thread_ids.length === 1 ? "thread" : "threads"}
-      </Text>
-    )),
+    collapsed: definePreview(modifyThreadLabelsArguments, function RelabelSummary(props) {
+      const { args } = props;
+      return args.thread_ids.length === 1 ? (
+        <ThreadsRelabel {...props} />
+      ) : (
+        <Stack gap={4}>
+          <Text size="sm">{args.thread_ids.length} threads</Text>
+          <LabelChanges add={args.add} remove={args.remove} />
+        </Stack>
+      );
+    }),
     opened: relabelPreview,
   },
   details: {
@@ -273,9 +280,9 @@ const draftPresentation: ActionPresentation = {
       </Text>
     )),
   },
-  offersCardDecisionButtons: (args) => {
+  offersCardDecisionButtons: (args, expanded) => {
     const parsed = draftArguments.safeParse(args);
-    return parsed.success && !parsed.data.thread_id;
+    return expanded && parsed.success && !parsed.data.thread_id;
   },
 };
 
@@ -315,7 +322,17 @@ export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     {
       fallbackLabel: "Replace Gmail draft",
       call: defineCallPreview(draftUpdateArguments, draftResult, DraftUpdateCall),
-      pane: { collapsed: definePreview(draftUpdateArguments, DraftCollapsed), opened: draftUpdatePreview },
+      pane: {
+        collapsed: definePreview(draftUpdateArguments, (props) => (
+          <Stack gap={4}>
+            <Text size="sm">
+              Replace <DraftTarget id={props.args.draft_id} requestId={props.requestId} />
+            </Text>
+            <DraftCollapsed {...props} />
+          </Stack>
+        )),
+        opened: draftUpdatePreview,
+      },
       details: { arguments: draftUpdatePreview, result: draftPresentation.details?.result },
     },
   ],
@@ -324,9 +341,7 @@ export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     {
       fallbackLabel: "Delete Gmail draft",
       pane: {
-        collapsed: definePreview(draftDeleteArguments, () => (
-          <Text size="sm">Permanently delete one unsent draft.</Text>
-        )),
+        collapsed: draftDeletePreview,
         opened: draftDeletePreview,
       },
       details: { arguments: draftDeletePreview, emptyResult: <Text size="sm">Unsent draft deleted.</Text> },

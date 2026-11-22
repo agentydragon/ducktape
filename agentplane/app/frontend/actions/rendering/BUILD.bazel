@@ -118,6 +118,7 @@ ts_library(
     srcs = ["integration_previews.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
@@ -170,6 +171,7 @@ ts_library(
     srcs = ["gmail/common.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",

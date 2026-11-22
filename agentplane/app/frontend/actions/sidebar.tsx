@@ -75,7 +75,7 @@ export function PendingActionList({
         const collapsedPreview = renderPaneCollapsed(action, args, request.id);
         const openedPreview = renderPaneOpened(action, args, request.id);
         const showRequestTitle = shouldRenderRequestTitle(action, args, request.title, actionLabel);
-        const decision = actionOffersCardDecisionButtons(action, args) ? (
+        const decision = actionOffersCardDecisionButtons(action, args, expanded) ? (
           <ActionDecisionButtons
             size="xs"
             deciding={actions.deciding === request.id}
