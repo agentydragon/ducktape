@@ -45,7 +45,7 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_lab
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
@@ -58,21 +58,14 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cpap-sync"
 # The tags come from image-pins/kustomization.yaml.
 _IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
 _GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"
-_LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "sync"}
+_SYNC = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "sync")))
 _GATEWAY = "cpap-gateway"
-_GUEST_METRICS_PORT = 9100
-_GUEST_METRICS_PORT_NAME = "node-metrics"
+_GUEST_METRICS = Port(name="node-metrics", number=9100)
 _GUEST_METRICS_SERVICE = f"{_GATEWAY}-metrics"
-_GUEST_POD_LABELS = domain_labels(_GATEWAY)
+_GUEST = Pods(namespace=NAMESPACE, labels=tuple(domain_labels(_GATEWAY).items()))
 _GUEST_METRICS_SERVICE_LABELS = {"app.kubernetes.io/name": _GUEST_METRICS_SERVICE}
-_GUEST_CARD_CLIENT_LABELS = {**cilium.endpoint_labels(NAMESPACE, NAME), "app.kubernetes.io/component": "sync"}
 # The gateway VM's forwarder listens on 18080; the Service presents it on 80.
-_CARD = ServiceRef(
-    name="cpap-card",
-    port=Port(name="http", number=80),
-    pods=Pods(namespace=NAMESPACE, labels=tuple(domain_labels(_GATEWAY).items())),
-    target_port=18080,
-)
+_CARD = ServiceRef(name="cpap-card", port=Port(name="http", number=80), pods=_GUEST, target_port=18080)
 _GIT_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="cpap-data-git-write")
 _GIT_READ_CREDENTIALS = "cpap-data-git-read"
 _WORKDIR = "/workdir"
@@ -108,9 +101,9 @@ def _gateway_vm(chart: Chart) -> VirtualMachine:
         # The host the CPAP card's USB WiFi adapter is attached to.
         node_selector=node_scheduling.OPTIPLEX.node_selector,
         ports=[
-            VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name="http", port=_CARD.pod_port),
+            VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name=_CARD.port.name, port=_CARD.pod_port),
             VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(
-                name=_GUEST_METRICS_PORT_NAME, port=_GUEST_METRICS_PORT
+                name=_GUEST_METRICS.name, port=_GUEST_METRICS.number
             ),
         ],
         disks={
@@ -176,7 +169,7 @@ def chart(app: App) -> Chart:
                 spec=k8s.JobSpec(
                     backoff_limit=2,
                     template=k8s.PodTemplateSpec(
-                        metadata=k8s.ObjectMeta(labels=_LABELS),
+                        metadata=k8s.ObjectMeta(labels=_SYNC.selector),
                         spec=k8s.PodSpec(
                             restart_policy="OnFailure",
                             node_selector=node_scheduling.OPTIPLEX.node_selector,
@@ -247,18 +240,7 @@ def chart(app: App) -> Chart:
             labels=_GUEST_METRICS_SERVICE_LABELS,
             annotations={"description": "Internal metrics endpoint for the CPAP gateway guest filesystem collector."},
         ),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_GUEST_POD_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=_GUEST_METRICS_PORT_NAME,
-                    port=_GUEST_METRICS_PORT,
-                    protocol="TCP",
-                    target_port=k8s.IntOrString.from_number(_GUEST_METRICS_PORT),
-                )
-            ],
-        ),
+        spec=k8s.ServiceSpec(type="ClusterIP", selector=_GUEST.selector, ports=[_GUEST_METRICS.k8s_service_port()]),
     )
     ServiceMonitor(
         chart,
@@ -270,7 +252,7 @@ def chart(app: App) -> Chart:
         ),
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_GUEST_METRICS_SERVICE_LABELS),
-            endpoints=[Endpoint.plain(port=_GUEST_METRICS_PORT_NAME)],
+            endpoints=[Endpoint.plain(port=_GUEST_METRICS.name)],
         ),
     )
     NetworkPolicy(
@@ -286,12 +268,12 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        endpoint_selector=_GUEST_POD_LABELS,
+        endpoint_selector=_GUEST.selector,
         ingress=[
             # Adding ingress isolation to the virt-launcher also covers the existing
             # cpap-card Service path, whose only in-cluster client is the sync Job.
-            IngressRule.from_endpoints(_GUEST_CARD_CLIENT_LABELS, ports=[_CARD.pod_port]),
-            alloy_endpoints.NODE.admit(_GUEST_METRICS_PORT),
+            _SYNC.admit(_CARD.pod_port),
+            alloy_endpoints.NODE.admit(_GUEST_METRICS.number),
         ],
     )
     PrometheusRule(

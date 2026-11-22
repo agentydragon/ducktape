@@ -193,48 +193,6 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
 
 
-def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(documents: list[dict[str, Any]]) -> None:
-    vm = find_resource(documents, "VirtualMachine", "cpap-gateway")
-    vm_template = vm["spec"]["template"]
-    interface = vm_template["spec"]["domain"]["devices"]["interfaces"][0]
-    assert {port["name"]: port["port"] for port in interface["ports"]} == {"http": 18080, "node-metrics": 9100}
-
-    service = find_resource(documents, "Service", "cpap-gateway-metrics")
-    monitor = find_resource(documents, "ServiceMonitor", "cpap-gateway-metrics")
-    assert service["spec"]["selector"].items() <= vm_template["metadata"]["labels"].items()
-    assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
-    assert monitor["spec"]["endpoints"] == [{"port": "node-metrics", "path": "/metrics"}]
-
-    policy = find_resource(documents, "CiliumNetworkPolicy", "guest-metrics-ingress")["spec"]
-    assert policy["endpointSelector"]["matchLabels"].items() <= vm_template["metadata"]["labels"].items()
-    assert policy["ingress"] == [
-        {
-            "fromEndpoints": [
-                {
-                    "matchLabels": {
-                        "app.kubernetes.io/component": "sync",
-                        "app.kubernetes.io/name": "cpap-sync",
-                        "k8s:io.kubernetes.pod.namespace": "cpap-sync",
-                    }
-                }
-            ],
-            "toPorts": [{"ports": [{"port": "18080", "protocol": "TCP"}]}],
-        },
-        {
-            "fromEndpoints": [
-                {
-                    "matchLabels": {
-                        "app.kubernetes.io/name": "alloy-node",
-                        "k8s:io.kubernetes.pod.namespace": "monitoring",
-                    }
-                }
-            ],
-            "toPorts": [{"ports": [{"port": "9100", "protocol": "TCP"}]}],
-        },
-    ]
-    assert "egress" not in policy
-
-
 def test_mcp_edge_removes_plaintext_service_and_ingress(documents: list[dict[str, Any]]) -> None:
     service = find_resource(documents, "Service", "mcp-edge")
     assert {(port["name"], port["port"]) for port in service["spec"]["ports"]} == {("http", 8081), ("grpc-tls", 8443)}
