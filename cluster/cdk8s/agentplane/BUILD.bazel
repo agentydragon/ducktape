@@ -1475,16 +1475,16 @@ py_test(
         ":runner_gateway_workload",
         ":sandbox_controller",
         ":staging",
-        ":workload_tls",
         "//:conftest",
         "//agentplane/net/peertls:config",
         "//agentplane/session_dispatcher:settings",
         "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
