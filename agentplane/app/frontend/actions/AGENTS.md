@@ -21,5 +21,6 @@
 - Command-running Actions (SSH, Pod and sandbox exec) read alike: the label is "Run command on/in
   <target>", the pane never repeats the target, and the settings that change how it runs are one
   line of `ShellCommandView` notes built by a `schemas/` helper that the notification text shares.
-- Offer card decision buttons when the compact card (label, collapsed and opened previews) shows
-  the whole call; a destructive call is no exception.
+- Offer card decision buttons when the current compact card shows the whole call. If review needs
+  the opened preview or live resolution of a target, gate the buttons on that preview and its
+  resolved data. Destructive actions use the same rule.

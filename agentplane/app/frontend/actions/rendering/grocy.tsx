@@ -356,6 +356,11 @@ function ProductEditSummary({ args, requestId }: PreviewProps<z.infer<typeof edi
             {item.name != null && <> → {item.name}</>}
           </Line>
           {item.location != null && <Line>Default location · {displayRef(item.location, "locations")}</Line>}
+          {item.clear_fields?.includes("description") ? (
+            <Line>Clear description</Line>
+          ) : (
+            item.description != null && <Line>Replace description</Line>
+          )}
         </Stack>
       ))}
       {args.items.length > 2 && <Line>{args.items.length - 2} more products</Line>}
@@ -384,6 +389,8 @@ function ProductEditDecision({ args, requestId, buttons, fallback }: ExpandedCar
   const current = target?.productEditCurrent;
   if (!target?.name.trim() || current === undefined) return fallback;
   if (item.location != null) {
+    if (current.locationId == null || current.locationId <= 0n || !Number.isSafeInteger(Number(current.locationId)))
+      return fallback;
     const previous = refs?.get(`locations/${current.locationId}`)?.name.trim();
     const next = refs?.get(`locations/${item.location}`)?.name.trim();
     if (!previous || !next || (previous === next && current.locationId !== BigInt(item.location))) return fallback;

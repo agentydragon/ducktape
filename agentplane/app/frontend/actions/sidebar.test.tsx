@@ -449,7 +449,7 @@ it.each(expandedDecisionCases)("keeps $group decisions behind the fully resolved
   expect(decision(matching)).toBeNull();
   await open(matching);
   expect(decision(matching)).toBeNull();
-  completeLookup(response);
+  await act(async () => completeLookup(response));
   await vi.waitFor(() => expect(decision(matching)).not.toBeNull());
   for (const text of example.completeText) expect(matching.textContent).toContain(text);
 
@@ -458,7 +458,10 @@ it.each(expandedDecisionCases)("keeps $group decisions behind the fully resolved
     expect(decision(card)).toBeNull();
   }
   await vi.waitFor(() => {
-    expect(sent.filter(({ path }) => path.endsWith(example.endpoint))).toHaveLength(5);
+    const previewed = sent
+      .filter(({ path }) => path.endsWith(example.endpoint))
+      .map(({ path }) => path.split("/").at(-2));
+    expect(new Set(previewed)).toEqual(new Set(fixtures.slice(0, 5).map(({ id }) => id)));
   });
   await open(incomplete);
   await vi.waitFor(() => expect(incomplete.textContent).toContain(example.partialText));
