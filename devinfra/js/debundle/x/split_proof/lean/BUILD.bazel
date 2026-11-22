@@ -211,6 +211,8 @@ lean_binary(
         "EsmSplit/CoreJS/Frame.lean",
         "EsmSplit/CoreJS/Fuel.lean",
         "EsmSplit/CoreJS/LinkedCells.lean",
+        "EsmSplit/CoreJS/LinkedInput.lean",
+        "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/Move.lean",
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/OpaqueFrame.lean",
@@ -226,6 +228,26 @@ lean_binary(
         "EsmSplit/LowerSplit.lean",
     ] + _ESTREE_SOURCES,
     entry = "EsmSplit/LowerSplit.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+lean_binary(
+    name = "linked_input_test_runner",
+    testonly = True,
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/CoreJS/Eval.lean",
+        "EsmSplit/CoreJS/FromESTree.lean",
+        "EsmSplit/CoreJS/LinkedInput.lean",
+        "EsmSplit/CoreJS/ModuleInput.lean",
+        "EsmSplit/CoreJS/Number.lean",
+        "EsmSplit/CoreJS/Syntax.lean",
+        "EsmSplit/CoreJS/Value.lean",
+        "EsmSplit/ModulePath.lean",
+        "EsmSplit/Plan.lean",
+        "LinkedInputTest.lean",
+    ] + _ESTREE_SOURCES,
+    entry = "LinkedInputTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
@@ -272,6 +294,7 @@ lean_binary(
             "EsmSplit/CoreJS/Frame.lean",
             "EsmSplit/CoreJS/Fuel.lean",
             "EsmSplit/CoreJS/LinkedCells.lean",
+            "EsmSplit/CoreJS/LinkedInput.lean",
             "EsmSplit/CoreJS/Move.lean",
             "EsmSplit/CoreJS/BindingCertificate.lean",
             "EsmSplit/CoreJS/BindingFootprint.lean",
@@ -315,6 +338,7 @@ lean_axiom_test(
         "EsmSplit/CoreJS/HeritageCertificate.lean",
         "EsmSplit/CoreJS/HeritageMove.lean",
         "EsmSplit/CoreJS/LinkedCells.lean",
+        "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/Move.lean",
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/OpaqueFrame.lean",
