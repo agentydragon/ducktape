@@ -224,6 +224,10 @@ message DispatchWorksetItem {
   // The original reason is available from an ordinary command-ID watch for as
   // long as this receipt is retained, including receipts of deleted Dispatches.
   bool reason_truncated = 8;
+  // Positive revision of this receipt from the Dispatcher's shared version
+  // sequence. Legacy and live receipts share the sequence.
+  optional int64 receipt_version = 9;
+  bool legacy_deletion_receipt = 10;
 }
 
 message WatchDispatchesResponse {

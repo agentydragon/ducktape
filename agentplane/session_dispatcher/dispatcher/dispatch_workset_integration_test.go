@@ -61,6 +61,11 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 		!initial.GetRecentIssues()[0].GetReasonTruncated() || initial.GetRecentIssues()[0].GetReason() != legacyReason[:256] {
 		t.Fatalf("initial workset = %v", initial)
 	}
+	active, legacy := first.GetWorkset().GetActive()[0], first.GetWorkset().GetRecentIssues()[0]
+	if active.GetLegacyDeletionReceipt() || !legacy.GetLegacyDeletionReceipt() ||
+		active.GetReceiptVersion() <= 0 || legacy.GetReceiptVersion() <= active.GetReceiptVersion() {
+		t.Fatalf("initial receipt revisions: live=%v legacy=%v", active, legacy)
+	}
 	exact := startVersionWatch(t, ctx, queueStore, hub, testSessionDispatchFilter(sessionID, "legacy"), "")
 	if full := exact.next(t).GetDispatch(); full.GetCommandId() != "legacy" || full.GetReason() != legacyReason {
 		t.Fatalf("selected watch lost the original legacy reason: %v", full)
@@ -71,7 +76,8 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if delivering := watch.next(t).GetWorkset(); len(delivering.GetActive()) != 1 ||
-		delivering.GetActive()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER {
+		delivering.GetActive()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER ||
+		delivering.GetActive()[0].GetReceiptVersion() <= active.GetReceiptVersion() {
 		t.Fatalf("delivering workset = %v", delivering)
 	}
 	if _, err := queueStore.Settle(ctx, commandID, owner, []string{store.DeliveringState}, store.AdmittedState, "", &eventlogpb.EventEntry{Cursor: 1}); err != nil {
@@ -80,7 +86,8 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 	settled := watch.next(t)
 	admitted := settled.GetWorkset().GetRecentAdmittedOrCancelled()
 	if len(settled.GetWorkset().GetActive()) != 0 || len(admitted) != 1 ||
-		admitted[0].GetCommandId() != commandID || !admitted[0].GetJournalAdmitted() {
+		admitted[0].GetCommandId() != commandID || !admitted[0].GetJournalAdmitted() ||
+		admitted[0].GetReceiptVersion() <= active.GetReceiptVersion() || admitted[0].GetLegacyDeletionReceipt() {
 		t.Fatalf("admitted workset = %v", settled.GetWorkset())
 	}
 	watch.stop(t)

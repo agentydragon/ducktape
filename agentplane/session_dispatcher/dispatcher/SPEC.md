@@ -357,6 +357,9 @@ carries `reason_truncated` when a command-ID-filtered ordinary watch is needed t
 full retained reason. The ordinary watch includes legacy tombstones, including after their
 live rows become unavailable. Payloads and journal entries remain available through their
 existing reads. History determines command effects.
+Each item includes its positive Dispatcher receipt version. A live row update and a legacy
+deletion receipt each receive a distinct version. The legacy deletion flag identifies rows
+held by the expiring tombstone store.
 
 The first frame on every connection replaces the previous workset. Later replacements follow
 Session-specific changes, including pruning of that Session's legacy tombstones. A PostgreSQL
