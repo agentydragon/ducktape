@@ -3,14 +3,9 @@
 import shlex
 from uuid import uuid4
 
-from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
-from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import Agent
-from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.native_platform import native_history_client
-from agentplane.system_tests.driver.session import run_session_setup_script
-from agentplane.system_tests.driver.session_setup import run_setup
+from agentplane.system_tests.driver.native_platform import NativePlatformClients
+from agentplane.system_tests.driver.session import Session
 from agentplane.system_tests.vm.configuration import CPU_QUOTA_PERIOD_MICROS, RESOURCES
 
 _SETUP = r"""set -eu
@@ -56,28 +51,25 @@ while ! test -e child-ready; do sleep 0.01; done
 
 
 async def session_setup_is_supervised(
-    cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    sandbox_name: str,
-    sandbox_uid: str,
-    harness: session_pb2.Harness,
-    model: str,
-) -> Agent:
+    platform: NativePlatformClients, sandbox_name: str, sandbox_uid: str, harness: session_pb2.Harness, model: str
+) -> Session:
     session_id = uuid4()
     # A fresh nested path exercises Runner's workspace helper rather than a pre-created cwd.
     cwd = f"/state/workspaces/{session_id}/nested"
-    stdout, stderr = await run_setup(
-        client,
-        dispatcher,
-        sandbox_name=sandbox_name,
-        sandbox_uid=sandbox_uid,
-        session_id=session_id,
-        harness=harness,
+    spec = session_pb2.SessionSpec(
+        placement=session_pb2.SessionPlacement(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
+            )
+        ),
         model=model,
+        reasoning_effort="low",
         cwd=cwd,
-        setup_script=_SETUP,
     )
+    session = await Session.create(
+        platform.dispatcher, platform.history, spec=spec, session_id=session_id, setup_script=_SETUP
+    )
+    stdout, stderr = await session.setup_output()
     assert stderr == "setup-stderr\n", stderr
     values = dict(line.split(" ", 1) for line in stdout.splitlines())
     assert values["UID"] == values["GID"] == "107", values
@@ -128,27 +120,23 @@ async def session_setup_is_supervised(
     child = int(values["CHILD"])
     # A second setup observes the first one's cleanup from outside its execution domain.
     # Checking the kernel domain also catches descendants missed by a PID-only assertion.
-    async with native_history_client(cluster) as history:
-        checked, errors = await run_session_setup_script(
-            dispatcher,
-            history,
-            sandbox_name=sandbox_name,
-            sandbox_uid=sandbox_uid,
-            session_id=uuid4(),
-            harness=harness,
-            model=model,
-            cwd=cwd,
-            setup_script=(
-                "set -eu\n"
-                f"if test -r /proc/{child}/stat; then grep -q ') Z ' /proc/{child}/stat; fi\n"
-                f"group={shlex.quote('/sys/fs/cgroup' + group)}\n"
-                'if test -d "$group"; then grep -qx "populated 0" "$group/cgroup.events"; fi\n'
-                "printf 'SETUP_DOMAIN_EMPTY\\n'\n"
-            ),
-        )
+    observer = await Session.create(
+        platform.dispatcher,
+        platform.history,
+        spec=spec,
+        session_id=uuid4(),
+        setup_script=(
+            "set -eu\n"
+            f"if test -r /proc/{child}/stat; then grep -q ') Z ' /proc/{child}/stat; fi\n"
+            f"group={shlex.quote('/sys/fs/cgroup' + group)}\n"
+            'if test -d "$group"; then grep -qx "populated 0" "$group/cgroup.events"; fi\n'
+            "printf 'SETUP_DOMAIN_EMPTY\\n'\n"
+        ),
+    )
+    checked, errors = await observer.setup_output()
     assert checked == "SETUP_DOMAIN_EMPTY\n", (checked, errors)
     assert not errors, errors
-    return Agent(client, dispatcher, thread_id=session_id, cursor=0, sandbox=sandbox_name, sandbox_uid=sandbox_uid)
+    return session
 
 
 # gazelle:include_dep @pypi//protobuf

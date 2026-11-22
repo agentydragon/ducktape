@@ -194,6 +194,7 @@ py_library(
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//tenacity",
     ],
