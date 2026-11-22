@@ -140,13 +140,13 @@ genrule(
     name = "lowersplit_launcher",
     srcs = [
         ":lowersplit_core",
-        "//devinfra/js/debundle/x/split_proof/translation:reparse",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     outs = ["lowersplit_launcher.sh"],
     cmd = """cat > $@ <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-export SPLIT_PROOF_REPARSE="$$(rlocation '$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:reparse)')"
+export SPLIT_PROOF_MODULE_IO="$$(rlocation '$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:module_io)')"
 exec "$$(rlocation '$(rlocationpath :lowersplit_core)')" "$$@"
 EOF
 chmod +x $@
@@ -158,7 +158,7 @@ sh_binary(
     srcs = [":lowersplit_launcher"],
     data = [
         ":lowersplit_core",
-        "//devinfra/js/debundle/x/split_proof/translation:reparse",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     use_bash_launcher = True,
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
@@ -171,6 +171,7 @@ lean_binary(
         "EsmSplit/Cli.lean",
         "EsmSplit/Correct.lean",
         "EsmSplit/Fast.lean",
+        "EsmSplit/ESTreeEmit.lean",
         "EsmSplit/Plan.lean",
         "EsmSplit/Render.lean",
         "EsmSplit/Semantics.lean",

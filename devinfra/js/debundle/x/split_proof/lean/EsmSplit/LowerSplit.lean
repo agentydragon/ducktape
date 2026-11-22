@@ -1,3 +1,4 @@
+import EsmSplit.ESTreeEmit
 import EsmSplit.ESTreeUnits
 import EsmSplit.Cli
 import EsmSplit.Effects
@@ -110,11 +111,6 @@ def replicateBundle (K : Nat) (B : Bundle) : Bundle :=
     B.map fun s => { s with defs := s.defs.map r, eager := s.eager.map r, lazy := s.lazy.map r,
                             exports := s.exports.map fun (p, l) => (s!"{p}${k}", l.map r) }
 
-/-- A statement that asks for another module to be loaded: an `import`, or an `export … from`. -/
-def isRequest (s : Json) : Bool :=
-  Lower.typ s == "ImportDeclaration"
-    || (Lower.typ s == "ExportNamedDeclaration" && !Lower.isNull (Lower.fld s "source"))
-
 /-- Why a statement is outside what the model covers, if it is.
 
 - A top-level `await` (an `await`, a `for await` or an `await using` outside every function): module evaluation is no
@@ -139,94 +135,6 @@ partial def outsideModel (inFn : Bool) (j : Json) : Option String :=
     if Lower.typ callee == "Identifier" && Lower.str (Lower.fld callee "name") == "eval" then some "a direct `eval`"
     else below inFn
   | _ => below inFn
-
-/-- The declarations that give a module the names it uses out of one top-level `import` declaration, with the
-original source, attributes and `imported as local` spelling. -/
-def importLines (decl : Json) (used : String → Bool) (sourceOverride : Option String := none)
-    (keepSideEffect : Bool := false) : List String :=
-  let name (j : Json) := if Lower.typ j == "Literal" then q (Lower.specName j) else Lower.specName j
-  let attrs := (Lower.items (Lower.fld decl "attributes")).toList.map fun a =>
-    s!"{name (Lower.fld a "key")}: {name (Lower.fld a "value")}"
-  let sourceName := sourceOverride.getD (Lower.specName (Lower.fld decl "source"))
-  let attrsSuffix := if attrs.isEmpty then "" else " with {" ++ ", ".intercalate attrs ++ "}"
-  let source := s!"from {q sourceName}{attrsSuffix};"
-  let specs := (Lower.items (Lower.fld decl "specifiers")).toList.filterMap fun sp =>
-    let l := Lower.specName (Lower.fld sp "local")
-    if used l then some (Lower.typ sp, name (Lower.fld sp "imported"), l) else none
-  let whole := specs.filterMap fun (t, _, l) =>
-    if t == "ImportDefaultSpecifier" then some s!"import {l} {source}"
-    else if t == "ImportNamespaceSpecifier" then some s!"import * as {l} {source}"
-    else none
-  let named := specs.filterMap fun (t, i, l) =>
-    if t == "ImportSpecifier" then some (if i == l then l else s!"{i} as {l}") else none
-  if whole.isEmpty && named.isEmpty && keepSideEffect then
-    [s!"import {q sourceName}{attrsSuffix};"]
-  else whole ++ (if named.isEmpty then [] else [s!"import \{ {", ".intercalate named} } {source}"])
-
-/-- Source text of a module of a bundle that has `import` statements (`imports`, with their statement numbers).
-What loads outside modules comes first, so that they still run before every statement of the bundle and in their
-order: the module's own `import` and `export … from` statements, which in the entry are all of the bundle's, and
-elsewhere an `import` of the outside names the module uses. Then the glue imports, the other statements verbatim,
-and the glue exports, as `Module.render` writes them. -/
-private def sourceLiteral (decl : Json) : String :=
-  Lower.specName (Lower.fld decl "source")
-
-private def exportRequestLines (decl : Json) (source : String) : List String :=
-  let name (j : Json) := if Lower.typ j == "Literal" then q (Lower.specName j) else Lower.specName j
-  let attrs := (Lower.items (Lower.fld decl "attributes")).toList.map fun a =>
-    s!"{name (Lower.fld a "key")}: {name (Lower.fld a "value")}"
-  let attrsSuffix := if attrs.isEmpty then "" else " with {" ++ ", ".intercalate attrs ++ "}"
-  let specs := (Lower.items (Lower.fld decl "specifiers")).toList.map fun sp =>
-    let localName := name (Lower.fld sp "local")
-    let exported := name (Lower.fld sp "exported")
-    if localName == exported then localName else s!"{localName} as {exported}"
-  [s!"export \{ {", ".intercalate specs} } from {q source}{attrsSuffix};"]
-
-private def renderNestedRequest (decl : Json) (modulePath : String) : Except String (List String) := do
-  let source ← rebaseRelativeRequest modulePath (sourceLiteral decl)
-  match Lower.typ decl with
-  | "ImportDeclaration" => pure (importLines decl (fun _ => true) (some source) true)
-  | "ExportNamedDeclaration" => pure (exportRequestLines decl source)
-  | other => throw s!"cannot rebase {other} from nested output module {modulePath}"
-
-private def validateNestedRequests (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan) :
-    Except String Unit := do
-  for m in P.mods do
-    if m.name.contains '/' then
-      let held := Std.HashSet.ofList m.stmts
-      for i in m.stmts do
-        let ast := asts.getD i Json.null
-        if isRequest ast && (sourceLiteral ast).startsWith "." then
-          let _ ← renderNestedRequest ast m.name
-      let uses := Std.HashSet.ofList (m.stmts.flatMap fun i => (B.stmt i).eager ++ (B.stmt i).lazy)
-      for (i, decl) in imports do
-        if !held.contains i && (Lower.items (Lower.fld decl "specifiers")).any
-            (fun spec => uses.contains (Lower.specName (Lower.fld spec "local"))) then
-          let _ ← rebaseRelativeRequest m.name (sourceLiteral decl)
-
-def renderModule (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan) (m : EsmSplit.Module) : String :=
-  let held := Std.HashSet.ofList m.stmts
-  let elsewhere := imports.filter fun (i, _) => !held.contains i
-  let outside :=
-    if elsewhere.isEmpty then [] else
-      let uses := Std.HashSet.ofList (m.stmts.flatMap fun i => (B.stmt i).eager ++ (B.stmt i).lazy)
-      elsewhere.flatMap fun (_, d) =>
-        let source := sourceLiteral d
-        let override := if m.name.contains '/' && source.startsWith "." then
-            (rebaseRelativeRequest m.name source).toOption
-          else none
-        importLines d uses.contains override
-  let (requests, body) := m.stmts.partition fun i => isRequest (asts.getD i Json.null)
-  let requestText := requests.flatMap fun i =>
-    let stmt := B.stmt i
-    let ast := asts.getD i Json.null
-    if m.name.contains '/' && isRequest ast && (sourceLiteral ast).startsWith "." then
-      match renderNestedRequest ast m.name with
-      | .ok lines => lines
-      | .error _ => [stmt.src]
-    else [stmt.src]
-  let text (is : List Nat) := is.map fun i => (B.stmt i).src
-  renderBlocks [requestText ++ outside ++ m.importLines P, text body, m.exportLines]
 
 /-- The footprints `lower` printed for this bundle (one JSON object per statement). The analysis takes minutes on a
 large bundle and does not depend on the split, so a run of many splits computes it once. The scan of the statements is
@@ -502,44 +410,61 @@ def sliceVerdict (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P
   | .error why => { lines := [if why.startsWith "the plan to keep the order" then s!"  proved slice: none. {kept} needs {why}"
       else s!"  proved slice: none. {kept} and {moves} need {why}"] }
 
-/-- Read the actual directory through the same Acorn and scope frontend used for the input.
-The native Lake binary finds that frontend beside the project; Bazel supplies its runfile. -/
-private def reparse (dir input reply : System.FilePath) : IO Json := do
+/-- Run the shared Acorn frontend and ESTree printer. Bazel supplies the runfile and
+the native Lake binary locates the same entry point beside the project. -/
+private def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit := do
   let cwd ← IO.currentDir
-  let args := #[dir, input, reply].map fun p => (if p.isAbsolute then p else cwd / p).toString
-  let parser ← IO.getEnv "SPLIT_PROOF_REPARSE"
-  let proc ← match parser with
+  let args := flags ++ paths.map fun p => (if p.isAbsolute then p else cwd / p).toString
+  let frontend ← IO.getEnv "SPLIT_PROOF_MODULE_IO"
+  let proc ← match frontend with
     | some exe => IO.Process.output { cmd := exe, args }
     | none => do
       let mut root ← IO.appPath
       for _ in [:5] do root := root.parent.getD "."
-      IO.Process.output { cmd := "node", args := #[toString (root / "translation" / "reparse.mjs")] ++ args }
-  unless proc.exitCode == 0 do throw (IO.userError s!"reparse failed: {proc.stderr.trimAscii}")
-  IO.ofExcept (Json.parse (← IO.FS.readFile reply))
+      IO.Process.output { cmd := "node", args := #[toString (root / "translation" / "module_io.mjs")] ++ args }
+  unless proc.exitCode == 0 do throw (IO.userError s!"JavaScript frontend failed: {proc.stderr.trimAscii}")
+
+private def readJson (path : System.FilePath) : IO Json := do
+  IO.ofExcept (Json.parse (← IO.FS.readFile path))
+
+private def loadProgram (path work : System.FilePath) : IO Json := do
+  let program ← readJson path
+  match program.getObjVal? "annotationVersion" with
+  | .ok v =>
+    unless v == toJson 2 do throw (IO.userError s!"unsupported annotationVersion: {v}")
+    return program
+  | .error _ =>
+    let upgraded := work / "upgraded.json"
+    javascript #["--upgrade"] #[path, upgraded]
+    readJson upgraded
+
+private def printModules (programs : Json) (dir work source : System.FilePath) : IO Unit := do
+  let manifest := work / "output-programs.json"
+  IO.FS.writeFile manifest programs.compress
+  javascript #["--print"] #[manifest, dir, source]
 
 private def certifyFiles (program : Json) (ss : List CoreJS.Stmt) (B : Bundle) (P : Plan)
-    (out : System.FilePath) (checkOnly : Bool) (render : EsmSplit.Module → String) : IO Unit := do
-  IO.FS.withTempDir fun work => do
-    let input := work / "source.mjs"
-    IO.FS.writeFile input (← IO.ofExcept (program.getObjValAs? String "sourceText"))
-    let verify (dir : System.FilePath) : IO Unit := do
-      let parsed ← reparse dir input (work / "programs.json")
-      unless (← IO.ofExcept (parsed.getObjVal? "source")) == program do
-        throw (IO.userError "input annotations differ from a fresh parse of sourceText")
-      let files ← IO.ofExcept (parsed.getObjVal? "files")
-      IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
-    if checkOnly then verify out else
-      let parent := out.parent.getD "."
-      IO.FS.createDirAll parent
-      -- A sibling directory makes publication a single same-filesystem rename.
-      let stage := parent / (".split-proof-" ++ work.fileName.get!)
-      IO.FS.createDir stage
-      try
-        writeModules B P stage render
-        verify stage
-        IO.FS.rename stage out
-      finally
-        if ← stage.pathExists then IO.FS.removeDirAll stage
+    (out work input : System.FilePath) (checkOnly : Bool) (programs : Except String Json) : IO Unit := do
+  let verify (dir : System.FilePath) : IO Unit := do
+    let reply := work / "reparsed.json"
+    javascript #[] #[dir, input, reply]
+    let parsed ← readJson reply
+    unless (← IO.ofExcept (parsed.getObjVal? "source")) == program do
+      throw (IO.userError "input annotations differ from a fresh parse of sourceText")
+    let files ← IO.ofExcept (parsed.getObjVal? "files")
+    IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
+  if checkOnly then verify out else
+    let parent := out.parent.getD "."
+    IO.FS.createDirAll parent
+    -- A sibling directory makes publication a single same-filesystem rename.
+    let stage := parent / (".split-proof-" ++ work.fileName.get!)
+    IO.FS.createDir stage
+    try
+      printModules (← IO.ofExcept programs) stage work input
+      verify stage
+      IO.FS.rename stage out
+    finally
+      if ← stage.pathExists then IO.FS.removeDirAll stage
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) : IO UInt32 := do
   let fields := match outcome with
@@ -548,7 +473,7 @@ private def emitVerdict (requested : String) (outcome : Except String Guarantee)
   IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson "closed-declarations")] ++ fields)).compress
   return if outcome.isOk then 0 else 1
 
-private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
+private def runInDir (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
@@ -568,13 +493,15 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
     IO.println s!"  [time] {what}: {t - t0} ms"; (← IO.getStdout).flush; return t
-  let program ← IO.ofExcept (Json.parse (← IO.FS.readFile bundlePath))
+  let program ← loadProgram bundlePath work
+  let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
+  let input := work / "source.mjs"
+  IO.FS.writeFile input source
   if required.isSome then
     -- Report the first original AST statement outside this theorem, before planning.
     let _ ← IO.ofExcept (CoreJS.DeclarationInput.decode program)
   let t1 ← lap "read + parse JSON" tStart
-  let stmts ← IO.ofExcept (ESTreeUnits.renderUnits program)
-  let asts := stmts.map (·.ast)
+  let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   for s in asts do
     -- `export * from` publishes names that only the other module knows: a glue export could shadow one
     if Lower.typ s == "ExportAllDeclaration" then
@@ -594,11 +521,24 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
       for line in Effects.premiseLines prem analysis do IO.println line
       pure fps
   let t2 ← lap "footprints (Lean analysis)" t1
-  let B0 : Bundle := (stmts.zip fps).toList.map fun (s, f) =>
-    toStmt s.src s.ast f
-  let B := match replicate?.bind String.toNat? with
+  -- The legacy standalone Lean instance embeds printable source for each unit.
+  let texts ← if leanOut?.isSome then do
+      let unitsFile := work / "units.json"
+      let reply := work / "texts.json"
+      IO.FS.writeFile unitsFile (Json.arr asts).compress
+      javascript #["--print-units"] #[unitsFile, input, reply]
+      IO.ofExcept (fromJson? (α := Array String) (← readJson reply))
+    else pure #[]
+  let B0 : Bundle := (asts.zip fps).toList.zipIdx.map fun ((ast, f), i) =>
+    toStmt (texts.getD i "") ast f
+  let copies := replicate?.bind String.toNat?
+  let B := match copies with
     | some K => replicateBundle K B0
     | none => B0
+  -- Timing mode repeats the source syntax alongside the synthetic bundle.
+  let outputAsts := match copies with
+    | none => asts
+    | some k => (Array.replicate k asts).flatten
   let S ← loadSpec specPath
   if required.isSome then
     for name in S.entry :: S.modules.map Prod.fst do
@@ -610,7 +550,7 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
   let mut bad := false
   if replicate?.isNone then
     -- An `export` is the entry module's interface, and an `import` loads an outside module before any statement
-    -- of the bundle runs: both stay in the entry module, which writes the imports first (`renderModule`).
+    -- of the bundle runs: both stay in the entry module, which places the outside requests first.
     for (ast, i) in asts.toList.zipIdx do
       let t := Lower.typ ast
       if (t == "ImportDeclaration" || t == "ExportNamedDeclaration" || t == "ExportDefaultDeclaration")
@@ -634,7 +574,7 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
     if request == .allOutcomes && level != .allOutcomes then
       throw (IO.userError "the checked reorder proves only normal-completion")
     let body ← IO.ofExcept model
-    certifyFiles program body.stmts B P out checkOnly (renderModule asts [] B P)
+    certifyFiles program body.stmts B P out work input checkOnly (ESTreeEmit.programs outputAsts B P source)
     return ← emitVerdict request.label (.ok level)
   if let some l := leanOut? then
     if bad then
@@ -643,12 +583,9 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
       IO.FS.writeFile l (instanceLean B S)
       IO.println s!"  wrote kernel certificate source to {l}"
   if force || (ok && !bad) then
-    let imports := asts.toList.zipIdx.filterMap fun (s, i) =>
-      if Lower.typ s == "ImportDeclaration" then some (i, s) else none
-    match validateNestedRequests asts imports B P with
-    | .error message => IO.eprintln s!"cannot write nested output: {message}"; return 3
-    | .ok _ => pure ()
-    writeModules B P out (renderModule asts imports B P)
+    match ESTreeEmit.programs outputAsts B P source with
+    | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
+    | .ok programs => printModules programs out work input
     if let some planPath := planPath? then
       let (count, sample, _) := if ok then (0, #[], #[]) else conflictInversions B P
       let examples := sample.map fun (later, earlier) =>
@@ -661,6 +598,9 @@ private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args :
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
   IO.eprintln (if force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
+
+private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
+  IO.FS.withTempDir fun work => runInDir work required checkOnly args
 
 def main (args : List String) : IO UInt32 := do
   if !args.contains "--require" then

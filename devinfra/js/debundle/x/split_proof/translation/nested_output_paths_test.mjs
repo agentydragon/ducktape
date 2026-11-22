@@ -38,9 +38,9 @@ assert(existsSync(path.join(out, "lib", "math.mjs")), "a sibling module director
 
 const entry = readFileSync(path.join(out, "public", "entry.mjs"), "utf8");
 const math = readFileSync(path.join(out, "lib", "math.mjs"), "utf8");
-assert.match(entry, /import \{ add \} from "\.\.\/lib\/math\.mjs";/);
-assert.match(math, /import \{ base \} from "\.\.\/dep\.mjs";/);
-assert.match(entry, /import \{ base \} from "\.\.\/dep\.mjs";/);
+assert.match(entry, /import \{\s*add\s*\} from "\.\.\/lib\/math\.mjs";/);
+assert.match(math, /import \{\s*base\s*\} from "\.\.\/dep\.mjs";/);
+assert.match(entry, /import \{\s*base\s*\} from "\.\.\/dep\.mjs";/);
 
 writeFileSync(path.join(out, "dep.mjs"), "export const base = 42;\n");
 const observed = spawnSync(

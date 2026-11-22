@@ -12,6 +12,12 @@
     "expect": { "code": 0, "contains": "PLAN SOUND" }
   },
   {
+    "name": "numeric literals use different spellings",
+    "edits": [{ "file": "lib/consts.js", "find": "[1, 2, 3]", "replace": "[0x1, 2.0, 3e0]" }],
+    "cert": "match",
+    "expect": { "code": 0, "contains": "PLAN SOUND" }
+  },
+  {
     "name": "a literal changed",
     "edits": [{ "file": "lib/consts.js", "find": "[1, 2, 3]", "replace": "[1, 2, 4]" }],
     "cert": "base",

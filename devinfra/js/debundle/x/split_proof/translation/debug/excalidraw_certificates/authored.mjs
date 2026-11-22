@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
+import { assertSelectedSourceUnits } from "../../ast_assertions.mjs";
 import { splitInputs } from "../../split_dump.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
@@ -88,6 +89,15 @@ for (const [chunk, spec] of [
     planOwners.toSorted(([a], [b]) => a - b),
     nodes.map((node) => [node.statement_ordinal, owners.get(node.destination)])
   );
+  for (const [modulePath, ordinals] of Object.entries(plan.modules)) {
+    const emittedText = readFileSync(path.join(rendered, modulePath), "utf8");
+    assertSelectedSourceUnits(
+      units.map((unit) => unit.node),
+      emittedText,
+      ordinals,
+      `${chunk}/${modulePath}`
+    );
+  }
   const slice = r.stdout.split("\n").find((line) => line.includes("proved slice:"));
   assert(slice, r.stderr);
   const moves = JSON.parse(readFileSync(path.join(dir, "moves.json"), "utf8"));
