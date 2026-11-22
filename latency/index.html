@@ -63,7 +63,7 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=ecaf9f6136f49b1f92eb0b3796741406fd0ccb2df8fb4d8ac32772419d7e61d2",
+        "./evidence.json?v=cb6357d2628f655a4ae14e651ccad3f75d5f965e6c34daeb868b86cf2efc27d6",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
@@ -90,6 +90,8 @@
       const kvmPlacement = evidence.kvm_worker_placement;
       const kvmWorkDisk = evidence.kvm_work_disk_trial;
       const retainedVm = evidence.kvm_retained_vm_ssd;
+      const testMemory = evidence.kvm_test_memory;
+      const memoryGiB = (bytes) => `${(bytes / 2 ** 30).toFixed(2)} GiB`;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.retained_nov20_source;
       const post = "after shadow retired";
@@ -365,6 +367,112 @@
   <${Text} my="sm">For KubeVirt, start with the largest uncompressed OCI inputs if the aim is to lower persistent footprint. gzip can reduce stored OCI content and input-cache bytes. Unpacked layers will still occupy space. Measure import time, allocated blocks and warm reuse on the same worker. Shrinking the logical 32 GiB K3s disk or the sparse guest workspace capacity has a much smaller measured target. ${link(kvmFootprint.sources.image_evidence, "Exact KubeVirt OCI inputs")}<//>
   <${Text} size="sm" c="dimmed">${kvmFootprint.findings.diagnostic_method} ${build(kvmFootprint.manual_actions.vm.invocation, "KubeVirt TestRunner")} · ${build(kvmFootprint.manual_actions.firecracker.invocation, "Firecracker TestRunner")} · ${link("./evidence.json", "Allocation samples and methods")}<//>
 </section>
+</section>
+<section id="kvm-test-memory">
+  <${Title} order=${2}>KubeVirt’s working set peaks 1.2 GiB above Firecracker’s<//>
+  <${Text} my="sm">Across 63 passing, physically executed actions, KubeVirt’s sampled working set reached 5.25 GiB and Firecracker’s reached 4.04 GiB. All 63 sampled maxima fell within test cases. By contrast, the highest sampled total charge approached 7 GiB for both suites. These observations cover 21 November 05:00 through 22 November 05:00 UTC in the self-hosted <code>kvm-vm</code> pool.<//>
+  ${table(
+    [
+      "Suite and fixture",
+      "Passes",
+      "Working-set peak p50 / p95 / max",
+      "Sampled total peak p50 / max",
+      "Post-reclaim charge p50",
+    ],
+    Object.entries(testMemory.groups).map(([label, g]) => [
+      label,
+      g.n,
+      [
+        g.time_series_working_set_peak_bytes.p50,
+        g.time_series_working_set_peak_bytes.p95,
+        g.time_series_working_set_peak_bytes.max,
+      ]
+        .map(memoryGiB)
+        .join(" / "),
+      [g.time_series_usage_peak_bytes.p50, g.time_series_usage_peak_bytes.max]
+        .map(memoryGiB)
+        .join(" / "),
+      memoryGiB(g.exit_after_reclaim_current_bytes.p50),
+    ]),
+    725,
+  )}
+  <${Text} size="sm" mt="sm">The 25 first assignments all created cold fixtures. The other 38 reused a verified baseline. Kernel lifetime peaks on fresh runners had medians of 6.67 GiB for KubeVirt and 6.23 GiB for Firecracker. Of 18 linked consecutive warm receipts, six raised the runner’s recorded lifetime peak. A warm receipt can retain an earlier action’s high-water mark.<//>
+  <${Text} my="sm">At Firecracker’s highest sampled total charge, 4.75 of 6.98 GiB was inactive file memory. At KubeVirt’s highest, inactive file memory accounted for 1.76 of 6.88 GiB. These are same-instant comparisons. The KubeVirt sample held two launcher Pods with 0.73 and 0.48 GiB of working set, already included in the total. The steady post-reclaim charge in the table is measured after the scenarios released their guests.<//>
+  <${Text} my="sm">Firecracker already encounters memory pressure during checkpointing. Out of 22 fresh or linked consecutive passing actions, nine increased the Docker hierarchy’s memory-limit counter. Eight of those nine also hit the live guest launcher’s 3.50 GiB limit during sampled checkpoints. In one passing Firecracker action the whole worker stalled on memory for 18.53s cumulatively between in-action scrapes, including 8.57s in one 60s interval. The largest KubeVirt full-stall total was 2.56s. Guest swap was disabled and the worker and Docker counters showed zero OOM kills across these 63 passes and four failed attempts. The four failures involved the trust-manager webhook, API availability or cleanup.<//>
+  <${Title} order=${3} mt="md">Hard caps on disposable test runners<//>
+  <${Text} my="sm">The sampled controls ran the normal required suites from fresh fixtures. The probe read the private Docker cgroup every two seconds. For each capped action Docker applied the limit only to a uniquely marked test container, and the test read back <code>memory.max</code> and zero swap before setting up the fixture.<//>
+  ${table(
+    [
+      "Suite",
+      "Docker cap",
+      "JUnit cases",
+      "Cgroup peak",
+      "Full PSI",
+      "Process",
+    ],
+    testMemory.trials.map((r) => [
+      r.suite === "test_vm" ? "KubeVirt" : "Firecracker",
+      build(
+        r.invocation,
+        r.arm === "control" ? "Uncapped" : r.arm === "cap5" ? "5 GiB" : "4 GiB",
+      ),
+      r.native_exit === 0
+        ? `${r.cases.length}/${r.cases.length} passed`
+        : r.cases.length
+          ? `${r.cases.filter((c) => !c[1].length).length}/${r.cases.length} passed`
+          : `Exit ${r.native_exit}`,
+      r.memory_peak_bytes == null ? "Unknown" : memoryGiB(r.memory_peak_bytes),
+      seconds(r.psi_full_seconds),
+      seconds(r.process_seconds),
+    ]),
+    510,
+  )}
+  <${Text} my="sm">At the uncapped KubeVirt control’s highest sampled charge of 6.88 GiB, 2.65 GiB was anonymous, 1.12 GiB shared memory, 2.91 GiB other file charge and 0.19 GiB kernel charge. The largest same-sample anonymous plus shared-memory total was 3.89 GiB. Firecracker’s uncapped control reached 4.40 GiB at a sample that held 3.02 GiB of regular file charge and 1.23 GiB of anonymous plus shared memory. This control was below much of the historical Firecracker total-charge distribution.<//>
+  <${Text} my="sm">Both suites passed both required cases at 5 GiB. KubeVirt reached the cap, counted 5,244 limit hits and refaulted 758,415 file pages. Firecracker’s 4.44 GiB high-water mark stayed below 5 GiB, with zero limit hits. The largest same-sample anonymous plus shared-memory total in the capped KubeVirt run was 3.77 GiB.<//>
+  <${Text} my="sm">At 4 GiB, KubeVirt failed both cases. The Claude case got an environment proxy 502, the Codex case lacked an egress identity, and teardown found two residual sandboxes. The fixture recorded failed readiness and liveness checks for Environments, plus a virt-operator restart after a failed liveness check. The cgroup recorded 779,000 limit hits, 42.1 million file-page refaults and 79.0s of full memory stalls. Firecracker still passed both cases at 4 GiB, with 136,000 limit hits and 34.4s of full stalls. Both capped arms recorded zero swap use and zero OOM kills. The KubeVirt pressure and failures coincided. These runs leave the failure chain unattributed.<//>
+  <${Text} my="sm"><strong>Sizing decision.</strong> Keep the current worker shape. Use 5 GiB as the next KubeVirt action-cap candidate, the smallest observed passing cap. Use 5 GiB for the first Firecracker qualification as well. It passed without reaching the cap in this trial. Repeat both on cold and retained runners under normal CI load and compare case verdicts, memory stalls and time to required green before changing admission estimates or VM requests. Reducing guest RAM by 1 GiB would free 2–8 GiB in requested memory at the current pool bounds. KubeVirt launcher overhead and boot readiness need separate measurement on any smaller worker.<//>
+  <${Text} size="sm" mt="sm">Each row is one fresh fixture. Different workers and concurrent pool load limit timing comparisons. Process time includes cap confirmation. The sandbox guests, scenario assertions and required CI targets were the same across arms. The cap was applied only to the disposable Docker scopes.<//>
+  <${Text} my="sm">The executor advertises 7 GiB. BuildBuddy asks for 7 GiB for KubeVirt and 6 GiB for Firecracker, and allocates at most one action per 4-vCPU worker. Each provisioned worker reserves 8 GiB of guest RAM plus KubeVirt launcher overhead. The two-worker floor holds 16 GiB of guest requests, and eight workers hold 64 GiB. Action caps leave those requests and slot counts unchanged. ${link(testMemory.sources.worker, "Worker sizing")} · ${link(testMemory.sources.executor, "Executor admission")}<//>
+  <${Accordion} variant="contained" mt="md">
+    <${Accordion.Item} value="kvm-test-memory-traces">
+      <${Accordion.Control}>Memory traces and sampling limits<//>
+      <${Accordion.Panel}>
+        <${Text} my="sm">The nested kubelet starts polling after K3s reaches Ready and stops before final fixture diagnostics and proactive reclaim. It yielded 1,924 unique observations. The median first-to-last sample envelope spans 69–84% of the TestRunner process across the four groups. Setup and case spans have data on every pass, while only five trace envelopes reach a recorded stack cleanup span. The largest observation gap was 51s. Process placement, image staging before the test process and spikes between samples can change the memory requirement.<//>
+        ${testMemory.traces.map(
+          (r) => html`
+            <${Title} order=${3} mt="md">${r.label}<//>
+            <${Box}
+              role="img"
+              aria-label=${r.label + " cgroup charge and working set by seconds since process start"}
+            >
+              <${LineChart}
+                h=${195}
+                data=${r.points}
+                dataKey="seconds"
+                curveType="linear"
+                yAxisLabel="GiB"
+                xAxisLabel="Seconds since process start"
+                xAxisProps=${{ type: "number", domain: ["dataMin", "dataMax"] }}
+                domain=${[0, 8]}
+                withLegend
+                withDots=${false}
+                series=${[
+                  { name: "Charged", color: "blue.6" },
+                  { name: "Working set", color: "orange.6" },
+                ]}
+              />
+            <//>
+            <${Text} size="sm" mt="sm"
+              >${build(r.invocation, "Exact action’s BuildBuddy invocation")}<//
+            >
+          `,
+        )}
+        <${Text} my="sm">The exit receipts separate anonymous memory, regular file charge (<code>file − shmem</code>), shared memory and kernel charge. The active and inactive lists are another view of the same pages. Anonymous memory includes nested guest RAM, where the guest may keep its own page cache. Kubelet working set excludes inactive file memory and may still include reclaimable active files and kernel objects. Inactive files can be needed again, especially during checkpointing. A hard-cap trial measures how much reclaim the full scenarios tolerate.<//>
+        <${Text} my="sm">Proactive file reclaim at test exit removed a median 2.00–2.51 GiB of regular file charge in the two KubeVirt groups and 2.53–2.72 GiB in Firecracker. Six KubeVirt reclaim requests returned EAGAIN after reclaiming fewer bytes than requested. Page scans and refaults from that explicit reclaim are kept out of the pre-reclaim deltas. The counter intervals start at fresh cgroup creation or the preceding verified receipt, so warm intervals can include activity between tests. Whole-VM PSI and MemAvailable include the executor, Docker, the test and other VM activity, including cache outside the test cgroup. The lowest sampled whole-VM MemAvailable was 1.88 GiB for KubeVirt and 2.92 GiB for Firecracker at roughly one-minute resolution.<//>
+        <${Text} size="sm">${link("./evidence.json", "Exact execution IDs and measurements")} · ${link(testMemory.sources.receipt, "Docker receipt and reclaim")} · ${link(testMemory.sources.sampler, "Kubelet sampler")} · ${link(testMemory.sources.cgroup, "Linux memory controller")}<//>
+      <//>
+    <//>
+  <//>
 </section>
 <section id="shard-replay">
  <${Title} order=${2}>Time the longest browser shard<//>
