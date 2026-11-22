@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { bundleFromParsed } from "./frontend.mjs";
-import { parseModule } from "./scope_metadata.mjs";
-import { dumpParsed, lowerDump } from "../lowering/dump_core.mjs";
+import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
+import { dumpParsed, lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = process.env.TEST_TMPDIR;
@@ -17,6 +17,10 @@ const source = path.join(here, "fixtures/local_identity/bundle.js");
 const code = readFileSync(source, "utf8");
 const out = path.join(temp, "emitted");
 mkdirSync(out, { recursive: true });
+function legacyDump(parsed) {
+  const meaning = resolveIdentifiers(parsed, () => true);
+  return JSON.stringify(annotateProgram(parsed, meaning, { legacy: true }));
+}
 const ast = path.join(temp, "ast.json");
 const spec = path.join(temp, "spec.json");
 const bundle = path.join(temp, "bundle.json");
@@ -46,7 +50,7 @@ assert.equal(syntaxProgram.body[2].specifiers[0].local.k, "T");
 const structure = (value) =>
   JSON.parse(
     JSON.stringify(value, function (key, v) {
-      if (["start", "end", "sourceText"].includes(key)) return undefined;
+      if (["start", "end", "sourceText", "annotationVersion"].includes(key)) return undefined;
       if (this?.type === "Identifier" && ["k", "b", "d"].includes(key)) return undefined;
       if (this?.type === "Literal" && ["lit", "value", "raw"].includes(key)) return undefined;
       return v;
@@ -56,6 +60,45 @@ assert.deepEqual(
   structure(syntaxProgram),
   structure(acorn.parse(syntax, { sourceType: "module", ecmaVersion: "latest" }))
 );
+// Printer fields cross the JSON boundary, including values JSON cannot represent directly.
+const printSource = `/*🌱*/ const literals = [/a+/gi, 0xffn, 1e400, -0];
+const holder = { get /* keep */ item() { return 1; }, async *items() {} };
+export class Thing { static run() {} }
+const closures = [x => x, function () {}, class {}];`;
+const printParsed = parseModule(printSource, acorn.parse, eslintScope);
+const printProgram = JSON.parse(JSON.stringify(dumpParsed(printParsed)));
+assert.equal(printProgram.annotationVersion, 2);
+const [literalDecl, objectDecl, exportedClass, closuresDecl] = printProgram.body;
+assert.deepEqual(literalDecl.declarations[0].init.elements, [
+  { type: "Literal", lit: "r:a+/gi", raw: "/a+/gi", value: null, regex: { pattern: "a+", flags: "gi" } },
+  { type: "Literal", lit: "bi:255", raw: "0xffn", value: "255", bigint: "255" },
+  { type: "Literal", lit: "n:Infinity", raw: "1e400", value: "Infinity" },
+  {
+    type: "UnaryExpression",
+    operator: "-",
+    prefix: true,
+    argument: { type: "Literal", lit: "n:0", raw: "0", value: 0 },
+  },
+]);
+const methods = objectDecl.declarations[0].init.properties;
+const classDecl = exportedClass.declaration;
+const closures = closuresDecl.declarations[0].init.elements;
+assert.deepEqual(
+  [...methods, classDecl, ...classDecl.body.body, ...closures].map(({ start, end }) => printSource.slice(start, end)),
+  [
+    "get /* keep */ item() { return 1; }",
+    "async *items() {}",
+    "class Thing { static run() {} }",
+    "static run() {}",
+    "x => x",
+    "function () {}",
+    "class {}",
+  ]
+);
+const legacy = JSON.parse(legacyDump(printParsed));
+assert.deepEqual(upgradeLowerDump(legacy, acorn, eslintScope), printProgram);
+legacy.body[0].declarations[0].init.elements[0].lit = "r:b+/gi";
+assert.throws(() => upgradeLowerDump(legacy, acorn, eslintScope), /disagrees with a fresh parse/);
 writeFileSync(ast, JSON.stringify(dumpParsed(parsed)));
 const scopes = lowerDump("const a = (x) => x, b = (x) => x;", acorn, eslintScope);
 const callbacks = scopes.body[0].declarations.map((d) => d.init);
@@ -65,6 +108,13 @@ const leanCertificate = path.join(temp, "generated.lean");
 const emitted = run(process.env.LOWERSPLIT, [ast, spec, out, "--lean", leanCertificate]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
+const legacyInput = path.join(temp, "legacy-ast.json");
+writeFileSync(legacyInput, legacyDump(parsed));
+const upgradedOut = path.join(temp, "upgraded");
+const upgraded = run(process.env.LOWERSPLIT, [legacyInput, spec, upgradedOut]);
+assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
+for (const file of ["entry.mjs", "side.mjs"])
+  assert.equal(readFileSync(path.join(upgradedOut, file), "utf8"), readFileSync(path.join(out, file), "utf8"));
 const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);

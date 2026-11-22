@@ -8,6 +8,7 @@ import path from "node:path";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump } from "../lowering/dump_core.mjs";
+import { assertSourceUnitsReparse } from "./ast_assertions.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp, "TEST_TMPDIR is required");
@@ -23,6 +24,40 @@ function observe(dir, file, names) {
     encoding: "utf8",
   });
   return probe.status === 0 ? probe.stdout : `${probe.stdout}${probe.stderr.match(/^\w*Error: .*/m)?.[0]}`;
+}
+
+function importShape(file) {
+  const code = readFileSync(file, "utf8");
+  const program = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
+  return program.body
+    .filter((node) => node.type === "ImportDeclaration")
+    .map(({ source, specifiers }) => ({
+      source: source.value,
+      specifiers: specifiers.map((specifier) => ({
+        kind:
+          specifier.type === "ImportDefaultSpecifier"
+            ? "default"
+            : specifier.type === "ImportNamespaceSpecifier"
+              ? "namespace"
+              : "named",
+        imported:
+          specifier.type === "ImportSpecifier"
+            ? specifier.imported.type === "Identifier"
+              ? specifier.imported.name
+              : specifier.imported.value
+            : null,
+        local: specifier.local.name,
+      })),
+    }));
+}
+
+function exportShape(file) {
+  const code = readFileSync(file, "utf8");
+  const program = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
+  return program.body
+    .filter((node) => node.type === "ExportNamedDeclaration" && node.declaration === null && node.source === null)
+    .flatMap((node) => node.specifiers)
+    .map(({ local, exported }) => ({ local: local.name, exported: exported.name }));
 }
 
 /** Dump `code`, split it by `modules` (the entry is `entry.mjs`) and write the result beside the bundle. */
@@ -58,6 +93,7 @@ function same(name, fixture, names) {
   const original = observe(result.dir, "bundle.mjs", names);
   assert.doesNotMatch(original, /Error/, `${name}: the bundle itself fails`);
   assert.equal(observe(result.dir, "entry.mjs", names), original, name);
+  assertSourceUnitsReparse(fixture.code, result.dir, Object.keys(fixture.modules), name);
   return result;
 }
 
@@ -78,7 +114,7 @@ function same(name, fixture, names) {
 // A glue name meets a name the entry publishes for another binding: `peel.mjs` needs the entry's local `m`, and the
 // entry's own statement exports `X` as `m`. The glue exports the local under a new name.
 {
-  const { text } = same(
+  const result = same(
     "export_alias",
     {
       code: `const X = "public";
@@ -91,9 +127,13 @@ export { X as m };
     },
     ["m"]
   );
-  assert.match(text("entry.mjs"), /^export \{ X as m \};$/m);
-  assert.match(text("entry.mjs"), /^export \{ m as m\$1 \};$/m);
-  assert.match(text("peel.mjs"), /^import \{ m\$1 as m \} from "\.\/entry\.mjs";$/m);
+  assert.deepEqual(exportShape(path.join(result.dir, "entry.mjs")), [
+    { local: "X", exported: "m" },
+    { local: "m", exported: "m$1" },
+  ]);
+  assert.deepEqual(importShape(path.join(result.dir, "peel.mjs")), [
+    { source: "./entry.mjs", specifiers: [{ kind: "named", imported: "m$1", local: "m" }] },
+  ]);
 }
 
 // The entry already publishes the bindings `peel.mjs` needs under their own names: no second export.
@@ -105,13 +145,25 @@ function sum() { return base + local; }
 console.log(twice(), sum());
 export { local };
 `;
-  const { text } = same(
+  const result = same(
     "export_reuse",
     { code, modules: { "entry.mjs": ["base", "local", "#4", "#5"], "peel.mjs": ["twice", "sum"] } },
     ["base", "local"]
   );
-  assert.equal(text("entry.mjs").match(/^export /gm).length, 2);
-  assert.match(text("peel.mjs"), /^import \{ base, local \} from "\.\/entry\.mjs";$/m);
+  const entryProgram = acorn.parse(readFileSync(path.join(result.dir, "entry.mjs"), "utf8"), {
+    sourceType: "module",
+    ecmaVersion: "latest",
+  });
+  assert.equal(entryProgram.body.filter((node) => node.type === "ExportNamedDeclaration").length, 2);
+  assert.deepEqual(importShape(path.join(result.dir, "peel.mjs")), [
+    {
+      source: "./entry.mjs",
+      specifiers: [
+        { kind: "named", imported: "base", local: "base" },
+        { kind: "named", imported: "local", local: "local" },
+      ],
+    },
+  ]);
 }
 
 // Imports from outside modules. Each outside module prints when it is evaluated: in the bundle that is before any
@@ -136,28 +188,50 @@ export const three = 3;
   },
 };
 {
-  const { text } = same(
+  const result = same(
     "imports",
     { ...imports, modules: { "entry.mjs": ["#0", "#1", "#2", "#5", "#6"], "peel.mjs": ["#3", "all"] } },
     ["late"]
   );
-  assert.deepEqual(text("peel.mjs").split("\n").slice(0, 3), [
-    'import two from "./dep.mjs";',
-    'import { one as uno } from "./dep.mjs";',
-    'import * as ns from "./dep.mjs";',
+  assert.deepEqual(importShape(path.join(result.dir, "peel.mjs")), [
+    {
+      source: "./dep.mjs",
+      specifiers: [
+        { kind: "default", imported: null, local: "two" },
+        { kind: "named", imported: "one", local: "uno" },
+      ],
+    },
+    {
+      source: "./dep.mjs",
+      specifiers: [{ kind: "namespace", imported: null, local: "ns" }],
+    },
   ]);
   // every request of the bundle comes before the glue import, in the bundle's order
+  assert.deepEqual(importShape(path.join(result.dir, "entry.mjs")), [
+    {
+      source: "./dep.mjs",
+      specifiers: [
+        { kind: "default", imported: null, local: "two" },
+        { kind: "named", imported: "one", local: "uno" },
+      ],
+    },
+    {
+      source: "./dep.mjs",
+      specifiers: [{ kind: "namespace", imported: null, local: "ns" }],
+    },
+    { source: "./side.mjs", specifiers: [] },
+    { source: "./peel.mjs", specifiers: [{ kind: "named", imported: "all", local: "all" }] },
+  ]);
+  assert.deepEqual(exportShape(path.join(result.dir, "entry.mjs")), []);
+  const entryAst = acorn.parse(readFileSync(path.join(result.dir, "entry.mjs"), "utf8"), {
+    sourceType: "module",
+    ecmaVersion: "latest",
+  });
   assert.deepEqual(
-    text("entry.mjs")
-      .split("\n")
-      .filter((line) => / from |^import /.test(line)),
-    [
-      'import two, { one as uno } from "./dep.mjs";',
-      'import * as ns from "./dep.mjs";',
-      'import "./side.mjs";',
-      'export { late } from "./late.mjs";',
-      'import { all } from "./peel.mjs";',
-    ]
+    entryAst.body
+      .filter((node) => node.type === "ExportNamedDeclaration" && node.source)
+      .map((node) => node.source.value),
+    ["./late.mjs"]
   );
 }
 
@@ -202,9 +276,12 @@ export const three = 3;
   const unordered = split("sequential_off", fixture);
   assert.equal(unordered.checked.status, 1, unordered.log);
   assert.match(unordered.log, /FAIL +OrderOk/);
-  const { text } = same("sequential", { ...fixture, spec: { sequential: true } }, []);
-  assert.match(text("c.mjs"), /^import \{ first \} from "\.\/a\.mjs";\nimport "\.\/b\.mjs";\n/);
-  assert.match(text("entry.mjs"), /^import "\.\/c\.mjs";\n/);
+  const result = same("sequential", { ...fixture, spec: { sequential: true } }, []);
+  assert.deepEqual(importShape(path.join(result.dir, "c.mjs")), [
+    { source: "./a.mjs", specifiers: [{ kind: "named", imported: "first", local: "first" }] },
+    { source: "./b.mjs", specifiers: [] },
+  ]);
+  assert.deepEqual(importShape(path.join(result.dir, "entry.mjs")), [{ source: "./c.mjs", specifiers: [] }]);
   // the same order, given by name
   same("sequential_order", { ...fixture, spec: { sequential: true, order: ["a.mjs", "b.mjs", "c.mjs"] } }, []);
 }
@@ -241,14 +318,5 @@ export const three = 3;
 export let e = 5, f = () => e + b;
 console.log(a, b, c, d, e, f());
 `;
-  const { text } = same(
-    "declarators",
-    { code, modules: { "entry.mjs": ["b", "e", "f", "#5"], "peel.mjs": ["a", "c"] } },
-    ["e", "f"]
-  );
-  assert.match(
-    text("entry.mjs"),
-    /const b = a \+ 1;\nexport let e = 5;\nexport let f = \(\) => e \+ b;\nconsole\.log\(a, b, c, d, e, f\(\)\);/
-  );
-  assert.equal(text("peel.mjs"), "const a = 1;\nconst { c, d } = { c: 3, d: 4 };\n\nexport { a, c, d };\n");
+  same("declarators", { code, modules: { "entry.mjs": ["b", "e", "f", "#5"], "peel.mjs": ["a", "c"] } }, ["e", "f"]);
 }

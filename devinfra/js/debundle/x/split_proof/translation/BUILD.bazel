@@ -16,6 +16,16 @@ js_library(
     ],
 )
 
+js_library(
+    name = "ast_assertions",
+    testonly = True,
+    srcs = ["ast_assertions.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":scope_metadata",
+    ],
+)
+
 js_binary(
     name = "module_io",
     data = [
@@ -176,7 +186,7 @@ js_test(
 js_test(
     name = "lower_chunk_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA,
+    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_assertions"],
     entry_point = "lower_chunk_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -184,7 +194,8 @@ js_test(
 js_test(
     name = "estree_printer_test",
     size = "small",
-    data = _LOWER_CALLBACK_FUZZ_DATA,
+    args = ["2026"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_assertions"],
     entry_point = "estree_printer_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -853,6 +864,7 @@ js_test(
     name = "excalidraw_authored_placements",
     size = "large",
     data = _COREJS_DIFFERENTIAL_DATA + [
+        ":ast_assertions",
         ":" + _EXCALIDRAW_EDITOR_SPEC,
         ":" + _EXCALIDRAW_MAIN_SPEC,
         "//devinfra/js/debundle/excalidraw:inputs",

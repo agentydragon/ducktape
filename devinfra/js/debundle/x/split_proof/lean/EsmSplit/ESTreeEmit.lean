@@ -64,9 +64,12 @@ private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B 
   let statements ← m.stmts.mapM fun i => do
     let some statement := asts[i]? | throw s!"statement {i} is missing from the input AST"
     return statement
-  let (requests, body) := statements.partition isRequest
+  -- Keep original directive strings in the prologue even when the plan adds imports.
+  let (directives, rest) := statements.partition fun s =>
+    Lower.typ s == "ExpressionStatement" && (s.getObjValAs? String "directive").isOk
+  let (requests, body) := rest.partition isRequest
   let requests ← requests.mapM (request · m.name)
-  let output := requests ++ duplicated.toList ++ glueImports P m ++ body ++ glueExports m
+  let output := directives ++ requests ++ duplicated.toList ++ glueImports P m ++ body ++ glueExports m
   return node "Program" ([("sourceType", .str "module"), ("body", toJson output)] ++
     (if m.name == P.entry then hashbang else []))
 
