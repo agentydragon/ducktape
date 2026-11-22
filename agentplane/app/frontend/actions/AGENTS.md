@@ -8,8 +8,11 @@
 - A custom Action label replaces the technical `group / name` identity in the pane and details
   header. Use a readable phrase ("List pods in namespace tofu-controller"); fixture titles and
   accessible names must not reintroduce identifiers like `pods_list_in_namespace`.
-- The whole collapsed action row (content and background) is the disclosure control; the separate
-  right-arrow details link is the row's only navigation target.
+- Use the collapsed row's content and background for disclosure, with a separate right-arrow link
+  for full review. A resource link in the row remains independently focusable and clickable.
+- A card without inline Approve and Deny can give a short target and intent summary. Put the
+  information needed to decide in the fuller review, including the opened preview when it offers
+  decision buttons.
 - No disclosure when opening would add nothing: an Action whose closed compact card already shows
   every argument declares `compactCardExpands` false for that invocation
   (`expandsForRejectedArguments`), and drops its `pane.opened` slot.
@@ -21,6 +24,10 @@
 - Command-running Actions (SSH, Pod and sandbox exec) read alike: the label is "Run command on/in
   <target>", the pane never repeats the target, and the settings that change how it runs are one
   line of `ShellCommandView` notes built by a `schemas/` helper that the notification text shares.
-- Offer card decision buttons when the current compact card shows the whole call. If review needs
-  the opened preview or live resolution of a target, gate the buttons on that preview and its
-  resolved data. Destructive actions use the same rule.
+- For mutations, offer card decision buttons when the current compact card shows the whole call.
+  If review needs the opened preview or live resolution of a target, gate the buttons on that
+  preview and its resolved data.
+- A compact card for a read may leave narrowing constraints in the opened or full view when the
+  broader read is clear from the card. Show the data source and account or target scope, and any
+  option that can broaden the read, change what it returns, or cause side effects. Unknown or
+  unsupported arguments require full review.

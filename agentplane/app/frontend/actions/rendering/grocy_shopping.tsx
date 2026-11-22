@@ -378,13 +378,15 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
       ...grocyRequest("Edit Grocy shopping item", editItem, ShoppingEdit, editedItem, ({ args }) => (
         <Stack gap={4}>
           <ShoppingTarget id={args.item_id} />
-          {args.amount != null && <Line>Set amount to {args.amount}</Line>}
-          {args.done != null && <Line>Mark {args.done ? "done" : "not done"}</Line>}
-          {args.clear_fields?.includes("note") ? (
-            <Line>Clear note</Line>
-          ) : (
-            args.note != null && <Line>Replace note</Line>
-          )}
+          <Line>
+            {[
+              args.amount != null && `Set amount to ${args.amount}`,
+              args.done != null && `Mark ${args.done ? "done" : "not done"}`,
+              args.clear_fields?.includes("note") ? "Clear note" : args.note != null && "Replace note",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Line>
         </Stack>
       )),
       call: editShoppingItemCall,

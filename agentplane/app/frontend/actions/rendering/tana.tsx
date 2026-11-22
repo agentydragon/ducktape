@@ -698,7 +698,7 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
       (args, names) => (
         <Stack gap={4}>
           <Line>{nodeLink(args.nodeId, names)}</Line>
-          {args.name && changes("Name", args.name)}
+          {args.name && <Line>{args.name.replace_all ? "Replace all matches in the name" : "Edit name"}</Line>}
           {args.description && (
             <Line>
               {args.description.replace_all
@@ -785,7 +785,15 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           </Stack>
         );
       },
-      checkboxReceipt
+      checkboxReceipt,
+      (args, names) => (
+        <Stack gap={4}>
+          <Line>
+            {args.showCheckbox ? "Show" : "Hide"} the done checkbox for {nodeLink(args.tagId, names)}
+          </Line>
+          {args.doneStateMapping && <Line>Map to {nodeLink(args.doneStateMapping.fieldId, names)}</Line>}
+        </Stack>
+      )
     ),
   ],
   [
@@ -811,8 +819,13 @@ export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
           <Line>
             <strong>{args.name}</strong> in {workspaceName(args.workspaceId, names)}
           </Line>
-          {!!args.extendsTagIds?.length && <Line>Extends {nodeLinks(args.extendsTagIds, names)}</Line>}
-          {args.showCheckbox && <Line>Show a done checkbox</Line>}
+          {(!!args.extendsTagIds?.length || args.showCheckbox) && (
+            <Line>
+              {!!args.extendsTagIds?.length && <>Extends {nodeLinks(args.extendsTagIds, names)}</>}
+              {!!args.extendsTagIds?.length && args.showCheckbox && " · "}
+              {args.showCheckbox && "Show a done checkbox"}
+            </Line>
+          )}
         </Stack>
       )
     ),

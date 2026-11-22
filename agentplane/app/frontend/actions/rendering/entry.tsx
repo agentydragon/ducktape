@@ -7,7 +7,7 @@ import type { z } from "zod";
 
 const compactPane = createContext(false);
 
-/** The collapsed summary sits inside the disclosure button. Resource names there are plain text. */
+/** Identifies the collapsed summary so previews can keep it brief. */
 export function CompactPaneContent({ children }: { children: ReactNode }): ReactNode {
   return <compactPane.Provider value>{children}</compactPane.Provider>;
 }

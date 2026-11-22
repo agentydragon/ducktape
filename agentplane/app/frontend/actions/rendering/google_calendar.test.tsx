@@ -5,7 +5,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ActionIdentitySchema } from "../../../../action_service/api/contracts/action_service_pb";
 import { answerApi, mount, toolResult } from "../testing/harness";
-import { renderActionCall, renderDetailsArguments, renderDetailsResult } from "./index";
+import { eventTime, formatEventRange, formatEventTime } from "./google_calendar_time";
+import {
+  actionOffersCardDecisionButtons,
+  renderActionCall,
+  renderDetailsArguments,
+  renderDetailsResult,
+  renderPaneCollapsed,
+  renderPaneOpened,
+} from "./index";
 
 const identity = (name: string) => create(ActionIdentitySchema, { group: "google_calendar", name });
 const target = { event_id: "occurrence-1", calendar_id: "facilities@example.test" };
@@ -17,7 +25,128 @@ function success(value: unknown) {
 }
 
 describe("Calendar Action review", () => {
-  it("shows only supplied changes, distinguishes clears, and preserves the requested event timezone", async () => {
+  it("offers compact list decisions with the source and broadening options visible and the dates in the opened view", async () => {
+    const action = identity("list_events");
+    const args = {
+      calendar_id: target.calendar_id,
+      time_min: "2026-11-24T00:00:00-08:00",
+      time_max: "2026-12-01T00:00:00-08:00",
+      expand_recurring: true,
+      max_results: 120,
+    };
+    answerApi(({ path }) =>
+      path.endsWith("/request-1/google-calendar-event-preview")
+        ? { calendar: { calendarId: target.calendar_id, summary: "Facilities calendar" } }
+        : undefined
+    );
+    const collapsed = await mount(renderPaneCollapsed(action, args, "request-1"));
+    expect(collapsed.textContent).toContain(target.calendar_id);
+    await vi.waitFor(() => expect(collapsed.textContent).toContain("Facilities calendar"));
+    expect(collapsed.textContent).toContain(target.calendar_id);
+    expect(collapsed.textContent).toContain("Expand recurring events into occurrences");
+    expect(collapsed.textContent).toContain("Results per page · 120");
+    expect(collapsed.textContent).not.toContain("Nov 24");
+    expect(collapsed.textContent).not.toContain("Dec 1");
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action, {})).toBe(true);
+
+    const opened = await mount(renderPaneOpened(action, args, "request-1"));
+    expect(opened.textContent).toContain("Ending after · Tue, Nov 24, 2026");
+    expect(opened.textContent).toContain("Starting before · Tue, Dec 1, 2026");
+    await vi.waitFor(() => expect(opened.querySelector("a")?.href).toBe(calendarLink));
+
+    for (const unreviewable of [
+      { ...args, include_deleted: true },
+      { ...args, account: "other-account@example.test" },
+      { ...args, max_results: 1000 },
+      { ...args, expand_recurring: "yes" },
+      { ...args, time_min: "not a date bound" },
+    ]) {
+      expect(actionOffersCardDecisionButtons(action, unreviewable)).toBe(false);
+    }
+    const unknown = await mount(renderPaneOpened(action, { ...args, include_deleted: true }));
+    expect(unknown.textContent).toContain("include_deleted");
+  });
+
+  it.each([
+    {
+      name: "displays a single range in the viewer's zone",
+      start: { date_time: "2026-11-23T17:00:00Z", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-11-23T17:30:00Z", time_zone: "America/Los_Angeles" },
+      range: "9:00 AM – 9:30 AM",
+    },
+    {
+      name: "shows both offsets when a clock change repeats the local time",
+      start: { date_time: "2026-11-01T08:15:00Z", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-11-01T09:15:00Z", time_zone: "America/Los_Angeles" },
+      range: "1:15 AM GMT-7 – 1:15 AM GMT-8",
+    },
+    {
+      name: "converts both endpoints when their submitted zones differ",
+      start: { date_time: "2026-11-23T17:00:00Z", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-11-23T19:00:00Z", time_zone: "America/New_York" },
+      range: "9:00 AM – 11:00 AM",
+    },
+  ])("$name", ({ start, end, range }) => {
+    expect(formatEventRange(eventTime.parse(start), eventTime.parse(end), "America/Los_Angeles")).toContain(range);
+  });
+
+  it.each([
+    [{ date: "2026-11-23" }, "Mon, Nov 23, 2026"],
+    [{ date_time: "2026-11-23T09:00:00", time_zone: "America/Los_Angeles" }, "5:00 PM"],
+    [{ date_time: "2026-11-01T01:15:00", time_zone: "America/Los_Angeles" }, "1:15 AM · America/Los_Angeles"],
+    [{ date_time: "2026-03-08T02:15:00", time_zone: "America/Los_Angeles" }, "2:15 AM · America/Los_Angeles"],
+    [{ date_time: "2026-11-23T09:00:00", time_zone: "Unrecognized/Zone" }, "9:00 AM · Unrecognized/Zone"],
+    [{ date_time: "2026-11-23T09:00:00" }, "9:00 AM · timezone unspecified"],
+  ] as const)("preserves all-day and unresolved wall times for %o", (submitted, visible) => {
+    expect(formatEventTime(eventTime.parse(submitted), "UTC")).toContain(visible);
+  });
+
+  it("separates the existing event schedule from changes to its time, location, and attendees", async () => {
+    const scheduled = { dateTime: "2026-11-23T17:00:00Z", timeZone: "America/Los_Angeles" };
+    answerApi(({ path }) =>
+      path.endsWith("/request-1/google-calendar-event-preview")
+        ? {
+            event: {
+              eventId: target.event_id,
+              summary: "Facilities coordination",
+              htmlLink: link,
+              start: scheduled,
+              end: { ...scheduled, dateTime: "2026-11-23T17:30:00Z" },
+              scope: "GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE",
+            },
+          }
+        : undefined
+    );
+    const card = await mount(
+      renderPaneCollapsed(
+        identity("update_event"),
+        {
+          ...target,
+          start: { date_time: "2026-11-23T18:00:00Z", time_zone: "America/Los_Angeles" },
+          location: "Test conference room",
+          attendees: ["attendee@example.test"],
+        },
+        "request-1"
+      )
+    );
+    await vi.waitFor(() => expect(card.textContent).toContain("Facilities coordination"));
+    const original = formatEventRange(
+      eventTime.parse(scheduled),
+      eventTime.parse({
+        ...scheduled,
+        dateTime: "2026-11-23T17:30:00Z",
+      })
+    );
+    expect(card.textContent?.split("Requested changes")[0]).toContain(original);
+    expect(card.textContent?.split("Requested changes")[1]).toContain("New time · Starts");
+    expect(card.textContent).toContain("Only this occurrence");
+    expect(card.textContent).toContain("Change location to Test conference room");
+    expect(card.textContent).toContain("Replace attendees with attendee@example.test");
+    expect(card.querySelector("a")).toBeNull();
+  });
+
+  it("shows only supplied changes and distinguishes clears", async () => {
     const review = await mount(
       renderDetailsArguments(identity("update_event"), {
         ...target,
@@ -31,8 +160,7 @@ describe("Calendar Action review", () => {
     expect(review.textContent).toContain("Clear location");
     expect(review.textContent).toContain("Remove all attendees");
     expect(review.textContent).toContain("Use calendar defaults");
-    expect(review.textContent).toContain("9:00 AM");
-    expect(review.textContent).toContain("America/Los_Angeles");
+    expect(review.textContent).toContain("New time · Starts");
     expect(review.textContent).not.toContain("Description");
     expect(review.textContent).not.toContain("End");
   });

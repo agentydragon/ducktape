@@ -12,7 +12,7 @@ from agentplane.app.frontend.testing.app import AgentplaneFixture
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.page_capture import wait_for_stable
-from testing.frontend_visual.viewports import MOBILE, Viewport
+from testing.frontend_visual.viewports import MOBILE, MOBILE_TOUCH, Viewport
 
 pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -84,6 +84,7 @@ CALENDAR_RECORDED_NAME = "Facilities schedule"
 CALENDAR_URL = "https://calendar.google.com/calendar?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q"
 CALENDAR_START = {"date_time": "2026-11-23T09:00:00-08:00", "time_zone": "America/Los_Angeles"}
 CALENDAR_END = {"date_time": "2026-11-23T09:30:00-08:00", "time_zone": "America/Los_Angeles"}
+CALENDAR_LOCAL_RANGE = "Mon, Nov 23, 2026 · 5:00 PM \u2013 5:30 PM"
 CALENDAR_SERIES = {
     "event_id": "facilities-series",
     "summary": "Facilities coordination",
@@ -3247,6 +3248,11 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("Facilities calendar")
         await expect(sidebar).to_contain_text("Entire recurring series")
         await expect(sidebar).to_contain_text("Remove all attendees")
+    elif example.key == "google_calendar.list_events":
+        await expect(sidebar).to_contain_text(CALENDAR_NAME)
+        await expect(sidebar).to_contain_text(CALENDAR_ID)
+        await expect(sidebar).not_to_contain_text("Ending after")
+        await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     elif example.key == "grocy_sf.shopping_list_item_edit":
         await expect(sidebar).to_contain_text("Kefir")
         await expect(sidebar).to_contain_text("Mark done")
@@ -3258,9 +3264,11 @@ async def test_action_presentations(
         await expect(sidebar).to_contain_text("docs-read")
         await expect(sidebar).to_contain_text("Send inbox messages")
     elif example.key == "gmail.threads_modify_labels":
-        await expect(sidebar).to_contain_text("Deployment review")
+        thread = sidebar.get_by_role("link", name="Deployment review", exact=True)
+        await expect(thread).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/thread-123")
         await expect(sidebar).to_contain_text("Reviewed")
         await expect(sidebar).to_contain_text("Needs review")
+        await expect(sidebar).not_to_contain_text("Creates missing labels")
     if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_have_count(0)
     if example.key in {
@@ -3274,12 +3282,47 @@ async def test_action_presentations(
         await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await wait_for_stable(page)
     await capture("sidebar-collapsed", sidebar)
+    if example.key == "google_calendar.update_event":
+        when = sidebar.get_by_role("button", name=CALENDAR_LOCAL_RANGE, exact=True)
+        await when.hover()
+        tooltip = page.get_by_role("tooltip")
+        await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
+        await page.mouse.move(0, 0)
+        await expect(tooltip).to_have_count(0)
+        await when.focus()
+        await expect(tooltip).to_contain_text("2026-11-23T09:30:00-08:00 · America/Los_Angeles")
+        await when.click()
+        await expect(tooltip).to_be_visible()
+        await sidebar.locator(".agentplane-actions-sidebar-expand").focus()
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
-        await disclosure.click()
+        if example.key == "gmail.threads_modify_labels":
+            thread = sidebar.get_by_role("link", name="Deployment review", exact=True)
+            gmail_url = "https://mail.google.com/mail/u/0/#all/thread-123"
+            await page.context.route("https://mail.google.com/**", lambda route: route.fulfill(body="Gmail fixture"))
+            await thread.focus()
+            await expect(thread).to_be_focused()
+            async with page.expect_popup() as popup_info:
+                if viewport == MOBILE:
+                    await thread.click()
+                else:
+                    await thread.press("Enter")
+            popup = await popup_info.value
+            await expect(popup).to_have_url(gmail_url)
+            await popup.close()
+            await expect(disclosure).to_have_attribute("aria-expanded", "false")
+            await disclosure.press("Enter")
+            await expect(sidebar.get_by_role("button", name="Collapse ", exact=False)).to_have_attribute(
+                "aria-expanded", "true"
+            )
+            await sidebar.get_by_role("button", name="Collapse ", exact=False).press("Enter")
+        await sidebar.locator(".agentplane-actions-sidebar-summary").click(position={"x": 25, "y": 8})
         await _expect_live_preview(sidebar, example)
         if example.key in {"gmail.threads_modify_labels", "grocy_sf.products_edit"}:
             await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
+        elif example.key == "google_calendar.list_events":
+            await expect(sidebar).to_contain_text("Ending after")
+            await expect(sidebar).to_contain_text("Starting before")
         await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
@@ -3453,6 +3496,33 @@ async def test_action_presentations(
         await expect(raw_switch).to_be_checked()
         await expect(receipt).to_contain_text('"item_ids": [')
         await expect(receipt).to_contain_text(r"\"item_id\": 52")
+
+
+@pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["touch"])
+async def test_calendar_source_time_touch(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    args = {
+        "summary": "Facilities coordination",
+        "start": CALENDAR_START,
+        "end": CALENDAR_END,
+        "calendar_id": CALENDAR_ID,
+    }
+    await app.show_action_preview(
+        "google_calendar", "create_event", args, {"google-calendar-event-preview": calendar_preview()[1]}
+    )
+    await app.show_action_receipt(
+        "google_calendar",
+        "create_event",
+        args,
+        {"content": [{"type": "text", "text": json.dumps(CALENDAR_SERIES)}], "structuredContent": CALENDAR_SERIES},
+    )
+    await app.mount_action_presentations(sidebar_width=viewport.width - 16, detail_width=viewport.width - 32, mcp=True)
+    sidebar = view.page.locator("[data-action-visual=sidebar]")
+    when = sidebar.get_by_role("button", name=CALENDAR_LOCAL_RANGE, exact=True)
+    await when.tap()
+    tooltip = view.page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text("2026-11-23T09:00:00-08:00 · America/Los_Angeles")
+    await expect(sidebar.get_by_role("button", name="Expand ", exact=False)).to_have_attribute("aria-expanded", "false")
+    await view.capture()
 
 
 @DESKTOP_AND_MOBILE

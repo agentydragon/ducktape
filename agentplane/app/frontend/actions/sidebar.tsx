@@ -115,19 +115,19 @@ export function PendingActionList({
         return (
           <div className="agentplane-actions-sidebar-request" key={request.id}>
             <div className="agentplane-actions-sidebar-request-heading">
-              {expands ? (
-                <UnstyledButton
-                  className="agentplane-actions-sidebar-summary agentplane-actions-sidebar-expand"
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
-                  aria-expanded={expanded}
-                  onClick={() => setExpandedId(expanded ? null : request.id)}
-                >
-                  {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                  {summary}
-                </UnstyledButton>
-              ) : (
-                <div className="agentplane-actions-sidebar-summary is-static">{summary}</div>
-              )}
+              <div className="agentplane-actions-sidebar-summary">
+                {expands && (
+                  <UnstyledButton
+                    className="agentplane-actions-sidebar-expand"
+                    aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedId(expanded ? null : request.id)}
+                  >
+                    {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  </UnstyledButton>
+                )}
+                {summary}
+              </div>
               <Tooltip label="View full details" withArrow>
                 <Link
                   className="agentplane-actions-sidebar-details"

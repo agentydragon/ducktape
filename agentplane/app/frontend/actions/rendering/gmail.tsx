@@ -55,7 +55,7 @@ function DraftFields({
       <EmailField name="Cc" value={args.cc?.join(", ")} />
       <EmailField name="Bcc" value={args.bcc?.join(", ")} />
       {short ? (
-        <Text size="sm" lineClamp={3} style={{ ...wrap, whiteSpace: "pre-wrap" }}>
+        <Text size="sm" lineClamp={1} style={{ ...wrap, whiteSpace: "pre-wrap" }}>
           {args.body || "(empty body)"}
         </Text>
       ) : (
@@ -81,7 +81,7 @@ function DraftReply({ id, requestId }: { id: string; requestId?: string }): JSX.
   const names = useIntegrationPreviewNames("gmail", requestId);
   return (
     <Text size="sm">
-      Reply in thread <ThreadTarget id={id} subject={names?.get(id)} />
+      Reply in thread <ThreadTarget id={id} subject={names?.get(id)} linkInCompact />
     </Text>
   );
 }
@@ -200,10 +200,15 @@ const searchPresentation: ActionPresentation = {
 };
 
 function LabelChanges({ add, remove }: { add?: string[] | null; remove?: string[] | null }): JSX.Element {
+  const compact = useCompactPane();
+  const summarize = (labels?: string[] | null): string | undefined =>
+    compact && labels && labels.length > 2
+      ? `${labels.slice(0, 2).join(", ")} + ${labels.length - 2} more`
+      : labels?.join(", ");
   return (
     <>
-      <EmailField name="Add" value={add?.join(", ")} />
-      <EmailField name="Remove" value={remove?.join(", ")} />
+      <EmailField name="Add" value={summarize(add)} />
+      <EmailField name="Remove" value={summarize(remove)} />
     </>
   );
 }
@@ -214,15 +219,15 @@ function ThreadsRelabel({ args, requestId }: PreviewProps<z.infer<typeof modifyT
   return (
     <Stack gap={4}>
       <LabelChanges add={args.add} remove={args.remove} />
-      {args.add?.length ? (
+      {!compact && args.add?.length ? (
         <Text size="sm" c="dimmed">
-          Creates any missing labels in Add and shows them in the Gmail sidebar and message lists.
+          Creates missing labels and shows them in the sidebar and message lists.
         </Text>
       ) : null}
       {!args.add?.length && !args.remove?.length && <Text size="sm">No label changes specified.</Text>}
       {args.thread_ids.map((id, index) => (
         <Text size="sm" key={index}>
-          <ThreadTarget id={id} subject={names?.get(id)} />
+          <ThreadTarget id={id} subject={names?.get(id)} linkInCompact />
           {!compact && names?.get(id) && (
             <>
               {" "}

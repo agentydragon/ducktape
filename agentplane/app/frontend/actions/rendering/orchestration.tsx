@@ -2,7 +2,7 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { ShellCommandSummary, ShellCommandView } from "../../ui/shell_command_view";
+import { ShellCommandView } from "../../ui/shell_command_view";
 import { TextBlock } from "../../ui/text_block";
 import { definePreview, type ArgumentsPreview } from "./entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
@@ -61,25 +61,26 @@ function Grants({ title, grants }: { title: string; grants?: string[] }): ReactN
 
 function LaunchArguments({ args, compact = false }: { args: z.infer<typeof launch>; compact?: boolean }): ReactNode {
   return (
-    <Stack gap="xs">
+    <Stack gap={compact ? 4 : "xs"}>
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
         {args.name} · Template {args.template}
       </Text>
-      <Grants title="Sandbox policy sets" grants={args.policy_sets} />
-      <Grants title="Launcher grants" grants={args.launcher_grants} />
-      {args.inbox_tags?.length ? <Text size="sm">Inbox tags · {args.inbox_tags.join(", ")}</Text> : null}
-      <Text size="sm">{args.wake_on_send ? "Wake on incoming work" : "Wake on incoming work is off"}</Text>
-      <Text size="sm">
-        {args.idle_suspend_after_seconds == null
-          ? "No idle suspension"
-          : `Suspend after ${args.idle_suspend_after_seconds} seconds idle`}
-      </Text>
+      {(!compact || !!args.policy_sets?.length) && <Grants title="Sandbox policy sets" grants={args.policy_sets} />}
+      {(!compact || !!args.launcher_grants?.length) && <Grants title="Launcher grants" grants={args.launcher_grants} />}
+      {!compact && (
+        <>
+          {args.inbox_tags?.length ? <Text size="sm">Inbox tags · {args.inbox_tags.join(", ")}</Text> : null}
+          <Text size="sm">{args.wake_on_send ? "Wake on incoming work" : "Wake on incoming work is off"}</Text>
+          <Text size="sm">
+            {args.idle_suspend_after_seconds == null
+              ? "No idle suspension"
+              : `Suspend after ${args.idle_suspend_after_seconds} seconds idle`}
+          </Text>
+        </>
+      )}
       {args.bootstrap &&
         (compact ? (
-          <>
-            <Text size="sm">Runs once before the first Session</Text>
-            <ShellCommandSummary text={args.bootstrap} />
-          </>
+          <Text size="sm">Runs bootstrap before the first Session</Text>
         ) : (
           <ShellCommandView command={args.bootstrap} notes={["Runs once before the first Session"]} surface="framed" />
         ))}

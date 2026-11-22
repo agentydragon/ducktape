@@ -593,6 +593,7 @@ agentplane_vitest_test(
     name = "google_calendar_test",
     srcs = ["google_calendar.test.tsx"],
     deps = [
+        ":google_calendar",
         ":index",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",

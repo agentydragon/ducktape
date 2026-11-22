@@ -495,7 +495,13 @@ async def test_sandbox_action_results(
 async def test_compact_action_summaries(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
-    await app.show_action_preview(group, name, arguments)
+    draft = group == "gmail" and name == "drafts_create"
+    summaries = (
+        {"gmail-thread-summaries": {"threads": [{"threadId": "existing-thread-123", "subject": "Rollout planning"}]}}
+        if draft
+        else None
+    )
+    await app.show_action_preview(group, name, arguments, summaries)
     await app.mount_thread(IDLE_THREAD)
     await _open_phone_navigation(view.page)
     section = view.page.locator(".agentplane-actions-sidebar")
@@ -505,8 +511,10 @@ async def test_compact_action_summaries(
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
     collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
-    if group == "gmail" and name == "drafts_create":
+    if draft:
         await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
+        thread_link = collapsed_summary.get_by_role("link", name="Rollout planning", exact=True)
+        await expect(thread_link).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/existing-thread-123")
         await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
         await view.capture("collapsed", target=section)
     if group == "github" and name == "create_pull_request":
