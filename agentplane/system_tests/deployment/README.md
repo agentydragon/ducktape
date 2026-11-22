@@ -276,10 +276,11 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
-([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
-(`//agentplane/system_tests/suites:vm_manifests.json`), so [`sandboxes.py`](../vm/sandboxes.py)
-installs production's KubeVirt release and Kyverno's admission controller. The required `test_vm`
+The required `test_vm` creates Claude and Codex sessions through the native Environments,
+Dispatcher and History services. It shares `vm_native_manifests.json` with the manual TCG
+comparison. The manual storage and OOM suites use `vm_manifests.json` for their App calls.
+Both fixtures install production's KubeVirt release and Kyverno's admission controller through
+[`sandboxes.py`](../vm/sandboxes.py). The required suite
 uses nested KVM on the hosted workers. The manual `test_vm_tcg` comparison and managed diagnostics
 use QEMU software emulation. Kyverno adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller

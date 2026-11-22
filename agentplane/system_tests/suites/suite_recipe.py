@@ -1,4 +1,4 @@
-"""Render all ten system-test suite fixtures in one Bazel action."""
+"""Render all system-test suite fixtures in one Bazel action."""
 
 import argparse
 from collections.abc import Callable
@@ -49,6 +49,7 @@ def main() -> None:
     shared_model = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
     renderers: list[tuple[str, Callable[[], RenderedFixture], McpInputs | None]] = [
         ("pod_native_manifests.json", partial(native_deployment.render, SandboxRuntime.POD), None),
+        ("vm_native_manifests.json", partial(native_deployment.render, SandboxRuntime.KUBEVIRT), None),
         ("firecracker_manifests.json", partial(native_deployment.render, SandboxRuntime.FIRECRACKER), None),
         ("recovery_manifests.json", recovery_deployment.render, None),
         ("history_manifests.json", history_deployment.render, None),

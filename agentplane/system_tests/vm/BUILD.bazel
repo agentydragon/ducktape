@@ -70,14 +70,9 @@ py_library(
     srcs = ["supervision.py"],
     deps = [
         ":configuration",
-        "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "//agentplane/system_tests/driver:agent",
-        "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:session",
-        "//agentplane/system_tests/driver:session_setup",
         "@pypi//protobuf",
     ],
 )

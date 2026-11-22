@@ -1,4 +1,4 @@
-"""Build the native Pod and Firecracker deployments from their backend services."""
+"""Build the native system-test deployments from their backend services."""
 
 from dataclasses import asdict
 
@@ -36,6 +36,8 @@ def render(runtime: SandboxRuntime) -> RenderedFixture:
     runner = fixture_chart.add_runner_templates(chart, env)
     if runtime is SandboxRuntime.FIRECRACKER:
         fixture_chart.add_firecracker_template(chart, env, runner)
+    elif runtime is SandboxRuntime.KUBEVIRT:
+        fixture_chart.add_vm_templates(chart, env, runner)
     boxes = fixture_chart.add_command_templates(chart, env)
     fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)

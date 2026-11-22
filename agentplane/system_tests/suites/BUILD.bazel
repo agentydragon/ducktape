@@ -71,6 +71,15 @@ image_manifest(
 )
 
 image_manifest(
+    name = "vm_native_image_manifest",
+    testonly = True,
+    fixture = BACKEND_SERVICE_IMAGES | VM_RUNNER_DISK_IMAGE,
+    guest = VM_GUEST_BOOT_IMAGE | VM_GUEST_ROOT_IMAGE,
+    pki = PKI_IMAGES,
+    vm = VM_IMAGES,
+)
+
+image_manifest(
     name = "vm_profile_image_manifest",
     testonly = True,
     fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | VM_RUNNER_DISK_IMAGE,
@@ -664,6 +673,7 @@ genrule(
         "recovery_manifests.json",
         "real_model_manifests.json",
         "vm_manifests.json",
+        "vm_native_manifests.json",
     ],
     cmd = "JSII_NODE=\"$(execpath @nodejs_linux_amd64//:bin/node)\" \"$(execpath :suite_recipe_bin)\" \"$(RULEDIR)\"",
     tools = [

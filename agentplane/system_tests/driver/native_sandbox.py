@@ -1,4 +1,4 @@
-"""App-free Pod Sandbox ownership through the native EnvironmentService."""
+"""App-free Sandbox ownership through the native EnvironmentService."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, SANDBOX_READY_SECONDS, Sandboxes
 from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
+from agentplane.system_tests.driver.tracing import tracer
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -99,8 +100,11 @@ async def native_sandbox_scope(cluster: Cluster, platform: NativePlatformClients
             identities.push_async_exit(delete_identity)
             if target.name != name:
                 raise RuntimeError(f"EnvironmentService created unexpected name {target.name!r} for {name!r}")
-            view = await wait_until_running(platform.environment, target)
-            await platform.ready_runner(target)
+            with tracer.start_as_current_span(
+                "system_test.sandbox.ready", attributes={"sandbox.name": name, "sandbox.uid": target.uid}
+            ):
+                view = await wait_until_running(platform.environment, target)
+                await platform.ready_runner(target)
             return view
 
         yield create

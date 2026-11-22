@@ -23,9 +23,12 @@ from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
+from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import runner_credentials
@@ -190,14 +193,12 @@ async def _command(
 
 async def vm_sandbox_turn(
     cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
+    platform: NativePlatformClients,
     sandbox: Sandboxes,
     harness: session_pb2.Harness,
-    offered_model: str,
     scripted: ScriptedUpstream,
     template: str,
-) -> None:
+) -> str:
     view = await sandbox(f"systest-vm-{harness}", template=template)
     assert view.kubernetes_diagnostics.HasField("pod")
     identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
@@ -209,20 +210,15 @@ async def vm_sandbox_turn(
                     "Missing this VM's supervisor check receipt"
                 )
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
-    with tracer.start_as_current_span(
-        "system_test.session.create",
-        attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
-    ):
-        agent = await session_setup_is_supervised(
-            cluster, client, dispatcher, view.target.name, view.target.uid, harness, offered_model
-        )
+    session = await session_setup_is_supervised(
+        platform, view.target.name, view.target.uid, harness, LOCAL_MODEL_MODELS[harness].id
+    )
     with (
         tracer.start_as_current_span("system_test.turn"),
         observe_active_turn(undeclared_outputs_dir() / "vm-artifacts", view.target.name, view.target.uid),
     ):
-        turn, _, _ = await scripted_turn_with_admission_and_history(
-            client,
-            agent,
+        turn, _ = await drive_scripted_turn(
+            session,
             model=model,
             command_id=f"vm-{view.target.uid}",
             prompt=PING,
@@ -230,6 +226,7 @@ async def vm_sandbox_turn(
             shell_call_id="vm-supervision",
             response="PING",
         )
+        await session.assert_completed_summary()
     assert len(turn.tool_outputs) == 1, turn.transcript
     output_text = turn.tool_outputs[0]
     assert "VM_UID 107" in output_text, turn.transcript
@@ -247,9 +244,9 @@ async def vm_sandbox_turn(
     assert systemctl_denial is not None, turn.transcript
     assert "PING" in turn.answer, turn.transcript
     rules_command = "agentplane --json egress rules"
-    rules_turn = await agent.run_shell(model, rules_command)
+    rules_turn = await session.run_shell(model, rules_command)
     assert rules_turn.shell_json(rules_command).get("identity") == {"name": view.identity_name}, rules_turn.transcript
-    platform_turn = await agent.run_shell(
+    platform_turn = await session.run_shell(
         model,
         "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK && "
         "agentplane session-dispatcher list --limit 1 >/dev/null && echo SESSIONS_GRPC_OK && "
@@ -262,6 +259,7 @@ async def vm_sandbox_turn(
     await runner_credentials.assert_vm_runner_identity_unchanged(
         cluster, view.kubernetes_diagnostics.pod.name, identity
     )
+    return view.target.uid
 
 
 async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_uid: str) -> Path:

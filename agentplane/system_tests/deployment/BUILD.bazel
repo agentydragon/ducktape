@@ -133,6 +133,7 @@ py_test(
         "//agentplane/system_tests/suites:probe_manifests.json",
         "//agentplane/system_tests/suites:recovery_manifests.json",
         "//agentplane/system_tests/suites:vm_manifests.json",
+        "//agentplane/system_tests/suites:vm_native_manifests.json",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
@@ -145,6 +146,7 @@ py_test(
         "K3S_POD_NATIVE_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests.json)",
         "K3S_MCP_SERVICES_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:mcp_services_manifests.json)",
         "K3S_POD_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
+        "K3S_VM_NATIVE_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_native_manifests.json)",
         "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
     },
     deps = [
