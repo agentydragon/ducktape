@@ -1,4 +1,4 @@
-import { Stack, Text } from "@mantine/core";
+import { Badge, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
@@ -445,9 +445,28 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
         const labels = labelWrite.safeParse(args);
         if (!labels.success) return "Change GitHub issue";
         const target = `${labels.data.owner}/${labels.data.repo}#${labels.data.issue_number}`;
-        return labels.data.labels.length === 0
-          ? `Clear labels on ${target}`
-          : `Set labels on ${target}: ${labels.data.labels.map((label) => JSON.stringify(label)).join(", ")}`;
+        if (labels.data.labels.length === 0) return `Clear labels on ${target}`;
+        return (
+          <span>
+            Set labels on {target}:{" "}
+            {labels.data.labels.map((label, index) => (
+              <Badge
+                key={index}
+                component="span"
+                variant="light"
+                color="gray"
+                size="sm"
+                tt="none"
+                h="auto"
+                maw="100%"
+                style={{ verticalAlign: "middle", marginRight: 4 }}
+                styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
+              >
+                {label}
+              </Badge>
+            ))}
+          </span>
+        );
       }),
       pane: {
         collapsed: definePreview(write, ({ args }) =>

@@ -49,9 +49,12 @@ describe("GitHub issue label updates", () => {
   const args = { ...REPOSITORY, method: "update", issue_number: 42, labels: ["bug", "upstream-waiting"] };
 
   it("shows the replacement label set and permits a decision on the closed card", async () => {
-    expect(shownText(await mount(renderActionLabel(action, args)))).toBe(
-      'Set labels on test-owner/test-repo#42: "bug", "upstream-waiting"'
-    );
+    const label = await mount(renderActionLabel(action, args));
+    expect(shownText(label)).toContain("Set labels on test-owner/test-repo#42:");
+    expect([...label.querySelectorAll(".mantine-Badge-label")].map((badge) => badge.textContent)).toEqual([
+      "bug",
+      "upstream-waiting",
+    ]);
     expect(shownText(await mount(renderPaneCollapsed(action, args)))).toBe("");
     expect(actionOffersCardDecisionButtons(action, args)).toBe(true);
     expect(actionCompactCardExpands(action, args)).toBe(false);

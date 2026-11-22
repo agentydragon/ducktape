@@ -3425,7 +3425,7 @@ async def test_issue_label_update_compact(view: VisualPage, app: AgentplaneFixtu
     detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
     await app.mount_action_presentations(sidebar_width=sidebar_width, detail_width=detail_width, mcp=True)
     sidebar = view.page.locator("[data-action-visual=sidebar]")
-    await expect(sidebar).to_contain_text('"needs investigation"')
+    await expect(sidebar.locator(".mantine-Badge-label").get_by_text("needs investigation")).to_be_visible()
     await expect(sidebar.get_by_role("button", name="Approve ", exact=False)).to_be_visible()
     await expect(sidebar.get_by_role("button", name="Expand ", exact=False)).to_have_count(0)
     await wait_for_stable(view.page)
