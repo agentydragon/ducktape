@@ -23,6 +23,7 @@ genrule(
     outs = ["Experiments/Generated.lean"],
     cmd = """
 work=$$(mktemp -d "$(@D)/split.XXXXXX")
+export BAZEL_BINDIR="$(BINDIR)"
 trap 'rm -rf "$$work"' EXIT
 $(execpath //devinfra/js/debundle/x/split_proof/lean:lowersplit) \
     $(location //devinfra/js/debundle/x/split_proof:example_ast) \
