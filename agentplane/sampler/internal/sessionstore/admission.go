@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -17,9 +18,9 @@ import (
 )
 
 var (
-	ErrSessionBlocked        = errors.New("session is blocked")
-	ErrInterruptTurnInactive = errors.New("interrupt target is not the active turn")
-	ErrInterruptOwnerMissing = errors.New("interrupt target has no sampler owner")
+	ErrSessionBlocked        = fmt.Errorf("session is blocked: %w", protocol.ErrPrecondition)
+	ErrInterruptTurnInactive = fmt.Errorf("interrupt target is not the active turn: %w", protocol.ErrPrecondition)
+	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
 )
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session, *Conversation) error) (*eventlogpb.EventEntry, error) {
