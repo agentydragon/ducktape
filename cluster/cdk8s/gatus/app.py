@@ -55,8 +55,15 @@ def _database(scope: Construct) -> None:
         resize_in_use_volumes=False,
         initdb=cluster.same_owner_initdb("gatus"),
         wal_archive=True,
+        resources=cluster.resource_requests(cpu_millis=100, memory_mib=160),
     )
-    backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(
+        scope,
+        "db-backup",
+        ref=DATABASE,
+        retention="30d",
+        instance_sidecar_configuration=backup.sidecar_resource_requests(cpu_millis=150, memory_mib=192),
+    )
 
 
 def _helm_release(scope: Construct, config_map: ConfigMap) -> None:

@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, Size
+from cdk8s_plus_34 import Cpu
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
     ClusterSpec,
@@ -22,6 +23,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
+    ClusterSpecResourcesRequests,
     ClusterSpecStorage,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
@@ -108,6 +110,16 @@ def same_owner_initdb(
         secret=None if secret is None else ClusterSpecBootstrapInitdbSecret(name=secret.name),
         locale_c_type=locale_c_type,
         locale_collate=locale_collate,
+    )
+
+
+def resource_requests(*, cpu_millis: int, memory_mib: int) -> ClusterSpecResources:
+    """Scheduling requests for the postgres and bootstrap-controller containers."""
+    return ClusterSpecResources(
+        requests={
+            "cpu": ClusterSpecResourcesRequests.from_string(Cpu.millis(cpu_millis).amount),
+            "memory": ClusterSpecResourcesRequests.from_string(Size.mebibytes(memory_mib).as_string()),
+        }
     )
 
 

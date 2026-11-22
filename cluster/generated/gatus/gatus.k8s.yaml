@@ -41,6 +41,10 @@ spec:
     liveness:
       isolationCheck:
         enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 160Mi
   storage:
     resizeInUseVolumes: false
     size: 2Gi
@@ -120,6 +124,11 @@ spec:
         name: gatus-db-backups-s3-credentials
     wal:
       compression: gzip
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 150m
+        memory: 192Mi
   retentionPolicy: 30d
 ---
 apiVersion: postgresql.cnpg.io/v1
