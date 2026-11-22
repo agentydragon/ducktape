@@ -4,8 +4,6 @@ The credential file has one owning process: refresh tokens rotate, so two holder
 """
 
 import asyncio
-import base64
-import hashlib
 import logging
 import os
 import secrets
@@ -18,6 +16,7 @@ from typing import Self
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID, TOKEN_URL
@@ -137,11 +136,6 @@ class OAuthTokenSource:
             return self._credential.access_token.get_secret_value()
 
 
-def pkce_challenge(verifier: str) -> str:
-    """RFC 7636 S256."""
-    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
-
-
 def redirect_uri(port: int) -> str:
     return f"http://localhost:{port}/callback"
 
@@ -218,7 +212,7 @@ class PairingAttempt:
     @property
     def url(self) -> str:
         return authorization_url(
-            state=self.state, challenge=pkce_challenge(self.verifier), scopes=self.scopes, port=self.port
+            state=self.state, challenge=create_s256_code_challenge(self.verifier), scopes=self.scopes, port=self.port
         )
 
     def code_from_redirect(self, redirect_url: str) -> str:

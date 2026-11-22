@@ -1,7 +1,5 @@
 """Tests for airlock.oauth.provider."""
 
-import base64
-import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -10,6 +8,7 @@ import httpx2
 import pytest
 import pytest_bazel
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 
 import airlock.oauth.provider as provider_module
 from airlock.oauth.config import OAuth2ProviderConfig, TokenSecretConfig
@@ -168,10 +167,7 @@ async def test_build_authorize_url_with_pkce_and_aud() -> None:
 
     assert code_verifier is not None
     assert 43 <= len(code_verifier) <= 128
-    expected_challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
-    )
-    assert params["code_challenge"] == [expected_challenge]
+    assert params["code_challenge"] == [create_s256_code_challenge(code_verifier)]
     assert params["code_challenge_method"] == ["S256"]
     assert params["aud"] == ["https://fhir.example.com/r4"]
     assert params["scope"] == ["interop"]

@@ -123,6 +123,7 @@ py_library(
     srcs = ["mock_oidc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//authlib",
         "@pypi//cryptography",
         "@pypi//pyjwt",
         "@pypi//starlette",
