@@ -72,6 +72,9 @@ var (
 	errModelIncompatible      = errors.New("cannot change to this model because its conversation format is incompatible with the current model")
 	errModelChangeUnsettled   = errors.New("cannot change model while the conversation has unfinished work")
 	errTargetModelUnavailable = errors.New("requested model or reasoning effort is not available")
+	errEffortUnsupported      = errors.New("unsupported reasoning effort")
+	errEffortFixed            = errors.New("model route has fixed reasoning effort")
+	errCompactionUnavailable  = errors.New("model route has no manual compaction")
 )
 
 func samplerError(ctx context.Context, err error) error {
@@ -85,6 +88,12 @@ func samplerError(ctx context.Context, err error) error {
 		return status.Error(codes.AlreadyExists, "identifier already has another payload")
 	case errors.Is(err, protocol.ErrMissing):
 		return status.Error(codes.NotFound, "session or command not found")
+	case errors.Is(err, sessionstore.ErrSessionBlocked):
+		return status.Error(codes.FailedPrecondition, "session is blocked. Check the session status and history for recovery details")
+	case errors.Is(err, sessionstore.ErrInterruptTurnInactive):
+		return status.Error(codes.FailedPrecondition, "cannot interrupt because the requested turn is no longer active")
+	case errors.Is(err, sessionstore.ErrInterruptOwnerMissing):
+		return status.Error(codes.FailedPrecondition, "cannot interrupt because the requested turn has no sampler worker")
 	case errors.Is(err, errModelUnavailable):
 		return status.Error(codes.FailedPrecondition, "selected model is no longer configured; the conversation cannot continue with this model")
 	case errors.Is(err, errModelChangeUnavailable):
@@ -95,6 +104,12 @@ func samplerError(ctx context.Context, err error) error {
 		return status.Error(codes.FailedPrecondition, "cannot change model while the conversation has unfinished work")
 	case errors.Is(err, errTargetModelUnavailable):
 		return status.Error(codes.InvalidArgument, "requested model or reasoning effort is not available")
+	case errors.Is(err, errEffortUnsupported):
+		return status.Error(codes.InvalidArgument, "reasoning effort is not supported by the selected model")
+	case errors.Is(err, errEffortFixed):
+		return status.Error(codes.FailedPrecondition, "reasoning effort is fixed for the selected model during a session")
+	case errors.Is(err, errCompactionUnavailable):
+		return status.Error(codes.FailedPrecondition, "manual compaction is not available for the selected model")
 	case errors.Is(err, protocol.ErrPrecondition):
 		return status.Error(codes.FailedPrecondition, "session cannot apply this operation")
 	case errors.Is(err, protocol.ErrInvalid):
@@ -133,7 +148,7 @@ func (s *Sampler) CreateSession(ctx context.Context, request *harnesshostpb.Crea
 		return nil, status.Error(codes.InvalidArgument, "model is not configured for the central sampler")
 	}
 	if !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
-		return nil, status.Error(codes.InvalidArgument, "reasoning effort is not supported by the selected model")
+		return nil, samplerError(ctx, errEffortUnsupported)
 	}
 	session, err := s.Store.CreateSession(ctx, configuration, principal, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {
@@ -227,14 +242,16 @@ func (s *Sampler) commandUsing(
 		} else if !currentConfigured {
 			return errModelUnavailable
 		}
-		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
-			return protocol.ErrInvalid
-		}
-		if effort := command.GetChangeReasoningEffort(); effort != nil && currentConfig.API == protocol.APIStyleAnthropicMessages && !currentConfig.AnthropicMessages.PerMessageEffort {
-			return protocol.ErrPrecondition
+		if effort := command.GetChangeReasoningEffort(); effort != nil {
+			if !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
+				return errEffortUnsupported
+			}
+			if currentConfig.API == protocol.APIStyleAnthropicMessages && !currentConfig.AnthropicMessages.PerMessageEffort {
+				return errEffortFixed
+			}
 		}
 		if command.GetCompact() != nil && ((currentConfig.API == protocol.APIStyleChatCompletions && currentConfig.ChatCompaction == nil) || currentConfig.Responses.Dialect == responses.DialectStandard || (currentConfig.API == protocol.APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
-			return protocol.ErrPrecondition
+			return errCompactionUnavailable
 		}
 		return nil
 	}

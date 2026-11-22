@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -14,6 +15,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	ErrSessionBlocked        = fmt.Errorf("session is blocked: %w", protocol.ErrPrecondition)
+	ErrInterruptTurnInactive = fmt.Errorf("interrupt target is not the active turn: %w", protocol.ErrPrecondition)
+	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
 )
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session, *Conversation) error) (*eventlogpb.EventEntry, error) {
@@ -54,7 +61,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			return err
 		}
 		if session.Blocked {
-			return protocol.ErrPrecondition
+			return ErrSessionBlocked
 		}
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
@@ -91,8 +98,11 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			}
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
-			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {
-				return protocol.ErrPrecondition
+			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() {
+				return ErrInterruptTurnInactive
+			}
+			if conversation.Owner == nil {
+				return ErrInterruptOwnerMissing
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_interrupt(id,conversation_id,generation,target_turn,result)
 				VALUES($1,$2,$3,$4,NULL)`, uuid.New(), conversation.ID, conversation.Generation, interrupt.GetTurnId()); err != nil {
