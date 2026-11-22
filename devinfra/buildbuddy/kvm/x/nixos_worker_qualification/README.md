@@ -27,8 +27,8 @@ the same K3s registry mirror settings, and a `pool` file containing
 `kvm-vm-nixos-spike`. It gives the VM 4 vCPUs (2 requested, 4 limit), 8 GiB RAM,
 the same nested-KVM node affinity, and the same 8080 readiness probe with the
 `server-type: buildbuddy-executor` header. Readiness is registered executor
-health, not merely a running VM. Guest egress permits the BuildBuddy scheduler,
-DNS, and Zot; it excludes Ubuntu package hosts. KubeVirt pulls
+health, not merely a running VM. Guest egress permits DNS, the BuildBuddy scheduler, Zot, and NTP to
+`time.cloudflare.com` on UDP/123. KubeVirt pulls
 the private Forgejo containerDisk with `containerDisk.imagePullSecret`. The
 namespace-scoped ExternalSecret reads the existing, controller-owned
 `forgejo-images-creds` from `kubernetes-forgejo-images-secret-store`; no token is

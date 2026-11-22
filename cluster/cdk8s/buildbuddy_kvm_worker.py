@@ -349,7 +349,12 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
         ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
-        egress=[cilium.dns_egress(resolves=["*"]), EgressRule.to_fqdns(*_HTTPS_HOSTS), zot.HTTP.egress()],
+        egress=[
+            cilium.dns_egress(resolves=["*"]),
+            EgressRule.to_fqdns(*_HTTPS_HOSTS),
+            EgressRule.to_fqdns("time.cloudflare.com", port=123, protocol="UDP"),
+            zot.HTTP.egress(),
+        ],
     )
     k8s.KubeService(
         chart,

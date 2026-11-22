@@ -45,6 +45,10 @@ in
   services.openssh.enable = lib.mkForce false;
   services.journald.console = "/dev/ttyS0";
   services.qemuGuest.enable = true;
+  services.timesyncd = {
+    servers = [ "time.cloudflare.com" ];
+    fallbackServers = [ ];
+  };
   services.prometheus.exporters.node.enable = true;
 
   documentation.enable = false;

@@ -112,7 +112,8 @@ Docker seccomp profile enables the required `keyctl` calls and conditional
 isolation from the outer cluster, not between hostile jobs.
 
 K3s images use Zot with public fallback disabled. The guest's outer network
-policy permits DNS, the BuildBuddy scheduler/cache and Zot. Metrics on ports
+policy permits DNS, the BuildBuddy scheduler/cache, Zot, and NTP to
+`time.cloudflare.com` on UDP/123. Metrics on ports
 9090 and 9100 admit only node-local Alloy. Ubuntu package hosts and the executor
 registry are unnecessary for guest startup. Diagnose a member with
 `virtctl -n buildbuddy-executor console buildbuddy-kvm-worker-0`; inspect mount,
