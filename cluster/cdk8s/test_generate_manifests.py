@@ -265,8 +265,8 @@ def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Pa
     patch: list[str] = []
     for relative in sorted(generated_files):
         committed_path = checkout / relative
-        before = committed_path.read_text() if committed_path.is_file() else None
-        after = (generated / relative).read_text()
+        before = committed_path.read_text(newline="") if committed_path.is_file() else None
+        after = (generated / relative).read_text(newline="")
         if before == after:
             continue
         (missing if before is None else stale).append(relative)
