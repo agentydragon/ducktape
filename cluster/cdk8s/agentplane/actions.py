@@ -5,8 +5,6 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -33,7 +31,6 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -333,40 +330,15 @@ class Actions(Construct):
         groups = dict(props.action_groups)
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
-            dispatcher_peer = ServicePeer(
-                target=dispatcher.authority,
-                request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
-            )
-            history_peer = ServicePeer(
-                target=history.authority,
-                request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
-            )
+            dispatcher_peer, history_peer = self._session_peers(_PEER_TIMEOUT_SECONDS)
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
-            delegated_dispatcher_peer = ServicePeer(
-                target=dispatcher.authority,
-                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
-            )
-            delegated_history_peer = ServicePeer(
-                target=history.authority,
-                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
-            )
+            delegated_dispatcher_peer, delegated_history_peer = self._session_peers(_DELEGATED_PEER_TIMEOUT_SECONDS)
         workload = self._add_workload()
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=ACTIONS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
-        rpc = listener.Listener(
-            listen_address=f"0.0.0.0:{self.service.pod_port}",
-            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-        )
+        rpc = serving_tls.spiffe_listener(self.service.pod_port)
         settings = SettingsFile(
             self,
             "settings",
@@ -411,6 +383,20 @@ class Actions(Construct):
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)
+
+    def _session_peers(self, timeout_seconds: int) -> tuple[ServicePeer, ServicePeer]:
+        return (
+            ServicePeer(
+                target=self.dispatcher.authority,
+                request_timeout_s=timeout_seconds,
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
+            ),
+            ServicePeer(
+                target=self.history.authority,
+                request_timeout_s=timeout_seconds,
+                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
+            ),
+        )
 
     def add_platform_resources(self) -> None:
         """Add the Cilium policy and Action Service availability alert."""
@@ -571,7 +557,6 @@ class Actions(Construct):
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
-            replica_profile=self.env.replicas,
             env_variables=self._container_env(),
             readiness=health.readiness(),
             liveness=health.liveness(),

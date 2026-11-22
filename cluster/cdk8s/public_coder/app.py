@@ -36,6 +36,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.public_coder import config as public_coder_config, egress as public_coder_egress, egress_proxy_url
@@ -66,7 +67,7 @@ _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
 _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
-_NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
+_NO_PROXY = f"127.0.0.1,localhost,{litellm.SERVICE.host},{litellm.SERVICE.fqdn}"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
@@ -77,7 +78,7 @@ def chart(app: App) -> Chart:
         chart_name=_CONFIG_MAP_NAME,
         configmap_name=_CONFIG_MAP_NAME,
         namespace=NAMESPACE,
-        data={"openclaw.json5": json_config(public_coder_config.config())},
+        data={"openclaw.json5": json_config(public_coder_config.config(litellm_url=litellm.API_BASE))},
     )
 
 
@@ -223,7 +224,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[_SERVICE.port.k8s_container_port()],
+        ports=[_SERVICE.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which hid
         # two different outages during the 2026.8.1 recovery: a gateway crash-looping every ~4
         # minutes, and one that started but never bound its port. /healthz answers 200
@@ -473,7 +474,7 @@ def _network_policies(scope: Construct) -> None:
                     ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
+                    to=[_peer(litellm.NAMESPACE, litellm.SERVICE.pods.selector)], ports=[_tcp(litellm.SERVICE.pod_port)]
                 ),
             ],
         ),
@@ -536,12 +537,12 @@ def _rbac(scope: Construct) -> None:
     #
     # Expand by adding RoleBindings in other namespaces that reference the deploy-owned
     # access-profile group, or by graduating to a ClusterRole when the scope warrants it.
-    reader = "public-coder-agent-reader"
+    reader = access.role_ref("public-coder-agent-reader")
     k8s.KubeRole(
         scope,
         "reader",
         metadata=k8s.ObjectMeta(
-            name=reader,
+            name=reader.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only diagnostic access for the public-coder access profile."},
         ),
@@ -577,21 +578,21 @@ def _rbac(scope: Construct) -> None:
         scope,
         "reader-binding",
         metadata=k8s.ObjectMeta(
-            name=reader,
+            name=reader.name,
             namespace=NAMESPACE,
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
-        role_ref=access.role_ref("public-coder-agent-reader"),
+        role_ref=reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-agent-reader")],
     )
 
     # Additional secret-free status for the public-coder workload itself.
-    diagnostics = "agent-public-coder-extended-diagnostics-reader"
+    diagnostics = access.role_ref("public-coder-volsync-status")
     k8s.KubeRole(
         scope,
         "extended-diagnostics-reader",
         metadata=k8s.ObjectMeta(
-            name=diagnostics,
+            name=diagnostics.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only VolSync backup status for Haku and public-coder."},
         ),
@@ -605,25 +606,25 @@ def _rbac(scope: Construct) -> None:
         scope,
         "extended-diagnostics-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=diagnostics,
+            name=diagnostics.name,
             namespace=NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to VolSync status."},
         ),
-        role_ref=access.role_ref("public-coder-volsync-status"),
+        role_ref=diagnostics,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-volsync-status")],
     )
 
     # Cluster-scoped node inventory for scheduling and health diagnostics.
     #
     # Nodes are cluster infrastructure rather than Git-managed application state, so this is
-    # intentionally the sole cluster-wide grant for the public coder. In particular, it does
+    # a separate cluster-wide grant for the public coder. In particular, it does
     # not include nodes/proxy, node logs, metrics, or any write verbs.
-    node_reader = "public-coder-agent-node-reader"
+    node_reader = access.role_ref("public-coder-node-read")
     k8s.KubeClusterRole(
         scope,
         "node-reader",
         metadata=k8s.ObjectMeta(
-            name=node_reader,
+            name=node_reader.name,
             annotations={"description": "Read-only node inventory for public-coder-agent diagnostics."},
         ),
         rules=[k8s.PolicyRule(api_groups=[""], resources=["nodes"], verbs=_READ)],
@@ -632,10 +633,10 @@ def _rbac(scope: Construct) -> None:
         scope,
         "node-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=node_reader,
+            name=node_reader.name,
             annotations={"description": "Binds public-coder and its Haku superset to read-only node inventory."},
         ),
-        role_ref=access.role_ref("public-coder-node-read"),
+        role_ref=node_reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-node-read")],
     )
 
@@ -645,12 +646,12 @@ def _rbac(scope: Construct) -> None:
     # here to make the Haku-superset invariant explicit. Keep public-coder on this smaller
     # surface rather than binding it to that broad role, which also exposes all Pods, PVs, RBAC,
     # and webhooks.
-    metadata_reader = "public-coder-agent-cluster-metadata-reader"
+    metadata_reader = access.role_ref("public-coder-cluster-metadata-read")
     k8s.KubeClusterRole(
         scope,
         "cluster-metadata-reader",
         metadata=k8s.ObjectMeta(
-            name=metadata_reader,
+            name=metadata_reader.name,
             annotations={"description": "Read-only CRD schemas and node metrics for public-coder diagnostics."},
         ),
         rules=[
@@ -662,12 +663,12 @@ def _rbac(scope: Construct) -> None:
         scope,
         "cluster-metadata-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=metadata_reader,
+            name=metadata_reader.name,
             annotations={
                 "description": "Binds public-coder and its Haku superset to CRD schemas and node metrics only."
             },
         ),
-        role_ref=access.role_ref("public-coder-cluster-metadata-read"),
+        role_ref=metadata_reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-cluster-metadata-read")],
     )
 
@@ -744,7 +745,6 @@ def public_coder_agent_app(
         "public-coder-agent-app",
         artifact,
         wait=None,
-        annotations={"ducktape.org/parked": "true"},
         # The parked app artifact is intentionally omitted. Keep its inventory orphanable so
         # the retained OpenClaw PVCs and state survive while the app is offline.
         suspend=True,

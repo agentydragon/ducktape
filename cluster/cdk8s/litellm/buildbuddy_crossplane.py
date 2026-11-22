@@ -43,7 +43,6 @@ def chart(app: App) -> Chart:
         reader=reader,
         source_namespace="flux-system",
         source_secret="buildbuddy-org-admin-api-key",
-        consumer_namespace=buildbuddy_provider.NAMESPACE,
     )
     ExternalSecret(
         chart,

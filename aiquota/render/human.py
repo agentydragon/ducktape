@@ -175,7 +175,8 @@ def _credit_lines(pv: ProviderView, now: datetime, tz: tzinfo | None, details: b
 
 def _balance_line(balance: BalanceView, indent: str, now: datetime, details: bool) -> Text:
     stale = f" · stale {format_age((now - balance.stale_since).total_seconds())}" if balance.stale_since else ""
-    line = Text(f"{indent}{balance.label}: {balance.value}{stale}")
+    label = f"{balance.label}: " if balance.label else ""
+    line = Text(f"{indent}{label}{balance.value}{stale}")
     if details and balance.pool_detail is not None:
         line.append(f"\n{indent}  pool: {balance.pool_detail}")
     if details and balance.exact_value is not None:

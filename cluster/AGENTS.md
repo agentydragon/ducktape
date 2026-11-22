@@ -12,12 +12,9 @@ Getting these wrong is destructive or silently corrupting.
   "including persistent auth" or "from scratch".
 - **Commit and push before reconciling Flux** — it reads the git remote; reconciling
   uncommitted work applies the old state and looks like a failed change.
-- **Wiping a backing DB orphans tofu state.** `tf/gitops/sso-providers/` (Authentik OAuth2
-  providers) and `props/deploy/forgejo/tofu/` (Forgejo registry user) record IDs of objects
-  in other stateful systems; wiping that DB without clearing tofu state (CNPG
-  `tofu-state-db-ovh`, one schema per root) yields
-  `Unable to read … not found with id N`. Recovery: <docs/troubleshooting.md>
-  § "Resource ID Desync After Wiping a Backing Datastore".
+- **A backing database restore can invalidate IDs in OpenTofu state.** Preserve the
+  state and identify the reconciler before repairing affected bindings. Authentik and
+  Forgejo examples are in [Resource ID Desync After Wiping a Backing Datastore](docs/troubleshooting.md#resource-id-desync-after-wiping-a-backing-datastore).
 - **DNS and website must survive OVH-only** (README § "OVH-Only Resilience Invariants").
 
 ## Bootstrap
@@ -62,9 +59,8 @@ minting fresh values for fields you can't recover (i.e. rotate).
   obvious.
 - In-cluster VMs should forward guest logs to a destination the cluster already collects;
   see <docs/troubleshooting.md> § Loki for the KubeVirt path and query.
-- YAML consumed by `configMapGenerator` stays `.yaml` (never disguised as `.txt`): add
-  `cluster-manifest-ignored=true` in root `.gitattributes`, add the path to the kubeconform
-  exclusion in `.pre-commit-config.yaml`, and mark the file as a `configMapGenerator` input.
+- List configuration YAML in its consuming `configMapGenerator` and keep the `.yaml`
+  extension. Exclude application-specific YAML from kubeconform in `.pre-commit-config.yaml`.
 - A `HelmRepository`/`GitRepository` consumed by exactly one `HelmRelease` in the same
   component directory: put it first in `helmrelease.yaml` and list only that file in
   `kustomization.yaml`. Keep separate if reused, independently owned, or a consumer needs
@@ -152,10 +148,8 @@ precaution based on a suspected, not proven, diskless-primary reattachment issue
 
 - A decommissioned or indefinitely suspended app whose source ducktape does **not** own
   (third-party image/chart/tool) moves whole to `cluster/parked/<name>/`, layout unchanged.
-  Its Flux Kustomization stays in the central chart with `spec.suspend: true` and annotation
-  `ducktape.org/parked: "true"` (required for `cluster/parked/` paths by
-  `test_flux_kustomizations_under_parked_path_are_annotated` in
-  `cdk8s/test_generate_manifests.py`).
+  Its Flux Kustomization stays in the central chart with `spec.suspend: true`.
+  `flux_kustomization` sets `ducktape.org/parked: "true"` from the artifact's directory.
 - Ducktape-owned code (`<project>/deploy/`, e.g. `props/deploy/`) keeps its manifests beside
   its source, active or suspended.
 - `cluster/parked` is outside the manifest roots: `cluster/validation` skips it, image

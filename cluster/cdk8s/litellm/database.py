@@ -16,9 +16,9 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.generation import write_app
+from cluster.cdk8s.litellm.endpoint import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-NAMESPACE = "litellm"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
 DATABASE = cluster.PostgresRef.generated(name="litellm-db", namespace=NAMESPACE)
 

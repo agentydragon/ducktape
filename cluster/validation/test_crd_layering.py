@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
@@ -11,44 +10,28 @@ from cluster.validation.flux import DependsOn, FluxKustomizationSpec
 from cluster.validation.k8s import K8sResource
 
 
-@pytest.mark.parametrize("transitive", [False, True], ids=["direct", "transitive"])
-@pytest.mark.parametrize(
-    ("kind", "api_version", "provider"),
-    [
-        ("ExternalSecret", "external-secrets.io/v1", "external-secrets-operator"),
-        ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
-        ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
-        ("Provider", "pkg.crossplane.io/v1", "crossplane"),
-        ("Key", "litellm.m.crossplane.io/v1alpha1", "crossplane-provider-litellm"),
-        ("Organization", "litellm.m.crossplane.io/v1alpha1", "crossplane-provider-litellm"),
-    ],
-)
-def test_app_helmrelease_can_share_operator_instances(
-    kind: str, api_version: str, provider: str, transitive: bool
-) -> None:
+def test_app_helmrelease_requires_all_its_crd_providers() -> None:
     cluster = ParsedCluster(
         flux_kustomizations={
-            "test-app": FluxKustomizationSpec(
-                depends_on=[DependsOn(name="test-prerequisites" if transitive else provider)]
-            ),
-            "test-prerequisites": FluxKustomizationSpec(depends_on=[DependsOn(name=provider)]),
-            provider: FluxKustomizationSpec(),
+            "app": FluxKustomizationSpec(depends_on=[DependsOn(name="cnpg"), DependsOn(name="observability")]),
+            "observability": FluxKustomizationSpec(depends_on=[DependsOn(name="monitoring-crds")]),
+            "cnpg": FluxKustomizationSpec(),
+            "monitoring-crds": FluxKustomizationSpec(),
+            "crossplane-provider-litellm": FluxKustomizationSpec(),
         },
         rendered_resources={
-            "test-app": [
+            "app": [
                 K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
-                K8sResource(kind=kind, apiVersion=api_version),
+                K8sResource(kind="Cluster", apiVersion="postgresql.cnpg.io/v1"),
+                K8sResource(kind="ServiceMonitor", apiVersion="monitoring.coreos.com/v1"),
+                K8sResource(kind="Key", apiVersion="litellm.m.crossplane.io/v1alpha1"),
+                K8sResource(kind="Organization", apiVersion="litellm.m.crossplane.io/v1alpha1"),
             ]
         },
     )
-    assert validate_operator_dependencies(cluster) == []
-
-    cluster.graph.remove_edge("test-app", "test-prerequisites" if transitive else provider)
-    errors = validate_operator_dependencies(cluster)
-    assert len(errors) == 1
-    assert "test-app" in errors[0]
-    assert kind in errors[0]
-    assert provider in errors[0]
+    assert validate_operator_dependencies(cluster) == [
+        "app uses Key resources but doesn't transitively depend on crossplane-provider-litellm"
+    ]
 
 
 def test_operator_cannot_satisfy_its_own_helm_install_dependency() -> None:

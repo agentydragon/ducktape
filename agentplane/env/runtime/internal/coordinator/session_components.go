@@ -28,8 +28,8 @@ func (r *Runtime) initializeSessions() error {
 	r.harnessProcesses = r.processes.Scope(r.lifecycleContext, supervision.HarnessDomain, &r.sessionWorkers, r.fail)
 	if r.config.Codex != nil {
 		execURL := ""
-		if r.config.CodexExecServer != nil {
-			execURL = r.config.CodexExecServer.URL
+		if r.config.ExecutionBackend != nil {
+			execURL = r.config.ExecutionBackend.URL
 		}
 		r.codexAppServer, err = codexappserver.NewHost(*r.config.Codex, codexappserver.Dependencies{
 			Context: r.lifecycleContext, State: r.lifecycleState, Workers: &r.sessionWorkers,

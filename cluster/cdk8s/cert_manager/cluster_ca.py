@@ -42,6 +42,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetConfigMapMetadata,
 )
 
+from cluster.cdk8s import public_web_pki
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 
@@ -53,8 +54,6 @@ INTERNAL_ISSUER = CertificateSpecIssuerRef(name="cluster-internal-ca", kind="Clu
 BUNDLE = "cluster-internal-ca-bundle"
 BUNDLE_KEY = "ca-certificates.crt"
 BOOTSTRAP_ISSUER = "cluster-ca-bootstrap"
-
-PUBLIC_BUNDLE = "public-web-pki"
 
 WORKLOAD_ISSUER = CertificateSpecIssuerRef(name="agentplane-workload", kind="ClusterIssuer")
 WORKLOAD_BUNDLE = "agentplane-workload-ca-bundle"
@@ -160,10 +159,10 @@ def chart(app: App) -> Chart:
     Bundle(
         chart,
         "public-web-pki",
-        metadata=ApiObjectMetadata(name=PUBLIC_BUNDLE),
+        metadata=ApiObjectMetadata(name=public_web_pki.NAME),
         spec=BundleSpec(
             sources=[BundleSpecSources(use_default_c_as=True)],
-            target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
+            target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=public_web_pki.KEY)),
         ),
     )
     add_workload_ca(chart)

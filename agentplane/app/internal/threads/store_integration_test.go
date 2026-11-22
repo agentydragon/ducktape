@@ -2,6 +2,7 @@ package threads
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -210,5 +211,73 @@ func assertQuiet(t *testing.T, wakeup <-chan struct{}) {
 	case <-wakeup:
 		t.Fatal("thread metadata operation emitted an unexpected notification")
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T) {
+	store, _, _ := openStore(t)
+	ctx := t.Context()
+	session := NoticeScope{ThreadID: uuid.New(), Issuer: "https://operator.test/identity", Subject: "user/1"}
+	otherSession := session
+	otherSession.ThreadID = uuid.New()
+	secondOperator := session
+	secondOperator.Subject = "user/2"
+	otherIssuer := session
+	otherIssuer.Issuer = "https://other.test/identity"
+	old := NoticeRevision{CommandID: "same-command", Version: 37}
+	changed := NoticeRevision{CommandID: old.CommandID, Version: old.Version + 1}
+	other := NoticeRevision{CommandID: "other-command", Version: 39}
+	for _, notice := range []NoticeRevision{old, old, other} {
+		if err := store.AcknowledgeNotice(ctx, session, notice); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found, err := store.FindNoticeAcknowledgements(ctx, session, []NoticeRevision{old, changed, {CommandID: other.CommandID, Version: old.Version}})
+	if err != nil || len(found) != 1 || found[0].NoticeRevision != old {
+		t.Fatalf("exact revisions: %v, %v", found, err)
+	}
+	ackTime := found[0].AcknowledgedAt
+	if rows, err := store.ListNoticeAcknowledgements(ctx, secondOperator, nil, 1); err != nil || len(rows) != 0 {
+		t.Fatalf("another operator's history: %v, %v", rows, err)
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, secondOperator, []NoticeRevision{old}); err != nil || len(rows) != 0 {
+		t.Fatalf("another operator's lookup: %v, %v", rows, err)
+	}
+	if err := store.AcknowledgeNotice(ctx, secondOperator, old); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, secondOperator, []NoticeRevision{old}); err != nil || len(rows) != 1 {
+		t.Fatalf("independent acknowledgement: %v, %v", rows, err)
+	}
+	found, err = store.FindNoticeAcknowledgements(ctx, otherSession, []NoticeRevision{old})
+	if err != nil || len(found) != 0 {
+		t.Fatalf("other Session: %v, %v", found, err)
+	}
+
+	if err := store.AcknowledgeNotice(ctx, session, changed); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeNotice(ctx, session, old); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.ListNoticeAcknowledgements(ctx, session, nil, 1)
+	if err != nil || len(page) != 2 || page[0].NoticeRevision != changed || page[1].NoticeRevision != other {
+		t.Fatalf("first page and lookahead: %v, %v", page, err)
+	}
+	for _, scope := range []NoticeScope{otherSession, secondOperator, otherIssuer} {
+		if _, err := store.ListNoticeAcknowledgements(ctx, scope, &page[0].ID, 2); !errors.Is(err, ErrNoticeCursor) {
+			t.Fatalf("cross-scope cursor: %v", err)
+		}
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, otherIssuer, []NoticeRevision{old}); err != nil || len(rows) != 0 {
+		t.Fatalf("different issuer with same subject: %v, %v", rows, err)
+	}
+	var issuer, subject string
+	if err := store.db.QueryRowContext(ctx, "SELECT operator_issuer,operator_subject FROM command_notice_acknowledgement WHERE acknowledgement_id=$1", page[0].ID).Scan(&issuer, &subject); err != nil || issuer != session.Issuer || subject != session.Subject {
+		t.Fatalf("persisted OIDC identity: issuer=%q subject=%q err=%v", issuer, subject, err)
+	}
+	next, err := store.ListNoticeAcknowledgements(ctx, session, &page[0].ID, 2)
+	if err != nil || len(next) != 2 || next[0].NoticeRevision != other || next[1].NoticeRevision != old || !next[1].AcknowledgedAt.Equal(ackTime) {
+		t.Fatalf("older revisions: %v, %v", next, err)
 	}
 }

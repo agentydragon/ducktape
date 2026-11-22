@@ -62,7 +62,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	var state string
-	if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", row.CommandID).Scan(&state); err != nil {
+	if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch WHERE command_id=$1", row.CommandID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != FailedState {

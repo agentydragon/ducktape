@@ -12,13 +12,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
-    ImagePolicySpecFilterTags,
-    ImagePolicySpecImageRepositoryRef,
-    ImagePolicySpecPolicy,
-    ImagePolicySpecPolicyAlphabetical,
-    ImagePolicySpecPolicyAlphabeticalOrder,
-)
 from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepository,
     ImageRepositorySpec,
@@ -32,7 +25,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 
-from cluster.cdk8s import node_scheduling, piraeus_storage, pod_policy
+from cluster.cdk8s import node_scheduling, piraeus_storage, pod_policy, public_web_pki
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.container_resources import container_resources
@@ -44,10 +37,10 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
+from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
-from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.volume_claim import volume_claim
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -313,16 +306,50 @@ def _image_policy(chart: Chart, name: str) -> None:
             secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
         ),
     )
-    ImagePolicy(
-        chart,
-        f"{name}-image-policy",
-        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
-        image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=r"^main-\d{14}-[0-9a-f]{7}$"),
-        policy=ImagePolicySpecPolicy(
-            alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
-        ),
+    newest_ci_tag_policy(chart, repository, prefix="main")
+
+
+def recorder_containers() -> list[k8s.Container]:
+    """The CA initializer and native sidecar for providers recording upstream traffic."""
+    recorder_listening = k8s.ExecAction(
+        command=[
+            "python",
+            "-c",
+            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
+        ]
     )
+    return [
+        k8s.Container(
+            name="recorder-ca-init",
+            image="busybox:1.38",
+            command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
+            volume_mounts=[
+                k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
+                k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+            ],
+            security_context=_container_security(),
+            resources=_resources(),
+        ),
+        k8s.Container(
+            name="upstream-recorder",
+            image="mitmproxy/mitmproxy:12.2.3",
+            # Start the recorder before providers dispatch their first probe.
+            restart_policy="Always",
+            command=[
+                "sh",
+                "-c",
+                f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
+            ],
+            readiness_probe=k8s.Probe(exec=recorder_listening),
+            startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
+            volume_mounts=[
+                k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+                k8s.VolumeMount(name="captures", mount_path="/captures"),
+            ],
+            security_context=_container_security(),
+            resources=_resources(),
+        ),
+    ]
 
 
 def _provider_workload(chart: Chart, instance: str, *, provider_type: str, record_upstream_traffic: bool) -> None:
@@ -382,55 +409,6 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
-    recorder_init = (
-        [
-            k8s.Container(
-                name="recorder-ca-init",
-                image="busybox:1.38",
-                command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
-                volume_mounts=[
-                    k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
-                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
-                ],
-                security_context=_container_security(),
-                resources=_resources(),
-            )
-        ]
-        if record_upstream_traffic
-        else []
-    )
-    recorder_listening = k8s.ExecAction(
-        command=[
-            "python",
-            "-c",
-            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
-        ]
-    )
-    recorder_sidecars = (
-        [
-            k8s.Container(
-                name="upstream-recorder",
-                image="mitmproxy/mitmproxy:12.2.3",
-                # Start the recorder before providers dispatch their first probe.
-                restart_policy="Always",
-                command=[
-                    "sh",
-                    "-c",
-                    f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
-                ],
-                readiness_probe=k8s.Probe(exec=recorder_listening),
-                startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
-                volume_mounts=[
-                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
-                    k8s.VolumeMount(name="captures", mount_path="/captures"),
-                ],
-                security_context=_container_security(),
-                resources=_resources(),
-            )
-        ]
-        if record_upstream_traffic
-        else []
-    )
     # Retain the memory reservations for providers with sampled working-set peaks near those requests.
     # Recorder and other init-container resources are outside these policies.
     vpa_policy: ContainerPolicy | None
@@ -441,7 +419,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
             vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="416Mi")
         case "quest-scheduler":
             vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="576Mi")
-        case "myquest":
+        case "myquest" | "myquest-canary":
             # The browser peaked at 986 MiB and used 158m CPU over five minutes during startup.
             vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", cpu_floor="175m", memory_floor="1Gi")
         case "thrive":
@@ -539,7 +517,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         ],
         selector_name=name,
         node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
-        init_containers=[*recorder_init, *recorder_sidecars],
+        init_containers=recorder_containers() if record_upstream_traffic else [],
         vpa_policy=vpa_policy,
     )
     _service(
@@ -566,7 +544,10 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
 
 
 def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
-    if record_upstream_traffic:
+    recorded = set(BASE_PROVIDERS) - {"myquest"} if record_upstream_traffic else set()
+    if config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC:
+        recorded.add("myquest-canary")
+    if recorded:
         interception_root_ca(
             chart,
             name="platform-sessions-recorder-root-ca",
@@ -579,14 +560,8 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     for integration in config.INTEGRATIONS["integrations"]:
         instance = str(integration["id"])
         _add_provider(chart, instance)
-        if instance == "myquest-canary":
-            provider_recording = config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
-        elif instance == "myquest":
-            provider_recording = False
-        else:
-            provider_recording = record_upstream_traffic
         _provider_workload(
-            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=provider_recording
+            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=instance in recorded
         )
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
@@ -613,7 +588,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             env_from=[k8s.EnvFromSource(secret_ref=k8s.SecretEnvSource(name="platform-sessions-oidc"))],
             env=[
                 k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value=f"https://{PUBLIC_HOSTNAME}"),
-                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                public_web_pki.SSL_CERT_FILE,
                 _config_env(
                     "PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json", config_map=CANARY_CONFIG
                 ),
@@ -627,13 +602,13 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="provider-credentials", mount_path=_TOKEN_DIR, read_only=True),
-                k8s.VolumeMount(name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True),
+                public_web_pki.VOLUME_MOUNT,
                 k8s.VolumeMount(name="bearers", mount_path="/var/run/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="trust", mount_path="/var/run/provider-trust", read_only=True),
             ],
         ),
         [
-            k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+            public_web_pki.VOLUME,
             provider_credentials,
             k8s.Volume(
                 name="bearers",

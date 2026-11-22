@@ -1,31 +1,17 @@
-"""Shared pytest tracing, harness parameters, and scripted-model fixtures.
-
-K3s suites supply explicit deployment access. The separate live targets read their configuration
-once at the fixture boundary and default to staging.
-"""
+"""Shared pytest markers, per-case tracing, and timing reports."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Generator, Iterator
-from typing import cast
+from collections.abc import Generator, Iterator
 
 import pytest
 from opentelemetry import trace
 
-from agentplane.proto import session_pb2
-from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver import scripted_upstream
 from agentplane.system_tests.driver.case_batch import CASE_RESULT
-from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.tracing import timing_summary, tracer
 from agentplane.system_tests.k3s.pytest_plugin import k3s_binary
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.otel_tracing import configure_tracing
-from util.net import Listener
-
-# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-# gazelle:include_dep @pypi//protobuf
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -68,28 +54,6 @@ def pytest_runtest_makereport(
         # elapsed duration, rather than just the time spent waiting for its result.
         report.duration = item.stash[CASE_RESULT].seconds
     return report
-
-
-@pytest.fixture
-async def dispatcher(cluster: Cluster) -> AsyncIterator[SessionDispatcherClient]:
-    """Native Dispatcher client using an authorized App service SVID."""
-    async with native_client(cluster) as client:
-        yield client
-
-
-@pytest.fixture(params=[session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX], ids=["claude", "codex"])
-def harness(request: pytest.FixtureRequest) -> session_pb2.Harness:
-    """Every scenario runs on every harness: one runner protocol, so one test body covers both."""
-    return cast(session_pb2.Harness, request.param)
-
-
-@pytest.fixture
-async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstream.ScriptedUpstream]:
-    """The model behind this target's LLM ingress, played by the scenario. One per test, so a request
-    a scenario leaves unanswered fails that scenario."""
-    upstream = scripted_upstream.ScriptedUpstream()
-    async with upstream.serving(listener=scripted_listener.socket):
-        yield upstream
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:

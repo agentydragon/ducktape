@@ -42,7 +42,7 @@ func dispatchOperation(operation string) (commandpb.Operation, error) {
 
 // DescribeDispatch is the single wire projection for reads and terminal Watch
 // events. It never substitutes runner admission for a queued receipt.
-func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
+func DescribeDispatch(row *Dispatch, includeCommand bool) (*dispatcherpb.Dispatch, error) {
 	operation, err := dispatchOperation(row.Operation)
 	if err != nil {
 		return nil, err
@@ -52,6 +52,9 @@ func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
 		SandboxUid: row.SandboxUID, Operation: operation, State: dispatchState(row.State),
 		Admission: row.Admission, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
+	}
+	if includeCommand {
+		result.Command = row.Command
 	}
 	if row.Reason != "" {
 		result.Reason = &row.Reason

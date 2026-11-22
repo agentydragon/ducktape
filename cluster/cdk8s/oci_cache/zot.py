@@ -90,9 +90,7 @@ def _deployment(chart: Chart) -> None:
                             image="ghcr.io/project-zot/zot-linux-amd64:v2.1.21",
                             image_pull_policy="IfNotPresent",
                             args=["serve", "/etc/zot/config.json"],
-                            ports=[
-                                k8s.ContainerPort(name=HTTP.port.name, container_port=HTTP.pod_port, protocol="TCP")
-                            ],
+                            ports=[HTTP.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/etc/zot", read_only=True),
                                 k8s.VolumeMount(name="cache", mount_path="/var/lib/zot"),
@@ -119,7 +117,7 @@ def _deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="public-auth-proxy",
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
-                            ports=[_PUBLIC_AUTH.port.k8s_container_port()],
+                            ports=[_PUBLIC_AUTH.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="public-auth-config", mount_path="/etc/nginx/conf.d", read_only=True

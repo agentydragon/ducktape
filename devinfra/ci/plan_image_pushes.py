@@ -35,8 +35,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob
-from devinfra.ci import publication_cli, publication_evidence
+from devinfra.ci import publication_cli
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
+from devinfra.ci.publication_test_verdicts import TestEvidence, TestGate
 from devinfra.oci.crane import Crane
 
 
@@ -162,15 +163,14 @@ def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int
         return list(pool.map(decider, images))
 
 
-def matrix_include(
-    decisions: list[Decision], reusable_tests: set[str] | None = None, blocked_tests: set[str] | None = None
-) -> list[dict[str, str]]:
+def matrix_include(decisions: list[Decision], tests: TestEvidence) -> list[dict[str, str]]:
     """Matrix rows for pushes; an image whose test gate push CI already failed never starts a job."""
-    reusable_tests = reusable_tests or set()
-    blocked_tests = blocked_tests or set()
     rows = []
     for decision in decisions:
-        if not decision.needs_push or decision.image.test in blocked_tests:
+        if not decision.needs_push:
+            continue
+        gate = tests.publication_gate(decision.image.name, decision.image.test, action="pushed")
+        if gate is TestGate.BLOCK:
             continue
         row = {
             "image_name": decision.image.name,
@@ -178,7 +178,7 @@ def matrix_include(
             "test_target": decision.image.test or "",
             "registry": decision.image.registry,
         }
-        if decision.image.test in reusable_tests:
+        if gate is TestGate.REUSE:
             row["reuse_test_verdict"] = "true"
         rows.append(row)
     return rows
@@ -204,18 +204,11 @@ def main(argv: list[str] | None = None) -> None:
 
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
-    reusable_tests, blocked_tests = evidence.test_gates(
-        (
-            publication_evidence.TestGateCandidate(decision.image.name, decision.image.test)
-            for decision in decisions
-            if decision.needs_push
-        ),
-        action="pushed",
-    )
-    include = matrix_include(decisions, reusable_tests, blocked_tests)
+    include = matrix_include(decisions, evidence.tests)
+    pushing = {row["image_name"] for row in include}
 
     for d in sorted(decisions, key=lambda d: d.image.name):
-        marker = "PUSH" if d.needs_push and d.image.test not in blocked_tests else "skip"
+        marker = "PUSH" if d.image.name in pushing else "skip"
         print(f"{marker:>4}  {d.image.name:<32} {d.reason}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decisions)} images need a push.", file=sys.stderr)
 

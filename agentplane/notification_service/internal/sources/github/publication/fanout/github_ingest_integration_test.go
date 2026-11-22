@@ -324,6 +324,7 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	source := g.source(githubmodel.PullRequestSubject{Number: 7})
 	idle := g.follow(t, source, "idle")
 	backedOff := g.followIn(t, "backed-off", source, "backed-off")
+	deliveryBackedOff := g.followIn(t, "delivery-backed-off", source, "delivery-backed-off")
 	cancelled := g.followIn(t, "cancelled", source, "cancelled")
 	expired := g.followIn(t, "expired", source, "expired")
 	retired := g.followIn(t, "retired", source, "retired")
@@ -337,13 +338,16 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 		UPDATE subscription SET error = 'rate limited', error_kind = 'rate_limited', error_since = now(), error_observed_at = now(),
 			next_attempt = now() + interval '1 hour' WHERE id = $1`, backedOff.ID)
 	later := time.Now().Add(24 * time.Hour)
-	for _, sub := range []githubSubscription{idle, cancelled, expired, retired} {
+	for _, sub := range []githubSubscription{idle, deliveryBackedOff, cancelled, expired, retired} {
 		g.exec(t, `UPDATE subscription SET next_attempt = $2 WHERE id = $1`, sub.ID, later)
 	}
 	g.exec(t, `UPDATE subscription SET next_attempt = $2 WHERE id = $1`, foreign.ID, later)
 	g.exec(t, `UPDATE inbox SET next_attempt = $1 WHERE id IN ($2, $3, $4, $5, $6, $7)`, later,
 		idle.InboxID, backedOff.InboxID, cancelled.InboxID, expired.InboxID, retired.InboxID, foreign.InboxID)
+	g.exec(t, `UPDATE inbox SET delivery_error = 'DispatcherNotFoundError', next_attempt = $2 WHERE id = $1`,
+		deliveryBackedOff.InboxID, later)
 	backoff := g.wakeState(t, backedOff).nextAttempt
+	deliveryBackoff := g.wakeState(t, deliveryBackedOff).inboxNext
 	unaffected := map[string]githubSubscription{"cancelled": cancelled, "expired": expired, "retired inbox": retired, "another App's": foreign}
 	was := map[string]wakeState{}
 	for name, sub := range unaffected {
@@ -367,6 +371,13 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	}
 	if next := g.wakeState(t, backedOff).nextAttempt; !next.Equal(backoff) {
 		t.Errorf("a source backing off from a failure was made due at %v, not left at %v", next, backoff)
+	}
+	delivery := g.wakeState(t, deliveryBackedOff)
+	if delivery.generation != 1 || delivery.nextAttempt.Before(before) || delivery.nextAttempt.After(time.Now()) {
+		t.Errorf("source with a backed-off inbox = %+v, want generation 1 and source due at delivery", delivery)
+	}
+	if !delivery.inboxNext.Equal(deliveryBackoff) {
+		t.Errorf("inbox with a delivery failure was made due at %v, want %v", delivery.inboxNext, deliveryBackoff)
 	}
 	for name, sub := range unaffected {
 		if current := g.wakeState(t, sub); current != was[name] {

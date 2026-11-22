@@ -6,12 +6,12 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
-func TestCancellationDuringNativeStartRequiresJoinedFenceProof(t *testing.T) {
+func TestCancellationDuringStartOwnedRequiresJoinedFenceProof(t *testing.T) {
 	fenceErr := errors.New("native process fence failed")
 	for _, test := range []struct {
 		name      string
@@ -27,8 +27,8 @@ func TestCancellationDuringNativeStartRequiresJoinedFenceProof(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				entered, canceled, releaseFence := make(chan struct{}), make(chan struct{}), make(chan struct{})
-				start := codexexecserver.NativeStart(codexexecserver.NativeConfig{
-					Binary: "codex", Config: codexexecserver.Config{URL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerSystemd, Placement: codexexecserver.PlacementDirect},
+				start := backend.StartOwned(backend.StartConfig{
+					Binary: "codex", Config: backend.Config{URL: "ws://127.0.0.1:4501", Owner: backend.OwnerSystemd, Placement: backend.PlacementDirect},
 					LaunchProcess: func(ctx context.Context, _ supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 						close(entered)
 						<-ctx.Done()

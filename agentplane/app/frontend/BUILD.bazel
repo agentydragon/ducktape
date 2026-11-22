@@ -1,4 +1,3 @@
-# gazelle:exclude test_visual_actions.py
 # gazelle:exclude test_visual_notifications.py
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
@@ -8,15 +7,14 @@
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
-# gazelle:exclude test_visual_operation_presentation.py
-load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load(":visual_tests.bzl", "agentplane_visual_test")
+load(":visual_tests.bzl", "agentplane_visual_bundle", "agentplane_visual_test")
 load(":vitest.bzl", "agentplane_vitest_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -188,32 +186,25 @@ ts_library(
     name = "visual_harness_lib",
     testonly = True,
     srcs = [
-        "harness/action_presentations_visual.tsx",
         "harness/disclosure_visual.tsx",
         "harness/harness.tsx",
-        "harness/operation_presentation_visual.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":harness_fetch_mock",
+        ":harness_mount",
         ":harness_network",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/actions:history",
-        "//agentplane/app/frontend/actions:requests",
-        "//agentplane/app/frontend/actions:sidebar",
-        "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
+        "//agentplane/app/frontend/actions/testing:visual_fixtures",
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/egress:decision_fixture",
         "//agentplane/app/frontend/sandboxes:client",
@@ -224,15 +215,12 @@ ts_library(
         "//agentplane/app/frontend/sessions/testing:electric_entity",
         "//agentplane/app/frontend/sessions/testing:model_catalog",
         "//agentplane/app/frontend/shell:app",
-        "//agentplane/app/frontend/shell:theme",
         "//agentplane/app/frontend/testing:runtime_diagnostics",
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
         "//agentplane/app/frontend/transport:query",
         "//agentplane/app/frontend/transport:stream_status",
-        "//agentplane/app/frontend/ui:shell_command_view",
-        "//agentplane/app/frontend/ui:text_block",
         "//agentplane/egress/api/admin:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
@@ -253,33 +241,11 @@ ts_library(
     ],
 )
 
-# A classic script (iife) so harness/index.html loads it from file:// without module CORS.
-esbuild(
+agentplane_visual_bundle(
     name = "visual_bundle",
-    testonly = True,
-    config = {"jsx": "automatic"},
     entry_point = "harness/harness.js",
-    format = "iife",
-    minify = False,
-    output = "harness/bundle.js",
-    output_css = "harness/bundle.css",
-    platform = "browser",
-    sourcemap = "linked",
-    target = ["es2022"],
+    output_dir = "harness",
     deps = [":visual_harness_lib"],
-)
-
-# Single-file views so $(rootpath) resolves to one path each.
-filegroup(
-    name = "visual_bundle_js",
-    testonly = True,
-    srcs = ["harness/bundle.js"],
-)
-
-filegroup(
-    name = "visual_bundle_css",
-    testonly = True,
-    srcs = ["harness/bundle.css"],
 )
 
 agentplane_visual_test(
@@ -341,12 +307,6 @@ agentplane_visual_test(
     title = "Agentplane: policies",
 )
 
-agentplane_visual_test(
-    name = "visual_operation_presentation",
-    src = "test_visual_operation_presentation.py",
-    title = "Agentplane: shared Action presentation",
-)
-
 ts_library(
     name = "harness_network",
     testonly = True,
@@ -366,9 +326,29 @@ agentplane_vitest_test(
 
 check_vitest_specs()
 
-agentplane_visual_test(
-    name = "visual_actions",
-    src = "test_visual_actions.py",
-    shard_count = 16,
-    title = "Agentplane: action presentations",
+ts_library(
+    name = "harness_fetch_mock",
+    testonly = True,
+    srcs = ["harness/fetch_mock.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "harness_mount",
+    testonly = True,
+    srcs = ["harness/mount.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//agentplane/app/frontend/shell:theme",
+    ],
+)
+
+filegroup(
+    name = "visual_index_html",
+    testonly = True,
+    srcs = ["harness/index.html"],
 )

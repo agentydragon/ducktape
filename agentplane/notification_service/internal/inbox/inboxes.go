@@ -381,7 +381,10 @@ func (s *Store) AppendTx(ctx context.Context, tx transaction.Tx, inboxID, subscr
 			return &QuotaError{Quota: EntriesPerInbox, Limit: s.quotas.EntriesPerInbox}
 		}
 		cursor++
-		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2, next_attempt = least(next_attempt, now()) WHERE id = $1`, inboxID, cursor); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2, next_attempt = CASE
+			WHEN delivery_error IS NOT NULL AND next_attempt IS NOT NULL THEN next_attempt
+			ELSE LEAST(next_attempt, now())
+		END WHERE id = $1`, inboxID, cursor); err != nil {
 			return err
 		}
 		if err := entrystorage.Insert(ctx, tx, inboxID, cursor, input, now()); err != nil {

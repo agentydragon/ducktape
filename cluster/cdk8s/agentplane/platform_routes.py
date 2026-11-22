@@ -102,7 +102,7 @@ def telemetry_route() -> Route:
     )
 
 
-def routes(namespace: str) -> tuple[Route, ...]:
+def runner_routes(namespace: str) -> tuple[Route, ...]:
     return (
         telemetry_route(),
         egress_rules(namespace),
@@ -113,7 +113,7 @@ def routes(namespace: str) -> tuple[Route, ...]:
     )
 
 
-def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> PlatformRoutes:
+def listener(*routes: Route, listen_host: str = "127.0.0.1") -> PlatformRoutes:
     """The sidecar's shared `platform_routes` listener and its method-selected routes."""
     return PlatformRoutes(
         listen_address=f"{listen_host}:{PLATFORM_ROUTES_PORT}",
@@ -121,7 +121,7 @@ def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> Platfor
             route.name: PlatformRoute(
                 service_prefixes=route.service_prefixes, upstream=route.service.authority, transport=route.transport
             )
-            for route in routes(namespace)
+            for route in routes
         },
     )
 
@@ -137,7 +137,7 @@ class PlatformRouteFences(Construct):
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, clients: Pods) -> None:
         super().__init__(scope, id)
-        fenced_routes = routes(namespace)
+        fenced_routes = runner_routes(namespace)
         NetworkPolicy(
             self,
             "clients",

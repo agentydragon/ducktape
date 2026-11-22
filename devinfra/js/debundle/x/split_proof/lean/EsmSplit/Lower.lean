@@ -1,0 +1,346 @@
+import Lean.Data.Json
+import Std.Data.HashSet
+
+/-!
+# What each top-level statement mentions, from raw ESTree, in Lean
+
+The scan reads acorn's ESTree (`Lean.Json`, untyped, so every node type of JavaScript is representable) and finds,
+for a top-level statement, the module-scope names it declares, reads when it runs (`rawEager`), reads only inside
+function bodies it creates (`rawLazy`) and assigns. It decides nothing about effects: `Effects.lean` does, by running
+the statement abstractly. Several traversals are partial Lean definitions; their termination and correspondence to
+JavaScript are not kernel-proved.
+
+Soundness is by construction and monotone:
+
+* A name is treated as local only if a *recognized* binder introduces it (parameter, `let`/`const`/
+  `var`/function/class declaration, `catch`, class or function-expression name).
+* Any node type not recognized goes through the generic fallback: every identifier below it is a
+  reference. That can add dependencies, never remove one.
+
+So adding precision (recognizing a binder) is the only way to get anything wrong.
+`lowering/compare.mjs` checks it against `eslint-scope`.
+-/
+
+open Lean
+
+namespace Lower
+
+structure Acc where
+  eager    : Array String := #[]
+  lazy     : Array String := #[]
+  /-- non-local names this statement assigns to (not declares) while it runs -/
+  assignedEager : Array String := #[]
+  /-- non-local names assigned inside the function bodies it creates, i.e. when they are called -/
+  assignedLazy  : Array String := #[]
+  /-- node types handled by the generic fallback -/
+  fallback : Array String := #[]
+
+abbrev M := StateM Acc
+
+def typ (j : Json) : String := (j.getObjValD "type").getStr?.toOption.getD ""
+def fld (j : Json) (k : String) : Json := j.getObjValD k
+def items (j : Json) : Array Json := j.getArr?.toOption.getD #[]
+def str (j : Json) : String := j.getStr?.toOption.getD ""
+def flag (j : Json) (k : String) : Bool := (j.getObjValD k).getBool?.toOption.getD false
+def isNull : Json → Bool | .null => true | _ => false
+
+def children : Json → Array Json
+  | .obj kvs => kvs.valuesArray
+  | .arr a => a
+  | _ => #[]
+
+/-- Why a statement is outside what the model covers, if it is.
+
+- A top-level `await` (an `await`, a `for await` or an `await using` outside every function): module evaluation is no
+  longer one sequence, since a module that is imported later can run before the awaiting one finishes. `Plan.visit`
+  does not model that.
+- A top-level `using`: its disposal runs when the module ends, which no statement stands for.
+- A direct `eval`, anywhere: the code it runs reaches the bindings around it by their spelling, so a split can part it
+  from a name that no statement mentions. An `eval` that is shadowed or optional is refused with it. -/
+partial def outsideModel (inFn : Bool) (j : Json) : Option String :=
+  let below (inFn : Bool) := (children j).findSome? (outsideModel inFn)
+  match typ j with
+  | "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression" => below true
+  | "AwaitExpression" => if inFn then below inFn else some "a top-level `await`"
+  | "ForOfStatement" => if flag j "await" && !inFn then some "a top-level `await`" else below inFn
+  | "VariableDeclaration" =>
+    let kind := str (fld j "kind")
+    if kind == "await using" && !inFn then some "a top-level `await`"
+    else if kind == "using" && !inFn then some "a top-level `using`"
+    else below inFn
+  | "CallExpression" =>
+    let callee := fld j "callee"
+    if typ callee == "Identifier" && str (fld callee "name") == "eval" then some "a direct `eval`"
+    else below inFn
+  | _ => below inFn
+
+/-- Names a pattern binds. -/
+partial def binders (j : Json) : List String :=
+  match typ j with
+  | "Identifier" => [str (fld j "name")]
+  | "ObjectPattern" => (items (fld j "properties")).toList.flatMap fun p =>
+      if typ p == "RestElement" then binders (fld p "argument") else binders (fld p "value")
+  | "ArrayPattern" => (items (fld j "elements")).toList.flatMap binders
+  | "AssignmentPattern" => binders (fld j "left")
+  | "RestElement" => binders (fld j "argument")
+  | _ => []
+
+/-- `let`/`const`/`class`/`function` declared directly in a statement list (block scope). -/
+def lexicalNames (stmts : Array Json) : List String :=
+  stmts.toList.flatMap fun s =>
+    match typ s with
+    | "VariableDeclaration" =>
+      if str (fld s "kind") == "var" then [] else
+        (items (fld s "declarations")).toList.flatMap fun d => binders (fld d "id")
+    | "FunctionDeclaration" | "ClassDeclaration" => binders (fld s "id")
+    | _ => []
+
+/-- `var` names hoisted to the enclosing function: through blocks, not through functions. -/
+partial def varNames (s : Json) : List String :=
+  match typ s with
+  | "VariableDeclaration" =>
+    if str (fld s "kind") == "var" then (items (fld s "declarations")).toList.flatMap fun d => binders (fld d "id") else []
+  | "BlockStatement" => (items (fld s "body")).toList.flatMap varNames
+  | "IfStatement" => varNames (fld s "consequent") ++ varNames (fld s "alternate")
+  | "ForStatement" => varNames (fld s "init") ++ varNames (fld s "body")
+  | "ForInStatement" | "ForOfStatement" => varNames (fld s "left") ++ varNames (fld s "body")
+  | "WhileStatement" | "DoWhileStatement" | "LabeledStatement" => varNames (fld s "body")
+  | "TryStatement" =>
+    varNames (fld s "block") ++ varNames (fld (fld s "handler") "body") ++ varNames (fld s "finalizer")
+  | "SwitchStatement" =>
+    (items (fld s "cases")).toList.flatMap fun c => (items (fld c "consequent")).toList.flatMap varNames
+  | _ => []
+
+def ref (bound : List String) (inFn : Bool) (n : String) : M Unit :=
+  unless bound.contains n do
+    modify fun s => if inFn then { s with lazy := s.lazy.push n } else { s with eager := s.eager.push n }
+
+def noteFallback (t : String) : M Unit := modify fun s => { s with fallback := s.fallback.push t }
+
+mutual
+
+/-- Visit a node. `bound`: names bound locally. `inFn`: inside a function body (reads are lazy). -/
+partial def visit (bound : List String) (inFn : Bool) (j : Json) : M Unit := do
+  match typ j with
+  | "" => for c in children j do visit bound inFn c
+  | "Identifier" => ref bound inFn (str (fld j "name"))
+  | "Literal" | "ThisExpression" | "Super" | "PrivateIdentifier" | "TemplateElement"
+  | "EmptyStatement" | "DebuggerStatement" | "BreakStatement" | "ContinueStatement" => pure ()
+  | "ArrayExpression" => for e in items (fld j "elements") do visit bound inFn e
+  | "ObjectExpression" => for p in items (fld j "properties") do visit bound inFn p
+  | "Property" =>
+    if flag j "computed" then visit bound inFn (fld j "key")
+    visit bound inFn (fld j "value")
+  | "SpreadElement" | "AwaitExpression" | "YieldExpression" | "UnaryExpression" | "ReturnStatement"
+  | "ThrowStatement" => visit bound inFn (fld j "argument")
+  | "ChainExpression" | "ParenthesizedExpression" | "ExpressionStatement" =>
+    visit bound inFn (fld j "expression")
+  | "BinaryExpression" | "LogicalExpression" =>
+    visit bound inFn (fld j "left"); visit bound inFn (fld j "right")
+  | "ConditionalExpression" | "IfStatement" =>
+    visit bound inFn (fld j "test"); visit bound inFn (fld j "consequent")
+    visit bound inFn (fld j "alternate")
+  | "AssignmentExpression" => target bound inFn (fld j "left"); visit bound inFn (fld j "right")
+  | "UpdateExpression" => target bound inFn (fld j "argument")
+  | "CallExpression" | "NewExpression" =>
+    visit bound inFn (fld j "callee")
+    for a in items (fld j "arguments") do visit bound inFn a
+  | "MemberExpression" =>
+    visit bound inFn (fld j "object")
+    if flag j "computed" then visit bound inFn (fld j "property")
+  | "SequenceExpression" | "TemplateLiteral" => for e in items (fld j "expressions") do visit bound inFn e
+  | "TaggedTemplateExpression" => visit bound inFn (fld j "tag"); visit bound inFn (fld j "quasi")
+  | "ImportExpression" => visit bound inFn (fld j "source"); visit bound inFn (fld j "options")
+  | "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression" => visitFn bound j
+  | "ClassDeclaration" | "ClassExpression" => visitClass bound inFn j
+  | "VariableDeclaration" =>
+    for d in items (fld j "declarations") do
+      visitPat bound inFn (fld d "id")
+      visit bound inFn (fld d "init")
+  | "BlockStatement" | "StaticBlock" =>
+    let stmts := items (fld j "body")
+    let b := lexicalNames stmts ++ bound
+    for s in stmts do visit b inFn s
+  | "ForStatement" =>
+    let b := lexicalNames #[fld j "init"] ++ bound
+    visit b inFn (fld j "init"); visit b inFn (fld j "test")
+    visit b inFn (fld j "update"); visit b inFn (fld j "body")
+  | "ForInStatement" | "ForOfStatement" =>
+    let left := fld j "left"
+    let b := lexicalNames #[left] ++ bound
+    if typ left == "VariableDeclaration" then visit b inFn left else target b inFn left
+    visit b inFn (fld j "right"); visit b inFn (fld j "body")
+  | "WhileStatement" | "DoWhileStatement" =>
+    visit bound inFn (fld j "test"); visit bound inFn (fld j "body")
+  | "LabeledStatement" => visit bound inFn (fld j "body")
+  | "TryStatement" =>
+    visit bound inFn (fld j "block")
+    let h := fld j "handler"
+    unless isNull h do
+      let b := binders (fld h "param") ++ bound
+      visitPat b inFn (fld h "param")
+      visit b inFn (fld h "body")
+    visit bound inFn (fld j "finalizer")
+  | "SwitchStatement" =>
+    visit bound inFn (fld j "discriminant")
+    let cases := items (fld j "cases")
+    let b := lexicalNames (cases.flatMap fun c => items (fld c "consequent")) ++ bound
+    for c in cases do
+      visit b inFn (fld c "test")
+      for s in items (fld c "consequent") do visit b inFn s
+  | "ExportNamedDeclaration" =>
+    visit bound inFn (fld j "declaration")
+    if isNull (fld j "source") then
+      for s in items (fld j "specifiers") do visit bound inFn (fld s "local")
+  | "ExportDefaultDeclaration" => visit bound inFn (fld j "declaration")
+  | "ExportAllDeclaration" => pure ()
+  | t => noteFallback t; for c in children j do visit bound inFn c
+
+/-- Expression parts of a binding pattern: defaults and computed keys. -/
+partial def visitPat (bound : List String) (inFn : Bool) (p : Json) : M Unit := do
+  match typ p with
+  | "" | "Identifier" => pure ()
+  | "ObjectPattern" =>
+    for q in items (fld p "properties") do
+      if typ q == "RestElement" then visitPat bound inFn (fld q "argument")
+      else
+        if flag q "computed" then visit bound inFn (fld q "key")
+        visitPat bound inFn (fld q "value")
+  | "ArrayPattern" => for e in items (fld p "elements") do visitPat bound inFn e
+  | "AssignmentPattern" => visitPat bound inFn (fld p "left"); visit bound inFn (fld p "right")
+  | "RestElement" => visitPat bound inFn (fld p "argument")
+  | _ => visit bound inFn p
+
+/-- Assignment target: a write to a non-local name is recorded. -/
+partial def target (bound : List String) (inFn : Bool) (t : Json) : M Unit := do
+  match typ t with
+  | "Identifier" =>
+    let n := str (fld t "name")
+    unless bound.contains n do
+      modify fun s => if inFn then { s with assignedLazy := s.assignedLazy.push n } else { s with assignedEager := s.assignedEager.push n }
+    ref bound inFn n
+  | "ObjectPattern" =>
+    for q in items (fld t "properties") do
+      if typ q == "RestElement" then target bound inFn (fld q "argument")
+      else
+        if flag q "computed" then visit bound inFn (fld q "key")
+        target bound inFn (fld q "value")
+  | "ArrayPattern" => for e in items (fld t "elements") do target bound inFn e
+  | "AssignmentPattern" => target bound inFn (fld t "left"); visit bound inFn (fld t "right")
+  | "RestElement" => target bound inFn (fld t "argument")
+  | _ => visit bound inFn t
+
+/-- Function bodies run when called, so everything inside is lazy. Parameter defaults cannot see
+the body's own declarations. -/
+partial def visitFn (bound : List String) (j : Json) : M Unit := do
+  let params := items (fld j "params")
+  let self := if typ j == "FunctionExpression" then binders (fld j "id") else []
+  let outer := (params.toList.flatMap binders) ++ self ++ bound
+  for p in params do visitPat outer true p
+  let body := fld j "body"
+  if typ body == "BlockStatement" then
+    let stmts := items (fld body "body")
+    let inner := (stmts.toList.flatMap varNames) ++ lexicalNames stmts ++ outer
+    for s in stmts do visit inner true s
+  else visit outer true body
+
+/-- `extends`, computed keys and static initializers run at definition; methods and instance
+field initializers run later. -/
+partial def visitClass (bound : List String) (inFn : Bool) (j : Json) : M Unit := do
+  visit bound inFn (fld j "superClass")
+  let inner := binders (fld j "id") ++ bound
+  for m in items (fld (fld j "body") "body") do
+    match typ m with
+    | "MethodDefinition" =>
+      if flag m "computed" then visit inner inFn (fld m "key")
+      visitFn inner (fld m "value")
+    | "PropertyDefinition" =>
+      if flag m "computed" then visit inner inFn (fld m "key")
+      visit inner (if flag m "static" then inFn else true) (fld m "value")
+    | "StaticBlock" => visit inner inFn m
+    | t => noteFallback t; for c in children m do visit inner inFn c
+
+end
+
+/-! ## Top-level statements -/
+
+partial def topDefs (s : Json) : List String :=
+  match typ s with
+  | "FunctionDeclaration" | "ClassDeclaration" => binders (fld s "id")
+  | "VariableDeclaration" => (items (fld s "declarations")).toList.flatMap fun d => binders (fld d "id")
+  | "ExportNamedDeclaration" => if isNull (fld s "declaration") then [] else topDefs (fld s "declaration")
+  | "ExportDefaultDeclaration" =>
+    let d := fld s "declaration"
+    if typ d == "FunctionDeclaration" || typ d == "ClassDeclaration" then binders (fld d "id") else []
+  -- a `var` inside a block, loop or `try` at the top level still declares a module-scope binding
+  | _ => varNames s
+
+/-- The name in an `import` or `export` specifier: an identifier, or a string literal (its `lit` is `s:` and the value). -/
+def specName (j : Json) : String :=
+  if typ j == "Literal" then ((str (fld j "lit")).drop 2).toString else str (fld j "name")
+
+/-- Local bindings an `export` statement exposes. Another module may observe them while this one evaluates (a cycle). -/
+def exportedBindings (s : Json) : List String :=
+  match typ s with
+  | "ExportNamedDeclaration" =>
+    if isNull (fld s "declaration") then
+      (items (fld s "specifiers")).toList.map fun sp => str (fld (fld sp "local") "name")
+    else topDefs (fld s "declaration")
+  | "ExportDefaultDeclaration" =>
+    let d := fld s "declaration"
+    if typ d == "Identifier" then [str (fld d "name")] else topDefs d
+  | _ => []
+
+def isHoisted (s : Json) : Bool :=
+  typ s == "FunctionDeclaration"
+    || ((typ s == "ExportNamedDeclaration" || typ s == "ExportDefaultDeclaration")
+        && typ (fld s "declaration") == "FunctionDeclaration")
+
+structure Top where
+  defs     : List String
+  rawEager : Array String
+  rawLazy  : Array String
+  assignedEager : Array String
+  assignedLazy  : Array String
+  fallback : Array String
+  hoisted  : Bool
+
+def analyzeTop (s : Json) : Top :=
+  let acc := (visit [] false s).run {} |>.2
+  { defs := topDefs s, rawEager := acc.eager, rawLazy := acc.lazy, assignedEager := acc.assignedEager,
+    assignedLazy := acc.assignedLazy, fallback := acc.fallback, hoisted := isHoisted s }
+
+/-- What the checker needs from one statement (`EsmSplit.Stmt` without the source text). -/
+structure Footprint where
+  defs     : List String
+  eager    : List String
+  lazy     : List String
+  /-- names the statement reads through functions it runs without mentioning them: see `Stmt.deps` -/
+  deps     : List String
+  hoisted  : Bool
+  /-- touches the world: see `Stmt.effect` -/
+  effect   : Bool
+  /-- names the statement may assign when it runs, including through the functions it may call -/
+  writes   : List String
+  /-- names that the code of the statement assigns, while it runs or in function bodies it creates -/
+  assigns  : List String
+  fallback : List String
+  rawEager : List String
+  rawLazy  : List String
+
+def Footprint.toJson (f : Footprint) : Json :=
+  Json.mkObj [("defs", Lean.toJson f.defs), ("eager", Lean.toJson f.eager), ("lazy", Lean.toJson f.lazy),
+    ("deps", Lean.toJson f.deps), ("hoisted", Lean.toJson f.hoisted), ("effect", Lean.toJson f.effect),
+    ("writes", Lean.toJson f.writes), ("assigns", Lean.toJson f.assigns), ("fallback", Lean.toJson f.fallback),
+    ("rawEager", Lean.toJson f.rawEager), ("rawLazy", Lean.toJson f.rawLazy)]
+
+def Footprint.ofJson (j : Json) : Except String Footprint := do
+  let get {α} [Lean.FromJson α] (k : String) : Except String α := do
+    let v ← j.getObjVal? k
+    Lean.fromJson? v
+  return { defs := ← get "defs", eager := ← get "eager", lazy := ← get "lazy", deps := ← get "deps",
+           hoisted := ← get "hoisted", effect := ← get "effect", writes := ← get "writes",
+           assigns := ← get "assigns", fallback := ← get "fallback", rawEager := ← get "rawEager",
+           rawLazy := ← get "rawLazy" }
+
+end Lower

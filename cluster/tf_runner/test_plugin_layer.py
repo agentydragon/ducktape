@@ -9,45 +9,41 @@ import pytest_bazel
 from cluster.tf_runner.plugin_layer import write_layer
 
 
-def _package(mirror: Path, source: str, name: str, members: dict[str, int]) -> None:
-    (mirror / source).mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(mirror / source / name, "w") as archive:
-        for member, mode in members.items():
-            info = zipfile.ZipInfo(member)
-            info.external_attr = (stat.S_IFREG | mode) << 16
-            archive.writestr(info, f"contents of {member}")
-
-
-@pytest.fixture
-def mirror(tmp_path: Path) -> Path:
+def test_equivalent_provider_packages_produce_the_same_unpacked_layer(tmp_path: Path) -> None:
     mirror = tmp_path / "mirror"
-    _package(
-        mirror,
-        "registry.example.test/example-ns/widget",
-        "terraform-provider-widget_1.2.3-rc.1_linux_amd64.zip",
-        {"terraform-provider-widget_v1.2.3-rc.1": 0o755, "LICENSE": 0o644},
-    )
-    (mirror / "registry.example.test/example-ns/widget/index.json").write_text("{}")
-    return mirror
+    source = Path("registry.example.test/example-ns/widget")
+    directory = mirror / source
+    directory.mkdir(parents=True)
+    (directory / "index.json").write_text("{}")
+    package = directory / "terraform-provider-widget_1.2.3-rc.1_linux_amd64.zip"
+    binary = "terraform-provider-widget_v1.2.3-rc.1"
+    entries = [(binary, 0o755), ("LICENSE", 0o644)]
 
+    def build_layer(year: int, members: list[tuple[str, int]]) -> Path:
+        with zipfile.ZipFile(package, "w") as archive:
+            for name, mode in members:
+                info = zipfile.ZipInfo(name, date_time=(year, 1, 1, 0, 0, 0))
+                info.external_attr = (stat.S_IFREG | mode) << 16
+                archive.writestr(info, name.encode())
+        output = tmp_path / f"{year}.tar"
+        write_layer(mirror, PurePosixPath("opt/plugins"), output)
+        return output
 
-def test_unpacks_into_version_and_target_directories(mirror: Path, tmp_path: Path) -> None:
-    write_layer(mirror, PurePosixPath("opt/plugins"), tmp_path / "layer.tar")
+    first = build_layer(2020, entries)
+    repacked = build_layer(2021, list(reversed(entries)))
+    assert first.read_bytes() == repacked.read_bytes()
 
-    with tarfile.open(tmp_path / "layer.tar") as layer:
-        files = {member.name: member for member in layer.getmembers() if member.isfile()}
-        target = "opt/plugins/registry.example.test/example-ns/widget/1.2.3-rc.1/linux_amd64"
-        assert set(files) == {f"{target}/terraform-provider-widget_v1.2.3-rc.1", f"{target}/LICENSE"}
-        assert files[f"{target}/terraform-provider-widget_v1.2.3-rc.1"].mode == 0o755
-        assert files[f"{target}/LICENSE"].mode == 0o644
+    target = f"opt/plugins/{source}/1.2.3-rc.1/linux_amd64"
+    with tarfile.open(first) as layer:
         assert layer.getmember("opt").isdir()
-
-
-def test_is_reproducible(mirror: Path, tmp_path: Path) -> None:
-    write_layer(mirror, PurePosixPath("opt/plugins"), tmp_path / "first.tar")
-    write_layer(mirror, PurePosixPath("opt/plugins"), tmp_path / "second.tar")
-
-    assert (tmp_path / "first.tar").read_bytes() == (tmp_path / "second.tar").read_bytes()
+        files = {member.name: member for member in layer if member.isfile()}
+        assert set(files) == {f"{target}/{name}" for name, _ in entries}
+        for name, mode in entries:
+            member = files[f"{target}/{name}"]
+            assert member.mode == mode
+            content = layer.extractfile(member)
+            assert content is not None
+            assert content.read() == name.encode()
 
 
 def test_rejects_an_empty_mirror(tmp_path: Path) -> None:

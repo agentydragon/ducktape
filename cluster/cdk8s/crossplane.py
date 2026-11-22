@@ -13,18 +13,24 @@ from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     ProviderSpecPackagePullSecrets,
     ProviderSpecRuntimeConfigRef,
 )
+from external_secrets_crds.io.external_secrets import ExternalSecret
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderers,
     HelmReleaseSpecPostRenderersKustomize,
     HelmReleaseSpecPostRenderersKustomizePatches,
     HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import flux, namespaces, node_scheduling, opentofu_runtime
+from cluster.cdk8s import namespaces, node_scheduling, opentofu_runtime
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     SECRET_NAME as FORGEJO_PULL_SECRET,
     forgejo_images_creds_external_secret,
@@ -50,16 +56,16 @@ OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
 OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
 OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
 PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="pkg.crossplane.io/v1",
-    kind="Provider",
+    api_version=Provider.GVK.api_version,
+    kind=Provider.GVK.kind,
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
 )
 _CORE_CPU_REQUEST = "100m"
 _CORE_MEMORY_FLOOR = "256Mi"
 _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="external-secrets.io/v1",
-    kind="ExternalSecret",
+    api_version=ExternalSecret.GVK.api_version,
+    kind=ExternalSecret.GVK.kind,
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')",
 )
@@ -131,14 +137,7 @@ def chart(app: App) -> Chart:
             "leaderElection": True,
             "affinity": k8s.Affinity(node_affinity=node_scheduling.zone_affinity(node_scheduling.HOME_AND_OVH_ZONES)),
             "topologySpreadConstraints": [
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "DoNotSchedule",
-                    "nodeTaintsPolicy": "Honor",
-                    "labelSelector": {"matchLabels": core_selector},
-                    "matchLabelKeys": ["pod-template-hash"],
-                },
+                node_scheduling.hostname_spread(core_selector, min_domains=None),
                 # Three replicas normally cover OVH and both home zones. With one zone left,
                 # allow replacements there on different hosts instead of blocking recovery.
                 k8s.TopologySpreadConstraint(
@@ -218,7 +217,6 @@ def litellm_provider_chart(app: App) -> Chart:
         reader=reader,
         source_namespace="forgejo-images",
         source_secret=FORGEJO_PULL_SECRET,
-        consumer_namespace=NAMESPACE,
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE, secret_store_name=store)
     Provider(
@@ -235,7 +233,11 @@ def litellm_provider_chart(app: App) -> Chart:
 
 
 def litellm_provider(
-    chart: Chart, directory: RenderedDirectory, crossplane: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    crossplane: Kustomization,
+    external_secrets_operator: Kustomization,
+    forgejo_images: Kustomization,
 ) -> Kustomization:
     """Wait for the LiteLLM provider CRDs and controller before applying managed resources."""
     return flux_kustomization(
@@ -246,11 +248,7 @@ def litellm_provider(
         prune=False,
         wait=True,
         health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, PROVIDER_HEALTH],
-        depends_on=[
-            flux_kustomization_depends_on(crossplane),
-            flux_kustomization_depends_on(external_secrets_operator),
-            KustomizationSpecDependsOn(name=FORGEJO_IMAGES_KUSTOMIZATION_NAME, namespace=flux.NAMESPACE),
-        ],
+        depends_on=flux_kustomization_depends_on_many(crossplane, external_secrets_operator, forgejo_images),
         description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
     )
 

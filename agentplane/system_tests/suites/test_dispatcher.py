@@ -13,6 +13,7 @@ from agentplane.session_dispatcher.dispatcher.api.session import session_dispatc
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import forward
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_SVID_SECRET
 from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.scenarios import dispatcher
 
@@ -32,7 +33,7 @@ async def test_sessions_service_authenticates_dispatcher_calls(cluster: Cluster)
         forward(cluster) as target,
         dial(
             target,
-            channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
+            channel_credentials=await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET),
             server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
         ) as authorized,
         dial(

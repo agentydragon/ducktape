@@ -106,7 +106,7 @@ from agentplane.system_tests.driver.native_auth import (
 )
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
-from cluster.cdk8s import agent_access_profiles as access
+from cluster.cdk8s import agent_access_profiles as access, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -344,7 +344,6 @@ def central_sampler_props(models: Sequence[Route]) -> CentralSamplerProps:
                 ca_file=workload_tls.TRUST_BUNDLE_FILE,
             ),
         ),
-        replicas=_ONE_REPLICA,
         models={
             model.id: ModelConfig(
                 connection="llm-ingress",
@@ -406,9 +405,7 @@ def actions_props(
 
 
 def mcp_edge_props(*, operator_oidc: OperatorOidcSettings, oauth_secret_name: str | None) -> McpEdgeProps:
-    return McpEdgeProps(
-        replicas=_ONE_REPLICA, operator_oidc=operator_oidc, oauth_secret_name=oauth_secret_name, hostname=None
-    )
+    return McpEdgeProps(operator_oidc=operator_oidc, oauth_secret_name=oauth_secret_name, hostname=None)
 
 
 def environment(
@@ -603,8 +600,8 @@ def add_fixture_pki(
     ConfigMap(
         chart,
         "fixture-public-web-pki",
-        metadata=ApiObjectMetadata(name="public-web-pki", namespace=NAMESPACE),
-        data={"ca-certificates.crt": system_roots},
+        metadata=ApiObjectMetadata(name=public_web_pki.NAME, namespace=NAMESPACE),
+        data={public_web_pki.KEY: system_roots},
     )
     ConfigMap(
         chart,
@@ -664,11 +661,6 @@ def add_backend_services(
     environment_service_delegation_actor = (
         ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME) if env.actions.orchestration_v1 is not None else None
     )
-    environment_service_delegated_methods = (
-        ("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",)
-        if environment_service_delegation_actor is not None
-        else ()
-    )
     gateway_callers = platform_callers | notifications_caller
     runner_gateway_workload.add_service(chart, env)
     runner_gateway_workload.RunnerGateway(
@@ -710,8 +702,7 @@ def add_backend_services(
             launchers=orchestration_caller,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
             wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
-            delegation_actor=environment_service_delegation_actor,
-            extra_delegated_methods=environment_service_delegated_methods,
+            delegate_to_actions=environment_service_delegation_actor is not None,
         ),
         runtime_proxy_readers=(RUNTIME_PROXY_TEST_READER_URI,),
         placement=None,
@@ -913,14 +904,7 @@ def add_vm_templates(
     launcher_relay.LauncherRelayPolicy(
         scope, "launcher-relay", namespace=env.namespace, template_name=POD_TEMPLATE, settings_config_map=relay_settings
     )
-    state_volume = runner_template.spec["stateVolume"]
-    state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
-    if env.vm_storage_class is not None:
-        state_claim["storageClassName"] = env.vm_storage_class
-    vm_state_volume = {**state_volume, "claim": state_claim}
-    workspace_volume = environment_sandbox.workspace_volume_spec(
-        vm_state_volume, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
-    )
+    state_storage_class = env.vm_storage_class or runner_template.storage_class
     config_data = environment_guest.guest_config_data(
         env,
         gateway=launcher_relay.GUEST_GATEWAY,
@@ -944,8 +928,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(_VM_GUEST_KERNEL_ARGS),
         config_map=config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
     oom_config = ConfigMap(
         scope,
@@ -963,8 +947,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} agentplane.cgroup-observer=1"),
         config_map=oom_config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
     environment_vm.EnvironmentVmTemplate(
         scope,
@@ -976,8 +960,8 @@ def add_vm_templates(
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} {vm_configuration.SUPERVISION_KERNEL_ARG}"),
         config_map=config,
         labels=labels,
-        state_volume=vm_state_volume,
-        workspace_volume=workspace_volume,
+        state_storage_class=state_storage_class,
+        workspace_storage_class=block_storage.STORAGE_CLASS,
     )
 
 
@@ -990,7 +974,7 @@ def add_firecracker_template(
         "firecracker-template",
         env,
         labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-        runner_state_volume=runner_template.spec["stateVolume"],
+        storage_class=env.vm_storage_class or runner_template.storage_class,
         runner_image=environment_vm.RUNNER_DISK_IMAGE,
         image_pull_secret_name=None,
         codex_readiness=_VM_CODEX_READINESS,

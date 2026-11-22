@@ -31,7 +31,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
-        "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -121,7 +120,7 @@ py_library(
     deps = [
         ":alloy_endpoints",
         ":grafana_helmrepository",
-        ":loki",
+        ":loki_endpoints",
         ":mimir",
         ":namespace",
         ":tempo",
@@ -139,15 +138,20 @@ py_library(
 )
 
 py_library(
+    name = "loki_endpoints",
+    srcs = ["loki_endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s:service_ref"],
+)
+
+py_library(
     name = "loki",
     srcs = ["loki.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":alloy_endpoints",
         ":grafana_helmrepository",
+        ":loki_endpoints",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
@@ -158,6 +162,7 @@ py_library(
         "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
@@ -178,6 +183,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
@@ -195,6 +201,7 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
@@ -226,6 +233,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":loki_endpoints",
         ":mimir",
         ":namespace",
         "//cluster/cdk8s:flux",
@@ -345,6 +353,7 @@ py_test(
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",
         "testdata/roaming_node_rules.yaml",
+        "//cluster:generated/platform-monitoring/platform-monitoring.k8s.yaml",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -353,13 +362,13 @@ py_test(
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":rules",
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -477,6 +486,7 @@ py_test(
         "//third_party/containers:blackbox_exporter",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -581,7 +591,7 @@ py_library(
     data = ["talos.alloy"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":loki",
+        ":loki_endpoints",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",

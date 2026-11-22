@@ -51,7 +51,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   afterwards are still checked (fleet rules run at App synth). `haku/charts.py`'s
   `*_chart(app)` is the same shape. The entry point holds no environment data.
 - **References, not names**: `Service(selector=deployment)`,
-  `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; network rules target a
+  `Volume.from_config_map(config_map)`, `RoleBinding(..., role=role)`; network rules target a
   workload via the owning module's exported constant
   (`cilium.endpoint_labels(namespace, egress.NAME)`). Helpers return the object they build.
 - **A name carries only what its namespace does not**: in namespace `atuin`, `server`,
@@ -85,9 +85,10 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   may hold a props-driven construct (tested with synthetic props); the cluster's
   instantiation lives here. Generally, config is typed by its consumer's schema; where
   that schema is another artifact, mirror it in a model tied by a test — e.g. a
-  tofu-controller module's inputs are a frozen pydantic model mirroring `variables.tf`
-  (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since tofu only warns on
-  undeclared variables.
+  GitOps OpenTofu module's inputs are a frozen Pydantic model mirroring `variables.tf`.
+  Pass the model to `gitops_workspace(variables=...)` for Crossplane or
+  `gitops_terraform(variables=...)` for tofu-controller. The generated-manifest test checks
+  the supplied variables against the module because OpenTofu only warns on undeclared names.
   Put authoring explanations in Python comments, not prose prepended to serialized
   ConfigMap values. Keep syntax required by the consumer, such as parser directives.
 - **What the generator knows, it renders** as a Python constant. Flux `postBuild`
@@ -103,7 +104,9 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   - Put workload overrides on the Deployment or StatefulSet metadata. Use
     `reloader.stakater.com/auto: "false"` to opt out of automatic reloads. For a
     ConfigMap or Secret whose changes should never trigger a rollout for any consumer,
-    put `reloader.stakater.com/ignore: "true"` on that resource.
+    put `reloader.stakater.com/ignore: "true"` on that resource. If only one workload
+    rereads mounted credentials at runtime, list those Secrets in its
+    `secrets.exclude.reloader.stakater.com/reload` annotation.
   - The cluster excludes Jobs, CronJobs and the ClickHouse namespace. See the
     [controller configuration](reloader.py) for the reasons.
   - Alloy discovers every ServiceMonitor/PodMonitor/PrometheusRule without a selector —
@@ -115,7 +118,9 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   `dns_egress`, ...), generic shapes in `providers/cilium/network_policy.py`
   (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
   `node_scheduling.py`, `pod_policy.py`, `volume_claim.volume_claim`,
-  `api_resource.custom_resource`. Parameterize only variation call sites actually have.
+  `api_resource.custom_resource`. For typed container requests and limits, use
+  `container_resources.container_resources` for CPU and memory or `quantities` for a
+  map that includes other resources. Parameterize only variation call sites actually have.
 - **A value feeding two artifacts lives once** (web-push hosts: one tuple in
   `agentplane/staging.py` feeds both the Action Service allowlist and its egress rule).
   Derive both; never a test reading both.
@@ -271,11 +276,11 @@ whose object is gone or now passes.
 
 ## Gotchas
 
-- `Chart.api_objects` is direct children only: walk `chart.node.find_all()` filtered by
-  `ApiObject.is_api_object`.
-- `cdk8s.Testing.synth(chart)` is `chart.to_json()`, which validates the whole app, so
-  `add_validation` rules run in tests. In a `test_*.py`, `from cdk8s import Testing` gets
-  collected by pytest: import `Testing as Cdk8sTesting` with a comment saying why.
+- Use `api_objects_in(scope)` from `api_objects.py` to include resources nested inside constructs.
+  `Chart.api_objects` lists direct children only.
+- Use `chart.to_json()` to render a chart in memory. It resolves dependencies and runs
+  validations across its entire app. Give independent charts separate apps when rendering
+  them individually to avoid repeating that work.
 - `ApiObject.to_json()` inside a validation is a safe pure render; mutating the tree there
   is not.
 - `EphemeralStorageResources` accepts only whole GiB, and a `JsonPatch` into
@@ -304,7 +309,7 @@ whose object is gone or now passes.
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and suffixes
   the rest, regardless of storage version. Tofu-controller v0.17.0 only serves v1alpha2,
   so its generated `Terraform` class renders v1alpha2
-  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import`).
+  (`//cluster/cdk8s:test_tofu_controller_release`).
 
 ## Typed constructs over raw dicts
 

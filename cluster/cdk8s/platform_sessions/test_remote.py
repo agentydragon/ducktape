@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart
+from cdk8s import App
 
 from cluster.cdk8s.platform_sessions import app, config, remote
 from cluster.cdk8s.testing.manifests import find_resource
@@ -114,15 +114,16 @@ def test_scheduler_has_one_owner_of_state(direct_workloads: list[dict[str, Any]]
     assert integration["state_dir"] == "/data/session/quest-scheduler"
 
 
-def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(scratch_app: App) -> None:
-    for instance, provider_type in (("myquest-canary", "myquest"), ("other-canary", "openai")):
-        chart = Chart(scratch_app, instance)
-        remote._provider_workload(chart, instance, provider_type=provider_type, record_upstream_traffic=False)
-        deployment = next(item for item in chart.to_json() if item["kind"] == "Deployment")
-        provider = deployment["spec"]["template"]["spec"]["containers"][0]
-        health = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}}
+def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(
+    direct_workloads: list[dict[str, Any]],
+) -> None:
+    health = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}}
+    for integration in config.INTEGRATIONS["integrations"]:
+        deployment = find_resource(direct_workloads, "Deployment", str(integration["id"]))
+        containers = deployment["spec"]["template"]["spec"]["containers"]
+        provider = next(container for container in containers if container["name"] == "provider")
         assert provider["readinessProbe"] == provider["livenessProbe"] == health
-        if provider_type == "myquest":
+        if integration["type"] == "myquest":
             startup = provider["startupProbe"]
             assert startup["httpGet"] == health["httpGet"]
             assert 32 <= startup["periodSeconds"] * startup["failureThreshold"] <= 60
@@ -142,13 +143,13 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
         recorder = init[-1]
         assert recorder["restartPolicy"] == "Always"
-        assert "startupProbe" in recorder
         env = {item["name"]: item["value"] for item in containers["provider"]["env"]}
         assert env["HTTPS_PROXY"] == "http://127.0.0.1:18080"
         assert env["SSL_CERT_FILE"] == "/var/run/session-recorder-trust/ca-certificates.crt"
         assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
         assert env["PLATFORM_SESSIONS_PROXY_CA_FILE"] == "/var/run/session-recorder-ca/tls.crt"
-        assert "+/captures/%Y-%m-%d.mitm" in recorder["command"][-1]
+        [capture_mount] = [mount for mount in recorder["volumeMounts"] if mount["name"] == "captures"]
+        assert capture_mount["mountPath"] == "/captures"
         claim = find_resource(objects, "PersistentVolumeClaim", f"{name}-captures")
         assert claim["spec"]["storageClassName"] == "piraeus-hdd-local"
         assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
@@ -189,7 +190,8 @@ def test_myquest_recording_switch_is_canary_only(
     assert integration["id"] == "myquest-canary"
     assert integration["type"] == "myquest"
 
-    objects = remote.chart(scratch_app).to_json()
+    # Exercise both directions of the canary override.
+    objects = remote.chart(scratch_app, record_upstream_traffic=not record_upstream_traffic).to_json()
     gateway = find_resource(objects, "Deployment", "gateway")["spec"]["template"]["spec"]
     [gateway_container] = gateway["containers"]
     refs = {
@@ -203,6 +205,11 @@ def test_myquest_recording_switch_is_canary_only(
     }
     assert refs["PLATFORM_SESSIONS_PROVIDER_CONNECTIONS"] == {"name": canary_config.name, "key": "connections.json"}
     canary = find_resource(objects, "Deployment", "myquest-canary")["spec"]["template"]["spec"]
+    if record_upstream_traffic:
+        volumes = {volume["name"]: volume for volume in canary["volumes"]}
+        ca_secret = volumes["recorder-ca"]["secret"]["secretName"]
+        assert any(obj["kind"] == "Certificate" and obj["spec"]["secretName"] == ca_secret for obj in objects)
+        find_resource(objects, "Bundle", volumes["recorder-trust"]["configMap"]["name"])
     config_volume = next(volume for volume in canary["volumes"] if volume["name"] == "config")
     assert config_volume["configMap"]["name"] == canary_config.name
     production = find_resource(objects, "Deployment", "myquest")["spec"]["template"]["spec"]

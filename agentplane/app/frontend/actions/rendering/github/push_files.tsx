@@ -1,7 +1,10 @@
-import type { JSX } from "react";
-import { Code, Stack, Text } from "@mantine/core";
-import { filesPushed } from "./receipts";
+import { type JSX, useMemo } from "react";
+import { Box, Code, Stack, Text } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
+import { formatPatch, OMIT_HEADERS, structuredPatch, type StructuredPatch } from "diff";
+import { filesPushed, GitHubLink, repositoryHref } from "./receipts";
 
+import { getGitHubPushFilesPreview } from "../../client";
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../../../util/frontend/clamped_block";
@@ -68,50 +71,150 @@ function PushFilesCollapsed({ args }: { args: PushFilesArguments }): JSX.Element
   );
 }
 
-/** One pushed file, closed until opened: Markdown as prose, code highlighted by its extension. */
-function PushedFileBlock({ file }: { file: PushedFile }): JSX.Element {
-  const fileExtension = extension(file.path);
+function compareFile(before: string | undefined, after: string) {
+  if (before === undefined) return undefined;
+  const patch = structuredPatch("before", "after", before, after, undefined, undefined, { timeout: 50 });
+  if (patch === undefined) return undefined;
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of patch.hunks) {
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) additions++;
+      if (line.startsWith("-")) deletions++;
+    }
+  }
+  return { patch, additions, deletions };
+}
+
+function PushedFileBlock({
+  file,
+  before,
+  defaultOpen,
+}: {
+  file: PushedFile;
+  before: string | undefined;
+  defaultOpen: boolean;
+}): JSX.Element {
+  const comparison = useMemo(() => compareFile(before, file.content), [before, file.content]);
+  const size = comparison ? `+${comparison.additions} -${comparison.deletions}` : pushedFileSize(file);
   return (
-    <OperationSection surface="framed">
+    <OperationSection layout="disclosure">
       <Disclosure
+        defaultOpen={defaultOpen}
         summary={
           <Text size="sm" ff="monospace" style={{ overflowWrap: "anywhere" }}>
             {file.path}
-            <Text span size="sm" c="dimmed" ff="var(--mantine-font-family)">
-              {` · ${pushedFileSize(file)}`}
+            <Text span size="sm" c="dimmed" ff="var(--mantine-font-family)" style={{ whiteSpace: "nowrap" }}>
+              {` · ${size}`}
             </Text>
           </Text>
         }
       >
-        <ClampedBlock
-          maxHeightRem={TEXT_MAX_HEIGHT_REM}
-          lines={lineCount(file.content)}
-          label={file.path}
-          stickyCollapse={false}
-        >
-          <CodeBlock
-            text={file.content}
-            language={LANGUAGE_BY_EXTENSION.get(fileExtension)}
-            font={fileExtension === "md" ? "prose" : "monospace"}
-            surface="plain"
-            releaseWhenFar
-          />
-        </ClampedBlock>
+        <Box py="var(--operation-section-padding)">
+          <PushedFileContent file={file} patch={comparison?.patch} hasBaseline={before !== undefined} />
+        </Box>
       </Disclosure>
     </OperationSection>
   );
 }
 
-function PushFiles({ args }: { args: PushFilesArguments }): JSX.Element {
+function PushedFileContent({
+  file,
+  patch,
+  hasBaseline,
+}: {
+  file: PushedFile;
+  patch: StructuredPatch | undefined;
+  hasBaseline: boolean;
+}): JSX.Element {
+  const fileExtension = extension(file.path);
+  const proposed = (
+    <ClampedBlock
+      maxHeightRem={TEXT_MAX_HEIGHT_REM}
+      lines={lineCount(file.content)}
+      label={file.path}
+      stickyCollapse={false}
+    >
+      <CodeBlock
+        text={file.content}
+        language={LANGUAGE_BY_EXTENSION.get(fileExtension)}
+        font={fileExtension === "md" ? "prose" : "monospace"}
+        surface="plain"
+        releaseWhenFar
+      />
+    </ClampedBlock>
+  );
+  if (!hasBaseline) return proposed;
+  if (patch === undefined) {
+    return (
+      <Stack gap="xs">
+        <Text size="sm" c="dimmed">
+          The diff is too large to display.
+        </Text>
+        {proposed}
+      </Stack>
+    );
+  }
+
+  const diff = patch.hunks.length > 0 ? formatPatch(patch, OMIT_HEADERS) : undefined;
+  return (
+    <Stack gap="xs">
+      {diff === undefined ? (
+        <Text size="sm" c="dimmed">
+          No text changes.
+        </Text>
+      ) : (
+        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(diff)} label="Diff" stickyCollapse={false}>
+          <CodeBlock text={diff} language="diff" surface="plain" releaseWhenFar />
+        </ClampedBlock>
+      )}
+      <Disclosure summary={<Text size="sm">Proposed contents</Text>}>{proposed}</Disclosure>
+    </Stack>
+  );
+}
+
+function PushFiles({ args, requestId }: { args: PushFilesArguments; requestId?: string }): JSX.Element {
+  const query = useQuery({
+    queryKey: ["github-push-files-preview", requestId],
+    queryFn: ({ signal }) => getGitHubPushFilesPreview(requestId ?? "", signal),
+    enabled: requestId !== undefined,
+    gcTime: 0,
+    staleTime: 0,
+    retry: false,
+  });
+  const preview = query.isFetching || query.isError ? undefined : query.data;
+  const baseline = new Map(preview?.files.map((file) => [file.path, file.content]));
   return (
     <Stack gap="xs">
       <TextBlock text={args.message} heading="Commit message" format="prose" clamp={false} />
       <Text size="sm" c="dimmed">
         Creates the branch from the default branch if needed.
       </Text>
+      {requestId !== undefined && (
+        <Text size="sm" c="dimmed" role="status">
+          {query.isFetching ? (
+            "Reading the target branch…"
+          ) : preview?.baseCommitSha && baseline.size > 0 ? (
+            <>
+              Compared with{" "}
+              <GitHubLink href={`${repositoryHref(args)}/commit/${encodeURIComponent(preview.baseCommitSha)}`}>
+                <Code>{preview.baseCommitSha.slice(0, 7)}</Code>
+              </GitHubLink>
+              {baseline.size < args.files.length && ". Other files show proposed contents."}
+            </>
+          ) : (
+            "Comparison unavailable. Files show proposed contents."
+          )}
+        </Text>
+      )}
       {args.files.map((file, index) => (
         // A push may list the same path twice; position is its identity.
-        <PushedFileBlock key={index} file={file} />
+        <PushedFileBlock
+          key={index}
+          file={file}
+          before={baseline.get(file.path)}
+          defaultOpen={requestId !== undefined && args.files.length === 1}
+        />
       ))}
     </Stack>
   );
@@ -129,6 +232,6 @@ export const pushFilesPresentation: ActionPresentation = {
   fallbackLabel: "Push files to GitHub",
   label: pushFilesLabel,
   pane: { collapsed: pushFilesCollapsed, opened: pushFilesPane },
-  details: { arguments: pushFilesPane, result: filesPushed },
+  details: { arguments: pushFilesPane, pendingPreviewOnly: true, result: filesPushed },
   offersCardDecisionButtons: offersCardDecisionButtonsPushFiles,
 };

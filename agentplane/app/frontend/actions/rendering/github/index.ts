@@ -14,7 +14,7 @@ import { searchPullRequestsPresentation } from "./search_pull_requests";
 import { updatePullRequestPresentation } from "./update_pull_request";
 import { updatePullRequestBranchPresentation } from "./update_pull_request_branch";
 
-export const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   ...issueRenderers,
   ...reviewRenderers,
   ...repositoryRenderers,
@@ -30,3 +30,5 @@ export const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
   ["create_pull_request", createPullRequestPresentation],
   ["search_pull_requests", searchPullRequestsPresentation],
 ]);
+
+export const githubPresentationGroup: readonly [string, typeof githubRenderers] = ["github", githubRenderers];

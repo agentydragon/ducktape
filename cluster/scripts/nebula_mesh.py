@@ -35,7 +35,6 @@ class Host(BaseModel):
     )
     role: Role = Field(description="K8s scheduling class, or 'non-k8s' for mesh-only participants")
     lighthouse: bool = Field(default=False, description="Acts as a Nebula lighthouse for others")
-    relay: bool = Field(default=False, description="Acts as a Nebula relay for NAT'd peers")
     managed_by: ManagedBy = Field(description="Who provisions this host and its cert")
     cert_groups: list[str] = Field(
         default_factory=list, description="Groups embedded in the Nebula cert (currently unused by firewall rules)"
@@ -60,6 +59,11 @@ class Host(BaseModel):
     def public_ip(self) -> str | None:
         """The endpoint's address; None for behind-NAT hosts."""
         return None if self.endpoint is None else self.endpoint.rpartition(":")[0]
+
+
+def public_dns_targets(nodes: dict[str, Host]) -> list[str]:
+    """Sorted, distinct public addresses for an ExternalDNS record."""
+    return sorted({ip for node in nodes.values() if (ip := node.public_ip) is not None})
 
 
 class Mesh(BaseModel):

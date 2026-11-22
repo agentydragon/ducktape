@@ -118,7 +118,7 @@ async def test_peak_burn_identifies_affected_models(view: VisualPage) -> None:
 async def test_openai_platform_credits(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
-    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Balance", exact=True)).to_be_visible()
     await expect(card.get_by_text("$126", exact=True)).to_be_visible()
     await expect(card.get_by_text("$100 remaining", exact=True)).to_be_visible()
     await expect(card.get_by_text("$26 remaining", exact=True)).to_be_visible()
@@ -135,7 +135,7 @@ async def test_openai_platform_credits(view: VisualPage) -> None:
 async def test_claude_prepaid_balance_states(view: VisualPage, expected_balance: str) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
     await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Balance", exact=True)).to_be_visible()
     await expect(card.get_by_text(expected_balance, exact=True)).to_be_visible()
 
 
@@ -182,7 +182,7 @@ async def test_active_extra_usage_is_inline_with_monthly_spend(view: VisualPage)
 @pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
 async def test_paid_credits_status_is_not_repeated(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
-    await expect(card.get_by_text("Paid credits", exact=True)).to_be_visible()
+    await expect(card.get_by_text("2,746 credits", exact=True)).to_be_visible()
     await expect(card.locator(".aiquota-window")).to_have_count(2)
     await expect(card.locator(".aiquota-status-row")).to_have_count(0)
     await expect(card.get_by_text("paid credits available", exact=False)).to_have_count(0)
@@ -334,7 +334,7 @@ async def test_live_subscription(visual: VisualHarness) -> None:
             _FIXTURES["paid_credits"],
         )
         await expect(page.locator(".aiquota-notice")).to_have_count(0)
-        await expect(page.get_by_text("Paid credits", exact=True).first).to_be_visible()
+        await expect(page.get_by_text("2,746 credits", exact=True).first).to_be_visible()
         await view.capture("live-recovered", target=page.locator("#app"))
         await page.get_by_role("button", name="Reconnect").click()
         await expect(page.get_by_role("button", name="Reconnect")).to_be_disabled()

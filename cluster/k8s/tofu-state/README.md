@@ -7,7 +7,7 @@ It depends on CNPG for admission; storage provisioning reconciles after admissio
 login through `Cluster.spec.managed.roles`, and the shared password is
 SOPS-managed in `db/credentials.sops.yaml`.
 
-Terraform runner pods and `cluster/.envrc` read that Secret directly. The
-database is shared by the remaining Terraform roots; application credentials
-such as Ollama's direct bearer token are managed by their owning application
-configuration.
+Crossplane OpenTofu Workspaces and the remaining tofu-controller runners share
+this database. Reflector copies the credential into `flux-system` for their
+`PGPASSWORD` references. For local access, `cluster/.envrc` decrypts the source
+file and sets `PG_CONN_STR`.

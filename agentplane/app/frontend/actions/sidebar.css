@@ -90,25 +90,34 @@
 }
 
 .agentplane-actions-sidebar-summary {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex: 1 1 auto;
-  align-items: flex-start;
-  gap: 4px;
   min-width: 0;
-  padding: 6px;
+  padding: 6px 6px 6px 22px;
   color: var(--mantine-color-text);
   text-align: left;
 }
 
-.agentplane-actions-sidebar-expand:hover,
-.agentplane-actions-sidebar-expand:focus-visible {
+.agentplane-actions-sidebar-summary:has(> .agentplane-actions-sidebar-expand:is(:hover, :focus-visible)) {
   background: var(--mantine-color-default-hover);
-  outline: none;
 }
 
-/* A card without an expanded version keeps the chevron's space, so labels line up down the queue. */
-.agentplane-actions-sidebar-summary.is-static {
-  padding-left: 22px;
+/* The disclosure covers the row. Inline controls stay separate for pointer and keyboard input. */
+.agentplane-actions-sidebar-expand {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  padding: 6px;
+}
+
+.agentplane-actions-sidebar-summary:has(> .agentplane-actions-sidebar-expand)
+  .agentplane-actions-sidebar-request-label
+  :is(a, [data-action-pane-control]) {
+  position: relative;
+  z-index: 1;
 }
 
 .agentplane-actions-sidebar-request-label {
@@ -158,9 +167,9 @@
   font-size: inherit;
 }
 
-/* Card decision buttons promise the card shows the whole call, so their label is never cut off. */
+/* A card with inline decisions always shows the full operation label. */
 .agentplane-actions-sidebar-request-label.is-unclamped .agentplane-actions-sidebar-name,
-.agentplane-actions-sidebar-request-label.offers-card-decision .agentplane-actions-sidebar-name {
+.agentplane-actions-sidebar-request:has(> .agentplane-actions-sidebar-decision) .agentplane-actions-sidebar-name {
   display: block;
   overflow: visible;
   -webkit-line-clamp: unset;

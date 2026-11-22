@@ -140,3 +140,8 @@ py_test(
         "@rules_python//python/runfiles",
     ],
 )
+
+py_library(
+    name = "config_paths",
+    srcs = ["config_paths.py"],
+)

@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, validSettings+`environment_service:
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+`environment_service:
   policy_namespace: agentplane
   rpc:
     listen_address: ":8082"

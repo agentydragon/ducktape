@@ -52,7 +52,7 @@ spec:
             - name: NAMESPACE_ALLOWLIST
               value: activitywatch,agentplane-staging,airlock,analytics,authentik,cert-manager,cli-proxy-api,clickhouse,cnpg-system,cpap-sync,csi-proxmox,docker-ci,external-dns,flux-system,forgejo,gatus,grocy-sf,grocy-vallejo,ha-mcp,haku-ci,kube-system,kyverno,litellm,loki,monitoring,nix-cache,node-feature-discovery,nvidia-device-plugin,oci-cache,ollama,props,proxmox-proxy,study-casino,tana-mcp
             - name: UPSTREAM_URL
-              value: http://loki-read.loki.svc:3100
+              value: http://loki-read.loki.svc.cluster.local:3100
             - name: KUBERNETES_CA_FILE
               value: /var/run/kube-root-ca/ca.crt
           image: git.allegedly.works/ducktape-ci/loki-read-proxy:unset

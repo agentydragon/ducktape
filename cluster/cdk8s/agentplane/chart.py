@@ -119,7 +119,8 @@ def environment_chart(
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}
-    environment_launchers = actions.orchestration_callers(env)
+    orchestration_callers = actions.orchestration_callers(env)
+    delegation_actor = sandbox_controller.action_delegation_actor(env)
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
@@ -131,11 +132,8 @@ def environment_chart(
         database_url=Database.HISTORY.url(chart, namespace=env.namespace),
         # The app reads Threads; the Notification Service reads command receipts; orchestration_v1
         # and session_delegation use the explicitly configured Action delegation actor.
-        callers=app_caller
-        | notifications_caller
-        | actions.orchestration_callers(env)
-        | actions.session_delegation_callers(env),
-        delegation_actor=sandbox_controller.action_delegation_actor(env),
+        callers=app_caller | notifications_caller | orchestration_callers | actions.session_delegation_callers(env),
+        delegation_actor=delegation_actor,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -178,11 +176,7 @@ def environment_chart(
             template_name=environment_template_name,
             settings_config_map=relay_settings,
         )
-        state_volume = runner_template.spec["stateVolume"]
-        state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
-        if env.vm_storage_class is not None:
-            state_claim["storageClassName"] = env.vm_storage_class
-        vm_state_volume = {**state_volume, "claim": state_claim}
+        storage_class = env.vm_storage_class or runner_template.storage_class
         vm_config = ConfigMap(
             runner_scope,
             "environment-vm-config",
@@ -199,10 +193,8 @@ def environment_chart(
             root_image=environment_vm.ROOT_IMAGE,
             config_map=vm_config,
             labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-            state_volume=vm_state_volume,
-            workspace_volume=environment_sandbox.workspace_volume_spec(
-                vm_state_volume, layout_type="BlockFilesystem", storage_class=env.vm_storage_class
-            ),
+            state_storage_class=storage_class,
+            workspace_storage_class=storage_class,
         )
     if env.firecracker_sandboxes:
         environment_firecracker.EnvironmentFirecrackerTemplate(
@@ -210,7 +202,7 @@ def environment_chart(
             "firecracker-template",
             env,
             labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
-            runner_state_volume=runner_template.spec["stateVolume"],
+            storage_class=env.vm_storage_class or runner_template.storage_class,
             runner_image=environment_vm.RUNNER_DISK_IMAGE,
             image_pull_secret_name=sandbox_pod.SECRET_NAME,
         )
@@ -222,11 +214,10 @@ def environment_chart(
         environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
         authority=sandbox_controller.environment_service_authority(
             env,
-            launchers=environment_launchers,
+            launchers=orchestration_callers,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
             wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
-            delegation_actor=sandbox_controller.action_delegation_actor(env),
-            extra_delegated_methods=sandbox_controller.environment_service_delegated_methods(env),
+            delegate_to_actions=delegation_actor is not None,
         ),
         runtime_proxy_readers=(),
         placement=node_scheduling.HIL_OVH,
@@ -240,9 +231,7 @@ def environment_chart(
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
         environment_service_endpoint=(
-            environment_service.environments_service(env.namespace)
-            if sandbox_controller.action_delegation_actor(env) is not None
-            else None
+            environment_service.environments_service(env.namespace) if delegation_actor is not None else None
         ),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,

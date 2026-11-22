@@ -7,10 +7,15 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/configtest",
     visibility = [
         "//agentplane/action_service/cmd:__pkg__",
+        "//agentplane/app/internal/settings:__pkg__",
         "//agentplane/egress/cmd:__pkg__",
+        "//agentplane/egress/sidecar/internal/relay:__pkg__",
+        "//agentplane/environments/cmd:__pkg__",
         "//agentplane/history_service/cmd:__pkg__",
         "//agentplane/llm_ingress/internal/server:__pkg__",
+        "//agentplane/mcp_edge/cmd:__pkg__",
         "//agentplane/notification_service/cmd:__pkg__",
+        "//agentplane/policy_controller/cmd:__pkg__",
         "//agentplane/session_dispatcher/internal/app:__pkg__",
     ],
 )

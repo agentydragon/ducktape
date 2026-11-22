@@ -1,7 +1,6 @@
 """The versioned archive history creates the exact schema and is safe to rerun."""
 
 # gazelle:include_dep //testing:postgres_fixtures
-from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
@@ -13,15 +12,8 @@ from sqlalchemy.schema import SchemaItem
 
 from ai_session_archive.database import Base, make_engine
 from ai_session_archive.database_migrate import RUNNER
-from testing.postgres import DatabaseNames, create_temporary_database
 
 pytest_plugins = ["testing.postgres_fixtures"]
-
-
-@pytest.fixture
-def fresh_database(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
-    with create_temporary_database(postgres_admin_url, database_names()) as database_url:
-        yield database_url
 
 
 def _include_owned_tables(
@@ -36,11 +28,11 @@ def _schema_drift(connection: Connection) -> list[Any]:
     return cast(list[Any], compare_metadata(context, Base.metadata))
 
 
-def test_fresh_database_matches_models_and_migration_is_idempotent(fresh_database: str) -> None:
-    RUNNER.apply(fresh_database)
-    RUNNER.apply(fresh_database)
+def test_fresh_database_matches_models_and_migration_is_idempotent(empty_postgres_url: str) -> None:
+    RUNNER.apply(empty_postgres_url)
+    RUNNER.apply(empty_postgres_url)
 
-    engine = create_engine(RUNNER.sync_url(fresh_database))
+    engine = create_engine(RUNNER.sync_url(empty_postgres_url))
     try:
         with engine.connect() as connection:
             assert _schema_drift(connection) == []

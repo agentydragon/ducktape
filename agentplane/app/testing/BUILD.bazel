@@ -373,3 +373,18 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "thread_browser_backends",
+    srcs = ["thread_browser_backends.py"],
+    deps = [
+        ":replication_source",
+        "//agentplane/history_service/testing:electric_service",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//devinfra/testing:output_writer",
+        "//testing/frontend_visual:capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+    ],
+)

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const testSettings = `actions_target: actions:8080
@@ -31,16 +33,12 @@ func clearSettingsEnv(t *testing.T) {
 	}
 }
 
-func settingsFile(t *testing.T, contents string) string {
+func settingsFile(t *testing.T, contents string) {
 	t.Helper()
 	clearSettingsEnv(t)
-	path := filepath.Join(t.TempDir(), "edge.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	path := configtest.WriteSettings(t, contents)
 	t.Setenv(settingPrefix+"CONFIG_FILE", path)
 	t.Setenv(settingPrefix+"DATABASE_URL", "postgres://edge")
-	return path
 }
 
 // testOAuthSettings is a complete provider-owned OAuth settings file. The identity values keep their case.
@@ -58,10 +56,7 @@ approving_operator:
 // oauthFileSetting writes contents as the OAuth settings file and returns the settings line that names it.
 func oauthFileSetting(t *testing.T, contents string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "oauth.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	path := configtest.WriteSettings(t, contents)
 	return fmt.Sprintf("oauth_file: %q\n", path)
 }
 
@@ -175,10 +170,7 @@ func TestConfigFileRejectsUnknownKeysAndAdditionalDocuments(t *testing.T) {
 	})
 
 	t.Run("second document", func(t *testing.T) {
-		path := settingsFile(t, testSettings)
-		if err := os.WriteFile(path, []byte(testSettings+"---\nport: 9000\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		settingsFile(t, testSettings+"---\nport: 9000\n")
 		if _, err := loadConfig(); err == nil {
 			t.Fatal("accepted a second settings document")
 		}

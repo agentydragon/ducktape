@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from cluster.validation.cluster import ParsedCluster
-
-HEALTH_CHECK_REQUIRED_KINDS = ["HelmRelease", "Terraform"]
+from cluster.validation.k8s import FluxControllerResource
 
 _ASYNC_HEALTH_CHECK_KINDS = {
     "HelmRelease",
@@ -23,17 +22,20 @@ _RETRY_INTERVAL_EXCEPTIONS = {"cli-proxy-api"}
 
 
 def check_controller_health_checks(cluster: ParsedCluster) -> list[str]:
-    """Check that flux kustomizations deploying controller resources health-check them:
-    `wait: true` checks every applied object, otherwise `healthChecks` must name the kind."""
-    return [
-        f"{name}: deploys a {kind} but neither waits nor has healthChecks for it. "
-        f"Leave wait on, or add a {kind} health check, on its node under cluster/cdk8s."
-        for name, resources in cluster.flux_kust_resources().items()
-        if not (spec := cluster.flux_kustomizations[name]).wait
-        for kind in HEALTH_CHECK_REQUIRED_KINDS
-        if any(r.kind == kind for r in resources)
-        if not any(hc.kind == kind for hc in spec.health_checks)
-    ]
+    """Flux waits for every applied object with wait: true, or just its named health checks."""
+    errors = []
+    for owner, resources in cluster.flux_kust_resources().items():
+        spec = cluster.flux_kustomizations[owner]
+        if spec.wait:
+            continue
+        checked = {(h.api_version.rpartition("/")[0], h.kind, h.namespace, h.name) for h in spec.health_checks}
+        for resource in resources:
+            if not isinstance(resource, FluxControllerResource) or resource.suspended:
+                continue
+            group = resource.api_version.rpartition("/")[0]
+            if (group, resource.kind, resource.namespace, resource.name) not in checked:
+                errors.append(f"{owner}: missing health check for {resource.kind} {resource.namespace}/{resource.name}")
+    return errors
 
 
 def check_retry_policy(cluster: ParsedCluster) -> list[str]:

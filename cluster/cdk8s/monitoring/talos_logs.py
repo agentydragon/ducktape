@@ -14,7 +14,7 @@ from cluster.cdk8s import namespaces, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import loki
+from cluster.cdk8s.monitoring import loki_endpoints
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAME = "vector-talos-logs"
@@ -89,7 +89,7 @@ def chart(app: App) -> Chart:
                                     ),
                                 ),
                                 k8s.EnvVar(name="TALOS_LISTEN_ADDRESS", value=f"{_LISTEN_HOST}:{_LISTEN_PORT}"),
-                                k8s.EnvVar(name="LOKI_PUSH_URL", value=loki.PUSH_URL),
+                                k8s.EnvVar(name="LOKI_PUSH_URL", value=loki_endpoints.PUSH_URL),
                             ],
                             security_context=k8s.SecurityContext(run_as_non_root=True, run_as_user=473),
                             readiness_probe=k8s.Probe(

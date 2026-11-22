@@ -1094,7 +1094,7 @@ const QuotaIndicator = GObject.registerClass(
       const parts = [title];
       if (includeGroup && group?.name) parts.push(group.name);
       const balance = group && headerBalance(group);
-      if (balance && inlineBalance) parts.push(`${balance.label}: ${balance.value}`);
+      if (balance && inlineBalance) parts.push(`${balance.label ? `${balance.label}: ` : ""}${balance.value}`);
       item.label.set_text(parts.join(" — "));
     }
 
@@ -1102,7 +1102,7 @@ const QuotaIndicator = GObject.registerClass(
       const lines = group.balances.map((balance) => {
         const staleSince = balance.stale_since ? new Date(balance.stale_since).getTime() : null;
         const stale = staleSince == null ? "" : ` · stale ${formatAge(Math.max(0, (nowMs() - staleSince) / 1000))} ago`;
-        return `${balance.label}: ${balance.value}${stale}`;
+        return `${balance.label ? `${balance.label}: ` : ""}${balance.value}${stale}`;
       });
       item.visible = lines.length > 0 && (!hasHeader || headerBalance(group) === null);
       item._summaryLabel.set_text(lines.join("\n"));
@@ -1230,7 +1230,7 @@ const QuotaIndicator = GObject.registerClass(
       const liveState = withLiveReset(state, staleAgeSeconds != null);
       const parts = [
         `${liveState.used}%`,
-        liveState.reset === "awaiting update" ? liveState.reset : `resets in ${liveState.reset}`,
+        liveState.reset === "awaiting update" ? liveState.reset : `↻ in ${liveState.reset}`,
       ];
       if (staleAgeSeconds == null && liveState.forecast) parts.push(liveState.forecast);
       item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);

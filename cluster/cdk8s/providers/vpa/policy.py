@@ -1,29 +1,61 @@
 """Typed policies for explicitly owned VerticalPodAutoscalers."""
 
+from cdk8s import ApiObjectMetadata
+from constructs import Construct
 from vpa_crds.io.k8s.autoscaling import (
+    VerticalPodAutoscaler,
     VerticalPodAutoscalerSpec,
     VerticalPodAutoscalerSpecResourcePolicy,
     VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
     VerticalPodAutoscalerSpecTargetRef,
     VerticalPodAutoscalerSpecUpdatePolicy,
 )
 
 
-def initial_requests_spec(
-    target_ref: VerticalPodAutoscalerSpecTargetRef, *, container_name: str
-) -> VerticalPodAutoscalerSpec:
-    """Size a single container's CPU and memory requests at admission, leaving other containers alone."""
-    return VerticalPodAutoscalerSpec(
-        target_ref=target_ref,
-        update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
-        resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
-            container_policies=[
-                VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
-                    container_name=container_name,
-                    controlled_resources=["cpu", "memory"],
-                    controlled_values="RequestsOnly",
-                ),
-                VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
-            ]
+def requests_only_vpa(
+    scope: Construct,
+    name: str,
+    *,
+    namespace: str,
+    container_name: str,
+    update_mode: str,
+    target_kind: str = "Deployment",
+    min_memory_mib: int | None = None,
+    max_memory_mib: int | None = None,
+) -> VerticalPodAutoscaler:
+    """Manage one container's CPU and memory requests and leave sidecars alone."""
+    return VerticalPodAutoscaler(
+        scope,
+        name,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        spec=VerticalPodAutoscalerSpec(
+            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind=target_kind, name=name),
+            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode=update_mode),
+            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
+                container_policies=[
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
+                        container_name=container_name,
+                        controlled_resources=["cpu", "memory"],
+                        controlled_values="RequestsOnly",
+                        min_allowed={
+                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
+                                f"{min_memory_mib}Mi"
+                            )
+                        }
+                        if min_memory_mib is not None
+                        else None,
+                        max_allowed={
+                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
+                                f"{max_memory_mib}Mi"
+                            )
+                        }
+                        if max_memory_mib is not None
+                        else None,
+                    ),
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
+                ]
+            ),
         ),
     )

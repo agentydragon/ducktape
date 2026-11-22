@@ -51,6 +51,7 @@ from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 
 # Aliased: the functions' own `namespace` parameter is the tenant's.
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME
 from cluster.cdk8s.secret_ref import SecretRef
 
 
@@ -103,7 +104,7 @@ def bucket(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_tenant(namespace), annotations=_description(description)),
-        cluster_ref=BucketSpecClusterRef(name=cluster.NAME, namespace=seaweedfs_namespace.NAME),
+        cluster_ref=BucketSpecClusterRef(name=CLUSTER_NAME, namespace=seaweedfs_namespace.NAME),
         access=access,
         adopt_existing=adopt_existing,
         reclaim_policy=reclaim_policy,
@@ -125,7 +126,7 @@ def identity(
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_tenant(namespace), annotations=_description(description)),
         spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
+            seaweed_ref=S3IdentitySpecSeaweedRef(name=CLUSTER_NAME, namespace=_seaweed_ref_namespace(namespace)),
             reclaim_policy=reclaim_policy,
         ),
     )
@@ -153,7 +154,7 @@ def credentials(
         id,
         metadata=ApiObjectMetadata(name=identity, namespace=_tenant(namespace), annotations=_description(description)),
         spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
+            seaweed_ref=S3CredentialsSpecSeaweedRef(name=CLUSTER_NAME, namespace=_seaweed_ref_namespace(namespace)),
             identity_ref=S3CredentialsSpecIdentityRef(name=identity),
             secret_ref=S3CredentialsSpecSecretRef(
                 name=secret,

@@ -175,12 +175,6 @@
       "test": "//cluster/provisioners/matrix_user_provisioner/...",
       "registry": "forgejo"
     },
-    "firecracker-manager": {
-      "target": "//devinfra/x/firecracker/manager:image"
-    },
-    "fc-vm-pod": {
-      "target": "//devinfra/x/firecracker/vm_pod:image"
-    },
     "stalwart": {
       "target": "//cluster/k8s/haku/mailbox/image:image",
       "registry": "forgejo"

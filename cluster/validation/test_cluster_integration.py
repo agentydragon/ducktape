@@ -10,9 +10,11 @@ patches. Live decryption and post-build variable sources are outside both paths.
 from __future__ import annotations
 
 import asyncio
+import base64
 import shutil
+import subprocess
 import tempfile
-from contextlib import ExitStack
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -31,151 +33,101 @@ from cluster.validation.checks import (
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
-from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, FluxKustomizationSpec
-from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
+from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
-from cluster.validation.image_automation import (
-    check_image_automation_webhook,
-    check_image_policy_markers,
-    check_no_flow_mappings_where_flux_writes,
+from cluster.validation.image_automation import check_image_automation_webhook, check_image_policy_markers
+from cluster.validation.k8s import (
+    AgentplanePolicySetResource,
+    AgentplaneSandboxTemplateResource,
+    K8sResource,
+    load_k8s_resources,
 )
-from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resources
-from cluster.validation.kustomize import (
-    KustomizeFile,
-    flux_generated_kustomization,
-    parse_kustomize_file,
-    run_kustomize_build,
-    stage_artifact_copies,
-)
+from cluster.validation.kustomize import run_kustomize_build, stage_artifact_copies
 
 
-async def _build_namespace_override(
-    owner: str, spec: FluxKustomizationSpec, directory: Path, source_root: Path
-) -> list[K8sResource]:
+async def _build_namespace_override(owner: str, spec: FluxKustomizationSpec, directory: Path) -> list[K8sResource]:
     assert spec.manifest_path is not None
-    # Flux CLI 2.4 rewrites the root kustomization temporarily. Each owner gets its own
-    # source copy so nested resources still resolve and overlapping owners cannot race.
-    with tempfile.TemporaryDirectory(prefix="flux-namespace-") as scratch:
-        source = Path(scratch) / "source"
-        shutil.copytree(source_root, source)
-        flux = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
-        process = await asyncio.create_subprocess_exec(
-            flux,
-            "build",
-            "kustomization",
-            owner,
-            "--namespace",
-            spec.namespace,
-            "--kustomization-file",
-            spec.manifest_path,
-            "--path",
-            source / directory.relative_to(source_root),
-            "--dry-run",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            raise RuntimeError(f"Flux build failed for {spec.namespace}/{owner}: {stderr.decode()}")
-    return parse_k8s_resources(yaml.safe_load_all(stdout))
+    flux = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
+    process = await asyncio.create_subprocess_exec(
+        flux,
+        "build",
+        "kustomization",
+        owner,
+        "--namespace",
+        spec.namespace,
+        "--kustomization-file",
+        spec.manifest_path,
+        "--path",
+        directory,
+        "--dry-run",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(f"Flux build failed for {spec.namespace}/{owner}: {stderr.decode()}")
+    return load_k8s_resources(stdout)
 
 
-def _build_cluster(repo_root: Path) -> ParsedCluster:
-    parsed = parse_cluster(repo_root)
+def _build_cluster(parsed: ParsedCluster, repo_root: Path) -> ParsedCluster:
+    async def build(owner: str, spec: FluxKustomizationSpec, directory: Path) -> tuple[str, list[K8sResource]]:
+        # Flux temporarily rewrites kustomization.yaml. Give each namespace override a private source,
+        # even when another owner builds the same path with a different targetNamespace.
+        with tempfile.TemporaryDirectory(prefix="flux-owner-") as scratch:
+            source = Path(scratch)
+            ref = spec.source_ref
+            if ref and ref.kind == EXTERNAL_ARTIFACT_KIND:
+                key = (ref.namespace or spec.namespace, ref.name)
+                try:
+                    stage_artifact_copies(repo_root, source, parsed.artifact_copies[key])
+                except (ValueError, FileNotFoundError, KeyError) as error:
+                    raise ValueError(f"{owner}: cannot stage ExternalArtifact {key}: {error}") from error
+                directory = source / directory.relative_to(repo_root)
+            elif spec.target_namespace:
+                shutil.copytree(repo_root, source, dirs_exist_ok=True)
+                directory = source / directory.relative_to(repo_root)
 
-    # Build all local flux-referenced kustomizations (including suspended — kustomize
-    # build should still succeed). Only validation checks filter suspended.
-    kusts_by_dir = {path.parent.resolve(): kust for path, kust in parsed.kustomize_files.items()}
+            if not directory.is_dir():
+                raise FileNotFoundError(f"{owner}: {spec.path} is missing from its source")
+            if spec.target_namespace:
+                return owner, await _build_namespace_override(owner, spec, directory)
 
-    artifact_specs = {
-        (resource.namespace, artifact["name"]): [(copy["from"], copy["to"]) for copy in artifact.get("copy", [])]
-        for resources in parsed.source_resources.values()
-        for resource in resources
-        if isinstance(resource, ArtifactGeneratorResource)
-        for artifact in resource.spec.artifacts
-    }
+            return owner, await run_kustomize_build(directory)
 
-    def needs_artifact_staging(copies: list[tuple[str, str]]) -> bool:
-        # Directory copies already appear at their artifact paths in the source checkout.
-        # Exact-file copies and remapped directories need a temporary materialized artifact.
-        for source_uri, destination_uri in copies:
-            if not source_uri.startswith("@repo/") or not destination_uri.startswith("@artifact/"):
-                continue
-            source = source_uri.removeprefix("@repo/")
-            if source == "**":
-                source = ""
-            elif source.endswith("/**"):
-                source = source.removesuffix("/**").rstrip("/")
-            destination = destination_uri.removeprefix("@artifact/").rstrip("/")
-            if source != destination:
-                return True
-        return False
-
-    staged_artifacts: dict[tuple[str, str], Path] = {}
-    with ExitStack() as staging_dirs:
-        for key, copies in artifact_specs.items():
-            if not needs_artifact_staging(copies):
-                continue
-            staging_root = Path(staging_dirs.enter_context(tempfile.TemporaryDirectory(prefix="flux-artifact-")))
-            try:
-                stage_artifact_copies(repo_root, staging_root, copies)
-            except (ValueError, FileNotFoundError) as error:
-                raise ValueError(f"failed to stage ExternalArtifact {key}: {error}") from error
-            staged_artifacts[key] = staging_root
-
-        async def _build_all() -> dict[str, list[K8sResource]]:
-            # At most one additional copy of a manifest tree, even when several owners share it.
-            namespace_build = asyncio.Semaphore(1)
-
-            async def _build(
-                owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile
-            ) -> tuple[str, list[K8sResource]]:
-                source_root = repo_root
-                build_file = kust
-                source_ref = spec.source_ref
-                if source_ref is not None and source_ref.kind == EXTERNAL_ARTIFACT_KIND:
-                    artifact_namespace = source_ref.namespace or spec.namespace
-                    if staged_root := staged_artifacts.get((artifact_namespace, source_ref.name)):
-                        relative = kust.path.relative_to(repo_root)
-                        staged_path = staged_root / relative
-                        if not staged_path.is_file():
-                            raise FileNotFoundError(
-                                f"ExternalArtifact {artifact_namespace}/{source_ref.name} does not contain {relative}"
-                            )
-                        source_root = staged_root
-                        build_file = KustomizeFile(path=staged_path)
-
-                if spec.target_namespace:
-                    async with namespace_build:
-                        resources = await _build_namespace_override(owner, spec, build_file.path.parent, source_root)
-                else:
-                    resources = await run_kustomize_build(build_file)
-                return owner, resources
-
-            rendered = await asyncio.gather(
+    async def build_all() -> dict[str, list[K8sResource]]:
+        return dict(
+            await asyncio.gather(
                 *(
-                    _build(owner, spec, kusts_by_dir[directory])
+                    build(owner, spec, directory)
                     for owner, spec in parsed.flux_kustomizations.items()
-                    if (directory := spec.local_dir(repo_root)) is not None and directory in kusts_by_dir
+                    if (directory := spec.local_dir(repo_root)) is not None
                 )
             )
-            return dict(rendered)
+        )
 
-        parsed.rendered_resources = asyncio.run(_build_all())
-    return parsed
+    return replace(parsed, rendered_resources=asyncio.run(build_all()))
 
 
 @pytest.fixture(scope="session")
-def cluster(repo_root: Path) -> ParsedCluster:
-    """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
-    return _build_cluster(repo_root)
+def parsed_cluster(repo_root: Path) -> ParsedCluster:
+    return parse_cluster(repo_root)
 
 
-def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, repo_root: Path) -> None:
-    """Every flux kustomization pointing to a local path must have a build result."""
-    expected = {name for name, spec in cluster.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
-    missing = sorted(expected - cluster.flux_kust_resources().keys())
-    assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
+@pytest.fixture(scope="session")
+def cluster(parsed_cluster: ParsedCluster, repo_root: Path) -> ParsedCluster:
+    """Build every local owner. A missing directory or failed build fails the fixture."""
+    return _build_cluster(parsed_cluster, repo_root)
+
+
+def test_flux_configmaps_and_secrets_have_namespaces(cluster: ParsedCluster) -> None:
+    """A namespace-less generated ConfigMap prevented the public-coder Deployment from reconciling."""
+    missing = [
+        f"{owner}: {resource.kind}/{resource.name}"
+        for owner, resources in cluster.flux_kust_resources(include_suspended=True).items()
+        for resource in resources
+        if resource.api_version == "v1" and resource.kind in {"ConfigMap", "Secret"} and not resource.namespace
+    ]
+    assert not missing, "Flux cannot apply resources missing a namespace:\n" + "\n".join(missing)
 
 
 def test_no_dependency_errors(cluster: ParsedCluster) -> None:
@@ -222,8 +174,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         owner("first", "secrets", "allowed"),
         owner("second", "secrets", "denied"),
         owner("unspecified", "secrets"),
-        owner("namespaces", "namespaces"),
-        owner("policy", "policy", "operator"),
+        owner("policy", "policy"),
     )
     secret_spec = {
         "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
@@ -243,49 +194,34 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
             "metadata": {"name": "explicit", "namespace": "allowed"},
             "spec": secret_spec,
         },
-        {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "referent"}},
-    )
-    write(
-        "cluster/generated/namespaces/resources.yaml",
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "allowed", "labels": {"team": "approved"}}},
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied"}},
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "original"}},
     )
     write(
         "cluster/generated/policy/resources.yaml",
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "source-operator"}},
         {
             "apiVersion": "external-secrets.io/v1",
             "kind": "ClusterSecretStore",
             "metadata": {"name": "shared"},
             "spec": {
-                "conditions": [{"namespaceSelector": {"matchLabels": {"team": "approved"}}}],
-                "provider": {"kubernetes": {"auth": {"serviceAccount": {"name": "referent"}}}},
+                "conditions": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "allowed"}}}]
             },
         },
-        {
-            "apiVersion": "external-secrets.io/v1",
-            "kind": "ClusterExternalSecret",
-            "metadata": {"name": "cluster-consumer"},
-            "spec": {"namespaces": ["allowed"], "externalSecretSpec": secret_spec},
-        },
     )
-    # The two targeted owners share one directory. The source Kustomization
-    # also remains available to an owner with no namespace override.
-    for directory in ("secrets", "namespaces", "policy"):
+    for directory in ("secrets", "policy"):
         write(
             f"cluster/generated/{directory}/kustomization.yaml",
             {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": ["resources.yaml"]},
         )
 
-    parsed = _build_cluster(tmp_path)
+    parsed = _build_cluster(parse_cluster(tmp_path), tmp_path)
     builds = parsed.flux_kust_resources()
     assert {
         owner_name: {resource.namespace for resource in builds[owner_name] if resource.kind == "ExternalSecret"}
         for owner_name in ("first", "second", "unspecified")
     } == {"first": {"allowed"}, "second": {"denied"}, "unspecified": {"", "allowed"}}
-    assert {resource.name: resource.namespace for resource in builds["policy"] if resource.kind == "Namespace"} == {
-        "operator": ""
-    }
+    for owner_name, expected in (("first", "allowed"), ("second", "denied"), ("unspecified", "original")):
+        [namespace] = [resource for resource in builds[owner_name] if resource.kind == "Namespace"]
+        assert (namespace.name, namespace.namespace) == (expected, "")
     errors = check_external_secret_store_wiring(parsed)
     assert len(errors) == 2
     for secret in ("implicit", "explicit"):
@@ -296,6 +232,63 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         ]
         assert "second" in error
         assert "./cluster/generated/secrets" in error
+
+
+def test_session_archive_importers_receive_the_backup_credentials(
+    parsed_cluster: ParsedCluster, repo_root: Path, tmp_path: Path
+) -> None:
+    owner = parsed_cluster.flux_kustomizations["ai-session-archive"]
+    # Flux dry-run masks the ciphertext even if the owner has no decryption key.
+    assert owner.decryption is not None
+    assert owner.decryption.provider == "sops"
+    assert owner.decryption.secret_ref is not None
+    # persistent-auth.tf provisions this key and reflects it into ducktape-flux.
+    assert owner.decryption.secret_ref.name == "sops-age-cluster-secrets"
+    source = owner.source_ref
+    assert source is not None
+    stage_artifact_copies(
+        repo_root, tmp_path, parsed_cluster.artifact_copies[source.namespace or owner.namespace, source.name]
+    )
+    # Flux dry-run masks SOPS payloads. Use Kustomize here to verify which file the importer actually receives.
+    kustomize = Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"
+    output = subprocess.check_output([kustomize, "build", tmp_path / owner.path])
+    resources = list(yaml.load_all(output, Loader=yaml.CSafeLoader))
+    [secret] = [doc for doc in resources if doc["kind"] == "Secret"]
+    jobs = [doc for doc in resources if doc["kind"] == "CronJob"]
+    assert jobs
+    expected = (repo_root / "secrets/shared/session-backup.yaml").read_bytes()
+    for job in jobs:
+        pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        [importer] = [container for container in pod["containers"] if "--credentials-file" in container.get("args", [])]
+        path = Path(importer["args"][importer["args"].index("--credentials-file") + 1])
+        [mount] = [mount for mount in importer["volumeMounts"] if path.is_relative_to(mount["mountPath"])]
+        [volume] = [volume["secret"] for volume in pod["volumes"] if volume["name"] == mount["name"]]
+        assert (job["metadata"]["namespace"], volume["secretName"]) == (
+            secret["metadata"]["namespace"],
+            secret["metadata"]["name"],
+        )
+        key = str(path.relative_to(mount["mountPath"]))
+        if "items" in volume:
+            [key] = [item["key"] for item in volume["items"] if item["path"] == key]
+        assert base64.b64decode(secret["data"][key]) == expected
+
+
+def test_staging_sandbox_templates_use_their_pinned_images(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    component = yaml.safe_load((k8s_dir / "agentplane-staging/image-pins/kustomization.yaml").read_text())
+    pins = {entry["name"]: entry["newTag"] for entry in component["images"]}
+    templates = [
+        resource
+        for resource in cluster.rendered_resources["agentplane-staging"]
+        if isinstance(resource, AgentplaneSandboxTemplateResource)
+    ]
+    assert templates
+    for template in templates:
+        assert template.images, template.name
+        for image in template.images:
+            name, _, tag = image.rpartition(":")
+            assert tag != "unset", (template.name, image)
+            if name in pins:
+                assert tag == pins[name], (template.name, image)
 
 
 def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:
@@ -315,15 +308,12 @@ def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Every `$imagepolicy` marker names a defined ImagePolicy, so no image silently stops rolling."""
+def test_files_flux_rewrites_have_valid_markers_and_block_style(cluster: ParsedCluster, k8s_dir: Path) -> None:
     errors = check_image_policy_markers(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
 
-def test_agent_binding_delegation_dependencies_follow_namespace_owners(
-    cluster: ParsedCluster, staging_policy_sets: dict[str, list[dict]], k8s_dir: Path
-) -> None:
+def test_agent_binding_delegation_dependencies_follow_namespace_owners(cluster: ParsedCluster) -> None:
     """Delegated binding applies follow the namespace owner that creates their targets."""
     retained_resources = cluster.flux_kust_resources(include_suspended=True)
     namespace_owners: dict[str, set[str]] = {}
@@ -333,71 +323,42 @@ def test_agent_binding_delegation_dependencies_follow_namespace_owners(
                 continue
             namespace_owners.setdefault(resource.name, set()).add(owner)
 
-    policy_set_namespaces = {
+    binding_namespaces = {
         namespace
-        for rules in staging_policy_sets.values()
-        for rule in rules
-        if rule["type"] == "kubernetes_role_binding"
-        for namespace in rule["namespaces"]
+        for resource in retained_resources["agentplane-staging"]
+        if isinstance(resource, AgentplanePolicySetResource)
+        for rule in resource.rules
+        if rule.type in {"kubernetes_role_binding", "role_binding"}
+        for namespace in rule.namespaces
     }
-    # Delegated: every PolicySet RoleBinding scope, the retained cleanup scopes, and the legacy
-    # static-only litellm role, whose binding remains outside PolicySets.
-    expected_external_scopes = (policy_set_namespaces - {"agentplane-staging"}) | {
+    # Include retained cleanup scopes and the static litellm grant alongside catalog grants.
+    expected_external_scopes = (binding_namespaces - {"agentplane-staging"}) | {
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
         "litellm",
     }
 
-    flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
-    delegation_name = "agentplane-staging-binding-delegation-"
-    flux_by_name = {
-        doc["metadata"]["name"]: doc
-        for doc in flux_objects
-        if doc["kind"] == "Kustomization" and doc["metadata"]["name"].startswith(delegation_name)
+    prefix = "agentplane-staging-binding-delegation-"
+    delegations = {
+        owner.removeprefix(prefix): owner for owner in cluster.flux_kustomizations if owner.startswith(prefix)
     }
-    expected_flux_names = {f"{delegation_name}{namespace}" for namespace in expected_external_scopes}
-    assert set(flux_by_name) == expected_flux_names
+    assert delegations.keys() == expected_external_scopes
 
-    namespace_owners["haku-sandbox"] = {"haku-rbac"}
-    namespace_owners["flux-system"] = set()
-    namespace_owners["ducktape-flux"] = set()
-    delegation_owner_overrides = {"clickhouse": "clickhouse"}
-    for namespace in expected_external_scopes:
-        owners = namespace_owners[namespace]
-        is_bootstrap_root = namespace in {"flux-system", "ducktape-flux"}
-        expected_dependency = (
-            None
-            if is_bootstrap_root
-            else [delegation_owner_overrides.get(namespace, owner) for owner in sorted(owners)]
-        )
-        assert is_bootstrap_root or len(owners) == 1, (namespace, owners)
-
-        flux = flux_by_name[f"{delegation_name}{namespace}"]
-        assert flux["spec"]["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
-        assert flux["spec"]["path"] == (
-            f"./cluster/generated/agentplane/binding-delegation/agentplane-staging/{namespace}"
-        )
-        if expected_dependency is None:
-            assert "dependsOn" not in flux["spec"]
+    # Haku and ClickHouse gate delegation on a later reconciliation step.
+    namespace_owners.update({"haku-sandbox": {"haku-rbac"}, "clickhouse": {"clickhouse"}})
+    source = SourceRef(kind="GitRepository", name="ducktape", namespace="ducktape-flux")
+    for namespace, owner in delegations.items():
+        spec = cluster.flux_kustomizations[owner]
+        assert spec.source_ref == source, owner
+        assert {resource.namespace for resource in retained_resources[owner] if resource.kind == "RoleBinding"} == {
+            namespace
+        }, owner
+        if namespace in {"flux-system", "ducktape-flux"}:
+            assert not spec.depends_on, owner
         else:
-            assert flux["spec"]["dependsOn"] == [{"name": expected_dependency[0], "namespace": "ducktape-flux"}]
-
-
-def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
-    """A flow mapping in a file Flux rewrites fails prettier on every open PR at once.
-
-    Flux re-serialises the whole document to set a tag, dropping prettier's inner spaces, and
-    that lands on `devel` with `[skip ci]` — so the failure surfaces in unrelated PRs.
-    """
-    errors = check_no_flow_mappings_where_flux_writes(k8s_dir)
-    assert not errors, "\n".join(errors)
-
-
-def test_flux_bootstrap_sources_need_no_decrypted_auth(k8s_dir: Path) -> None:
-    """Cold bootstrap sources must not depend on Flux-decrypted auth."""
-    errors = check_flux_bootstrap_auth(k8s_dir)
-    assert not errors, "\n".join(errors)
+            [dependency] = namespace_owners[namespace]
+            assert spec.depends_on == [DependsOn(name=dependency, namespace="ducktape-flux")], owner
 
 
 def test_sops_secrets_have_decryption_block(cluster: ParsedCluster) -> None:
@@ -406,14 +367,14 @@ def test_sops_secrets_have_decryption_block(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_retry_policy(cluster: ParsedCluster) -> None:
-    errors = check_retry_policy(cluster)
+def test_retry_policy(parsed_cluster: ParsedCluster) -> None:
+    errors = check_retry_policy(parsed_cluster)
     assert not errors, "\n".join(errors)
 
 
-def test_no_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> None:
+def test_no_orphaned_files(parsed_cluster: ParsedCluster, repo_root: Path) -> None:
     """All active YAML files must be referenced by a kustomization.yaml."""
-    errors = find_orphaned_files(cluster, repo_root)
+    errors = find_orphaned_files(parsed_cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 
@@ -429,52 +390,25 @@ def test_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-@pytest.fixture(scope="module")
-def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
-    """Bootstrap roots are not children of the generated Flux graph; build them rather than guessing their labels."""
-    bootstrap_roots = (
-        parse_kustomize_file(k8s_dir / "flux/flux-system/kustomization.yaml"),
-        flux_generated_kustomization(k8s_dir / "flux/ducktape-flux"),
-    )
-    return [resource for root in bootstrap_roots for resource in asyncio.run(run_kustomize_build(root))]
-
-
-@pytest.fixture(scope="module")
-def agent_permission_resources(cluster: ParsedCluster, bootstrap_resources: list[K8sResource]) -> list[K8sResource]:
-    # Suspension stops reconciliation, not the grants already present in a retained namespace.
-    resources = [
-        resource for group in cluster.flux_kust_resources(include_suspended=True).values() for resource in group
-    ]
-    resources.extend(bootstrap_resources)
-    return resources
-
-
-@pytest.fixture(scope="module")
-def staging_manifest_docs(k8s_dir: Path) -> list[dict]:
-    return list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
-
-
-@pytest.fixture(scope="module")
-def staging_policy_sets(staging_manifest_docs: list[dict]) -> dict[str, list[dict]]:
-    return {
-        doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifest_docs if doc["kind"] == "PolicySet"
-    }
-
-
-def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
+def test_no_legacy_agent_diagnostic_rbac(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """The delivered cluster has no implicit Kyverno-generated agent readers."""
-    assert not any(
-        resource.kind == "ClusterPolicy" and resource.name == "generate-agent-diagnostics-readers"
-        for resource in agent_permission_resources
-    )
-    assert not any(
-        resource.kind == "ClusterRole" and resource.name == "kyverno-background-controller-rolebindings"
-        for resource in agent_permission_resources
-    )
-    assert not any(
-        resource.kind == "RoleBinding" and resource.name in {"agent-readable-metadata", "agent-readable-logs"}
-        for resource in agent_permission_resources
-    )
+    # Suspended owners retain their grants. The two bootstrap roots are outside the Flux graph.
+    owners = cluster.flux_kust_resources(include_suspended=True)
+    for root in ("flux/flux-system", "flux/ducktape-flux"):
+        owners[root] = asyncio.run(run_kustomize_build(k8s_dir / root))
+
+    retired = {
+        ("ClusterPolicy", "generate-agent-diagnostics-readers"),
+        ("ClusterRole", "kyverno-background-controller-rolebindings"),
+        ("RoleBinding", "agent-readable-metadata"),
+        ("RoleBinding", "agent-readable-logs"),
+    }
+    assert not [
+        (owner, resource.kind, resource.namespace, resource.name)
+        for owner, resources in owners.items()
+        for resource in resources
+        if (resource.kind, resource.name) in retired
+    ]
 
 
 if __name__ == "__main__":

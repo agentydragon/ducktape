@@ -52,7 +52,7 @@ py_library(
     name = "crossplane_keys",
     srcs = ["crossplane_keys.py"],
     deps = [
-        ":database",
+        ":endpoint",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:reflector",
@@ -90,9 +90,16 @@ py_library(
     srcs = ["credentials.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
-        ":database",
+        ":endpoint",
         "//cluster/cdk8s:secret_ref",
     ],
+)
+
+py_library(
+    name = "endpoint",
+    srcs = ["endpoint.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s:service_ref"],
 )
 
 py_library(
@@ -102,6 +109,7 @@ py_library(
     deps = [
         ":config",
         ":database",
+        ":endpoint",
         ":upstreams",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:disruption_budget",
@@ -131,6 +139,7 @@ py_library(
     srcs = ["namespace.py"],
     deps = [
         ":database",
+        ":endpoint",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -142,6 +151,7 @@ py_library(
     name = "database",
     srcs = ["database.py"],
     deps = [
+        ":endpoint",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/cnpg:backup",
@@ -158,7 +168,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        ":database",
+        ":endpoint",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

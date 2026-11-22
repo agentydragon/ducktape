@@ -1,7 +1,9 @@
 # gazelle:ignore
+# gazelle:resolve py eso_github_access_token_crds //cluster/cdk8s/providers/external_secrets:githubaccesstoken
 
 # gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
+# gazelle:resolve py agentplane_sandboxtemplate_crds //agentplane/crds:sandboxtemplate
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
 # gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
@@ -27,7 +29,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/haku_ci:egress_gateway",
         "//cluster/cdk8s/haku_ci:runner",
-        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "//cluster/cdk8s/providers/vpa:policy",
         "@pypi//cdk8s",
     ],
 )
@@ -174,6 +176,7 @@ py_library(
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s/cert_manager:cluster_ca",
@@ -181,7 +184,7 @@ py_library(
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/litellm:credentials",
-        "//cluster/cdk8s/litellm:proxy",
+        "//cluster/cdk8s/litellm:endpoint",
         "//cluster/cdk8s/ollama:app",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:policy_set",
@@ -222,6 +225,7 @@ py_library(
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//util:settings_contract",
@@ -320,7 +324,6 @@ py_library(
         "//agentplane:crd_group",
         "//agentplane:subjects",
         "//agentplane/environments:settings",
-        "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
@@ -400,9 +403,11 @@ py_library(
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s/litellm:endpoint",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -473,6 +478,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
@@ -499,8 +505,9 @@ py_library(
         ":platform_routes",
         ":sandbox_pod",
         ":telemetry",
+        ":template_storage",
         ":workload_routes",
-        "//agentplane:crd_group",
+        "//agentplane/crds:sandboxtemplate",
         "//agentplane/egress:platform_routes",
         "//agentplane/env:config",
         "//agentplane/net/peertls:config",
@@ -535,7 +542,8 @@ py_library(
     srcs = ["environment_vm.py"],
     deps = [
         ":environment",
-        "//agentplane:crd_group",
+        ":template_storage",
+        "//agentplane/crds:sandboxtemplate",
         "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "@pypi//cdk8s",
@@ -555,7 +563,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -740,23 +747,11 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/app:sandbox_models",
         "//agentplane/app:settings",
-        "//agentplane/crds:policyset",
         "//agentplane/env/runtime:harness",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//model_catalog:catalog",
-    ],
-)
-
-py_library(
-    name = "staging_grants",
-    srcs = ["staging_grants.py"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":kubernetes_grants",
-        ":sandbox_pod",
-        "//cluster/cdk8s:agent_access_profiles",
     ],
 )
 
@@ -877,7 +872,6 @@ py_library(
         ":sandbox_controller",
         ":sandbox_pod",
         ":staging_config",
-        ":staging_grants",
         ":workload_certificate_admission",
         ":workload_tls",
         "//agentplane:subjects",
@@ -886,7 +880,6 @@ py_library(
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/action_service/sandbox/contract:actions",
         "//agentplane/app:action_federation_settings",
-        "//agentplane/app:settings",
         "//agentplane/crds:policyset",
         "//agentplane/env:config",
         "//agentplane/identity/operator:settings",
@@ -907,6 +900,7 @@ py_library(
         "//cluster/cdk8s:tana_mcp",
         "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/cnpg:health",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -943,8 +937,15 @@ py_test(
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
     srcs = ["test_actions.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = [
+        "testdata/action_availability.yaml",
+        "@multitool//tools/promtool",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
     deps = [
         ":actions",
         ":central_sampler",
@@ -959,10 +960,14 @@ py_test(
         "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/testing:manifests",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//jsonschema",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//referencing",
     ],
 )
 
@@ -1046,9 +1051,13 @@ py_test(
     name = "test_notifications",
     size = "medium",
     srcs = ["test_notifications.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    data = [
+        "//cluster/k8s/agentplane-staging:github-app.sops.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":actions",
         ":conftest",
         ":notifications",
         ":runner_gateway",
@@ -1058,6 +1067,8 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1071,7 +1082,6 @@ py_test(
     deps = [
         ":conftest",
         ":egress",
-        ":egress_staging_credentials",
         ":environment_service",
         ":history_service",
         ":kubernetes_account_ref",
@@ -1080,15 +1090,12 @@ py_test(
         ":notifications",
         ":platform_routes",
         ":staging",
-        ":staging_grants",
         "//:conftest",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -1179,6 +1186,7 @@ py_library(
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/haku:mailbox",
+        "//cluster/cdk8s/haku:mailbox_endpoint",
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/plaid_mcp:pgweb",
@@ -1218,7 +1226,9 @@ py_test(
     deps = [
         ":egress_credentials",
         ":egress_staging_credentials",
+        ":gaffer_archive",
         "//:conftest",
+        "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/testing:manifests",
@@ -1273,6 +1283,7 @@ py_test(
         "//agentplane/env:config",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
@@ -1365,20 +1376,18 @@ py_test(
         ":policy_controller",
         "//:conftest",
         "//agentplane:crd_group",
-        "//agentplane/net/peertls:config",
+        "//agentplane/policy_controller:settings",
         "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/testing:manifests",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "test_sandbox_controller",
-    # Synthesizes the staging chart to check its settings file and projected token wiring.
+    # Synthesizes the staging chart to check its service configuration, permissions and mounted certificates.
     size = "medium",
     srcs = ["test_sandbox_controller.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -1407,7 +1416,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -1438,7 +1446,6 @@ py_library(
         ":workload_tls",
         "//agentplane:crd_group",
         "//agentplane:subjects",
-        "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//agentplane/session_dispatcher:settings",
         "//cluster/cdk8s:api_resource",
@@ -1471,22 +1478,21 @@ py_test(
         ":runner_gateway_workload",
         ":sandbox_controller",
         ":staging",
-        ":workload_tls",
         "//:conftest",
         "//agentplane/net/peertls:config",
         "//agentplane/session_dispatcher:settings",
         "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "test_service_boundaries",
-    # Synthesizes both environments and checks History database wiring, environment authority, and notification scope.
     size = "medium",
     srcs = ["test_service_boundaries.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -1499,8 +1505,11 @@ py_test(
         ":runner_gateway",
         ":sandbox_controller",
         "//:conftest",
+        "//agentplane:crd_group",
+        "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -1580,6 +1589,7 @@ py_test(
         ":sandbox_pod",
         "//:conftest",
         "//agentplane:crd_group",
+        "//cluster/cdk8s:agent_rbac_test_support",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/kyverno:apply",
         "@pypi//cdk8s",
@@ -1700,6 +1710,7 @@ py_library(
     srcs = ["workload_tls.py"],
     deps = [
         ":environment",
+        "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/providers/cert_manager:certificate",
@@ -1736,11 +1747,12 @@ py_library(
     deps = [
         ":environment",
         ":environment_guest",
-        ":environment_sandbox",
         ":platform_routes",
         ":sandbox_pod",
+        ":template_storage",
         ":workload_routes",
-        "//agentplane:crd_group",
+        "//agentplane/crds:sandboxtemplate",
+        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//agentplane/env:config",
         "//agentplane/firecracker:config",
@@ -1756,26 +1768,27 @@ py_library(
 
 py_test(
     name = "test_environment_firecracker",
-    size = "medium",
     srcs = ["test_environment_firecracker.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
         ":egress",
         ":environment_firecracker",
-        ":environment_vm",
-        ":history_service",
         ":kubernetes_account_ref",
+        ":runner_gateway",
         ":staging",
         "//:conftest",
         "//agentplane/egress:platform_routes",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s/testing:manifests",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -1812,6 +1825,7 @@ py_test(
         ":staging",
         "//:conftest",
         "//cluster/cdk8s:agent_rbac_test_support",
+        "//cluster/cdk8s:api_objects",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/testing:manifests",
@@ -1826,4 +1840,29 @@ py_library(
     name = "environment_service",
     srcs = ["environment_service.py"],
     deps = ["//cluster/cdk8s:service_ref"],
+)
+
+py_library(
+    name = "template_storage",
+    srcs = ["template_storage.py"],
+    deps = [
+        "//agentplane/crds:sandboxtemplate",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "gaffer_archive",
+    srcs = ["gaffer_archive.py"],
+    deps = [
+        ":egress_credentials",
+        "//cluster/cdk8s:image_automation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:reflector",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/external_secrets:githubaccesstoken",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
 )

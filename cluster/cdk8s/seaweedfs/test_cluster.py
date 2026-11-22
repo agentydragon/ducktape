@@ -11,11 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest_bazel
-from cdk8s import (
-    App,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
-from more_itertools import one
+from cdk8s import Chart
 
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.seaweedfs import cluster
@@ -38,14 +34,13 @@ def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, A
     return found
 
 
-def test_seaweedfs_components_carry_the_protected_priority_class(scratch_app: App) -> None:
-    seaweed = one(doc for doc in Cdk8sTesting.synth(cluster.chart(scratch_app)) if doc["kind"] == "Seaweed")
+def test_seaweedfs_components_carry_the_protected_priority_class(scratch_chart: Chart) -> None:
+    seaweed = cluster.seaweed(scratch_chart).to_json()
     components = _pod_spawning_components(seaweed["spec"])
 
     assert components, "found no pod-spawning components in the SeaweedFS CR"
-    assert {path: component.get("priorityClassName") for path, component in components.items()} == dict.fromkeys(
-        components, stateful_infra.NAME
-    )
+    for path, component in components.items():
+        assert component.get("priorityClassName") == stateful_infra.NAME, path
 
 
 if __name__ == "__main__":

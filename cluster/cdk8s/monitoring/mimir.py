@@ -14,12 +14,12 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3_AUTHORITY
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mimir"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
-_S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
 # The chart's nginx gateway Service, named after the release: port 80 onto the Pods' 8080.
 GATEWAY = ServiceRef(
     name=f"{NAME}-gateway",
@@ -41,7 +41,7 @@ PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 def _s3(bucket: str) -> dict[str, object]:
     # Credentials injected via global.extraEnvFrom; expanded by -config.expand-env=true.
     return {
-        "endpoint": _S3_ENDPOINT,
+        "endpoint": S3_AUTHORITY,
         "bucket_name": bucket,
         "region": "us-east-1",
         "insecure": True,
@@ -157,16 +157,14 @@ def _values() -> dict[str, object]:
             # placement; zone-aware would just add a second StatefulSet and
             # rollout-operator coupling for no behavioural win at this scale.
             "zoneAwareReplication": {"enabled": False},
-            "affinity": {
-                "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-                **node_scheduling.one_per_host(
-                    {
-                        "app.kubernetes.io/component": "ingester",
-                        "app.kubernetes.io/name": NAME,
-                        "app.kubernetes.io/instance": NAME,
-                    }
-                ),
-            },
+            "affinity": node_scheduling.one_per_host(
+                {
+                    "app.kubernetes.io/component": "ingester",
+                    "app.kubernetes.io/name": NAME,
+                    "app.kubernetes.io/instance": NAME,
+                },
+                node_affinity=node_scheduling.PREFER_WORKERS.node_affinity,
+            ),
         },
         "querier": _component(1, "50m", "128Mi"),
         "query_frontend": _component(1, "50m", "128Mi"),

@@ -63,10 +63,11 @@ releases/images/configuration. `stack.py` owns fresh workload orchestration and 
 `vm/runtime.py` owns guest configuration and evidence; its runtime composition selects retained
 KubeVirt infrastructure and optional workspace block storage. The fingerprint includes
 `certificates.py` because its cleanup determines whether retained PKI is clean.
-Every k3s entrypoint registers the same `deployment.pytest_plugin` module. Its ordinary session
-`deployment` fixture starts only when requested. The rendered runtime selects the Pod, KubeVirt or
-Firecracker lifecycle; plugin registration does not vary. All suites share the scenario tracing,
-scripted-model and batched-case reporting hooks in the parent conftest.
+The session-scoped `deployment` fixture starts only when requested. Pod suites load
+`deployment.pytest_plugin` directly. Each guest suite loads its runtime's plugin, which registers
+the shared deployment plugin and supplies the lifecycle fixture selected by the rendered manifest.
+All suites share the scenario tracing, scripted-model and batched-case reporting hooks in the
+parent conftest.
 
 A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
 refreshed snapshot is saved, later actions can repeat the rebuild.
@@ -252,9 +253,8 @@ Probed 2026-10-21 with `bb execute` on the managed executor under the k3s target
 (`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. That managed stack ran KubeVirt with software emulation and used kube-proxy with ClusterIP Services.
 The required VM suite now uses the [hosted KVM pool](../../../devinfra/ci/README.md#where-bazel-ci-runs-tests).
 
-The earlier RBE precompile failure did not recur on 2026-10-30 with `rules_python` 2.4.3 (`MODULE.bazel` now
-pins 2.5.0-rc4): a target using `pyc_collection = "include_pyc"` passed and Python loaded the generated `.pyc`
-files. The
+The earlier RBE precompile failure did not recur on 2026-10-30 with `rules_python` 2.4.3. A
+target using `pyc_collection = "include_pyc"` passed and Python loaded the generated `.pyc` files. The
 [current experiment](../k3s/debug/pyc_precompilation.md) shows the large compile action graph and the
 observed warm-run difference, so the suites do not enable collection yet. With the chart rendered at
 build time, imports still took 10–13 s before pytest in the October 21 measurements
@@ -276,10 +276,11 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
-([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
-(`//agentplane/system_tests/suites:vm_manifests.json`), so [`sandboxes.py`](../vm/sandboxes.py)
-installs production's KubeVirt release and Kyverno's admission controller. The required `test_vm`
+The required `test_vm` creates Claude and Codex sessions through the native Environments,
+Dispatcher and History services. It shares `vm_native_manifests.json` with the manual TCG
+comparison. The manual storage and OOM suites use `vm_manifests.json` for their App calls.
+Both fixtures install production's KubeVirt release and Kyverno's admission controller through
+[`sandboxes.py`](../vm/sandboxes.py). The required suite
 uses nested KVM on the hosted workers. The manual `test_vm_tcg` comparison and managed diagnostics
 use QEMU software emulation. Kyverno adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller

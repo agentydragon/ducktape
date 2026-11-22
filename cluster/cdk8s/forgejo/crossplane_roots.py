@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 
@@ -37,7 +37,6 @@ def haku_state_chart(app: App) -> Chart:
         app,
         module_name="haku-state",
         identity_name=HAKU_STATE_IDENTITY,
-        schema=terraform.gitops_state_schema("haku-state"),
         secret_accesses=(
             (
                 "haku-state-forgejo-secrets",
@@ -60,7 +59,6 @@ def budget_ledger_chart(app: App) -> Chart:
         app,
         module_name="budget-ledger",
         identity_name=BUDGET_LEDGER_IDENTITY,
-        schema=terraform.gitops_state_schema("budget-ledger"),
         secret_accesses=(
             ("budget-ledger-forgejo-secrets", "forgejo", ("forgejo-admin-password",), ("budget-ledger-git-creds",)),
         ),
@@ -72,7 +70,6 @@ def cpap_data_chart(app: App) -> Chart:
         app,
         module_name="cpap-data",
         identity_name=CPAP_DATA_IDENTITY,
-        schema=terraform.gitops_state_schema("cpap-data"),
         secret_accesses=(
             (
                 "cpap-data-forgejo-secrets",
@@ -89,7 +86,6 @@ def finance_agent_chart(app: App) -> Chart:
         app,
         module_name="finance-agent",
         identity_name=FINANCE_AGENT_IDENTITY,
-        schema=terraform.gitops_state_schema("finance-agent"),
         secret_accesses=(
             (
                 "finance-agent-forgejo-secrets",

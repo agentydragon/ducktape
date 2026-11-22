@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//agentplane/env/runtime/supervision/testing:defs.bzl", "pid1_go_test")
+
+package(default_visibility = [
+    "//agentplane/env:__subpackages__",
+])
+
+go_library(
+    name = "backend",
+    srcs = ["server.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend",
+    deps = [
+        "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/execution/companion/control:control_go_proto",
+        "//agentplane/env/runtime/supervision",
+        "@com_github_sethvargo_go_retry//:go-retry",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+pid1_go_test(
+    name = "backend_test",
+    srcs = ["server_test.go"],
+    embed = [":backend"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/execution/companion/control:control_go_proto",
+        "//agentplane/env/runtime/supervision",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@org_golang_google_grpc//:grpc",
+        "@org_uber_go_zap//:zap",
+    ],
+)

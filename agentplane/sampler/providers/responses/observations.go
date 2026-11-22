@@ -7,10 +7,23 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-// Observations projects one native event into normalized events. It never changes or replaces
-// the provider's raw event record.
-func Observations(event Event) ([]*eventpb.Event, error) {
+// observationProjector correlates provider item IDs with the call IDs used by the journal.
+type observationProjector struct {
+	calls map[string]string
+}
+
+// observations never changes or replaces the provider's raw event record.
+func (p *observationProjector) observations(event Event) ([]*eventpb.Event, error) {
 	switch event.Type {
+	case EventFunctionCallArgumentsDelta, EventCustomToolCallInputDelta:
+		if event.Delta == nil {
+			return nil, protocol.ErrInvalid
+		}
+		id, ok := p.calls[event.ItemID]
+		if !ok || *event.Delta == "" {
+			return nil, nil
+		}
+		return []*eventpb.Event{{Observation: &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{ItemId: id, PartialJson: protocol.DisplayText(*event.Delta)}}}}, nil
 	case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
 		if event.Delta == nil {
 			return nil, protocol.ErrInvalid
@@ -38,6 +51,12 @@ func Observations(event Event) ([]*eventpb.Event, error) {
 			id = item.ID
 		}
 		if event.Type == EventOutputItemAdded {
+			if (item.Type == ItemCustomToolCall || item.Type == ItemFunctionCall) && item.ID != "" && id != "" {
+				if p.calls == nil {
+					p.calls = make(map[string]string)
+				}
+				p.calls[item.ID] = id
+			}
 			return []*eventpb.Event{{Observation: &eventpb.Event_ItemStarted{
 				ItemStarted: &eventpb.ItemStarted{ItemId: id, Kind: kind, ToolName: item.Name},
 			}}}, nil

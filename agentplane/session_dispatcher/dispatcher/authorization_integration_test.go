@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -449,6 +450,13 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	commandID := uuid.NewString()
+	if _, err := client.SubmitInput(authoritySVIDContext(t), &dispatcherpb.SubmitInputRequest{
+		SessionId: stored.SessionID, CommandId: commandID, Text: "test retained input",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	// An accepted receipt retry does not need live inventory or rebind the execution Identity.
 	inventory.failSandboxRead(errors.New("inventory unavailable after accepted opening"))
 	again, err := client.CreateSession(authoritySVIDContext(t), request)
@@ -483,6 +491,14 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	inventory.failSandboxRead(nil)
 	if err := queueStore.EndSandbox(t.Context(), snapshot.UID); err != nil {
 		t.Fatal(err)
+	}
+	read := &dispatcherpb.GetDispatchRequest{CommandId: commandID}
+	if got, err := client.GetDispatch(authoritySVIDContext(t), read); err != nil ||
+		got.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || got.GetDispatch().GetSandboxUid() != snapshot.UID {
+		t.Fatalf("component read after Environment deletion: %v, %v", got, err)
+	}
+	if _, err := peers.otherIdentity.GetDispatch(authoritySVIDContext(t), read); status.Code(err) != codes.NotFound {
+		t.Fatalf("other Identity could discover retained command: %v", err)
 	}
 	retained, err := client.CreateSession(authoritySVIDContext(t), request)
 	if err != nil || retained.GetSession().GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED ||
@@ -581,5 +597,221 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		if _, err := client.ListSessions(authoritySVIDContext(t), request); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("invalid page request %v: %v", request, err)
 		}
+	}
+}
+
+func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *testing.T) {
+	ctx := t.Context()
+	queueStore := testStore(t, 5)
+	id, uid := uuid.NewString(), uuid.NewString()
+	enqueue := func(command string) {
+		t.Helper()
+		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-page-env", uid, input(command, "test retained text"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, command := range []string{"test-first", "test-second", "test-third"} {
+		enqueue(command)
+	}
+	peers := authorityClients(t, queueStore, &authorityInventory{sandboxErr: errors.New("inventory unavailable")}, nil)
+	page := func(token string, limit uint32) *dispatcherpb.ListSessionDispatchesResponse {
+		t.Helper()
+		result, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, PageToken: token, Limit: limit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	first := page("", 1)
+	if len(first.Dispatches) != 1 || first.Dispatches[0].GetCommandId() != "test-third" || first.NextPageToken == "" {
+		t.Fatalf("first receipt page: %v", first)
+	}
+	if _, err := enqueueWithSession(t, queueStore, ctx, uuid.NewString(), "foreign-env", uuid.NewString(), input("foreign", "private"), nil); err != nil {
+		t.Fatal(err)
+	}
+	batch := &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: []string{"foreign", "test-first", "test-third"}}
+	values, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), batch)
+	if err != nil || len(values.GetResults()) != 3 || values.Results[0].CommandId != "foreign" || values.Results[0].GetNotFound() == nil {
+		t.Fatalf("partial batch: %v, %v", values, err)
+	}
+	for i, id := range batch.CommandIds[1:] {
+		row := values.Results[i+1]
+		if row.CommandId != id || row.GetDispatch().GetReceiptVersion() <= 0 || !proto.Equal(row.GetDispatch().GetCommand(), input(id, "test retained text")) {
+			t.Fatalf("ordered batch command %s: %v", id, row)
+		}
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, "ALTER TABLE dispatch DISABLE TRIGGER keep_session_command_on_environment_deletion"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), batch); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("unprotected database returned batch: %v", err)
+	}
+	if _, err := peers.otherIdentity.BatchGetDispatches(authoritySVIDContext(t), batch); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-owner lookup: %v", err)
+	}
+	for _, ids := range [][]string{nil, {""}, {"a", "a"}, make([]string, 17)} {
+		if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: ids}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid batch: %v", err)
+		}
+	}
+	for _, session := range []string{id, "test-no-such-session"} {
+		_, err := peers.otherIdentity.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: session})
+		if status.Code(err) != codes.NotFound {
+			t.Fatalf("foreign Identity enumerated Session %q: %v", session, err)
+		}
+	}
+	for _, req := range []*dispatcherpb.ListSessionDispatchesRequest{
+		{SessionId: id, Limit: 101},
+		{SessionId: id, PageToken: "invalid"},
+		{SessionId: "other-session", PageToken: first.NextPageToken},
+	} {
+		if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), req); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid page request %v: %v", req, err)
+		}
+	}
+	initial := page("", 3)
+	if len(initial.Dispatches) != 3 {
+		t.Fatalf("initial receipt page: %v", initial)
+	}
+	oldVersion := initial.Dispatches[1].GetReceiptVersion()
+	if oldVersion <= 0 || initial.Dispatches[1].GetCommandId() != "test-second" {
+		t.Fatalf("initial receipt version: %v", initial)
+	}
+	point, err := peers.component.GetDispatch(authoritySVIDContext(t), &dispatcherpb.GetDispatchRequest{CommandId: "test-second"})
+	if err != nil || point.GetDispatch() == nil || point.GetDispatch().ReceiptVersion != nil {
+		t.Fatalf("point receipt version presence: %v, %v", point, err)
+	}
+	enqueue("test-later")
+	reason := strings.Repeat("test-reason-", 100)
+	if _, err := queueStore.Settle(ctx, "test-second", claimSessionOwner(t, queueStore, id), []string{store.QueueState}, store.FailedState, reason, nil); err != nil {
+		t.Fatal(err)
+	}
+	last := page(first.NextPageToken, 2)
+	if len(last.Dispatches) != 2 || last.Dispatches[0].GetCommandId() != "test-second" || last.Dispatches[0].GetReason() != reason || last.Dispatches[0].GetReceiptVersion() <= oldVersion ||
+		last.Dispatches[1].GetCommandId() != "test-first" || last.NextPageToken != "" || last.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
+		t.Fatalf("continued after admission and receipt update: %v", last)
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id='test-first'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=now()-interval '2 days'"); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := queueStore.PruneDispatchTombstones(ctx); err != nil || count != 1 {
+		t.Fatalf("prune: %d, %v", count, err)
+	}
+	if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, PageToken: first.NextPageToken}); status.Code(err) != codes.OutOfRange {
+		t.Fatalf("continued across pruned deletion: %v", err)
+	}
+	fresh := page("", 0)
+	if len(fresh.Dispatches) != 3 || fresh.Dispatches[0].GetCommandId() != "test-later" || fresh.NextPageToken != "" || fresh.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
+		t.Fatalf("fresh retained-row enumeration: %v", fresh)
+	}
+}
+
+func TestBatchGetDispatchesRetainsOriginalsAcrossEnvironmentDeletionAndLimitsResponseBytes(t *testing.T) {
+	ctx := t.Context()
+	queueStore := testStore(t, 5)
+	id, uid := uuid.NewString(), uuid.NewString()
+	text := strings.Repeat("x", 2<<20)
+	for _, cmd := range []string{"one", "two"} {
+		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-batch-env", uid, input(cmd, text), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := queueStore.EndSandbox(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	peers := authorityClients(t, queueStore, &authorityInventory{sandboxErr: errors.New("inventory down")}, nil)
+	req := &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: []string{"one", "two"}}
+	if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), req); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("batch byte limit: %v", err)
+	}
+	req.CommandIds = []string{"two"}
+	result, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), req)
+	if err != nil || len(result.GetResults()) != 1 {
+		t.Fatalf("retained command read: %v", err)
+	}
+	row := result.Results[0].GetDispatch()
+	if row.GetSessionId() != id || row.GetSandboxUid() != uid || row.GetCommand().GetSubmitInput().GetText() != text || row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED {
+		t.Fatal("did not recover the original and final delivery outcome")
+	}
+}
+
+func TestBatchGetDispatchesChoosesLiveThenLatestDeletionInSession(t *testing.T) {
+	ctx := t.Context()
+	queue := testStore(t, 5)
+	sessionID, anotherSession := uuid.NewString(), uuid.NewString()
+	uid := uuid.NewString()
+	const commandID = "same-id"
+	const sourceID = "another-source"
+	for _, fixture := range []struct{ session, id string }{{sessionID, commandID}, {anotherSession, sourceID}} {
+		if _, err := enqueueWithSession(t, queue, ctx, fixture.session, "test-env", uid, input(fixture.id, "original"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Historical deletions can share an ID across retained Sessions. The latest
+	// global deletion is deliberately in a different Session.
+	deleted := func(source, reason string) int64 {
+		t.Helper()
+		var version int64
+		err := queue.DB.QueryRowContext(ctx, `INSERT INTO dispatch_tombstone(command_id,version,session_id,operation,state,reason,
+			admission,delivery_blocker,wake_assessment,created_at,updated_at)
+			SELECT $1,nextval('dispatch_version_seq'),session_id,operation,'UNKNOWN',$2,admission,delivery_blocker,
+				wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$3 RETURNING version`, commandID, reason, source).Scan(&version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return version
+	}
+	deleted(commandID, "older deletion")
+	deleted(sourceID, "another Session")
+	peers := authorityClients(t, queue, &authorityInventory{sandboxErr: errors.New("inventory unavailable")}, nil)
+	read := func(session string) *dispatcherpb.BatchGetDispatchesResponse_Result {
+		t.Helper()
+		r, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: session, CommandIds: []string{"missing", commandID}})
+		if err != nil || len(r.GetResults()) != 2 || r.Results[0].CommandId != "missing" || r.Results[0].GetNotFound() == nil || r.Results[1].CommandId != commandID {
+			t.Fatalf("ordered batch: %v, %v", r, err)
+		}
+		return r.Results[1]
+	}
+	live := read(sessionID).GetDispatch()
+	if live.GetCommand().GetSubmitInput().GetText() != "original" || live.GetReceiptVersion() <= 0 || live.SandboxUid != uid {
+		t.Fatalf("live precedence: %v", live)
+	}
+	const reason = "runner effect unconfirmed"
+	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch SET state='UNKNOWN',reason=$1 WHERE command_id=$2", reason, commandID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {
+		t.Fatal(err)
+	}
+	expectedVersion := int64(0)
+	if err := queue.DB.QueryRowContext(ctx, "SELECT max(version) FROM dispatch_tombstone WHERE session_id=$1 AND command_id=$2", sessionID, commandID).Scan(&expectedVersion); err != nil {
+		t.Fatal(err)
+	}
+	foreignVersion := deleted(sourceID, "unrelated newer deletion")
+	legacy := read(sessionID).GetLegacyDeletionReceipt()
+	if legacy.GetReceiptVersion() != expectedVersion || legacy.GetReceiptVersion() <= live.GetReceiptVersion() || legacy.GetSessionId() != sessionID ||
+		legacy.GetReason() != reason || legacy.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || legacy.Command != nil || legacy.Sandbox != "" || legacy.SandboxUid != "" || legacy.UpdatedAt == nil {
+		t.Fatalf("scoped legacy evidence: %v", legacy)
+	}
+	if other := read(anotherSession).GetLegacyDeletionReceipt(); other.GetReceiptVersion() != foreignVersion || other.GetReason() != "unrelated newer deletion" {
+		t.Fatalf("other Session: %v", other)
+	}
+	if _, err := peers.otherIdentity.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: sessionID, CommandIds: []string{commandID}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("inaccessible Session: %v", err)
+	}
+	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET reason=repeat('x',4200000) WHERE version=$1", expectedVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := peers.component.BatchGetDispatches(authoritySVIDContext(t), &dispatcherpb.BatchGetDispatchesRequest{SessionId: sessionID, CommandIds: []string{commandID}}); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("oversized legacy evidence: %v", err)
+	}
+	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch_tombstone WHERE session_id=$1", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if miss := read(sessionID); miss.GetNotFound() == nil {
+		t.Fatalf("expired scoped evidence: %v", miss)
 	}
 }

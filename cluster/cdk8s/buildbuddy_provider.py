@@ -24,7 +24,7 @@ from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     ProviderSpecRuntimeConfigRef,
 )
 
-from cluster.cdk8s import crossplane
+from cluster.cdk8s import crossplane, public_web_pki
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as FORGEJO_PULL_SECRET
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -58,12 +58,14 @@ def chart(app: App) -> Chart:
                                     name="package-runtime",
                                     volume_mounts=[
                                         DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersVolumeMounts(
-                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                            name=public_web_pki.NAME,
+                                            mount_path=public_web_pki.MOUNT_PATH,
+                                            read_only=True,
                                         )
                                     ],
                                     env=[
                                         DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersEnv(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
+                                            name="SSL_CERT_FILE", value=public_web_pki.CA_FILE
                                         ),
                                         DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersEnv(
                                             name="WATCH_NAMESPACE", value=NAMESPACE
@@ -79,9 +81,9 @@ def chart(app: App) -> Chart:
                             ],
                             volumes=[
                                 DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecVolumes(
-                                    name="public-web-pki",
+                                    name=public_web_pki.NAME,
                                     config_map=DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecVolumesConfigMap(
-                                        name="public-web-pki"
+                                        name=public_web_pki.NAME
                                     ),
                                 )
                             ],

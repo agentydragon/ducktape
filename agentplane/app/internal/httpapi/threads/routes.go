@@ -23,6 +23,11 @@ func (h *Handler) RegisterRoutes(server httpapi.RouteRegistrar) error {
 	server.RegisterRawRoute("PATCH /upstream/app/v1/threads/{thread_id}", gateway, false)
 	server.RegisterRawRoute("POST /upstream/app/v1/threads/{thread_id}/archive", gateway, false)
 	server.RegisterRawRoute("POST /upstream/app/v1/threads/{thread_id}/unarchive", gateway, false)
+	// These preferences are shared between operator browsers. Workload credentials cannot
+	// inspect which notices the operator has read or suppress their display.
+	server.RegisterRawRoute("POST /upstream/app/v1/threads/{thread_id}/notice-acknowledgements", gateway, true)
+	server.RegisterRawRoute("POST /upstream/app/v1/threads/{thread_id}/notice-acknowledgements:batchGet", gateway, true)
+	server.RegisterRawRoute("GET /upstream/app/v1/threads/{thread_id}/notice-acknowledgements", gateway, true)
 	// grpc-gateway's in-process registration supports unary calls only. Forward the same typed
 	// watch through its standard stream encoder, without a local gRPC listener or transport.
 	server.RegisterRawRoute("GET /upstream/app/v1/threads:watch", h.WatchHandler(mux), false)

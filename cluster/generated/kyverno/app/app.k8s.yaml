@@ -92,7 +92,7 @@ spec:
     cleanupController:
       annotations:
         goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "124Mi"}, "maxAllowed": {"memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
-        goldilocks.fairwinds.com/vpa-update-mode: initial
+        goldilocks.fairwinds.com/vpa-update-mode: auto
       enabled: true
       podDisruptionBudget:
         minAvailable: 2

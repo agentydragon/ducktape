@@ -396,11 +396,8 @@ func TestSandboxDeletionCleansQueuedWorkAndFencesReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.until(t, func(ctx context.Context) (bool, error) {
-		_, err := f.queueStore.GetDispatch(ctx, command)
-		if errors.Is(err, store.ErrNotFound) {
-			return true, nil
-		}
-		return false, err
+		row, err := f.queueStore.GetDispatch(ctx, command)
+		return err == nil && row.State == store.FailedState && row.Reason == "sandbox_deleted" && row.SandboxUID == string(f.sandbox.UID), err
 	})
 	if _, err := f.queueStore.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: uuid.NewString(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test stale input"}}}, nil, store.ServiceCaller{SPIFFEID: peertls.AppURI}); !errors.Is(err, store.ErrSandboxDeleted) {
 		t.Fatalf("deleted UID admitted work: %v", err)

@@ -1,5 +1,5 @@
 rule_files:
-  - client-cert.yaml
+  - client-certificate-expiry-alerts.yaml
 evaluation_interval: 1m
 tests:
   - name: short-lived Talos traffic does not mask or create another client alert

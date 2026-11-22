@@ -34,12 +34,18 @@ import {
   type ReadThreadEntitiesResponse,
 } from "../../../history_service/api/history/history_service_pb";
 import {
+  BatchGetDispatchesResponseSchema,
+  type BatchGetDispatchesResponse_Result,
   ChangeModelRequestSchema,
   ChangeModelResponseSchema,
   ChangeReasoningEffortRequestSchema,
   ChangeReasoningEffortResponseSchema,
   DeliveryState,
   DispatchSchema,
+  GetDispatchResponseSchema,
+  ListSessionDispatchesResponseSchema,
+  ListSessionDispatchesResponse_Coverage,
+  type ListSessionDispatchesResponse,
   InterruptTurnRequestSchema,
   InterruptTurnResponseSchema,
   SubmitInputRequestSchema,
@@ -306,6 +312,87 @@ function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, com
   )
     throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
   return { ...dispatch, state };
+}
+
+export async function listSessionDispatches(
+  sessionId: string,
+  { pageToken = "", limit = 25, signal }: { pageToken?: string; limit?: number; signal?: AbortSignal } = {}
+): Promise<ListSessionDispatchesResponse> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (pageToken) query.set("pageToken", pageToken);
+  const json = await fetchJson(
+    `/upstream/dispatcher/v1/sessions/${encodeURIComponent(sessionId)}/dispatches?${query}`,
+    {
+      signal,
+      headers: { Accept: "application/json" },
+    }
+  );
+  const page = fromJson(ListSessionDispatchesResponseSchema, json, { ignoreUnknownFields: true });
+  const ids = new Set(page.dispatches.map((row) => row.commandId));
+  if (
+    page.coverage !== ListSessionDispatchesResponse_Coverage.RETAINED_DISPATCH_ROWS ||
+    page.dispatches.length > limit ||
+    ids.size !== page.dispatches.length ||
+    page.dispatches.some((row) => row.sessionId !== sessionId || !row.commandId)
+  )
+    throw new Error("Dispatcher returned an invalid receipt page");
+  return page;
+}
+
+export const MAX_DISPATCH_BATCH = 16;
+
+/** Read complete, ordered results for selected receipts in one Session. */
+export async function batchGetDispatches(
+  sessionId: string,
+  ids: readonly string[],
+  signal: AbortSignal
+): Promise<BatchGetDispatchesResponse_Result[]> {
+  if (!ids.length || ids.length > MAX_DISPATCH_BATCH || ids.includes("") || new Set(ids).size !== ids.length)
+    throw new Error("Invalid receipt IDs");
+  const query = new URLSearchParams();
+  for (const id of ids) query.append("commandIds", id);
+  let value: JsonValue;
+  try {
+    value = await fetchJson(
+      `/upstream/dispatcher/v1/sessions/${encodeURIComponent(sessionId)}/dispatches:batchGet?${query}`,
+      { signal, cache: "no-store", headers: { Accept: "application/json" } }
+    );
+  } catch (error) {
+    // Large originals can exceed the aggregate transport limit. Split the read without changing its order.
+    if (ids.length < 2 || !(error instanceof HttpError) || error.code !== 8) throw error;
+    const middle = Math.ceil(ids.length / 2);
+    const first = await batchGetDispatches(sessionId, ids.slice(0, middle), signal);
+    return [...first, ...(await batchGetDispatches(sessionId, ids.slice(middle), signal))];
+  }
+  const { results } = fromJson(BatchGetDispatchesResponseSchema, value, { ignoreUnknownFields: true });
+  if (results.length !== ids.length) throw new Error("Incomplete Dispatcher batch");
+  for (const [index, row] of results.entries()) {
+    if (row.commandId !== ids[index]) throw new Error("Unexpected command in Dispatcher batch");
+    if (row.result.case === "notFound") continue;
+    if (row.result.case !== "dispatch" && row.result.case !== "legacyDeletionReceipt")
+      throw new Error("Missing Dispatcher result");
+    const receipt = confirmedDispatch(row.result.value, sessionId, row.commandId);
+    if ((receipt.receiptVersion ?? 0n) <= 0n) throw new Error("Dispatcher omitted a receipt revision");
+    if (row.result.case === "legacyDeletionReceipt" && (receipt.sandbox || receipt.sandboxUid || receipt.command))
+      throw new Error("Invalid legacy deletion receipt");
+    row.result.value = receipt;
+  }
+  return results;
+}
+
+/** A missing current receipt leaves any earlier submission unconfirmed. */
+export function getDispatch(threadId: string, commandId: string, signal?: AbortSignal): Promise<Dispatch | null> {
+  return fetchProto(
+    `/upstream/dispatcher/v1/dispatches/${encodeURIComponent(commandId)}`,
+    (value) =>
+      confirmedDispatch(
+        fromJson(GetDispatchResponseSchema, normalizeDispatchResponseJson(value)).dispatch,
+        threadId,
+        commandId
+      ),
+    "Dispatcher receipt",
+    signal
+  );
 }
 
 export async function submitInput(threadId: string, commandId: string, text: string): Promise<CommandSubmission> {

@@ -56,13 +56,13 @@ def test_shared_services_use_ready_installation_replicas(scratch_app: App, chi: 
 
 def test_retiring_full_node_preserves_surviving_host_and_replica_names(chi: dict[str, Any]) -> None:
     layout = chi["spec"]["configuration"]["clusters"][0]["layout"]
-    assert layout["replicasCount"] == 2
     assert [replica["name"] for replica in layout["replicas"]] == ["1", "2"]
     hosts = layout["shards"][0]["replicas"]
-    assert [(host["name"], host["templates"]["podTemplate"]) for host in hosts] == [
-        ("0-1", "clickhouse-piraeus-103656"),
-        ("0-3", "clickhouse-piraeus-102453"),
-    ]
+    pod_templates = {template["name"]: template["spec"] for template in chi["spec"]["templates"]["podTemplates"]}
+    assert [
+        (host["name"], pod_templates[host["templates"]["podTemplate"]]["nodeSelector"]["kubernetes.io/hostname"])
+        for host in hosts
+    ] == [("0-1", "ovh-ns103656"), ("0-3", "ovh-ns102453")]
     assert all(host["templates"]["dataVolumeClaimTemplate"] == "data-piraeus-hdd" for host in hosts)
 
 

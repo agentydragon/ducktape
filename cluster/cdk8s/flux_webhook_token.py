@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "flux-webhook-token"
@@ -18,7 +18,6 @@ def chart(app: App) -> Chart:
         app,
         module_name=NAME,
         identity_name=KUBERNETES_IDENTITY,
-        schema=terraform.gitops_state_schema(NAME),
         secret_accesses=(
             ("flux-system-secrets", "flux-system", ("github-secrets-sync-pat",), ("github-webhook-token",)),
         ),

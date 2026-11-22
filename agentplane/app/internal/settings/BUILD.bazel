@@ -25,5 +25,6 @@ go_test(
     deps = [
         "//agentplane/net/peertls",
         "//agentplane/sandboxes/runtimeconfig",
+        "//agentplane/testing/configtest",
     ],
 )

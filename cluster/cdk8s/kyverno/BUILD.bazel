@@ -132,15 +132,15 @@ py_test(
     data = [
         "@multitool//tools/kyverno",
         "@nodejs_linux_amd64//:bin/node",
-    ] + glob(["testdata/cluster_secret_store_*.yaml"]),
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":apply",
         ":policies",
-        ":test_support",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

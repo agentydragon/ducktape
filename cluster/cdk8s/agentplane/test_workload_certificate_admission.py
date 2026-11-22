@@ -12,7 +12,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-import cdk8s
 import pytest
 import pytest_bazel
 import yaml
@@ -135,7 +134,7 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
     workload_certificate_admission.add_workload_certificate_admission(
         scratch_chart, workload_credential_issuers={RECORD_ISSUER}, service_requester=APPLIER, cert_manager=CERT_MANAGER
     )
-    documents = cast(list[Body], cdk8s.Testing.synth(scratch_chart))
+    documents = scratch_chart.to_json()
     controller = _username(SANDBOX_CONTROLLER)
     runner = _certificate(uris=[_runtime_uri(NAMESPACE)])
     service = _certificate(uris=["spiffe://agentplane/test-service"])

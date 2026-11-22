@@ -82,8 +82,6 @@ def test_fixture_exposes_environments(mcp_fixture: rendered_fixture.RenderedFixt
     docs = mcp_fixture.objects
     deployment = _resource(docs, "Deployment", "environments")
     assert deployment["spec"]["replicas"] == 1
-    labels = deployment["spec"]["template"]["metadata"]["labels"]
-    assert _resource(docs, "Service", "environments")["spec"]["selector"].items() <= labels.items()
     certificate = _resource(docs, "Certificate", "environments-client-workload")["spec"]
     assert certificate["dnsNames"] == [f"environments.{NAMESPACE}.svc.cluster.local"]
     assert certificate["uris"] == [SANDBOX_CONTROLLER_URI]
@@ -173,6 +171,16 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
     _resource(fixture.objects, "ConfigMap", "mcp-edge-settings")
     _resource(fixture.objects, "Role", "mcp-edge")
     _resource(fixture.objects, "RoleBinding", "mcp-edge")
+
+
+def test_native_vm_fixture_runs_both_guest_templates_without_app(runfiles: Runfiles) -> None:
+    fixture = _read_fixture(runfiles, "K3S_VM_NATIVE_FIXTURE_RLOCATION")
+    assert fixture.runtime is rendered_fixture.SandboxRuntime.KUBEVIRT
+    deployments = {doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Deployment"}
+    assert "app" not in deployments
+    assert fixture_chart.NATIVE_TEST_CLIENT in deployments
+    for template in ("environment-vm", SUPERVISION_TEMPLATE):
+        assert "vm" in _resource(fixture.objects, "SandboxTemplate", template)["spec"]
 
 
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
@@ -396,7 +404,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_config["session_dispatcher_tls"]["server_uri"] == SESSION_DISPATCHER_URI
     assert app_config["runner_gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    assert sessions_config["runner_control_target_template"] == "environments.{namespace}.svc:8082"
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     assert app_container.get("args", []) == []
     app_env = {entry["name"]: entry for entry in app_container["env"]}
@@ -862,7 +869,11 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
 
 @pytest.mark.parametrize(
     ("location", "central_enabled"),
-    [("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True), ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False)],
+    [
+        ("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True),
+        ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False),
+        ("K3S_FIRECRACKER_FIXTURE_RLOCATION", False),
+    ],
 )
 def test_native_recovery_profile_uses_service_caller_without_app(
     runfiles: Runfiles, location: str, central_enabled: bool

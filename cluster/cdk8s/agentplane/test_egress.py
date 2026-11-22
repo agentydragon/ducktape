@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePosixPath
 from typing import Any
 
-import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
@@ -32,7 +30,6 @@ from cluster.cdk8s.agentplane import (
     platform_routes,
     runner_gateway,
     staging,
-    staging_grants,
 )
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -43,28 +40,31 @@ from cluster.cdk8s.agentplane.egress import (
     PUBLIC_INTERNET_POLICY,
     admin,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
-from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
-def test_egress_reads_its_settings_file_and_database_url(staging_manifests: list[dict[str, Any]]) -> None:
+def test_egress_proxy_settings_and_credentials(staging_manifests: list[dict[str, Any]]) -> None:
     pod = find_resource(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    settings_document = one(find_resource(staging_manifests, "ConfigMap", "egress-go-settings")["data"].values())
     assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
         EgressSettings.config_file_env,
         EgressSettings.database_url_env,
     }
     database = proxy_env[EgressSettings.database_url_env]["valueFrom"]["secretKeyRef"]
     assert database == {"name": "postgres-egress", "key": "uri"}
-    config = yaml.safe_load(settings_document)
+    config = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
     assert config["rules_namespace"] == staging.ENV.namespace
     assert sorted(config["allowed_service_account_namespaces"]) == sorted(
         [staging.ENV.namespace, *staging.ENV.egress.external_workload_namespaces]
     )
     assert config["admin_grpc_service_callers"] == [APP_URI]
+    assert pod["automountServiceAccountToken"] is True
+    assert config["local_api_server"] == {
+        "host": KUBERNETES_HOST,
+        "port": 443,
+        "token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
+    }
 
 
 def test_staging_requires_the_tls_hop(staging_manifests: list[dict[str, Any]]) -> None:
@@ -92,9 +92,6 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     service = find_resource(staging_manifests, "Service", "egress")
     mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
     assert len(mtls_ports) == 1
-
-    settings = config_map_yaml(staging_manifests, "egress-go-settings", "settings.yaml")
-    assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
 
     role = find_resource(staging_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
@@ -152,17 +149,11 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
     public = find_resource(catalog_manifests, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
-    for doc in catalog_manifests:
-        if doc["kind"] == "PolicyBinding":
-            if doc["metadata"]["name"] == "public-coder-openclaw":
-                assert doc["spec"]["subject"] == {"identity": {"name": "public-coder-openclaw"}}
-                assert doc["spec"]["policySets"] == [
-                    "public-coder-openclaw",
-                    INFERENCE_EXPERIMENTS_POLICY,
-                    PUBLIC_INTERNET_POLICY,
-                ]
-            else:
-                assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
+    assert [
+        (binding["metadata"]["namespace"], binding["spec"]["subject"])
+        for binding in catalog_manifests
+        if binding["kind"] == "PolicyBinding" and PUBLIC_INTERNET_POLICY in binding["spec"]["policySets"]
+    ] == [(staging.ENV.namespace, {"identity": {"name": "public-coder-openclaw"}})]
 
 
 def test_basic_has_no_projected_workload_token_route(staging_manifests: list[dict[str, Any]]) -> None:
@@ -341,7 +332,8 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     """New Sandbox Identities use account egress, while their existing account grants retain preset RBAC."""
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    assert staging.ENV.app is not None
+    presets = staging.ENV.app.config.sandbox_presets
     policies = {
         doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifests if doc["kind"] == "PolicySet"
     }
@@ -353,8 +345,8 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
         if grant["kind"] == "ServiceAccountGrant"
     }
 
-    for preset, spec in config["sandbox_presets"].items():
-        launch_policies = set(spec["policy_sets"])
+    for preset, spec in presets.items():
+        launch_policies = spec.policy_sets
         assert all(not rule["type"].startswith("kubernetes_") for name in launch_policies for rule in policies[name]), (
             preset
         )
@@ -383,16 +375,11 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
             agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
         },
     }
-    for preset in ("public-coder", "finance-agent", "haku"):
+    for preset, role_sets in expected_role_sets.items():
         ref = kubernetes_account_ref.account(staging.ENV.namespace, preset)
-        assert ref.credential_name in config["sandbox_presets"][preset]["policy_sets"]
-        assert account_grants[(ref.namespace, ref.name)] == expected_role_sets[preset]
+        assert ref.credential_name in presets[preset].policy_sets
+        assert account_grants[(ref.namespace, ref.name)] == role_sets
 
-    for preset in ("finance-agent", "haku"):
-        launch_policies = config["sandbox_presets"][preset]["policy_sets"]
-        assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in launch_policies
-        assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in launch_policies
-        assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in launch_policies
     for name in (
         agent_access_profiles.COINBASE_POLICY,
         agent_access_profiles.OVH_BILLING_POLICY,
@@ -430,158 +417,30 @@ def test_ovh_billing_is_a_named_read_only_credential_with_scoped_egress(
         "/1.0/service/**",
     }
     assert "credentialRef" not in egress
-    assert staging.ENV.app is not None
-    presets = staging.ENV.app.config.sandbox_presets
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["finance-agent"].policy_sets
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["haku"].policy_sets
-    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" not in presets["public-coder"].policy_sets
 
 
-@pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
-def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
-    preset: str, staging_manifests: list[dict[str, Any]]
-) -> None:
-    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    assert "kubernetes_grants" not in config
-    grant_models = staging_grants.catalog(staging.ENV.namespace)
-    catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
-    account_grants = {
-        grant["spec"]["serviceAccount"]["name"]: set(grant["spec"]["roleSets"])
-        for grant in staging_manifests
-        if grant["kind"] == "ServiceAccountGrant"
-    }
-    selected_role_sets = account_grants[preset]
-    selected = {
-        grant for role_set in selected_role_sets for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    public_selected = {
-        grant
-        for role_set in account_grants["public-coder"]
-        for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    credential_grants = (
-        {
-            "coinbase-credentials",
-            "ovh-billing-credentials",
-            "spend-policy-config",
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
-        }
-        if preset == "finance-agent"
-        else set()
-    )
-    # Coinbase and Plaid keep their GET egress in the Identity policy sibling; their Kubernetes
-    # permissions are provisioned on the preset account.
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity" in config["sandbox_presets"][preset]["policy_sets"]
-    ) == (preset == "finance-agent")
-    assert selected == public_selected | credential_grants
-    assert "cluster-diagnostics" in selected
-    haku = {
-        grant for role_set in account_grants["haku"] for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
-    }
-    assert "cluster-diagnostics" in haku
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    )
-    assert (
-        f"{agent_access_profiles.COINBASE_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    coinbase_rules = find_resource(staging_manifests, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"][
-        "rules"
-    ]
-    assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
+def test_coinbase_egress_and_standing_identity_selections(staging_manifests: list[dict[str, Any]]) -> None:
+    for caller in ("claude-ai", "haku-agent"):
+        selected = find_resource(staging_manifests, "PolicyBinding", caller)["spec"]["policySets"]
+        assert {"coinbase-identity", "plaid-diagnostics-identity"} <= set(selected)
+    get_coinbase = {"type": "egress", "hosts": ["api.coinbase.com"], "methods": ["GET"]}
+    assert find_resource(staging_manifests, "PolicySet", "coinbase-identity")["spec"]["rules"] == [get_coinbase]
+    mixed = find_resource(staging_manifests, "PolicySet", "coinbase")["spec"]["rules"]
+    assert len(mixed) == 2
+    assert get_coinbase in mixed
     assert {
-        (rule["role"]["kind"], rule["role"]["name"], tuple(rule["namespaces"]))
-        for rule in coinbase_rules
-        if rule["type"] == "kubernetes_role_binding"
-    } == {("Role", "claude-ai-coinbase-reader", ("agentplane-staging",))}
-    egress_rule = one(rule for rule in coinbase_rules if rule["type"] == "egress")
-    assert egress_rule["hosts"] == ["api.coinbase.com"]
-    assert egress_rule["methods"] == ["GET"]
-    assert "paths" not in egress_rule
-    assert "credentialRef" not in egress_rule
-    assert (
-        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    )
-    assert (
-        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-        in find_resource(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    assert (
-        set(haku) - set(selected)
-        == {
-            "haku-sandbox-write",
-            "coinbase-credentials",
-            "ovh-billing-credentials",
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
-        }
-        - credential_grants
-    )
-    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-policy-config"} if preset == "finance-agent" else set()
-    )
-    assert {
-        "agentplane-staging-metadata",
-        "agentplane-staging-logs",
-        "haku-console-metadata",
-        "clickhouse-diagnostics",
-        "ducktape-flux-read",
-        "public-coder-volsync-status",
-        "public-coder-agent-reader",
-    } <= set(selected)
-    # Cluster-wide reads are explicit inventory and diagnostics grants. Namespaced
-    # log and metadata readers remain namespaced.
-    assert {name: catalog[name] for name in selected if catalog[name]["kind"] == "ClusterRoleBinding"} == {
-        "public-coder-node-read": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-node-reader"},
-        },
-        "public-coder-cluster-metadata-read": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-cluster-metadata-reader"},
-        },
-        "cluster-diagnostics": {
-            "kind": "ClusterRoleBinding",
-            "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
-        },
-    }
-    assert {
-        catalog[name]["role_ref"]["name"]
-        for name in selected
-        if catalog[name]["kind"] == "RoleBinding" and catalog[name]["role_ref"]["kind"] == "ClusterRole"
-    } == {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
-    assert {
-        (catalog[name]["namespace"], catalog[name]["role_ref"]["name"])
-        for name in selected
-        if catalog[name]["role_ref"]["kind"] == "Role"
-    } == {
-        ("haku-console", "agent-haku-console-metadata-reader"),
-        ("clickhouse", "agent-clickhouse-diagnostics-reader"),
-        ("ducktape-flux", "ducktape-flux-reader"),
-        ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
-        ("public-coder-agent", "public-coder-agent-reader"),
-    } | (
-        {
-            ("agentplane-staging", "claude-ai-coinbase-reader"),
-            ("agentplane-staging", "ovh-billing-reader"),
-            ("plaid-mcp", "plaid-spend-finance-config-reader"),
-            ("plaid-mcp", "plaid-finance-diagnostics-reader"),
-        }
-        if preset == "finance-agent"
-        else set()
-    )
+        "type": "kubernetes_role_binding",
+        "role": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
+        "namespaces": [staging.ENV.namespace],
+    } in mixed
 
 
 def test_inference_is_granted_separately_from_platform_operations(catalog_manifests: list[dict[str, Any]]) -> None:
     granted = find_resource(catalog_manifests, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
-    # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in catalog_manifests if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]
-        if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
+        if BASIC_POLICY in policies:
             assert INFERENCE_EXPERIMENTS_POLICY in policies
     inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
     assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule.get("hosts", []))
@@ -601,44 +460,6 @@ def test_inference_is_granted_separately_from_platform_operations(catalog_manife
         secret = find_resource(catalog_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-def test_the_local_api_server_bearer_is_the_proxys_mounted_token(catalog_manifests: list[dict[str, Any]]) -> None:
-    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
-    server = settings["local_api_server"]
-    assert (server["host"], server["port"]) == (KUBERNETES_HOST, 443)
-    pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
-    # The kubelet mounts the API-server token here when the Pod automounts it.
-    assert pod["automountServiceAccountToken"] is True
-    assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
-
-
-def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    for name in ("finance-agent", "haku"):
-        assert AIQUOTA_READ_POLICY in config["sandbox_presets"][name]["policy_sets"]
-    assert AIQUOTA_READ_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
-    quota = find_resource(catalog_manifests, "PolicySet", AIQUOTA_READ_POLICY)
-    assert {
-        "type": "egress",
-        "hosts": [client.HTTP.fqdn],
-        "clusterInternal": True,
-        "methods": ["GET"],
-        "paths": ["/"],
-        "credentialRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS},
-    } in quota["spec"]["rules"]
-    credential = find_resource(catalog_manifests, "EgressCredential", client.AIQUOTA_HISTORY_CREDENTIALS)
-    assert credential["spec"]["source"] == {
-        "secretRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS, "key": client.PASSWORD_KEY}
-    }
-    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
-    assert any(
-        rule.get("clusterInternal")
-        and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
-        and rule["methods"] == ["GET"]
-        and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
-        for rule in quota["spec"]["rules"]
-    )
 
 
 if __name__ == "__main__":

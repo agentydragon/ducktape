@@ -17,6 +17,11 @@ for label changes, and live Tana names beside recorded node IDs for node moves. 
 The view can render the saved arguments immediately and keep showing them if the lookup fails.
 The page and Web Push worker both use the operator-authenticated Action Service facade.
 
+Pending GitHub file pushes show a per-file diff in the expanded Actions card and detail view
+when the old text is available. The comparison identifies the branch commit it read.
+GitHub resolves the branch again when it runs the push. Files always offer their complete
+proposed contents.
+
 Calendar approvals can resolve an event or series title, schedule, scope and Google Calendar link
 through the operator facade. A missing preview leaves the request's calendar and event IDs
 visible. Calendar receipts use recorded results, with the complete request and response available
@@ -63,6 +68,35 @@ The Thread page uses Dispatcher placement to identify the exact Environment befo
 Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
 is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
+The open Thread watches the Dispatcher's bounded Session workset. The conversation shows queued,
+delivering, failed, and unknown commands using ordinary input bubbles and control cards. The browser
+can load originals for visible receipts even before History is available. Loaded History owns
+finished commands. A pending History command shows its unresolved delivery status on the same
+row. The message gutter holds the progress dots, short state, and dismissal. The dots follow
+submission, Dispatcher delivery, runner admission, and the observed effect. Red identifies a
+confirmed error at its boundary. A recorded delivery-attempt error can be red while the outcome
+remains unknown. Unknown outcomes without such an error leave the first unverified stage dashed.
+The state opens its reason without resizing the message row. Admissions and cancellations outside
+the conversation are available in Delivery history.
+The browser reports stale delivery updates, clipped active work or issues, and expired receipt
+coverage. When a reason is abbreviated, the browser reads the full retained reason by command ID.
+
+An operator can acknowledge a failed or unknown Dispatcher delivery issue. The App stores the
+preference for the verified OIDC operator, Thread, command ID, and exact receipt revision. Another
+browser signed in as that operator sees it when it opens or returns focus to the Thread. A newer
+receipt revision needs separate attention. When the workset clips issues, Older delivery issues
+opens the paginated receipt history, where retained failures can still be acknowledged.
+The selected Thread shares acknowledgement state between the conversation and Delivery history.
+Opening the archive loads one page at a time, with input excerpts and requested settings from
+retained receipts. Operators can open the full stored command. Dismissing a receipt updates both
+views.
+The browser checks saved local terminal rows against bounded Dispatcher batch reads before
+hiding an equivalent acknowledged notice, including after it leaves the recent workset. Without
+an exact server revision the notice remains visible. History and saved command data are unchanged.
+Delivery history remains available independently of the History projection and includes previous
+acknowledgements. When an exact revision has expired or was superseded, the interface reports that
+loss of evidence.
+
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can
@@ -100,8 +134,12 @@ its ID as a placeholder; clearing the name restores that placeholder.
 ## Thread command outcomes
 
 The thread shows command failures, refusals, unconfirmed Dispatcher receipts and unknown delivery
-outcomes below the command, including the reason when available. Unconfirmed submissions offer
-Retry when the browser can resend the command.
+outcomes below the command, including the reason when available. For an attempted command without
+a receipt, reload, reconnect and Retry first read its Dispatch by ID. The full command and Session must
+match the saved record. A missing live Dispatch allows the browser to retry a Session-addressed command
+with its original ID and payload. An incomplete or contradictory receipt, or a lookup error, leaves
+the command unconfirmed. Older commands with uncertain or Sandbox-addressed destinations offer
+Check status and retain their original input.
 
 ## Composer activity
 

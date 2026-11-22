@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import cdk8s
 import pytest
 import pytest_bazel
 import yaml
@@ -45,7 +44,7 @@ def eso_store_crds() -> list[dict[str, Any]]:
 
 
 async def test_cluster_secret_store_admission(scratch_app: App, eso_store_crds: list[dict[str, Any]]) -> None:
-    docs = cast(list[dict[str, Any]], cdk8s.Testing.synth(operator.chart(scratch_app)))
+    docs = operator.chart(scratch_app).to_json()
     policy = one(document for document in docs if document["kind"] == "ValidatingAdmissionPolicy")
     binding = one(document for document in docs if document["kind"] == "ValidatingAdmissionPolicyBinding")
     allowed = [{"namespaces": ["consumer"]}]

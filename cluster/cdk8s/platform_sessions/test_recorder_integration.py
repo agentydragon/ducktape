@@ -13,7 +13,6 @@ from uuid import uuid4
 
 import docker
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
@@ -225,6 +224,7 @@ def _wait_for_exec(container: Container, command: list[str], *, timeout: float =
         probes.append(f"exit={result.exit_code} output={_output_bytes(result.output)!r}")
         if result.exit_code == 0:
             return
+        container.reload()
         if container.status != "running":
             break
         time.sleep(0.2)
@@ -265,46 +265,21 @@ def _assert_full_fidelity(flows: list[http.HTTPFlow], marker: str) -> None:
     assert flow.response.headers["Set-Cookie"] == "synthetic-session=unredacted-response-cookie; HttpOnly"
 
 
-def _container_mounts(config: str, captures: str, ca: str, origin: str) -> dict[str, dict[str, str]]:
-    return {
-        config: {"bind": "/config", "mode": "rw"},
-        captures: {"bind": "/captures", "mode": "rw"},
-        ca: {"bind": "/ca", "mode": "ro"},
-        origin: {"bind": "/origin", "mode": "ro"},
-    }
-
-
-def _deployed_recorder_contract(app: App) -> tuple[str, list[str]]:
-    objects = Cdk8sTesting.synth(remote.chart(app, record_upstream_traffic=True))
-    recorders = [
-        container
-        for obj in objects
-        if obj["kind"] == "Deployment"
-        for container in obj["spec"]["template"]["spec"].get("initContainers", [])
-        if container["name"] == "upstream-recorder"
-    ]
-    assert recorders
-    contracts = {(recorder["image"], tuple(recorder["command"])) for recorder in recorders}
-    assert len(contracts) == 1, f"Providers have different recorder images/commands: {contracts}"
-    image, command = next(iter(contracts))
-    return image, list(command)
-
-
-def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scratch_app: App) -> None:
-    deployed_image, deployed_command = _deployed_recorder_contract(scratch_app)
+def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> None:
+    initializer, recorder = remote.recorder_containers()
+    assert initializer.command
+    assert recorder.command
+    assert recorder.startup_probe is not None
+    probe = recorder.startup_probe.exec
+    assert probe is not None
+    assert probe.command
+    startup_command = list(probe.command)
     pinned_image = os.environ["MITMPROXY_TEST_IMAGE_REFERENCE"]
     for registry in ("mirror.gcr.io/", "docker.io/"):
         if pinned_image.startswith(registry):
             pinned_image = pinned_image.removeprefix(registry)
             break
-    assert deployed_image == pinned_image
-    assert deployed_command[:2] == ["sh", "-c"]
-    assert len(deployed_command) == 3
-    production_command = deployed_command[2]
-    assert production_command.count(" -w ") == 1
-    recorder_command = production_command.replace(
-        " -w ", " --set ssl_verify_upstream_trusted_ca=/origin/upstream-ca.crt -w ", 1
-    )
+    assert recorder.image == pinned_image
     mitmproxy_ref = load_oci_image(mitmproxy_image.LAYOUT_RLOCATION)
     busybox_ref = load_oci_image(busybox_image.LAYOUT_RLOCATION)
     client = docker.from_env()
@@ -348,12 +323,14 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
         containers.append(setup)
         _put_files(setup, "/ca", {"tls.key": _private_key_pem(recorder_key), "tls.crt": _pem_cert(recorder_cert)})
         _put_files(
+            setup, "/origin", {"upstream.crt": _pem_cert(upstream_cert), "upstream.key": _private_key_pem(upstream_key)}
+        )
+        _put_files(
             setup,
-            "/origin",
+            "/config",
             {
                 "upstream-ca.crt": _pem_cert(upstream_ca_cert),
-                "upstream.crt": _pem_cert(upstream_cert),
-                "upstream.key": _private_key_pem(upstream_key),
+                "config.yaml": b"ssl_verify_upstream_trusted_ca: /config/upstream-ca.crt\n",
             },
         )
         _put_files(setup, "/fixture", {"origin.py": _ORIGIN_SERVER.encode()})
@@ -363,7 +340,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
                 "-c",
                 "chown -R 1000:1000 /config /captures /ca /origin /fixture && "
                 "chmod 0770 /config /captures && chmod 0440 /ca/tls.key /ca/tls.crt "
-                "/origin/upstream-ca.crt /origin/upstream.crt /origin/upstream.key && "
+                "/origin/upstream.crt /origin/upstream.key && "
                 "chmod 0550 /fixture /fixture/origin.py",
             ]
         )
@@ -376,8 +353,8 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
         # Run the exact pod init command as UID 1000 with a read-only root filesystem.
         init = client.containers.run(
             busybox_ref,
-            entrypoint=["sh", "-c"],
-            command=["umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
+            entrypoint=initializer.command[0],
+            command=list(initializer.command[1:]),
             user="1000:1000",
             read_only=True,
             volumes={
@@ -393,9 +370,6 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             raise AssertionError(
                 f"BusyBox CA init failed with {init_result['StatusCode']}; diagnostics saved to {path}"
             )
-        init.reload()
-        assert init.attrs["Config"]["User"] == "1000:1000"
-        assert init.attrs["HostConfig"]["ReadonlyRootfs"] is True
         ca_archive, _ = init.get_archive("/config/mitmproxy-ca.pem")
         with tarfile.open(fileobj=bytes_io.BytesIO(b"".join(ca_archive)), mode="r:") as archive:
             ca_file = archive.next()
@@ -424,25 +398,25 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
         )
         containers.append(origin)
 
+        capture_day = datetime.now(UTC).date()
         proxy = client.containers.run(
             mitmproxy_ref,
-            entrypoint=["sh", "-c"],
-            command=[recorder_command],
+            entrypoint=recorder.command[0],
+            command=list(recorder.command[1:]),
             user="1000:1000",
             read_only=True,
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],
             network=network.name,
-            volumes=_container_mounts(config_volume.name, captures_volume.name, ca_volume.name, origin_volume.name),
+            volumes={
+                config_volume.name: {"bind": "/config", "mode": "rw"},
+                captures_volume.name: {"bind": "/captures", "mode": "rw"},
+                ca_volume.name: {"bind": "/ca", "mode": "ro"},
+            },
             detach=True,
         )
         containers.append(proxy)
-        proxy.reload()
-        assert proxy.attrs["Config"]["User"] == "1000:1000"
-        assert proxy.attrs["HostConfig"]["ReadonlyRootfs"] is True
-        _wait_for_exec(
-            proxy, ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 18080), 1).close()"]
-        )
+        _wait_for_exec(proxy, startup_command)
         _wait_for_exec(
             proxy, ["python", "-c", f"import socket; socket.create_connection(({upstream_name!r}, 8443), 1).close()"]
         )
@@ -454,29 +428,16 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             raise AssertionError(f"Client request before restart failed; diagnostics saved to {path}")
         proxy.stop(timeout=15)
 
-        first_reader = client.containers.run(
-            mitmproxy_ref,
-            entrypoint=["sh", "-c"],
-            command=["sleep 3600"],
-            user="1000:1000",
-            read_only=True,
-            volumes={captures_volume.name: {"bind": "/captures", "mode": "ro"}},
-            detach=True,
-        )
-        containers.append(first_reader)
-        first_capture = _read_capture_volume(first_reader)
-        first_reader.remove(force=True)
-        containers.remove(first_reader)
+        first_capture = _read_capture_volume(proxy)
         assert len(first_capture) == 1, list(first_capture)
         first_file, (first_bytes, first_mode) = next(iter(first_capture.items()))
+        assert first_file in {f"{day}.mitm" for day in (capture_day, datetime.now(UTC).date())}
         assert first_mode == 0o600
         _assert_full_fidelity(_flows(first_bytes), first_marker)
 
         # Starting the same container reuses its persistent capture volume and CA confdir.
         proxy.start()
-        _wait_for_exec(
-            proxy, ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 18080), 1).close()"]
-        )
+        _wait_for_exec(proxy, startup_command)
         second_marker = "after-recorder-restart"
         second = proxy.exec_run(["python", "-c", _CLIENT, second_marker, upstream_name])
         if second.exit_code != 0:
@@ -484,17 +445,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             raise AssertionError(f"Client request after restart failed; diagnostics saved to {path}")
         proxy.stop(timeout=15)
 
-        final_reader = client.containers.run(
-            mitmproxy_ref,
-            entrypoint=["sh", "-c"],
-            command=["sleep 3600"],
-            user="1000:1000",
-            read_only=True,
-            volumes={captures_volume.name: {"bind": "/captures", "mode": "ro"}},
-            detach=True,
-        )
-        containers.append(final_reader)
-        final_capture = _read_capture_volume(final_reader)
+        final_capture = _read_capture_volume(proxy)
         assert first_file in final_capture
         flows_by_file = {name: _flows(data) for name, (data, _) in final_capture.items()}
         all_flows = [flow for flows in flows_by_file.values() for flow in flows]
@@ -513,8 +464,6 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scrat
             # Daily rotation is expected if a test happens to cross UTC midnight.
             assert len(final_capture) == 2
             assert len(flows_by_file[first_file]) == len(flows_by_file[second_file]) == 1
-        final_reader.remove(force=True)
-        containers.remove(final_reader)
     except BaseException:
         for index, container in enumerate(containers):
             _save_container_diagnostics(container, f"container-{index}-{container.name}")

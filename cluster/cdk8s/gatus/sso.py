@@ -2,7 +2,7 @@
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "crossplane-gatus-sso"
@@ -16,7 +16,6 @@ def chart(app: App) -> Chart:
         app,
         module_name=TF_MODULE_NAME,
         identity_name=KUBERNETES_IDENTITY,
-        schema=terraform.gitops_state_schema(TF_MODULE_NAME),
         secret_accesses=(
             ("authentik-secrets", "authentik", ("authentik-bootstrap",), ()),
             ("gatus-secrets", "gatus", (), ("gatus-oidc-secret",)),

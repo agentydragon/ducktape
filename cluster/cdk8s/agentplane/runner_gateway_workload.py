@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
-from pathlib import Path
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
@@ -30,7 +29,6 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -39,7 +37,6 @@ from agentplane.net.peertls.config import (
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
-    ClientTLS,
     ServiceSPIFFEID,
 )
 from agentplane.session_dispatcher.settings import CentralSamplerTarget, ServiceDelegation, ServiceDelegator, Settings
@@ -219,26 +216,14 @@ class RunnerGateway(Construct):
             sessions, container=sessions_workload.container, name="sessions"
         )
         client = workload_tls.mount_client_certificate(sessions, container=sessions_workload.container, name="sessions")
-        assert client.cert_file is not None
-        assert client.key_file is not None
-        assert client.ca_file is not None
         central_sampler_target = (
             CentralSamplerTarget(
                 target=central_sampler.service(namespace).authority,
-                tls=ClientTLS(
-                    ca_file=Path(client.ca_file),
-                    server_uri=CENTRAL_SAMPLER_URI,
-                    cert_file=Path(client.cert_file),
-                    key_file=Path(client.key_file),
-                    client_uri=GATEWAY_SESSIONS_URI,
-                ),
+                tls=client.client_tls(CENTRAL_SAMPLER_URI, client_uri=GATEWAY_SESSIONS_URI),
             )
             if env.central_sampler is not None
             else None
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         dispatcher_service_delegation = None
         if delegation_actor is not None:
             dispatcher_service_delegation = ServiceDelegation(
@@ -260,19 +245,9 @@ class RunnerGateway(Construct):
             sandbox_namespace=namespace,
             policy_namespace=namespace,
             kubernetes_client_qps=-1,
-            rpc=workload_listener.Listener(
-                listen_address=f"0.0.0.0:{endpoint.pod_port}",
-                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
-            gateway_tls=ClientTLS(
-                ca_file=Path(client.ca_file),
-                server_uri=SANDBOX_CONTROLLER_URI,
-                cert_file=Path(client.cert_file),
-                key_file=Path(client.key_file),
-                client_uri=GATEWAY_SESSIONS_URI,
-            ),
-            runner_control_target_template=environment_service.environments_control_target(namespace),
+            rpc=serving_tls.spiffe_listener(endpoint.pod_port),
+            gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
+            runner_control_target_template=environment_service.environments_service(namespace).authority,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,
             dispatcher_service_delegation=dispatcher_service_delegation,
@@ -332,7 +307,7 @@ class RunnerGateway(Construct):
 
 
 def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, *, role_name: str) -> None:
-    Role(
+    role = Role(
         scope,
         "role",
         metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
@@ -357,10 +332,7 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
         ],
     )
     RoleBinding(
-        scope,
-        "rolebinding",
-        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-        role=Role.from_role_name(scope, "role-ref", role_name),
+        scope, "rolebinding", metadata=ApiObjectMetadata(name=role_name, namespace=namespace), role=role
     ).add_subjects(service_account)
 
 

@@ -3,18 +3,11 @@
 from collections.abc import Callable
 
 import pytest_bazel
-from cdk8s import App
+from cdk8s import App, SizeRoundingBehavior
 from cdk8s_plus_34 import Deployment
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import staging, staging_vpa
-
-
-def _mib(quantity: str) -> int:
-    if quantity.endswith("Gi"):
-        return int(quantity[:-2]) * 1024
-    assert quantity.endswith("Mi")
-    return int(quantity[:-2])
 
 
 def test_vpa_bounds_fit_staging_deployments(scratch_app_factory: Callable[[], App]) -> None:
@@ -31,10 +24,10 @@ def test_vpa_bounds_fit_staging_deployments(scratch_app_factory: Callable[[], Ap
         assert memory is not None
         if minimum is not None:
             assert memory.request is not None
-            assert _mib(memory.request.as_string()) <= _mib(minimum)
+            assert memory.request.to_mebibytes(rounding=SizeRoundingBehavior.NONE) <= minimum
         if maximum is not None:
             assert memory.limit is not None
-            assert _mib(memory.limit.as_string()) >= _mib(maximum)
+            assert memory.limit.to_mebibytes(rounding=SizeRoundingBehavior.NONE) >= maximum
 
 
 if __name__ == "__main__":

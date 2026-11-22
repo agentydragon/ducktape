@@ -19,6 +19,35 @@ pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.t
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+async def test_opening_wrapped_output_never_lays_out_an_oversized_preview(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
+    page = view.page
+    await app.build(Scene.WRAPPED_OUTPUT_HISTORY)
+    await app.mount_thread(IDLE_THREAD)
+    history = page.get_by_role("region", name="Thread history")
+    row = history.locator('[data-thread-anchor="2"]')
+    control = row.get_by_role("button", name="Read report")
+    await expect(control).to_be_visible()
+    # Observe the same row boxes the history consumes, including intermediate layouts
+    # between Playwright calls. Only the editor wraps this single source line.
+    heights = await row.evaluate_handle("""row => {
+        const samples = [];
+        const observer = new ResizeObserver(([entry]) => samples.push(entry.borderBoxSize[0].blockSize));
+        observer.observe(row);
+        return { samples, observer };
+    }""")
+    async with holding_still(page, row):
+        await control.click()
+        await expect(row.get_by_role("button", name="Show all", exact=True)).to_be_visible()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await frames(page)
+        samples = await heights.evaluate("({samples, observer}) => { observer.disconnect(); return samples; }")
+        final_height = await row.evaluate("row => row.getBoundingClientRect().height")
+        assert max(samples) <= final_height + 1, (samples, final_height)
+    await view.capture()
+
+
 async def _select_command_line(page: Page, command: Locator, line_text: str) -> None:
     line = command.locator(".cm-line").filter(has_text=line_text)
     await expect(line).to_have_count(1)

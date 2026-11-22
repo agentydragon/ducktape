@@ -130,6 +130,11 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded execution Identity.
   These reads do not require a live Sandbox or Identity. Old rows without a trustworthy owner are hidden
   from Identity callers but remain visible to service callers.
+- GetDispatch includes the full typed command as stored by Dispatcher. Command mutation responses omit the
+  field so older ProtoJSON clients can still decode their receipts.
+  ListDispatches and WatchDispatches return summaries. BatchGetDispatches reads originals by Session
+  and command IDs; a legacy deletion receipt has no stored command. Presence of an original supplies
+  no evidence of Runner admission.
 - WatchDispatches applies the retained Session read scope to live rows and deletion receipts, authorizes
   every request, and resumes from an opaque filter-bound version token. The token carries no caller identity;
   a filter mismatch returns `INVALID_ARGUMENT`, and a cursor behind retained coverage returns `OUT_OF_RANGE`.
@@ -206,8 +211,7 @@ SPEC for its policy and mutation contract.
 
 Once Dispatcher cleanup for an exact Sandbox UID commits, later `CreateSession` and queued-command
 admissions for that UID fail with `FAILED_PRECONDITION`, including privileged callers using an
-inventory snapshot read before cleanup. The durable UID tombstone survives removal of command receipts and
-process restart. A same-name environment with a different UID has independent admission.
+inventory snapshot read before cleanup. The durable UID fence survives process restart. A same-name environment with a different UID has independent admission.
 
 Cleanup retains Sessions with their immutable placement and execution principal. It records that
 the required Environment is deleted separately from owner materialization: a not-yet-sent opening
@@ -276,9 +280,13 @@ unknown later execution/effect outcome on deletion; its terminal snapshot retain
 entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
-Deletion cleanup keeps the Session row and writes tombstones in the same transaction that removes
-Dispatch rows. Runtime journals and History remain separate evidence owners; cleanup neither deletes
-retained History nor converts missing evidence into failure.
+Deletion cleanup commits the Session status and delivery outcomes together. The retained Session owns
+the original commands and their receipts. Authorized Get, List and Watch reads continue across
+Environment deletion and Dispatcher restart. During a rolling upgrade, a pre-`00029` replica may
+revisit every retained Environment UID on each full reconciliation. Migration `00029` suppresses its
+cleanup deletes for owned commands, so those extra scans preserve terminal outcomes and versions.
+Previously deleted commands have only the receipt
+evidence still present in legacy watch tombstones. Runtime journals and History retain their own evidence.
 
 Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
 running; overlapping old writers do not provide this evidence. A lost marker-commit reply is retried
@@ -286,6 +294,38 @@ under ownership before any RPC. If ownership or the request is lost, no RPC is i
 marker without a send remains conservatively uncertain.
 The migration adds the column without altering authored data or History. A rollback to old writers
 loses the forwarding-evidence guarantee even if the column remains present.
+
+## Paged command discovery
+
+`ListSessionDispatches` pages one retained Session's current Dispatch rows in descending submission
+position. Each page checks the Session's recorded owner and exact placement. Its metadata includes
+the full delivery reason and positive database receipt revision. The ProtoJSON `receiptVersion`
+is a decimal string and changes on each row update. Use `GetDispatch` for individual admission evidence. The default page
+contains up to 25 rows and the maximum is 100.
+
+The first page fixes membership for later admissions. Receipt updates read at each page's snapshot
+do not change the order. The continuation token binds the position and deletion frontier to the
+Session and read scope. A physical Dispatch deletion anywhere after that frontier, including one
+whose tombstone was subsequently pruned, can return `OUT_OF_RANGE`. Discard the traversal and
+restart on that status. An empty `next_page_token` completes the retained-row enumeration.
+`coverage=RETAINED_DISPATCH_ROWS` excludes legacy tombstones, which can be read by known ID through
+`BatchGetDispatches` or observed through `WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
+Older servers return `UNIMPLEMENTED` for the RPC.
+
+`BatchGetDispatches` reads up to 16 distinct command IDs from one authorized Session. Each
+result corresponds to the requested ID at the same position. A `dispatch` result contains the
+original command and current positive receipt version. If there is no current row for that Session,
+`legacy_deletion_receipt` returns its latest retained deletion evidence, including the revision, full
+reason and available admission. It has no authored command or Sandbox address. A `not_found`
+result means the Session has no retained evidence of that ID. Absence or legacy evidence cannot
+authorize replay or release of the caller's original. An unauthorized Session
+returns `NOT_FOUND` for the whole batch. Batches larger than 4 MiB return `RESOURCE_EXHAUSTED`.
+
+Returned originals stay available after Environment deletion for the lifetime of the retained
+Session. Dispatcher checks the database protection before returning batch results. An older
+server returns `UNIMPLEMENTED` before it supports this RPC. A server predating the legacy result can return
+`not_found` for a retained deletion. An older App facade can present an unknown result variant as unset. In either case, a client holding the sole authored copy
+can release it only after a successful read that matches that copy and its destination.
 
 ## Versioned dispatch watches
 
@@ -338,6 +378,28 @@ Direct `GetDispatch` and `ListDispatches` read current rows. The tombstones prov
 and replay coverage. Supported rollback images must serve versioned watches and keep migration
 `00024` installed.
 
+### Session delivery workset
+
+`WatchDispatches` accepts `workset_session_id` in place of its ordinary filter. The workset
+uses the same Session authorization and includes metadata for up to 1,024 queued or delivering
+commands, 20 recent failed or unknown receipts, and 20 recent admissions or cancellations.
+The last group lets the browser bridge the interval between delivery and History projection.
+Each group indicates overflow. Recent receipts include legacy tombstones. A reason excerpt
+carries `reason_truncated` when a command-ID-filtered ordinary watch is needed to show the
+full retained reason. The ordinary watch includes legacy tombstones, including after their
+live rows become unavailable. Payloads and journal entries remain available through their
+existing reads. History determines command effects.
+Each item includes its positive Dispatcher receipt version. A live row update and a legacy
+deletion receipt each receive a distinct version. The legacy deletion flag identifies rows
+held by the expiring tombstone store.
+
+The first frame on every connection replaces the previous workset. Later replacements follow
+Session-specific changes, including pruning of that Session's legacy tombstones. A PostgreSQL
+listener interruption ends the stream with `UNAVAILABLE`. A resume token is scoped to the workset
+and Session and detects expired tombstone coverage with `OUT_OF_RANGE`. Clearing the token
+requests a new current snapshot. Omission from a workset gives no evidence that a command was
+unsent. Older facades and Dispatchers reject requests that omit the ordinary filter.
+
 ## Session resource
 
 `SessionSpec.placement` carries `environment_hosted` or `central_sampler_v1`; there is no flat harness
@@ -379,7 +441,7 @@ Acquiring a lease requires only the Session ID, including when no Environment ex
 
 Worker writes take the shared side of the existing Sandbox deletion advisory lock, then the
 Session admission advisory lock, then fence the Session lease. Environment cleanup takes the
-exclusive deletion lock while classifying Dispatch outcomes and deleting the rows. This
+exclusive deletion lock while settling Dispatch outcomes and marking Sessions. This
 serializes `MarkDeliveryAttempt` and settlement with deletion without holding the lock between
 transactions or across an RPC.
 

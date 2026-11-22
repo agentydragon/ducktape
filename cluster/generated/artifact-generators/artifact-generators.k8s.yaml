@@ -11,6 +11,11 @@ spec:
       name: agentplane-staging
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agentplane-staging/gaffer-private-archive/**"
+          to: "@artifact/cluster/generated/agentplane-staging/gaffer-private-archive/"
+      name: gaffer-private-archive
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/agentplane-staging-delivery/**"
           to: "@artifact/cluster/generated/agentplane-staging-delivery/"
         - from: "@repo/cluster/k8s/agentplane-staging/image-pins/**"
@@ -197,8 +202,6 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/tofu-controller/**"
           to: "@artifact/cluster/generated/tofu-controller/"
-        - from: "@repo/cluster/k8s/tofu-controller-image-pins/**"
-          to: "@artifact/cluster/k8s/tofu-controller-image-pins/"
       name: tofu-controller
       originRevision: "@repo"
     - copy:
@@ -454,11 +457,6 @@ spec:
         - from: "@repo/cluster/generated/agents/shared-rbac/**"
           to: "@artifact/cluster/generated/agents/shared-rbac/"
       name: agent-shared-rbac
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/shared-secrets/**"
-          to: "@artifact/cluster/k8s/agents/shared-secrets/"
-      name: agent-shared-secrets
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/aiquota/**"

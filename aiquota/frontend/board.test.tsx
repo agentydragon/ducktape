@@ -59,7 +59,7 @@ function sampleQuotas(): AllQuotasView {
       {
         provider: "codex",
         label: "Codex",
-        balances: [{ label: "Paid credits", value: "450 credits" }],
+        balances: [{ label: "", value: "450 credits" }],
         grants: [
           {
             label: "Promo grant",
@@ -108,7 +108,7 @@ function sampleQuotas(): AllQuotasView {
       {
         provider: "anthropic_platform",
         label: "Anthropic API",
-        balances: [{ label: "Available balance", value: "$75.00", group: "Research org" }],
+        balances: [{ label: "Balance", value: "$75.00", group: "Research org" }],
         grants: [
           {
             label: "Promo grant",
@@ -227,7 +227,7 @@ describe("QuotaBoard", () => {
     expect(container.textContent).toContain("Meter: fill = quota used; tick = time elapsed.");
     expect(container.textContent).toContain("Forecasts use average usage since the window started.");
     expect(container.querySelector(".aiquota-board-help")?.hasAttribute("open")).toBe(false);
-    expect(container.textContent).toContain("Paid credits");
+    expect(container.textContent).toContain("450 credits");
     expect(container.textContent).toContain("5h");
     expect(container.textContent).toContain("On pace");
     expect(container.textContent).toContain("Numeric pace: +10 pp");
@@ -287,9 +287,7 @@ describe("QuotaBoard", () => {
   it("updates only reset countdown and pending state as time advances without a new payload", () => {
     const quotas = sampleQuotas();
     render(quotas, Date.parse("2026-01-15T12:00:00Z"));
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain(
-      "Resets in 2h 30m"
-    );
+    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("↻ in 2h 30m");
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("On pace");
 
     render(quotas, Date.parse("2026-01-15T14:31:00Z"));
@@ -320,7 +318,7 @@ describe("QuotaBoard", () => {
     render(quotas);
     expect(container.textContent).not.toContain("Included quota exhausted");
     expect(container.textContent).not.toContain("paid credits available");
-    expect(container.textContent).toContain("Paid credits");
+    expect(container.textContent).toContain("450 credits");
     expect(container.textContent).toContain("exhausted");
     render(quotas, Date.parse("2026-01-15T12:11:00Z"));
 

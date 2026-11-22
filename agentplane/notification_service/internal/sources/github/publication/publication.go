@@ -56,7 +56,8 @@ func wakeApp(ctx context.Context, tx transaction.Tx, appID int64) error {
 		appID, ids, at); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE inbox SET next_attempt = $2 WHERE id = ANY($1::uuid[])`, ids, at)
+	_, err = tx.ExecContext(ctx, `UPDATE inbox SET next_attempt = $2
+		WHERE id = ANY($1::uuid[]) AND (delivery_error IS NULL OR next_attempt IS NULL)`, ids, at)
 	return err
 }
 

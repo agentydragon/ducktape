@@ -11,13 +11,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 
 from cluster.cdk8s import cilium, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -25,10 +18,10 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.haku import namespace
+from cluster.cdk8s.haku import mailbox_endpoint, namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
     ClusterSecretStoreRef,
@@ -47,8 +40,6 @@ _INGRESS_OBJECT_NAME = "smtp-ingress"  # the DaemonSet and its CiliumNetworkPoli
 _TLS_SECRET = "mx-allegedly-works-tls"
 DATABASE = cluster.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
 _DB_PASSWORD = DATABASE.app_secret.key("password")
-PUBLIC_HOSTNAME = "haku-mailbox.allegedly.works"
-PUBLIC_URL = f"https://{PUBLIC_HOSTNAME}"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
 # (//cluster/k8s/haku/mailbox/image) -- upstream ships the CLI only as a distroless image,
 # unusable from the pod. Published by the push-images workflow; image-pins/ sets the tag Flux
@@ -124,7 +115,7 @@ def _add_deployment(chart: Chart) -> None:
     An init container applies it with a temporary fallback admin before production starts.
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
-    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=PUBLIC_URL)
+    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=mailbox_endpoint.PUBLIC_URL)
     # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
     # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
@@ -182,11 +173,7 @@ def _add_deployment(chart: Chart) -> None:
                             # status is diagnostics-readable -- without this, an initialization
                             # failure is a black box to agent sessions.
                             termination_message_policy="FallbackToLogsOnError",
-                            ports=[
-                                SMTP.port.k8s_container_port(),
-                                HTTP.port.k8s_container_port(),
-                                _IMAP.port.k8s_container_port(),
-                            ],
+                            ports=[SMTP.k8s_container_port(), HTTP.k8s_container_port(), _IMAP.k8s_container_port()],
                             env=[_DB_PASSWORD.env_var("STALWART_DB_PASSWORD"), public_url],
                             volume_mounts=_stalwart_mounts(),
                             resources=_stalwart_resources(),
@@ -244,7 +231,7 @@ def _add_services(chart: Chart) -> None:
             annotations={
                 "description": (
                     "Stalwart's cluster-internal listeners: HTTP (JMAP + management API, exposed "
-                    f"publicly only via the cluster-gateway HTTPRoute {PUBLIC_HOSTNAME}) and "
+                    f"publicly only via the cluster-gateway HTTPRoute {mailbox_endpoint.PUBLIC_HOSTNAME}) and "
                     "plaintext IMAP for haku-sandbox clients (himalaya) — no route, no externalIPs, "
                     "OAUTHBEARER-only auth."
                 )
@@ -348,21 +335,11 @@ def _add_smtp_ingress(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=_INGRESS_OBJECT_NAME, namespace=NAMESPACE),
         endpoint_selector=_INGRESS_LABELS,
         ingress=[
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[
-                    CiliumNetworkPolicySpecIngressFromEntities.WORLD,
-                    # Kubelet TCP readiness/liveness probes originate from the node.
-                    CiliumNetworkPolicySpecIngressFromEntities.HOST,
-                ],
-                to_ports=[
-                    CiliumNetworkPolicySpecIngressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_SMTP_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                            )
-                        ]
-                    )
-                ],
+            IngressRule.from_entities(
+                Entity.WORLD,
+                # Kubelet TCP readiness/liveness probes originate from the node.
+                Entity.HOST,
+                ports=[_SMTP_PORT],
             )
         ],
         egress=[cilium.dns_egress(), EgressRule.to_endpoints(SMTP.pods.selector, SMTP.pod_port)],
@@ -444,7 +421,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostnames=[PUBLIC_HOSTNAME],
+        hostnames=[mailbox_endpoint.PUBLIC_HOSTNAME],
         backend=HTTP,
         timeout="60s",
         hsts=False,

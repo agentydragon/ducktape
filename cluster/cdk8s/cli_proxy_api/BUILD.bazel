@@ -18,7 +18,6 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

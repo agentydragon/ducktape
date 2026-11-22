@@ -1,5 +1,5 @@
 rule_files:
-  - io-pressure.yaml
+  - io-pressure-alerts.yaml
 evaluation_interval: 1m
 tests:
   - name: node stalled on I/O fires after an hour, a lightly stalled node never does

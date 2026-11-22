@@ -189,7 +189,7 @@ Session to address but is not itself permission to send or wake. When deletion r
 fail commands proven not to have left Dispatcher, report unresolved in-flight outcomes as unknown,
 and never redirect work to a replacement environment
 ([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
-Command-receipt outcome reads after cleanup remain unresolved.
+Dispatcher retains accepted commands and their delivery outcomes with the Session after cleanup.
 
 ```text
 public address:  session_id = UUID

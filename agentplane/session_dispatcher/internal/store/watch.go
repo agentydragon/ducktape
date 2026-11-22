@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/lib/pq"
@@ -15,6 +16,7 @@ import (
 )
 
 type DispatchChange struct {
+	Deleted  bool
 	Version  int64
 	Dispatch *dispatcherpb.Dispatch
 }
@@ -105,7 +107,7 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 			FROM dispatch_tombstone WHERE version>$1 AND version<=$2
 		)
 		SELECT c.version,c.command_id,c.session_id,c.sandbox_name,c.sandbox_uid,c.operation,c.state,c.reason,
-			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at
+			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at,NULL::bytea,c.deleted
 		FROM changes c JOIN session o ON o.session_id=c.session_id
 			AND (c.deleted OR (o.sandbox_name=c.sandbox_name AND o.sandbox_uid::text=c.sandbox_uid))
 		WHERE `+predicate+" AND "+owner+" ORDER BY c.version", args...)
@@ -129,13 +131,19 @@ func scanDispatchChange(row interface{ Scan(...any) error }) (DispatchChange, er
 	var change DispatchChange
 	var dispatch Dispatch
 	var reason sql.NullString
-	var admission, blocker, wake []byte
+	var admission, blocker, wake, command []byte
 	if err := row.Scan(&change.Version, &dispatch.CommandID, &dispatch.SessionID,
 		&dispatch.SandboxName, &dispatch.SandboxUID, &dispatch.Operation, &dispatch.State,
-		&reason, &admission, &blocker, &wake, &dispatch.CreatedAt, &dispatch.UpdatedAt); err != nil {
+		&reason, &admission, &blocker, &wake, &dispatch.CreatedAt, &dispatch.UpdatedAt, &command, &change.Deleted); err != nil {
 		return change, err
 	}
 	dispatch.Reason = reason.String
+	if command != nil {
+		dispatch.Command = &commandpb.Command{}
+		if err := proto.Unmarshal(command, dispatch.Command); err != nil {
+			return change, fmt.Errorf("decode stored command: %w", err)
+		}
+	}
 	if admission != nil {
 		dispatch.Admission = &eventlogpb.EventEntry{}
 		if err := proto.Unmarshal(admission, dispatch.Admission); err != nil {
@@ -151,6 +159,6 @@ func scanDispatchChange(row interface{ Scan(...any) error }) (DispatchChange, er
 	if err != nil {
 		return change, err
 	}
-	change.Dispatch, err = DescribeDispatch(&dispatch)
+	change.Dispatch, err = DescribeDispatch(&dispatch, true)
 	return change, err
 }

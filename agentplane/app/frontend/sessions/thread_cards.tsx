@@ -624,12 +624,14 @@ export function EntityCard({
   live,
   fallbackText,
   onFallbackLoaded,
+  deliveryProgress,
 }: {
   threadId: string;
   entity: ThreadEntity;
   live: boolean;
   fallbackText?: string;
   onFallbackLoaded?: () => void;
+  deliveryProgress?: JSX.Element | null;
 }): JSX.Element {
   const item = entity.entity.case === "item" ? entity.entity.value : undefined;
   // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
@@ -659,9 +661,15 @@ export function EntityCard({
         entity={entity}
         fallbackText={fallbackText}
         onFallbackLoaded={onFallbackLoaded}
-        phase="pending"
-        pending
-        progress={<CommandProgress stage="admitted" subject="input" />}
+        phase={deliveryProgress ? "failed" : "pending"}
+        pending={!deliveryProgress}
+        progress={
+          deliveryProgress === undefined ? (
+            <CommandProgress stage="admitted" subject="input" />
+          ) : (
+            (deliveryProgress ?? undefined)
+          )
+        }
       />
     );
   }

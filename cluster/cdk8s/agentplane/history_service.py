@@ -4,9 +4,8 @@ workload Identity and exact service SVID grants are authorized per method.
 """
 
 from collections.abc import Mapping
-from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -22,7 +21,6 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.history_service.settings import IngressSettings, ServiceDelegationSettings, ServiceDelegator, Settings
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -91,7 +89,7 @@ class HistoryService(Construct):
         self.env = env
         self.callers = callers
         endpoint = service(env.namespace)
-        Role(
+        role = Role(
             self,
             "service-account-reader-role",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
@@ -108,7 +106,7 @@ class HistoryService(Construct):
             self,
             "service-account-reader-rolebinding",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
-            role=Role.from_role_name(self, "service-account-reader-role-ref", f"{NAME}-service-accounts"),
+            role=role,
         ).add_subjects(
             ServiceAccount.from_service_account_name(
                 self, "history-service-account", NAME, namespace_name=env.namespace
@@ -145,7 +143,6 @@ class HistoryService(Construct):
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
-            termination_grace=Duration.seconds(30),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
@@ -153,19 +150,12 @@ class HistoryService(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=HISTORY_SERVICE_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         settings = Settings(
             reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
             service_delegation=service_delegation,
             policy_namespace=env.namespace,
             ingress=ingress_settings,
-            rpc=listener.Listener(
-                listen_address=f"0.0.0.0:{endpoint.pod_port}",
-                tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
+            rpc=serving_tls.spiffe_listener(endpoint.pod_port),
         )
         config = SettingsFile(
             self,

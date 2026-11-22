@@ -54,80 +54,43 @@ class TestValidateDependencies:
         )
 
 
-class TestSourceReferences:
-    """A bare sourceRef resolves in the consumer's own namespace (the PR #3759 outage class);
-    an ExternalArtifact sourceRef resolves only to an artifact an ArtifactGenerator declares."""
-
-    def test_source_ref_cross_namespace_fails(self) -> None:
-        """Bare sourceRef to a source that exists only in another namespace is flagged."""
-        cluster = ParsedCluster(
-            flux_kustomizations={
-                "app": FluxKustomizationSpec(
-                    namespace="ducktape-flux", source_ref=SourceRef(kind="GitRepository", name="flux-system")
-                )
-            },
-            flux_sources={("GitRepository", "flux-system", "flux-system")},
-        )
-        errors = check_source_references(cluster)
-        assert len(errors) == 1
-        assert "sourceRef" in errors[0]
-        assert "flux-system" in errors[0]
-
-    @pytest.mark.parametrize(
-        ("namespace", "ref_kind", "ref_name", "source_kind", "source_name", "source_namespace"),
-        [
-            # Bare refs resolve within the consumer's namespace.
-            ("flux-system", "GitRepository", "flux-system", "GitRepository", "flux-system", "flux-system"),
-            # Same names in another source kind do not collide with GitRepository lookup.
-            ("ducktape-flux", "GitRepository", "kyverno", "HelmRepository", "kyverno", "kyverno"),
-        ],
-        ids=("same-namespace-bare-ref", "same-name-different-kind"),
+def test_git_source_refs_resolve_by_kind_name_and_namespace() -> None:
+    repo = SourceRef(kind="GitRepository", name="config")
+    cluster = ParsedCluster(
+        flux_sources={("GitRepository", "sources", "config"), ("HelmRepository", "sources", "charts")},
+        flux_kustomizations={
+            "local": FluxKustomizationSpec(namespace="sources", source_ref=repo),
+            "missing-namespace": FluxKustomizationSpec(namespace="apps", source_ref=repo),
+            "remote": FluxKustomizationSpec(
+                namespace="apps", source_ref=SourceRef(kind="GitRepository", name="config", namespace="sources")
+            ),
+            # A GitRepository absent from the repo is outside the validator's view,
+            # even if a HelmRepository has that name elsewhere.
+            "external": FluxKustomizationSpec(
+                namespace="apps", source_ref=SourceRef(kind="GitRepository", name="charts")
+            ),
+        },
     )
-    def test_source_ref_positive_cases(
-        self, namespace: str, ref_kind: str, ref_name: str, source_kind: str, source_name: str, source_namespace: str
-    ) -> None:
-        cluster = ParsedCluster(
-            flux_kustomizations={
-                "app": FluxKustomizationSpec(namespace=namespace, source_ref=SourceRef(kind=ref_kind, name=ref_name))
-            },
-            flux_sources={(source_kind, source_name, source_namespace)},
-        )
-        assert check_source_references(cluster) == []
+    (error,) = check_source_references(cluster)
+    assert "missing-namespace" in error
+    assert "sourceRef 'config' resolves to ns=apps" in error
 
-    def test_external_artifact_ref_needs_a_declaring_generator(self) -> None:
-        """`kind: ExternalArtifact, name: ducktape` with only a GitRepository of that name (the #6297
-        outage class): no generator declares the artifact, so the ref stalls."""
-        cluster = ParsedCluster(
-            flux_kustomizations={
-                "cert-manager": FluxKustomizationSpec(
-                    namespace="ducktape-flux",
-                    path="./cluster/k8s/cert-manager/app",
-                    source_ref=SourceRef(kind="ExternalArtifact", name="ducktape", namespace="ducktape-flux"),
-                )
-            },
-            flux_sources={
-                ("GitRepository", "ducktape-flux", "ducktape"),
-                ("ExternalArtifact", "ducktape-flux", "cert-manager"),
-            },
-        )
-        errors = check_source_references(cluster)
-        assert len(errors) == 1
-        assert "ArtifactGenerator" in errors[0]
-        assert "cert-manager" in errors[0]
 
-    def test_external_artifact_ref_resolves_to_declared_artifact(self) -> None:
-        """The consumer names an artifact its generator declares."""
-        cluster = ParsedCluster(
-            flux_kustomizations={
-                "cert-manager": FluxKustomizationSpec(
-                    namespace="ducktape-flux",
-                    path="./cluster/k8s/cert-manager/app",
-                    source_ref=SourceRef(kind="ExternalArtifact", name="cert-manager"),
-                )
-            },
-            flux_sources={("ExternalArtifact", "ducktape-flux", "cert-manager")},
-        )
-        assert check_source_references(cluster) == []
+def test_external_artifact_requires_a_declared_output_in_the_target_namespace() -> None:
+    cluster = ParsedCluster(
+        flux_sources={
+            ("ExternalArtifact", "apps", "cert-manager"),
+            ("ExternalArtifact", "elsewhere", "ducktape"),
+            ("GitRepository", "apps", "ducktape"),
+        },
+        flux_kustomizations={
+            name: FluxKustomizationSpec(namespace="apps", source_ref=SourceRef(kind="ExternalArtifact", name=name))
+            for name in ("cert-manager", "ducktape")
+        },
+    )
+    (error,) = check_source_references(cluster)
+    assert "sourceRef ExternalArtifact 'ducktape'" in error
+    assert "no ArtifactGenerator declares that artifact there" in error
 
 
 if __name__ == "__main__":

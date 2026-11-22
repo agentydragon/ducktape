@@ -35,6 +35,7 @@ def test_service_port_targets_the_pods_port() -> None:
     assert port.port == 80
     assert port.target_port == 8080
     assert _SERVICE.container_port().number == 8080
+    assert _SERVICE.k8s_container_port().container_port == 8080
 
 
 def test_monitor_derives_service_selector_and_port_without_changing_custom_endpoints() -> None:

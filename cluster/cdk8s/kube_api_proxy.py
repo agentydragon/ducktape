@@ -81,16 +81,7 @@ def _deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
-                    affinity=k8s.Affinity(
-                        pod_anti_affinity=k8s.PodAntiAffinity(
-                            required_during_scheduling_ignored_during_execution=[
-                                k8s.PodAffinityTerm(
-                                    label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
-                                    topology_key="kubernetes.io/hostname",
-                                )
-                            ]
-                        )
-                    ),
+                    affinity=node_scheduling.one_per_host(_SERVICE.pods.selector),
                     topology_spread_constraints=[
                         k8s.TopologySpreadConstraint(
                             topology_key=node_scheduling.ZONE_LABEL,

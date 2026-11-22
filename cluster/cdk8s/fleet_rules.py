@@ -1,8 +1,6 @@
-"""Rules every object this repo generates must hold, checked over an App's rendered
-objects when it synthesizes (`App.synth`, `App.synth_yaml`, `Chart.to_json`,
-`cdk8s.Testing.synth` all validate the construct tree first). `generation.write_app` attaches
-them to every App it writes. A violation fails synth with the object named, instead of an
-admission denial or a CreateContainerConfigError on the cluster.
+"""Fleet rules checked at synthesis. `generation.write_app` registers them on each App.
+Synthesizing an App or calling `Chart.to_json` validates its construct tree, so violations
+identify the offending object before admission or Pod startup.
 """
 
 from __future__ import annotations
@@ -10,12 +8,12 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Iterable, Iterator
 from itertools import combinations
-from typing import Any, cast
+from typing import Any
 
 import jsii
-from cdk8s import ApiObject
 from constructs import Construct, IValidation
 
+from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
 from cluster.cdk8s.pod_policy import embeds_pod, pod_spec
@@ -119,35 +117,23 @@ def _outside_https_pins(obj: dict[str, Any]) -> tuple[bool, bool]:
     return True in pin_states, False in pin_states
 
 
-def _endpoint_scope(obj: dict[str, Any]) -> tuple[str, dict[str, str], bool]:
-    """What a policy's `endpointSelector` covers: `(namespace, matchLabels, selects_everything)`.
-
-    A policy that names no labels, or names `matchExpressions`, cannot be reduced to label pairs
-    here, so it answers `selects_everything`: it conflicts rather than being skipped quietly.
-    `CiliumClusterwideNetworkPolicy` has no namespace of its own and reaches every one, so it
-    carries the empty string, which `_share_endpoints` reads as "any".
-    """
+def _endpoint_scope(obj: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """Required namespace (empty for clusterwide or unknown) and exact label matches."""
     selector = obj["spec"].get("endpointSelector") or {}
-    labels = dict(selector.get("matchLabels") or {})
     namespace = "" if obj["kind"] == _CLUSTERWIDE_KIND else obj["metadata"].get("namespace", "")
-    return namespace, labels, not labels or bool(selector.get("matchExpressions"))
+    return namespace, selector.get("matchLabels") or {}
 
 
-def _share_endpoints(left: tuple[str, dict[str, str], bool], right: tuple[str, dict[str, str], bool]) -> bool:
-    """Whether one endpoint can satisfy both selectors at once.
+def _share_endpoints(left: tuple[str, dict[str, str]], right: tuple[str, dict[str, str]]) -> bool:
+    """Conservatively allow overlap wherever the namespaces and required labels are compatible.
 
-    A `matchLabels` selector matches every endpoint carrying at least those labels, so two
-    selectors overlap unless they pin the same key to different values: an endpoint labelled with
-    the union of both satisfies them, however narrow each is on its own. Disjoint key sets always
-    overlap, which is the answer a check for shared keys alone would get wrong.
+    A selector's matchExpressions may narrow it further. Every matchLabel still applies.
     """
-    left_namespace, left_labels, left_all = left
-    right_namespace, right_labels, right_all = right
+    left_namespace, left_labels = left
+    right_namespace, right_labels = right
     if left_namespace and right_namespace and left_namespace != right_namespace:
         return False
-    if left_all or right_all:
-        return True
-    shared = set(left_labels) & set(right_labels)
+    shared = left_labels.keys() & right_labels.keys()
     return all(left_labels[key] == right_labels[key] for key in shared)
 
 
@@ -311,9 +297,7 @@ class FleetRules:
         self._unpinned_https_egress = set(unpinned_https_egress)
 
     def validate(self) -> list[str]:
-        objects = [
-            cast(ApiObject, node).to_json() for node in self._scope.node.find_all() if ApiObject.is_api_object(node)
-        ]
+        objects = [obj.to_json() for obj in api_objects_in(self._scope)]
         return [
             *pod_hardening(objects, unhardened=self._unhardened_pods),
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),

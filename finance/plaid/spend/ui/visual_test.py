@@ -29,7 +29,7 @@ from finance.plaid.spend.models import SpendConfigurationView, SpendTransactions
 from finance.plaid.spend.pace_history import pace_history
 from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.reconciliation import ReportStatus
-from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
 from finance.plaid.spend.testing import dashboard, ledger
 from finance.plaid.spend.ui.testing import sustainability, transactions
 from testing.asgi import serve_app_sync
@@ -42,6 +42,7 @@ pytest_plugins = ("util.playwright",)
 
 
 _FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
+_WINDOWS_ROUTE = "**/api/v1/sustainability/windows"
 _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 
 
@@ -123,6 +124,15 @@ async def _expect_tooltip_rendered(tooltip: Locator) -> None:
 
 async def _expect_tooltip_hidden(tooltip: Locator) -> None:
     await expect(tooltip).to_be_hidden()
+
+
+async def _serve_windows(page: Page, *windows: SustainabilityView) -> None:
+    payload = sustainability.dashboard(*windows).model_dump(mode="json")
+
+    async def respond(route: Route) -> None:
+        await route.fulfill(json=payload)
+
+    await page.route(_WINDOWS_ROUTE, respond)
 
 
 @pytest.fixture(scope="module")
@@ -1082,15 +1092,8 @@ async def test_sustainability_graph_visibility_is_independent_of_details(
 async def test_sustainability_shorter_curve_survives_missing_yearly_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
-    async def serve_windows(route: Route) -> None:
-        yearly = sustainability.with_history(sustainability.view(window_days=365), [])
-        await route.fulfill(
-            json=sustainability.dashboard(sustainability.window(30), sustainability.view(), yearly).model_dump(
-                mode="json"
-            )
-        )
-
-    await page.route("**/api/v1/sustainability/windows", serve_windows)
+    yearly = sustainability.with_history(sustainability.view(window_days=365), [])
+    await _serve_windows(page, sustainability.window(30), sustainability.view(), yearly)
     await page.set_viewport_size({"width": width, "height": 960})
     await page.goto(f"{dashboard_url}/#/sustainability?window_days=365", wait_until="domcontentloaded")
     history = page.get_by_role("region", name="Spending and funding history")
@@ -1110,14 +1113,7 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
 async def test_sustainability_shared_history_tooltip_dates(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
-    async def serve_single_endpoint(route: Route) -> None:
-        windows = [
-            sustainability.with_history(window, window.history[-1:])
-            for window in (sustainability.window(days) for days in (30, 90, 365))
-        ]
-        await route.fulfill(json=sustainability.dashboard(*windows).model_dump(mode="json"))
-
-    await page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
+    await _serve_windows(page, *sustainability.single_point_windows())
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
     canvas = page.get_by_role("img", name="Annual funding including taxes by day")
@@ -1157,14 +1153,7 @@ async def test_sustainability_shared_history_tooltip_dates(
 
 
 async def test_sustainability_history_tooltip_on_touch(touch_page: Page, dashboard_url: str) -> None:
-    async def serve_single_endpoint(route: Route) -> None:
-        windows = [
-            sustainability.with_history(window, window.history[-1:])
-            for window in (sustainability.window(days) for days in (30, 90, 365))
-        ]
-        await route.fulfill(json=sustainability.dashboard(*windows).model_dump(mode="json"))
-
-    await touch_page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
+    await _serve_windows(touch_page, *sustainability.single_point_windows())
     await touch_page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
     canvas = touch_page.get_by_role("img", name="Annual funding including taxes by day")
     await expect(canvas).to_be_visible()
@@ -1228,7 +1217,7 @@ async def test_sustainability_loading_preserves_layout(
         await response_ready.wait()
         await route.continue_()
 
-    await page.route("**/api/v1/sustainability/windows", delay_estimate)
+    await page.route(_WINDOWS_ROUTE, delay_estimate)
     await page.set_viewport_size({"width": width, "height": 960})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1268,10 +1257,7 @@ async def test_sustainability_loading_preserves_layout(
 async def test_sustainability_partial_window_has_no_startup_chart(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
-    async def serve_partial(route: Route) -> None:
-        await route.fulfill(json=sustainability.dashboard(sustainability.partial_window()).model_dump(mode="json"))
-
-    await page.route("**/api/v1/sustainability/windows", serve_partial)
+    await _serve_windows(page, sustainability.partial_window())
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1293,12 +1279,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
 async def test_sustainability_account_history_coverage_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
-    async def serve_partial_coverage(route: Route) -> None:
-        await route.fulfill(
-            json=sustainability.dashboard(sustainability.with_partial_account_history()).model_dump(mode="json")
-        )
-
-    await page.route("**/api/v1/sustainability/windows", serve_partial_coverage)
+    await _serve_windows(page, sustainability.with_partial_account_history())
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1348,12 +1329,7 @@ async def test_sustainability_account_history_coverage_render(
 async def test_sustainability_history_survives_current_coverage_gap(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
-    async def serve_historical_gap(route: Route) -> None:
-        await route.fulfill(
-            json=sustainability.dashboard(sustainability.with_historical_coverage_gap()).model_dump(mode="json")
-        )
-
-    await page.route("**/api/v1/sustainability/windows", serve_historical_gap)
+    await _serve_windows(page, sustainability.with_historical_coverage_gap())
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1380,10 +1356,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
 async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualPage, dashboard_url: str) -> None:
     touch_page = touch_view.page
 
-    async def serve_ready(route: Route) -> None:
-        await route.fulfill(json=sustainability.dashboard(sustainability.view()).model_dump(mode="json"))
-
-    await touch_page.route("**/api/v1/sustainability/windows", serve_ready)
+    await _serve_windows(touch_page, sustainability.view())
     await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(touch_page, "Sustainability")
     marker = touch_page.get_by_role("button", name="Scenario 1: 3% draw rate")
@@ -1413,10 +1386,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualP
 
 
 async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
-    async def serve_low_draw(route: Route) -> None:
-        await route.fulfill(json=sustainability.dashboard(sustainability.view("low_draw")).model_dump(mode="json"))
-
-    await page.route("**/api/v1/sustainability/windows", serve_low_draw)
+    await _serve_windows(page, sustainability.view("low_draw"))
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
@@ -1434,10 +1404,7 @@ async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPa
 async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     page: Page, view: VisualPage, dashboard_url: str
 ) -> None:
-    async def serve_tax_unmodeled(route: Route) -> None:
-        await route.fulfill(json=sustainability.dashboard(sustainability.view("tax_unmodeled")).model_dump(mode="json"))
-
-    await page.route("**/api/v1/sustainability/windows", serve_tax_unmodeled)
+    await _serve_windows(page, sustainability.view("tax_unmodeled"))
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
@@ -1469,12 +1436,8 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
 async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
-    async def serve_provisional(route: Route) -> None:
-        provisional = sustainability.view("provisional")
-        provisional = sustainability.with_history(provisional, provisional.history[-1:])
-        await route.fulfill(json=sustainability.dashboard(provisional).model_dump(mode="json"))
-
-    await page.route("**/api/v1/sustainability/windows", serve_provisional)
+    provisional = sustainability.view("provisional")
+    await _serve_windows(page, sustainability.with_history(provisional, provisional.history[-1:]))
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1511,29 +1474,17 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
         animations="disabled",
     )
 
-    async def serve_historical_provisional(route: Route) -> None:
-        historical = sustainability.view()
-        latest = historical.history[-1]
-        provisional_point = SustainabilityHistoryPoint(
-            date=latest.date,
-            status=ReportStatus.PROVISIONAL,
-            covered_days=latest.covered_days,
-            annualized_spending_minor_units=latest.annualized_spending_minor_units,
-            spending_draw_rate=latest.spending_draw_rate,
-            tax_adjusted_draw_rate=latest.tax_adjusted_draw_rate,
-        )
-        historical = sustainability.with_history(
-            historical,
-            [provisional_point],
-            issues=[
-                "Historical chart: Review the unverified reversal and confirm its classification "
-                "before relying on this point."
-            ],
-        )
-        await route.fulfill(json=sustainability.dashboard(historical).model_dump(mode="json"))
-
-    await page.unroute("**/api/v1/sustainability/windows", serve_provisional)
-    await page.route("**/api/v1/sustainability/windows", serve_historical_provisional)
+    historical = sustainability.view()
+    provisional_point = historical.history[-1].model_copy(update={"status": ReportStatus.PROVISIONAL})
+    historical = sustainability.with_history(
+        historical,
+        [provisional_point],
+        issues=[
+            "Historical chart: Review the unverified reversal and confirm its classification before relying on this point."
+        ],
+    )
+    await page.unroute(_WINDOWS_ROUTE)
+    await _serve_windows(page, historical)
     await page.reload(wait_until="domcontentloaded")
     await expect(page.get_by_text("Provisional", exact=True)).to_have_count(0)
     historical_issue = page.get_by_role("alert").filter(has_text="Historical chart: Review the unverified reversal")
@@ -1556,10 +1507,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
 async def test_sustainability_stale_and_unavailable_render(
     page: Page, view: VisualPage, dashboard_url: str, variant: Literal["stale", "unavailable"], width: int, height: int
 ) -> None:
-    async def serve_variant(route: Route) -> None:
-        await route.fulfill(json=sustainability.dashboard(sustainability.view(variant)).model_dump(mode="json"))
-
-    await page.route("**/api/v1/sustainability/windows", serve_variant)
+    await _serve_windows(page, sustainability.view(variant))
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")

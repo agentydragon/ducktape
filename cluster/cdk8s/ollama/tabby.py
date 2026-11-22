@@ -12,6 +12,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.container_resources import quantities
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -96,20 +97,14 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
                             env=[k8s.EnvVar(name="CUDA_DEVICE_ORDER", value="PCI_BUS_ID")],
                             resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("4"),
-                                    "memory": k8s.Quantity.from_string("20Gi"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("48Gi"),
-                                    "nvidia.com/gpu": k8s.Quantity.from_string("2"),
-                                },
+                                requests=quantities({"cpu": "4", "memory": "20Gi"}),
+                                limits=quantities({"memory": "48Gi", "nvidia.com/gpu": "2"}),
                             ),
                             startup_probe=k8s.Probe(
                                 http_get=models, period_seconds=5, timeout_seconds=2, failure_threshold=72

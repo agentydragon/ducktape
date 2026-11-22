@@ -23,7 +23,7 @@ free-name coverage; it does not prove the semantic correctness of either fronten
 
 ## Semantic interface
 
-[`MovesSound`](../lean/Experiments/CoreJS/Move.lean) separates the semantic premise
+[`MovesSound`](../lean/EsmSplit/CoreJS/Move.lean) separates the semantic premise
 from the procedure that establishes it. For each bundle scope produced by a
 successful `declareTops` allocation and each execution bound, every allowed pair
 must commute in both directions. Using an actual allocation trace preserves the
@@ -116,7 +116,7 @@ cross a contiguous block of inert or allocation-only declarations whose eager
 reads exclude the subclass binding. Both orders must share the prefix that
 establishes the base. The resulting theorem quantifies over all CoreJS worlds
 and fuel bounds and compares the entire final state on successful execution.
-[Checker and theorem](../lean/Experiments/CoreJS/HeritageCertificate.lean)
+[Checker and theorem](../lean/EsmSplit/CoreJS/HeritageCertificate.lean)
 
 ## Current proof inventory
 
@@ -128,9 +128,17 @@ and fuel bounds and compares the entire final state on successful execution.
 | Objects, closures, control flow, classes                                                            | CoreJS semantics and selected locality results               | Soundness of the corresponding Effects summaries                                 |
 | Intrinsics and unknown-code fallback                                                                | Handwritten and generated regression coverage                | Per-rule semantic contracts and conservative fallback proofs                     |
 
-The [`model` coverage matrix](../experiments/model/README.md) and
-[`effects` tests](../experiments/effects/README.md) describe executable evidence.
+The [`model` coverage matrix](../model/README.md) and
+[`effects` tests](../effects/README.md) describe executable evidence.
 Passing those tests is not a footprint soundness proof.
+
+For a flat `var` object pattern with a named RHS, the conditional
+[`DataProjection.declaration_commutes_at`](../lean/EsmSplit/CoreJS/DataProjection.lean)
+covers the entire CoreJS block, including receiver capture, getter-free reads and
+writes to each target. Its premises require the resolved binding and the actual
+own data descriptors in the state at the crossing, with the other unit local to
+a separate region. The ordinary checker still needs a proof that the preceding
+units establish and preserve those premises before it can use this theorem.
 
 ## Implementation boundaries and milestones
 

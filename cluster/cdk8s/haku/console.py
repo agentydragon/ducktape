@@ -17,11 +17,10 @@ carries the Flux marker a generated file cannot.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -36,19 +35,24 @@ from cdk8s_plus_34 import (
     Pods,
     PodSecurityContextProps,
     Probe,
-    Protocol,
     Role,
     RoleBinding,
     RolePolicyRule,
     Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import agent_access_profiles as access, disruption_budget, node_scheduling, pod_policy, service_ref
+from cluster.cdk8s import (
+    agent_access_profiles as access,
+    disruption_budget,
+    node_scheduling,
+    pod_policy,
+    public_web_pki,
+    service_ref,
+)
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
@@ -128,7 +132,7 @@ class Console(Construct):
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.
         diagnostics = "agent-haku-console-metadata-reader"
-        Role(
+        role = Role(
             self,
             "diagnostics-role",
             metadata=ApiObjectMetadata(
@@ -152,7 +156,7 @@ class Console(Construct):
                 namespace=NAMESPACE,
                 annotations={"description": "Binds Haku and public-coder to narrow Console metadata diagnostics."},
             ),
-            role=Role.from_role_name(self, "diagnostics-role-ref", diagnostics),
+            role=role,
         ).add_subjects(
             *[
                 subject.imported(self, f"diagnostics-subject-{index}")
@@ -177,7 +181,7 @@ class Console(Construct):
         image_metadata = ConfigMap.from_config_map_name(self, "image-metadata-ref", IMAGE_METADATA_CONFIG_MAP)
         return dict(
             [
-                ("SSL_CERT_FILE", EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt")),
+                ("SSL_CERT_FILE", EnvValue.from_value(public_web_pki.CA_FILE)),
                 (env_name(Settings, "image_tag"), EnvValue.from_config_map(image_metadata, _IMAGE_TAG_KEY)),
                 # Capability tier: the launch-routine action. The console builds both the fire
                 # URL and the claude.ai/code deep-link from this routine (trigger) id; the bearer
@@ -246,7 +250,7 @@ class Console(Construct):
             name="server",
             image=f"{IMAGE}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[_API.port.container_port()],
+            ports=[_API.container_port()],
             env_variables=self._container_env(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
@@ -268,12 +272,7 @@ class Console(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, container)
         config.mount_into(container, env=CONFIG_FILE_ENV)
         static_metadata = ConfigMap.from_config_map_name(self, "static-metadata-ref", STATIC_METADATA_CONFIG_MAP)
         container.mount(
@@ -293,15 +292,7 @@ class Console(Construct):
             "service",
             metadata=ApiObjectMetadata(name=_API.name, namespace=NAMESPACE, labels=_API.labels),
             selector=Pods.select(self, "pods", labels=_API.pods.selector),
-            ports=[
-                _API.port.service_port(),
-                ServicePort(
-                    name=_METRICS.port.name,
-                    port=_METRICS.port.number,
-                    target_port=_METRICS.pod_port,
-                    protocol=Protocol.TCP,
-                ),
-            ],
+            ports=[_API.service_port(), _METRICS.service_port()],
         )
 
     def _add_service_monitor(self) -> None:
@@ -330,12 +321,7 @@ class Console(Construct):
         )
         deployment.select(LabelSelector.of(labels=_STATIC.pods.selector))
         # Spread each revision across hosts; with one eligible host, keep one replica running.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/topologySpreadConstraints",
-                [node_scheduling.hostname_spread(_STATIC.pods.selector)],
-            )
-        )
+        node_scheduling.set_topology_spread(deployment, node_scheduling.hostname_spread(_STATIC.pods.selector))
         container = deployment.add_container(
             name="static",
             image=f"{_STATIC_IMAGE}:{PLACEHOLDER_TAG}",
@@ -348,7 +334,7 @@ class Console(Construct):
                 "HAKU_CONSOLE_AUTH_ORIGIN": EnvValue.from_value(_AUTHENTIK),
                 "HAKU_CONSOLE_API_UPSTREAM": EnvValue.from_value(f"{_API.host}:{_API.port.number}"),
             },
-            ports=[ContainerPort(name=_STATIC.port.name, number=_STATIC.pod_port, protocol=Protocol.TCP)],
+            ports=[_STATIC.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
@@ -368,14 +354,7 @@ class Console(Construct):
             "static-service",
             metadata=ApiObjectMetadata(name=_STATIC.name, namespace=NAMESPACE, labels=_STATIC.labels),
             selector=Pods.select(self, "static-pods", labels=_STATIC.pods.selector),
-            ports=[
-                ServicePort(
-                    name=_STATIC.port.name,
-                    port=_STATIC.port.number,
-                    target_port=_STATIC.pod_port,
-                    protocol=Protocol.TCP,
-                )
-            ],
+            ports=[_STATIC.service_port()],
         )
 
     def _add_http_route(self) -> None:

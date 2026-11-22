@@ -60,7 +60,6 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
-cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/external-credentials/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true
@@ -75,7 +74,6 @@ cluster/parked/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=
 cluster/parked/public-coder-agent/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/nix-cache/kustomization.yaml linguist-generated=true
 cluster/k8s/host-firewall/kustomization.yaml linguist-generated=true
 cluster/k8s/session-backup/kustomization.yaml linguist-generated=true
@@ -106,14 +104,6 @@ x/llm/instruct_logseq/pages/** filename-conventions-ignored=true
 # Blog posts - filenames are published URLs (date-prefixed kebab-case)
 website/posts/** filename-conventions-ignored=true
 
-# cluster/validation/cluster.py reads cluster-manifest-ignored via `git check-attr` (pygit2) and skips
-# such files from orphan detection + resource parsing.
-# Parked manifests are retained for possible revival but are not active cluster config.
-cluster/parked/** cluster-manifest-ignored=true
-# The retired Codex pod's manifests are kept beside their source, not active cluster config.
-x/codex_pod_image/deploy/** cluster-manifest-ignored=true
-# A strategic-merge patch the tofu-controller image-pins Component applies — not a resource.
-cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml cluster-manifest-ignored=true
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true
 .*/** filename-conventions-ignored=true

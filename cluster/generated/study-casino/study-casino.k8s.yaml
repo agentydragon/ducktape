@@ -45,10 +45,15 @@ spec:
       name: barman-cloud.cloudnative-pg.io
       parameters:
         barmanObjectName: study-casino-db
+  primaryUpdateMethod: switchover
   probes:
     liveness:
       isolationCheck:
         enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 192Mi
   storage:
     resizeInUseVolumes: false
     size: 1Gi
@@ -128,6 +133,11 @@ spec:
         name: study-casino-db-backups-s3-credentials
     wal:
       compression: gzip
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 75m
+        memory: 192Mi
   retentionPolicy: 30d
 ---
 apiVersion: postgresql.cnpg.io/v1

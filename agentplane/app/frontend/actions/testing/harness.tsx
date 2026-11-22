@@ -1,3 +1,5 @@
+import { appActionRendering } from "../rendering/index";
+import { ActionRenderingContext } from "../rendering/dispatch";
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode, act } from "react";
@@ -401,7 +403,9 @@ export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <MantineProvider env="test">{node}</MantineProvider>
+        <ActionRenderingContext.Provider value={appActionRendering}>
+          <MantineProvider env="test">{node}</MantineProvider>
+        </ActionRenderingContext.Provider>
       </QueryClientProvider>
     );
   });

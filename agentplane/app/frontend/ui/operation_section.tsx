@@ -9,9 +9,15 @@ import "./operation_section.css";
 export function OperationSection({
   children,
   surface = "framed",
+  layout = "payload",
 }: {
   children: ReactNode;
   surface?: CodeBlockSurface;
+  layout?: "payload" | "disclosure";
 }): JSX.Element {
-  return <div className={`agentplane-operation-section ui-code-surface-${surface}`}>{children}</div>;
+  return (
+    <div className={`agentplane-operation-section ui-code-surface-${surface}`} data-layout={layout}>
+      {children}
+    </div>
+  );
 }

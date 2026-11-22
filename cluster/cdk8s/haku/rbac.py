@@ -9,6 +9,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import agent_access_profiles as access
+from cluster.cdk8s.container_resources import quantities, sandbox_limits
 from cluster.cdk8s.haku import ui_egress
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -16,11 +17,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "haku-rbac"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/rbac"
 SERVICE_ACCOUNT = "haku"
-ADMIN_ROLE = "haku-sandbox-admin"
-
-
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
 def chart(app: App) -> Chart:
@@ -66,11 +62,12 @@ def chart(app: App) -> Chart:
     # Haku's only write-capable RBAC. Deliberately an explicit resource allowlist with NO
     # httproutes/gateways/networkpolicies -- Haku must never open a public door or loosen its own
     # fences. Invariants + full enforcement inventory: haku/docs/security.md.
+    admin = access.role_ref("haku-sandbox-write")
     k8s.KubeRole(
         chart,
         "admin-role",
         metadata=k8s.ObjectMeta(
-            name=ADMIN_ROLE,
+            name=admin.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -116,7 +113,7 @@ def chart(app: App) -> Chart:
         chart,
         "haku-binding",
         metadata=k8s.ObjectMeta(name="haku", namespace=NAMESPACE),
-        role_ref=access.role_ref("haku-sandbox-write"),
+        role_ref=admin,
         subjects=[access.HAKU_SERVICE_ACCOUNT.k8s(), access.HAKU_CONSOLE.k8s()],
     )
     k8s.KubeRoleBinding(
@@ -133,7 +130,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        role_ref=access.role_ref("haku-sandbox-write"),
+        role_ref=admin,
         subjects=[access.HAKU_OIDC.k8s()],
     )
     # Shared by everything in haku-sandbox: the managed-agent worker, haku-ui, AND the sandbox warm
@@ -147,7 +144,7 @@ def chart(app: App) -> Chart:
         "quota",
         metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
-            hard=_quantities(
+            hard=quantities(
                 {
                     "requests.cpu": "8",
                     "requests.memory": "16Gi",
@@ -166,17 +163,6 @@ def chart(app: App) -> Chart:
         chart,
         "limits",
         metadata=k8s.ObjectMeta(name="limits", namespace=NAMESPACE),
-        spec=k8s.LimitRangeSpec(
-            limits=[
-                k8s.LimitRangeItem(
-                    type="Container",
-                    max=_quantities({"cpu": "4", "memory": "8Gi"}),
-                    min=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                    default=_quantities({"cpu": "500m", "memory": "512Mi"}),
-                    default_request=_quantities({"cpu": "100m", "memory": "128Mi"}),
-                ),
-                k8s.LimitRangeItem(type="Pod", max=_quantities({"cpu": "4", "memory": "8Gi"})),
-            ]
-        ),
+        spec=sandbox_limits(max_pod_cpu="4", max_pod_memory="8Gi"),
     )
     return chart

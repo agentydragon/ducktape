@@ -23,6 +23,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        ":release_content_hash",
         "@pypi//httpx",  # keep: sync-pins downloads wheel candidates
         "@pypi//pygithub",
     ],
@@ -46,6 +47,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        ":release_content_hash",
         "@pypi//pydantic",
         "@pypi//pygithub",
     ],
@@ -73,7 +75,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":publication_cli",
-        ":publication_evidence",
+        ":publication_test_verdicts",
         ":release_assets",
         ":release_content_hash",
         "//devinfra/buildbuddy/ci:bes",
@@ -160,7 +162,7 @@ py_library(
     deps = [
         ":image_registry",
         ":publication_cli",
-        ":publication_evidence",
+        ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/oci:crane",
     ],
@@ -240,7 +242,9 @@ py_test(
     srcs = ["test_plan_releases.py"],
     deps = [
         ":plan_releases",
+        ":publication_test_verdicts",
         ":release_assets",
+        ":release_content_hash",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -314,6 +318,7 @@ py_test(
     deps = [
         ":image_registry",
         ":plan_image_pushes",
+        ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/oci:crane",
         "@pypi//pytest",

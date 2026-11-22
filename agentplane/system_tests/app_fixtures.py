@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Generator
 from functools import partial
+from typing import cast
 
 import pytest
 from opentelemetry import trace
@@ -14,6 +15,7 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.system_tests.driver import native_artifacts, scenario
 from agentplane.system_tests.driver.app_sandbox import sandbox_scope
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.ollama_warmup import warm_ollama
 from agentplane.system_tests.driver.sandbox import Sandboxes
@@ -32,6 +34,19 @@ def pytest_runtest_makereport(
     if call.when == "call":
         item.stash[_CALL_REPORT] = report
     return report
+
+
+@pytest.fixture
+async def dispatcher(cluster: Cluster) -> AsyncIterator[SessionDispatcherClient]:
+    """Native Dispatcher client using an authorized App service SVID."""
+    async with native_client(cluster) as client:
+        yield client
+
+
+@pytest.fixture(params=[session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> session_pb2.Harness:
+    """Every scenario runs on every harness: one runner protocol, so one test body covers both."""
+    return cast(session_pb2.Harness, request.param)
 
 
 @pytest.fixture

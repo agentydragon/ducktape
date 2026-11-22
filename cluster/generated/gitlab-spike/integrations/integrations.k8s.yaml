@@ -107,7 +107,7 @@ spec:
             - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: gitlab-spike-job
+      io.cilium.k8s.policy.serviceaccount: gitlab-spike-job
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -174,8 +174,6 @@ spec:
             poll_timeout = 180
             [runners.kubernetes.node_selector]
               "topology.kubernetes.io/zone" = "hil-ovh"
-            [runners.kubernetes.pod_labels]
-              "app.kubernetes.io/name" = "gitlab-spike-job"
             [runners.kubernetes.pod_security_context]
               run_as_non_root = true
               run_as_user = 1000

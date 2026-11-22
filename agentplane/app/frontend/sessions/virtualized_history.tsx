@@ -16,6 +16,7 @@ export interface VirtualizedHistoryProps {
   inputEchoes: ReadonlyMap<string, string>;
   onInputEchoLoaded: (commandId: string) => void;
   tail?: ReactNode;
+  projectedProgress?: ReadonlyMap<string, JSX.Element | null>;
   running: boolean;
   activeTurn: string | null;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection">;
@@ -27,6 +28,7 @@ export function VirtualizedHistory({
   inputEchoes,
   onInputEchoLoaded,
   tail,
+  projectedProgress,
   running,
   activeTurn,
   history,
@@ -65,6 +67,7 @@ export function VirtualizedHistory({
           row={row}
           live={live}
           inputEchoes={inputEchoes}
+          deliveryProgress={projectedProgress?.get(row.entities[0].entityId)}
           onInputEchoLoaded={onInputEchoLoaded}
         />
       )}

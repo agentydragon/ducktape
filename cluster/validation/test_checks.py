@@ -135,6 +135,19 @@ def test_forgejo_image_namespace_missing_external_secret_is_flagged() -> None:
     assert "worker" in error
 
 
+def test_cronjob_image_requires_credentials_in_its_namespace() -> None:
+    cron_job = {
+        "apiVersion": "batch/v1",
+        "kind": "CronJob",
+        "metadata": {"namespace": "jobs", "name": "import"},
+        "spec": {
+            "jobTemplate": {"spec": {"template": {"spec": {"containers": [{"image": "git.allegedly.works/job"}]}}}}
+        },
+    }
+    [error] = check_forgejo_image_namespace_reflection(_cluster_with(cron_job, _forgejo_creds_eso("other")))
+    assert "CronJob 'jobs/import' runs Forgejo image(s) git.allegedly.works/job" in error
+
+
 @pytest.mark.parametrize(
     ("api_version", "spec", "image_names"),
     [

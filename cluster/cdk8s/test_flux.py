@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import ApiObjectMetadata, App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -55,7 +55,7 @@ def test_wait_with_health_checks_fails_synth(scratch_app: App) -> None:
     chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=True, health_checks=_HEALTH_CHECKS)
     with pytest.raises(Exception, match="Kustomization/test-app"):
-        Cdk8sTesting.synth(chart)
+        chart.to_json()
 
 
 @pytest.mark.parametrize(("wait", "health_checks"), [(False, _HEALTH_CHECKS), (True, None)])
@@ -64,7 +64,7 @@ def test_wait_or_health_checks_alone_synthesizes(
 ) -> None:
     chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=wait, health_checks=health_checks)
-    (rendered,) = Cdk8sTesting.synth(chart)
+    (rendered,) = chart.to_json()
     assert rendered["spec"]["wait"] is wait
 
 
@@ -79,25 +79,25 @@ def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> Non
 
 
 def test_artifact_maps_one_source_file_into_its_consumer_directory() -> None:
-    result = artifact("test-app", "test/app", files={"secrets/shared/test.yaml": "test/app/test.sops.yaml"})
+    result = artifact("test-app", "test/app", files={"secrets/shared/test.yaml": "nested/test.sops.yaml"})
     assert artifact_directories(result) == ["test/app"]
     assert artifact_directory(result) == "test/app"
     assert [(copy.from_, copy.to) for copy in result.copy] == [
         ("@repo/test/app/**", "@artifact/test/app/"),
-        ("@repo/secrets/shared/test.yaml", "@artifact/test/app/test.sops.yaml"),
+        ("@repo/secrets/shared/test.yaml", "@artifact/test/app/nested/test.sops.yaml"),
     ]
 
 
 @pytest.mark.parametrize(
     ("source", "destination"),
     [
-        ("secrets/shared/*.yaml", "test/app/test.sops.yaml"),
-        ("secrets/../public.yaml", "test/app/test.sops.yaml"),
-        ("secrets/shared/test.yaml", "test/app/../outside.yaml"),
+        ("secrets/shared/*.yaml", "test.sops.yaml"),
+        ("secrets/../public.yaml", "test.sops.yaml"),
+        ("secrets/shared/test.yaml", "../outside.yaml"),
     ],
 )
 def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str) -> None:
-    with pytest.raises(ValueError, match=r"repository file path|file destination"):
+    with pytest.raises(ValueError, match="artifact file paths"):
         artifact("test-app", "test/app", files={source: destination})
 
 
@@ -105,6 +105,7 @@ def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str
     "copy",
     [
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/other/"),
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/*/**", to="@artifact/test/*/"),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/*.yaml", to="@artifact/test/app/"),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/app/", exclude=["*.md"]),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/secrets/../test.yaml", to="@artifact/test/app/test.sops.yaml"),
@@ -112,8 +113,14 @@ def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str
     ],
 )
 def test_artifact_directory_refuses_a_partial_or_moved_copy(copy: ArtifactGeneratorSpecArtifactsCopy) -> None:
-    # The helper reports the offending first copy; the "copies nothing" error does not.
-    with pytest.raises(ValueError, match=r"first\.from_="):
+    first = artifact("test-app", "test/app").copy[0]
+    with pytest.raises(ValueError, match=r"copy\.from_="):
+        artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[first, copy]))
+
+
+def test_a_file_copy_cannot_supply_the_kustomization_directory() -> None:
+    copy = ArtifactGeneratorSpecArtifactsCopy(from_="@repo/conf.yaml", to="@artifact/test/app/conf.yaml")
+    with pytest.raises(ValueError, match=r"copy\.from_="):
         artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[copy]))
 
 
@@ -123,17 +130,15 @@ def test_artifact_rejects_unsafe_directory_paths(directory: str) -> None:
         artifact("test-app", directory)
 
 
-def test_generator_entry_without_a_namespace_raises() -> None:
-    with pytest.raises(ValueError, match="unplaced="):
-        kustomize_kustomization(resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace=None)])
-
-
-def test_secret_generator_without_a_namespace_raises() -> None:
-    with pytest.raises(ValueError, match="secretGenerator entries"):
+def test_missing_namespaces_identify_all_unplaced_generator_entries() -> None:
+    with pytest.raises(ValueError, match="namespace") as error:
         kustomize_kustomization(
             resources=[],
-            secret_generator=[SecretGeneratorArgs(name="test-secret", namespace=None, files=["credentials.yaml"])],
+            config_map_generator=[ConfigMapArgs(name="settings", namespace=None)],
+            secret_generator=[SecretGeneratorArgs(name="credentials", namespace=None, files=["credentials.yaml"])],
         )
+    assert "ConfigMap/settings" in str(error.value)
+    assert "Secret/credentials" in str(error.value)
 
 
 @pytest.mark.parametrize(

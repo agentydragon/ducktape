@@ -18,8 +18,12 @@ from barman_cloud_objectstore_crds.io.cnpg.barmancloud import (
     ObjectStoreSpecConfigurationS3CredentialsSecretAccessKey,
     ObjectStoreSpecConfigurationWal,
     ObjectStoreSpecConfigurationWalCompression,
+    ObjectStoreSpecInstanceSidecarConfiguration,
+    ObjectStoreSpecInstanceSidecarConfigurationResources,
+    ObjectStoreSpecInstanceSidecarConfigurationResourcesRequests,
 )
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, Size
+from cdk8s_plus_34 import Cpu
 from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackup,
     ScheduledBackupSpec,
@@ -32,9 +36,7 @@ from constructs import Construct
 
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.seaweedfs import s3
-
-_S3_ENDPOINT = "http://seaweedfs-s3.seaweedfs.svc:8333"
-
+from cluster.cdk8s.seaweedfs.endpoints import S3_HTTP_URL
 
 # Base backups start within [01:00, 05:00) UTC, each Cluster at its own minute (`_schedule`).
 _WINDOW_START_MINUTE = 60
@@ -61,6 +63,22 @@ def _schedule(ref: cluster.PostgresRef, cadence: Cadence) -> str:
     return f"0 {minute} {hour} * * {day_of_week}"
 
 
+def sidecar_resource_requests(*, cpu_millis: int, memory_mib: int) -> ObjectStoreSpecInstanceSidecarConfiguration:
+    """Scheduling requests for the restartable Barman container injected by the plugin."""
+    return ObjectStoreSpecInstanceSidecarConfiguration(
+        resources=ObjectStoreSpecInstanceSidecarConfigurationResources(
+            requests={
+                "cpu": ObjectStoreSpecInstanceSidecarConfigurationResourcesRequests.from_string(
+                    Cpu.millis(cpu_millis).amount
+                ),
+                "memory": ObjectStoreSpecInstanceSidecarConfigurationResourcesRequests.from_string(
+                    Size.mebibytes(memory_mib).as_string()
+                ),
+            }
+        )
+    )
+
+
 class CnpgBackup(Construct):
     """`ref`'s backups into a private SeaweedFS bucket `<namespace>-db-backups`: the ObjectStore
     named `ref.name`, which `cluster.cluster(wal_archive=True)` archives WAL to, and a `cadence`
@@ -84,6 +102,7 @@ class CnpgBackup(Construct):
         cadence: Cadence = Cadence.DAILY,
         secret_name: str | None = None,
         adopt_existing: bool = True,
+        instance_sidecar_configuration: ObjectStoreSpecInstanceSidecarConfiguration | None = None,
     ) -> None:
         super().__init__(scope, id)
         bucket = f"{ref.namespace}-db-backups"
@@ -108,9 +127,10 @@ class CnpgBackup(Construct):
             ),
             spec=ObjectStoreSpec(
                 retention_policy=retention,
+                instance_sidecar_configuration=instance_sidecar_configuration,
                 configuration=ObjectStoreSpecConfiguration(
                     destination_path=f"s3://{bucket}/",
-                    endpoint_url=_S3_ENDPOINT,
+                    endpoint_url=S3_HTTP_URL,
                     s3_credentials=ObjectStoreSpecConfigurationS3Credentials(
                         access_key_id=ObjectStoreSpecConfigurationS3CredentialsAccessKeyId(
                             name=storage.access_key.secret.name, key=storage.access_key.key

@@ -425,16 +425,11 @@ def test_allowance_paced(
         capture_menu.capture(geometry, label="allowance paced")
 
 
-def test_rounded_balance_keeps_exact_amount_in_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+def test_rounded_balance_has_no_details_toggle(session: GnomeSession) -> None:
     with _menu(session, "allowance_fractional", "$200"):
         menu_text = string_reply(session.call("GetMenuText"))
         assert "$200 available" in menu_text
-        assert "$200.25" not in menu_text
-        assert "Balance details" in menu_text
-        assert string_reply(session.call("GetBalanceDetails")) == "Exact available: $200.25"
-        session.call("OpenBalanceDetails")
-        session.wait_for_paint()
-        capture_menu.capture(session.open_menu(), label="exact balance details")
+        assert "Balance details" not in menu_text
 
 
 def test_allowance_warning(
@@ -448,8 +443,7 @@ def test_allowance_warning(
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
-        assert "7d unmatched 1 ($15)" in menu_text
-        assert "30d unmatched 1 ($15)" in menu_text
+        assert "Unmatched: 7d: 1 txn ($15) · 30d: 1 txn ($15)" in menu_text
         assert "Oldest linked sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="allowance warning")
 
@@ -541,6 +535,7 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
                 "window": "7d",
             }
             assert "$12,345 available" in string_reply(session.call("GetMenuText"))
+            assert "7d $22/day (110%) · 30d $28/day (140%)" in string_reply(session.call("GetMenuText"))
             assert "Customize panel" in string_reply(session.call("GetMenuText"))
             assert "Use 30-day pace" not in string_reply(session.call("GetMenuText"))
             assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))

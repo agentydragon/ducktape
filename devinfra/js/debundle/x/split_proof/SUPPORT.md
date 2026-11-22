@@ -24,9 +24,9 @@ The same requirement covers the standard library and the host: every standard an
 
 - 63 ECMAScript globals, and static paths to most of their members. The names of all but 37 of the 378 members of the standard objects of Node 22 occur somewhere, so the requirement is close to the whole standard library.
 - 226 web platform globals, 10 Node.js globals the web does not have, `Bun`, 5 globals of other hosts, 42 Node.js and Bun modules and 5 keys of `import.meta`.
-- Assignments to standard objects: `Array.prototype.reduce`, `Function.prototype.toString`, `Math.hypot`, `Object.entries`, `Object.prototype.toString`, `Symbol.dispose` and `Symbol.asyncDispose`. These are patches by name, which the [effect analysis](experiments/effects/README.md) sees (premise P1) and pays for in precision: a patched static member turns the units that read it into effects, and a patched prototype member does that to every unit that is not a function declaration.
+- Assignments to standard objects: `Array.prototype.reduce`, `Function.prototype.toString`, `Math.hypot`, `Object.entries`, `Object.prototype.toString`, `Symbol.dispose` and `Symbol.asyncDispose`. These are patches by name, which the [effect analysis](effects/README.md) sees (premise P1) and pays for in precision: a patched static member turns the units that read it into effects, and a patched prototype member does that to every unit that is not a function declaration.
 
-The inventory is static and by name: it is a lower bound on the globals and an upper bound on the members of standard objects, and it prints no name that a program or its page defines (270 globals and 805 member paths are counted only). [`experiments/translation/README.md`](experiments/translation/README.md#the-host-inventory) says how to run it.
+The inventory is static and by name: it is a lower bound on the globals and an upper bound on the members of standard objects, and it prints no name that a program or its page defines (270 globals and 805 member paths are counted only). [`translation/README.md`](translation/README.md#the-host-inventory) says how to run it.
 
 ## Only start-up code needs a precise model
 
@@ -34,7 +34,7 @@ Both lists say what the inputs contain, not what runs when a module is evaluated
 
 ## Features that are hard to reason about
 
-Code from strings, interception, reflection, hooks that the language calls on its own, patched standard objects, and what observes how code is spelled. [`experiments/translation/magic_census.mjs`](experiments/translation/magic_census.mjs) counts them by syntax. On 2026-11-21, over the 3,363 input files:
+Code from strings, interception, reflection, hooks that the language calls on its own, patched standard objects, and what observes how code is spelled. [`translation/magic_census.mjs`](translation/magic_census.mjs) counts them by syntax. On 2026-11-21, over the 3,363 input files:
 
 | Feature                                                                                | Sites | Files | Sites at the top level | Files |
 | -------------------------------------------------------------------------------------- | ----: | ----: | ---------------------: | ----: |

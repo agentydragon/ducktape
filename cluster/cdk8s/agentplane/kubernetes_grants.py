@@ -4,38 +4,36 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 DnsName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=63)]
 
 
 class RoleRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["Role", "ClusterRole"]
     name: DnsName
 
 
 class ClusterRoleRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["ClusterRole"]
     name: DnsName
 
 
 class RoleBindingGrant(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal["RoleBinding"]
     namespace: DnsName
     role_ref: RoleRef
 
 
 class ClusterRoleBindingGrant(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal["ClusterRoleBinding"]
     role_ref: ClusterRoleRef
 
 
-KubernetesGrant = Annotated[RoleBindingGrant | ClusterRoleBindingGrant, Field(discriminator="kind")]
+type KubernetesGrant = RoleBindingGrant | ClusterRoleBindingGrant

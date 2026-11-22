@@ -200,7 +200,7 @@ py_test(
         "//agentplane/env/e2e/testing:process",
         "//agentplane/env/runtime/execution:executor_pb2",
         "//agentplane/env/runtime/execution:executor_pb2_grpc",
-        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
+        "//agentplane/env/runtime/execution/testing:executor_companion",
         "//agentplane/grpc:calls",
         "//agentplane/harness_host:harness_host_pb2",
         "//agentplane/history_service/testing:go_service",

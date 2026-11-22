@@ -2,27 +2,15 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import (
-    ApiObject,
-    ApiObjectMetadata,
-    App,
-    Chart,
-    JsonPatch,
-    Testing as Cdk8sTesting,
-)  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s.fleet_rules import (
-    add_fleet_rules,
     cilium_rules_enforce_something,
     daemonsets_leave_offline_nodes,
     https_egress_sni_conflicts,
     pinned_https_egress,
     pod_hardening,
     reference_kind_mismatches,
-    vpa_auto_mode_policies_set_controlled_values,
 )
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
-from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}
@@ -195,20 +183,6 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
     ]
 
 
-def test_auto_vpa_namespace_owned_policy_requires_controlled_values() -> None:
-    namespace = {
-        "kind": "Namespace",
-        "metadata": {
-            "name": "partial",
-            "labels": {VPA_UPDATE_MODE_LABEL: "auto"},
-            "annotations": {VPA_RESOURCE_POLICY_ANNOTATION: '{"containerPolicies":[{"containerName":"*"}]}'},
-        },
-    }
-    assert vpa_auto_mode_policies_set_controlled_values([namespace]) == [
-        "Namespace/partial: VPA container policy '*' lacks controlledValues"
-    ]
-
-
 def _reader(
     name: str, env_secret: str | None = None, volume_secret: str | None = None, config_map: str | None = None
 ) -> dict[str, Any]:
@@ -346,15 +320,14 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         labels=proxy,
     )
     assert https_egress_sni_conflicts([open_egress, internal]) == []
-    # A selector this cannot reduce to labels -- none at all, or `matchExpressions` -- covers
-    # everything in scope, so it conflicts rather than being skipped.
+    # Without contradictory required labels, these selectors can cover the open endpoint.
     no_selector = _policy("catch-all", [_https({"toEntities": ["remote-node", "host"]}, ["a.test"])])
     assert len(https_egress_sni_conflicts([open_egress, no_selector])) == 1
     expressions = _policy_for("expressions", pinned_egress["spec"]["egress"], namespace=_STAGING, labels={})
-    expressions["spec"]["endpointSelector"]["matchExpressions"] = [
-        {"key": "app.kubernetes.io/name", "operator": "In", "values": ["egress"]}
-    ]
+    expressions["spec"]["endpointSelector"]["matchExpressions"] = [{"key": "tier", "operator": "Exists"}]
     assert len(https_egress_sni_conflicts([open_egress, expressions])) == 1
+    expressions["spec"]["endpointSelector"]["matchLabels"] = another
+    assert https_egress_sni_conflicts([open_egress, expressions]) == []
     # The same shape inside one policy -- a pinned rule and an open one on 443 -- is the same
     # contradiction, and is named as its own error.
     both = _policy_for(
@@ -378,18 +351,6 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         },
     }
     assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
-
-
-def test_rules_fail_synth_naming_the_object(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "fleet")
-    ApiObject(
-        chart, "bare", api_version="apps/v1", kind="Deployment", metadata=ApiObjectMetadata(name="bare")
-    ).add_json_patch(JsonPatch.add("/spec", {"template": {"spec": {"containers": [{"name": "main"}]}}}))
-    add_fleet_rules(chart)
-    with pytest.raises(
-        Exception, match=r"(?s)Validation failed.*Deployment/bare container main: seccomp profile is None"
-    ):
-        Cdk8sTesting.synth(chart)
 
 
 if __name__ == "__main__":

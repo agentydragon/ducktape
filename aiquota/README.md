@@ -127,7 +127,7 @@ details add the original amount when it differs from remaining, and exact remain
 when rounding hides a fraction. The optional `original_repeats_remaining` presentation hint
 suppresses repeated originals; older payloads without the hint still show the existing
 `original` string.
-Monetary balances use the shared `Available balance` label within their provider and organization;
+Monetary balances use the shared `Balance` label within their provider and organization;
 Claude's separate subscription prepaid pool is identified in details. Banked resets are separate
 from monetary and paid-credit balances.
 Known zero banked resets remain available in details. The default shows zero only when

@@ -71,6 +71,24 @@ class NativePlatformClients:
 
 
 @asynccontextmanager
+async def native_history_client(
+    cluster: Cluster, credentials: grpc.ChannelCredentials | None = None
+) -> AsyncIterator[HistoryServiceClient]:
+    if credentials is None:
+        credentials = await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET)
+    async with (
+        forward(cluster, f"service/{HISTORY_SERVICE}", remote_port=SERVICE_PORT) as target,
+        HistoryServiceClient(
+            target,
+            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
+            channel_credentials=credentials,
+            server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
+        ) as history,
+    ):
+        yield history
+
+
+@asynccontextmanager
 async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatformClients]:
     """Open native Environment, Dispatcher, History, and Runner-control clients once."""
     async with AsyncExitStack() as opened:
@@ -96,16 +114,7 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
                 server_name=f"{DISPATCHER_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
-        history_target = await opened.enter_async_context(
-            forward(cluster, f"service/{HISTORY_SERVICE}", remote_port=SERVICE_PORT)
-        )
-        history = HistoryServiceClient(
-            history_target,
-            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
-            channel_credentials=credentials,
-            server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
-        )
-        await opened.enter_async_context(history)
+        history = await opened.enter_async_context(native_history_client(cluster, credentials))
         yield NativePlatformClients(
             cluster=cluster,
             environment=environment,

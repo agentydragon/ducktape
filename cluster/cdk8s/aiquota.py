@@ -202,7 +202,7 @@ class Aiquota(Construct):
             name=_API_NAME,
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             env_variables={
                 env_name(Settings, "api_bearer_token"): _BEARER.env_value(self, "bearer-ref"),
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
@@ -288,7 +288,7 @@ class Aiquota(Construct):
                 },
             ),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_service_monitor(self) -> None:

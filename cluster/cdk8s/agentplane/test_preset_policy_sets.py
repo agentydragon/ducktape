@@ -22,6 +22,16 @@ def test_no_launch_preset_grants_public_internet(identity_catalog: bool) -> None
         assert PUBLIC_INTERNET_POLICY not in preset.policy_sets, name
 
 
+@pytest.mark.parametrize("identity_catalog", [False, True])
+def test_financial_api_grants_are_limited_to_finance_and_haku(identity_catalog: bool) -> None:
+    env = staging.environment(identity_catalog=identity_catalog)
+    assert env.app is not None
+    suffix = "" if identity_catalog else "-identity"
+    for policy in ("aiquota-read", f"coinbase{suffix}", f"ovh-billing{suffix}", f"plaid-diagnostics{suffix}"):
+        holders = {name for name, preset in env.app.config.sandbox_presets.items() if policy in preset.policy_sets}
+        assert holders == {"finance-agent", "haku"}, policy
+
+
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
     assert staging.ENV.app is not None
     cfg = staging.ENV.app.config

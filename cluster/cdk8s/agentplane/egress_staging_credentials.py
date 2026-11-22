@@ -42,7 +42,7 @@ from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.haku import mailbox
+from cluster.cdk8s.haku import mailbox, mailbox_endpoint
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
@@ -90,6 +90,31 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
         source="github-agentydragon-agent",
         key="token",
         store=EXTERNAL_CREDS_STORE,
+    )
+    archive = "gaffer-private-archive"
+    _present(
+        construct,
+        archive,
+        namespace=namespace,
+        credential=archive,
+        description="Read source archives of agentydragon/gaffer-private with a repository-scoped GitHub App token.",
+        secret=archive,
+        key="token",
+        target=_BEARER,
+        rules=[
+            _rule(
+                archive,
+                "api.github.com",
+                method=PolicySetSpecRulesMethods.GET,
+                paths=["/repos/agentydragon/gaffer-private/tarball/*"],
+            ),
+            # GitHub redirects private archives to a signed URL on codeload.
+            Rule.egress(
+                hosts=["codeload.github.com"],
+                methods=[PolicySetSpecRulesMethods.GET],
+                paths=["/agentydragon/gaffer-private/legacy.tar.gz/*"],
+            ),
+        ],
     )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _forgejo_finance_agent(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -152,12 +177,7 @@ def _copy_secret(
         source=source,
         key=key,
         store=single_secret_store(
-            scope,
-            f"agentplane-staging-{store}",
-            reader=reader,
-            source_namespace=source_namespace,
-            source_secret=source,
-            consumer_namespace=credentials_namespace,
+            scope, f"agentplane-staging-{store}", reader=reader, source_namespace=source_namespace, source_secret=source
         ),
     )
 
@@ -706,7 +726,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         key="jwt",
     )
     credential = "haku-mailbox"
-    host = mailbox.PUBLIC_HOSTNAME
+    host = mailbox_endpoint.PUBLIC_HOSTNAME
     _present(
         scope,
         HAKU_MAILBOX_POLICY,

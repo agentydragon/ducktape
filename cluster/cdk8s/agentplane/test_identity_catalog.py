@@ -4,11 +4,11 @@ and the Policy Controller may bind every role a role set names."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
+from cdk8s import App
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
@@ -16,6 +16,7 @@ from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import binding_delegation, egress, kubernetes_account_ref, policy_controller, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import COMMON_GITHUB_READ_SET
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY, KUBERNETES_HOST
+from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.testing.manifests import config_map_yaml
 
@@ -31,18 +32,18 @@ def _names(docs: list[dict[str, Any]], kind: str) -> set[tuple[str, str]]:
 
 
 def test_flux_bindings_and_launches_name_rendered_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
-    policy_sets = {name for _, name in _names(catalog_manifests, "PolicySet")}
+    policy_sets = _names(catalog_manifests, "PolicySet")
+    bindings = _of(catalog_manifests, "PolicyBinding")
+    assert bindings
+    for binding in bindings:
+        namespace = binding["metadata"]["namespace"]
+        assert {(namespace, name) for name in binding["spec"]["policySets"]} <= policy_sets, binding["metadata"]
+
     config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
-    named = {
-        (f"preset {preset}", name) for preset, spec in config["sandbox_presets"].items() for name in spec["policy_sets"]
-    }
-    named |= {
-        (f"binding {binding['metadata']['name']}", name)
-        for binding in _of(catalog_manifests, "PolicyBinding")
-        for name in binding["spec"]["policySets"]
-    }
-    assert named
-    assert {(holder, name) for holder, name in named if name not in policy_sets} == set()
+    environments = config_map_yaml(catalog_manifests, "environments-settings", "config.yaml")
+    namespace = environments["environment_service"]["policy_namespace"]
+    for preset, spec in config["sandbox_presets"].items():
+        assert {(namespace, name) for name in spec["policy_sets"]} <= policy_sets, preset
 
 
 def test_no_policy_set_carries_a_kubernetes_rule(identity_catalog_manifests: list[dict[str, Any]]) -> None:
@@ -126,21 +127,24 @@ def test_standing_callers_always_use_identity_policies_and_exact_account_grants(
 
 
 def test_openclaw_identity_and_grants_are_independent_of_the_catalog_switch(
-    staging_manifests: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+    catalog_manifests: list[dict[str, Any]],
 ) -> None:
     """The paused OpenClaw backend keeps its reviewed Identity grants in either policy rendering."""
-    caller = public_coder_egress.OPENCLAW
-    expected_egress = [public_coder_egress.POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY]
-
-    for docs in (staging_manifests, identity_catalog_manifests):
-        assert (staging.ENV.namespace, caller.identity) in _names(docs, "Identity")
-        for binding_name, expected_policy_sets in (
-            (public_coder_egress.POLICY, expected_egress),
-            ("public-coder-openclaw-actions", [COMMON_GITHUB_READ_SET]),
-        ):
-            binding = one(doc for doc in _of(docs, "PolicyBinding") if doc["metadata"]["name"] == binding_name)
-            assert binding["spec"]["subject"] == {"identity": {"name": caller.identity}}
-            assert binding["spec"]["policySets"] == expected_policy_sets
+    identity = public_coder_egress.OPENCLAW.identity
+    assert (staging.ENV.namespace, identity) in _names(catalog_manifests, "Identity")
+    assert {
+        binding["metadata"]["name"]: binding["spec"]["policySets"]
+        for binding in _of(catalog_manifests, "PolicyBinding")
+        if binding["metadata"]["namespace"] == staging.ENV.namespace
+        and binding["spec"]["subject"] == {"identity": {"name": identity}}
+    } == {
+        public_coder_egress.POLICY: [
+            public_coder_egress.POLICY,
+            egress.INFERENCE_EXPERIMENTS_POLICY,
+            egress.PUBLIC_INTERNET_POLICY,
+        ],
+        "public-coder-openclaw-actions": [COMMON_GITHUB_READ_SET],
+    }
 
 
 def test_every_standing_record_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
@@ -208,13 +212,8 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
 @pytest.fixture(scope="module")
 def external_delegation(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     app = scratch_app_factory()
-    env = staging.ENV
-    grants = staging.assignable_grants()
-    return [
-        doc
-        for target in binding_delegation.external_scopes(env, grants)
-        for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(binding_delegation.chart(app, env, target, grants)))
-    ]
+    charts = binding_delegation.external_charts(staging.ENV, staging.ASSIGNABLE_GRANTS)
+    return [obj.to_json() for build in charts.values() for obj in api_objects_in(build(app))]
 
 
 def test_external_delegation_is_separate_from_the_app(

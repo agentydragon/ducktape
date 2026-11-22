@@ -1,19 +1,11 @@
 """The static browser shell, routed beside the app API on the same public origin."""
 
-from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ContainerResources,
-    Cpu,
-    CpuResources,
-    DeploymentStrategy,
-    MemoryResources,
-    PercentOrAbsolute,
-    Volume,
-)
+from cdk8s import ApiObjectMetadata, Size
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Volume
 from constructs import Construct
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
@@ -22,14 +14,6 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "frontend"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-frontend"
-_REPLICAS = ReplicaProfile(
-    count=2,
-    strategy=DeploymentStrategy.rolling_update(
-        max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
-    ),
-    min_ready=Duration.seconds(5),
-    pdb_min_available=1,
-)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -62,8 +46,6 @@ class Frontend(Construct):
                 cpu=CpuResources(request=Cpu.millis(10)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
-            termination_grace=Duration.seconds(30),
-            replica_profile=_REPLICAS,
             placement=node_scheduling.HIL_OVH,
             registry_secret_name="forgejo-images-creds",
             automount_service_account_token=False,

@@ -23,5 +23,9 @@ py_library(
     name = "policy",
     srcs = ["policy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["//cluster/cdk8s/providers/vpa:verticalpodautoscaler"],
+    deps = [
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
 )

@@ -14,13 +14,13 @@ def github_remote(repository: str, token: str) -> str:
     return f"https://x-access-token:{token}@github.com/{repository}.git"
 
 
-def enter_sparse_checkout(directory: Path, remote: str, paths: Iterable[Path | str]) -> None:
+def enter_sparse_checkout(directory: Path, remote: str, outputs: Iterable[Path]) -> None:
     directory.mkdir()
     os.chdir(directory)
     subprocess.run(["git", "init", "-q"], check=True)
     subprocess.run(["git", "remote", "add", "origin", remote], check=True)
     subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
-    Path(".git/info/sparse-checkout").write_text("\n".join(map(str, paths)) + "\n")
+    Path(".git/info/sparse-checkout").write_text("\n".join([".sops.yaml", *map(str, outputs)]) + "\n")
     subprocess.run(["git", "fetch", "-q", "--depth=1", "--no-tags", "origin", "devel"], check=True)
     subprocess.run(["git", "checkout", "-q", "FETCH_HEAD"], check=True)
 

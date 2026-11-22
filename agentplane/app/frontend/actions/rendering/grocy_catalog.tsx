@@ -70,7 +70,8 @@ function createView<S extends z.ZodType<{ name: string; description?: string | n
   label: string,
   schema: S,
   path: string,
-  details?: (item: z.infer<S>) => ReactNode
+  details?: (item: z.infer<S>) => ReactNode,
+  singleItemIsFullyDisplayed = false
 ): ActionPresentation {
   const argsSchema = z.strictObject({ items: z.array(schema) });
   const request = ({ args }: { args: z.infer<typeof argsSchema> }) => (
@@ -86,6 +87,20 @@ function createView<S extends z.ZodType<{ name: string; description?: string | n
       ))}
     </Stack>
   );
+  const summary = ({ args }: { args: z.infer<typeof argsSchema> }) => (
+    <Stack gap={4}>
+      {args.items.slice(0, 2).map((item, i) => (
+        <Line key={i}>{item.name}</Line>
+      ))}
+      {args.items.length > 2 && <Line>{args.items.length - 2} more</Line>}
+    </Stack>
+  );
+  const canReviewCompactly = (value: unknown): boolean => {
+    const parsed = argsSchema.safeParse(value);
+    if (!singleItemIsFullyDisplayed || !parsed.success || parsed.data.items.length !== 1) return false;
+    const [item] = parsed.data.items;
+    return !!item?.name.trim();
+  };
   const receipt = (results: z.infer<typeof createResult>, names?: string[]) => (
     <Stack gap={4}>
       {results.length === 0 && <Line>No creation results</Line>}
@@ -112,8 +127,11 @@ function createView<S extends z.ZodType<{ name: string; description?: string | n
       label,
       argsSchema,
       request,
-      defineResultPreview(createResult, ({ result }) => receipt(result))
+      defineResultPreview(createResult, ({ result }) => receipt(result)),
+      (props) => (canReviewCompactly(props.args) ? request(props) : summary(props))
     ),
+    offersCardDecisionButtons: canReviewCompactly,
+    compactCardExpands: (args) => !canReviewCompactly(args),
     call: defineCallPreview(argsSchema, createResult, ({ args, result }) => (
       <Stack gap="sm">
         {request({ args })}
@@ -188,7 +206,8 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
         "Delete Grocy product",
         removeProduct,
         deletionRequest,
-        defineResultPreview(deletion, ({ result }) => deletionReceipt(result))
+        defineResultPreview(deletion, ({ result }) => deletionReceipt(result)),
+        deletionRequest
       ),
       call: defineCallPreview(removeProduct, deletion, ({ args, result }) =>
         result ? (
@@ -208,7 +227,7 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
     "products_merge",
     {
       fallbackLabel: "Merge Grocy products",
-      pane: { opened: mergeReview },
+      pane: { collapsed: mergeReview, opened: mergeReview },
       details: {
         arguments: mergeReview,
         pendingPreviewOnly: true,
@@ -223,19 +242,31 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
       "Create Grocy locations",
       location,
       "location",
-      (item) => item.is_freezer && <Line>Freezer · Adjusts due dates when stock moves in or out</Line>
+      (item) =>
+        item.is_freezer ? (
+          <Line>Freezer · Adjusts due dates when stock moves in or out</Line>
+        ) : (
+          <Line>Regular storage</Line>
+        ),
+      true
     ),
   ],
   ["locations_list", lists("List Grocy storage locations", "storage locations", "location")],
-  ["product_groups_create", createView("Create Grocy product groups", named, "productgroup")],
+  ["product_groups_create", createView("Create Grocy product groups", named, "productgroup", undefined, true)],
   ["product_groups_list", lists("List Grocy product groups", "product groups", "productgroup")],
   [
     "quantity_units_create",
-    createView("Create Grocy quantity units", quantityUnit, "quantityunit", (item) => (
-      <>
-        <Line>Plural · {item.name_plural}</Line>
-        {item.plural_forms && <Line>Plural rule · {item.plural_forms}</Line>}
-      </>
-    )),
+    createView(
+      "Create Grocy quantity units",
+      quantityUnit,
+      "quantityunit",
+      (item) => (
+        <>
+          <Line>Plural · {item.name_plural}</Line>
+          {item.plural_forms && <Line>Plural rule · {item.plural_forms}</Line>}
+        </>
+      ),
+      true
+    ),
   ],
 ]);

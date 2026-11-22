@@ -42,6 +42,7 @@ go_test(
     embed = [":responses"],
     race = "on",
     deps = [
+        "//agentplane/proto:event_go_proto",
         "//agentplane/sampler/internal/content",
         "//agentplane/sampler/internal/providerio",
         "//agentplane/sampler/protocol",

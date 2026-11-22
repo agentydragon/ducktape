@@ -7,8 +7,8 @@ with service deployment.
 import contextlib
 import json
 import logging
+import subprocess
 import time
-from datetime import UTC, datetime
 
 from kubernetes import client, watch
 from kubernetes.client import ApiException
@@ -96,92 +96,55 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
 
 
 def restart_cilium_operator_gateway_controller(timeout: int = 120) -> None:
-    """Restart the Cilium operator to ensure the gateway controller starts cleanly.
-
-    The gateway controller is a one-shot job inside the operator. If it fails to sync
-    the API cache during startup (e.g., because kube-apiserver was restarting during
-    talos_machine_configuration_apply), it dies permanently for that pod's lifetime.
-    Existing Envoy routes continue serving but new HTTPRoutes are never programmed.
-
-    Restarting the operator here is cheap (~30s) and guarantees the gateway controller
-    starts with a healthy apiserver after tofu apply completes.
+    """Restart the operator after the API settles. If its gateway controller fails its initial
+    cache sync during Talos configuration, it stops programming new HTTPRoutes until restarted.
     """
-    logger.info("Restarting Cilium operator to ensure gateway controller starts cleanly...")
-    apps_v1 = client.AppsV1Api()
-    deployment = apps_v1.read_namespaced_deployment("cilium-operator", "kube-system")
-    annotations = deployment.spec.template.metadata.annotations or {}
-    annotations["kubectl.kubernetes.io/restartedAt"] = datetime.now(UTC).isoformat()
-    deployment.spec.template.metadata.annotations = annotations
-    apps_v1.patch_namespaced_deployment("cilium-operator", "kube-system", deployment)
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        dep = apps_v1.read_namespaced_deployment("cilium-operator", "kube-system")
-        if dep.status.updated_replicas == dep.spec.replicas and dep.status.available_replicas == dep.spec.replicas:
-            logger.info("Cilium operator restarted and ready")
-            return
-        time.sleep(5)
-    logger.warning("Cilium operator restart did not complete within %ds (continuing anyway)", timeout)
+    rollout = ["kubectl", "--namespace=kube-system", "rollout"]
+    deployment = "deployment/cilium-operator"
+    subprocess.run([*rollout, "restart", deployment], check=True)
+    try:
+        subprocess.run([*rollout, "status", deployment], timeout=timeout, check=True)
+    except subprocess.TimeoutExpired:
+        logger.warning("Cilium operator restart did not complete within %ds (continuing anyway)", timeout)
 
 
 def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval: int = 10) -> None:
-    """Verify ClusterIP routing works from a pod on every node.
+    """Probe DNS through the kube-dns Service from every node before deploying Flux.
 
-    WHY THIS GATE EXISTS: The preceding _check_cilium_health() only verifies
-    the Cilium agent-to-agent health mesh (ICMP/HTTP between cilium pods).
-    That passes BEFORE Cilium's BPF service maps are populated — there's a
-    3-10s gap where Cilium reports healthy but ClusterIP routing silently
-    fails. Without this gate, Flux would deploy services into that window,
-    causing webhook timeouts and DNS failures.
-
-    On 2026-02-11, this exact gap caused Kyverno webhook timeouts that
-    permanently blocked 49 kustomizations. See docs/lessons_learned/
-    2026_02_11_cilium_mtu_cross_node_packet_loss.md for the full analysis.
-
-    WHAT WE TEST: Creates a busybox pod on each node that retries nslookup
-    against kubernetes.default.svc.cluster.local until success. This exercises:
-      1. ClusterIP routing to kube-dns (same BPF maps as all other ClusterIPs)
-      2. CoreDNS serving DNS queries
-      3. The kubernetes service being registered in DNS
-    All three are prerequisites for services to function after Flux deploys.
+    The Cilium health mesh can converge before its ClusterIP maps. Deploying Kyverno
+    during that 3-10s gap left webhooks unreachable and blocked reconciliation; see
+    docs/lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md.
     """
-    nodes = v1.list_node().items
-    node_names = [n.metadata.name for n in nodes]
-
+    node_names = [node.metadata.name for node in v1.list_node().items]
     logger.info("Verifying ClusterIP routing from %d nodes...", len(node_names))
 
     namespace = "default"
-    pod_map: dict[str, str] = {}  # node_name -> pod_name
-
-    # The pod command retries nslookup internally (every interval seconds, up to timeout).
-    # Pod exits 0 on success, 1 on timeout. No exec needed.
-    probe_cmd = (
-        f"i=0; while [ $i -lt {timeout} ]; do "
-        f"nslookup kubernetes.default.svc.cluster.local >/dev/null 2>&1 && exit 0; "
-        f"sleep {interval}; i=$((i + {interval})); done; exit 1"
-    )
-
-    for node_name in node_names:
-        pod_name = f"clusterip-test-{node_name}"
-        pod_map[node_name] = pod_name
-        pod = client.V1Pod(
-            metadata=client.V1ObjectMeta(name=pod_name, labels={"app": "bootstrap-clusterip-test"}),
-            spec=client.V1PodSpec(
-                node_selector={"kubernetes.io/hostname": node_name},
-                # Tolerate all taints so we schedule on control-plane nodes too.
-                tolerations=[client.V1Toleration(operator="Exists")],
-                containers=[client.V1Container(name="probe", image="busybox:1.37", command=["sh", "-c", probe_cmd])],
-                restart_policy="Never",
-                termination_grace_period_seconds=0,
-                active_deadline_seconds=timeout,
-            ),
-        )
-        _create_pod_replacing_existing(v1, namespace, pod)
+    pod_to_node: dict[str, str] = {}
+    # Kubernetes enforces the timeout with activeDeadlineSeconds, including a hung nslookup.
+    probe_cmd = f"until nslookup kubernetes.default.svc.cluster.local >/dev/null 2>&1; do sleep {interval}; done"
 
     try:
-        _wait_for_pods_terminal(v1, namespace, pod_map, timeout=timeout + 30)
+        for node_name in node_names:
+            pod_name = f"clusterip-test-{node_name}"
+            pod = client.V1Pod(
+                metadata=client.V1ObjectMeta(name=pod_name, labels={"app": "bootstrap-clusterip-test"}),
+                spec=client.V1PodSpec(
+                    node_selector={"kubernetes.io/hostname": node_name},
+                    # Tolerate all taints so we schedule on control-plane nodes too.
+                    tolerations=[client.V1Toleration(operator="Exists")],
+                    containers=[
+                        client.V1Container(name="probe", image="busybox:1.37", command=["sh", "-c", probe_cmd])
+                    ],
+                    restart_policy="Never",
+                    termination_grace_period_seconds=0,
+                    active_deadline_seconds=timeout,
+                ),
+            )
+            _create_pod_replacing_existing(v1, namespace, pod)
+            pod_to_node[pod_name] = node_name
+        _wait_for_pods_terminal(v1, namespace, pod_to_node, timeout=timeout + 30)
     finally:
-        for pod_name in pod_map.values():
+        for pod_name in pod_to_node:
             with contextlib.suppress(ApiException):
                 v1.delete_namespaced_pod(pod_name, namespace, grace_period_seconds=0)
 
@@ -208,10 +171,9 @@ def _create_pod_replacing_existing(v1: client.CoreV1Api, namespace: str, pod: cl
         v1.create_namespaced_pod(namespace, pod)
 
 
-def _wait_for_pods_terminal(v1: client.CoreV1Api, namespace: str, pod_map: dict[str, str], timeout: int) -> None:
+def _wait_for_pods_terminal(v1: client.CoreV1Api, namespace: str, pod_to_node: dict[str, str], timeout: int) -> None:
     """Wait for all probe pods to reach a terminal phase (Succeeded or Failed)."""
-    pod_to_node = {pod_name: node_name for node_name, pod_name in pod_map.items()}
-    remaining = set(pod_map.values())
+    remaining = set(pod_to_node)
 
     w = watch.Watch()
     for event in w.stream(

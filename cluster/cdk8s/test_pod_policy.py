@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObject, ApiObjectMetadata, Chart  # pytest auto-collects classes named Test*
+from cdk8s import ApiObject, ApiObjectMetadata, Chart
 from cdk8s_plus_34 import ContainerSecurityContextProps, Deployment, k8s
 from keda_scaledjob_crds.sh import keda
 

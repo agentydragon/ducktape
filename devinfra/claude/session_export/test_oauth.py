@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlsplit
 import httpx
 import pytest
 import pytest_bazel
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from pydantic import ValidationError
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID
@@ -29,7 +30,6 @@ from devinfra.claude.session_export.oauth import (
     authorization_url,
     callback_listener,
     pair,
-    pkce_challenge,
     redeem,
 )
 from util.net import listen_tcp
@@ -72,9 +72,12 @@ def test_validation_errors_do_not_echo_tokens(tmp_path: Path) -> None:
         assert "test-refresh-secret" not in str(failure.value)
 
 
-def test_pkce_challenge_matches_the_rfc_7636_example() -> None:
+def test_pairing_url_matches_the_rfc_7636_example() -> None:
+    attempt = PairingAttempt(
+        verifier="dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", state="state", scopes=tuple(DEFAULT_SCOPES), port=54545
+    )
     assert (
-        pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        dict(parse_qsl(urlsplit(attempt.url).query))["code_challenge"] == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
     )
 
 
@@ -115,7 +118,7 @@ async def test_pair_saves_a_private_credential_after_the_browser_callback(tmp_pa
     assert body["state"] == announced[0]["state"]
     assert body["redirect_uri"] == announced[0]["redirect_uri"]
     assert urlsplit(body["redirect_uri"]).port not in (None, 0)
-    assert pkce_challenge(body["code_verifier"]) == announced[0]["code_challenge"]
+    assert create_s256_code_challenge(body["code_verifier"]) == announced[0]["code_challenge"]
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert CredentialStore(path).load() == credential
     assert credential.access_token.get_secret_value() == TEST_ACCESS_TOKEN
@@ -138,7 +141,10 @@ async def test_a_pasted_redirect_url_is_redeemed_like_a_callback() -> None:
         attempt.state,
         "http://localhost:54545/callback",
     )
-    assert pkce_challenge(body["code_verifier"]) == dict(parse_qsl(urlsplit(attempt.url).query))["code_challenge"]
+    assert (
+        create_s256_code_challenge(body["code_verifier"])
+        == dict(parse_qsl(urlsplit(attempt.url).query))["code_challenge"]
+    )
     assert credential.organization_uuid == TEST_ORG_UUID
 
 

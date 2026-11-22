@@ -134,7 +134,6 @@ def _readonly_copy(chart: Chart) -> None:
         reader=reader,
         source_namespace=NAMESPACE,
         source_secret=READONLY.name,
-        consumer_namespace=_READONLY_CONSUMER,
     )
     ExternalSecret(
         chart,

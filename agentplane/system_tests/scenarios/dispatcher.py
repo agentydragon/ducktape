@@ -31,6 +31,7 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
 from agentplane.system_tests.driver.dispatcher_transport import forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME, NATIVE_CLIENT_SVID_SECRET
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.sandbox_diagnostics import (
@@ -412,7 +413,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
     path.write_text(json.dumps(evidence, indent=2) + "\n")
     async with AsyncExitStack() as stack:
         authentication, caller, _caller_uid = await service_caller(
-            cluster, "app", certificate_secret="app-workload-tls"
+            cluster, NATIVE_CLIENT_NAME, certificate_secret=NATIVE_CLIENT_SVID_SECRET
         )
         identities = await stack.enter_async_context(AsyncExitStack())
         identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
@@ -709,6 +710,14 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                         assert response.dispatch.reason == "sandbox_deleted"
                         assert response.dispatch.command_id == deletion_command
                         break
+            retained = await stub.GetDispatch(pb.GetDispatchRequest(command_id=deletion_command), timeout=15)
+            assert retained.dispatch.state == pb.DELIVERY_STATE_FAILED
+            assert retained.dispatch.sandbox_uid == uid
+            listed = await stub.ListDispatches(
+                pb.ListDispatchesRequest(filter=pb.DispatchFilter(session_id=deletion_session)), timeout=15
+            )
+            assert [row.command_id for row in listed.dispatches] == [deletion_command]
+            assert listed.dispatches[0].state == retained.dispatch.state
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         else:
             environment_target = await stack.enter_async_context(
@@ -717,7 +726,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             environment_channel = await stack.enter_async_context(
                 dial(
                     environment_target,
-                    channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
+                    channel_credentials=await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET),
                     server_name=f"environments.{cluster.namespace}.svc.cluster.local",
                 )
             )
@@ -794,7 +803,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     crictl_command: tuple[str, ...], cluster: Cluster
 ) -> None:
     deployments: dict[str, object] = {}
-    for name in (WORKLOAD, "environments", "app", "notifications"):
+    for name in (WORKLOAD, "environments", NATIVE_CLIENT_NAME, "notifications"):
         deployment = json.loads(await cluster.kubectl("get", "deployment", name, "-o", "json"))
         assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
         deployments[name] = {
@@ -877,7 +886,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         assert stopped["status"]["suspendedAtWakeGeneration"] == stopped["spec"]["wakeGeneration"] == 0
         evidence["initial_incarnation"] = initial_incarnation
         app_authentication, app_pod, app_pod_uid = await service_caller(
-            cluster, "app", certificate_secret="app-workload-tls"
+            cluster, NATIVE_CLIENT_NAME, certificate_secret=NATIVE_CLIENT_SVID_SECRET
         )
         # This is the Dispatcher submission-authorization case, not a Runtime-proxy reader.
         notification_authentication, notification_pod, notification_pod_uid = await service_caller(

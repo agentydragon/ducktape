@@ -62,7 +62,7 @@ spec:
     kind: Deployment
     name: virt-operator
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler

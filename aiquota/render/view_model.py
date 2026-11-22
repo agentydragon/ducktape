@@ -386,11 +386,7 @@ def _window_view(
         used=display_used_percent(window),
         reset="awaiting update" if reset_pending else format_duration(window.reset_seconds),
         pace=format_pace(pace),
-        forecast=None
-        if reset_pending or stale
-        else "exhausted"
-        if exhausted
-        else format_pace_forecast(pace, window.reset_seconds),
+        forecast=None if reset_pending or stale else "exhausted" if exhausted else format_pace_forecast(pace),
         tint="stale"
         if stale or reset_pending
         else "hot"
@@ -457,7 +453,7 @@ def _credit_rows(
         )
         balances.append(
             BalanceView(
-                label="Available balance",
+                label="Balance",
                 value=summary,
                 pool_detail="Claude prepaid credits",
                 exact_value=(
@@ -475,15 +471,14 @@ def _credit_rows(
     result = selection.result
     if result is not None and result.paid_credits is not None:
         credits = result.paid_credits
-        balances.append(
-            BalanceView(label="Paid credits", value=format_paid_credit_balance(credits.balance, credits.unlimited))
-        )
+        value = format_paid_credit_balance(credits.balance, credits.unlimited)
+        balances.append(BalanceView(label="" if value.endswith(" credits") else "Paid credits", value=value))
     if openai is not None:
         exact = format_exact_usd(openai.total_available_usd)
         summary = format_summary_usd(openai.total_available_usd)
         balances.append(
             BalanceView(
-                label="Available balance",
+                label="Balance",
                 value=summary,
                 exact_value=exact if summary_hides_fraction(openai.total_available_usd) else None,
             )
@@ -524,7 +519,7 @@ def _credit_rows(
                 value = "lookup failed"
             balances.append(
                 BalanceView(
-                    label="Available balance",
+                    label="Balance",
                     value=value,
                     exact_value=(
                         exact

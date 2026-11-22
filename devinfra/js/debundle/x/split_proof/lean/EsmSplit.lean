@@ -3,7 +3,7 @@ import EsmSplit.Semantics
 import EsmSplit.Plan
 import EsmSplit.Split
 import EsmSplit.Correct
-import EsmSplit.Render
+import EsmSplit.ModulePath
 import EsmSplit.Instance
 import EsmSplit.Controls
 import EsmSplit.Cli

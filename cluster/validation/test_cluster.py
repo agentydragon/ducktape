@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from cluster.validation.cluster import ParsedCluster
+from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.flux import FluxKustomizationSpec
 from cluster.validation.k8s import K8sMetadata, K8sResource
 
@@ -14,6 +14,26 @@ def test_both_manifest_roots_are_local(tmp_path: Path) -> None:
         assert FluxKustomizationSpec(path=f"./{root}/app").local_dir(tmp_path) == (tmp_path / root / "app").resolve()
     # A path in another source (an upstream GitRepository, a project's own deploy/) is not.
     assert FluxKustomizationSpec(path="./deploy").local_dir(tmp_path) is None
+
+
+def test_only_resources_declare_flux_sources(tmp_path: Path) -> None:
+    app = tmp_path / "cluster/k8s/app"
+    app.mkdir(parents=True)
+    (app / "Kustomization").write_text(
+        "resources: [source.yml]\npatches: [{path: patch.yaml}]\n"
+        "configMapGenerator: [{name: app-config, files: [config.yaml]}]\n"
+        "secretGenerator: [{name: credentials, files: [token=secret.yaml], envs: [settings.env]}]\n"
+        "configurations: [transform.yaml]\n"
+    )
+    for path in (app / "source.yml", app / "patch.yaml"):
+        path.write_text(f"kind: GitRepository\nmetadata: {{namespace: app, name: {path.stem}}}\n")
+    (app / "config.yaml").write_text("setting: !application value\n")
+    cluster = parse_cluster(tmp_path)
+    assert cluster.kustomize_files[app / "Kustomization"].all_referenced_files == {
+        app / filename
+        for filename in ("source.yml", "patch.yaml", "config.yaml", "secret.yaml", "settings.env", "transform.yaml")
+    }
+    assert cluster.flux_sources == {("GitRepository", "app", "source")}
 
 
 def test_authorization_inventory_can_retain_suspended_owners_without_parked_workloads() -> None:

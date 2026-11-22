@@ -68,7 +68,7 @@ class VmImageRestartController(Construct):
         )
         vm_resource = named_resource("kubevirt.io", "virtualmachines", target_name)
         vmi_resource = named_resource("kubevirt.io", "virtualmachineinstances", target_name)
-        Role(
+        role = Role(
             self,
             "role",
             metadata=ApiObjectMetadata(
@@ -84,10 +84,7 @@ class VmImageRestartController(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "role-binding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            self, "role-binding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
         ).add_subjects(service_account)
 
         deployment = Deployment(

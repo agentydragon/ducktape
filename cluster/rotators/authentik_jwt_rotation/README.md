@@ -3,7 +3,7 @@
 Hourly CronJob that mints Authentik `client_credentials` JWTs and commits them
 SOPS-encrypted to `secrets/`. Deployed by
 <../../cdk8s/authentik/jwt_rotation.py> (this directory is the rotator's
-source). Its `ROTATIONS` roster, typed by <config.py>, is the source of truth
+source). The [rotation roster](../../cdk8s/authentik/jwt_roster.py), typed by <config.py>, is the source of truth
 for rotation names, providers, output files, credential modes, expected groups /
 audiences / claims, and optional in-cluster Secret publication; the generator
 renders it into the ConfigMap `rotate.py --config` reads.
@@ -18,8 +18,8 @@ rotation self-heals on the next hourly run.
 Rotations with a `probe` (requires `k8s_secret`) additionally verify on every
 hourly run that the token _published in-cluster_ actually works: the job reads
 the published Secret back via the Kubernetes API (ServiceAccount scoped by the
-`published-secrets-reader` Role in `flux-system` to exactly the rotator's own
-published Secret names) and sends its token as a Bearer to the probe URL. A
+`published-secrets-reader` Role in `flux-system` to the published
+Secrets with probes) and sends its token as a Bearer to the probe URL. A
 401/403 — or a Secret missing the configured stringData key — bypasses the
 freshness gate and re-mints, which also rewrites the Secret manifest. Endpoint
 sickness (5xx, unreachable) and an unreadable Secret are logged but are not

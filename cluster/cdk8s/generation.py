@@ -28,10 +28,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
-CNPG_DATABASE_READY = (
-    "has(status.applied) && status.applied && "
-    "has(status.observedGeneration) && status.observedGeneration == metadata.generation"
-)
 _PATCH_FILE = "patches.k8s.yaml"
 
 
@@ -134,6 +130,7 @@ def write_directory(
     remote_resources: Sequence[str] = (),
     namespace: str | None = None,
     components: Sequence[str] = (),
+    include_copied_components: bool = False,
     generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
     secret_generator: Sequence[SecretGeneratorArgs] = (),
@@ -158,15 +155,15 @@ def write_directory(
     directory's `decryption` is set when a sibling is SOPS ciphertext or a `secret_generator`
     reads a `.sops.yaml` file. Secret generators first package the encrypted file contents into
     a Kubernetes Secret; Flux's SOPS decryption then decrypts those generated Secret values
-    after the Kustomize build and before applying resources. Every copied directory of
-    `artifact` after the first must be a Component `components` name: the `image-pins`
-    directory a `GENERATED_ROOT` directory includes across the roots
-    (cluster/docs/cdk8s_remainder.md § Mixed-directory layout).
+    after the Kustomize build and before applying resources. When the artifact also copies
+    Kustomize Components, set `include_copied_components` to list their relative paths.
     """
     directory, *copied = artifact_directories(artifact)
-    included = {posixpath.normpath(posixpath.join(directory, component)) for component in components}
-    if shared := [base for base in copied if base not in included]:
-        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
+    if copied and not include_copied_components:
+        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {copied=}")
+    if include_copied_components and not copied:
+        raise ValueError(f"{artifact.name=} has no copied Component directories")
+    component_paths = [posixpath.relpath(path, directory) for path in copied]
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
     resources = [write_app(root, directory, _app(chart_builders, app))] if chart_builders or app is not None else []
@@ -180,7 +177,7 @@ def write_directory(
         kustomize_kustomization(
             resources=[*resources, *siblings, *remote_resources],
             namespace=namespace,
-            components=components,
+            components=[*components, *component_paths],
             generator_options=generator_options,
             config_map_generator=config_map_generator,
             secret_generator=secret_generator,
@@ -197,14 +194,12 @@ def sops_decryption(
     resources: Sequence[str], *, secret_generators: Sequence[SecretGeneratorArgs] = ()
 ) -> KustomizationSpecDecryption | None:
     """Return the Flux decryption block for SOPS resource siblings or generator input files."""
-    encrypted_generator = any(
-        file.rsplit("=", maxsplit=1)[-1].endswith(".sops.yaml")
-        for generator in secret_generators
-        for file in generator.files
-    )
-    if not any(resource.endswith(".sops.yaml") for resource in resources) and not encrypted_generator:
-        return None
-    return SOPS_DECRYPTION
+    # In a Kustomize key=filename entry the source filename is last.
+    if any(path.endswith(".sops.yaml") for path in resources) or any(
+        file.endswith(".sops.yaml") for generator in secret_generators for file in generator.files
+    ):
+        return SOPS_DECRYPTION
+    return None
 
 
 def namespace_chart(

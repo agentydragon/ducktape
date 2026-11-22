@@ -1,3 +1,5 @@
+load(":certificate.bzl", "lowered_certificate")
+
 genrule(
     name = "generate_instance",
     srcs = ["//devinfra/js/debundle/x/split_proof:generated_instance"],
@@ -11,5 +13,14 @@ genrule(
     srcs = ["//devinfra/js/debundle/x/split_proof:proof_fixture_instance"],
     outs = ["ProofFixture/Instance.lean"],
     cmd = "cp $(location //devinfra/js/debundle/x/split_proof:proof_fixture_instance) $@",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
+lowered_certificate(
+    name = "generate_lowered_example_certificate",
+    out = "Experiments/Generated.lean",
+    ast = "//devinfra/js/debundle/x/split_proof:example_ast",
+    spec = "//devinfra/js/debundle/x/split_proof:example/spec.json",
+    splitter = "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -59,7 +59,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_app, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.litellm.database import NAMESPACE
+from cluster.cdk8s.litellm.endpoint import NAME, NAMESPACE, SERVICE
 from cluster.cdk8s.litellm.upstreams import (
     RUGGED_LOCAL_LLM_KEY_ENV,
     RUGGED_LOCAL_LLM_PORT,
@@ -70,17 +70,11 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
-from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
-NAME = "litellm"
-SERVICE = ServiceRef(
-    name=NAME,
-    port=Port(name="http", number=4000),
-    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
-)
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=NAMESPACE, name="litellm-master-key").key("api-key")
 _LANGFUSE_OTEL_CONFIG = SecretRef(namespace=NAMESPACE, name="litellm-langfuse-otel-config")
@@ -195,7 +189,7 @@ class LiteLLMProxy(Construct):
             name="litellm",
             image=f"git.allegedly.works/ducktape-ci/tana-litellm-proxy:{_PLACEHOLDER_TAG}",
             args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             env_variables=self._env_variables(),
             image_pull_policy=ImagePullPolicy.ALWAYS,
             liveness=_http_probe("/health/liveliness", 30, 3),
@@ -220,19 +214,14 @@ class LiteLLMProxy(Construct):
         deployment.scheduling.tolerate(
             Node.tainted(NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE))
         )
-        # cdk8s-plus exposes no custom topology spread settings on Deployment.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/topologySpreadConstraints",
-                [
-                    k8s.TopologySpreadConstraint(
-                        max_skew=1,
-                        topology_key="kubernetes.io/hostname",
-                        when_unsatisfiable="ScheduleAnyway",
-                        label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
-                    )
-                ],
-            )
+        node_scheduling.set_topology_spread(
+            deployment,
+            k8s.TopologySpreadConstraint(
+                max_skew=1,
+                topology_key="kubernetes.io/hostname",
+                when_unsatisfiable="ScheduleAnyway",
+                label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
+            ),
         )
         return deployment
 
@@ -243,7 +232,7 @@ class LiteLLMProxy(Construct):
             "service",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.labels),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
             type=ServiceType.CLUSTER_IP,
         )
 

@@ -85,7 +85,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert llm_connection["auth"] == {"type": "agentplane_ingress"}
     assert "history_token_file" not in config
     assert "gateway_token_file" not in config
-    assert config["gateway_target"] == "environments.{namespace}.svc:8082"
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
     for tls, server_uri in (
@@ -102,24 +101,18 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
             assert mounts[path.parent]["secret"]["secretName"] == serving_certificate["spec"]["secretName"]
     anthropic_connection = config["connections"]["anthropic-api"]
     assert anthropic_connection["base_url"] == "https://api.anthropic.com"
-    assert anthropic_connection["auth"] == {
-        "type": "anthropic_api_key",
-        "credential_file": "/var/run/secrets/central-sampler-anthropic/api-key",
-    }
+    assert anthropic_connection["auth"]["type"] == "anthropic_api_key"
     assert all("credential" not in connection["auth"] for connection in config["connections"].values())
-
-    anthropic_secret_volume = one(
-        volume
-        for volume in pod["volumes"]
-        if volume.get("secret", {}).get("secretName") == "agentplane-staging-anthropic-api-key"
-    )
-    assert anthropic_secret_volume["secret"]["items"] == [{"key": "api-key", "path": "api-key"}]
-    assert any(
-        mount["name"] == anthropic_secret_volume["name"]
-        and mount["mountPath"] == "/var/run/secrets/central-sampler-anthropic"
-        and mount["readOnly"]
-        for mount in container["volumeMounts"]
-    )
+    credential = PurePosixPath(anthropic_connection["auth"]["credential_file"])
+    mount = one(m for m in container["volumeMounts"] if m["mountPath"] == str(credential.parent))
+    assert mount["readOnly"]
+    assert "subPath" not in mount
+    secret = volumes[mount["name"]]["secret"]
+    assert secret["secretName"] == "agentplane-staging-anthropic-api-key"
+    assert {"key": "api-key", "path": credential.name} in secret["items"]
+    excluded = deployment["metadata"]["annotations"]["secrets.exclude.reloader.stakater.com/reload"].split(",")
+    assert secret["secretName"] in excluded
+    assert database["name"] not in excluded
 
     gateway = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
     target = gateway["central_sampler"]

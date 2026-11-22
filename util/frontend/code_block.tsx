@@ -2,6 +2,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { ensureSyntaxTree, HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { diff } from "@codemirror/legacy-modes/mode/diff";
 import { go } from "@codemirror/legacy-modes/mode/go";
 import { javascript, typescript } from "@codemirror/legacy-modes/mode/javascript";
 import { protobuf } from "@codemirror/legacy-modes/mode/protobuf";
@@ -17,7 +18,7 @@ import { type JSX, type ReactNode, useCallback, useEffect, useLayoutEffect, useM
 import "./code_block.css";
 
 export type Language =
-  "bash" | "go" | "javascript" | "json" | "nix" | "protobuf" | "python" | "rust" | "typescript" | "yaml";
+  "bash" | "diff" | "go" | "javascript" | "json" | "nix" | "protobuf" | "python" | "rust" | "typescript" | "yaml";
 
 export type CodeBlockSurface = "framed" | "plain";
 export type CodeBlockFont = "monospace" | "prose";
@@ -27,6 +28,7 @@ export type CodeBlockFont = "monospace" | "prose";
 // CodeMirror legacy stream modes, as in Haku's shared read-only code viewer.
 const LEGACY_LANGUAGES = {
   bash: StreamLanguage.define(shell),
+  diff: StreamLanguage.define(diff),
   go: StreamLanguage.define(go),
   javascript: StreamLanguage.define(javascript),
   protobuf: StreamLanguage.define(protobuf),
@@ -37,6 +39,7 @@ const LEGACY_LANGUAGES = {
 
 const LANGUAGE_EXTENSIONS: Record<Language, () => Extension> = {
   bash: () => LEGACY_LANGUAGES.bash,
+  diff: () => LEGACY_LANGUAGES.diff,
   go: () => LEGACY_LANGUAGES.go,
   javascript: () => LEGACY_LANGUAGES.javascript,
   json: () => json(),
@@ -55,6 +58,8 @@ const REGISTERED_LANGUAGES: ReadonlySet<string> = new Set(Object.keys(LANGUAGE_E
 const CODE_TOKENS: ReadonlyArray<{ tag: Tag | readonly Tag[]; token: string }> = [
   { tag: tags.propertyName, token: "key" },
   { tag: tags.string, token: "string" },
+  { tag: tags.inserted, token: "string" },
+  { tag: tags.deleted, token: "keyword" },
   { tag: tags.number, token: "number" },
   { tag: [tags.bool, tags.atom, tags.literal], token: "literal" },
   { tag: [tags.keyword, tags.controlKeyword], token: "keyword" },

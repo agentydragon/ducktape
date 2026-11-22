@@ -4067,6 +4067,12 @@ spec:
         enabled: true
         podTemplate:
           spec:
+            containers:
+              - name: linstor-affinity-controller
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 64Mi
             nodeSelector:
               storage.allegedly.works/piraeus-ready: "true"
               topology.kubernetes.io/region: hil

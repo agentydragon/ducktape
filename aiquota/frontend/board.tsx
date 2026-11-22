@@ -233,7 +233,7 @@ function Readings({
 function BalanceRow({ balance, now }: { balance: BalanceView; now: number }): JSX.Element {
   return (
     <div className="aiquota-reading-row">
-      <dt>{balance.label}</dt>
+      <dt aria-label={balance.label || "Paid credits"}>{balance.label}</dt>
       <dd>{balance.value}</dd>
       {balance.stale_since && (
         <span className="aiquota-reading-note">
@@ -381,7 +381,7 @@ function WindowRow({
         label={`${window.label} quota usage`}
       />
       <div className="aiquota-window-meta">
-        <span>{resetPending ? "Awaiting updated usage" : `Resets in ${window.reset}`}</span>
+        <span>{resetPending ? "Awaiting updated usage" : `↻ in ${window.reset}`}</span>
         {window.exhausted && !resetPending && <span className="aiquota-exhausted">exhausted</span>}
         {window.forecast && !window.exhausted && <span className="aiquota-forecast">{window.forecast}</span>}
       </div>

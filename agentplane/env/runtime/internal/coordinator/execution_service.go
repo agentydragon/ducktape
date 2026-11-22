@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -183,21 +183,21 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 }
 
 func runtimeExecutionServiceConfig(config Config, incarnationUID string, processes *supervision.Host, supervisor *supervision.Supervisor, commandSupervisor *supervision.Supervisor) (service.Config, error) {
-	if config.CodexExecServer == nil {
+	if config.ExecutionBackend == nil {
 		return service.Config{}, errors.New("Execution service requires a configured execution backend")
 	}
 	serviceConfig := service.Config{
 		ProcessHost: processes, Supervisor: supervisor, CommandSupervisor: commandSupervisor,
-		Owner: config.CodexExecServer.Owner, Placement: config.CodexExecServer.Placement,
+		Owner: config.ExecutionBackend.Owner, Placement: config.ExecutionBackend.Placement,
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
 		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
 		StateDir:    filepath.Join(config.StateDir, "execution"),
-		ExecutorURL: config.CodexExecServer.URL, LimitsJSON: config.CodexExecServer.LimitsJSON, Environment: config.HarnessEnvironment,
-		Implementation: config.CodexExecServer.Implementation, Readiness: config.CodexExecServer.Readiness,
+		ExecutorURL: config.ExecutionBackend.URL, LimitsJSON: config.ExecutionBackend.LimitsJSON, Environment: config.HarnessEnvironment,
+		Implementation: config.ExecutionBackend.Implementation, Readiness: config.ExecutionBackend.Readiness,
 	}
 	switch serviceConfig.Owner {
-	case codexexecserver.OwnerSystemd:
-		launcher := config.CodexExecServer.Launcher
+	case backend.OwnerSystemd:
+		launcher := config.ExecutionBackend.Launcher
 		if launcher == nil {
 			return service.Config{}, errors.New("systemd executor owner requires its explicit launcher")
 		}
@@ -207,11 +207,11 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string, process
 		if config.Codex != nil {
 			serviceConfig.CodexBinary = config.Codex.Binary
 		}
-	case codexexecserver.OwnerCompanion:
-		if config.CodexExecServer.ContainerSocket == "" {
+	case backend.OwnerCompanion:
+		if config.ExecutionBackend.ContainerSocket == "" {
 			return service.Config{}, errors.New("companion executor owner requires its ownership socket")
 		}
-		serviceConfig.ContainerSocket = config.CodexExecServer.ContainerSocket
+		serviceConfig.ContainerSocket = config.ExecutionBackend.ContainerSocket
 	}
 	serviceConfig, err := serviceConfig.Resolve()
 	if err != nil {

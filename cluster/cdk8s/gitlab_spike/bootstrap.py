@@ -48,7 +48,7 @@ def namespace_chart(app: App) -> Chart:
         DEMO_NAMESPACE,
         name=DEMO_NAMESPACE,
         # Let VPA update the disposable single-replica demo without waiting for another rollout.
-        vpa=VpaProfile.requests_only(Vpa.AUTO, min_replicas=1),
+        vpa=VpaProfile(Vpa.AUTO, min_replicas=1),
         labels={"pod-security.kubernetes.io/enforce": "baseline"},
     )
     for secret_key in (ROOT_PASSWORD, BOOTSTRAP_TOKEN):

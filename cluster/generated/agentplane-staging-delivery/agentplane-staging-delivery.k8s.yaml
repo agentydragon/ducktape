@@ -332,7 +332,7 @@ data:
       cert_file: /run/agentplane/sessions-client-tls/tls.crt
       key_file: /run/agentplane/sessions-client-tls/tls.key
       client_uri: spiffe://agentplane/sessions
-    runner_control_target_template: environments.{namespace}.svc:8082
+    runner_control_target_template: environments.agentplane-staging.svc.cluster.local:8082
     dispatcher_service_delegation:
       actors:
         - spiffe_id: spiffe://agentplane/actions

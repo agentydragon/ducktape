@@ -113,12 +113,12 @@ func assertGooseVersion(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var applied int
 	if err := db.QueryRowContext(t.Context(), `
-		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id = 3 AND is_applied
+		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id IN (3, 4) AND is_applied
 	`).Scan(&applied); err != nil {
 		t.Fatal(err)
 	}
-	if applied != 1 {
-		t.Fatalf("expected Goose version 3 applied once, got %d rows", applied)
+	if applied != 2 {
+		t.Fatalf("expected Goose versions 3 and 4 applied once, got %d rows", applied)
 	}
 }
 

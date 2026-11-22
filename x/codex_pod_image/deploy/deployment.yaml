@@ -69,19 +69,16 @@ spec:
                   name: buildbuddy-api-key
                   key: api-key
                   optional: true
-            # LiteLLM virtual key (`chatgpt-sub/oai-responses/*` models) minted by
-            # cluster/cdk8s/litellm/crossplane_keys.py and reflected into this namespace. Codex's
-            # baked config.toml points its `litellm` model_provider at this via
-            # env_key=LITELLM_API_KEY, so codex routes to LiteLLM instead of a
-            # ChatGPT sign-in. Optional during the pre-reflection window.
+            # Supply this Secret before reviving the experiment. Codex's baked
+            # config uses LITELLM_API_KEY to access the LiteLLM Responses API.
             - name: LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: litellm-key-codex-pod
                   key: api-key
                   optional: true
-            # Codex-claude LiteLLM virtual key (codex-* models via LiteLLM → CLIProxyAPI),
-            # minted by Crossplane and reflected into this namespace.
+            # Supply a separate LiteLLM Messages credential for codex-claude
+            # before reviving the experiment.
             - name: CODEX_LITELLM_KEY
               valueFrom:
                 secretKeyRef:

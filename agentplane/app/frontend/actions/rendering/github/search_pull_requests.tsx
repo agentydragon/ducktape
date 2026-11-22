@@ -1,8 +1,9 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
 
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
-import { definePreview, type ArgumentsPreview } from "../entry";
+import { type ActionPresentation, expandsForDetails } from "../presentation";
+import { definePreview, type ArgumentsPreview, useCompactPane } from "../entry";
+import { Field } from "./display";
 import { pullRequestSearchResults } from "./receipts";
 import {
   type SearchPullRequestsArguments,
@@ -18,6 +19,7 @@ function SearchPullRequestsLabel(): JSX.Element {
 }
 
 function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
+  const compact = useCompactPane();
   const repository =
     args.owner && args.repo && !/(^|\W)repo:\S+/.test(args.query) ? `${args.owner}/${args.repo}` : undefined;
   return (
@@ -29,6 +31,12 @@ function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArg
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
           Repository <Code>{repository}</Code>
         </Text>
+      )}
+      {!compact && (
+        <>
+          <Field name="Page" value={args.page} />
+          <Field name="Page size" value={args.perPage} />
+        </>
       )}
     </Stack>
   );
@@ -49,8 +57,11 @@ export const searchPullRequestsCompactArguments: ArgumentsPreview = definePrevie
 export const searchPullRequestsPresentation: ActionPresentation = {
   fallbackLabel: "Search GitHub pull requests",
   label: searchPullRequestsLabel,
-  pane: { collapsed: searchPullRequestsCompactArguments },
+  pane: { collapsed: searchPullRequestsCompactArguments, opened: searchPullRequestsCompactArguments },
   details: { arguments: searchPullRequestsCompactArguments, result: pullRequestSearchResults },
   offersCardDecisionButtons: offersCardDecisionButtonsSearchPullRequests,
-  compactCardExpands: expandsForRejectedArguments(zSearchPullRequestsArguments),
+  compactCardExpands: expandsForDetails(
+    zSearchPullRequestsArguments,
+    (args) => args.page !== undefined || args.perPage !== undefined
+  ),
 };

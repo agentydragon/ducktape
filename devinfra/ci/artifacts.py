@@ -3,7 +3,6 @@
 import base64
 import hashlib
 import json
-import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -41,23 +40,6 @@ class ArtifactTarget(BaseModel):
 
 class ArtifactTargets(BaseModel):
     pins: dict[str, ArtifactTarget]
-
-
-_HEX_SUFFIX_RE = re.compile(r"^[0-9a-f]{7}$|^[0-9a-f]{12}$")
-
-
-def is_tag_for_pkg(tag: str, pkg: str) -> bool:
-    """Match `{pkg}-{7hex}` or `{pkg}-{12hex}` exactly, avoiding prefix collisions."""
-    prefix = f"{pkg}-"
-    if not tag.startswith(prefix):
-        return False
-    return _HEX_SUFFIX_RE.match(tag[len(prefix) :]) is not None
-
-
-def tag_package(tag: str) -> str | None:
-    """Return the package a release tag belongs to, or None if it is not one of ours."""
-    pkg, _, suffix = tag.rpartition("-")
-    return pkg if pkg and _HEX_SUFFIX_RE.match(suffix) else None
 
 
 class Artifact(BaseModel, frozen=True):

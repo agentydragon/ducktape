@@ -3677,7 +3677,7 @@ data:
       "executor_codex": "codex",
       "logs": "/var/log/central-sampler",
       "history_target": "history-service.agentplane-staging.svc.cluster.local:8080",
-      "gateway_target": "environments.{namespace}.svc:8082",
+      "gateway_target": "environments.agentplane-staging.svc.cluster.local:8082",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "rpc_timeout_seconds": 30,
@@ -3698,6 +3698,8 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    secrets.exclude.reloader.stakater.com/reload: agentplane-staging-anthropic-api-key
   labels:
     app.kubernetes.io/name: central-sampler
   name: central-sampler
@@ -3724,8 +3726,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
-              value: /etc/agentplane-central-sampler/settings.json
             - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -3733,6 +3733,8 @@ spec:
                   name: postgres-central-sampler
             - name: SSL_CERT_FILE
               value: /var/run/public-web-pki/ca-certificates.crt
+            - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
+              value: /etc/agentplane-central-sampler/settings.json
           image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -3778,7 +3780,7 @@ spec:
             periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-central-sampler
-              name: central-sampler-settings
+              name: configmap-central-sampler-settings
               readOnly: true
             - mountPath: /var/log/central-sampler
               name: logs
@@ -3816,7 +3818,7 @@ spec:
       volumes:
         - configMap:
             name: central-sampler-settings
-          name: central-sampler-settings
+          name: configmap-central-sampler-settings
         - emptyDir: {}
           name: logs
         - name: workload-tls
@@ -5711,28 +5713,28 @@ spec:
             defaultMode: 288
             secretName: buildbuddy-api-key
   stateVolume:
-    name: state
+    claim:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: piraeus-hdd-local
     layout:
       type: DirectoryTree
-    claim:
-      storageClassName: piraeus-hdd-local
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
+    name: state
   workspaceVolume:
-    name: workspace
     claim:
-      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+      storageClassName: piraeus-hdd-local
       volumeMode: Filesystem
     layout:
       type: DirectoryTree
+    name: workspace
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -5824,7 +5826,7 @@ spec:
   matchConditions:
     - expression: request.namespace == 'agentplane-staging'
       name: in-namespace
-    - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls')))"
+    - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))"
       name: launcher-or-relay-credential-volume
   matchConstraints:
     resourceRules:
@@ -5841,7 +5843,7 @@ spec:
   validationActions:
     - Deny
   validations:
-    - expression: "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) && c.volumeMounts.exists(m, m.name in ['agentplane-runner-relay-tls']))"
+    - expression: "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) && c.volumeMounts.exists(m, m.name == 'agentplane-runner-relay-tls'))"
       message: Only the launcher relay may mount the runner credential and trust files.
     - expression: request.operation != 'CREATE' || request.userInfo.username == 'system:serviceaccount:kubevirt:kubevirt-controller'
       message: A launcher must be created by KubeVirt's controller.
@@ -6021,13 +6023,25 @@ metadata:
   name: environment-vm
   namespace: agentplane-staging
 spec:
+  stateVolume:
+    claim:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: piraeus-ssd-2-autodiskful
+      volumeMode: Filesystem
+    layout:
+      type: DirectoryTree
+    name: state
   vm:
     template:
       metadata:
         labels:
-          app.kubernetes.io/name: agentplane-environment-runtime
-          agentplane.io/otel-emitter: "true"
           agentplane.io/otel-class: environment-runtime
+          agentplane.io/otel-emitter: "true"
+          app.kubernetes.io/name: agentplane-environment-runtime
       spec:
         domain:
           cpu:
@@ -6086,31 +6100,19 @@ spec:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
               imagePullPolicy: IfNotPresent
             name: runner
-  stateVolume:
-    name: state
-    layout:
-      type: DirectoryTree
-    claim:
-      storageClassName: piraeus-ssd-2-autodiskful
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-      volumeMode: Filesystem
   workspaceVolume:
-    name: workspace
     claim:
-      storageClassName: piraeus-ssd-2-autodiskful
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+      storageClassName: piraeus-ssd-2-autodiskful
       volumeMode: Block
     layout:
-      type: BlockFilesystem
       filesystem: ext4
+      type: BlockFilesystem
+    name: workspace
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -6247,6 +6249,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   firecracker:
+    bootImage: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset
+    memoryMiB: 8192
     pod:
       metadata:
         labels:
@@ -6366,36 +6370,34 @@ spec:
               path: /dev/net/tun
               type: CharDevice
             name: tun
-    bootImage: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset
     runnerImage: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
     vcpuCount: 1
-    memoryMiB: 8192
   stateVolume:
-    name: state
-    layout:
-      type: RawDiskImage
-      filesystem: ext4
     claim:
-      storageClassName: piraeus-ssd-2-autodiskful
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 100Gi
-      volumeMode: Filesystem
-  workspaceVolume:
-    name: workspace
-    claim:
       storageClassName: piraeus-ssd-2-autodiskful
+      volumeMode: Filesystem
+    layout:
+      filesystem: ext4
+      type: RawDiskImage
+    name: state
+  workspaceVolume:
+    claim:
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+      storageClassName: piraeus-ssd-2-autodiskful
       volumeMode: Filesystem
     layout:
-      type: RawDiskImage
       filesystem: ext4
+      type: RawDiskImage
+    name: workspace
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -6622,28 +6624,6 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: environments
-  name: environments
-  namespace: agentplane-staging
-spec:
-  externalIPs: []
-  ports:
-    - name: grpc
-      port: 8082
-      protocol: TCP
-      targetPort: 8082
-    - name: metrics
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    app.kubernetes.io/component: environments
-  type: ClusterIP
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -6901,7 +6881,6 @@ spec:
       labels:
         agentplane.io/otel-class: service
         agentplane.io/otel-emitter: "true"
-        app.kubernetes.io/component: environments
         app.kubernetes.io/name: environments
         cdk8s.io/metadata.addr: agentplane-sandbox-controller-environments-deployment-c8d1d5ae
     spec:
@@ -6934,11 +6913,11 @@ spec:
             periodSeconds: 30
           name: environments
           ports:
-            - containerPort: 8080
-              name: metrics
-              protocol: TCP
             - containerPort: 8082
               name: grpc
+              protocol: TCP
+            - containerPort: 8080
+              name: metrics
               protocol: TCP
             - containerPort: 8081
               name: health
@@ -7021,6 +7000,28 @@ spec:
         - configMap:
             name: environments-settings
           name: configmap-environments-settings
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: environments
+  name: environments
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8082
+      protocol: TCP
+      targetPort: 8082
+    - name: metrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-controller-environments-deployment-c8d1d5ae
+  type: ClusterIP
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -7266,7 +7267,7 @@ data:
     namespace: agentplane-staging
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
-    runner_gateway_target: environments.{namespace}.svc:8082
+    runner_gateway_target: environments.agentplane-staging.svc.cluster.local:8082
 immutable: false
 ---
 apiVersion: cilium.io/v2
@@ -14090,6 +14091,46 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: agentplane-github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: gaffer-private-archive
+  namespace: agentplane-staging
+spec:
+  description: Read source archives of agentydragon/gaffer-private with a repository-scoped GitHub App token.
+  source:
+    secretRef:
+      key: token
+      name: gaffer-private-archive
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: gaffer-private-archive
+  namespace: agentplane-staging
+spec:
+  rules:
+    - credentialRef:
+        name: gaffer-private-archive
+      hosts:
+        - api.github.com
+      methods:
+        - GET
+      paths:
+        - /repos/agentydragon/gaffer-private/tarball/*
+      type: egress
+    - hosts:
+        - codeload.github.com
+      methods:
+        - GET
+      paths:
+        - /agentydragon/gaffer-private/legacy.tar.gz/*
+      type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

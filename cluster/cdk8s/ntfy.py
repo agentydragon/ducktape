@@ -220,7 +220,7 @@ class Ntfy(Construct):
             image=_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["serve"],
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             env_variables={
                 "NTFY_BASE_URL": EnvValue.from_value(f"https://{HOSTNAME}"),
                 # Run above Linux's privileged-port range with all capabilities dropped.
@@ -250,7 +250,7 @@ class Ntfy(Construct):
             "service",
             metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAMESPACE, labels=SERVICE.labels),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_service_monitor(self) -> None:

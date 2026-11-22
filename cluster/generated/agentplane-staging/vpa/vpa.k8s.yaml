@@ -190,7 +190,7 @@ spec:
     kind: Deployment
     name: history-service
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -268,7 +268,7 @@ spec:
     kind: Deployment
     name: notifications
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -342,4 +342,4 @@ spec:
     kind: Deployment
     name: haku-ci-egress
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate

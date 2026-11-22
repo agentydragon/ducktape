@@ -24,7 +24,6 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoute, PlatformRoutes
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress, platform_routes
@@ -46,7 +45,6 @@ OPENCLAW = StandingCaller(
     ServiceAccountRef(namespace=NAMESPACE, name=SERVICE_ACCOUNT), identity="public-coder-openclaw"
 )
 GATEWAY = egress.proxy("agentplane-staging")
-RULES_ROUTE = platform_routes.egress_rules("agentplane-staging")
 CA_BUNDLE_NAME = "agentplane-egress-ca"
 POLICY = "public-coder-openclaw"
 GITHUB_CREDENTIAL = "github-pat"
@@ -78,22 +76,13 @@ def add_relay_settings(scope: Construct) -> PodWiring:
                 auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
             ),
         ),
-        platform_routes=PlatformRoutes(
-            listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
-            routes={
-                RULES_ROUTE.name: PlatformRoute(
-                    service_prefixes=RULES_ROUTE.service_prefixes,
-                    upstream=RULES_ROUTE.service.authority,
-                    transport=RULES_ROUTE.transport,
-                )
-            },
-        ),
+        platform_routes=platform_routes.listener(platform_routes.egress_rules(GATEWAY.pods.namespace)),
     )
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        content=yaml_config(settings.model_dump(mode="json", exclude_none=True)),
+        content=yaml_config(settings, exclude_none=True),
         path=_SETTINGS_PATH,
     ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
 
@@ -286,12 +275,7 @@ def _copied_credential(
     target: EgressCredentialSpecTargets,
 ) -> None:
     store = single_secret_store(
-        scope,
-        f"agentplane-{credential}",
-        reader=reader,
-        source_namespace=source_namespace,
-        source_secret=secret,
-        consumer_namespace=credentials_namespace,
+        scope, f"agentplane-{credential}", reader=reader, source_namespace=source_namespace, source_secret=secret
     )
     credential_external_secret(
         scope, namespace=credentials_namespace, target=credential, source=secret, key=key, store=store

@@ -109,6 +109,7 @@ py_test(
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -4,8 +4,24 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 from collections.abc import Sequence
 from pathlib import Path
+
+# Current releases use 12 hex digits. Older releases used seven.
+TAG_HASH_LENGTH = 12
+
+
+def content_tag(pkg: str, content_hash: str) -> str:
+    return f"{pkg}-{content_hash[:TAG_HASH_LENGTH]}"
+
+
+def tag_package(tag: str) -> str | None:
+    """Read a current or historical release tag, including hyphenated package names."""
+    pkg, _, suffix = tag.rpartition("-")
+    if pkg and len(suffix) in (7, TAG_HASH_LENGTH) and re.fullmatch("[0-9a-f]+", suffix):
+        return pkg
+    return None
 
 
 def release_content_hash(artifacts: Sequence[Path]) -> str:
@@ -50,11 +66,12 @@ def _assets_hash(assets: Sequence[tuple[str, bytes]]) -> str:
     return digest.hexdigest()
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--package", required=True)
     parser.add_argument("artifacts", type=Path, nargs="+")
-    args = parser.parse_args()
-    print(release_content_hash(args.artifacts))
+    args = parser.parse_args(argv)
+    print(content_tag(args.package, release_content_hash(args.artifacts)))
 
 
 if __name__ == "__main__":

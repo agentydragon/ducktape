@@ -257,7 +257,12 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Read GitHub repository contents",
       schema: fileArgs,
-      compact: ({ args }) => <Field name="Path" value={args.path || "Repository root"} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo} · {args.path || "Repository root"}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />
@@ -303,7 +308,12 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Read GitHub commit",
       schema: commitGet,
-      compact: ({ args }) => <Field name="Commit or ref" value={args.sha} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo} · {args.sha}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />
@@ -319,6 +329,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     "list_commits",
     githubPresentation({
       label: "List GitHub commits",
+      cardDecision: true,
       schema: commitList,
       compact: RepoSlug,
       request: ({ args }) => (
@@ -346,6 +357,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "List GitHub branches",
       schema: pagedRepo,
+      cardDecision: true,
       compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
@@ -374,6 +386,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     "list_tags",
     githubPresentation({
       label: "List GitHub tags",
+      cardDecision: true,
       schema: pagedRepo,
       compact: RepoSlug,
       request: ({ args }) => (
@@ -403,7 +416,12 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Read GitHub tag",
       schema: releaseTag,
-      compact: ({ args }) => <Field name="Tag" value={args.tag} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo} · {args.tag}
+        </Text>
+      ),
       request: ({ args }) => (
         <RepoTarget repo={args} path={`/tree/${encodeURIComponent(args.tag)}`}>
           {args.owner}/{args.repo} · {args.tag}
@@ -430,6 +448,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     "list_releases",
     githubPresentation({
       label: "List GitHub releases",
+      cardDecision: true,
       schema: releaseList,
       compact: RepoSlug,
       request: ({ args }) => (
@@ -451,6 +470,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     "get_latest_release",
     githubPresentation({
       label: "Read latest GitHub release",
+      cardDecision: true,
       schema: repoInput,
       compact: RepoSlug,
       request: ({ args }) => <RepoTarget repo={args} path="/releases/latest" />,
@@ -462,7 +482,12 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Read GitHub release by tag",
       schema: releaseTag,
-      compact: ({ args }) => <Field name="Tag" value={args.tag} />,
+      cardDecision: true,
+      compact: ({ args }) => (
+        <Text size="sm">
+          {args.owner}/{args.repo} · {args.tag}
+        </Text>
+      ),
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/releases" />
@@ -477,19 +502,16 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Search GitHub commits",
       schema: searchCommits,
-      compact: ({ args }) => (
-        <Stack gap={4}>
-          <Field name="Query" value={args.query} />
-          <Field name="Page size" value={args.perPage} />
-        </Stack>
-      ),
+      compact: ({ args }) => <Field name="Query" value={args.query} />,
       request: ({ args }) => (
         <Stack gap={4}>
           <Field name="Query" value={args.query} />
+          <Field name="Page" value={args.page} />
           <Field name="Page size" value={args.perPage} />
         </Stack>
       ),
       staticCard: true,
+      hasFoldedArguments: (args) => args.page !== undefined || args.perPage !== undefined,
       result: defineResultPreview(
         z.object({
           items: z.array(commitResult),

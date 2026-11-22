@@ -97,16 +97,16 @@ The queue, replica and wake probes run in the `test_dispatcher` system test, des
   receiver retirement does not adopt unowned rows or change attachment cardinality.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
-- **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
-  ones and admitted inputs `UNKNOWN`. Deletion writes receipt tombstones transactionally. A versioned
-  `WatchDispatches` snapshot or replay reads those tombstones in version order and applies the same retained
-  Session read scope as live rows. A tombstone contains no Sandbox name or UID.
+- **Sandbox deleted** (seen on the Sandbox watch): commands proven unsent end `FAILED` (`sandbox_deleted`).
+  Possibly forwarded commands and admitted inputs end `UNKNOWN`; admission evidence and other terminal
+  outcomes are preserved. `GetDispatch`, `ListDispatches` and `WatchDispatches` continue to serve the
+  retained Session's receipts under the same read authority.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
   Later Session creation requests and queued commands cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.
   This starts at Dispatcher cleanup, not the Kubernetes deletion instant; see
   [the deletion contract](SPEC.md#deletion-admission-fence).
-- **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
+- **Retention**: accepted commands and their delivery outcomes stay with their Session across Environment deletion.
 - **Delivery leases**: each head step acquires its Session's PostgreSQL lease before wake or
   materialization, renews it while the step runs, and releases it after settlement or a persisted
   deferral. The database clock decides expiry; each acquisition has a fresh holder UUID. Every

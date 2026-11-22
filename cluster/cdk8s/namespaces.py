@@ -91,19 +91,16 @@ def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, 
 def _vpa_annotations(
     name: str, vpa: Vpa | VpaProfile, annotations: Mapping[str, str] | None
 ) -> tuple[Vpa, dict[str, str] | None]:
-    metadata_annotations = None if annotations is None else dict(annotations)
-    if isinstance(vpa, VpaProfile):
-        vpa_annotations = vpa.annotations()
-        metadata_annotations = metadata_annotations or {}
-        if overlap := metadata_annotations.keys() & vpa_annotations.keys():
-            raise ValueError(f"{name=}: {sorted(overlap)} are set by the VPA profile")
-        metadata_annotations.update(vpa_annotations)
-        vpa = vpa.mode
-    if vpa is Vpa.AUTO:
+    profile = vpa if isinstance(vpa, VpaProfile) else VpaProfile(vpa)
+    explicit = profile.annotations()
+    merged = dict(annotations or {})
+    if overlap := merged.keys() & explicit.keys():
+        raise ValueError(f"{name=}: {sorted(overlap)} are set by the VPA profile")
+    merged.update(explicit)
+    if profile.mode is Vpa.AUTO and VPA_RESOURCE_POLICY_ANNOTATION not in merged:
         # Proportional CPU limits caused the 2026-08-09 LiteLLM crashloop; see cluster/k8s/TODO.md.
-        metadata_annotations = metadata_annotations or {}
-        metadata_annotations.setdefault(VPA_RESOURCE_POLICY_ANNOTATION, resource_policy_annotation(REQUESTS_ONLY))
-    return vpa, metadata_annotations
+        merged[VPA_RESOURCE_POLICY_ANNOTATION] = resource_policy_annotation(REQUESTS_ONLY)
+    return profile.mode, merged or None
 
 
 def namespace(

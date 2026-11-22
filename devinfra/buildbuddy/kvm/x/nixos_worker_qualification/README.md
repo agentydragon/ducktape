@@ -15,8 +15,9 @@ is applied and removed as a bounded qualification experiment. The checked-in
 KubeVirt shape copies the existing typed `container_disk_pool_template` output;
 the package under `x/` cannot import `cluster/cdk8s` per that package's
 `AGENTS.md` boundary. `render.py` injects only a pinned containerDisk image and
-the runtime ConfigMap. It rejects mutable image tags and executor configs without
-runtime API-key substitution.
+the runtime ConfigMap. It reads the production guest ConfigMap for the K3s settings and executor config.
+Use `--executor-config` to qualify a different executor config. The renderer rejects
+mutable image tags and executor configs without runtime API-key substitution.
 
 The guest boots EFI from the NixOS qcow2 containerDisk, attaches a fresh 80-GiB
 local SSD work disk, mounts it as ext4 at `/buildbuddy`, and reads the
@@ -26,8 +27,8 @@ the same K3s registry mirror settings, and a `pool` file containing
 `kvm-vm-nixos-spike`. It gives the VM 4 vCPUs (2 requested, 4 limit), 8 GiB RAM,
 the same nested-KVM node affinity, and the same 8080 readiness probe with the
 `server-type: buildbuddy-executor` header. Readiness is registered executor
-health, not merely a running VM. Guest egress permits the BuildBuddy scheduler,
-DNS, and Zot; it excludes Ubuntu package hosts. KubeVirt pulls
+health, not merely a running VM. Guest egress permits DNS, the BuildBuddy scheduler, Zot, and NTP to
+`time.cloudflare.com` on UDP/123. KubeVirt pulls
 the private Forgejo containerDisk with `containerDisk.imagePullSecret`. The
 namespace-scoped ExternalSecret reads the existing, controller-owned
 `forgejo-images-creds` from `kubernetes-forgejo-images-secret-store`; no token is
@@ -52,7 +53,6 @@ scratch=${TMPDIR:-/tmp}/agents/2026_11_16/nixos-kvm-worker-spike
 image=git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:<64-hex-digest>
 bb run //devinfra/buildbuddy/kvm/x/nixos_worker_qualification:render -- \
   --image "$image" \
-  --executor-config "$PWD/devinfra/buildbuddy/kvm/worker/executor.yaml" \
   --output "$scratch/canary.k8s.yaml"
 kubectl apply -f "$scratch/canary.k8s.yaml"
 kubectl wait -n buildbuddy-executor --for=condition=Ready \

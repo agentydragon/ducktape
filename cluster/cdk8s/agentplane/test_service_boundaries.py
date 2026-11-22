@@ -4,9 +4,12 @@ Controller owns environment management, and Notifications never calls the app.""
 from typing import Any
 from urllib.parse import urlsplit
 
+import pytest
 import pytest_bazel
 from more_itertools import one
 
+from agentplane.crd_group import GROUP
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, sandbox_controller
 from cluster.cdk8s.testing.manifests import find_resource
 
@@ -31,37 +34,46 @@ def test_history_service_uses_sandbox_database(staging_manifests: list[dict[str,
     assert uri.username == database["spec"]["owner"]
 
 
-def test_environment_management_and_dispatcher_wake_have_separate_authority(
+@pytest.fixture(scope="module")
+def rbac(staging_manifests: list[dict[str, Any]]) -> Rbac:
+    return Rbac(staging_manifests)
+
+
+@pytest.mark.parametrize(
+    ("service", "group", "resource", "verbs", "exclusive"),
+    [
+        (app.NAME, GROUP, "sandboxes", {"get", "list", "watch"}, True),
+        (app.NAME, GROUP, "sandboxtemplates", {"list"}, True),
+        (app.NAME, "subresources.kubevirt.io", "virtualmachineinstances/console", {"get"}, False),
+        (runner_gateway.NAME, GROUP, "sandboxes", {"get", "list", "watch", "patch"}, True),
+        (runner_gateway.NAME, GROUP, "sandboxtemplates", set(), True),
+        (sandbox_controller.NAME, GROUP, "sandboxes", {"create", "patch", "delete"}, False),
+        (sandbox_controller.NAME, GROUP, "sandboxtemplates", {"get", "list"}, False),
+    ],
+)
+def test_environment_management_authority(
     staging_manifests: list[dict[str, Any]],
+    rbac: Rbac,
+    service: str,
+    group: str,
+    resource: str,
+    verbs: set[str],
+    exclusive: bool,
 ) -> None:
-    app_rules = find_resource(staging_manifests, "Role", app.NAME)["rules"]
-    for rule in app_rules:
-        if rule["resources"] == ["sandboxes"]:
-            assert set(rule["verbs"]) == {"get", "list", "watch"}
-    permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
-    assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in permissions
-    assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in permissions
-
-    gateway = find_resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
-    assert gateway["serviceAccountName"] == runner_gateway.NAME
-    gateway_rules = find_resource(staging_manifests, "Role", runner_gateway.NAME)["rules"]
-    assert set(one(rule for rule in gateway_rules if rule["resources"] == ["sandboxes"])["verbs"]) == {
-        "get",
-        "list",
-        "watch",
-        "patch",
-    }
-    assert not any("sandboxtemplates" in rule["resources"] for rule in gateway_rules)
-
-    controller = find_resource(staging_manifests, "Deployment", sandbox_controller.NAME)["spec"]["template"]["spec"]
-    assert controller["serviceAccountName"] == sandbox_controller.NAME
-    controller_rules = find_resource(staging_manifests, "Role", sandbox_controller.NAME)["rules"]
-    assert {"create", "patch", "delete"} <= set(
-        one(rule for rule in controller_rules if rule["resources"] == ["sandboxes"])["verbs"]
-    )
-    assert {"get", "list"} <= set(
-        one(rule for rule in controller_rules if rule["resources"] == ["sandboxtemplates"])["verbs"]
-    )
+    deployment = find_resource(staging_manifests, "Deployment", service)
+    namespace = deployment["metadata"]["namespace"]
+    account = deployment["spec"]["template"]["spec"]["serviceAccountName"]
+    grants = rbac.identity("ServiceAccount", account, namespace)
+    required = {Permission(namespace, group, resource, verb) for verb in verbs}
+    assert not uncovered(required, grants)
+    if exclusive:
+        # Restrict each grant to the resource under test, retaining its scope and verb.
+        matching = {
+            permission
+            for grant in grants
+            if grant.covers(permission := Permission(grant.namespace, group, resource, grant.verb, grant.name))
+        }
+        assert not uncovered(matching, required)
 
 
 def test_notifications_have_their_own_account_without_app_egress(staging_manifests: list[dict[str, Any]]) -> None:

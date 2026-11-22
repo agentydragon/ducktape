@@ -11,7 +11,7 @@ zero chunks, so a text-to-binary change removes the old searchable version. Ther
 extension-based filter or encoding detection/conversion; `IGNORE` patterns are the only
 way to leave a path out of a snapshot.
 
-The parked service builds and tests on request. Build `//agentplane/x/indexing:image`,
+The index tests run in routine CI while the service is parked. Build `//agentplane/x/indexing:image`,
 run its test suite, and publish a deliberate tag to
 `git.allegedly.works/ducktape-ci/agentplane-index` before deploying. The standalone binary is
 `//agentplane/x/indexing:main_bin`.

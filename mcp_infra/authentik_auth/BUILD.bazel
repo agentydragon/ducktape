@@ -10,6 +10,7 @@ py_test(
         "//mcp_infra:conftest",
         "//testing:asgi",
         "//testing:mock_oidc",
+        "@pypi//authlib",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//py_key_value_aio",

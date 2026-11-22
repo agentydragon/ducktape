@@ -1,9 +1,10 @@
 """Transport-independent interpretation of one admitted harness turn."""
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -26,13 +27,33 @@ class Turn:
     # `time.monotonic()` when the caller accepted the turn's input: the Dispatcher holds it, and no
     # native work need have started.
     accepted: float
-    tool_outputs: list[str] = field(default_factory=list)
+    tool_results: list[event_pb2.ToolResult] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
     # Every line the harness wrote during the turn, as the runner recorded it.
     native: list[str] = field(default_factory=list)
     status: event_pb2.TurnStatus | None = None
     input_confirmed: bool = False
     resumed: bool = False
+
+    @property
+    def tool_outputs(self) -> list[str]:
+        return [result.output for result in self.tool_results]
+
+    def shell_json(self, command: str) -> dict[str, Any]:
+        """Decode the object printed by one successful shell tool, after any harness preamble."""
+        assert len(self.tool_results) == 1, (
+            f"{command!r} produced {len(self.tool_results)} tool results, expected one\n{self.transcript}"
+        )
+        (result,) = self.tool_results
+        assert result.succeeded, f"{command!r} failed\n{self.transcript}"
+        start = result.output.find("{")
+        assert start >= 0, f"{command!r} returned no JSON object\n{self.transcript}"
+        try:
+            value, _ = json.JSONDecoder().raw_decode(result.output, idx=start)
+        except json.JSONDecodeError as error:
+            raise AssertionError(f"{command!r} returned invalid JSON: {error}\n{self.transcript}") from error
+        assert isinstance(value, dict), f"{command!r} returned no JSON object\n{self.transcript}"
+        return value
 
     @property
     def answer(self) -> str:
@@ -134,7 +155,7 @@ class TurnCollector:
 def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:
     match item.WhichOneof("outcome"):
         case "tool":
-            turn.tool_outputs.append(item.tool.output)
+            turn.tool_results.append(item.tool)
         case "text":
             turn.text.append(item.text)
 

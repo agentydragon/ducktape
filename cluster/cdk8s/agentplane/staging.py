@@ -6,7 +6,6 @@ Google Calendar MCP action groups.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 
 from agentplane_kubernetesroleset_crds.works.allegedly.agentplane import KubernetesRoleSet, KubernetesRoleSetSpec
@@ -17,11 +16,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -30,7 +25,6 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
-from agentplane.app.settings import Settings
 from agentplane.env.config import Executor, GuestResources, ResourceLimits, SystemdExecutorOwner
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
@@ -78,15 +72,16 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     sandbox_controller,
     staging_config,
-    staging_grants,
     workload_certificate_admission,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.actions_staging_policies import (
+    ASSIGNABLE_EGRESS_RULES,
     CLAUDE_AI,
     HAKU_AGENT,
     add_staging_action_policies,
     caller_role_sets,
+    identity_egress_set_name,
 )
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -120,14 +115,19 @@ from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, Kube
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
-from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
+from cluster.cdk8s.agentplane.sandbox_pod import (
+    SECRET_NAME as SANDBOX_SECRET_NAME,
+    TOOL_CONFIG_GRANT,
+    tool_config_grant,
+)
 from cluster.cdk8s.cnpg import cluster
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.generation import sops_decryption
 from cluster.cdk8s.haku import namespace as haku_namespace, ui_egress as haku_ui_egress
 from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
@@ -434,23 +434,6 @@ LAYOUT = ManifestLayout(
 )
 
 
-def _app_config(*, identity_catalog: bool) -> Settings:
-    return staging_config.config(
-        namespace=STAGING_NAMESPACE,
-        sandbox_template=POD_TEMPLATE,
-        firecracker_template=environment_firecracker.NAME,
-        runtime=_RUNTIME_CATALOG,
-        action_federation=_ACTION_FEDERATION,
-        connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.authority}"),
-        app_origin=f"https://{_HOSTNAME}",
-        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
-        electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
-        identity_catalog=identity_catalog,
-    )
-
-
-_APP_CONFIG = _app_config(identity_catalog=False)
-
 # The verified caller fields LiteLLM records as each request's spend-log metadata, sent both as one JSON
 # header and as W3C baggage under `litellm.metadata.spend_logs_metadata.`.
 _SPEND_LOGS_FIELDS = {
@@ -463,278 +446,281 @@ _SPEND_LOGS_FIELDS = {
 }
 
 
-ENV = Environment(
-    namespace=STAGING_NAMESPACE,
-    description=(
-        "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
-    ),
-    replicas=ReplicaProfile(
-        count=2,
-        strategy=DeploymentStrategy.rolling_update(
-            max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+def environment(*, identity_catalog: bool) -> Environment:
+    """Build staging with the selected policy catalog for both app and orchestration presets."""
+    app_origin = f"https://{_HOSTNAME}"
+    oidc_issuer = f"{_AUTHENTIK}/application/o/agentplane-staging/"
+    config = staging_config.config(
+        namespace=STAGING_NAMESPACE,
+        sandbox_template=POD_TEMPLATE,
+        firecracker_template=environment_firecracker.NAME,
+        runtime=_RUNTIME_CATALOG,
+        action_federation=_ACTION_FEDERATION,
+        connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.authority}"),
+        app_origin=app_origin,
+        oidc_issuer=oidc_issuer,
+        electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
+        identity_catalog=identity_catalog,
+    )
+    return Environment(
+        namespace=STAGING_NAMESPACE,
+        description=(
+            "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
         ),
-        min_ready=Duration.seconds(5),
-        pdb_min_available=1,
-    ),
-    runtime_catalog=_RUNTIME_CATALOG,
-    hostname_spread_services=frozenset(
-        {
-            "actions",
-            "app",
-            "environments",
-            "frontend",
-            "history-service",
-            "llm-ingress",
-            "mcp-edge",
-            "notifications",
-            "policy-controller",
-            "sessions",
-        }
-    ),
-    # Every launch also acts as the shared diagnostics account.
-    # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
-    #   removes the ServiceAccount-subject rendering and this switch.
-    identity_catalog=False,
-    central_sampler=CentralSamplerProps(
-        actions=ActionsConfig(
-            target=actions.service(STAGING_NAMESPACE).authority,
-            tls=TLS(
-                cert_file=workload_tls.CERT_FILE, key_file=workload_tls.KEY_FILE, ca_file=workload_tls.TRUST_BUNDLE_FILE
-            ),
-        ),
-        models={
-            route.id: (
-                ModelConfig(
-                    connection="anthropic-api",
-                    provider_model=route.model.id,
-                    api="anthropic_messages",
-                    anthropic_messages=_ANTHROPIC_MESSAGES,
-                    exec_encoding="json",
-                    reasoning_efforts=set(route.reasoning_efforts),
-                )
-                if route.upstream.provider == Provider.ANTHROPIC_API
-                else ModelConfig(
-                    connection="llm-ingress",
-                    provider_model=route.id,
-                    response_header_timeout_seconds=360 if route == TABBYAPI_QWEN_STOCK else None,
-                    api="responses",
-                    responses=(_LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES),
-                    exec_encoding="freeform" if route.upstream.provider == Provider.CHATGPT else "json",
-                    reasoning_efforts={"", *route.reasoning_efforts},
-                )
-            )
-            for route in STAGING_APP_MODELS.central_sampler
-        }
-        | {
-            chat_completions_id(route, STAGING_APP_MODELS.central_sampler): ModelConfig(
-                connection="llm-ingress",
-                provider_model=route.id,
-                response_header_timeout_seconds=360
-                if route in (TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED)
-                else None,
-                api="chat_completions",
-                exec_encoding="json",
-                reasoning_efforts={"", *route.reasoning_efforts},
-                chat_compaction=ChatCompactionConfig(
-                    max_tokens=8_192, keep_recent_turns=2, auto_compact_tokens=192 * 1024
-                ),
-            )
-            for route in STAGING_APP_MODELS.central_sampler_chat
-        },
-        connections={
-            "llm-ingress": ConnectionConfig(
-                base_url=(
-                    f"https://{llm_ingress.service(STAGING_NAMESPACE).fqdn}:"
-                    f"{llm_ingress.service(STAGING_NAMESPACE).port.number}"
-                ),
-                auth=AuthConfig(type="agentplane_ingress"),
-                tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
-            ),
-            "anthropic-api": ConnectionConfig(
-                base_url="https://api.anthropic.com",
-                auth=AuthConfig(
-                    type="anthropic_api_key", credential_file=Path("/var/run/secrets/central-sampler-anthropic/api-key")
-                ),
-            ),
-        },
-        connection_credentials={
-            "anthropic-api": SecretRef(namespace=STAGING_NAMESPACE, name=_ANTHROPIC_API_KEY_SECRET).key(
-                ANTHROPIC_API_KEY.key
-            )
-        },
-        max_live_sessions=32,
-        rpc_timeout_seconds=30,
-        lease_seconds=60,
-    ),
-    settle_deltas=True,
-    compact_deltas=True,
-    notifications_debounce=NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
-    notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
-    kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
-    llm_ingress=LlmIngressProps(
-        litellm_key_secret_name=_LITELLM_KEY_SECRET,
-        models=model_configs(STAGING_APP_MODELS),
-        codex_routes=STAGING_APP_MODELS.codex,
-        attribution=AttributionConfig(
-            json_headers=[
-                AttributionJsonHeader(
-                    name="x-litellm-spend-logs-metadata",
-                    fields=[AttributionField(key=key, source=source) for key, source in _SPEND_LOGS_FIELDS.items()],
-                )
-            ],
-            baggage=[
-                AttributionField(key=f"litellm.metadata.spend_logs_metadata.{key}", source=source)
-                for key, source in _SPEND_LOGS_FIELDS.items()
-            ],
-        ),
-    ),
-    egress=EgressProps(
-        ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
-        credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
         replicas=ReplicaProfile(
-            count=3,
+            count=2,
             strategy=DeploymentStrategy.rolling_update(
                 max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
             ),
             min_ready=Duration.seconds(5),
-            pdb_min_available=2,
+            pdb_min_available=1,
         ),
-        traffic_distribution="PreferClose",
-        zones=node_scheduling.HOME_AND_OVH_ZONES,
-        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_namespace.NAMESPACE, runner.NAMESPACE),
-        standing_workload_namespaces=(haku_namespace.NAMESPACE, runner.NAMESPACE),
-    ),
-    app=AppProps(
-        config=_APP_CONFIG,
-        origin=f"https://{_HOSTNAME}",
-        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
-        reach_incluster_authentik=True,
-        oidc_session_secret_name=_OIDC_SESSION_SECRET,
-    ),
-    actions=ActionsProps(
-        central_sampler_session_delegation=True,
-        hostname=_ACTIONS_HOSTNAME,
-        operator_oidc=_FEDERATION_TARGET,
-        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_namespace.NAMESPACE}),
-        mcp_servers=_MCP_SERVERS,
-        action_groups=_ACTION_GROUPS,
-        mcp_client_metadata=McpClientMetadataSettings(
-            url=AnyHttpUrl(_MCP_CLIENT_METADATA_URL), client_name="Agentplane staging"
-        ),
-        web_push=WebPushProps(
-            subject="mailto:agentydragon@gmail.com",
-            public_base_url=f"https://{_HOSTNAME}",
-            allowed_push_hosts=_WEB_PUSH_ALLOWED_HOSTS,
-            secret_name=_WEB_PUSH_SECRET,
-        ),
-        oauth_secret_items=(),
-        github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
-        bearer_mcp_mounts=[_SSH_MCP_MOUNT, _HA_MCP_MOUNT, _TANA_MCP_MOUNT, _GOOGLE_MCP_MOUNT],
-        extra_egress=[
-            EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
-            ssh_mcp.SERVICE.egress(),
-            ha_mcp.FACADE.egress(),
-            tana_mcp.MCP_PROXY.egress(),
-            google_mcp.SERVICE.egress(),
-            # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
-            # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
-            cilium.egress_via_gateway("auth.allegedly.works"),
-            # GitHub MCP discovery advertises github.com as its OAuth authorization server.
-            EgressRule.to_fqdns("api.githubcopilot.com", "github.com"),
-            # Claude and Codex publish their public CIMD documents at these origins.
-            EgressRule.to_fqdns("claude.ai", "chatgpt.com"),
-            # `github_public_repository` policies confirm a repository is public with an
-            # unauthenticated Go GitHub REST lookup (agentplane/action_service/internal/admission/policies/visibility.go); no credential
-            # rides this path.
-            EgressRule.to_fqdns("api.github.com"),
-            kubectl_passthrough_mcp.SERVICE.egress(),
-            # Linking probes the Kubernetes MCP server's public URL for its OAuth metadata.
-            cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
-            # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
-            # same public Gateway path.
-            cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
-            EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
-        ],
-        # Every Action but launch_sandbox, which always waits for the operator: the rest are auto-approved for
-        # claude-ai (list_launch_presets) or by a launcher's grants, and answer in one call.
-        orchestration_v1=OrchestrationProps(
-            presets=app_settings.orchestration_presets(
-                sandbox_presets=_APP_CONFIG.sandbox_presets, thread_presets=_APP_CONFIG.thread_presets
-            ),
-            direct_tools=frozenset(
-                {
-                    "list_launch_presets",
-                    "create_session",
-                    "submit_input",
-                    "interrupt_turn",
-                    "change_model",
-                    "change_reasoning_effort",
-                    "get_session",
-                    "list_sessions",
-                    "read_turns",
-                    "wait_for_turn",
-                }
-            ),
-        ),
-        session_delegation=SessionDelegationProps(
-            direct_tools_by_group={
-                "environments": frozenset({"list", "get", "resume"}),
-                "sessions": frozenset(
-                    {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
-                ),
+        runtime_catalog=_RUNTIME_CATALOG,
+        hostname_spread_services=frozenset(
+            {
+                "actions",
+                "app",
+                "environments",
+                "frontend",
+                "history-service",
+                "llm-ingress",
+                "mcp-edge",
+                "notifications",
+                "policy-controller",
+                "sessions",
             }
         ),
-    ),
-    mcp_edge=McpEdgeProps(
-        operator_oidc=_FEDERATION_TARGET,
-        oauth_secret_name="agentplane-mcp-oauth",
-        hostname=_ACTIONS_HOSTNAME,
-        extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
-    ),
-    vm_sandboxes=True,
-    firecracker_sandboxes=True,
-    vm_storage_class=piraeus_storage.SSD_REPLICATED,
-    vm_resources=STAGING_VM_RESOURCES,
-    vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd"),
-)
-
-
-def environment(*, identity_catalog: bool) -> Environment:
-    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes."""
-    config = _app_config(identity_catalog=identity_catalog)
-    assert ENV.app is not None
-    assert ENV.actions.orchestration_v1 is not None
-    return replace(
-        ENV,
         identity_catalog=identity_catalog,
-        app=replace(ENV.app, config=config),
-        actions=replace(
-            ENV.actions,
-            orchestration_v1=replace(
-                ENV.actions.orchestration_v1,
+        central_sampler=CentralSamplerProps(
+            actions=ActionsConfig(
+                target=actions.service(STAGING_NAMESPACE).authority,
+                tls=TLS(
+                    cert_file=workload_tls.CERT_FILE,
+                    key_file=workload_tls.KEY_FILE,
+                    ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                ),
+            ),
+            models={
+                route.id: (
+                    ModelConfig(
+                        connection="anthropic-api",
+                        provider_model=route.model.id,
+                        api="anthropic_messages",
+                        anthropic_messages=_ANTHROPIC_MESSAGES,
+                        exec_encoding="json",
+                        reasoning_efforts=set(route.reasoning_efforts),
+                    )
+                    if route.upstream.provider == Provider.ANTHROPIC_API
+                    else ModelConfig(
+                        connection="llm-ingress",
+                        provider_model=route.id,
+                        response_header_timeout_seconds=360 if route == TABBYAPI_QWEN_STOCK else None,
+                        api="responses",
+                        responses=(
+                            _LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES
+                        ),
+                        exec_encoding="freeform" if route.upstream.provider == Provider.CHATGPT else "json",
+                        reasoning_efforts={"", *route.reasoning_efforts},
+                    )
+                )
+                for route in STAGING_APP_MODELS.central_sampler
+            }
+            | {
+                chat_completions_id(route, STAGING_APP_MODELS.central_sampler): ModelConfig(
+                    connection="llm-ingress",
+                    provider_model=route.id,
+                    response_header_timeout_seconds=360
+                    if route in (TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED)
+                    else None,
+                    api="chat_completions",
+                    exec_encoding="json",
+                    reasoning_efforts={"", *route.reasoning_efforts},
+                    chat_compaction=ChatCompactionConfig(
+                        max_tokens=8_192, keep_recent_turns=2, auto_compact_tokens=192 * 1024
+                    ),
+                )
+                for route in STAGING_APP_MODELS.central_sampler_chat
+            },
+            connections={
+                "llm-ingress": ConnectionConfig(
+                    base_url=f"https://{llm_ingress.service(STAGING_NAMESPACE).authority}",
+                    auth=AuthConfig(type="agentplane_ingress"),
+                    tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
+                ),
+                "anthropic-api": ConnectionConfig(
+                    base_url="https://api.anthropic.com",
+                    auth=AuthConfig(
+                        type="anthropic_api_key",
+                        credential_file=Path("/var/run/secrets/central-sampler-anthropic/api-key"),
+                    ),
+                ),
+            },
+            connection_credentials={
+                "anthropic-api": SecretRef(namespace=STAGING_NAMESPACE, name=_ANTHROPIC_API_KEY_SECRET).key(
+                    ANTHROPIC_API_KEY.key
+                )
+            },
+            max_live_sessions=32,
+            rpc_timeout_seconds=30,
+            lease_seconds=60,
+        ),
+        settle_deltas=True,
+        compact_deltas=True,
+        notifications_debounce=NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
+        notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
+        kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
+        llm_ingress=LlmIngressProps(
+            litellm_key_secret_name=_LITELLM_KEY_SECRET,
+            models=model_configs(STAGING_APP_MODELS),
+            codex_routes=STAGING_APP_MODELS.codex,
+            attribution=AttributionConfig(
+                json_headers=[
+                    AttributionJsonHeader(
+                        name="x-litellm-spend-logs-metadata",
+                        fields=[AttributionField(key=key, source=source) for key, source in _SPEND_LOGS_FIELDS.items()],
+                    )
+                ],
+                baggage=[
+                    AttributionField(key=f"litellm.metadata.spend_logs_metadata.{key}", source=source)
+                    for key, source in _SPEND_LOGS_FIELDS.items()
+                ],
+            ),
+        ),
+        egress=EgressProps(
+            ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
+            credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
+            replicas=ReplicaProfile(
+                count=3,
+                strategy=DeploymentStrategy.rolling_update(
+                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+                ),
+                min_ready=Duration.seconds(5),
+                pdb_min_available=2,
+            ),
+            traffic_distribution="PreferClose",
+            zones=node_scheduling.HOME_AND_OVH_ZONES,
+            external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_namespace.NAMESPACE, runner.NAMESPACE),
+            standing_workload_namespaces=(haku_namespace.NAMESPACE, runner.NAMESPACE),
+        ),
+        app=AppProps(
+            config=config,
+            origin=app_origin,
+            oidc_issuer=oidc_issuer,
+            reach_incluster_authentik=True,
+            oidc_session_secret_name=_OIDC_SESSION_SECRET,
+        ),
+        actions=ActionsProps(
+            central_sampler_session_delegation=True,
+            hostname=_ACTIONS_HOSTNAME,
+            operator_oidc=_FEDERATION_TARGET,
+            caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_namespace.NAMESPACE}),
+            mcp_servers=_MCP_SERVERS,
+            action_groups=_ACTION_GROUPS,
+            mcp_client_metadata=McpClientMetadataSettings(
+                url=AnyHttpUrl(_MCP_CLIENT_METADATA_URL), client_name="Agentplane staging"
+            ),
+            web_push=WebPushProps(
+                subject="mailto:agentydragon@gmail.com",
+                public_base_url=app_origin,
+                allowed_push_hosts=_WEB_PUSH_ALLOWED_HOSTS,
+                secret_name=_WEB_PUSH_SECRET,
+            ),
+            oauth_secret_items=(),
+            github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
+            bearer_mcp_mounts=[_SSH_MCP_MOUNT, _HA_MCP_MOUNT, _TANA_MCP_MOUNT, _GOOGLE_MCP_MOUNT],
+            extra_egress=[
+                EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
+                ssh_mcp.SERVICE.egress(),
+                ha_mcp.FACADE.egress(),
+                tana_mcp.MCP_PROXY.egress(),
+                google_mcp.SERVICE.egress(),
+                # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
+                # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
+                cilium.egress_via_gateway("auth.allegedly.works"),
+                # GitHub MCP discovery advertises github.com as its OAuth authorization server.
+                EgressRule.to_fqdns("api.githubcopilot.com", "github.com"),
+                # Claude and Codex publish their public CIMD documents at these origins.
+                EgressRule.to_fqdns("claude.ai", "chatgpt.com"),
+                # `github_public_repository` policies confirm a repository is public with an
+                # unauthenticated Go GitHub REST lookup (agentplane/action_service/internal/admission/policies/visibility.go); no credential
+                # rides this path.
+                EgressRule.to_fqdns("api.github.com"),
+                kubectl_passthrough_mcp.SERVICE.egress(),
+                # Linking probes the Kubernetes MCP server's public URL for its OAuth metadata.
+                cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
+                # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
+                # same public Gateway path.
+                cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
+                EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
+            ],
+            # Every Action but launch_sandbox, which always waits for the operator: the rest are auto-approved for
+            # claude-ai (list_launch_presets) or by a launcher's grants, and answer in one call.
+            orchestration_v1=OrchestrationProps(
                 presets=app_settings.orchestration_presets(
                     sandbox_presets=config.sandbox_presets, thread_presets=config.thread_presets
                 ),
+                direct_tools=frozenset(
+                    {
+                        "list_launch_presets",
+                        "create_session",
+                        "submit_input",
+                        "interrupt_turn",
+                        "change_model",
+                        "change_reasoning_effort",
+                        "get_session",
+                        "list_sessions",
+                        "read_turns",
+                        "wait_for_turn",
+                    }
+                ),
+            ),
+            session_delegation=SessionDelegationProps(
+                direct_tools_by_group={
+                    "environments": frozenset({"list", "get", "resume"}),
+                    "sessions": frozenset(
+                        {
+                            "create",
+                            "submit_input",
+                            "observe_input",
+                            "get",
+                            "read_turns",
+                            "cancel_input",
+                            "interrupt_turn",
+                        }
+                    ),
+                }
             ),
         ),
+        mcp_edge=McpEdgeProps(
+            operator_oidc=_FEDERATION_TARGET,
+            oauth_secret_name="agentplane-mcp-oauth",
+            hostname=_ACTIONS_HOSTNAME,
+            extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
+        ),
+        vm_sandboxes=True,
+        firecracker_sandboxes=True,
+        vm_storage_class=piraeus_storage.SSD_REPLICATED,
+        vm_resources=STAGING_VM_RESOURCES,
+        vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd"),
     )
 
 
-def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
-    """The assignable sets' Kubernetes grants, by set: PolicySet rules, or in the identity catalog
-    the KubernetesRoleSets of the same names."""
-    catalog = staging_grants.catalog(ENV.namespace)
-    sets = agent_access_profiles.policy_set_grants(catalog)
-    sets[TOOL_CONFIG_GRANT] = (catalog[TOOL_CONFIG_GRANT],)
-    return sets
+# CLEANUP(added 2026-11-09): switch staging to the identity catalog at cutover, then remove
+# the ServiceAccount-subject rendering and this switch.
+ENV = environment(identity_catalog=False)
 
 
-def assignable_grants() -> tuple[KubernetesGrant, ...]:
-    """Role grants the controller may bind for presets and the standing Claude account."""
-    return (
-        *(grant for grants in assignable_policy_sets().values() for grant in grants),
-        *agent_access_profiles.claude_ai_static_grants(),
-    )
+_ASSIGNABLE_POLICY_SETS = {
+    **agent_access_profiles.policy_set_grants(),
+    TOOL_CONFIG_GRANT: (tool_config_grant(STAGING_NAMESPACE),),
+}
+
+# Both the controller's own bind permissions and its delegation in other namespaces
+# cover the preset role sets and the standing Claude account's additional static roles.
+ASSIGNABLE_GRANTS: tuple[KubernetesGrant, ...] = (
+    *(grant for grants in _ASSIGNABLE_POLICY_SETS.values() for grant in grants),
+    *agent_access_profiles.CLAUDE_AI_STATIC_GRANTS,
+)
 
 
 def chart(app: App, env: Environment = ENV) -> Chart:
@@ -801,10 +787,8 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     ).add_platform_resources()
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
-    assignable_sets = assignable_policy_sets()
-    egress_rules = staging_config.assignable_set_egress_rules()
     role_sets: dict[str, KubernetesRoleSet] = {}
-    for name, grants in sorted(assignable_sets.items()):
+    for name, grants in sorted(_ASSIGNABLE_POLICY_SETS.items()):
         # Sandboxes and standing callers act as Identities and reach the API server only as accounts,
         # which the role sets grant. Mixed-mode PolicySets keep their Kubernetes rules for any
         # remaining ServiceAccount-subject bindings; Identity bindings use pure-egress siblings.
@@ -820,29 +804,24 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 f"policy-set-{name}",
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 spec=PolicySetSpec(
-                    rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())]
+                    rules=[*agent_access_profiles.rules_for_grants(grants), *ASSIGNABLE_EGRESS_RULES.get(name, ())]
                 ),
             )
-            if name in egress_rules:
-                PolicySet(
-                    chart,
-                    f"policy-set-{name}-identity",
-                    metadata=ApiObjectMetadata(name=f"{name}-identity", namespace=env.namespace),
-                    spec=PolicySetSpec(rules=egress_rules[name]),
-                )
-        elif name in egress_rules:
+        if name in ASSIGNABLE_EGRESS_RULES:
+            policy_name = identity_egress_set_name(name, identity_catalog=env.identity_catalog)
             PolicySet(
                 chart,
-                f"policy-set-{name}",
-                metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-                spec=PolicySetSpec(rules=egress_rules[name]),
+                f"policy-set-{policy_name}",
+                metadata=ApiObjectMetadata(name=policy_name, namespace=env.namespace),
+                spec=PolicySetSpec(rules=ASSIGNABLE_EGRESS_RULES[name]),
             )
-    claude_ai_static_grants = agent_access_profiles.claude_ai_static_grants()
     role_sets[agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] = KubernetesRoleSet(
         chart,
         "kubernetes-role-set-claude-ai-static",
         metadata=ApiObjectMetadata(name=agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET, namespace=env.namespace),
-        spec=KubernetesRoleSetSpec(rules=agent_access_profiles.role_set_rules_for_grants(claude_ai_static_grants)),
+        spec=KubernetesRoleSetSpec(
+            rules=agent_access_profiles.role_set_rules_for_grants(agent_access_profiles.CLAUDE_AI_STATIC_GRANTS)
+        ),
     )
     _add_launch_accounts(chart, env, role_sets=role_sets)
     _add_standing_identity_access(chart, env, role_sets=role_sets)
@@ -870,10 +849,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         "policy-controller-rbac",
         env,
         account=controller.account,
-        assignable_grants=[
-            *(grant for grants in assignable_sets.values() for grant in grants),
-            *claude_ai_static_grants,
-        ],
+        assignable_grants=ASSIGNABLE_GRANTS,
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
         workload_namespaces=workload_namespaces,
     )
@@ -899,7 +875,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace="litellm",
                 source_secret=_LITELLM_KEY_SECRET,
-                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
@@ -923,7 +898,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace=ANTHROPIC_API_KEY.secret.namespace,
                 source_secret=ANTHROPIC_API_KEY.secret.name,
-                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(ANTHROPIC_API_KEY.secret.name, ANTHROPIC_API_KEY.key, secret_key=ANTHROPIC_API_KEY.key)],
@@ -961,7 +935,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace=source.secret.namespace,
                 source_secret=source.secret.name,
-                consumer_namespace=STAGING_NAMESPACE,
             ),
         )
     # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
@@ -978,7 +951,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 reader=reader,
                 source_namespace="haku-console",
                 source_secret=_GITHUB_MCP_CLIENT_SECRET,
-                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(_GITHUB_MCP_CLIENT_SECRET, key) for key in ("client_id", "client_secret")],
@@ -986,13 +958,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(
-        chart,
-        identity_catalog=env.identity_catalog,
-        identity_egress_set_names=set(egress_rules),
-        haku_ui=haku_ui,
-        haku_ci=haku_ci,
-    )
+    add_staging_action_policies(chart, identity_catalog=env.identity_catalog, haku_ui=haku_ui, haku_ci=haku_ci)
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
     )
@@ -1020,14 +986,14 @@ def _add_launch_accounts(chart: Chart, env: Environment, *, role_sets: Mapping[s
         description="Read-only namespace diagnostics every agent may use.",
         role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
     )
-    for preset in agent_access_profiles.MANAGED_GRANTS:
+    for preset, selected_sets in agent_access_profiles.PRESET_ROLE_SETS.items():
         KubernetesAccount(
             chart,
             f"kubernetes-account-{preset}",
             account=kubernetes_account_ref.account(env.namespace, preset),
             policy_namespace=env.namespace,
             description=f"The '{preset}' preset's Kubernetes identity.",
-            role_sets=[role_sets[role_set] for role_set in staging_config.preset_role_sets(preset)],
+            role_sets=[role_sets[role_set] for role_set in selected_sets],
         )
 
 
@@ -1134,11 +1100,7 @@ def agentplane_staging(
                 )
             ),
         ],
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         decryption=sops_decryption(LAYOUT.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
             agentplane_crds,

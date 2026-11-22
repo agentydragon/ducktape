@@ -17,14 +17,16 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).absolute().parent.parent
 RENDER = pathlib.Path(os.environ.get("RENDER", ROOT / "lean/.lake/build/bin/render"))
 # Selector for each statement of example/input/bundle.mjs, by position.
 SEL = ["PI", "square", "area", "isEven", "isOdd", "registry", "register", "#7", "label", "#9", "#10", "#11"]
 
 
 def run_node(directory, entry):
-    p = subprocess.run(["node", entry], check=False, cwd=directory, capture_output=True, text=True, timeout=30)
+    p = subprocess.run(
+        [os.environ.get("NODE", "node"), entry], check=False, cwd=directory, capture_output=True, text=True, timeout=30
+    )
     return (p.returncode, p.stdout)
 
 
@@ -62,7 +64,7 @@ def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 300
     rng = random.Random(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
     expected = run_node(ROOT / "example" / "input", "bundle.mjs")
-    tally = collections.Counter()
+    tally: collections.Counter[str] = collections.Counter()
     seen, examples = set(), []
     for _ in range(count):
         spec = gen(rng)
@@ -92,9 +94,10 @@ def main():
                 tally["UNSOUND"] += 1
                 print("UNSOUND: accepted a split that behaves differently", json.dumps(spec), got, file=sys.stderr)
             elif valid:
-                order = re.search(
-                    r"\[[0-9, ]+\]", next(ln for ln in r.stdout.splitlines() if "statement order" in ln)
-                ).group(0)
+                match = re.search(r"\[[0-9, ]+\]", next(ln for ln in r.stdout.splitlines() if "statement order" in ln))
+                if match is None:
+                    raise RuntimeError(f"missing statement order: {r.stdout}")
+                order = match.group(0)
                 examples.append((order != str(list(range(len(SEL)))), json.dumps(spec["modules"]), order))
             elif same:
                 tally["rejected_but_harmless"] += 1

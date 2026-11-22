@@ -226,7 +226,7 @@ class Dex(Construct):
                 .key("client-secret")
                 .env_value(self, "mcp-edge-oauth-client-secret-ref"),
             },
-            ports=[_SERVICE.port.container_port(), HTTPS_PORT.container_port()],
+            ports=[_SERVICE.container_port(), HTTPS_PORT.container_port()],
             readiness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=0, period_seconds=5),
             liveness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=10, period_seconds=30),
             resources=ContainerResources(
@@ -253,5 +253,5 @@ class Dex(Construct):
             "service",
             metadata=ApiObjectMetadata(name=_SERVICE.name, namespace=NAMESPACE),
             selector=deployment,
-            ports=[_SERVICE.port.service_port(), HTTPS_PORT.service_port()],
+            ports=[_SERVICE.service_port(), HTTPS_PORT.service_port()],
         )

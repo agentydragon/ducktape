@@ -26,7 +26,8 @@ if str(_REPO_ROOT) not in sys.path:
 from github import Auth, Github
 from pydantic import BaseModel, Field
 
-from devinfra.ci.artifacts import Sources, sources_path, tag_package
+from devinfra.ci.artifacts import Sources, sources_path
+from devinfra.ci.release_content_hash import tag_package
 
 REPO = "agentydragon/ducktape"
 RETENTION_DAYS = 30

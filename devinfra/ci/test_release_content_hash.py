@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.release_content_hash import release_content_hash, release_content_hash_from_digests
+from devinfra.ci.release_content_hash import main, release_content_hash, release_content_hash_from_digests, tag_package
 
 
 def test_single_artifact_preserves_existing_content_hash(tmp_path: Path) -> None:
@@ -47,10 +47,6 @@ def test_group_rejects_duplicate_release_filenames(tmp_path: Path) -> None:
         release_content_hash([first, second])
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 def test_digest_form_matches_the_file_form(tmp_path: Path) -> None:
     """plan_releases derives tags from BES digests instead of bytes. If these two
     ever disagree, every package republishes once under a new tag."""
@@ -62,3 +58,19 @@ def test_digest_form_matches_the_file_form(tmp_path: Path) -> None:
     for group in ([first], [first, second], [second, first]):
         digests = [(p.name, hashlib.sha256(p.read_bytes()).hexdigest()) for p in group]
         assert release_content_hash(group) == release_content_hash_from_digests(digests)
+
+
+def test_publish_tag_round_trips_through_pin_sync_and_retention(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    asset = tmp_path / "a.whl"
+    asset.write_bytes(b"alpha")
+    main(["--package", "skill-backtrace", str(asset)])
+    tag = capsys.readouterr().out.strip()
+    assert tag == "skill-backtrace-8ed3f6ad685b"
+    assert tag_package(tag) == "skill-backtrace"
+    assert tag_package("skill-backtrace-0123abc") == "skill-backtrace"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

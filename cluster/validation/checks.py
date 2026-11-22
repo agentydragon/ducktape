@@ -12,7 +12,6 @@ from cluster.validation.k8s import (
     AgentplaneSandboxTemplateResource,
     CiliumPolicyResource,
     ClusterExternalSecretResource,
-    CronJobResource,
     ExternalSecretResource,
     K8sResource,
     PodTemplateWorkloadResource,
@@ -24,7 +23,6 @@ from cluster.validation.k8s import (
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _FORGEJO_IMAGE_WORKLOAD_TYPES = (
-    CronJobResource,
     PodTemplateWorkloadResource,
     SandboxTemplateResource,
     AgentplaneSandboxTemplateResource,
@@ -39,14 +37,9 @@ def find_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
         referenced.update(kust.all_referenced_files)
-        for resource in kust.resolved_resources:
-            if resource.is_dir():
-                referenced.add(resource / "kustomization.yaml")
 
     errors = []
     for yaml_file in cluster.all_yaml_files:
-        if yaml_file.name == "kustomization.yaml":
-            continue
         relative = yaml_file.relative_to(repo_root)
         if relative in _INTENTIONALLY_STORED_ONLY_FILES:
             continue

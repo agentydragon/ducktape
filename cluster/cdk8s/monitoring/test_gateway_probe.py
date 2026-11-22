@@ -1,10 +1,7 @@
 """Exercise the gateway probe's alert expressions with upstream promtool."""
 
 import pytest_bazel
-from cdk8s import (
-    App,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import App
 from more_itertools import one
 
 from cluster.cdk8s.monitoring import gateway_probe
@@ -29,7 +26,7 @@ _MESH = Mesh(
 def test_gateway_probe_rules(promtool: PromtoolRules, scratch_app: App) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app, _MESH))
+        for manifest in gateway_probe.chart(scratch_app, _MESH).to_json()
         if manifest["kind"] == "PrometheusRule"
     )
     promtool(
