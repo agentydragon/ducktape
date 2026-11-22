@@ -353,6 +353,22 @@ js_test(
 )
 
 js_test(
+    name = "effects_generated_known_gaps_test",
+    size = "medium",
+    args = [
+        "--generated-known-gaps",
+        "--seed",
+        "20261121",
+    ],
+    data = _EFFECTS_CASES_DATA + [
+        "gen/core.mjs",
+        "gen/implicit_calls.mjs",
+    ],
+    entry_point = _EFFECTS + ":run",
+    env = _EFFECTS_CASES_ENV,
+)
+
+js_test(
     name = "effects_permutations_test",
     size = "large",
     args = [

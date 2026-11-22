@@ -4,7 +4,7 @@
 // order must change what Node prints (`differs`) or not (`same`), and `translate` must not accept a tree that
 // differs. A `same` reorder with `accepted: true` is a positive anchor: the analysis is precise enough to allow it.
 //
-//   node run.mjs [--show] [--permutations N [--seed S] | --known-gaps]
+//   node run.mjs [--show] [--permutations N | --known-gaps | --generated-known-gaps] [--seed S]
 //
 // `--permutations N` also runs N random permutations of the units of every case (after the listed reorders) and fails on
 // a wrong accept: a tree that `translate` accepts and Node runs differently.
@@ -27,6 +27,7 @@ const option = (name, fallback) => {
 const permutations = option("permutations", 0);
 const caseSeed = option("seed", 1);
 const auditGaps = process.argv.includes("--known-gaps");
+const generatedGaps = process.argv.includes("--generated-known-gaps");
 let seed = caseSeed;
 
 // `CASES=path` runs another file of cases with the same shape; a relative path is from this script's directory. Without
@@ -37,13 +38,15 @@ const knownGaps = {
   "./debug/p1_known_gaps/cases.mjs": "P1",
   "../translation/debug/generator_findings/cases.mjs": "P3",
 };
-if (auditGaps && (process.env.CASES || permutations))
-  throw new Error("--known-gaps selects its own cases and reorders");
+if ((auditGaps || generatedGaps) && (process.env.CASES || permutations || (auditGaps && generatedGaps)))
+  throw new Error("select one known-gap audit and use its own cases and reorders");
 const caseFiles = auditGaps
   ? Object.keys(knownGaps)
-  : process.env.CASES
-    ? [process.env.CASES]
-    : ["./cases.mjs", "./cases_general.mjs"];
+  : generatedGaps
+    ? ["../translation/gen/implicit_calls.mjs"]
+    : process.env.CASES
+      ? [process.env.CASES]
+      : ["./cases.mjs", "./cases_general.mjs"];
 const modules = await Promise.all(caseFiles.map((f) => import(pathToFileURL(path.resolve(here, f)).href)));
 const cases = modules.flatMap((m, i) => {
   const generated = m.generateCases ? m.generateCases(caseSeed) : m.cases;
@@ -148,6 +151,7 @@ const reorder = (c, bundleJson, lines, order) => {
 let failures = 0;
 const observedFamilies = new Set();
 const observedGaps = new Map();
+const observedGapFamilies = new Map();
 for (const [n, raw] of cases.entries()) {
   const c = { ...raw, source: raw.source.replaceAll("%VENDOR%", vendorFile), premisesFile: premisesOf(raw, n) };
   const source = path.join(work, "case.mjs");
@@ -169,18 +173,20 @@ for (const [n, raw] of cases.entries()) {
   const lines = c.source.trim().split("\n");
   const original = c.reorders?.length || permutations ? nodeOutput(source) : undefined;
   for (const r of c.reorders ?? []) {
+    const gap = c.knownGap ?? (generatedGaps ? r.knownGap : undefined);
     const res = reorder(c, bundle, lines, r.order);
+    const expectedWrongAccept = gap && res.verdict === "accepted";
     const differs = !sameNodeOutput(res.node, original);
     const problems = [];
     if (differs !== (r.behavior === "differs"))
       problems.push(`Node ${differs ? "differs" : "agrees"}, the case says ${r.behavior}`);
     if (r.stdoutDiffers && res.node.stdout === original.stdout) problems.push("Node stdout did not differ");
-    if (c.knownGap) {
+    if (gap) {
       if (original.status !== 0 || res.node.status !== 0 || original.stdout === res.node.stdout)
         problems.push("known gap requires both Node runs to complete and print different output");
-      if (res.verdict !== "accepted")
+      if (c.knownGap && !expectedWrongAccept)
         problems.push(`known gap no longer accepted (${res.verdict}); move to a regression test`);
-      if (c.knownGap === "P3") {
+      if (gap === "P3") {
         const defaultPremises = premisesOf({ premises: { ...c.premises, noWorldHooks: false } }, n + cases.length);
         const control = reorder({ ...c, premisesFile: defaultPremises }, bundle, lines, r.order);
         if (control.verdict === "accepted") problems.push("WRONG ACCEPT with P3 off");
@@ -188,10 +194,13 @@ for (const [n, raw] of cases.entries()) {
     } else if (differs && res.verdict === "accepted") problems.push("WRONG ACCEPT");
     if (r.accepted && res.verdict !== "accepted") problems.push(`wanted accepted, got ${res.verdict}`);
     if (problems.length) failures++;
-    else if (c.knownGap) observedGaps.set(c.knownGap, (observedGaps.get(c.knownGap) ?? 0) + 1);
+    else if (expectedWrongAccept) {
+      observedGaps.set(gap, (observedGaps.get(gap) ?? 0) + 1);
+      if (c.family) observedGapFamilies.set(c.family, (observedGapFamilies.get(c.family) ?? 0) + 1);
+    }
     if (differs && c.family) observedFamilies.add(c.family);
     console.log(
-      `  ${problems.length ? "FAIL" : c.knownGap ? `XFAIL (${c.knownGap})` : "pass"}  [${r.order}] ${res.verdict}; Node ${differs ? "differs" : "agrees"}${problems.length ? ` (${problems.join("; ")})` : ""}`
+      `  ${problems.length ? "FAIL" : expectedWrongAccept ? `XFAIL (${gap})` : "pass"}  [${r.order}] ${res.verdict}; Node ${differs ? "differs" : "agrees"}${problems.length ? ` (${problems.join("; ")})` : ""}`
     );
   }
   // a bundle that throws in Node is outside premise P4: its permutations would differ by the error's file and line
@@ -223,9 +232,15 @@ for (const [n, raw] of cases.entries()) {
 }
 rmSync(work, { recursive: true, force: true });
 const missingFamilies = Object.keys(requiredFamilies).filter((family) => !observedFamilies.has(family));
-if (failures) {
+if (failures || missingFamilies.length) {
   const missing = missingFamilies.length ? `; no observable differing reorder for: ${missingFamilies.join(", ")}` : "";
   throw new Error(`${failures} cases gave the wrong classification${missing}`);
 }
 for (const [category, count] of observedGaps) console.log(`${count} expected wrong accepts (${category})`);
+if (generatedGaps) {
+  for (const [family, count] of observedGapFamilies)
+    console.log(`${family}: ${count}/${familyCounts.get(family)} divergent reorders accepted`);
+  const unobserved = Object.keys(requiredFamilies).filter((family) => !observedGapFamilies.has(family));
+  if (unobserved.length) throw new Error(`no known gap reproduced for ${unobserved.join(", ")}`);
+}
 console.log(`${cases.length} cases`);

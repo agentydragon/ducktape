@@ -179,6 +179,20 @@ node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --w
 
 [`syntax_inventory.mjs`](syntax_inventory.mjs) lists the node types and forms (each with a witness snippet that `coverage_audit_test` parses), [`analysis_inventory.mjs`](analysis_inventory.mjs) reads the analysis's inventory from the Lean sources, and [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a program calls from its own code (`node --import`). `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
 
+### Protocol combinations outside the general fuzz corpus
+
+The general generator produces standard array calls, iterable `Array.from` inputs, classes, regular expressions and program-defined hooks. Coverage of those individual forms does not establish that the generator can compose the effectful calls in the known-gap fixtures. [`implicit_calls.mjs`](gen/implicit_calls.mjs) composes dispatch, hook installation and observation for the following families. `effects_generated_known_gaps_test` runs seed `20261121` through `translate` and Node with a safe control and a stdout-changing reorder per program. It requires an observed wrong accept in each listed family and records siblings that are correctly refused. To rerun the matrix with other generated values, append `--test_arg=--seed --test_arg=77`.
+
+| Family                       | What generation exercises                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Array species                | `map`, `filter`, `slice`, `splice`, `concat`, `flat` and `flatMap` with a program constructor under `Symbol.species`, installed by assignment or descriptor |
+| Inherited array factories    | Subclass construction through `Array.from` on iterable and array-like inputs and through `Array.of`                                                         |
+| Node inspection              | A custom inspector reached through nested object and array arguments to `console.log`                                                                       |
+| P1, RegExp legacy state      | An independent read of a legacy capture across `exec`, `test`, `replace`, `match` or `split`                                                                |
+| P3, hidden hook installation | Getter, conversion and prototype installation through iterator callbacks, generators and `Reflect.apply`. The order check is also repeated with P3 off.     |
+
+The module generator in [`gen/core.mjs`](gen/core.mjs) assumes P1 and omits patches to built-ins. The template fuzzer emits direct static and prototype assignments that the checker already detects. Computed mutator selection, spread forwarding, a generator-body alias and defining an intrinsic global remain explicit counterexamples in [the P1 audit](../effects/debug/p1_known_gaps/README.md). Shift supplies grammar coverage, without a production pairing these mutations with an initialized intrinsic and an observation of the changed state. The footprint oracle treats built-ins as opaque, so the P1 audit uses the Node output from an independent read across the mutation.
+
 ## The host inventory
 
 [`host_inventory.mjs`](host_inventory.mjs) counts which standard and host features a set of JavaScript files uses: the globals (names no declaration in the file binds), the static member paths that start at one, the names of members of standard objects on any other receiver, host modules and the keys of `import.meta`. It reads source only.
