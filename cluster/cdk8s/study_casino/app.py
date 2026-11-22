@@ -20,6 +20,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
+    ClusterSpecPrimaryUpdateMethod,
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
@@ -131,7 +132,8 @@ def _database(scope: Construct) -> None:
         ),
         initdb=cluster.same_owner_initdb(_DATABASE),
         wal_archive=True,
-        resources=cluster.resource_requests(cpu_millis=250, memory_mib=160),
+        resources=cluster.resource_requests(cpu_millis=250, memory_mib=192),
+        primary_update_method=ClusterSpecPrimaryUpdateMethod.SWITCHOVER,
     )
     backup.CnpgBackup(
         scope,
