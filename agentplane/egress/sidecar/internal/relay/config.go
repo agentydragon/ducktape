@@ -232,8 +232,7 @@ type config struct {
 }
 
 // loadConfig reads the only settings source used by the process.
-func loadConfig(getenv func(string) string) (config, error) {
-	path := getenv(configFileEnv)
+func loadConfig(path string) (config, error) {
 	if path == "" {
 		return config{}, fmt.Errorf("%s must name the YAML settings file", configFileEnv)
 	}
