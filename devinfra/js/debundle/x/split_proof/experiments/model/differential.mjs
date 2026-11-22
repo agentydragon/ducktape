@@ -68,7 +68,7 @@ import {
 } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
-import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
+import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 
 const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);
@@ -930,6 +930,14 @@ const focusedCoverage = {};
 for (const job of jobs.filter((j) => j.focused)) {
   const covered = (focusedCoverage[job.focused.family] ??= { generated: 0, completed: 0, reordered: 0 });
   covered.generated++;
+  if (job.focused.family === "expressions") {
+    for (const [kind, table] of Object.entries({ unary: UNARY, binary: BINARY, logical: LOGICAL }))
+      for (const op of Object.values(table))
+        assert(
+          job.result.out.some((line) => line.startsWith(`${kind} ${op} `)),
+          `${job.label}: missing ${kind} ${op}`
+        );
+  }
   if (job.result.end === "normal" && sameRun(job.result, job.node)) covered.completed++;
   if (splitJobs.some((s) => s.of === job && !s.orderKept && sameRun(s.result, job.result) && sameRun(s.node, job.node)))
     covered.reordered++;
