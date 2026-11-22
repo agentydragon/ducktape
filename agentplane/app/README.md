@@ -130,6 +130,22 @@ permits a Session-addressed retry with the same command ID and payload under Dis
 Session placement and deleted-Sandbox fence. An unreadable or conflicting receipt leaves the original
 saved. Older commands with uncertain or Sandbox-addressed destinations support read-only status checks.
 
+The App stores operator acknowledgement separately from delivery. An acknowledgement identifies the
+verified OIDC issuer and subject, Session, command ID and exact positive Dispatcher receipt version
+the operator saw. The same operator sees it across browser logins and App replicas. Other operators
+maintain independent attention and history, including for the same receipt. Username changes leave
+preferences intact. Acknowledgements are idempotent and retained across App upgrades. A later revision can request
+attention again, including a changed UNKNOWN outcome. The App records the time of acknowledgement
+and keeps the referenced command and revision discoverable in newest-first pages. Dispatcher and
+History retain authority over the outcome and effects. If the original receipt expires or changes,
+its acknowledgement remains a reference without that original evidence.
+
+The operator-only `/upstream/app/v1/threads/{thread_id}/notice-acknowledgements` collection accepts
+an acknowledgement by POST and lists history by GET (default 25, maximum 100). The collection's
+`:batchGet` method checks up to 100 exact pairs at once. All three operations verify the retained
+Session before reading or writing operator preferences. During rollout, clients receiving a failure
+from an older App replica must keep the notice visible.
+
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
 plain `/upstream/dispatcher/{path...}` proxy forwards to the Dispatcher's gRPC-Gateway facade,

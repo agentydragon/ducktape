@@ -4,9 +4,15 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 go_library(
     name = "threads",
-    srcs = ["store.go"],
+    srcs = [
+        "notices.go",
+        "store.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/threads",
-    deps = ["@com_github_google_uuid//:uuid"],
+    deps = [
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+    ],
 )
 
 go_test(
