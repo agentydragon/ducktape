@@ -13,7 +13,6 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-import yaml
 from cdk8s import App, Testing as Cdk8sTesting
 
 from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
@@ -26,7 +25,9 @@ from cluster.cdk8s.haku.charts import console_chart
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db as plaid_db, spend as plaid_spend
 from cluster.cdk8s.public_coder import app as public_coder_app
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+
+pytest_plugins = ("cluster.cdk8s.agentplane.testing.fixtures",)
 
 _NAMESPACE = staging.ENV.namespace
 _ACCOUNTS_NAMESPACE = kubernetes_accounts_namespace(_NAMESPACE)
@@ -48,14 +49,13 @@ class Rendering:
         return self.rbac.held(self.bindings[name]["policySets"])
 
 
-def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool) -> Rendering:
-    """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
+@pytest.fixture(scope="module")
+def static_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    """Roles and bindings owned outside Agentplane are shared by both policy catalogs."""
     app = scratch_app_factory()
-    env = staging.environment(identity_catalog=identity_catalog)
     charts = [
         agent_rbac_base.chart(app),
         agent_shared_rbac.chart(app),
-        staging.chart(app, env),
         haku_rbac.chart(app),
         ducktape_flux.chart(app),
         plaid_db.chart(app),
@@ -65,14 +65,11 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
         console_chart(app),
     ]
     charts.extend(agent_namespace_rbac.chart(app, namespace) for namespace in NAMESPACE_DIAGNOSTICS)
-    # Its own app: it names its chart "agentplane" too.
-    charts.append(staging.delivery_chart(scratch_app_factory(), env))
-    docs = [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
+    return [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
 
-    def config_map(name: str, key: str) -> Any:
-        return yaml.safe_load(find_resource(docs, "ConfigMap", name)["data"][key])
 
-    presets = config_map("app-config", "config.yaml")["sandbox_presets"]
+def _rendering(docs: list[dict[str, Any]]) -> Rendering:
+    presets = config_map_yaml(docs, "app-config", "config.yaml")["sandbox_presets"]
     bindings = [doc for doc in docs if doc["kind"] == "PolicyBinding"]
     assert len({doc["metadata"]["name"] for doc in bindings}) == len(bindings)
     return Rendering(
@@ -84,13 +81,17 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
 
 
 @pytest.fixture(scope="module")
-def serviceaccount_rendering(scratch_app_factory: Callable[[], App]) -> Rendering:
-    return _rendering(scratch_app_factory, identity_catalog=False)
+def serviceaccount_rendering(
+    static_resources: list[dict[str, Any]], staging_manifests: list[dict[str, Any]]
+) -> Rendering:
+    return _rendering(static_resources + staging_manifests)
 
 
 @pytest.fixture(scope="module")
-def identity_rendering(scratch_app_factory: Callable[[], App]) -> Rendering:
-    return _rendering(scratch_app_factory, identity_catalog=True)
+def identity_rendering(
+    static_resources: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+) -> Rendering:
+    return _rendering(static_resources + identity_catalog_manifests)
 
 
 @pytest.fixture(scope="module", params=[False, True], ids=["serviceaccount-catalog", "identity-catalog"])
@@ -98,6 +99,55 @@ def rendering(request: pytest.FixtureRequest) -> Rendering:
     return cast(
         Rendering, request.getfixturevalue("identity_rendering" if request.param else "serviceaccount_rendering")
     )
+
+
+def test_public_coder_and_haku_configured_diagnostics_are_secret_free(static_resources: list[dict[str, Any]]) -> None:
+    """Configured public diagnostics do not widen secret or exec access."""
+    read = {"get", "list", "watch"}
+    metadata_role = find_resource(static_resources, "ClusterRole", "agent-readable-namespace-metadata")
+    assert all(set(rule["verbs"]) == read for rule in metadata_role["rules"])
+    assert not {
+        "secrets",
+        "externalsecrets",
+        "secretstores",
+        "clustersecretstores",
+        "pushsecrets",
+        "clusterpushsecrets",
+        "pods/log",
+        "pods/exec",
+        "pods/attach",
+        "pods/portforward",
+    } & {resource for rule in metadata_role["rules"] for resource in rule["resources"]}
+
+    for name in (
+        "agent-clickhouse-diagnostics-reader",
+        "agent-haku-console-metadata-reader",
+        "agent-public-coder-extended-diagnostics-reader",
+    ):
+        role = find_resource(static_resources, "Role", name)
+        binding = find_resource(static_resources, "RoleBinding", name)
+        assert binding["roleRef"]["name"] == role["metadata"]["name"]
+        assert all(set(rule["verbs"]) == read for rule in role["rules"]), name
+        assert not {"secrets", "pods/log", "pods/exec"} & {
+            resource for rule in role["rules"] for resource in rule["resources"]
+        }, name
+
+    # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
+    haku_cluster_binding = find_resource(static_resources, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
+    assert {(s["kind"], s["name"], s.get("namespace")) for s in haku_cluster_binding["subjects"]} >= {
+        ("Group", "oidc-ksbx-groups:haku", None),
+        ("Group", "haku:access-profile:haku", None),
+        ("ServiceAccount", "haku", "haku-sandbox"),
+    }
+
+    diagnostics_role = find_resource(static_resources, "ClusterRole", "cluster-diagnostics-reader")
+    assert {
+        (api_group, resource, verb)
+        for rule in diagnostics_role["rules"]
+        for api_group in rule["apiGroups"]
+        for resource in rule["resources"]
+        for verb in rule["verbs"]
+    } >= {("redis.redis.opstreelabs.in", "redisreplications", verb) for verb in read}
 
 
 def test_namespace_diagnostics_cover_static_and_managed_bindings(rendering: Rendering) -> None:

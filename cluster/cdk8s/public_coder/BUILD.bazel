@@ -80,7 +80,6 @@ py_library(
 
 py_test(
     name = "test_app",
-    # Synth imports the console's Settings, and with it the console runtime.
     size = "medium",
     srcs = ["test_app.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -89,12 +88,8 @@ py_test(
         ":app",
         ":egress",
         "//:conftest",
-        "//cluster/cdk8s:agent_rbac_base",
-        "//cluster/cdk8s:agent_shared_rbac",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/clickhouse:installation",
-        "//cluster/cdk8s/haku:charts",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
