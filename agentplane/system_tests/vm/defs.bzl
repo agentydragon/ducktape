@@ -29,7 +29,7 @@ def vm_test(
         properties = {
             "dockerNetwork": "bridge",
             "test.EstimatedCPU": "4",
-            "test.EstimatedFreeDiskBytes": "50GB",
+            "test.EstimatedFreeDiskBytes": "30GB",
             "test.EstimatedMemory": "7GiB",
         } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties
     else:

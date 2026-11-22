@@ -142,11 +142,11 @@ def _shadow_scaling_rules() -> PrometheusRuleSpecGroups:
 
     # Boolean comparisons preserve a reported zero. An absent input drops the pod,
     # so count(fit) measures coverage and sum(fit) counts workers with headroom.
-    # BuildBuddy parses the suite's EstimatedFreeDiskBytes=50GB as 50 GiB.
+    # BuildBuddy parses the suite's EstimatedFreeDiskBytes=30GB as 30 GiB.
     fit = (
         f"({free('milli_cpu')} >= bool 4000)\n"
         f"* ({free('ram_bytes')} >= bool {7 * 1024**3})\n"
-        f"* (min {per_pod} ({_fresh(fs)}) >= bool {50 * 1024**3})\n"
+        f"* (min {per_pod} ({_fresh(fs)}) >= bool {30 * 1024**3})\n"
         f"* min {per_pod} ({per_check})\n"
         f"and (count {per_pod} ({per_check}) == 4)\n"
         f"and on (namespace, pod) ({_fresh(_REGISTERED)} == 1)\n"

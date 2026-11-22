@@ -86,7 +86,7 @@ of two for the KubeVirt scale subresource, then ignores HPA changes to that fiel
 
 The dashboard also plots a shadow recommendation, `buildbuddy_kvm:shadow_target_workers`.
 Mimir evaluates it against the required KubeVirt suite's four CPUs, 7 GiB of
-RAM and 50 GiB of available work-disk space on the same healthy worker. A local
+RAM and 30 GiB of available work-disk space on the same healthy worker. A local
 reservation holds the desired count if a worker has room, or proposes one more
 VM otherwise, up to eight. Empty queues propose the number of busy workers with
 a floor of two. Incomplete worker telemetry or a VM still registering holds the
@@ -96,8 +96,8 @@ reservation can represent a smaller action or duplicate an action already runnin
 
 The executor advertises four CPUs and 7 GiB, leaving 1 GiB for the guest. Each
 KVM suite declares its scheduling estimates. The required Agentplane VM suite
-uses four CPUs, 7 GiB of memory and 50 GiB of free disk. BuildBuddy parses the
-suite's `EstimatedFreeDiskBytes=50GB` in binary units. These allocations and
+uses four CPUs, 7 GiB of memory and 30 GiB of free disk. BuildBuddy parses the
+suite's `EstimatedFreeDiskBytes=30GB` in binary units. These allocations and
 the one-task limit stay independent of the image pin. The
 [worker comparison](https://agentydragon.github.io/ducktape/latency/#worker-image-comparison)
 measured faster cached startup without demonstrating faster tests, RAM savings
