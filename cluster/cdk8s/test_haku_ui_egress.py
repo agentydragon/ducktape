@@ -54,24 +54,27 @@ def test_haku_ui_standing_access_stays_within_claude_ais_except_ankiweb(resource
     assert special <= haku
     assert haku - special <= claude
 
-    claude_hosts = {
-        host
+    read_methods = {"GET", "HEAD"}
+    # Notebook downloads can request any path. A path-scoped Claude grant cannot cover them.
+    claude_reads = {
+        (host, method)
         for policy in resources
         if policy["kind"] == "PolicySet"
         and policy["metadata"]["namespace"] == staging.ENV.namespace
         and policy["metadata"]["name"] in claude
         for rule in policy["spec"]["rules"]
-        if rule["type"] == "egress"
+        if rule["type"] == "egress" and not rule.get("paths")
         for host in rule["hosts"]
+        for method in rule.get("methods", read_methods)
     }
     notebook = find_resource(resources, "PolicySet", HAKU_NOTEBOOK_FETCH_POLICY, namespace=staging.ENV.namespace)
     assert notebook["spec"]["rules"]
     for rule in notebook["spec"]["rules"]:
         assert rule["type"] == "egress"
         assert rule["hosts"]
-        assert set(rule["hosts"]) <= claude_hosts
         assert rule["methods"]
-        assert set(rule["methods"]) <= {"GET", "HEAD"}
+        assert set(rule["methods"]) <= read_methods
+        assert {(host, method) for host in rule["hosts"] for method in rule["methods"]} <= claude_reads
         assert "credentialRef" not in rule
         assert not rule.get("clusterInternal", False)
 
