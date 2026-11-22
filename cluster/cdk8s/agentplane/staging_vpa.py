@@ -14,21 +14,21 @@ from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 NAME = "agentplane-staging-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 
-# (Deployment, container, memory floor, memory ceiling).
+# (Deployment, container, memory floor in MiB, memory ceiling in MiB).
 _WORKLOADS = (
-    ("actions", "actions", "128Mi", "160Mi"),
-    ("app", "app", "128Mi", "160Mi"),
+    ("actions", "actions", 128, 160),
+    ("app", "app", 128, 160),
     ("central-sampler", "central-sampler", None, None),
     ("egress", "proxy", None, None),
-    ("electric", "electric", "448Mi", None),
-    ("environments", "environments", "64Mi", "112Mi"),
+    ("electric", "electric", 448, None),
+    ("environments", "environments", 64, 112),
     ("frontend", "frontend", None, None),
-    ("history-service", "history-service", "128Mi", "256Mi"),
-    ("llm-ingress", "ingress", "128Mi", "160Mi"),
-    ("mcp-edge", "mcp-edge", "128Mi", "160Mi"),
-    ("notifications", "notifications", "128Mi", "160Mi"),
-    ("policy-controller", "policy-controller", "64Mi", "112Mi"),
-    ("sessions", "sessions", "256Mi", "320Mi"),
+    ("history-service", "history-service", 128, 256),
+    ("llm-ingress", "ingress", 128, 160),
+    ("mcp-edge", "mcp-edge", 128, 160),
+    ("notifications", "notifications", 128, 160),
+    ("policy-controller", "policy-controller", 64, 112),
+    ("sessions", "sessions", 256, 320),
 )
 _UPDATE_MODES = {"frontend": "Recreate"}
 
@@ -42,8 +42,8 @@ def chart(app: App) -> Chart:
             namespace=STAGING_NAMESPACE,
             container_name=container,
             update_mode=_UPDATE_MODES.get(deployment, "Initial"),
-            min_memory=memory_floor,
-            max_memory=memory_ceiling,
+            min_memory_mib=memory_floor,
+            max_memory_mib=memory_ceiling,
         )
     # The staging Deployment artifact already owns and health-checks the Haku relay.
     egress_gateway.add_vpa(chart, haku_ci_runner.NAMESPACE)

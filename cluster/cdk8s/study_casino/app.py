@@ -373,7 +373,7 @@ def chart(app: App) -> Chart:
 def vpa_chart(app: App) -> Chart:
     chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
     requests_only_vpa(
-        chart, _NAME, namespace=_NAMESPACE, container_name="app", update_mode="Initial", min_memory="224Mi"
+        chart, _NAME, namespace=_NAMESPACE, container_name="app", update_mode="Initial", min_memory_mib=224
     )
     return chart
 

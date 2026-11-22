@@ -22,8 +22,8 @@ def requests_only_vpa(
     container_name: str,
     update_mode: str,
     target_kind: str = "Deployment",
-    min_memory: str | None = None,
-    max_memory: str | None = None,
+    min_memory_mib: int | None = None,
+    max_memory_mib: int | None = None,
 ) -> VerticalPodAutoscaler:
     """Manage one container's CPU and memory requests and leave sidecars alone."""
     return VerticalPodAutoscaler(
@@ -41,17 +41,17 @@ def requests_only_vpa(
                         controlled_values="RequestsOnly",
                         min_allowed={
                             "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
-                                min_memory
+                                f"{min_memory_mib}Mi"
                             )
                         }
-                        if min_memory is not None
+                        if min_memory_mib is not None
                         else None,
                         max_allowed={
                             "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
-                                max_memory
+                                f"{max_memory_mib}Mi"
                             )
                         }
-                        if max_memory is not None
+                        if max_memory_mib is not None
                         else None,
                     ),
                     VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
