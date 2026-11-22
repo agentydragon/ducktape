@@ -33,7 +33,6 @@ py_test(
         ":config",
         ":rotate",
         "//:conftest",
-        "//cluster/rotators:sops",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
