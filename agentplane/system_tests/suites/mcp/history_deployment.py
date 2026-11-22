@@ -1,6 +1,6 @@
 """Build the history suite's deployment from explicit cdk8s additions."""
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 
 from agentplane.system_tests.deployment import fixture_chart, fixture_database
 from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
@@ -16,7 +16,7 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 
 def render() -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
-    routes = replace(fixture_chart.LOCAL_MODEL_ROUTES, central_sampler=(fixture_chart.GPT6_LUNA_RESPONSES,))
+    routes = fixture_chart.LOCAL_MODEL_ROUTES_WITH_SAMPLER
     operator_oidc = fixture_chart.operator_oidc()
     app_props = fixture_chart.app_props(
         routes=routes,
@@ -24,7 +24,7 @@ def render() -> RenderedFixture:
         operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER,
         app_origin=fixture_chart.APP_ORIGIN,
     )
-    central_sampler_props = fixture_chart.central_sampler_props(model=fixture_chart.GPT6_LUNA_RESPONSES)
+    central_sampler_props = fixture_chart.central_sampler_props(routes.central_sampler)
     actions_props = fixture_chart.actions_props(
         operator_oidc=operator_oidc, oauth_secret_items=("client-secret",), central_sampler_session_delegation=True
     )

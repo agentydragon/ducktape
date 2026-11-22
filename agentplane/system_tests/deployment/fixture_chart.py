@@ -216,6 +216,7 @@ _VM_GUEST_KERNEL_ARGS = "console=ttyS0 net.ifnames=0"
 LOCAL_MODEL_ROUTES = HarnessRoutes(
     claude=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CLAUDE],), codex=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CODEX],)
 )
+LOCAL_MODEL_ROUTES_WITH_SAMPLER = replace(LOCAL_MODEL_ROUTES, central_sampler=(GPT6_LUNA_RESPONSES,))
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
 PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_5_5_API,), codex=(GPT6_LUNA_RESPONSES,))
@@ -333,7 +334,7 @@ def app_props(
     )
 
 
-def central_sampler_props(*, model: Route) -> CentralSamplerProps:
+def central_sampler_props(models: Sequence[Route]) -> CentralSamplerProps:
     return CentralSamplerProps(
         admin_service_callers=(GATEWAY_SESSIONS_URI,),
         actions=ActionsConfig(
@@ -355,6 +356,7 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
                 responses=ResponsesConfig(dialect="lite"),
                 exec_encoding="freeform",
             )
+            for model in models
         },
         connections={
             "llm-ingress": ConnectionConfig(
