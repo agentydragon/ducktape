@@ -127,20 +127,62 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "command_notice_client",
+    srcs = ["command_notice_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":facade_body",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend/transport:client",
+    ],
+)
+
+ts_library(
+    name = "command_notice_attention",
+    srcs = ["command_notice_attention.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_notice_client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
+    name = "delivery_labels",
+    srcs = ["delivery_labels.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/proto:command_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+ts_library(
     name = "command_delivery_history",
     srcs = ["command_delivery_history.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":command_notice_attention",
+        ":command_notice_client",
+        ":delivery_labels",
+        ":dispatch_workset",
+        ":dispatch_workset_panel",
         ":stored_command_details",
         ":thread_presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/ui:time_ago",
-        "//agentplane/proto:command_pb",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
@@ -150,6 +192,7 @@ ts_library(
     srcs = ["dispatch_workset.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:session_dispatcher_client",
@@ -163,14 +206,15 @@ ts_library(
     srcs = ["dispatch_workset_panel.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":command_notice_attention",
         ":command_progress",
+        ":delivery_labels",
         ":dispatch_workset",
         ":local_commands",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/history_service/api/history:history_service_pb",
-        "//agentplane/proto:command_pb",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )

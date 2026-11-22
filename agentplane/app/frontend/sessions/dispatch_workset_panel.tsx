@@ -1,13 +1,20 @@
 import { Button, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
-import { type JSX, useEffect, useRef, useState } from "react";
+import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { ThreadCommandOutcome, type ThreadEntity } from "../../../history_service/api/history/history_service_pb";
-import { Operation } from "../../../proto/command_pb";
+import { deliveryOperationLabel, deliveryStateLabel } from "./delivery_labels";
 import {
   DeliveryState,
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { waitingReasonLabel } from "./command_progress";
+import {
+  isDeliveryIssue,
+  NO_ISSUES,
+  noticeKey,
+  useCommandNoticeAttention,
+  type NoticeAttention,
+} from "./command_notice_attention";
 import {
   EMPTY_WORKSET,
   readFullDispatchReason,
@@ -17,32 +24,40 @@ import {
 } from "./dispatch_workset";
 import type { LocalCommand } from "./local_commands";
 
-function operationLabel(operation: Operation): string {
-  switch (operation) {
-    case Operation.SUBMIT_INPUT:
-      return "Send message";
-    case Operation.CHANGE_MODEL:
-      return "Model change";
-    case Operation.CHANGE_REASONING_EFFORT:
-      return "Reasoning effort change";
-    case Operation.INTERRUPT_TURN:
-      return "Turn interrupt";
-    default:
-      return "Command";
-  }
+export function AcknowledgeDeliveryIssue({
+  item,
+  attention,
+}: {
+  item: DispatchWorksetItem;
+  attention: NoticeAttention;
+}): JSX.Element | null {
+  if (attention.stale || !attention.issues.includes(item) || (item.receiptVersion ?? 0n) <= 0n) return null;
+  const saving = attention.pending === noticeKey(item);
+  return (
+    <Button
+      size="compact-xs"
+      variant="subtle"
+      loading={saving}
+      disabled={attention.pending !== null && !saving}
+      onClick={() => attention.acknowledge(item)}
+      aria-label={`Acknowledge delivery issue for command ${item.commandId}`}
+    >
+      Acknowledge
+    </Button>
+  );
 }
 
-const stateLabel: Record<DeliveryState, string> = {
-  [DeliveryState.UNSPECIFIED]: "Delivery unconfirmed",
-  [DeliveryState.QUEUED_IN_DISPATCHER]: "Queued in Dispatcher",
-  [DeliveryState.DELIVERING_TO_RUNNER]: "Sending to runner",
-  [DeliveryState.RUNNER_ADMITTED]: "Runner accepted",
-  [DeliveryState.FAILED]: "Delivery failed",
-  [DeliveryState.CANCELLED_IN_DISPATCHER]: "Cancelled before delivery",
-  [DeliveryState.UNKNOWN]: "Outcome unknown",
-};
-
-function WorksetRow({ sessionId, item }: { sessionId: string; item: DispatchWorksetItem }): JSX.Element {
+export function WorksetRow({
+  sessionId,
+  item,
+  action,
+  showCommandId = true,
+}: {
+  sessionId: string;
+  item: DispatchWorksetItem;
+  action?: ReactNode;
+  showCommandId?: boolean;
+}): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReasonLookup | null>(null);
   const stopLookup = useRef<(() => void) | null>(null);
@@ -64,11 +79,13 @@ function WorksetRow({ sessionId, item }: { sessionId: string; item: DispatchWork
     <Stack gap={0} data-dispatch-command-id={item.commandId} style={{ overflowWrap: "anywhere" }}>
       <Group gap="xs" justify="space-between" align="baseline">
         <Text size="sm">
-          {operationLabel(item.operation)} · {stateLabel[item.state]}
+          {deliveryOperationLabel(item.operation)} · {deliveryStateLabel[item.state]}
         </Text>
-        <Text size="xs" c="dimmed" ff="monospace" title={item.commandId} aria-label={`Command ${item.commandId}`}>
-          {item.commandId.slice(0, 8)}
-        </Text>
+        {showCommandId && (
+          <Text size="xs" c="dimmed" ff="monospace" title={item.commandId} aria-label={`Command ${item.commandId}`}>
+            {item.commandId.slice(0, 8)}
+          </Text>
+        )}
       </Group>
       {item.state === DeliveryState.UNKNOWN && item.journalAdmitted && (
         <Text size="xs" c="dimmed">
@@ -81,11 +98,14 @@ function WorksetRow({ sessionId, item }: { sessionId: string; item: DispatchWork
           {showFullReason && "…"}
         </Text>
       )}
-      {showFullReason && (
+      {(showFullReason || action) && (
         <Group gap="xs">
-          <Button size="compact-xs" variant="subtle" loading={loading} onClick={showReason}>
-            Show full reason
-          </Button>
+          {showFullReason && (
+            <Button size="compact-xs" variant="subtle" loading={loading} onClick={showReason}>
+              Show full reason
+            </Button>
+          )}
+          {action}
           {result && "error" in result && (
             <Text size="xs" c="dimmed" role="status">
               {result.error}
@@ -100,16 +120,19 @@ function WorksetRow({ sessionId, item }: { sessionId: string; item: DispatchWork
 export function DispatchWorksetPanel({
   sessionId,
   view,
+  onOpenDeliveryHistory,
   localCommands = [],
   entities = [],
 }: {
   sessionId: string;
   view: WorksetView;
+  onOpenDeliveryHistory: () => void;
   localCommands?: readonly LocalCommand[];
   entities?: readonly ThreadEntity[];
 }): JSX.Element | null {
   const { snapshot, stale, coverageLost } = view;
-  const rows = snapshot ? [...snapshot.active, ...snapshot.recentIssues, ...snapshot.recentAdmittedOrCancelled] : [];
+  const attention = useCommandNoticeAttention(sessionId, snapshot?.recentIssues ?? NO_ISSUES, stale);
+  const rows = snapshot ? [...snapshot.active, ...attention.issues, ...snapshot.recentAdmittedOrCancelled] : [];
   const hidden = new Set(localCommands.map((command) => command.command.commandId));
   const pendingInHistory = new Set<string>();
   for (const row of entities) {
@@ -127,16 +150,15 @@ export function DispatchWorksetPanel({
   const visible = rows.filter(
     (item) =>
       !hidden.has(item.commandId) &&
-      (!pendingInHistory.has(item.commandId) ||
-        item.state === DeliveryState.UNKNOWN ||
-        item.state === DeliveryState.FAILED)
+      !attention.acknowledged(item) &&
+      (!pendingInHistory.has(item.commandId) || isDeliveryIssue(item.state))
   );
+  const hasOlderIssues = snapshot?.moreRecentIssuesAvailable;
   const limits = [
     snapshot?.moreActiveAvailable && "More active commands are outside this view.",
-    snapshot?.moreRecentIssuesAvailable && "Older delivery issues are outside this view.",
     snapshot?.moreRecentAdmittedOrCancelledAvailable && "Older admissions or cancellations are outside this view.",
   ].filter(Boolean);
-  if (!visible.length && !stale && !coverageLost && !limits.length) return null;
+  if (!visible.length && !stale && !coverageLost && !hasOlderIssues && !limits.length && !attention.error) return null;
   return (
     <Paper component="section" aria-label="Dispatcher delivery" p="xs" withBorder>
       <Stack gap="xs">
@@ -155,6 +177,21 @@ export function DispatchWorksetPanel({
             Some earlier delivery receipts may have expired.
           </Text>
         )}
+        {attention.error && (
+          <Text size="xs" role="alert">
+            {attention.error}
+          </Text>
+        )}
+        {hasOlderIssues && (
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            style={{ alignSelf: "flex-start" }}
+            onClick={onOpenDeliveryHistory}
+          >
+            Older delivery issues
+          </Button>
+        )}
         {limits.length > 0 && (
           <Text size="xs" c="dimmed">
             {limits.join(" ")}
@@ -165,9 +202,10 @@ export function DispatchWorksetPanel({
             <Stack gap="xs">
               {visible.map((item) => (
                 <WorksetRow
-                  key={`${item.commandId}:${item.state}:${item.updatedAt?.seconds}:${item.updatedAt?.nanos}`}
+                  key={`${noticeKey(item)}:${item.state}:${item.updatedAt?.seconds}:${item.updatedAt?.nanos}`}
                   sessionId={sessionId}
                   item={item}
+                  action={<AcknowledgeDeliveryIssue item={item} attention={attention} />}
                 />
               ))}
             </Stack>

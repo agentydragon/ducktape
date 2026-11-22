@@ -156,6 +156,9 @@ let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETT
 let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
 let noticeInboxes: Array<{ inboxId: string; sessionId: string; queued: number; unacknowledged: number }> = [];
+let deliveryRequest: (url: URL, init?: RequestInit) => Response | Promise<Response>;
+let selectedReceipts: Array<Record<string, unknown> & { commandId: string; legacyDeletion?: boolean }>;
+let receiptBatchRequests: URL[];
 
 function sharedThreadView(): ThreadView {
   const sharedSummary = sharedThread.summary;
@@ -199,6 +202,9 @@ beforeEach(() => {
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
   noticeInboxes = [];
+  deliveryRequest = () => Response.json({ message: "route unavailable" }, { status: 404 });
+  selectedReceipts = [];
+  receiptBatchRequests = [];
   vi.spyOn(appConfigClient, "getFrontendConfig").mockImplementation(async () =>
     create(FrontendConfigSchema, {
       traceSearch: traceSearchSettings ?? undefined,
@@ -250,8 +256,25 @@ beforeEach(() => {
   );
   const sandboxFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), window.location.href);
+    if (
+      url.pathname.includes("/notice-acknowledgements") ||
+      /^\/upstream\/dispatcher\/v1\/sessions\/[^/]+\/dispatches$/.test(url.pathname)
+    ) {
+      return Promise.resolve(deliveryRequest(url, init));
+    }
+    if (url.pathname === `/upstream/dispatcher/v1/sessions/${THREAD.metadata.threadId}/dispatches:batchGet`) {
+      receiptBatchRequests.push(url);
+      const results = url.searchParams.getAll("commandIds").map((commandId) => {
+        const found = selectedReceipts.find((row) => row.commandId === commandId);
+        if (!found) return { commandId, notFound: {} };
+        const { legacyDeletion, ...row } = found;
+        const receipt = { ...row, sessionId: THREAD.metadata.threadId };
+        return legacyDeletion ? { commandId, legacyDeletionReceipt: receipt } : { commandId, dispatch: receipt };
+      });
+      return Promise.resolve(Response.json({ results }));
+    }
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
-      const url = new URL(String(input), window.location.href);
       const worksetSession = url.searchParams.get("worksetSessionId");
       if (url.pathname === "/upstream/dispatcher/v1/dispatches:watch" && worksetSession) {
         const stream = new ServedWatch(String(input), init?.signal ?? undefined);
@@ -1653,12 +1676,14 @@ it("shows server delivery for a fresh browser and defers to settled History", as
     "Runner accepted the command",
     "Reasoning effort change · Runner accepted",
     "More active commands are outside this view.",
-    "Older delivery issues are outside this view.",
+    "Older delivery issues",
     "Older admissions or cancellations are outside this view.",
   ])
     expect(panel?.textContent).toContain(text);
   expect(panel?.textContent).not.toContain("Intermediate delivery receipt");
-  expect(panel?.querySelectorAll("button")).toHaveLength(0);
+  expect(Array.from(panel?.querySelectorAll("button") ?? [], (button) => button.textContent)).toEqual([
+    "Older delivery issues",
+  ]);
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
 });
 
@@ -1687,6 +1712,181 @@ it("leaves a locally retained command with its existing browser row", async () =
   expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(1);
 });
 
+const ISSUE_TIMESTAMP = "2026-11-20T12:00:00.123456Z";
+
+function issueReceipt(commandId: string, receiptVersion: string, reason = "Delivery refused") {
+  return {
+    commandId,
+    receiptVersion,
+    reason,
+    operation: "OPERATION_SUBMIT_INPUT",
+    state: "DELIVERY_STATE_FAILED",
+    updatedAt: ISSUE_TIMESTAMP,
+  };
+}
+
+async function showIssues(watch: ServedWatch, ...recentIssues: Array<ReturnType<typeof issueReceipt>>) {
+  await act(async () => {
+    watch.send({ workset: { sessionId: THREAD.metadata.threadId, recentIssues }, resumeToken: "delivery-issues" });
+  });
+}
+
+it("keeps unseen delivery issues visible when acknowledgement reads or writes fail", async () => {
+  deliveryRequest = () => Response.json({ message: "temporarily unavailable" }, { status: 503 });
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, issueReceipt("keep-unseen", "41"));
+  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
+  expect(panel.textContent).toContain("Delivery refused");
+  expect(panel.textContent).toContain("Could not load acknowledgements.");
+  await act(async () => buttonIn(panel, "Acknowledge")!.click());
+  expect(panel.textContent).toContain("Delivery refused");
+  expect(panel.textContent).toContain("Could not acknowledge the delivery issue.");
+});
+
+it("keeps older issues actionable after every recent issue is acknowledged", async () => {
+  const collection = `/upstream/app/v1/threads/${THREAD.metadata.threadId}/notice-acknowledgements`;
+  const recent = Array.from({ length: 20 }, (_, index) =>
+    issueReceipt(`recent-${index}`, String(200 + index), "Already acknowledged")
+  );
+  const prior = issueReceipt("older-receipt", "9007199254740993", "Older failure still needs attention");
+  const retainedRow = dispatchFromJson({ ...prior, sessionId: THREAD.metadata.threadId });
+  vi.mocked(listSessionDispatches).mockImplementation(async (_, options) =>
+    create(ListSessionDispatchesResponseSchema, {
+      dispatches: options?.pageToken ? [retainedRow] : [],
+      nextPageToken: options?.pageToken ? "" : "oldest",
+    })
+  );
+  const writes: unknown[] = [];
+  const acknowledged = new Map(recent.map(({ commandId, receiptVersion }) => [commandId, receiptVersion]));
+  deliveryRequest = (url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (url.pathname === `${collection}:batchGet`)
+      return Response.json({
+        acknowledgements: body.notices
+          .filter(
+            ({ commandId, receiptVersion }: { commandId: string; receiptVersion: string }) =>
+              acknowledged.get(commandId) === receiptVersion
+          )
+          .map((notice: object) => ({ notice })),
+      });
+    expect(url.pathname).toBe(collection);
+    writes.push(body);
+    acknowledged.set(body.notice.commandId, body.notice.receiptVersion);
+    return Response.json({});
+  };
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await act(async () => {
+    watch.send({
+      workset: { sessionId: THREAD.metadata.threadId, recentIssues: recent, moreRecentIssuesAvailable: true },
+      resumeToken: "clipped-workset",
+    });
+  });
+  const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
+  expect(panel.textContent).not.toContain("Already acknowledged");
+  expect(new LocalCommands(THREAD.metadata.threadId).getSnapshot().commands).toHaveLength(0);
+  await act(async () => buttonIn(panel, "Older delivery issues")!.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  await act(async () => buttonIn(dialog, "Older")!.click());
+  expect(dialog.textContent).toContain(prior.reason);
+  await act(async () => buttonIn(dialog, "Acknowledge")!.click());
+  expect(writes).toEqual([{ notice: { commandId: prior.commandId, receiptVersion: prior.receiptVersion } }]);
+  expect(buttonIn(dialog, "Acknowledge")).toBeUndefined();
+  expect(dialog.textContent).toContain(prior.reason);
+  expect(buttonIn(panel, "Older delivery issues")).toBeDefined();
+});
+
+it("keeps a newer receipt visible when its acknowledgement lookup fails", async () => {
+  const earlier = issueReceipt("fresh-revision", "40", "Earlier failure");
+  const newer = issueReceipt(earlier.commandId, "41", "A new delivery problem");
+  deliveryRequest = (_url, init) => {
+    const { notices } = JSON.parse(String(init?.body));
+    if (notices[0].receiptVersion === newer.receiptVersion)
+      return Response.json({ message: "temporarily unavailable" }, { status: 503 });
+    return Response.json({ acknowledgements: [{ notice: notices[0] }] });
+  };
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, earlier);
+  expect(container.textContent).not.toContain(earlier.reason);
+  await showIssues(watch, newer);
+  expect(container.textContent).toContain(newer.reason);
+  expect(container.textContent).toContain("Could not load acknowledgements.");
+});
+
+it("ignores an obsolete acknowledgement batch after the same Dispatcher issue advances", async () => {
+  const old = issueReceipt("new-revision", "123");
+  let finishOld: ((value: Response) => void) | undefined;
+  const batchSizes: number[] = [];
+  deliveryRequest = (_url, init) => {
+    const { notices } = JSON.parse(String(init?.body));
+    batchSizes.push(notices.length);
+    if (notices.some((notice: { receiptVersion: string }) => notice.receiptVersion === "123")) {
+      return new Promise((resolve) => {
+        finishOld = resolve;
+      });
+    }
+    return Response.json({ acknowledgements: [] });
+  };
+  const container = await render();
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, old);
+  await showIssues(watch, issueReceipt(old.commandId, "124", "Current issue"));
+  await act(async () =>
+    finishOld?.(Response.json({ acknowledgements: [{ notice: { commandId: old.commandId, receiptVersion: "123" } }] }))
+  );
+  expect(container.textContent).toContain("Current issue");
+  expect(batchSizes).toEqual([1, 1]);
+});
+
+it("revisits paginated acknowledgements on a fresh browser while History is unavailable", async () => {
+  const issue = issueReceipt("persisted-issue", "51");
+  const acknowledgedIssue = {
+    notice: { commandId: issue.commandId, receiptVersion: issue.receiptVersion },
+    acknowledgedAt: ISSUE_TIMESTAMP,
+  };
+  const seenPages: string[] = [];
+  vi.mocked(listSessionDispatches).mockResolvedValue(create(ListSessionDispatchesResponseSchema));
+  deliveryRequest = (url) => {
+    if (url.pathname.endsWith(":batchGet")) return Response.json({ acknowledgements: [acknowledgedIssue] });
+    expect(url.searchParams.get("pageSize")).toBe("25");
+    const token = url.searchParams.get("pageToken") ?? "";
+    seenPages.push(token);
+    const page = token ? Number(token) : 1;
+    const acknowledgements = Array.from({ length: 25 }, (_, index) =>
+      page === 1 && index === 0
+        ? acknowledgedIssue
+        : {
+            notice: { commandId: `page-${page}-notice-${index}`, receiptVersion: String(page * 100 + index + 1) },
+            acknowledgedAt: ISSUE_TIMESTAMP,
+          }
+    );
+    return Response.json({ acknowledgements, ...(page < 5 && { nextPageToken: String(page + 1) }) });
+  };
+  const container = await render({ window: null, error: null });
+  const watch = await selectedWorksetWatch();
+  await showIssues(watch, issue);
+  expect(container.textContent).not.toContain("Delivery refused");
+  await act(async () => buttonIn(container, "Delivery history")!.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  const tab = [...dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (element) => element.textContent === "Acknowledged"
+  );
+  await act(async () => tab!.click());
+  expect(dialog.textContent).toContain("persisted-issue");
+  expect(dialog.textContent).toContain("Delivery refused");
+  await showIssues(watch);
+  selectedReceipts = [{ ...issue, legacyDeletion: true }];
+  await act(async () => buttonIn(dialog, "Inspect original receipt")!.click());
+  expect(dialog.textContent).toContain("Delivery refused");
+  for (let page = 1; page <= 5; page++) {
+    expect(dialog.textContent).toContain(`page-${page}-notice-24`);
+    if (page < 5) await act(async () => buttonIn(dialog, "Older")!.click());
+  }
+  expect(seenPages).toEqual(["", "2", "3", "4", "5"]);
+});
+
 it("reads a full legacy reason by command ID and retains the view across expired coverage", async () => {
   const container = await render();
   const watch = await selectedWorksetWatch();
@@ -1697,7 +1897,9 @@ it("reads a full legacy reason by command ID and retains the view across expired
     operation: "OPERATION_SUBMIT_INPUT",
     state: "DELIVERY_STATE_UNKNOWN",
     updatedAt,
+    receiptVersion: "71",
   };
+  selectedReceipts = [{ ...row, legacyDeletion: true, reason }];
   await act(async () => {
     watch.send({
       workset: {
@@ -1709,18 +1911,8 @@ it("reads a full legacy reason by command ID and retains the view across expired
   });
   const panel = container.querySelector<HTMLElement>('[aria-label="Dispatcher delivery"]')!;
   await act(async () => buttonIn(panel, "Show full reason")?.click());
-  const selected = await openedWatch();
-  expect(selected.url.searchParams.get("filter.sessionId")).toBe(THREAD.metadata.threadId);
-  expect(selected.url.searchParams.getAll("filter.commandIds")).toEqual([row.commandId]);
-  await act(async () => {
-    selected.send({
-      dispatch: { ...row, sessionId: THREAD.metadata.threadId, reason },
-      resumeToken: "legacy-receipt",
-    });
-    selected.send({ caughtUp: {}, resumeToken: "selected-workset" });
-  });
+  expect(receiptBatchRequests.map((url) => url.searchParams.getAll("commandIds"))).toEqual([[row.commandId]]);
   expect(panel.textContent).toContain(reason);
-  expect(selected.signal?.aborted).toBe(true);
   await act(async () => watch.write('{"error":{"code":11,"message":"coverage expired"}}\n'));
   expect(panel.textContent).toContain("Showing the last delivery update while reconnecting.");
   expect(panel.textContent).toContain("Some earlier delivery receipts may have expired.");

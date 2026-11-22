@@ -340,6 +340,7 @@ function ConversationBody({
       <DispatchWorksetPanel
         sessionId={threadId}
         view={dispatchWorkset}
+        onOpenDeliveryHistory={onOpenDeliveryHistory}
         localCommands={localCommands}
         entities={entities}
       />
@@ -558,7 +559,11 @@ export function ThreadConversation({
       <>
         <DeliveryHistoryFallback onOpen={onOpenDeliveryHistory} />
         {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
-        <DispatchWorksetPanel sessionId={threadId} view={dispatchWorkset} />
+        <DispatchWorksetPanel
+          sessionId={threadId}
+          view={dispatchWorkset}
+          onOpenDeliveryHistory={onOpenDeliveryHistory}
+        />
       </>
     );
   }

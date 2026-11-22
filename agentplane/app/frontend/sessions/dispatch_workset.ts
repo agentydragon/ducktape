@@ -1,13 +1,16 @@
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
   DeliveryState,
+  DispatchWorksetItemSchema,
   WatchDispatchesResponseSchema,
+  type Dispatch,
   type DispatchWorkset,
   type DispatchWorksetItem,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError, HttpError } from "../transport/client";
 import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import { WatchStreamError } from "../transport/watch_stream";
+import { batchGetDispatches } from "./client";
 
 const LEASE_RENEWAL_GRACE_MS = 3_000;
 const INITIAL_WORKSET_TIMEOUT_MS = 60_000;
@@ -20,6 +23,34 @@ export interface WorksetView {
 }
 
 export const EMPTY_WORKSET: WorksetView = { snapshot: null, stale: false, coverageLost: false };
+
+export function worksetItemFromReceipt(row: Dispatch): DispatchWorksetItem {
+  return create(DispatchWorksetItemSchema, {
+    commandId: row.commandId,
+    operation: row.operation,
+    state: row.state,
+    reason: row.reason,
+    updatedAt: row.updatedAt,
+    receiptVersion: row.receiptVersion,
+    journalAdmitted: row.admission !== undefined,
+  });
+}
+
+/** Read the exact current or legacy receipt, with an explicit bound on diagnostic lookups. */
+export async function readSelectedDispatchReceipts(
+  sessionId: string,
+  commandIds: readonly string[],
+  signal: AbortSignal
+): Promise<Dispatch[]> {
+  const results = await batchGetDispatches(
+    sessionId,
+    commandIds,
+    AbortSignal.any([signal, AbortSignal.timeout(RECEIPT_LOOKUP_TIMEOUT_MS)])
+  );
+  return results.flatMap(({ result }) =>
+    result.case === "dispatch" || result.case === "legacyDeletionReceipt" ? [result.value] : []
+  );
+}
 
 function decodeFrame(result: JsonValue) {
   const frame = fromJson(WatchDispatchesResponseSchema, result, { ignoreUnknownFields: true });
@@ -99,50 +130,34 @@ export function watchDispatchWorkset(sessionId: string, publish: (view: WorksetV
 
 export type ReasonLookup = { reason: string } | { error: string };
 
-/** The ordinary command-ID watch can read a retained receipt after GetDispatch loses its live row. */
 export function readFullDispatchReason(
   sessionId: string,
   item: DispatchWorksetItem,
   publish: (result: ReasonLookup) => void
 ): () => void {
-  let latest: string | undefined;
-  const finish = (result: ReasonLookup) => {
-    stop();
-    publish(result);
-  };
-  const stop = sessionDispatcherClient.watchDispatches(
-    new URLSearchParams({ "filter.sessionId": sessionId, "filter.commandIds": item.commandId }),
-    {
-      initialFrameTimeoutMs: RECEIPT_LOOKUP_TIMEOUT_MS,
-      initialFrameReady: (frame) => typeof frame === "object" && frame !== null && "caughtUp" in frame,
-      onOpen: () => undefined,
-      onFrame: (result) => {
-        const frame = decodeFrame(result).frame;
-        if (frame.case === "dispatch") {
-          const row = frame.value;
-          if (row.sessionId !== sessionId || row.commandId !== item.commandId) {
-            throw new Error("Dispatcher returned a different command receipt");
-          }
-          const sameUpdate =
-            item.updatedAt?.seconds === row.updatedAt?.seconds && item.updatedAt?.nanos === row.updatedAt?.nanos;
-          latest =
-            row.state === item.state &&
-            row.operation === item.operation &&
-            sameUpdate &&
-            row.reason?.startsWith(item.reason ?? "")
-              ? row.reason
-              : undefined;
-        } else if (frame.case === "caughtUp") {
-          finish(latest === undefined ? { error: "The original reason is no longer available." } : { reason: latest });
-        } else {
-          throw new Error("Dispatcher omitted the command receipt");
-        }
-      },
-      onConnection: ({ phase }) => {
-        if (phase === "reconnecting") finish({ error: "The receipt stream closed before returning the full reason." });
-      },
-      onError: (reason) => finish({ error: displayableError(reason) }),
+  const controller = new AbortController();
+  void readSelectedDispatchReceipts(sessionId, [item.commandId], controller.signal).then(
+    ([row]) => {
+      if (controller.signal.aborted) return;
+      const sameUpdate =
+        item.updatedAt?.seconds === row?.updatedAt?.seconds && item.updatedAt?.nanos === row?.updatedAt?.nanos;
+      const sameVersion = item.receiptVersion === undefined || item.receiptVersion === row?.receiptVersion;
+      if (
+        row &&
+        sameVersion &&
+        row.state === item.state &&
+        row.operation === item.operation &&
+        sameUpdate &&
+        row.reason?.startsWith(item.reason ?? "")
+      ) {
+        publish({ reason: row.reason });
+      } else {
+        publish({ error: "Dispatcher could not return the original reason." });
+      }
+    },
+    (error: unknown) => {
+      if (!controller.signal.aborted) publish({ error: displayableError(error) });
     }
   );
-  return stop;
+  return () => controller.abort();
 }

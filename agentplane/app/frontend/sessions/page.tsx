@@ -197,6 +197,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
       </TopbarTitle>
       <CommandDeliveryHistory
         sessionId={threadId}
+        issues={dispatchWorkset.snapshot?.recentIssues ?? []}
         opened={historySession === threadId}
         onClose={() => setHistorySession(null)}
       />
@@ -249,7 +250,12 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
           </sync.Thread>
         )}
         {thread && materializationUnconfirmed && !thread.summary.projectionEpoch && (
-          <DispatchWorksetPanel key={threadId} sessionId={threadId} view={dispatchWorkset} />
+          <DispatchWorksetPanel
+            key={threadId}
+            sessionId={threadId}
+            view={dispatchWorkset}
+            onOpenDeliveryHistory={openDeliveryHistory}
+          />
         )}
       </Stack>
     </ChronologicalDebugProvider>

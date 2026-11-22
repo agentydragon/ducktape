@@ -2481,17 +2481,29 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
 // What the mock Dispatcher's stream reports for a queued command, where a scene gives it a reason of
 // its own.
 const queuedReasons = new Map<string, string>();
+const LEGACY_DISPATCH_WITH_LONG_REASON = "5034baaf-0000-4000-8000-000000000001";
 const dispatchWorksets = new Map<string, Record<string, unknown>>();
 const dispatchDetails = new Map<string, Record<string, unknown>>();
+type NoticeRevision = { commandId: string; receiptVersion: string };
+const noticeAcknowledgements = new Map<string, Array<{ notice: NoticeRevision; acknowledgedAt: string }>>();
 
-function dispatchWorkset(): void {
+function dispatchWorkset(withNoticeVersions = false): void {
   const reason =
     "Runner connection was lost while setting the model. The Runtime recorded the command, but the Dispatcher could not obtain an outcome before the Sandbox became unavailable. A later History update may still establish the result. The last response mentioned the disconnected execution stream.";
   const issue = {
-    commandId: "5034baaf-0000-4000-8000-000000000001",
+    commandId: LEGACY_DISPATCH_WITH_LONG_REASON,
     operation: "OPERATION_CHANGE_MODEL",
     state: "DELIVERY_STATE_UNKNOWN",
     updatedAt: ago(1_000),
+    ...(withNoticeVersions ? { receiptVersion: "9007199254740993" } : {}),
+  };
+  const failed = {
+    commandId: "ef4ce91a-0000-4000-8000-000000000004",
+    operation: "OPERATION_CHANGE_REASONING_EFFORT",
+    state: "DELIVERY_STATE_FAILED",
+    reason: "Runner refused the reasoning effort change.",
+    updatedAt: ago(2_000),
+    receiptVersion: "9007199254740992",
   };
   dispatchWorksets.set(RUNNING_THREAD, {
     active: [
@@ -2502,7 +2514,10 @@ function dispatchWorkset(): void {
         reason: "sandbox_resuming",
       },
     ],
-    recentIssues: [{ ...issue, journalAdmitted: true, reason: reason.slice(0, 256), reasonTruncated: true }],
+    recentIssues: [
+      { ...issue, journalAdmitted: true, reason: reason.slice(0, 256), reasonTruncated: true },
+      ...(withNoticeVersions ? [failed] : []),
+    ],
     recentAdmittedOrCancelled: [
       {
         commandId: "2e08b63a-0000-4000-8000-000000000003",
@@ -2513,6 +2528,7 @@ function dispatchWorkset(): void {
     moreRecentIssuesAvailable: true,
   });
   dispatchDetails.set(issue.commandId, { ...issue, reason, sessionId: RUNNING_THREAD });
+  if (withNoticeVersions) dispatchDetails.set(failed.commandId, { ...failed, sessionId: RUNNING_THREAD });
 }
 
 // Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
@@ -3297,6 +3313,20 @@ function retiredConnectionRows(): Connection[] {
 }
 
 routes.push(
+  [
+    "GET",
+    /^\/upstream\/dispatcher\/v1\/sessions\/([^/]+)\/dispatches:batchGet$/,
+    (match, query) => ({
+      results: query.getAll("commandIds").map((commandId) => {
+        const detail = dispatchDetails.get(commandId);
+        if (!detail || detail.sessionId !== match[1]) return { commandId, notFound: {} };
+        const receipt = { ...detail, receiptVersion: detail.receiptVersion ?? "1" };
+        return commandId === LEGACY_DISPATCH_WITH_LONG_REASON
+          ? { commandId, legacyDeletionReceipt: receipt }
+          : { commandId, dispatch: { ...COMMAND_TARGET, ...receipt } };
+      }),
+    }),
+  ],
   // These scenes seed browser-local commands with no corresponding stored records.
   [
     "GET",
@@ -3307,6 +3337,34 @@ routes.push(
     "GET",
     /^\/upstream\/dispatcher\/v1\/dispatches\/legacy-input$/,
     () => Response.json({ code: 5, message: "Dispatch not found" }, { status: 404 }),
+  ],
+  [
+    "GET",
+    /^\/upstream\/app\/v1\/threads\/([^/]+)\/notice-acknowledgements$/,
+    (match) => ({ acknowledgements: noticeAcknowledgements.get(match[1]) ?? [] }),
+  ],
+  [
+    "POST",
+    /^\/upstream\/app\/v1\/threads\/([^/]+)\/notice-acknowledgements:batchGet$/,
+    (match, _query, _signal, body) => {
+      const { notices } = JSON.parse(body ?? "{}") as { notices: NoticeRevision[] };
+      const acknowledgements = (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) =>
+        notices.some((item) => item.commandId === notice.commandId && item.receiptVersion === notice.receiptVersion)
+      );
+      return { acknowledgements };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/app\/v1\/threads\/([^/]+)\/notice-acknowledgements$/,
+    (match, _query, _signal, body) => {
+      const { notice } = JSON.parse(body ?? "{}") as { notice: NoticeRevision };
+      noticeAcknowledgements.set(match[1], [
+        { notice, acknowledgedAt: ago(0) },
+        ...(noticeAcknowledgements.get(match[1]) ?? []),
+      ]);
+      return {};
+    },
   ],
   [
     "GET",
@@ -4355,6 +4413,9 @@ const visualHarness = {
   rememberShortRefusedWake,
   rememberFailedAndUnknownDispatches,
   dispatchWorkset,
+  versionedDispatchWorkset(): void {
+    dispatchWorkset(true);
+  },
   completedRollout(): void {
     serveRollout("Completed diagnostic run", rollout);
   },
