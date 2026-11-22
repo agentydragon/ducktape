@@ -140,14 +140,21 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(static_res
         ("ServiceAccount", "haku", "haku-sandbox"),
     }
 
-    diagnostics_role = find_resource(static_resources, "ClusterRole", "cluster-diagnostics-reader")
-    assert {
-        (api_group, resource, verb)
-        for rule in diagnostics_role["rules"]
-        for api_group in rule["apiGroups"]
-        for resource in rule["resources"]
-        for verb in rule["verbs"]
-    } >= {("redis.redis.opstreelabs.in", "redisreplications", verb) for verb in read}
+    grants = Rbac(static_resources).binding_rules(haku_cluster_binding)
+    required = {
+        Permission(None, group, resource, verb)
+        for group, resource in (
+            ("kustomize.toolkit.fluxcd.io", "kustomizations"),
+            ("redis.redis.opstreelabs.in", "redisreplications"),
+        )
+        for verb in read
+    }
+    assert not uncovered(required, grants)
+    # Authorization reviews query the apiserver and do not persist an object.
+    assert {grant for grant in grants if grant.verb not in read} <= {
+        Permission(None, "authorization.k8s.io", resource, "create")
+        for resource in ("subjectaccessreviews", "localsubjectaccessreviews")
+    }
 
 
 def test_namespace_diagnostics_cover_static_and_managed_bindings(rendering: Rendering) -> None:
