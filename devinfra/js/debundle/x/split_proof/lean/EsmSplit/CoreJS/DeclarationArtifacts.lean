@@ -1,7 +1,7 @@
 import EsmSplit.CoreJS.ModuleInput
 import EsmSplit.CoreJS.DeclarationCertificate
 
-/-! Decode the reparsed files of a closed declaration split. An output declaration gets its
+/-! Decode the output ESTree of a closed declaration split. An output declaration gets its
 original allocation-region identity from the placement, after checking its position, name, kind
 and initializer. The parser and scope/literal annotations are shared frontend premises. -/
 
@@ -31,6 +31,7 @@ private def readModule (file : Json) (md : EsmSplit.Module) : Except String Modu
       let exported := (← typ j) == "ExportNamedDeclaration"
       let decl ← if exported then j.getObjVal? "declaration" else pure j
       if exported then
+        ModuleInput.noAttributes j
         unless (← j.getObjVal? "source") == .null do throw "unsupported re-export from another module"
       if decl == .null then
         let specs ← j.getObjValAs? (Array Json) "specifiers"
@@ -48,7 +49,7 @@ private def readModule (file : Json) (md : EsmSplit.Module) : Except String Modu
   unless glue.toList == md.exports do throw "glue export table differs from the plan"
   return { name := md.name, imports := imports.toList, body := body.toList, exports := glue.toList ++ published.toList }
 
-/-- The keys are the filenames observed by the caller, and each value is its annotated ESTree.
+/-- Each key names a module, and each value supplies its ESTree with annotations on declarations.
 Require the complete file set, including empty modules. -/
 def decode (files : Json) (P : EsmSplit.Plan) : Except String Program := do
   let names := (← files.getObj?).toList.map Prod.fst

@@ -1,6 +1,6 @@
 import EsmSplit.CoreJS.FromESTree
 
-/-! Static module requests in the shared annotated ESTree. -/
+/-! Static module requests in parsed ESTree and emitted glue. -/
 namespace CoreJS.ModuleInput
 
 open Lean (Json)
@@ -38,16 +38,14 @@ def noAttributes (j : Json) : Except String Unit := do
 /-- Read a named or side-effect-only import and resolve its relative module request. -/
 def importDecl (importer : String) (j : Json) : Except String Import := do
   unless (← typ j) == "ImportDeclaration" do throw "expected an import declaration"
-  let src ← j.getObjVal? "source"
-  unless (← typ src) == "Literal" do throw "expected a literal import source"
-  let lit ← src.getObjValAs? String "lit"
-  unless lit.startsWith "s:" do throw "expected a string import source"
-  let source ← resolve importer (lit.drop 2).toString
+  let request ← j.getObjVal? "source" >>= FromESTree.stringLiteral
+  let source ← resolve importer request
   noAttributes j
   let specs ← j.getObjValAs? (List Json) "specifiers"
   let names ← specs.mapM fun sp => do
     unless (← typ sp) == "ImportSpecifier" do throw "expected a named import"
-    return (← FromESTree.identifier (← sp.getObjVal? "imported"), ← FromESTree.identifier (← sp.getObjVal? "local"))
+    return (← FromESTree.moduleExportName (← sp.getObjVal? "imported"),
+      ← FromESTree.identifier (← sp.getObjVal? "local"))
   return { source, names }
 
 end CoreJS.ModuleInput

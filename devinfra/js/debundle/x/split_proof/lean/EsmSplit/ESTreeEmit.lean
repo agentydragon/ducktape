@@ -26,7 +26,7 @@ private def setField (j : Json) (key : String) (v : Json) : Except String Json :
 
 /-- Retained and duplicated requests resolve relative to the file that now imports them. -/
 private def request (decl : Json) (file : String) : Except String Json := do
-  let original := Lower.specName (Lower.fld decl "source")
+  let original ← (← decl.getObjVal? "source").getObjValAs? String "value"
   let target ← rebaseRelativeRequest file original
   if target == original then return decl
   setField decl "source" (literal target)

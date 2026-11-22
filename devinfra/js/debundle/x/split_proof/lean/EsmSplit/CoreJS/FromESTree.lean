@@ -14,6 +14,20 @@ def identifier (j : Json) : Except String Name := do
   unless (← field j "type") == "Identifier" do throw "expected an identifier"
   field j "name"
 
+/-- Module requests and quoted export names carry their strings in ESTree's value field.
+Synthesized glue supplies this syntax directly. -/
+def stringLiteral (j : Json) : Except String String := do
+  unless (← field j "type") == "Literal" && !(j.getObjVal? "bigint").isOk && !(j.getObjVal? "regex").isOk do
+    throw "expected a string literal"
+  let value ← field j "value"
+  if let .ok lit := j.getObjVal? "lit" then
+    unless lit == .str ("s:" ++ value) do throw "string literal differs from its annotation"
+  return value
+
+/-- The public side of a named import or export can be an identifier or a quoted name. -/
+def moduleExportName (j : Json) : Except String Name := do
+  if (← field j "type") == "Literal" then stringLiteral j else identifier j
+
 private def literal (key : String) : Except String Expr := do
   match key with
   | "null" => return .null
@@ -132,7 +146,8 @@ private def declarationWith (binder : Json → Except String Name) (initializer 
   | "const", e => return (x, .decl .const x (← initializer x e))
   | kind, _ => throw s!"unsupported declaration {kind}"
 
-/-- One emitted declaration; an imported reference can read only a local name in its import table. -/
+/-- Decode an emitted declaration. Retained references to module bindings keep their source
+annotation and resolve by name in the emitted module's scope. -/
 def declaration (imports : List Name) (j : Json) : Except String (Name × Stmt) :=
   declarationWith moduleBinding (fun _ => exprWithImports imports) j
 
@@ -207,7 +222,7 @@ def linkedUnit (imports : List Name) : Json → Except String Stmt :=
 /-- A named export of a local binding, in (public, local) order. -/
 def exportSpec (j : Json) : Except String (Name × Name) := do
   unless (← field j "type") == "ExportSpecifier" do throw "expected a local named export"
-  return (← identifier (← j.getObjVal? "exported"), ← identifier (← j.getObjVal? "local"))
+  return (← moduleExportName (← j.getObjVal? "exported"), ← identifier (← j.getObjVal? "local"))
 
 def unit (j : Json) : Except String (Option Stmt × List (Name × Name)) := do
   match ← field j "type" with
