@@ -154,6 +154,11 @@ the programs cannot finish with one shared state in every world, so the checker
 refuses before generating the all-world proof. Matching probe states are only a
 necessary check; Lean still proves the guarantee for every modeled world.
 
+When both linked graphs run their units in the same order, Lean can reuse the
+source’s normal execution. It checks the state after hoisting and compares each
+unit’s original ordinal, full statement, receiver and free-name binding cells.
+The entry’s public names must resolve to the same cells in both graphs.
+
 The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
 top-level record initializer it can make one more attempt with 64 plus the largest
 property count, capped at 2048. Exhausting the budget, unsupported syntax or an

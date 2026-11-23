@@ -255,6 +255,7 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
     s!"private theorem {stem}Eq : {stem}Fields = {stem}Data := {stem}Witness.property\n" ++
     s!"private theorem {stem}Width : {stem}Fields.length ≤ {fields.length} := by rw [{stem}Eq]; {widthProof}\n" ++
     s!"@[cbv_opaque] private def {stem}Props := {stem}Fields.map CoreJS.literalField\n" ++
+    s!"@[cbv_eval] private theorem {stem}Free : freeProps {stem}Props = [] := freeProps_literalFields {stem}Fields\n" ++
     s!"@[cbv_eval] private theorem {stem}Eval " ++ "{W : World} (fuel : Nat) (env : Env) :\n" ++
     s!"    (evalExpr fuel env (.obj {stem}Props) : M W Val) =\n" ++
     s!"      CoreJS.LinkedBehavior.evalQuotedRecordBody {stem}Fields {stem}Props {fields.length} fuel env :=\n" ++
