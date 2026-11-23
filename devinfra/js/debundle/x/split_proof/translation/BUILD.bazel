@@ -313,6 +313,14 @@ js_test(
 )
 
 js_test(
+    name = "linked_object_elements_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_object_elements_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "linked_programs_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,

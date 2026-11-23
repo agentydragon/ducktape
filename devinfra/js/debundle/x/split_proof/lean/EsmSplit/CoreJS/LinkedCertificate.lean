@@ -106,6 +106,15 @@ private partial def propEq : MatchEq PropDef
     let ⟨key⟩ ← exprEq k k'
     let ⟨value⟩ ← exprEq v v'
     return ⟨key ▸ value ▸ rfl⟩
+  | .getter k f, .getter k' f' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨fn⟩ ← funcEq f f'
+    return ⟨key ▸ fn ▸ rfl⟩
+  | .setter k f, .setter k' f' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨fn⟩ ← funcEq f f'
+    return ⟨key ▸ fn ▸ rfl⟩
+  | .proto v, .proto v' => (exprEq v v').map fun h => ⟨congrArg PropDef.proto h.down⟩
   | _, _ => none
 
 private partial def stmtEq : MatchEq Stmt
