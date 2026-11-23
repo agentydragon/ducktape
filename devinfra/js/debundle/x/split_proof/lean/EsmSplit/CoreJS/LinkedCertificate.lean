@@ -217,6 +217,7 @@ private partial def propEq : MatchEq PropDef
     let ⟨key⟩ ← exprEq k k'
     let ⟨fn⟩ ← funcEq f f'
     return ⟨key ▸ fn ▸ rfl⟩
+  | .spread a, .spread b => (exprEq a b).map fun h => ⟨congrArg PropDef.spread h.down⟩
   | .proto v, .proto v' => (exprEq v v').map fun h => ⟨congrArg PropDef.proto h.down⟩
   | _, _ => none
 

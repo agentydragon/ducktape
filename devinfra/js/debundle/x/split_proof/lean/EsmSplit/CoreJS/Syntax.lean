@@ -127,6 +127,7 @@ inductive PropDef where
   | setter (k : Expr) (f : Func)
   /-- `__proto__: v`. -/
   | proto (v : Expr)
+  | spread (source : Expr)
 
 inductive ClassMember where
   | method (static : Bool) (k : Expr) (f : Func)
@@ -311,7 +312,7 @@ def Target.free : Target → List Name
 def PropDef.free : PropDef → List Name
   | .init k v => k.free ++ v.free
   | .getter k f | .setter k f => k.free ++ f.free
-  | .proto v => v.free
+  | .proto v | .spread v => v.free
 
 def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free

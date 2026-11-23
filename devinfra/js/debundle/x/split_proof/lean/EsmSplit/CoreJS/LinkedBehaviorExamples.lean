@@ -196,4 +196,23 @@ private def imported (name : String) : Json := node "Identifier" [("name", .str 
     (arrayLiteral #[imported "direct", spread (imported "iterable")]))).map Stmt.free).toOption ==
     some ["direct", "iterable"]
 
+private def objectSpreads (operands : Array Json) : Json :=
+  node "ObjectExpression" [("properties", .arr (operands.map spread))]
+
+private def objectSpreadProgram : Program :=
+  let body : Expr := .obj [.spread (.str "first"), .spread (.str "second")]
+  ⟨"main.mjs", [⟨"main.mjs", [], [(0, .expr (.func (.mk "" .arrow false [] [.ret body])))], []⟩]⟩
+
+private theorem objectSpreadExecution : LinkedBehavior.Equivalent objectSpreadProgram objectSpreadProgram ∧
+    LinkedBehavior.SameExports objectSpreadProgram objectSpreadProgram := by
+  verify_linked_programs 16
+
+#guard checkClosure (objectSpreads #[stringLiteral "first", stringLiteral "second"]) objectSpreadProgram objectSpreadExecution
+#guard !checkClosure (objectSpreads #[stringLiteral "second", stringLiteral "first"]) objectSpreadProgram objectSpreadExecution
+#guard !checkClosure (objectSpreads #[stringLiteral "first"]) objectSpreadProgram objectSpreadExecution
+
+#guard
+  ((FromESTree.linkedUnit ["source"] (closureUnit (objectSpreads #[imported "source"]))).map Stmt.free).toOption ==
+    some ["source"]
+
 end CoreJS.LinkedBehaviorExamples

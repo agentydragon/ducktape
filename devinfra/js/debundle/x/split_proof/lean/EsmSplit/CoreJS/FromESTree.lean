@@ -232,7 +232,11 @@ private def linkedObject (lower : Name → Json → Except String Expr)
   let mut seen : Std.HashMap String String := {}
   let mut props := #[]
   for p in ← j.getObjValAs? (Array Json) "properties" do
-    unless (← field p "type") == "Property" do throw "expected a static data property or method"
+    let propType ← field p "type"
+    if propType == "SpreadElement" then
+      props := props.push (.spread (← lower "" (← p.getObjVal? "argument")))
+      continue
+    unless propType == "Property" do throw "expected a static data property or method"
     if ← p.getObjValAs? Bool "computed" then throw "expected a static data property or method"
     let key ← staticPropertyName (← p.getObjVal? "key")
     let keyExpr ← stringExpr key

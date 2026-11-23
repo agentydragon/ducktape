@@ -141,6 +141,7 @@ def token (tag : String) (args : List Json) : D Unit := do
   | "setter", [] => do
     let f ← popFunc
     push (.prop (.setter (← popExpr) f))
+  | "spreadProp", [] => do push (.prop (.spread (← popExpr)))
   | "proto", [] => do push (.prop (.proto (← popExpr)))
   | "arr", [size] => do push (.expr (.arr (← popMany popExpr (← nat size))))
   | "method", [static] => do
