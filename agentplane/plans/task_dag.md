@@ -18,8 +18,8 @@ The operator listed these directions without ranking them. There is also a curre
   are a later design decision.
 
 - [Sessions and Environments cutover leftovers](#sessions-and-environments-cutover-leftovers).
-  The service cutover reached staging. Four independent cleanup PRs are in review. Removing
-  the transitional Sessions Pod label follows verification of the Service selector in staging.
+  Verify the Sessions image rollout. Retiring the transitional Sessions Pod label requires a
+  separate check of the live Service endpoints.
 - [Firecracker on the cluster](#firecracker_integration_design--choose-firecracker-integration-and-privilege-boundary).
   Evaluate an existing Firecracker integration before choosing how to provision privileged
   infrastructure. Keeping the Agentplane launcher in a dedicated namespace remains an option.
@@ -118,9 +118,7 @@ before changing lifecycle behavior.
 
 ### Release decisions
 
-The operator released leftover settings-key cleanup on Nov 16. The verified App fields are in
-[cutover leftovers](#sessions-and-environments-cutover-leftovers). Removing `CommandSettled`,
-retiring `orchestration_v1` and adding launcher auto-grants remain held. The stable provider
+Removing `CommandSettled`, retiring `orchestration_v1` and adding launcher auto-grants remain held. The stable provider
 prefix design [awaits operator review](#awaiting-operator-review).
 
 ### Sandbox-free central Sessions
@@ -3628,27 +3626,13 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
 
 #### Sessions and Environments cutover leftovers
 
-[#17630](https://github.com/agentydragon/ducktape/pull/17630) retired the old Services, workloads,
-bootstrap aliases, CONNECT authorities and image automation. The operator dispatched the four
-remaining code changes independently on Nov 22. Each canonical Service had two ready endpoints.
-
-- [App settings #19314](https://github.com/agentydragon/ducktape/pull/19314) removes the two
-  unused Runner Gateway timeout fields. Staging omits both keys, and the production Go loader
-  accepted the [rendered staging config](https://app.buildbuddy.io/invocation/12157b1e-a07b-4371-a93b-e3abcbd23b17).
-- [Runtime listener policy #19320](https://github.com/agentydragon/ducktape/pull/19320) removes
-  the retired `sandbox-controller` peer from
-  `environment-tools-listener`. After `agentplane-staging` reconciles, verify the Environments
-  Runtime connections still report connected on the running Sandboxes.
-- [Sessions Service selector #19319](https://github.com/agentydragon/ducktape/pull/19319)
-  selects `app.kubernetes.io/name=sessions`. Before dispatch, both the new and old selector
-  matched the exact two Ready EndpointSlice Pod UIDs. Once Flux applies the new Service
-  selector, verify its ready endpoints against the current Sessions Pods, then remove
-  `app.kubernetes.io/component=sessions` from the separately owned
-  `agentplane-staging-delivery` Pod template.
-- [Sessions executable #19313](https://github.com/agentydragon/ducktape/pull/19313) updates
-  the Bazel target, image entrypoint and runfiles together. The serving and `--migrate-only`
-  paths use the same image and database contracts. After the new image rolls, verify Sessions
-  readiness and a Dispatcher RPC.
+- **Sessions image rollout.** Once the image containing the [renamed Sessions executable](https://github.com/agentydragon/ducktape/pull/19313)
+  reaches `agentplane-staging-delivery`, confirm the Deployment is Ready and a Dispatcher RPC succeeds.
+- **Transitional Sessions Pod label.** After the [Service selector change](https://github.com/agentydragon/ducktape/pull/19319)
+  reaches `agentplane-staging`, verify that the live Service selects `app.kubernetes.io/name=sessions`
+  and its Ready EndpointSlice Pod UIDs match the ready name-selected Pods. Then remove
+  `app.kubernetes.io/component=sessions` from the separately owned `agentplane-staging-delivery`
+  Pod template, regenerate its manifest and recheck endpoints after the Pods roll.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
