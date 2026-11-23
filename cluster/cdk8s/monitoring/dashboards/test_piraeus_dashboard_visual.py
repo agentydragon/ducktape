@@ -19,8 +19,6 @@ from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 
-pytest_plugins = ("devinfra.testing.pytest_outputs",)
-
 
 @pytest.mark.asyncio
 async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) -> None:
