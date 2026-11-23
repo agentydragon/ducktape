@@ -71,6 +71,12 @@ for (const [operator, initial, rhs, expected, onMember] of [
   ["*=", 3, 4, 12, false],
   ["/=", 10, "2", 5, true],
   ["%=", 8, 3, 2, false],
+  ["&=", 0x100000001, 3, 1, false],
+  ["|=", "0x10", "2", 18, true],
+  ["^=", -3.9, true, -4, false],
+  ["<<=", 1, 63, -0x80000000, true],
+  [">>=", -3, 1, -2, false],
+  [">>>=", "-1", 0, 0xffffffff, true],
 ]) {
   const target = onMember ? member(id("box"), literal("value"), true) : id("value");
   const source = run([
