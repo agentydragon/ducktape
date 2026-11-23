@@ -84,7 +84,7 @@ Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict
 
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
 The state includes the heap and captured bindings of exported closures. The proof uses
-an interpreter fuel witness selected by running both programs in a concrete world. The checker starts at 16 and retries at 32 and 64 on fuel exhaustion. The kernel checks the selected witness for every modeled world. Exhausting the budget, unsupported syntax or a proof that fails
+an interpreter fuel witness selected by running both programs in a concrete world. The checker starts at 16 and retries at 32 and 64 on fuel exhaustion. For a top-level record initializer it can make one more attempt with 64 plus the largest property count, capped at 1024. The kernel checks the selected witness for every modeled world. Exhausting the budget, unsupported syntax or a proof that fails
 to reduce yields a rejection. A successful comparison reports `"scope":"linked-programs"`.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
 

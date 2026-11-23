@@ -171,19 +171,31 @@ assertWorkerResult(
   "number"
 );
 
-// Even the largest witness is insufficient for 62 properties. A throw after
-// the first witness exhausts must instead report an abrupt initialization.
-for (const [width, useLater, reason] of [
-  [62, false, /exhausted the fuel search budget/],
-  [14, true, /original threw during linked initialization/],
-]) {
-  const props = Array.from({ length: width }, (_, i) =>
-    property(`field${i}`, useLater && i === width - 1 ? id("result") : literal(i))
-  );
-  const source = observedProgram(literal(0), { type: "ObjectExpression", properties: props });
-  const { verdict, out } = workerSplit(`record-fuel-${width}`, source);
+// A wide, straight-line initializer consumes one level of fuel per property.
+const fields = Array.from({ length: 65 }, (_, i) => property(`field${i}`, literal(i)));
+assertWorkerResult(
+  "wide-record",
+  observedProgram(literal(0), { type: "ObjectExpression", properties: fields }),
+  Object.fromEntries(fields.map((field, i) => [field.key.name, i]))
+);
+
+// After retrying the wide record, report the actual TDZ on its final property.
+{
+  const value = { type: "ObjectExpression", properties: [...fields, property("tail", id("result"))] };
+  const { verdict, out } = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
   assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, reason);
+  assert.match(verdict.reason, /original threw during linked initialization/);
+  assert(!existsSync(out));
+}
+
+// An unbounded call chain still exhausts the ordinary search budget.
+{
+  const { verdict, out } = workerSplit(
+    "recursive-fuel",
+    observedProgram(arrow([], call(id("worker"))), call(id("worker")))
+  );
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, /exhausted the fuel search budget \(64\)/);
   assert(!existsSync(out));
 }
 

@@ -280,13 +280,27 @@ private def completesAt (label : String) (p : Program) (fuel : Nat) : Except Str
   | .throw .. => .error s!"{label} threw during linked initialization"
   | .unknown why _ => .error s!"{label} reached an unknown result during linked initialization: {why}"
 
+/-- Evaluating a flat record uses one level of interpreter fuel per property.
+Reserve the usual depth for its expressions and surrounding declaration. -/
+private def recordFuelLimit (source : Program) : Nat := Id.run do
+  let mut width := 0
+  for m in source.modules do
+    for (_, s) in m.body do
+      if let .decl _ _ (.obj props) := s then
+        width := max width props.length
+  return min 1024 (64 + width)
+
 private def witnessFuel (source candidate : Program) : Except String Nat := do
-  let maxFuel := 64
-  for fuel in [16, 32, maxFuel] do
+  let test (fuel : Nat) : Except String Bool := do
     let before ← completesAt "original" source fuel
     let after ← completesAt "split" candidate fuel
-    if before && after then return fuel
-  throw s!"linked initialization exhausted the fuel search budget ({maxFuel})"
+    return before && after
+  for fuel in [16, 32, 64] do
+    if ← test fuel then return fuel
+  let limit := recordFuelLimit source
+  if limit > 64 then
+    if ← test limit then return limit
+  throw s!"linked initialization exhausted the fuel search budget ({limit})"
 
 /-- The generated module proves an all-world, fuel-independent claim for these two programs.
 The caller accepts only successful elaboration and kernel checking of the complete file. -/
