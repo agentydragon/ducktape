@@ -23,7 +23,7 @@ def make_lifespan(api_key: str | None = None):
     @asynccontextmanager
     async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         """Initialize client once at server startup, share across all requests."""
-        key = api_key or load_api_key(exit_on_missing=False)
+        key = load_api_key(api_key)
         if not key:
             raise RuntimeError(
                 "HABITIFY_API_KEY environment variable is required. Set it in .env or pass via --api-key."

@@ -5,7 +5,6 @@ CLI-specific utility functions.
 import typer
 from rich.console import Console
 
-from x.habitify_mcp.config import load_api_key
 from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
 
 STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
@@ -20,11 +19,6 @@ def format_rich_status(status: str) -> str:
     """Format a status string with Rich formatting."""
     color = get_status_color(status)
     return f"[{color}]{status.capitalize()}[/]"
-
-
-def get_api_key_from_param_or_env(api_key_param: str | None = None) -> str | None:
-    """Get API key from CLI parameter or environment."""
-    return api_key_param or load_api_key(exit_on_missing=False)
 
 
 async def resolve_habit_for_cli(habit: str, client: HabitifyClient, err_console: Console) -> tuple[str, str]:

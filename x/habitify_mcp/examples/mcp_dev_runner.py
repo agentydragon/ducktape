@@ -20,7 +20,7 @@ def main() -> int:
     parser.add_argument("--debug", "--debug-tools", action="store_true", help="Enable Habitify server debug logging")
     args = parser.parse_args()
 
-    api_key = args.api_key or load_api_key(exit_on_missing=False)
+    api_key = load_api_key(args.api_key)
     if not api_key:
         print("HABITIFY_API_KEY is required. Set it in the environment or pass --api-key.", file=sys.stderr)
         return 1

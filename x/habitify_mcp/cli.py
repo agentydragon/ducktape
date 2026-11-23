@@ -10,26 +10,18 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated
 
 import typer
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
 from x import habitify_mcp
+from x.habitify_mcp.config import load_api_key
 from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
 from x.habitify_mcp.server import create_habitify
 from x.habitify_mcp.types import Status
-from x.habitify_mcp.utils.cli_utils import (
-    format_rich_status,
-    get_api_key_from_param_or_env,
-    get_status_color,
-    resolve_habit_for_cli,
-)
-
-# Load environment variables
-load_dotenv()
+from x.habitify_mcp.utils.cli_utils import format_rich_status, get_status_color, resolve_habit_for_cli
 
 # Set up logging to stderr
 logging.basicConfig(
@@ -44,6 +36,20 @@ app = typer.Typer(help="Habitify CLI and MCP Server")
 # Two consoles - one for stderr (server mode) and one for stdout (normal CLI usage)
 err_console = Console(stderr=True)  # For server logs and errors
 console = Console()  # For normal CLI output
+
+
+ApiKeyOption = Annotated[
+    str | None, typer.Option("--api-key", "-k", help="Habitify API key (overrides environment variable)")
+]
+
+
+def _require_api_key(api_key: str | None) -> str:
+    key = load_api_key(api_key)
+    if not key:
+        err_console.print("[bold red]Error:[/] Habitify API key is required.")
+        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
+        raise typer.Exit(code=1)
+    return key
 
 
 # Signal handling for graceful shutdown
@@ -62,44 +68,18 @@ def setup_signal_handlers() -> None:
 def mcp(
     transport: str = typer.Option("stdio", "--transport", "-t", help="Transport type: stdio or sse"),
     port: int = typer.Option(3000, "--port", "-p", help="Port for SSE transport"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Disable debug output"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
 ) -> None:
     """Start the Habitify MCP server with the specified transport."""
-    # Configure logging
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logger.setLevel(logging.DEBUG)
-    elif quiet:
-        logging.getLogger().setLevel(logging.WARNING)
-        logger.setLevel(logging.WARNING)
+    if debug or quiet:
+        level = logging.DEBUG if debug else logging.WARNING
+        logging.getLogger().setLevel(level)
+        logger.setLevel(level)
 
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
-
-    # Check if API key is set
-    if not habitify_api_key:
-        err_console.print("[bold red]Error:[/] Habitify API key is required.")
-        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
-        raise typer.Exit(code=1)
-
-    # Set up signal handlers
+    habitify_api_key = _require_api_key(api_key)
     setup_signal_handlers()
-
-    # Configure logging level for the server
-    server_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-    if debug:
-        server_log_level = "DEBUG"
-    elif quiet:
-        server_log_level = "WARNING"
-    else:
-        server_log_level = "INFO"
-
-    # Configure logging
-    logging.basicConfig(level=server_log_level)
 
     # Create server with API key
     server = create_habitify(api_key=habitify_api_key)
@@ -129,19 +109,10 @@ def mcp(
 @app.command("install")
 def install(
     name: str = typer.Option("Habitify", "--name", "-n", help="Name to register the server as"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Install the Habitify MCP server to Claude Desktop."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
-
-    # Check if API key is set
-    if not habitify_api_key:
-        err_console.print("[bold red]Error:[/] Habitify API key is required.")
-        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
-        raise typer.Exit(code=1)
+    habitify_api_key = _require_api_key(api_key)
 
     # Get full path to the server module
     server_path = Path(habitify_mcp.__file__).parent
@@ -173,9 +144,7 @@ def install(
 @app.command("list")
 def list_habits(
     include_archived: bool = typer.Option(False, "--include-archived", "-a", help="Include archived habits"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """List habits, excluding archived ones by default."""
     # Run the async implementation in an event loop
@@ -184,8 +153,7 @@ def list_habits(
 
 async def _list_habits_async(*, include_archived: bool = False, api_key: str | None = None) -> None:
     """Async implementation of the list command."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
+    habitify_api_key = load_api_key(api_key)
 
     try:
         # Use async context manager
@@ -226,9 +194,7 @@ async def _list_habits_async(*, include_archived: bool = False, api_key: str | N
 def status(
     habit: str = typer.Argument(..., help="Habit ID or name"),
     date: str | None = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Check a habit's status for a specific date."""
     # Run the async implementation in an event loop
@@ -237,8 +203,7 @@ def status(
 
 async def _status_async(habit: str, date: str | None = None, api_key: str | None = None) -> None:
     """Async implementation of the status command."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
+    habitify_api_key = load_api_key(api_key)
 
     try:
         # Use async context manager
@@ -288,9 +253,7 @@ def log(
     date: str | None = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"),
     note: str | None = typer.Option(None, "--note", "-n", help="Optional note to attach"),
     value: float | None = typer.Option(None, "--value", "-v", help="Optional value (for number/timer habits)"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Log a habit with a specific status."""
     # Run the async implementation in an event loop
@@ -306,8 +269,7 @@ async def _log_async(
     api_key: str | None = None,
 ) -> None:
     """Async implementation of the log command."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
+    habitify_api_key = load_api_key(api_key)
 
     # Validate status
     valid_statuses = ["completed", "skipped", "failed", "none"]
