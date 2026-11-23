@@ -1,13 +1,10 @@
 import { useState } from "react";
 
+import gameRules from "../game_rules.json";
 import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
 
-// European roulette wheel pocket order (clockwise from 0)
-const WHEEL = [
-  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7,
-  28, 12, 35, 3, 26,
-];
-const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const RED = new Set(gameRules.red);
+const POCKET_ANGLE = 360 / gameRules.wheel.length;
 
 // Fill for a wheel pocket or a result chip: green zero, otherwise red or black.
 function pocketFill(n) {
@@ -77,8 +74,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
     setSpinning(true);
     setResult(null);
 
-    const anglePer = 360 / WHEEL.length;
-    const targetAngle = -(pickedIdx * anglePer);
+    const targetAngle = -(pickedIdx * POCKET_ANGLE);
     const fullSpins = 6 + Math.floor(Math.random() * 3);
     const finalRotation = rotation - fullSpins * 360 + (targetAngle - (rotation % 360));
     setRotation(finalRotation);
@@ -130,10 +126,9 @@ export function Roulette({ offline, credits, spinRoulette }) {
           >
             <circle r="140" fill={COLORS.goldDim} />
             <circle r="136" fill={COLORS.black} />
-            {WHEEL.map((num, i) => {
-              const anglePer = 360 / WHEEL.length;
-              const startAngle = i * anglePer - 90 - anglePer / 2;
-              const endAngle = startAngle + anglePer;
+            {gameRules.wheel.map((num, i) => {
+              const startAngle = i * POCKET_ANGLE - 90 - POCKET_ANGLE / 2;
+              const endAngle = startAngle + POCKET_ANGLE;
               const sRad = (startAngle * Math.PI) / 180;
               const eRad = (endAngle * Math.PI) / 180;
               const r = 130;
@@ -141,7 +136,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
                 y1 = Math.sin(sRad) * r;
               const x2 = Math.cos(eRad) * r,
                 y2 = Math.sin(eRad) * r;
-              const textAngle = i * anglePer - 90;
+              const textAngle = i * POCKET_ANGLE - 90;
               const tx = Math.cos((textAngle * Math.PI) / 180) * 108;
               const ty = Math.sin((textAngle * Math.PI) / 180) * 108;
               return (
@@ -330,10 +325,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
               marginBottom: 6,
             }}
           >
-            Bet type{" "}
-            <span style={{ color: COLORS.gold }}>
-              · pays {betType === "number" ? "35:1" : betType.startsWith("dozen") ? "2:1" : "1:1"}
-            </span>
+            Bet type <span style={{ color: COLORS.gold }}>· pays {gameRules.roulette_multipliers[betType] - 1}:1</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
             <BetTypeBtn {...betBtnProps} value="red">
@@ -368,7 +360,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
           </div>
           <div style={{ marginTop: 8 }}>
             <BetTypeBtn {...betBtnProps} value="number">
-              Single Number (35:1)
+              Single Number ({gameRules.roulette_multipliers.number - 1}:1)
             </BetTypeBtn>
             {betType === "number" && (
               <div style={{ marginTop: 8 }}>
