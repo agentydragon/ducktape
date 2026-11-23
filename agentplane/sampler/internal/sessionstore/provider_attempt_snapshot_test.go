@@ -11,7 +11,9 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/lib/pq"
@@ -81,7 +83,14 @@ func TestPreparedSamplingParity(t *testing.T) {
 			run := func(prepared bool) sampling {
 				store := newTestStore(t)
 				store.now = func() time.Time { return time.Date(2026, 1, 7, 12, 0, 0, 0, time.UTC) }
-				session := openSessionForStore(t, store, "")
+				// The platform instructions contain the Session ID, so reuse it in the two isolated databases.
+				session, err := openStoreSession(t, store, &sessionconfig.Configuration{
+					SessionId: "91000000-0000-4000-8000-000000000001",
+					Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
+				}, "fixture-account", protocol.APIStyleResponses)
+				if err != nil {
+					t.Fatal(err)
+				}
 				owner := claim(t, store, session)
 				if err := store.AppendInput(t.Context(), owner, "Fixture prior input"); err != nil {
 					t.Fatal(err)
@@ -103,7 +112,6 @@ func TestPreparedSamplingParity(t *testing.T) {
 				var snapshot *ProviderAttemptSnapshot
 				var id string
 				var wire []byte
-				var err error
 				if prepared {
 					source := snapshotFixtureRead(t, store, owner)
 					id, wire, snapshot, err = store.BeginPreparedSampling(t.Context(), owner, source, state, request, preparation, providerAttemptTestPolicy())
@@ -153,9 +161,16 @@ func TestPreparedSamplingParity(t *testing.T) {
 				return sampling{wire: wire, conversation: conversation, events: events}
 			}
 			old, prepared := run(false), run(true)
-			if !bytes.Equal(old.wire, prepared.wire) || !bytes.Contains(prepared.wire, []byte("fixture-live-cell")) ||
-				!bytes.Contains(prepared.wire, []byte("/fixture/bash")) {
-				t.Fatal("prepared request changed bytes or omitted execution context")
+			if !bytes.Equal(old.wire, prepared.wire) {
+				for i := 0; i < min(len(old.wire), len(prepared.wire)); i++ {
+					if old.wire[i] != prepared.wire[i] {
+						t.Fatalf("prepared request diverged at byte %d", i)
+					}
+				}
+				t.Fatalf("request byte counts differ: old=%d prepared=%d", len(old.wire), len(prepared.wire))
+			}
+			if !bytes.Contains(prepared.wire, []byte("fixture-live-cell")) || !bytes.Contains(prepared.wire, []byte("/fixture/bash")) {
+				t.Fatal("prepared request omitted environment or execution context")
 			}
 			if !sameNativeContext(old.conversation.Transcript, prepared.conversation.Transcript) ||
 				!sameNativeContext(old.conversation.Context(), prepared.conversation.Context()) ||
