@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
 	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -101,10 +102,7 @@ func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) 
 	if opens != 1 || starts != 0 {
 		t.Fatalf("OpenSession attempts=%d StartProcess attempts=%d, want one open and no start", opens, starts)
 	}
-	var processes int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_process WHERE conversation_id=$1`, owner.ConversationID).Scan(&processes); err != nil {
-		t.Fatal(err)
-	}
+	processes := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_process WHERE conversation_id=$1`, owner.ConversationID)
 	if processes != 0 {
 		t.Fatalf("environment refusal before workspace setup registered %d processes, want none", processes)
 	}
@@ -1023,10 +1021,7 @@ func TestCompletedReadIsJournaledAfterCallerCancellation(t *testing.T) {
 		t.Fatalf("completed read lost to caller cancellation: %v", err)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
-	var completed int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read' AND result->>'outcome'='completed'`, owner.ConversationID).Scan(&completed); err != nil {
-		t.Fatal(err)
-	}
+	completed := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read' AND result->>'outcome'='completed'`, owner.ConversationID)
 	if completed != 1 {
 		t.Fatalf("completed read intents=%d, want one", completed)
 	}
@@ -1543,10 +1538,7 @@ func ptrInt(value int) *int       { return &value }
 
 func assertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()
-	var count int
-	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
+	count := postgres.Count(t, store.DB(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID)
 	if count != 0 {
 		t.Fatalf("unresolved nested intents=%d", count)
 	}

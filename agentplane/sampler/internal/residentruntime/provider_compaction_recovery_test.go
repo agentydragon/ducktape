@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
@@ -126,11 +127,8 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 		!first.resultPresent || second.status != "" || !second.resultPresent {
 		t.Fatalf("compaction attempt lineage/results=%+v", attempts)
 	}
-	var completed int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_intent
-		WHERE provider_command_id=$1 AND request->>'kind'='compaction' AND result IS NOT NULL AND NOT (result ? 'status')`, commandID).Scan(&completed); err != nil {
-		t.Fatal(err)
-	}
+	completed := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent
+		WHERE provider_command_id=$1 AND request->>'kind'='compaction' AND result IS NOT NULL AND NOT (result ? 'status')`, commandID)
 	if completed != 1 {
 		t.Fatalf("persisted successful compaction results=%d, want one", completed)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -35,11 +36,7 @@ func startTurnForStore(t *testing.T, store *sessionstore.Store, session *session
 
 func queuedNotifications(t *testing.T, store *sessionstore.Store, conversationID string) int {
 	t.Helper()
-	var count int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_notification WHERE conversation_id=$1`, conversationID).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_notification WHERE conversation_id=$1`, conversationID)
 }
 
 func outputTexts(items []responses.Item) []string {
