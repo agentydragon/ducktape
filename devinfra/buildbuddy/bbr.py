@@ -197,39 +197,21 @@ def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
     --invocation_id_file is unsound: concurrent bbr runs sharing that path
     cross-attribute each other's runs (devinfra/buildbuddy/docs/remote.md § Invocation IDs).
     """
-    bb = _find_bb()
-
-    # Split user_args at the bazel verb into startup options (before verb)
-    # and command options (after verb).
+    # A bare boolean can slip through bb's remote flag parser into Bazel's startup options.
+    cmd = [_find_bb(), "remote", "--disable_retry=true"]
     verb_idx = find_verb_index(user_args)
-    if verb_idx is not None:
-        startup_options = user_args[:verb_idx]
-        verb = user_args[verb_idx]
-        command_options = user_args[verb_idx + 1 :]
-        explicit_id = _explicit_invocation_id(command_options)
-        invocation_id = explicit_id or str(uuid.uuid4())
-        invocation_id_flag = [] if explicit_id else [f"--invocation_id={invocation_id}"]
-    else:
-        # No bazel verb (e.g. --script): no Bazel command
-        # line to attach --invocation_id to, so no ID is minted or reported.
-        startup_options = user_args
-        verb = None
-        command_options = []
-        invocation_id = None
-        invocation_id_flag = []
+    if verb_idx is None:
+        # Script mode has no Bazel invocation to identify.
+        return [*cmd, *user_args, *_bazelrc_args()], None
 
-    cmd = [
-        bb,
-        "remote",
-        # The explicit value is required: bare boolean flags can leak through
-        # bb's remote-flag stripping into Bazel startup options.
-        "--disable_retry=true",
-        *startup_options,
-        *([verb] if verb else []),
-        *invocation_id_flag,
-        *_bazelrc_args(),
-        *command_options,
-    ]
+    cmd.extend(user_args[: verb_idx + 1])
+    command_options = user_args[verb_idx + 1 :]
+    invocation_id = _explicit_invocation_id(command_options)
+    if not invocation_id:
+        invocation_id = str(uuid.uuid4())
+        cmd.append(f"--invocation_id={invocation_id}")
+    cmd.extend(_bazelrc_args())
+    cmd.extend(command_options)
     return cmd, invocation_id
 
 
