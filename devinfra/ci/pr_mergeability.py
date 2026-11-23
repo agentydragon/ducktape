@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -149,6 +148,12 @@ def resolve_merge_commit(
     )
 
 
+def read_checkout_revision() -> tuple[str, list[str]]:
+    """Read HEAD and its available parents from one Git revision walk."""
+    sha, *parents = subprocess.check_output(["git", "rev-list", "--parents", "-n", "1", "HEAD"], text=True).split()
+    return sha, parents
+
+
 def verify_source_revision(
     resolved_sha: str, *, expected_sha: str, expected_head_sha: str, second_parent_sha: str = ""
 ) -> str:
@@ -168,16 +173,12 @@ def verify_checked_out_source() -> None:
     expected_sha = os.environ.get("SOURCE_COMMIT") or os.environ["GITHUB_SHA"]
     expected_head_sha = os.environ.get("EXPECTED_HEAD_SHA", "")
     try:
-        resolved_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        second_parent_sha = ""
-        if expected_head_sha:
-            with suppress(subprocess.CalledProcessError):
-                second_parent_sha = subprocess.check_output(["git", "rev-parse", "HEAD^2"], text=True).strip()
+        resolved_sha, parents = read_checkout_revision()
         verify_source_revision(
             resolved_sha,
             expected_sha=expected_sha,
             expected_head_sha=expected_head_sha,
-            second_parent_sha=second_parent_sha,
+            second_parent_sha=parents[1] if len(parents) >= 2 else "",
         )
     except (OSError, subprocess.CalledProcessError, SourceRevisionError) as error:
         print(f"::error::{error}")
