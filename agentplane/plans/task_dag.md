@@ -2175,8 +2175,13 @@ preserve History and cover Sessions already archived under the current behavior.
 
 The proposed direction is for Session Dispatcher to know whether a Session is archived when it
 admits new work, dispatches queued work or wakes the Session. Decide which service owns archive
-state. Walk through archiving during an active turn, a permanently disconnected host, a queued
-notification and an explicit unarchive.
+state. Walk through archiving during an active turn, a permanently disconnected host and a queued
+notification.
+
+For a central sampler Session, consider an explicit unarchive that allows another sampling turn
+in the same Session. Agentplane owns the Session and its continuation records, so it can retain
+them through archive and check the required bindings before admitting the next turn. Could Codex
+and Claude offer the same operation when their native continuation state is still available?
 
 Does the Notification Service also need to observe archive? Decide what should happen to
 notification delivery, unread entries and subscriptions while the Session is archived.
