@@ -412,10 +412,10 @@ A remote run produces two invocations:
 before the run and in the post-run summary. For scripting, either pass your
 own `--invocation_id=<uuid>` after the verb (adopted, not overridden) or use
 bbr's own `--invocation-id-file=PATH` flag, which writes the ID to that path
-before the run. Use the current task's start date and scratch directory:
+before the run. If the task already has a scratch directory, set `scratch` to it.
 
 ```bash
-scratch="${TMPDIR:-/tmp}/agents/2026_11_23/build-diagnosis"
+scratch="${scratch:-${TMPDIR:-/tmp}/agents/$(date +%Y_%m_%d)/build-diagnosis}"
 bbr --invocation-id-file="$scratch/invocation-id" test //devinfra/buildbuddy/ci:test_live_test_status
 bbapi invocation "$(cat "$scratch/invocation-id")"
 ```
