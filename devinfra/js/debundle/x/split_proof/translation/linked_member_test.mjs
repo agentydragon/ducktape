@@ -121,14 +121,16 @@ for (const computed of [false, true]) {
   assert.equal((await load(path.join(preview, entry))).result, "number");
 }
 
-for (const [name, expr, reason] of [
-  ["optional", "instance?.field", /unsupported linked expression ChainExpression/],
-  ["object-key", "instance[{}]", /object is converted to a primitive/],
-]) {
-  const test = fixture(name, `const instance = { field: 1 }; export const result = ${expr};`, 2, [0]);
+await requireCertified(
+  fixture("optional", "const instance = { field: 1 }; export const result = instance?.field;", 2, [0]),
+  1
+);
+
+{
+  const test = fixture("object-key", "const instance = { field: 1 }; export const result = instance[{}];", 2, [0]);
   const { verdict, log } = test;
   assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason);
+  assert.match(verdict.reason, /object is converted to a primitive/);
   assert(!existsSync(test.out));
 }
 

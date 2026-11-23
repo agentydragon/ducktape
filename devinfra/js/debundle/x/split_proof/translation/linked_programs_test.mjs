@@ -423,6 +423,11 @@ assertWorkerResult(
   'const window = null; export const result = "undefined" != typeof window;',
   true
 );
+assertWorkerResult(
+  "record-optional-member",
+  "const worker = { field: 1 }; export const result = { key: worker?.field };",
+  { key: 1 }
+);
 for (const [name, expr, reason] of [
   ["record-computed", '({ ["key"]: 1 })', /static data property/],
   ["computed-getter", '({ get ["key"]() { return 1; } })', /static data property/],
@@ -430,7 +435,6 @@ for (const [name, expr, reason] of [
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
   ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
-  ["record-optional-member", "({ key: worker?.field })", /unsupported linked expression ChainExpression/],
   ["mixed-equality", '"01" == 1', /linked == requires two string operands/],
   ["unguarded-equality", "worker == worker", /linked == requires two string operands/],
   ["host-equality-typeof", '"undefined" == typeof window', /unsupported global window/],
