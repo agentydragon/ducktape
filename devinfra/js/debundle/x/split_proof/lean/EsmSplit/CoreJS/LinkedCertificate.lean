@@ -27,6 +27,8 @@ private partial def exprEq : MatchEq Expr
   | .var a, .var b => (scalarEq a b).map fun h => ⟨congrArg Expr.var h.down⟩
   | .obj a, .obj b => (listEq propEq a b).map fun h => ⟨congrArg Expr.obj h.down⟩
   | .arr a, .arr b => (listEq exprEq a b).map fun h => ⟨congrArg Expr.arr h.down⟩
+  | .arrWithSpread a, .arrWithSpread b =>
+    (listEq arrayElementEq a b).map fun h => ⟨congrArg Expr.arrWithSpread h.down⟩
   | .unary op a, .unary op' b => do
     let ⟨o⟩ ← scalarEq op op'
     let ⟨v⟩ ← exprEq a b
@@ -56,6 +58,12 @@ private partial def exprEq : MatchEq Expr
     return ⟨callee ▸ arguments ▸ rfl⟩
   | .func a, .func b => (funcEq a b).map fun h => ⟨congrArg Expr.func h.down⟩
   | _, _ => none
+
+private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
+  | (kind, e), (kind', e') => do
+    let ⟨tag⟩ ← scalarEq kind kind'
+    let ⟨value⟩ ← exprEq e e'
+    return ⟨tag ▸ value ▸ rfl⟩
 
 private partial def funcEq : MatchEq Func
   | .mk name kind self params body, .mk name' kind' self' params' body' => do
@@ -151,6 +159,7 @@ local instance : Lean.ToExpr Float where
   toExpr n := Lean.mkApp (Lean.mkConst ``Float.ofBits) (Lean.toExpr n.toBits)
   toTypeExpr := Lean.mkConst ``Float
 
+deriving instance Lean.ToExpr for ArrayElementKind
 deriving instance Lean.ToExpr for DeclKind
 deriving instance Lean.ToExpr for UnOp
 deriving instance Lean.ToExpr for BinOp

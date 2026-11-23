@@ -83,11 +83,16 @@ private def node (kind : String) (fields : List (String × Json)) : Json :=
 
 /-- A proof for a closure returning "first" cannot be reused for a decoded closure returning
 "second", even though constructing each closure separately finishes normally. -/
-private def closureAST (value : String) : Json :=
-  let body := node "Literal" [("value", .str value), ("lit", .str ("s:" ++ value))]
+private def closureUnit (body : Json) : Json :=
   let arrow := node "ArrowFunctionExpression" [("async", .bool false), ("generator", .bool false),
     ("params", .arr #[]), ("body", body)]
-  node "Program" [("sourceType", .str "module"), ("body", .arr #[node "ExpressionStatement" [("expression", arrow)]])]
+  node "ExpressionStatement" [("expression", arrow)]
+
+private def closureAST (body : Json) : Json :=
+  node "Program" [("sourceType", .str "module"), ("body", .arr #[closureUnit body])]
+
+private def stringLiteral (value : String) : Json :=
+  node "Literal" [("value", .str value), ("lit", .str ("s:" ++ value))]
 
 private def closureProgram : Program :=
   ⟨"main.mjs", [⟨"main.mjs", [], [(0, .expr (.func (.mk "" .arrow false [] [.ret (.str "first")])))], []⟩]⟩
@@ -96,13 +101,42 @@ private theorem closureExecution :
     LinkedBehavior.Equivalent closureProgram closureProgram ∧ LinkedBehavior.SameExports closureProgram closureProgram := by
   verify_linked_programs 16
 
-private def checkClosure (value : String) :=
-  let source := closureAST value
+private def checkClosure (body : Json) (p : Program)
+    (semantics : LinkedBehavior.Equivalent p p ∧ LinkedBehavior.SameExports p p) : Bool :=
+  let source := closureAST body
   let files := Json.mkObj [("main.mjs", source)]
   let plan : EsmSplit.Plan := ⟨"main.mjs", [⟨"main.mjs", [0], [], []⟩]⟩
-  (LinkedBehavior.certifyASTs source (Json.mkObj []) files plan closureProgram closureProgram closureExecution).isOk
+  (LinkedBehavior.certifyASTs source (Json.mkObj []) files plan p p semantics).isOk
 
-#guard checkClosure "first"
-#guard !checkClosure "second"
+#guard checkClosure (stringLiteral "first") closureProgram closureExecution
+#guard !checkClosure (stringLiteral "second") closureProgram closureExecution
+
+private def spread (operand : Json) : Json := node "SpreadElement" [("argument", operand)]
+
+private def arrayLiteral (elements : Array Json) : Json := node "ArrayExpression" [("elements", .arr elements)]
+
+private def spreadProgram : Program :=
+  let body : Expr := .arrWithSpread [(.spread, .str "first"), (.spread, .arr [])]
+  ⟨"main.mjs", [⟨"main.mjs", [], [(0, .expr (.func (.mk "" .arrow false [] [.ret body])))], []⟩]⟩
+
+private theorem spreadExecution :
+    LinkedBehavior.Equivalent spreadProgram spreadProgram ∧ LinkedBehavior.SameExports spreadProgram spreadProgram := by
+  verify_linked_programs 16
+
+private def checkSpread (first : Json) : Bool :=
+  checkClosure (arrayLiteral #[first, spread (arrayLiteral #[])]) spreadProgram spreadExecution
+
+-- Mutate the tag of one element while keeping the other spread and the whole array.
+#guard checkSpread (spread (stringLiteral "first"))
+#guard !checkSpread (stringLiteral "first")
+#guard !checkSpread (spread (stringLiteral "second"))
+
+private def imported (name : String) : Json := node "Identifier" [("name", .str name), ("k", .str "V")]
+
+-- The captures come from every element, including those with a spread tag.
+#guard
+  ((FromESTree.linkedUnit ["direct", "iterable"] (closureUnit
+    (arrayLiteral #[imported "direct", spread (imported "iterable")]))).map Stmt.free).toOption ==
+    some ["direct", "iterable"]
 
 end CoreJS.LinkedBehaviorExamples
