@@ -12,11 +12,13 @@ would be for.
 
 ## Open on the Electric design
 
-1. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
-   older page and no count, and the pending panel has no height cap, so on a phone it can squeeze
-   the history view to nothing. Porting means a subset form such as
-   `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
-   "keyset page by admission cursor" describes the page that does not exist yet.
+1. **Older pending History commands.** Electric loads the newest 200 pending projection rows.
+   They render inside the scrolling transcript. Dispatcher delivery has a bounded workset and
+   paginated [Delivery history](../../app/README.md#replica-safe-command-delivery) for receipts.
+   An older admitted command whose effect is still pending in History needs a separate view of
+   that History state. If this workflow warrants paging, start from the current transcript and
+   Dispatcher surfaces. [#7567](https://github.com/agentydragon/ducktape/pull/7567) explored a
+   keyset page against the earlier frontend and schema.
 2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership).
    `agentplane/app/test_electric_window_traffic.py` records Electric's cgroup and RSS counters over
@@ -42,9 +44,9 @@ would be for.
 
 ## A second implementation
 
-<seams.md> is where one plugs in, so several can live on `devel` at once and a deployment picks
-one. Whether to build one is for the measurements above to decide: if Electric meets them, a second
-implementation is an experiment rather than a replacement. The candidates:
+The [replacement decision](../task_dag.md#thread_sync_without_electric--replace-electric-with-our-own-thread-stream)
+depends on which History representation the operator selects. The measurements above inform the
+cost of keeping Electric. <seams.md> describes how the fold-based candidates would run beside Electric:
 
 - <option_window_poll.md> — the client long-polls a range of positions and fetches bodies by
   reference. The cheapest to build.

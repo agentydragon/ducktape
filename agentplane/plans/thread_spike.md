@@ -5,7 +5,7 @@ act on ([naming ADR](../docs/adr_journal_and_thread.md)). Nothing here is releas
 decides when to build it. The task DAG's
 [`AGENT_AUTHORED_CONVERSATIONS_DESIGN`](task_dag.md#agent_authored_conversations_design--conversations-agents-act-on-through-tools)
 records the direction (operator, 2026-11-17 13:21 UTC), and the
-[CLI experiment](authored_conversation_experiment.md) is the evidence it builds on, and
+[CLI experiment](../debug/authored_conversation/README.md) is the evidence it builds on, and
 [prior art](thread_prior_art.md) collects how other agent systems do it.
 
 **Decided (operator, 2026-11-17 13:29 UTC):** "i agree, i think Notifications would probably make

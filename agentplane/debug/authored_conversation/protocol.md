@@ -1,13 +1,8 @@
-# Authored conversation CLI experiment
+# Authored conversation CLI experiment protocol
 
-Specification for a bounded experiment. Prototype source is under
-[`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md). The
-[publication and yield probes](../debug/authored_conversation/README.md#publication-and-yield) record Qwen's repeated missing
-publications under the concise prompt and the later explanatory prompt and explicit-yield
-results for Qwen and Luna. Preliminary progress remains inconsistent. The
-[task DAG](task_dag.md#agent_authored_conversations_experiment--try-an-authored-conversation-in-a-cli)
-owns its scheduling. The experiment informs the broader conversation decision without choosing
-Agentplane's eventual history architecture.
+This protocol records the original scenarios and win conditions. The
+[findings and run evidence](README.md) record the completed experiment.
+The [prototype](../../x/authored_conversation/README.md) remains available for follow-up probes.
 
 ## Problem and hypothesis
 
@@ -28,7 +23,7 @@ sufficient for the experiment. Progress updates are complete authored messages. 
 display, incremental rendering and delta settlement are outside this experiment.
 
 Today's Agentplane `Thread` is a projection of Session history
-([layering](../docs/thread_layering.md#authorities-and-representations)). This experiment's authored
+([layering](../../docs/thread_layering.md#authorities-and-representations)). This experiment's authored
 thread is a separate object; using the word does not change that existing contract.
 
 Authored threads are optional in eventual Agentplane designs. An agent may instead work in the
@@ -43,7 +38,7 @@ A failed transport/tool smoke test makes the interaction experiment inconclusive
 
 Use the same model, generation settings, work tools and equivalent scratch fixtures for two modes:
 ordinary chat with direct assistant replies, and the authored-thread interaction in
-[`SPEC.md`](../x/authored_conversation/SPEC.md). Start each mode with fresh context. For the reset
+[`SPEC.md`](../../x/authored_conversation/SPEC.md). Start each mode with fresh context. For the reset
 scenario, ordinary chat may rebuild context from its visible conversation as usual; authored mode
 must retrieve its retained thread through `read_thread`. Run one paired pass through the scenarios
 below; repeat a failed or ambiguous case once without changing its prompt. Record both attempts.
@@ -84,7 +79,7 @@ not additional gates for W1-W4:
   uses and understands reactions. Compare notifying it of a reaction with discovering one on a
   later read before choosing wakeup behavior or fixed emoji meanings.
 - **Editing past messages:** the CLI now supports revisioned edits by both participants. The first
-  [live revision probe](../debug/authored_conversation/README.md#editing-a-prior-answer) showed Qwen and Luna
+  [live revision probe](README.md#editing-a-prior-answer) showed Qwen and Luna
   revising an existing answer after the human edited an earlier instruction; Luna also appended
   an unnecessary acknowledgement. Next try edits during live work and rereading after a context
   reset. Check whether the agent proceeds from the corrected conversation without treating stale

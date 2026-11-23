@@ -135,8 +135,10 @@ symmetric." Later changes stayed inside that bound:
   private extensions so extensive that it no longer supplies the neutral language.
 - The central sampler (#12225, 2026-10-28) adopted the vocabulary as its native output, and
   `Compact` entered the common operation set though only the sampler implements it.
-- [`ENVIRONMENT_RUNTIME_NATIVE_SURFACE`](task_dag.md#environment_runtime_native_surface--an-environment-runtime-surface-unmistakably-about-native-sessions)
-  was deferred on 2026-11-11.
+- [#17435](https://github.com/agentydragon/ducktape/pull/17435) moved all Session control and status
+  RPCs off EnvironmentRuntime. [HarnessHost](../harness_host/harness_host.proto) is the shared
+  host contract. Dispatcher owns public Session admission, and EnvironmentRuntime serves lifecycle
+  and process diagnostics.
 
 The generic surface works for the four operations every kind shares and has no way past them. The
 harness capabilities beyond it sit in the freezer: Codex `turn/steer` and `thread/queue/*` and Claude

@@ -108,7 +108,7 @@ exploration (#10990, closed after this section absorbed it).
 
 - **Workload objects.** The Sandbox Controller creates a Pod or KubeVirt VM, the state and workspace
   PVCs, the launch ConfigMap and the ServiceAccount for each Sandbox (`environments/`). Runtime
-  proxy callers use the stable `runner-gateway` Service. Gateway replicas dial the Runtime at its
+  proxy callers use the `environments:8082` Service. Environments replicas dial the Runtime at its
   Pod IP; the code creates no per-Sandbox control Service or EndpointSlice and publishes no
   connection Lease. Existing route objects, if present, remain owned by the Sandbox for normal
   garbage collection. These workloads need

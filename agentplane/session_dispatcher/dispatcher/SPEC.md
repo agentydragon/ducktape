@@ -280,7 +280,9 @@ unknown later execution/effect outcome on deletion; its terminal snapshot retain
 entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
-Deletion cleanup commits the Session status and delivery outcomes together. The retained Session owns
+The [managed deletion fence](../../environments/runtimeproxy/SPEC.md#managed-environment-deletion)
+cuts off admission at the Runtime. Dispatcher cleanup commits the Session status and delivery
+outcomes together. The retained Session owns
 the original commands and their receipts. Authorized Get, List and Watch reads continue across
 Environment deletion and Dispatcher restart. During a rolling upgrade, a pre-`00029` replica may
 revisit every retained Environment UID on each full reconciliation. Migration `00029` suppresses its
