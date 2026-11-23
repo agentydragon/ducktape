@@ -1,5 +1,3 @@
-import tempfile
-
 import requests
 import structlog
 from bs4 import BeautifulSoup
@@ -114,10 +112,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         except Exception:
             log.exception("Error downloading part image")
             raise
-        # part.uploadImage(...) expects a path, save to a temp file
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as f:
-            f.write(r.content)
-            f.flush()
-            p.uploadImage(f.path)
+        # Use the same multipart update as uploadImage, which requires a filesystem path.
+        p.save(data={}, files={"image": ("lcsc.jpg", r.content)})
 
     print("\nDone uploading images for LCSC parts.")
