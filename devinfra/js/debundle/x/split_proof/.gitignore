@@ -4,8 +4,7 @@
 /lowering/bundles/
 /lowering/example.json
 /lowering/torture.json
-# Generated from `package.json.in` by run.sh. The repository's CI treats any committed `package.json` as a change to the whole build graph.
-/extract/package.json
+# Standalone npm manifests copied from package.json.in.
 /lowering/package.json
 /debundle_cases/package.json
 /translation/package.json
