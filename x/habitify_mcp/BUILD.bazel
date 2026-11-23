@@ -122,6 +122,7 @@ py_library(
         ":habitify_client",
         ":server",
         ":types",
+        "//util:typer",
         "@pypi//rich",
         "@pypi//typer",
     ],
