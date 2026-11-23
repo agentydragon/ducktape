@@ -441,9 +441,10 @@ theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props :
       exact evalExpr_obj_string_fields n env fields budget
     · rw [evalExpr] <;> rfl
 
-/-- Kernel opacity keeps the concrete list out of the execution proof. The subtype
-proof exposes it only in the short equations checked before the execution proof. -/
-private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) : String := Id.run do
+/-- The syntax retains the checked original field list. Wide records expose
+individual lookups, while small records expose their full property list so
+later operations can inspect or replace its descriptors. -/
+private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) : Except String String := do
   let stem := s!"record{index}"
   let data := String.intercalate ",\n  " (fields.map fun (k, v) => s!"({k.quote}, {v.quote})")
   let mut definitions :=
@@ -461,6 +462,11 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
     s!"rfl {stem}Length fuel env\n" ++
     s!"@[cbv_eval] private theorem {stem}Reverse : {stem}Fields.reverse = {stem}Data.reverse :=\n" ++
     s!"  congrArg List.reverse {stem}Eq\n"
+  if fields.length < wideRecordMinFields then
+    let props ← term (Lean.toExpr (literalProperties fields))
+    return definitions ++ s!"@[cbv_eval] private theorem {stem}OwnProperties :\n" ++
+      s!"    CoreJS.literalProperties {stem}Fields = {props} := by\n" ++
+      s!"  rw [{stem}Eq] <;> rfl\n"
   let reversed := fields.reverse
   for (key, i) in keys.zipIdx do
     let result := match reversed.lookup key with
@@ -817,15 +823,12 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
     else none
   let s ← termWith replace sourceTerm
   let c ← termWith replace candidateTerm
-  let recordTerms := if records.fields.isEmpty then "" else
+  let recordTerms ← if records.fields.isEmpty then pure "" else do
     let keys := if records.fields.any (·.length ≥ wideRecordMinFields) then
       (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
     else #[]
-    "attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++
-    String.join (records.fields.zipIdx.toList.map fun (fields, index) =>
-      -- The checked fallback scan is cheap for a small record. Individual
-      -- facts avoid repeated scans of wide field lists.
-      recordDefinitions index fields (if fields.length < wideRecordMinFields then #[] else keys))
+    let definitions ← records.fields.zipIdx.toList.mapM fun (fields, index) => recordDefinitions index fields keys
+    pure ("attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++ String.join definitions)
   let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
   let p ← term (Lean.toExpr plan)
   let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
