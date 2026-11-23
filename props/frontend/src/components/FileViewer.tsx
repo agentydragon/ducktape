@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@mantine/core";
 
@@ -25,7 +25,7 @@ interface Props {
   critiqueIssues?: ReportedIssueInfo[];
   gradingEdges?: GradingEdgeInfo[];
   snapshotSlug?: string;
-  targetOccurrenceId?: string | null;
+  targetOccurrence?: { issueId: string; occurrenceId: string };
   defaultCollapsed?: boolean;
 }
 
@@ -63,11 +63,19 @@ export default function FileViewer({
   critiqueIssues = [],
   gradingEdges = [],
   snapshotSlug,
-  targetOccurrenceId = null,
+  targetOccurrence,
   defaultCollapsed = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(() => new Set());
+
+  const table = useRef<HTMLTableElement>(null);
+  const targetIssueId = targetOccurrence?.issueId;
+  const targetOccurrenceId = targetOccurrence?.occurrenceId;
+  useEffect(() => {
+    if (targetOccurrenceId)
+      table.current?.querySelector("[data-target-occurrence]")?.scrollIntoView({ block: "center" });
+  }, [targetIssueId, targetOccurrenceId, file.path, collapsed]);
 
   const lines = useMemo(() => {
     const raw = file.content.split("\n");
@@ -224,7 +232,7 @@ export default function FileViewer({
 
       {!collapsed && (
         <div className="overflow-auto max-h-[70vh]">
-          <table className="w-full">
+          <table ref={table} className="w-full">
             <tbody>
               {lines.map((line, index) => {
                 const lineIssues = lineToIssues.get(index) ?? [];
@@ -272,6 +280,7 @@ export default function FileViewer({
                           : fileLocations.some((location) => location.start_line === index + 1);
                       if (!isFirstLine) return null;
 
+                      const isTarget = targetIssueId === issue.issueId && targetOccurrenceId === issue.occurrenceId;
                       const issueKey = getIssueKey(issue);
                       const copyUrl = issue.occurrenceId
                         ? getOccurrenceUrl(issue.issueId, issue.occurrenceId)
@@ -280,10 +289,8 @@ export default function FileViewer({
                         <tr key={`${issueKey}-${issueIndex}`}>
                           <td colSpan={2} className="px-4 py-1">
                             <div
-                              id={issue.occurrenceId ? `${issue.issueId}-${issue.occurrenceId}` : undefined}
-                              className={
-                                targetOccurrenceId === issue.occurrenceId ? "ring-2 ring-blue-500 rounded" : ""
-                              }
+                              data-target-occurrence={isTarget || undefined}
+                              className={isTarget ? "ring-2 ring-blue-500 rounded" : ""}
                             >
                               <IssueComment
                                 kind={issue.kind}

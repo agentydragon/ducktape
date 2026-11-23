@@ -24,15 +24,22 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
                 "tp_id": "example-issue",
                 "rationale": "Example issue",
                 "occurrences": [
-                    {"occurrence_id": "example-occurrence", "locations": [{"file": file_path, "start_line": 1}]}
+                    {"occurrence_id": "example-occurrence", "locations": [{"file": file_path, "start_line": 95}]}
                 ],
-            }
+            },
+            {
+                "tp_id": "other-issue",
+                "rationale": "Different issue with the same occurrence ID",
+                "occurrences": [
+                    {"occurrence_id": "example-occurrence", "locations": [{"file": file_path, "start_line": 2}]}
+                ],
+            },
         ],
         "false_positives": [],
     }
     responses = {
         "/auth/me": {"email": "viewer@example.test"},
-        "/api/gt/snapshots": {"snapshots": [{**snapshot, "tp_count": 1, "fp_count": 0}]},
+        "/api/gt/snapshots": {"snapshots": [{**snapshot, "tp_count": 2, "fp_count": 0}]},
         f"/api/gt/snapshots/{slug}": snapshot,
         f"/api/gt/snapshots/{slug}/tree": {
             "tree": [{"path": "README.md", "name": "README.md", "is_dir": False, "tp_count": 0, "fp_count": 0}]
@@ -57,8 +64,12 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         if "/files/" in path:
             file_requests.append(path)
             requested_file = unquote(path.split("/files/", maxsplit=1)[1])
-            content = "# Routing example" if requested_file == "README.md" else "# Encoded routing example"
-            await route.fulfill(json={"path": requested_file, "content": content, "line_count": 1})
+            lines = (
+                ["# Routing example"]
+                if requested_file == "README.md"
+                else ["pass"] * 94 + ["# Encoded routing example"]
+            )
+            await route.fulfill(json={"path": requested_file, "content": "\n".join(lines), "line_count": len(lines)})
             return
         await route.fulfill(json=responses[path])
 
@@ -75,13 +86,15 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
             slug,
         )
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()
-        await view.page.get_by_role("tab", name="True Positives (1)").click()
+        await view.page.get_by_role("tab", name="True Positives (2)").click()
         occurrence_link = view.page.get_by_role("link", name="example-issue/example-occurrence")
         await expect(occurrence_link).to_have_attribute(
             "href", f"#/snapshots/{slug}/example-issue/example-occurrence?file={quote(file_path, safe='')}"
         )
         await occurrence_link.click()
         await expect(view.page.get_by_text("# Encoded routing example", exact=True)).to_be_visible()
+        selected_marker = view.page.get_by_role("button", name="example-issue/example-occurrence TP")
+        await expect(selected_marker).to_be_in_viewport()
         assert file_requests[-1] == f"/api/gt/snapshots/{slug}/files/{quote(file_path)}"
         await view.page.go_back()
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()

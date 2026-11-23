@@ -123,11 +123,9 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
   const selectedFile = selectedFileQuery.data ?? null;
   const loadingFile = selectedFilePath !== null && selectedFileQuery.isPending;
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(() => new Set());
-  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
 
   useEffect(() => {
     setFileSelection(null);
-    setPendingScrollTarget(null);
     setExpandedIssues(new Set());
   }, [snapshotSlug]);
 
@@ -174,23 +172,12 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
 
       path ??= occurrence.locations[0].file;
       setExpandedIssues((current) => (current.has(issueId) ? current : new Set(current).add(issueId)));
-      setPendingScrollTarget(`${issueId}-${routeOccurrenceId}`);
     }
     if (path) {
       setFileSelection({ snapshotSlug, path });
       setActiveTab("files");
     }
   }, [snapshot, snapshotSlug, targetFile, issueId, routeOccurrenceId]);
-
-  useEffect(() => {
-    if (!pendingScrollTarget || !selectedFile || loadingFile) return;
-    const target = pendingScrollTarget;
-    setPendingScrollTarget(null);
-    const frame = requestAnimationFrame(() => {
-      document.getElementById(target)?.scrollIntoView({ block: "center" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pendingScrollTarget, selectedFile, loadingFile]);
 
   const breadcrumbs = useMemo(() => {
     if (!selectedFile || !snapshot) return [{ label: snapshotSlug }];
@@ -259,7 +246,6 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                         return (
                           <Paper
                             key={occurrence.occurrence_id}
-                            id={`${currentIssueId}-${occurrence.occurrence_id}`}
                             withBorder
                             p="sm"
                             style={highlighted ? { outline: "2px solid var(--mantine-color-blue-5)" } : undefined}
@@ -404,7 +390,9 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                         tps={snapshot.true_positives}
                         fps={snapshot.false_positives}
                         snapshotSlug={snapshot.slug}
-                        targetOccurrenceId={routeOccurrenceId}
+                        targetOccurrence={
+                          issueId && routeOccurrenceId ? { issueId, occurrenceId: routeOccurrenceId } : undefined
+                        }
                       />
                     </>
                   ) : (
