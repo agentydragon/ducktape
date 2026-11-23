@@ -140,6 +140,19 @@ for (let seed = 0; seed < 16; seed++) {
   fs.writeFileSync(file, changed);
   check(generated, all, "rejected", "--check-output");
 }
+// A printer can keep consecutive module-scope declarators in one statement.
+prepare("const a = 1, b = a; export const result = b;", { [entry]: ["#2"], [left]: ["#0", "#1"] }, [left]);
+const groupedOut = path.join(root, "grouped-declarators");
+check(groupedOut, normal, "certified");
+const groupedFile = path.join(groupedOut, left);
+const groupedCode = fs.readFileSync(groupedFile, "utf8").replace("const a = 1;\nconst b = a;", "const a = 1, b = a;");
+assert.match(groupedCode, /const a = 1, b = a;/);
+fs.writeFileSync(groupedFile, groupedCode);
+check(groupedOut, normal, "certified", "--check-output");
+for (const changed of ["const b = a, a = 1;", "let a = 1, b = a;", "const a = 2, b = a;"]) {
+  fs.writeFileSync(groupedFile, groupedCode.replace("const a = 1, b = a;", changed));
+  check(groupedOut, normal, "rejected", "--check-output");
+}
 // This cyclic placement needs the entry to expose a previously private binding to its peer.
 // Even an order-preserving CoreJS plan with all nine structural checks cannot certify that change.
 const leakingSource = "const first = later; var later = 1; export const publicValue = first;";

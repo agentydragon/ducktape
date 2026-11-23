@@ -1,3 +1,4 @@
+import EsmSplit.ESTreeUnits
 import EsmSplit.ESTreeEmit
 import EsmSplit.CoreJS.ModuleInput
 
@@ -88,6 +89,11 @@ partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : 
       frontier := frontier.push (name, ast)
   return Json.mkObj providers.toList
 
+/-- Preserve module headers and compare the same ordered declaration units used by the linker. -/
+private def unitProgram (ast : Json) : Except String Json := do
+  let units ← ESTreeUnits.nodes ast
+  return .obj ((← ast.getObj?).insert "body" (.arr units))
+
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
 def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
@@ -102,7 +108,13 @@ def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
     let providerManifest := work / "provider-programs.json"
     IO.FS.writeFile providerManifest providers.compress
     timePhase timings "output_comparison" fun _ => do
-      javascript #["--check-output"] #[manifest, input, providerManifest, out]
+      let grouped := work / "grouped-output.json"
+      javascript #["--check-output"] #[manifest, input, providerManifest, out, grouped]
+      for pair in ← IO.ofExcept (← readJson grouped).getArr? do
+        let name ← IO.ofExcept (pair.getObjValAs? String "name")
+        let planned ← IO.ofExcept (pair.getObjVal? "planned" >>= unitProgram)
+        let observed ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
+        unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
     check programs
   else
     check programs

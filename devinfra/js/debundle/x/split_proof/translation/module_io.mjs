@@ -88,7 +88,7 @@ function readMap(file, description) {
   return value;
 }
 
-function checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir) {
+function checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath) {
   const expected = readMap(manifestPath, "generated-module manifest");
   const providers = readMap(providersManifestPath, "provider manifest");
   const originalSource = fs.readFileSync(originalSourcePath, "utf8");
@@ -111,22 +111,29 @@ function checkOutput(manifestPath, originalSourcePath, providersManifestPath, di
     );
   }
 
+  const grouped = [];
   for (const name of expectedNames) {
     const parsed = program(actual[name]);
     if (parsed.sourceText.startsWith("#!")) parsed.hashbang = parsed.sourceText.split(/[\r\n\u2028\u2029]/, 1)[0];
-    if (
-      !isDeepStrictEqual(
-        comparableAst(expected[name], originalSource, `manifest module ${name}`),
-        comparableAst(parsed, parsed.sourceText, `output module ${name}`)
-      )
-    )
-      throw new Error(`output module ${name} differs from its generated ESTree`);
+    const planned = comparableAst(expected[name], originalSource, `manifest module ${name}`);
+    const observed = comparableAst(parsed, parsed.sourceText, `output module ${name}`);
+    if (isDeepStrictEqual(planned, observed)) continue;
+
+    // Lean splits module-level declarations into ordered units. Only a grouped
+    // declaration can account for a difference under that operation.
+    const hasGroup = observed.body.some((statement) => {
+      const decl = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+      return decl?.type === "VariableDeclaration" && decl.declarations.length > 1;
+    });
+    if (!hasGroup) throw new Error(`output module ${name} differs from its generated ESTree`);
+    grouped.push({ name, planned, observed });
   }
   for (const name of providerNames) {
     const sourceText = providers[name]?.sourceText;
     if (typeof sourceText !== "string" || !fs.readFileSync(actual[name]).equals(Buffer.from(sourceText)))
       throw new Error(`provider ${name} differs from the source graph`);
   }
+  writeJson(groupedPath, grouped);
 }
 
 try {
@@ -185,8 +192,8 @@ try {
       writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope));
     }
   } else if (mode === "--check-output") {
-    const [manifestPath, originalSourcePath, providersManifestPath, dir] = args;
-    checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir);
+    const [manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath] = args;
+    checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath);
   } else if (mode === "--read-modules") {
     const [entry, names, output] = args;
     const source = fs.realpathSync(entry);
