@@ -1,3 +1,4 @@
+import EsmSplit.ESTreeUnits
 import EsmSplit.ESTreeEmit
 import EsmSplit.CoreJS.ModuleInput
 
