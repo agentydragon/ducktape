@@ -172,7 +172,10 @@ py_library(
     name = "image_registry",
     srcs = ["image_registry.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//devinfra/oci:crane"],
+    deps = [
+        "//devinfra/oci:crane",
+        "//devinfra/oci:image_tags",
+    ],
 )
 
 py_library(
@@ -180,7 +183,7 @@ py_library(
     srcs = ["nix_images.py"],
     data = ["nix_images.json"],
     visibility = ["//:__subpackages__"],
-    deps = [":push_image"],
+    deps = ["//devinfra/oci:image_tags"],
 )
 
 py_library(
@@ -190,6 +193,7 @@ py_library(
     deps = [
         ":image_registry",
         "//devinfra/oci:crane",
+        "//devinfra/oci:image_tags",
     ],
 )
 
@@ -372,6 +376,7 @@ py_test(
         ":image_registry",
         ":push_image",
         "//devinfra/oci:crane",
+        "//devinfra/oci:image_tags",
         "@pypi//pytest_bazel",
     ],
 )

@@ -25,11 +25,7 @@ from pathlib import Path
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, newest_pinned_digest, registry_digest, repo_for
 from devinfra.oci.crane import Crane
-
-
-def pinned_tag(now: datetime.datetime, commit: str, *, prefix: str = "devel") -> str:
-    """Mint a tag Flux can select and order newest-alphabetically."""
-    return f"{prefix}-{now:%Y%m%d%H%M%S}-{commit[:7]}"
+from devinfra.oci.image_tags import pinned_tag
 
 
 def push(

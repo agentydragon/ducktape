@@ -229,7 +229,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: gitlab-spike
   policy:

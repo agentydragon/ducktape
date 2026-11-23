@@ -37,6 +37,7 @@ on:
       - "devinfra/ci/nix_images.json"
       - "devinfra/ci/nix_images.py"
       - "devinfra/ci/pr_mergeability.py"
+      - "devinfra/oci/image_tags.py"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
