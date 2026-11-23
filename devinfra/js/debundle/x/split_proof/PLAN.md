@@ -365,7 +365,9 @@ Steps are independent PRs. Steps 2–5 touch different Lean files and can run in
 
 **TODO (eventual authoring workflow).** Let authors keep the same spec across bundle rebuilds that rename bindings or shift statement ordinals. Rust debundle already resolves stable selectors such as AST templates with holes, distinctive string literals and relationships to other declarations. Consider a substring anchor if an exact literal is too brittle. Reuse the Rust resolver to turn the authored spec into concrete unit-to-module assignments for each input. For now the Lean splitter takes a declared binding name or a zero-based `#n` and its destination module. Selector resolution is a separate authoring problem and can wait while we prove the correctness of a given placement. [Rust selector syntax](../../docs/selectors.md) · [How Rust resolves selectors](../../docs/selector_resolution.md)
 
-### 1. Take selector resolution from debundle (54 comparable entries; 12 more are refusal tests)
+### 1. Take selector resolution from debundle (deferred)
+
+Track the extraction and verification boundary in [TODO.md](TODO.md). The corpus has 54 comparable entries in this group and 12 refusal tests.
 
 The adapter resolves `binding` selectors and hole-free templates by exact AST shape. debundle resolves holes, alpha-renaming, statement ranges and the dataflow selectors (`passed_to_call`, `member_of_module`, `cross_ref`, `reads_member`, `makes_decorate_call`).
 
