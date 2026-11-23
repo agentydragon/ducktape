@@ -1,16 +1,11 @@
 # Model rosters and consumer configuration
 
-Status: ownership design and implementation plan, reconciled 2026-10-10. Consumer
-pauses are approved and recorded under [approved pauses](#approved-pauses-and-remaining-decisions); no shared route retirement is implied.
-The active Codex path has been [audited](client_budgets.md#active-codex-path-audit-2026-10-05). The overall consumer-wiring refactor,
-including limits publication and its end-to-end validation, remains incomplete.
-
-The former implementation PR [#9034](https://github.com/agentydragon/ducktape/pull/9034)
-is closed as superseded, not merged; its remaining comment cleanup landed separately
-in #9577. Implementation has proceeded in smaller slices tracked below. This design
-does not enable the long-context experiment or authorize unresolved file dispositions.
-
-Current work: [#9574](https://github.com/agentydragon/ducktape/issues/9574); historical revival inventory: [#9121](https://github.com/agentydragon/ducktape/issues/9121).
+Cross-consumer ownership design. The
+[historical tracker #9574](https://github.com/agentydragon/ducktape/issues/9574)
+records the October 2026 implementation and rollout, including the superseded
+[#9034](https://github.com/agentydragon/ducktape/pull/9034) and follow-up #9577.
+See [#9121](https://github.com/agentydragon/ducktape/issues/9121) for the earlier
+revival inventory.
 
 The program is **non-duplicated model configuration across the neutral catalogue,
 cdk8s, cluster services, Nix, and clients**. Slugs, account provenance, pretty names,
@@ -28,22 +23,17 @@ in force; listing a file does not authorize modifying, deleting or re-enabling i
 
 ## Routing review checkpoint, 2026-10-10
 
-The operator requested a [routing-contract review](routing_review.md), including
-LiteLLM's transformations and possible alternatives, after finding catalogue-derived
-request defaults. This review precedes **further roster restructuring**, not just token-metadata work:
-the resulting architecture may remove configuration/projection responsibilities.
-Revise the roster implementation plan after the routing decision.
-The all-routes token-publication target below is **under reconsideration**,
-not the next implementation requirement. Existing overrides and runtime policy remain
-unchanged pending a decision. No router replacement or metadata removal is approved.
-The primary acceptance criterion is working clients on required protocols, with usable
-route context not accidentally reduced by gateway or harness fallback metadata; see
-the [end-to-end requirements](routing_review.md#primary-success-criterion-working-clients-and-usable-route-context).
+The [routing review](routing_review.md) records the decision to evaluate whether
+catalogue-derived request defaults and routing responsibilities should change before
+further roster restructuring. The
+[gateway replacement requirements](../cluster/docs/plans/x/llm_gateway_replacement.md)
+describe the later consumer inventory and evaluation questions. The target of publishing
+Ducktape-owned metadata for every route remains under reconsideration.
 
 ## Reading guide
 
 - **This design:** [goals](#scope-and-priorities), [ownership and examples](#ownership-and-data-flow),
-  [rollout](#proposed-shape-and-rollout), [pause constraints](#approved-pauses-and-remaining-decisions),
+  [rollout](#proposed-shape-and-rollout), [pause history and constraints](#approved-pauses-and-remaining-decisions),
   [shared token vocabulary](#token-limit-vocabulary), and [Ollama serving constraints](#ollama-serving-configuration).
 - [Migration inventory](migration_inventory.md): files and consumers requiring disposition
   decisions, approved moves, and documentation consolidation options. Listing is not approval.
@@ -54,21 +44,15 @@ the [end-to-end requirements](routing_review.md#primary-success-criterion-workin
 - [Client budgets](client_budgets.md): Claude/OpenClaw/Codex semantics, Agentplane wiring,
   subscription-path evidence and the separate, proposed long-context experiment and costs.
 
-The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574) owns changing
-PR/rollout status and the complete parked-integration inventory. Research documents retain
-dated evidence; they do not independently authorize changes to limits, budgets or routes.
-
 ## Scope and priorities
 
 ### Why we paused consumers
 
 The Nix Claude gateway wrappers (#9112), Public Coder OpenClaw (#9116), and Agentplane
 Claude offerings (#9127) were paused to **reduce the active compatibility obligations
-while simplifying the roster and its consumers**. Their retained code/state and revival
-requirements remain tracked in #9574. These were not prerequisites for a standalone
-long-context feature, permission to delete shared routes, or permanent retirements.
-Keep the requested Nix renderers and Public Coder PVCs; do not spend this refactor
-building compatibility machinery for paused paths before deciding what to revive.
+while simplifying the roster and its consumers**. See the
+[pause history and constraints](#approved-pauses-and-remaining-decisions) and the
+[current cluster offerings](../cluster/docs/model_catalog.md#agentplane-offerings).
 
 ### What success looks like for the whole program
 
@@ -87,17 +71,10 @@ not a central registry followed by a growing collection of adapters and registri
 
 ### Active paths to preserve
 
-The operator's currently used paths are:
-
-1. Agentplane → Codex harness → LiteLLM → Codex/ChatGPT subscription API
-   (through our subscription gateway).
-2. Claude Code Web → upstream provider, without our LiteLLM.
-3. Local Codex and Claude Code → upstream providers directly.
-
-Preserve these. Moving more clients behind central LiteLLM is a desired future
-capability, not permission to migrate the direct clients now. Supporting every
-historical model × account × wire × harness combination is **not** a requirement.
-Unused wrappers and integrations may be paused or retired after confirmation.
+Preserve the configured and direct client paths documented in the
+[gateway consumer inventory](../cluster/docs/plans/x/llm_gateway_replacement.md#consumer-inventory).
+Moving direct clients behind the gateway or reviving a parked client requires a
+separate decision.
 
 ### Desired properties
 
@@ -191,7 +168,7 @@ model/route instances to remain in `model_catalog/catalog.py`:
 | `cluster/cdk8s/litellm/`                       | Endpoint/auth bindings and LiteLLM projection                                                                          | Generated proxy config                                                              |
 | Ollama deployment and model definitions        | Server defaults, model tags/aliases, runtime serving options                                                           | Ollama; route must resolve to the intended model definition                         |
 | `model_catalog/nix.py` and Nix gateway modules | Wrapper route selections and Claude-specific settings                                                                  | Generated wrapper JSON → process environment                                        |
-| `cluster/cdk8s/public_coder/app.py`            | OpenClaw model selections and client budgets                                                                           | OpenClaw configuration                                                              |
+| `cluster/cdk8s/public_coder/config.py`         | OpenClaw model selections and client budgets                                                                           | OpenClaw configuration                                                              |
 | `cluster/cdk8s/agentplane/model_selections.py` | Agentplane offers/defaults and explicit runner budget selections                                                       | App catalogue, ingress and runner configuration                                     |
 | Key/team renderer and deployment bindings      | Bind neutral lane policies to actual keys/teams                                                                        | Terraform allowances and ordered fallbacks; no second handwritten route list        |
 | Gatus, diagnostics and acceptance clients      | Explicit probe selection and test scenarios                                                                            | Route IDs / generated artifacts / deployed APIs, not imports of synthesis internals |
@@ -268,21 +245,21 @@ remain in the [inventory](migration_inventory.md).
 
 ### First source-declaration extraction
 
-`model_catalog/ollama.py` now owns Ollama tags, names, the server's default
-`num_ctx`, and the two Qwen serving variants. `catalog.py` projects them into
+The October 2026 extraction moved Ollama tags, names, the server's default
+`num_ctx`, and the two Qwen serving variants into `model_catalog/ollama.py`.
+`catalog.py` projected them into
 LiteLLM identities; Ollama cdk8s renders its existing setup shell from the same
 source declarations. Storage/shard handling, other generation parameters and the
 choice of models to provision remain local to Ollama cdk8s. This is not a generic
 provisioning system or approval of the remaining tentative APIs.
 
-Provisioning, route identities and client budgets are unchanged. Native Ollama
-routes now always send their explicitly requested `options.num_ctx`, including
+That extraction preserved provisioning, route identities and client budgets. It
+made native Ollama routes send their explicitly requested `options.num_ctx`, including
 128K: matching the server default is not a reason to inherit it (or a model's baked
 parameters). OpenAI-compatible routes omit this ignored option and rely on their
 selected tag's baked settings instead.
 
-GPT-OSS 20B's 256K/512K/1M OpenAI-compatible exposures are now parked by explicit
-operator decision: the base tag had no baked aliases to select those contexts.
+The operator then parked GPT-OSS 20B's 256K/512K/1M OpenAI-compatible exposures: the base tag had no baked aliases to select those contexts.
 Native variants remain and still request `num_ctx`; that is not proof of attended
 capacity. The 128K route, provisioning and storage are unchanged. Restoration needs
 correct aliases and a serving-path check; see the
@@ -335,13 +312,11 @@ existing small separation rather than adding a meta-configuration layer:
    their values come from one coherent authority. When Ducktape supplies a generative
    input/output pair, project the complete set of relevant fields from it, including
    LiteLLM's legacy output alias `max_tokens`; do not leave that alias to an unrelated
-   catalogue default. **Every served route must ultimately publish Ducktape-owned
-   token metadata.** Catalogue values may be copied into source declarations with
-   revision/entry provenance, not left as an implicit runtime authority. Keep aliases
-   out of the neutral schema and remove the transitional `publish_limits` gate as
-   route declarations are completed. Keep embedding/
-   transcription metadata separate rather than inventing a generation output ceiling.
-   Do not reintroduce our unused custom `context_window` field.
+   catalogue default. Cite the entry and revision when adopting catalogue facts.
+   Keep legacy aliases in the projection, and use modality-specific metadata for
+   embeddings and transcription. The [routing review](routing_review.md#why-reopen-the-design)
+   records the open publication-policy decision, including the scope of
+   `publish_limits`.
 5. **Native client behavior:** configure and verify the actual harness. A clean
    `/model/info` response cannot fix Codex/Claude's independent recognition tables.
 
@@ -353,14 +328,6 @@ omission/null experiment remains useful evidence about fallback, not justificati
 for stripping legacy keys. Existing configured numbers still need semantic cleanup;
 consistent publication does not validate them as provider limits.
 
-The ownership policy is settled; the remaining work is to populate and review each
-route's applicable metadata. Omitting overrides still permits catalogue fallback during
-this migration and is **not the intended end state**. Missing values need a specific
-source or retention/pause decision, not invented limits or blanket raw-API assumptions.
-A new live probe is not required for every model: reviewed catalogue snapshots are valid
-sources. Do not change pricing/capabilities or internal request heuristics incidentally. Legacy metadata is also read internally; keeping it aligned
-with the already-configured output limit is intentional, not response-only filtering.
-
 ### Rollout and useful validation
 
 1. Trace the retained consumers through [ownership and data flow](#ownership-and-data-flow) and the [migration inventory](migration_inventory.md); remove duplicate declarations,
@@ -369,11 +336,9 @@ with the already-configured output limit is intentional, not response-only filte
    path, direct clients, and retained state; verify activation separately from merge status.
 2. The [active-session audit](client_budgets.md#active-codex-path-audit-2026-10-05) records the real slug, binary and resolved budget.
    Recheck this evidence when changing harness versions or recognition strategy.
-3. Validate complete ordinary token overrides through load/reload and supported
-   metadata schemas. Complete Ducktape-owned declarations for the remaining routes,
-   with catalogue provenance where adopted; decide individual unsupported routes'
-   fates rather than retaining implicit fallback. Cover DB-backed paths if retained,
-   and preserve pricing, capabilities and request settings.
+3. When changing token publication, validate load/reload and the supported metadata
+   schemas, including DB-backed paths if used. Check the effect on request defaults,
+   pricing and capabilities at their respective boundaries.
 4. Verify retained harness startup arguments/environment and reported window with
    a bounded request. Test model switching where budgets differ. Test Ollama alias
    effectiveness only for variants we decide to keep. No silent live deployment.
@@ -392,9 +357,9 @@ Keep the overall refactor net-negative in code/plumbing where possible.
 
 ## Approved pauses and remaining decisions
 
-Approved pause scope as of 2026-10-05. A merge is not proof of machine activation or Flux
-rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574)
-maintains deployment status, the full parked inventory, and restoration requirements.
+The table records the October 2026 pause decisions. The [historical tracker](https://github.com/agentydragon/ducktape/issues/9574)
+holds dated rollout observations and restoration requirements. Verify actual machine
+activation and Flux rollout separately.
 
 | Integration                      | Approved scope                                                                                   | Retained for restoration                                                                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -415,8 +380,9 @@ fallbacks, aliases, monitoring and embedding dependents before proposing withdra
 An experiment-key grant is not a maintenance commitment for every route it admits.
 
 Publication policy and any Codex recognition/budget change remain separate decisions.
-The approved pauses reduce the immediate compatibility matrix; they do not resolve
-LiteLLM's fallback metadata or establish new provider limits.
+Later source changes reopened selected [Agentplane Claude offerings](../cluster/docs/model_catalog.md#agentplane-offerings).
+Nix gateway installation now uses explicit opt-in. See the
+[consumer inventory](migration_inventory.md#nix-wrappers-and-direct-local-clients).
 
 ## Token-limit vocabulary
 
@@ -441,9 +407,9 @@ If an active path needs a combined constraint enforced, design that explicitly.
 
 ## Ollama serving configuration
 
-The inspected live/source version was **0.34.4**. Our deployment sets
-`OLLAMA_CONTEXT_LENGTH=131072`; the Qwen 256K model alias bakes in `num_ctx=262144`.
-See the [Ollama deployment notes](../cluster/cdk8s/ollama/README.md).
+The October 2026 audit inspected **0.34.4**. Its deployment set
+`OLLAMA_CONTEXT_LENGTH=131072`, and the Qwen 256K model alias baked in `num_ctx=262144`.
+See the [Ollama deployment notes](../cluster/cdk8s/ollama/README.md) for serving configuration.
 
 - `num_ctx` requests runtime context allocation. On the inspected GGUF path, the
   scheduler can clamp it to recorded training context. Allocation, prompt handling,
