@@ -153,9 +153,9 @@ js_test(
     name = "identity_emission_test",
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
-        ":pair",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
     ],
     entry_point = "identity_emission_test.mjs",
@@ -378,12 +378,14 @@ js_test(
 
 js_test(
     name = "inert_escape_test",
-    data = _CHECKER_RUNFILES + [
+    data = [
         "testdata/inert_escape/seed2026_round3.js.txt",
         "testdata/inert_escape/seed2026_round8.js.txt",
-        ":pair",
+        ":frontend",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _TRANSLATE,
     ],
     entry_point = "inert_escape_test.mjs",
     env = {
@@ -394,10 +396,12 @@ js_test(
 
 js_test(
     name = "factory_emission_test",
-    data = _CHECKER_RUNFILES + [
-        ":pair",
+    data = [
+        ":frontend",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _TRANSLATE,
     ],
     entry_point = "factory_emission_test.mjs",
     env = {
@@ -1200,6 +1204,7 @@ py_test(
 js_library(
     name = "frontend",
     srcs = ["frontend.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__"],
     deps = [
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
@@ -1210,6 +1215,7 @@ js_library(
 js_library(
     name = "pair",
     srcs = ["pair.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__"],
     deps = [":frontend"],
 )
 

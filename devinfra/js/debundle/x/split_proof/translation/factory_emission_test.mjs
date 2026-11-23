@@ -1,10 +1,10 @@
 import { strict as assert } from "node:assert";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { frontBundle } from "./frontend.mjs";
+import { checkTranslation } from "./testing/check_translation.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
 const good = `function factory(f) { return async (...args) => f(...args); }
 function callback() { console.log("callback"); }
 const result = factory(callback);
@@ -28,19 +28,7 @@ assert.equal(before.status, 0, before.stderr);
 assert.equal(after.status, 0, after.stderr);
 assert.equal(after.stdout, before.stdout);
 assert.equal(after.stdout, "side\ncallback\n");
-const frontend = path.join(here, "frontend.mjs");
-const bundle = path.join(goodResult.dir, "bundle.json");
-const tree = path.join(goodResult.dir, "tree.json");
-const cert = path.join(goodResult.dir, "cert.json");
-for (const args of [
-  [frontend, "bundle", goodResult.source, "--out", bundle],
-  [frontend, "tree", goodResult.dir, "--entry", "entry.mjs", "--out", tree],
-  [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
-]) {
-  const r = run(process.execPath, args);
-  assert.equal(r.status, 0, r.stderr);
-}
-const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
+const checked = checkTranslation(frontBundle(goodResult.source), goodResult.dir);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 const multi = good
   .replace("const result = factory(callback);", "const result = factory(callback);\nconst result2 = factory(callback);")
@@ -158,18 +146,7 @@ trigger();`,
   assert.equal(original.status, 0, original.stderr);
   assert.notEqual(emitted.status, 0, name);
   assert.match(emitted.stderr, /ReferenceError/, name);
-  const originalBundle = path.join(process.env.TEST_TMPDIR, `${name}-bundle.json`);
-  const outputTree = path.join(process.env.TEST_TMPDIR, `${name}-tree.json`);
-  const pairing = path.join(process.env.TEST_TMPDIR, `${name}-pairing.json`);
-  for (const args of [
-    [frontend, "bundle", forced.source, "--out", originalBundle],
-    [frontend, "tree", forced.dir, "--entry", "entry.mjs", "--out", outputTree],
-    [path.join(here, "pair.mjs"), originalBundle, outputTree, "--out", pairing],
-  ]) {
-    const r = run(process.execPath, args);
-    assert.equal(r.status, 0, r.stderr);
-  }
-  const checkedForced = run(process.env.TRANSLATE, [originalBundle, outputTree, pairing]);
+  const checkedForced = checkTranslation(frontBundle(forced.source), forced.dir);
   assert.equal(checkedForced.status, 4, `${name}: ${checkedForced.stdout}\n${checkedForced.stderr}`);
   assert.match(checkedForced.stdout, /FAIL\s+OrderOk/, name);
 }

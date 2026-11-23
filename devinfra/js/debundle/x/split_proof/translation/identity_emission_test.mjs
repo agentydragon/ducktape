@@ -5,9 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { bundleFromParsed } from "./frontend.mjs";
+import { bundleFromParsed, frontBundle } from "./frontend.mjs";
 import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
 import { dumpParsed, lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
+import { checkTranslation } from "./testing/check_translation.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -23,9 +24,6 @@ function legacyDump(parsed) {
 }
 const ast = path.join(temp, "ast.json");
 const spec = path.join(temp, "spec.json");
-const bundle = path.join(temp, "bundle.json");
-const tree = path.join(temp, "tree.json");
-const cert = path.join(temp, "cert.json");
 writeFileSync(
   spec,
   JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["identity", "result", "#3"], "side.mjs": ["#2"] } })
@@ -141,16 +139,7 @@ assert.match(leanSource, /theorem plan_valid/);
     assert(generated.includes(`src := ${JSON.stringify(unit)}`), unit);
 }
 
-const frontend = path.join(here, "frontend.mjs");
-writeFileSync(bundle, JSON.stringify(bundleFromParsed(parsed)));
-for (const args of [
-  [frontend, "tree", out, "--entry", "entry.mjs", "--out", tree],
-  [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
-]) {
-  const p = run(process.execPath, args);
-  assert.equal(p.status, 0, p.stderr);
-}
-const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
+const checked = checkTranslation(bundleFromParsed(parsed), out);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 assert.match(checked.stdout, /PLAN SOUND/);
 const before = run(process.execPath, [source]);
@@ -253,9 +242,6 @@ globalThis.cb();`,
 ]) {
   const fixture = prepareSideSplit(name, unsafe, side);
   const { dir, source: original } = fixture;
-  const sourceBundle = path.join(temp, `${name}-bundle.json`);
-  const outputTree = path.join(temp, `${name}-tree.json`);
-  const pairing = path.join(temp, `${name}-pairing.json`);
   const rejected = lowerDiagnostic(fixture);
   assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
@@ -268,15 +254,7 @@ globalThis.cb();`,
   assert.equal(before.status, 0, before.stderr);
   assert.notEqual(after.status, 0, name);
   assert.match(after.stderr, /ReferenceError/);
-  for (const args of [
-    [frontend, "bundle", original, "--out", sourceBundle],
-    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", outputTree],
-    [path.join(here, "pair.mjs"), sourceBundle, outputTree, "--out", pairing],
-  ]) {
-    const p = run(process.execPath, args);
-    assert.equal(p.status, 0, p.stderr);
-  }
-  const checkedUnsafe = run(process.env.TRANSLATE, [sourceBundle, outputTree, pairing]);
+  const checkedUnsafe = checkTranslation(frontBundle(original), dir);
   assert.equal(checkedUnsafe.status, 4, `${name}: ${checkedUnsafe.stdout}\n${checkedUnsafe.stderr}`);
   assert.match(checkedUnsafe.stdout, /FAIL\s+OrderOk/);
 }

@@ -12,29 +12,14 @@ import { strict as assert } from "node:assert";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { frontBundle } from "./frontend.mjs";
+import { checkTranslation } from "./testing/check_translation.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const frontend = path.join(here, "frontend.mjs");
 const fixture = (name) => readFileSync(path.join(here, "testdata/inert_escape", name), "utf8");
-
-// `translate` on the tree in `dir` against the source.
-function translate(name, source, dir) {
-  const bundle = path.join(temp, `${name}-bundle.json`);
-  const tree = path.join(temp, `${name}-tree.json`);
-  const cert = path.join(temp, `${name}-cert.json`);
-  for (const args of [
-    [frontend, "bundle", source, "--out", bundle],
-    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", tree],
-    [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
-  ]) {
-    const result = run(process.execPath, args);
-    assert.equal(result.status, 0, result.stderr);
-  }
-  return run(process.env.TRANSLATE, [bundle, tree, cert]);
-}
 
 const describe = (name, r) => `${name}: ${r.stdout}\n${r.stderr}`;
 
@@ -50,7 +35,7 @@ function refuse(name, code, side) {
   assert.equal(before.status, 0, before.stderr);
   assert.notEqual(after.status, 0, `${name}: the forced split should fail`);
   assert.match(after.stderr, /ReferenceError/, name);
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.equal(checked.status, 4, describe(name, checked));
   assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
@@ -64,7 +49,7 @@ function accept(name, code, side) {
   assert.equal(before.status, 0, before.stderr);
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, before.stdout, name);
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.equal(checked.status, 0, describe(name, checked));
 }
 
@@ -76,7 +61,7 @@ function byBehavior(name, code, side) {
   const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
   const differs = after.status !== 0 || after.stdout !== before.stdout;
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   if (differs) {
     assert.equal(
       unforced.status,
@@ -188,7 +173,7 @@ export { ratios, factory };`,
     assert.equal(result.status, 0, describe(name, result));
     assert.equal(result.stdout, expected, name);
   }
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.equal(checked.status, 4, describe(name, checked));
   assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
@@ -325,7 +310,7 @@ console.log(values.includes(ratio));`,
     assert.equal(result.status, 0, describe(name, result));
     assert.equal(result.stdout, expected, name);
   }
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.deepEqual([verdict.status, checked.status], [1, 4], describe(name, verdict) + describe(name, checked));
   assert.equal(forced.status, 1, describe(name, forced));
   assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
@@ -348,7 +333,7 @@ for (const [name, setup, length] of [
     assert.equal(result.status, 0, describe(name, result));
     assert.equal(result.stdout, expected, name);
   }
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.deepEqual(
     [verdict.status, forced.status, checked.status],
     [1, 1, 4],
