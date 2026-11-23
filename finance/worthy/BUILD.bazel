@@ -56,7 +56,6 @@ rust_binary(
         ":config",
         ":converter",
         ":denomination",
-        ":exchange_rate",
         ":flags",
         ":json_output",
         ":source",
@@ -203,6 +202,9 @@ rust_library(
     srcs = ["json_output.rs"],
     edition = "2024",
     deps = [
+        ":asset",
+        ":denomination",
+        ":exchange_rate",
         "@crates//:chrono",
         "@crates//:rust_decimal",
         "@crates//:serde",
@@ -217,6 +219,9 @@ rust_test(
         "@crates//:rust_decimal_macros",
     ],
     deps = [
+        ":asset",
+        ":denomination",
+        ":exchange_rate",
         ":json_output",
         "@crates//:chrono",
         "@crates//:rust_decimal",

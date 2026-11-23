@@ -7,11 +7,11 @@ use clap::Parser;
 use config::{Config, ConverterConfig, SourceConfig};
 use converter::Converter;
 use denomination::Denomination;
-use exchange_rate::ExchangeRate;
 use flags::Opt;
 use futures::prelude::*;
 use glob::glob;
 use ibflex_source::IBFlexSource;
+use json_output::{ConverterSnapshot, ConverterType, SourceSnapshot, SourceType};
 use log::{info, trace, warn};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::*;
@@ -20,8 +20,7 @@ use source::Source;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsStr;
-use std::fs::File;
-use std::io::prelude::*;
+use std::fs::{self, File};
 use std::path::Path;
 use term_table::{Table, TableStyle, row::Row, table_cell::Alignment, table_cell::TableCell};
 
@@ -44,18 +43,6 @@ fn asset_to_money(x: &Asset) -> Money<'_, iso::Currency> {
         }
         _ => panic!("arg"),
     }
-}
-
-enum SourceType {
-    Hardcoded,
-    IBFlex,
-}
-
-struct SourceSnapshot {
-    id: String,
-    name: String,
-    source_type: SourceType,
-    snapshot: Vec<Asset>,
 }
 
 async fn get_source_snapshots(
@@ -84,18 +71,6 @@ async fn get_source_snapshots(
         })
         .collect()
         .await
-}
-
-enum ConverterType {
-    AlphaVantage,
-    // Historical snapshot provenance; no longer a configurable converter.
-    Fixer,
-}
-
-struct ConverterSnapshot {
-    id: String,
-    converter_type: ConverterType,
-    snapshot: Vec<ExchangeRate>,
 }
 
 async fn get_converter_snapshots(
@@ -444,28 +419,17 @@ async fn main() {
 
             // Save JSON snapshot.
             let json_snapshot = json_output::Snapshot {
-                // TODO(agentydragon): should be shared
                 timestamp: now,
-                source_snapshot: source_snapshots
-                    .iter()
-                    .map(source_snapshot_to_json)
-                    .collect(),
-                converter_snapshots: converter_snapshots
-                    .iter()
-                    .map(converter_snapshot_to_json)
-                    .collect(),
-                total: asset_to_json(&total),
+                source_snapshot: source_snapshots,
+                converter_snapshots,
+                total,
             };
             let s = serde_json::to_string_pretty(&json_snapshot).unwrap();
 
             let output_path =
                 shellexpand::tilde(&config.dated_json_output).replace("%s", &now.to_rfc3339());
 
-            {
-                let mut file = File::create(&output_path).unwrap();
-                file.write_all(s.bytes().collect::<Vec<_>>().as_slice())
-                    .unwrap();
-            }
+            fs::write(output_path, s).unwrap();
         }
         ModelLastSnapshot => {
             let paths = get_snapshot_paths(&config);
@@ -473,17 +437,12 @@ async fn main() {
             let file = File::open(loaded_path).unwrap();
             let snapshot: json_output::Snapshot = serde_json::from_reader(file).unwrap();
 
-            let converter_snapshots: Vec<ConverterSnapshot> = snapshot
-                .converter_snapshots
-                .iter()
-                .map(converter_snapshot_from_json)
-                .collect();
-            let source_snapshots: Vec<SourceSnapshot> = snapshot
-                .source_snapshot
-                .iter()
-                .map(source_snapshot_from_json)
-                .collect();
-            let _total = model_and_show(&config, &converter_snapshots, &source_snapshots).await;
+            model_and_show(
+                &config,
+                &snapshot.converter_snapshots,
+                &snapshot.source_snapshot,
+            )
+            .await;
         }
         Csv => {
             let paths = get_snapshot_paths(&config);
@@ -510,128 +469,6 @@ async fn main() {
             println!("Written: {csv_path}");
         }
         Server => panic!("TODO"),
-    }
-}
-
-fn converter_snapshot_to_json(
-    converter_snapshot: &ConverterSnapshot,
-) -> json_output::ConverterSnapshot {
-    json_output::ConverterSnapshot {
-        id: converter_snapshot.id.clone(),
-        converter_type: match converter_snapshot.converter_type {
-            ConverterType::AlphaVantage => json_output::ConverterType::AlphaVantage,
-            ConverterType::Fixer => json_output::ConverterType::Fixer,
-        },
-        snapshot: converter_snapshot
-            .snapshot
-            .iter()
-            .map(exchange_rate_to_json)
-            .collect(),
-    }
-}
-
-fn converter_snapshot_from_json(
-    converter_snapshot: &json_output::ConverterSnapshot,
-) -> ConverterSnapshot {
-    ConverterSnapshot {
-        id: converter_snapshot.id.clone(),
-        converter_type: match converter_snapshot.converter_type {
-            json_output::ConverterType::AlphaVantage => ConverterType::AlphaVantage,
-            json_output::ConverterType::Fixer => ConverterType::Fixer,
-        },
-        snapshot: converter_snapshot
-            .snapshot
-            .iter()
-            .map(exchange_rate_from_json)
-            .collect(),
-    }
-}
-
-fn exchange_rate_from_json(c: &json_output::Conversion) -> ExchangeRate {
-    let json_output::Conversion {
-        source,
-        target,
-        target_per_source,
-    } = c;
-    ExchangeRate {
-        from: denomination_from_json(source),
-        to: denomination_from_json(target),
-        rate: *target_per_source,
-    }
-}
-
-fn exchange_rate_to_json(exchange_rate: &ExchangeRate) -> json_output::Conversion {
-    let ExchangeRate { from, to, rate } = exchange_rate;
-    json_output::Conversion {
-        source: denomination_to_json(from),
-        target: denomination_to_json(to),
-        target_per_source: *rate,
-    }
-}
-
-fn source_snapshot_to_json(source_snapshot: &SourceSnapshot) -> json_output::SourceSnapshot {
-    json_output::SourceSnapshot {
-        id: source_snapshot.id.clone(),
-        name: source_snapshot.name.clone(),
-        source_type: match source_snapshot.source_type {
-            SourceType::Hardcoded => json_output::SourceType::Hardcoded,
-            SourceType::IBFlex => json_output::SourceType::IBFlex,
-        },
-        snapshot: source_snapshot.snapshot.iter().map(asset_to_json).collect(),
-    }
-}
-
-fn source_snapshot_from_json(json_snapshot: &json_output::SourceSnapshot) -> SourceSnapshot {
-    SourceSnapshot {
-        id: json_snapshot.id.clone(),
-        name: json_snapshot.name.clone(),
-        source_type: match json_snapshot.source_type {
-            json_output::SourceType::Hardcoded => SourceType::Hardcoded,
-            json_output::SourceType::IBFlex => SourceType::IBFlex,
-        },
-        snapshot: json_snapshot.snapshot.iter().map(asset_from_json).collect(),
-    }
-}
-
-fn denomination_to_json(denomination: &Denomination) -> json_output::Denomination {
-    match denomination {
-        Denomination::Currency { currency } => json_output::Denomination::Currency {
-            symbol: currency.clone(),
-        },
-        Denomination::Cryptocurrency { symbol } => json_output::Denomination::Cryptocurrency {
-            symbol: symbol.clone(),
-        },
-        Denomination::Stock { stock } => json_output::Denomination::Stock {
-            symbol: stock.clone(),
-        },
-    }
-}
-
-fn denomination_from_json(denomination: &json_output::Denomination) -> Denomination {
-    match denomination {
-        json_output::Denomination::Currency { symbol } => Denomination::Currency {
-            currency: symbol.clone(),
-        },
-        json_output::Denomination::Cryptocurrency { symbol } => Denomination::Cryptocurrency {
-            symbol: symbol.clone(),
-        },
-        json_output::Denomination::Stock { symbol } => Denomination::Stock {
-            stock: symbol.clone(),
-        },
-    }
-}
-
-fn asset_to_json(asset: &Asset) -> json_output::Asset {
-    json_output::Asset {
-        denomination: denomination_to_json(&asset.denomination),
-        amount: asset.amount,
-    }
-}
-
-fn asset_from_json(asset: &json_output::Asset) -> Asset {
-    Asset {
-        denomination: denomination_from_json(&asset.denomination),
-        amount: asset.amount,
     }
 }
 
