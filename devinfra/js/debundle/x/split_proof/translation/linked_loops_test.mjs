@@ -20,6 +20,30 @@ import {
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
+
+{
+  const source = `
+    const before = j;
+    var total = 0;
+    const reads = {};
+    for (let i = 0; i < 3; i++) {
+      reads[i] = () => i;
+    }
+    for (var j = 0; j < 2; j++) {
+      total += j;
+    }
+    export const result = [before === undefined, reads[0](), reads[1](), reads[2](), j, total];
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-for", source, {
+    "worker.mjs": ["#0", "#1", "#2", "#3", "#4"],
+    [entry]: ["#5"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result: [true, 0, 1, 2, 2, 1] });
+  }
+}
+
 // The update gets a fresh lexical cell. A closure made before continue must still
 // see the first iteration's value, even after the update and the second iteration.
 const capture = sequentialSplit(
