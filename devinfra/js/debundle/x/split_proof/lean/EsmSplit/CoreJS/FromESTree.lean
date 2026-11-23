@@ -291,14 +291,22 @@ private def ambientSymbolMember? (j : Json) : Option Name := do
 
 /-- Decode a property access, retaining the receiver and the unevaluated key for
 the interpreter's property read, call, or write. -/
-private def linkedMember (lower : Json → Except String Expr) (j : Json) (allowOptional := false) :
+private partial def linkedMember (lower : Json → Except String Expr) (j : Json) (allowOptional := false) :
     Except String (Expr × Expr) := do
   if (← j.getObjValAs? Bool "optional") && !allowOptional then throw "unsupported optional member access"
   let obj ← j.getObjVal? "object"
   let prop ← j.getObjVal? "property"
   if (← field obj "type") == "Super" then throw "unsupported super member access"
   if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
-  let base ← (lower obj).mapError fun reason =>
+  -- Consecutive optional reads propagate undefined. A non-optional continuation
+  -- would need to distinguish a skipped access from a property that returned undefined.
+  let lowerBase := do
+    if allowOptional && (← field obj "type") == "MemberExpression" &&
+        (obj.getObjValAs? Bool "optional").toOption == some true then
+      let (base, key) ← linkedMember lower obj (allowOptional := true)
+      return Expr.getOptional base key
+    lower obj
+  let base ← lowerBase.mapError fun reason =>
     match ambientSymbolMember? j with
     | some member => s!"unsupported ambient member Symbol.{member}"
     | none => reason
