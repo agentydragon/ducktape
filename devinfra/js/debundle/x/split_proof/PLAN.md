@@ -8,6 +8,12 @@ Given the original module graph, a proposed placement and a requested guarantee,
 
 The production acceptance run uses the private bundle, its dependencies and the reviewed placement. Record the certified guarantee for the complete split, which authored boundaries it realizes, and the result of running the emitted application through its browser smoke test. Until it certifies, record the first reproducible blocker on that input. Keep the bundle, selectors and run artifacts in the private repository.
 
+### Build the Lean placement spec from the existing spec
+
+Keep the pinned original spec as the baseline. Derive the private Lean spec from its selectors, owner assignments and module order. Start with certified dependency-closed regions, then certify their unions through the ordinary splitter. A union can introduce initializer reversals that neither region exercised on its own.
+
+When an authored placement changes observable behavior, save the smallest input and unchanged placement that exhibit the difference, and skip that extraction. An unsupported construct or a resource limit leaves the placement undecided. Track those cases for language modeling, proofs and optimization. Record any proposed change to ownership or order as an explicit diff from the original spec for review, and replay the resulting placement at emission and from disk.
+
 ## Production replay status
 
 The 2026-11-22 survey of the private production bundle found that 2,766 of 9,707 body units lower individually. Of 2,793 authored modules, 161 lower every unit they own. For 141, lowering also succeeds across the dependencies found by the syntactic scan. Ten of those depend on another authored module. All ten now have linked CoreJS `normal-completion` certificates for dependency-closed **excerpts**. Eight exercise records and two call an imported formatter during initialization. The complete archived split remains uncertified.
