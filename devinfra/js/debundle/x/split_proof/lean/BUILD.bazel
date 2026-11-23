@@ -282,6 +282,7 @@ lean_binary(
             "EsmSplit/CoreJS/WriteExpr.lean",
             "EsmSplit/CoreJS/WrapperLinked.lean",
             "EsmSplit/CoreJS/HeritageCertificate.lean",
+            "EsmSplit/CoreJS/BatchState.lean",
             "EsmSplit/CoreJS/FreshWrites.lean",
             "EsmSplit/CoreJS/RecordOrigin.lean",
             "EsmSplit/CoreJS/DataProjection.lean",
@@ -314,6 +315,7 @@ lean_axiom_test(
     name = "corejs_axioms_test",
     srcs = [
         "EsmSplit/Bundle.lean",
+        "EsmSplit/CoreJS/BatchState.lean",
         "EsmSplit/CoreJS/BindingCertificate.lean",
         "EsmSplit/CoreJS/BindingFootprint.lean",
         "EsmSplit/CoreJS/BindingMoves.lean",
@@ -365,6 +367,7 @@ lean_axiom_test(
         "EsmSplit/Semantics.lean",
     ],
     imports = [
+        "EsmSplit.CoreJS.BatchState",
         "EsmSplit.CoreJS.BindingCertificate",
         "EsmSplit.CoreJS.BindingFootprint",
         "EsmSplit.CoreJS.BindingMoves",
@@ -423,6 +426,7 @@ lean_axiom_test(
         "CoreJS.cellFootprint_lift",
         "CoreJS.CellFootprint.bind",
         "CoreJS.plainClassVar_origin",
+        "CoreJS.evalExpr_seq_batch",
         "CoreJS.setProp_many_fresh",
         "CoreJS.RecordOrigin.literalVar_origin",
         "CoreJS.CellFootprint.preserves",
