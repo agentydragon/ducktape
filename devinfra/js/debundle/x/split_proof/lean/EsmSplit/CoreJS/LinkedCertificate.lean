@@ -190,8 +190,17 @@ partial def jsonLiteral : Lean.Json → String
   | .bool b => "(Lean.Json.bool " ++ toString b ++ ")"
   | .num n => "(Lean.Json.num ⟨(" ++ toString n.mantissa ++ ")," ++ toString n.exponent ++ "⟩)"
   | .str s => "(Lean.Json.str " ++ s.quote ++ ")"
-  | .arr a => "(Lean.Json.arr #[" ++ String.intercalate "," (a.toList.map jsonLiteral) ++ "])"
+  | .arr a => "(Lean.Json.arr " ++ arrayLiteral a 0 a.size ++ ")"
   | .obj ⟨⟨o⟩⟩ => "(Lean.Json.obj ⟨⟨" ++ objectLiteral o ++ "⟩⟩)"
+
+/-- Bound the depth of the elaborated array literal by joining small chunks in a balanced tree. -/
+private partial def arrayLiteral (a : Array Lean.Json) (start stop : Nat) : String :=
+  let count := stop - start
+  if count ≤ 16 then
+    "#[" ++ String.intercalate "," ((a.extract start stop).toList.map jsonLiteral) ++ "]"
+  else
+    let middle := start + count / 2
+    "(Array.append " ++ arrayLiteral a start middle ++ " " ++ arrayLiteral a middle stop ++ ")"
 
 private partial def objectLiteral : Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json) → String
   | .leaf => ".leaf"
