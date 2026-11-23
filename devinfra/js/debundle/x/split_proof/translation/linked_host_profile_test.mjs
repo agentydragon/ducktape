@@ -118,14 +118,14 @@ for (const [name, body, reason] of [
   assert(!existsSync(test.out));
 }
 
-// Preserve the ambient call and its captured initializer across the split.
+// Preserve the ambient symbol operations and the captured initializer across the split.
 // The provider defers invoking the factory until after initialization.
 {
   const dir = path.join(root, "deferred-ambient-symbol");
   const files = prepare(dir, {
     source: `
       import { defer } from "./provider.mjs";
-      const load = defer(() => Symbol.for(moved()));
+      const load = defer(() => [Symbol.for(moved()), Symbol.iterator]);
       const moved = () => "fixture";
       export { load, moved };
     `,
@@ -145,7 +145,7 @@ for (const [name, body, reason] of [
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const namespace = await import(pathToFileURL(file).href);
     assert.equal(namespace.moved(), "fixture");
-    assert.equal(namespace.load(), Symbol.for("fixture"));
+    assert.deepEqual(namespace.load(), [Symbol.for("fixture"), Symbol.iterator]);
   }
 }
 
@@ -153,15 +153,15 @@ const caughtSymbol = fixture(
   "caught-opaque-symbol-for",
   'const read = () => { try { return Symbol.for((() => { throw "argument"; })()); } catch { return "caught"; } }; const result = read(); export { result };'
 );
-assert.match(caughtSymbol.run().reason, /unknown.*ambient call Symbol\.for is reached/);
+assert.match(caughtSymbol.run().reason, /unknown.*ambient member Symbol\.for is reached/);
 assert(!existsSync(caughtSymbol.out));
 
-const otherSymbol = fixture(
-  "unsupported-symbol-member",
-  "const read = () => Symbol.iterator; const result = read; export { result };"
+const reachedIterator = fixture(
+  "reached-symbol-iterator",
+  "const read = () => Symbol.iterator; const result = read(); export { result };"
 );
-assert.match(otherSymbol.run().reason, /unsupported ambient member Symbol\.iterator/);
-assert(!existsSync(otherSymbol.out));
+assert.match(reachedIterator.run().reason, /unknown.*ambient member Symbol\.iterator is reached/);
+assert(!existsSync(reachedIterator.out));
 
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {

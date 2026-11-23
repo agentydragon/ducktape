@@ -43,7 +43,7 @@ inductive Prim where
   | globalTypeof (binding : String)
   | globalRef (binding : String)
   | opaqueConstructorRef (binding : String)
-  | opaqueSymbolForRef
+  | opaqueAmbientMemberRef (receiver member : String)
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 
