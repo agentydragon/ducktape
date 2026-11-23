@@ -13,18 +13,18 @@ private `thrive-scrape` Workspace contributes six; its contents were counted
 in the live module but not assessed. These are desired Workspace modules, not
 an independent audit of OpenTofu state or downstream service health.
 
-| Workspace                  | Blocks | Workspace                 | Blocks |
-| -------------------------- | -----: | ------------------------- | -----: |
-| agent-machine-access       |     56 | alloy-otlp-bearer-token   |     11 |
-| budget-ledger              |      6 | cdviz-github-webhook      |      3 |
-| cpap-data                  |     10 | finance-agent             |     12 |
-| flux-webhook-token         |      3 | forgejo-agentydragon      |      1 |
-| forgejo-agentydragon-repos |      4 | forgejo-claude            |      4 |
-| forgejo-images             |      2 | gatus-sso                 |      4 |
-| github-branch-protection   |      1 | github-secrets-sync       |     20 |
-| gitlab-spike               |     27 | haku-state                |     19 |
-| route53-domain-delegation  |      1 |                           |        |
-| sso-providers              |     78 | thrive-scrape             |      6 |
+| Workspace                  | Blocks | Workspace               | Blocks |
+| -------------------------- | -----: | ----------------------- | -----: |
+| agent-machine-access       |     56 | alloy-otlp-bearer-token |     11 |
+| budget-ledger              |      6 | cdviz-github-webhook    |      3 |
+| cpap-data                  |     10 | finance-agent           |     12 |
+| flux-webhook-token         |      3 | forgejo-agentydragon    |      1 |
+| forgejo-agentydragon-repos |      4 | forgejo-claude          |      4 |
+| forgejo-images             |      2 | gatus-sso               |      4 |
+| github-branch-protection   |      1 | github-secrets-sync     |     20 |
+| gitlab-spike               |     27 | haku-state              |     19 |
+| route53-domain-delegation  |      1 |                         |        |
+| sso-providers              |     78 | thrive-scrape           |      6 |
 
 Separately, tofu-controller has `home-switch` (Ready unknown, initializing);
 its checked-in root contains 17 blocks. This is a **source count**, not a
