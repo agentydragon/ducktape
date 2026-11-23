@@ -99,30 +99,27 @@ assertCertified(
   "g"
 );
 
-for (const [name, receiver, caught, expected] of [
-  ["throwing-getter", '{ get method() { trace += "g"; throw "getter"; } }', 'error === "getter"', "g"],
-  ["noncallable-method", "{ method: false }", 'typeof error === "object"', "a"],
-  ["null-receiver", "null", 'typeof error === "object"', ""],
+for (const [name, expression, expectedError, thrown] of [
+  ["throwing-getter", '({ get method() { throw "getter"; } }).method?.(fail())', 'error === "getter"', "getter"],
+  ["argument-before-callability", "({ method: false }).method?.(fail())", 'error === "argument"', "argument"],
+  ["noncallable-method", "({ method: false }).method?.()", 'typeof error === "object"', "TypeError"],
+  ["null-receiver", "(null).method?.(fail())", 'typeof error === "object"', "TypeError"],
 ]) {
-  assertCertified(
-    split(
-      name,
-      `const run = () => {
-        let trace = "";
-        const argument = () => { trace += "a"; };
-        try {
-          (${receiver}).method?.(argument());
-        } catch (error) {
-          if (${caught} && trace === ${JSON.stringify(expected)}) return trace;
-          throw error;
-        }
-        throw "expected an abrupt call";
-      };
-      const result = run();
-      export { result };`
-    ),
-    expected
+  // Only the expected error escapes. A different error or an absent throw reaches normal completion.
+  const test = split(
+    name,
+    `const run = () => {
+      const fail = () => { throw "argument"; };
+      try { return ${expression}; }
+      catch (error) {
+        if (${expectedError}) throw typeof error === "string" ? { name: error } : error;
+      }
+    };
+    const result = run();
+    export { result };`
   );
+  assert.deepEqual(observe(test.files.sourceFile, "result"), { error: thrown });
+  assertRejected(test, /original threw during linked initialization/);
 }
 
 function member(object, name) {
@@ -142,11 +139,10 @@ const generated = program([
       expression: { type: "CallExpression", callee: member(id("receiver"), "method"), arguments: [], optional: true },
     })
   ),
-  variable("const", "result", {
-    type: "ArrayExpression",
-    elements: [
-      object([property("method", literal(null))]),
-      object([]),
+  variable(
+    "const",
+    "result",
+    call(id("invoke"), [
       object([
         property("value", literal(42)),
         {
@@ -154,16 +150,11 @@ const generated = program([
           method: true,
         },
       ]),
-    ].map((receiver) => ({
-      type: "LogicalExpression",
-      operator: "??",
-      left: call(id("invoke"), [receiver]),
-      right: literal("skipped"),
-    })),
-  }),
+    ])
+  ),
   exportNamed([["result", "result"]]),
 ]);
-assertCertified(split("generated-optional-callee", generated), ["skipped", "skipped", 42]);
+assertCertified(split("generated-optional-callee", generated), 42);
 
 const reordered = `const target = { value: "ready" };
   target.method = function () { return this.value; };

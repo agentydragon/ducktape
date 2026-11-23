@@ -24,4 +24,6 @@ The run uploaded the generated Lean certificate and profiler logs. [BuildBuddy p
 
 `cbv` crossed the same guard on each obligation alone. Source-side normal completion reached 2,514,348 KiB in 6.17 seconds. Source/candidate equality reached 2,532,520 KiB in 4.86 seconds. `rfl` alone did not prove normal completion. [Isolated proof obligations](https://app.buildbuddy.io/invocation/e0f904f0-148d-4c2b-ae76-7bcca56e1caf)
 
-Using `LinkedBehavior.of_runs` with separate reductions to the same final state reached 2,544,716 KiB in 6.36 seconds. The fixture still exceeds the proof memory budget. [Separate reductions](https://app.buildbuddy.io/invocation/a192a0a2-a2f9-40c3-be1d-146bb40dc816)
+Using `LinkedBehavior.of_runs` with separate reductions to the same final state reached 2,544,716 KiB in 6.36 seconds. [Separate reductions](https://app.buildbuddy.io/invocation/a192a0a2-a2f9-40c3-be1d-146bb40dc816)
+
+Fuel 26 was the smallest bound at which both programs completed normally in the probe world. The full proof at fuel 26 with `cbv` first reached 2,519,264 KiB in 6.97 seconds. The fixture still exceeds the proof memory budget. [Smallest probe fuel](https://app.buildbuddy.io/invocation/a56ce423-6ee5-45e3-9d32-bb0f3da69dde)
