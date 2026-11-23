@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pygit2
 import pytest
@@ -131,15 +132,20 @@ def make_base(root: Path, workspace: Path, *, name: str | None = None) -> Path:
     return base
 
 
-def make_cache_entry(contents: Path, hash_name: str, uuid_name: str, *, recorded_inputs: bool = True) -> Path:
+def cache_entry_path(contents: Path, hash_digit: str, uuid_digit: str) -> Path:
+    """Expand test IDs to Bazel's hash/UUID cache layout."""
+    return contents / (hash_digit * 64) / str(UUID(uuid_digit * 32))
+
+
+def make_cache_entry(contents: Path, hash_digit: str, uuid_digit: str, *, recorded_inputs: bool = True) -> Path:
     """A fetched repository as Bazel's repo contents cache holds it: the directory plus its
     recorded-inputs file."""
-    entry = contents / hash_name / uuid_name
+    entry = cache_entry_path(contents, hash_digit, uuid_digit)
     entry.mkdir(parents=True)
     (entry / "REPO.bazel").write_text("")
     (entry / "payload").write_bytes(b"x" * 4096)
     if recorded_inputs:
-        recorded_inputs_of(entry).write_text(f"{hash_name}\n")
+        recorded_inputs_of(entry).write_text(f"{entry.parent.name}\n")
     return entry
 
 

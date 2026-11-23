@@ -9,16 +9,8 @@ import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, repo_contents_cache_gc as gc
-from devinfra.gc.conftest import hold_posix_lock, link_external, make_base, make_cache_entry
+from devinfra.gc.conftest import cache_entry_path, hold_posix_lock, link_external, make_base, make_cache_entry
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
-
-
-def _hash(char: str) -> str:
-    return char * 64
-
-
-def _uuid(char: str) -> str:
-    return f"{char * 8}-{char * 4}-{char * 4}-{char * 4}-{char * 12}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,15 +38,15 @@ def cache(tmp_path: Path) -> FakeCache:
     kept_base = make_base(root, workspace)
     prunable_base = make_base(root, tmp_path / "gone")
 
-    referenced = make_cache_entry(contents, _hash("a"), _uuid("1"))
-    prunable_only = make_cache_entry(contents, _hash("b"), _uuid("2"))
-    unreferenced = make_cache_entry(contents, _hash("c"), _uuid("3"))
-    missing_inputs = make_cache_entry(contents, _hash("d"), _uuid("4"), recorded_inputs=False)
-    malformed = contents / _hash("e") / "not-a-uuid"
+    referenced = make_cache_entry(contents, "a", "1")
+    prunable_only = make_cache_entry(contents, "b", "2")
+    unreferenced = make_cache_entry(contents, "c", "3")
+    missing_inputs = make_cache_entry(contents, "d", "4", recorded_inputs=False)
+    malformed = contents / ("e" * 64) / "not-a-uuid"
     malformed.mkdir(parents=True)
 
     link_external(kept_base, "referenced_repo", referenced)
-    link_external(kept_base, "gone_repo", contents / _hash("f") / _uuid("6"))  # dangling: the entry is gone
+    link_external(kept_base, "gone_repo", cache_entry_path(contents, "f", "6"))  # dangling: the entry is gone
     link_external(kept_base, "_main", workspace)  # a link outside the cache
     (kept_base / "external" / "@referenced_repo.marker").write_text("")  # a regular file
     link_external(prunable_base, "referenced_repo", referenced)
@@ -233,8 +225,8 @@ def test_a_link_through_a_symlinked_cache_path_is_a_reference(
 
 
 def test_recorded_inputs_without_a_directory_requires_review(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
-    orphan = cache.contents / _hash("a") / (_uuid("9") + gc.RECORDED_INPUTS_SUFFIX)
-    orphan.write_text(_hash("a"))
+    orphan = gc.recorded_inputs_of(cache_entry_path(cache.contents, "a", "9"))
+    orphan.write_text(orphan.parent.name)
 
     item = _scan(cache, proc, mountinfo)[orphan]
 
@@ -406,7 +398,7 @@ def test_report_summarizes_prunable_entries_and_retains_details_on_request(
     cache: FakeCache, proc: Path, mountinfo: Path
 ) -> None:
     entries = list(_scan(cache, proc, mountinfo).values())
-    name = f"{_hash('c')}/{_uuid('3')}"
+    name = str(cache.unreferenced.relative_to(cache.contents))
     compact = gc.render_report(entries, contents=cache.contents, include_kept=False, include_sizes=True)
     detailed = gc.render_report(
         entries, contents=cache.contents, include_kept=False, include_sizes=False, include_prunable=True

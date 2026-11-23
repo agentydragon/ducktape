@@ -66,9 +66,9 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     checkout = repo.clone("checkout")  # the scan needs the `origin/HEAD` a real clone has
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
-    kept_entry = make_cache_entry(contents, "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-    freed_entry = make_cache_entry(contents, "b" * 64, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-    unreferenced_entry = make_cache_entry(contents, "c" * 64, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+    kept_entry = make_cache_entry(contents, "a", "a")
+    freed_entry = make_cache_entry(contents, "b", "b")
+    unreferenced_entry = make_cache_entry(contents, "c", "c")
     kept_base = make_base(root, checkout.path.resolve())
     link_external(kept_base, "kept_repo", kept_entry)
     pruned_base = make_base(root, tmp_path / "gone")
@@ -171,10 +171,7 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
 ) -> None:
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
-    entries = [
-        make_cache_entry(contents, char * 64, f"{char * 8}-{char * 4}-{char * 4}-{char * 4}-{char * 12}")
-        for char in "ab"
-    ]
+    entries = [make_cache_entry(contents, char, char) for char in "ab"]
     (contents / "gc_lock").touch()
     monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
     with hold_posix_lock(contents / "gc_lock", fcntl.LOCK_SH), pytest.raises(SystemExit) as exit_info:
