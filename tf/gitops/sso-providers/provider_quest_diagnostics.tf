@@ -27,7 +27,7 @@ resource "kubernetes_secret" "quest_diagnostics_oidc" {
     namespace = "quest-diagnostics"
   }
   data = {
-    QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/quest-diagnostics/"
+    QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.quest_diagnostics.slug}/"
     QUEST_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["quest_diagnostics"].client_id
     QUEST_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["quest_diagnostics"].client_secret
     QUEST_OIDC_SESSION_SECRET  = random_password.quest_diagnostics_session_secret.result
