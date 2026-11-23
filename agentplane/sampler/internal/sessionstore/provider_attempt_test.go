@@ -136,7 +136,11 @@ func TestResponseEvidenceRenewsLeaseOnlyOnSemanticProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const progressLease = 2*time.Minute + 137*time.Millisecond
+	// Put the first renewal in the middle of a 30s bucket so a second progress
+	// event can exercise the same deadline without sleeping or racing its boundary.
+	_, now := readProviderAttemptLease(t, store, intentID)
+	wantDeadline := now.Truncate(30 * time.Second).Add(2 * time.Minute)
+	progressLease := wantDeadline.Add(-15 * time.Second).Sub(now)
 	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: progressLease}
 	frame := protocol.WireBytes{Bytes: []byte("response bytes")}
 	before, err := store.GetSession(t.Context(), session.ID, "")
@@ -147,23 +151,64 @@ func TestResponseEvidenceRenewsLeaseOnlyOnSemanticProgress(t *testing.T) {
 	if err := evidence.Record(t.Context(), frame, false); err != nil {
 		t.Fatal(err)
 	}
-	unchanged, beforeProgress := readProviderAttemptLease(t, store, intentID)
+	unchanged, _ := readProviderAttemptLease(t, store, intentID)
 	if !unchanged.Equal(initialLease) {
 		t.Fatalf("transport evidence changed lease from %s to %s", initialLease, unchanged)
 	}
 	if err := evidence.Record(t.Context(), frame, true); err != nil {
 		t.Fatal(err)
 	}
-	renewed, afterProgress := readProviderAttemptLease(t, store, intentID)
-	if renewed.Before(beforeProgress.Add(progressLease)) || renewed.After(afterProgress.Add(progressLease)) {
-		t.Fatalf("renewed lease=%s, want DB clock between %s and %s plus %s", renewed, beforeProgress, afterProgress, progressLease)
+	renewed, _ := readProviderAttemptLease(t, store, intentID)
+	if !renewed.Equal(wantDeadline) {
+		t.Fatalf("renewed lease=%s, want rounded DB deadline %s", renewed, wantDeadline)
+	}
+	rowVersion := func() string {
+		t.Helper()
+		var xmin string
+		if err := store.DB().QueryRowContext(t.Context(), `SELECT xmin::text FROM sampler_intent WHERE id=$1`, intentID).Scan(&xmin); err != nil {
+			t.Fatal(err)
+		}
+		return xmin
+	}
+	version := rowVersion()
+	if err := evidence.Record(t.Context(), frame, true); err != nil {
+		t.Fatal(err)
+	}
+	if rowVersion() != version {
+		t.Fatal("another chunk with the same deadline rewrote the attempt row")
+	}
+	// Shift the requested expiry by one bucket to exercise a subsequent renewal.
+	evidence.ProgressLease += 30 * time.Second
+	if err := evidence.Record(t.Context(), frame, true); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := readProviderAttemptLease(t, store, intentID)
+	if !next.Equal(wantDeadline.Add(30*time.Second)) || rowVersion() == version {
+		t.Fatalf("next renewal deadline=%s, want next bucket after %s and a new row version", next, wantDeadline)
+	}
+	// Silence after that last semantic event (including a transport-only read)
+	// leaves its full remaining idle and operation budgets on the durable attempt.
+	version = rowVersion()
+	if err := evidence.Record(t.Context(), frame, false); err != nil {
+		t.Fatal(err)
+	}
+	if rowVersion() != version {
+		t.Fatal("transport activity after the last progress event rewrote the attempt")
 	}
 	current, err := store.GetSession(t.Context(), session.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Cursor != before.Cursor+4 {
+	if current.Cursor != before.Cursor+10 {
 		t.Fatalf("want two events for each evidence record, cursor before=%d after=%d", before.Cursor, current.Cursor)
+	}
+	expireLease(t, store, session)
+	_ = claim(t, store, session)
+	if err := evidence.Record(t.Context(), frame, true); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("previous owner appended progress after handoff: %v", err)
+	}
+	if rowVersion() != version {
+		t.Fatal("previous owner rewrote the attempt after handoff")
 	}
 }
 

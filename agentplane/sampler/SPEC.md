@@ -945,7 +945,10 @@ sampling evidence remains retained, while observed response items are reconciled
 partial tool call is committed or dispatched before Finish. Semantic progress renews the attempt
 lease in the transaction that records the event and its projected observations. The local idle
 timer resets after that transaction commits. Initial leases cover response-head and semantic-idle
-budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
+budgets plus three bounded database operations. On semantic progress, the sampler adds the idle
+budget and two operation budgets to the PostgreSQL time and rounds the expiry up to the next
+30-second boundary. It writes the attempt row only when that deadline changes. Every evidence
+append still checks the live lease and owner generation.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
 attempt count and budget. There is no elapsed turn deadline.
