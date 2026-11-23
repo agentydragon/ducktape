@@ -530,23 +530,8 @@ fn assignment_edit_keeps_the_projection_and_the_artifact() {
 
 #[test]
 fn order_edits_reuse_the_analysis_but_recheck_the_supplied_priority() {
-    let (staged, _fixture) = staged(
-        FixtureOpts::new(
-            r#"const hub = () => [a, b];
-const a = { dependency: hub, lazy: () => b };
-const b = { dependency: hub };
-console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
-"#,
-            vec![
-                logical_module("hub", &[Member::new("hub")]),
-                logical_module("a", &[Member::new("a")]),
-                logical_module("b", &[Member::new("b")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline())
-        .with_import_order(&["a", "b", "hub"])
-        .with_browser_harness(),
-    );
+    let (staged, _fixture) =
+        staged(import_priority_fixture(&["a", "b", "hub"]).with_browser_harness());
     let projection = fs::read(&staged.projection).unwrap();
     let artifact = fs::read(&staged.artifact).unwrap();
     let mut spec: serde_yaml::Value =

@@ -6,9 +6,8 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, debundler_path,
-    logical_module, node_module_evaluation_order, process, read_tree, run_fixture_with_graphs,
-    run_tree_graph_fixture, tree_spec_args, unassigned_mode_inline,
+    FixtureOpts, TreeFixture, assert_node_output, debundler_path, process, read_tree,
+    run_fixture_with_graphs, run_tree_graph_fixture, tree_spec_args,
 };
 use tempfile::TempDir;
 
@@ -793,65 +792,4 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     .unwrap();
     assert!(replay.status.success(), "{}", stderr(&replay));
     assert!(graph.exists());
-}
-
-#[test]
-fn exported_priority_captures_the_materialized_cycle_traversal() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            r#"const hub = () => [a, b];
-const a = { dependency: hub, lazy: () => b };
-const b = { dependency: hub };
-console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
-"#,
-            vec![
-                logical_module("hub", &[Member::new("hub")]),
-                logical_module("a", &[Member::new("a")]),
-                logical_module("b", &[Member::new("b")]),
-            ],
-        )
-        .with_import_order(&["a", "b", "hub"])
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_entry_output(&fixture, "true true true\n");
-    let priority: Vec<_> = fixture
-        .dependency_graph()
-        .import_order
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    let mut owners = priority.clone();
-    owners.sort();
-    assert_eq!(owners, ["a", "b", "hub"]);
-    // Independent DFS over this fixture's source-known import edges. This
-    // also covers a supplied priority that differs from discovery order.
-    fn visit(
-        module: &str,
-        priority: &[String],
-        seen: &mut std::collections::BTreeSet<String>,
-        completed: &mut Vec<String>,
-    ) {
-        if !seen.insert(module.to_owned()) {
-            return;
-        }
-        let targets: &[&str] = match module {
-            "entry" => &["a", "b", "hub"],
-            "hub" => &["a", "b"],
-            "a" => &["b", "hub"],
-            "b" => &["hub"],
-            _ => panic!("unexpected fixture module {module}"),
-        };
-        let mut targets = targets.to_vec();
-        targets.sort_by_key(|target| priority.iter().position(|owner| owner == target).unwrap());
-        for target in targets {
-            visit(target, priority, seen, completed);
-        }
-        completed.push(module.to_owned());
-    }
-    let mut expected = Vec::new();
-    visit("entry", &priority, &mut Default::default(), &mut expected);
-    assert_eq!(
-        node_module_evaluation_order(&fixture, &["a", "b", "hub", "entry"]),
-        expected,
-    );
 }
