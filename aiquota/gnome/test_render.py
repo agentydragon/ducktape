@@ -220,6 +220,36 @@ def test_quota_bars_toggle_provider_details(session: GnomeSession, capture_menu:
         session.close_menu()
 
 
+def test_live_shaped_multiple_accounts(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "multi_account_live_shape")
+    pro = _ProviderPopup(session, "codex:example-pro")
+    maximum = _ProviderPopup(session, "codex:example-max")
+    assert len(pro.windows) == len(maximum.windows) == 1
+    assert "35%" in pro.windows[0]
+    assert "80%" in maximum.windows[0]
+    assert "1,235 credits" in maximum.header
+    assert json.loads(string_reply(session.call("GetPanelProviders"))) == [
+        "claude:example-claude",
+        "codex:example-pro",
+        "codex:example-max",
+    ]
+    session.open_menu()
+    try:
+        capture_menu.capture(session.open_menu(), label="Multiple accounts collapsed", checkpoint="collapsed")
+        assert session.call("ActivateMeter", "codex:example-pro", "0") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-pro") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-max") == b"(false,)\n"
+        capture_menu.capture(session.open_menu(), label="Multiple accounts first expanded", checkpoint="first-expanded")
+        assert session.call("ActivateMeter", "codex:example-max", "0") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-pro") == b"(false,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-max") == b"(true,)\n"
+        capture_menu.capture(
+            session.open_menu(), label="Multiple accounts second expanded", checkpoint="second-expanded"
+        )
+    finally:
+        session.close_menu()
+
+
 def test_balance_only_provider_keeps_details_toggle(session: GnomeSession) -> None:
     _reload_fixture(session, "openai_platform_credits")
     session.open_menu()
