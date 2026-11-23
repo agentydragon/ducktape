@@ -656,12 +656,14 @@ def main() -> None:
     args = parser.parse_args()
     if args.end <= args.start:
         parser.error("--end must be after --start")
+    window = timedelta(hours=args.window_hours)
+    if window <= timedelta(0):
+        parser.error("--window-hours must advance the query window")
 
     checkpoint_dir = args.checkpoint_dir
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     usage_query = WindowedQuery(FIVE_MINUTE_SQL.read_text(), args.max_execution_seconds, checkpoint_dir)
     raw_rows: list[dict[str, Any]] = []
-    window = timedelta(hours=args.window_hours)
     cursor = args.start
     query_seconds = 0
     window_index = 0
