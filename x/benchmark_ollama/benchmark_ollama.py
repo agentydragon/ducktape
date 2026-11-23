@@ -1,9 +1,9 @@
 """Benchmark Ollama models via the LiteLLM OpenAI-compatible proxy.
 
 Measures output speed, input speed at multiple context lengths, and
-needle-in-haystack recall (niah). Each configuration runs for up to
---time-limit seconds (default 60s) or --min-samples samples, whichever comes
-first.
+needle-in-haystack recall (NIAH). Each throughput configuration collects up to
+ten samples and stops starting requests at --time-limit (default 60s).
+A request in flight can run past the time limit. NIAH has its own sample limit.
 
 Usage:
     bb run //x/benchmark_ollama:benchmark_ollama_bin
@@ -18,7 +18,8 @@ Methodology:
     prewarm: one throwaway request per context size to allocate KV cache.
 
     output:  short seed prompt + max_tokens=128, stream=True.
-             Rate = (tokens_generated - 1) / (last_chunk_ts - first_chunk_ts).
+             Rate = (content_chunks - 1) / (last_chunk_ts - first_chunk_ts),
+             counting each chunk containing text as one output token.
              Measures decode (output token generation) speed at minimal context.
 
     decode:  filler prompt of ~N tokens + max_tokens=128, stream=True.
@@ -49,10 +50,12 @@ import secrets
 import statistics
 import time
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import openai
+from openai.types.chat import ChatCompletionChunk
 
 from devinfra.bazel.workspace import get_build_working_directory
 
@@ -60,7 +63,7 @@ OLLAMA_BASE_URL = "https://litellm.allegedly.works/v1"
 DEFAULT_MODELS = ["gpt-oss-20b-128k", "gpt-oss-120b-128k"]
 
 TIME_LIMIT_S = 60
-MIN_SAMPLES = 10
+MAX_THROUGHPUT_SAMPLES = 10
 NIAH_SAMPLES_DEFAULT = 8
 
 _FILLER_PHRASE = "The quick brown fox jumps over the lazy dog near the riverbank. "
@@ -200,35 +203,41 @@ def unload_model(client: openai.OpenAI, model: str) -> None:
         )
 
 
+def _stream_rate(stream: Iterable[ChatCompletionChunk], deadline: float) -> float | None:
+    first_ts: float | None = None
+    last_ts: float | None = None
+    content_chunks = 0
+    for chunk in stream:
+        if time.monotonic() > deadline:
+            break
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            now = time.monotonic()
+            if first_ts is None:
+                first_ts = now
+            last_ts = now
+            content_chunks += 1
+
+    if first_ts and last_ts and last_ts > first_ts and content_chunks > 1:
+        return (content_chunks - 1) / (last_ts - first_ts)
+    return None
+
+
 def measure_output(client: openai.OpenAI, model: str, time_limit: float) -> list[float]:
     """Measure output (decode) speed: tokens/sec between first and last streaming chunk."""
     results: list[float] = []
     deadline = time.monotonic() + time_limit
 
-    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
-        first_ts: float | None = None
-        last_ts: float | None = None
-        token_count = 0
-
+    while time.monotonic() < deadline and len(results) < MAX_THROUGHPUT_SAMPLES:
         stream = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": OUTPUT_SEED_PROMPT}],
             max_tokens=OUTPUT_MAX_TOKENS,
             stream=True,
         )
-        for chunk in stream:
-            if time.monotonic() > deadline:
-                break
-            delta = chunk.choices[0].delta.content if chunk.choices else None
-            if delta:
-                now = time.monotonic()
-                if first_ts is None:
-                    first_ts = now
-                last_ts = now
-                token_count += 1
-
-        if first_ts and last_ts and last_ts > first_ts and token_count > 1:
-            results.append((token_count - 1) / (last_ts - first_ts))
+        rate = _stream_rate(stream, deadline)
+        if rate is not None:
+            results.append(rate)
 
     return results
 
@@ -243,7 +252,7 @@ def measure_input(client: openai.OpenAI, model: str, target_tokens: int, time_li
     deadline = time.monotonic() + time_limit
     num_ctx = num_ctx_for(target_tokens)
 
-    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
+    while time.monotonic() < deadline and len(results) < MAX_THROUGHPUT_SAMPLES:
         start = time.monotonic()
         try:
             resp = client.chat.completions.create(
@@ -275,11 +284,7 @@ def measure_decode_at_context(client: openai.OpenAI, model: str, target_tokens: 
     deadline = time.monotonic() + time_limit
     num_ctx = num_ctx_for(target_tokens)
 
-    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
-        first_ts: float | None = None
-        last_ts: float | None = None
-        token_count = 0
-
+    while time.monotonic() < deadline and len(results) < MAX_THROUGHPUT_SAMPLES:
         try:
             stream = client.chat.completions.create(
                 model=model,
@@ -288,22 +293,13 @@ def measure_decode_at_context(client: openai.OpenAI, model: str, target_tokens: 
                 stream=True,
                 extra_body={"options": {"num_ctx": num_ctx}},
             )
-            for chunk in stream:
-                if time.monotonic() > deadline:
-                    break
-                delta = chunk.choices[0].delta.content if chunk.choices else None
-                if delta:
-                    now = time.monotonic()
-                    if first_ts is None:
-                        first_ts = now
-                    last_ts = now
-                    token_count += 1
+            rate = _stream_rate(stream, deadline)
         except openai.APIError as exc:
             print(f" [error: {exc}]", flush=True)
             break
 
-        if first_ts and last_ts and last_ts > first_ts and token_count > 1:
-            results.append((token_count - 1) / (last_ts - first_ts))
+        if rate is not None:
+            results.append(rate)
 
     return results
 
