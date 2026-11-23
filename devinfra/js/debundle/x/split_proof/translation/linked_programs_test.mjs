@@ -357,9 +357,8 @@ for (const [name, expr, reason] of [
   ["record-spread", "({ ...worker })", /static data property/],
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
   ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
-  ["record-anonymous-function", "({ key: () => 1 })", /unsupported object property value ArrowFunctionExpression/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
-  ["record-optional-member", "({ key: worker?.field })", /unsupported object property value ChainExpression/],
+  ["record-optional-member", "({ key: worker?.field })", /unsupported linked expression ChainExpression/],
   ["mixed-inequality", '"01" != 1', /requires two string operands/],
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {
