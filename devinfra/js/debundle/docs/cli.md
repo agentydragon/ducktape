@@ -356,10 +356,15 @@ the complete prospective spec. For example, `merges.json`:
 ```
 
 ```bash
-debundle modules merge --batch merges.json --modules "$MODULES" \
-  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --dry-run
+debundle modules merge --batch merges.json --modules "$CHUNK_MODULES" \
+  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --import-order final-order.json --dry-run
 # Apply the same validated plan by omitting --dry-run.
 ```
+
+Pass the chunk's module subtree as `--modules`. When the batch creates a
+target, `final-order.json` must list every final nonentry owner in its
+reviewed import order. With only surviving owners, omitting `--import-order`
+keeps their relative order.
 
 Explicit `.yaml` filenames preserve their physical casing. Each entry uses the
 single-merge claim, annotation, comment and note rules. The batch rejects empty
@@ -1224,6 +1229,9 @@ refactors whose intermediate states would be invalid can land in one shot:
 5. If valid: write every changed surviving YAML first, then delete drained
    move-source files — an interruption can never lose a member that was not
    yet written to its destination.
+
+Only drained move sources are eligible for cleanup. For new destination owners,
+pass `--import-order final-order.json` with the complete final nonentry priority.
 
 `--dry-run` runs steps 1–4 and stops. `--no-verify` skips step 3 (still
 does duplicate-claim detection — that's a structural error, not a

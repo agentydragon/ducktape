@@ -72,8 +72,6 @@ Surprises met while validating debundle changes and authoring specs.
   module indexes, binding homes and claims to every root of that chunk;
   dropping the scope check alone would let unrelated YAML contaminate
   resolution.
-- `modules merge` takes the chunk's module subtree (`--module-subdir`), not
-  `--tree-config`.
 - A partially claimed atomic group can be completed only by naming its sole
   owner in `coarse_atomic_groups.complete_partial_atomic_groups_for`; a
   catchall pulls unrelated atoms into the owner and can create a transport
