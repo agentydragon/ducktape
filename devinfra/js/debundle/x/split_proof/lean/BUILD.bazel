@@ -285,6 +285,7 @@ lean_library(
         "EsmSplit/CoreJS/Eval.lean",
         "EsmSplit/CoreJS/Fragment.lean",
         "EsmSplit/CoreJS/FromESTree.lean",
+        "EsmSplit/CoreJS/BrowserGlobals.lean",
         "EsmSplit/CoreJS/HostProfile.lean",
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Run.lean",

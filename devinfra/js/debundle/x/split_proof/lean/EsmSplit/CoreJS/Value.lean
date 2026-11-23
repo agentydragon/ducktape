@@ -160,6 +160,7 @@ inductive HostResult where
 inductive HostRef where
   | binding (name : String)
   | property (receiver key : String)
+  deriving DecidableEq, Repr
 
 /-- **The world**: the host functions that work on primitives, without their definitions. It has a state of its own
 and one deterministic step: the host function `fn`, called with the receiver `this` and the arguments `args` in a
@@ -683,7 +684,7 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
   if ((hostNamespaces.lookup name).getD []).contains k then pure (.host s!"{name}.{k}")
-  else if name == "window" && k == "Error" then readHostRef (.property name k)
+  else if name == "window" || name.startsWith "window." then readHostRef (.property name k)
   else unknown s!"a property of host value {name}"
 
 /-- `base[key]`. A getter runs with `base` as `this`. -/

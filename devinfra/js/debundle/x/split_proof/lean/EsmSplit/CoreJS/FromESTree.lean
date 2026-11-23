@@ -106,9 +106,10 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
-    if profile.pageBindings.contains x then return .prim (.globalRef x) []
+    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
     -- A successful typeof guard does not establish what a direct lookup would do.
-    if profile == .browserPage && x == "global" then return .prim (.opaqueAmbientRef x) []
+    if profile.opaqueBinding x then
+      return .prim (.opaqueAmbientRef x) []
     match x with
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
@@ -292,8 +293,10 @@ private def linkedMember (lower : Json → Except String Expr) (j : Json) (allow
   let prop ← j.getObjVal? "property"
   if (← field obj "type") == "Super" then throw "unsupported super member access"
   if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
-  if let some member := ambientSymbolMember? j then throw s!"unsupported ambient member Symbol.{member}"
-  let base ← lower obj
+  let base ← (lower obj).mapError fun reason =>
+    match ambientSymbolMember? j with
+    | some member => s!"unsupported ambient member Symbol.{member}"
+    | none => reason
   let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
   return (base, key)
 
@@ -442,7 +445,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | other => throw s!"unsupported unary operator {other}"
     if op == .typeof && (← field argument "type") == "Identifier" && (field argument "k").toOption == some "G" then
       let name ← identifier argument
-      if (profile.typeofBindings.lookup name).isSome then return .prim (.globalTypeof name) []
+      if (profile.bindingType name).isSome then return .prim (.globalTypeof name) []
     return .unary op (← linkedExpr profile imports inFunction "" argument)
   | "BinaryExpression" =>
     let op ← field j "operator"

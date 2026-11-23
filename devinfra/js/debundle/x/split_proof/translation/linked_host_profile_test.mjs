@@ -119,8 +119,8 @@ for (const [binding, defaulted] of [
   assert.deepEqual(verdict.assumptions, [
     "typeof globalThis is object without observable effects throughout initialization",
     "typeof self is object without observable effects throughout initialization",
-    "globalThis returns the same page object without observable effects throughout initialization",
     "self returns the same page object without observable effects throughout initialization",
+    "globalThis returns the same page object without observable effects throughout initialization",
   ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   globalThis.self = globalThis;
@@ -161,11 +161,12 @@ for (const deferred of [false, true]) {
   );
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  const assumptions = ["globalThis returns the same page object without observable effects throughout initialization"];
-  if (!deferred)
-    assumptions.push(
-      "reading Error from the page object returns the same opaque host object without observable effects throughout initialization"
-    );
+  const assumptions = deferred
+    ? []
+    : [
+        "globalThis returns the same page object without observable effects throughout initialization",
+        "window.Error returns the stable host reference window.Error without observable effects throughout initialization",
+      ];
   assert.deepEqual(verdict.assumptions, assumptions);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   for (const file of [test.sourceFile, path.join(test.out, entry)]) {
@@ -181,14 +182,39 @@ for (const [name, body, reason] of [
     /host value window.Error is constructed/,
   ],
   ["reached-global", "try { return global; } catch { return 17; }", /ambient binding global is reached/],
-  ["alias-property", "return self.document;", /a property of host value window/],
-  ["property", "return typeof window.document;", /a property of host value window/],
-  ["other-global", "return typeof document;", /unsupported global document/],
+  ["alias-property", "return self.document.title;", /unsupported host reference window.document.title/],
+  ["volatile", "return innerWidth;", /ambient binding innerWidth is reached/],
+  ["other-global", "return typeof applicationSpecific;", /unsupported global applicationSpecific/],
   ["tdz", "return typeof window; let window;", /threw during linked initialization/],
 ]) {
   const test = fixture(name, `const read = () => { ${body} }; const result = read(); export { result };`);
   assert.match(test.run("--host-contract", profile).reason, reason);
   assert(!existsSync(test.out));
+}
+
+{
+  const test = fixture(
+    "bulk-browser-bindings",
+    "const read = () => [typeof document, typeof fetch, typeof process, Object.defineProperty, globalThis.Object.defineProperty, URL, (() => FileReader)]; const result = read(); export { result };"
+  );
+  const verdict = test.run("--host-contract", profile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(verdict.assumptions, [
+    "typeof document is object without observable effects throughout initialization",
+    "typeof fetch is function without observable effects throughout initialization",
+    "typeof process is undefined without observable effects throughout initialization",
+    "Object returns the stable host reference window.Object without observable effects throughout initialization",
+    "window.Object.defineProperty returns the stable host reference window.Object.defineProperty without observable effects throughout initialization",
+    "globalThis returns the same page object without observable effects throughout initialization",
+    "window.Object returns the stable host reference window.Object without observable effects throughout initialization",
+    "URL returns the stable host reference window.URL without observable effects throughout initialization",
+  ]);
+  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
+  for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+    const [, , shim, direct, qualified, url] = (await import(pathToFileURL(file).href)).result;
+    assert.deepEqual([direct, qualified, url], [Object.defineProperty, Object.defineProperty, URL]);
+    assert.equal(shim, "object");
+  }
 }
 
 // Preserve the ambient symbol operations and the captured initializer across the split.
@@ -280,6 +306,23 @@ const reachedBody = fixture(
 );
 assert.match(reachedBody.run().reason, /unknown.*deferred function called: unsupported global Object/);
 assert(!existsSync(reachedBody.out));
+
+// A method can retain the clock lookup without promising a time or a host effect.
+for (const reached of [false, true]) {
+  const test = fixture(
+    `clock-method-${reached}`,
+    `class Clock { read() { return Date.now(); } } const result = ${reached ? "new Clock().read()" : "42"}; export { result };`
+  );
+  const verdict = test.run("--host-contract", profile);
+  if (reached) {
+    assert.match(verdict.reason, /host function window.Date.now is called/);
+    assert(!existsSync(test.out));
+  } else {
+    assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+    assert.deepEqual(verdict.assumptions, []);
+    assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
+  }
+}
 
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {
