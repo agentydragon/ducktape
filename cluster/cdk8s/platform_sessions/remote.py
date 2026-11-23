@@ -12,11 +12,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
-    ImageRepository,
-    ImageRepositorySpec,
-    ImageRepositorySpecSecretRef,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitor,
@@ -37,7 +32,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
-from cluster.cdk8s.image_automation import newest_ci_tag_policy
+from cluster.cdk8s.forgejo_registry import image_automation as forgejo_images, pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
@@ -56,7 +51,6 @@ _PROVIDER_HTTPS = Port(name="https", number=8443)
 _PROVIDER_GRPC = Port(name="grpc", number=8444)
 _PROVIDER_METRICS = Port(name="metrics", number=9091)
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
-REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
 BASE_INTEGRATIONS = [item for item in config.INTEGRATIONS["integrations"] if item["id"] != "myquest-canary"]
 BASE_PROVIDERS = tuple(str(item["id"]) for item in BASE_INTEGRATIONS)
@@ -70,7 +64,7 @@ BEARER_FILES = (
     "chatgpt-read",
     "blueshield-read",
 )
-_GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
+_GW_IMAGE = f"{forgejo_images.REGISTRY}/{GATEWAY}:unset"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
 _RECORD_CA_SECRET = "platform-sessions-recorder-ca"
@@ -220,7 +214,7 @@ def _deployment(
                 metadata=k8s.ObjectMeta(labels={"app": selector_name}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     node_selector=node_selector,
                     security_context=_security(),
                     containers=[container],
@@ -292,21 +286,6 @@ def _add_provider(chart: Chart, instance: str) -> None:
         size="20Gi",
         annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
-
-
-def _image_policy(chart: Chart, name: str) -> None:
-    # Provider images are built by gaffer-private and use main-* tags.
-    repository = ImageRepository(
-        chart,
-        f"{name}-image-repository",
-        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
-        spec=ImageRepositorySpec(
-            image=f"{REGISTRY}/{name}",
-            interval="5m",
-            secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
-        ),
-    )
-    newest_ci_tag_policy(chart, repository, prefix="main")
 
 
 def recorder_containers() -> list[k8s.Container]:
@@ -434,7 +413,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         instance,
         k8s.Container(
             name="provider",
-            image=f"{REGISTRY}/{_provider_image(instance)}:unset",
+            image=f"{forgejo_images.REGISTRY}/{_provider_image(instance)}:unset",
             args=[
                 "--integration-config",
                 f"/etc/platform-sessions/{instance}-integration.json",
@@ -564,7 +543,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=instance in recorded
         )
     for image in PROVIDER_IMAGES:
-        _image_policy(chart, image)
+        forgejo_images.track_ci_image(chart, image, prefix="main")
     provider_credentials = k8s.Volume(
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
