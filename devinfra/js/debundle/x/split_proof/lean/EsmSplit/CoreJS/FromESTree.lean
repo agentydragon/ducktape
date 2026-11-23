@@ -193,7 +193,8 @@ private def localBinding (id : Json) : Except String Name := do
 
 /-- Flat object-pattern bindings in property evaluation order. Even an empty pattern
 checks coercibility, so it cannot be lowered to an empty sequence of property reads. -/
-private def linkedObjectPattern (j : Json) : Except String (List (Name × Name)) := do
+private def linkedObjectPattern (j : Json) (binder : Json → Except String Name := localBinding) :
+    Except String (List (Name × Name)) := do
   unless (← field j "type") == "ObjectPattern" do throw "expected an object pattern"
   let props ← j.getObjValAs? (List Json) "properties"
   if props.isEmpty then throw "unsupported empty object pattern"
@@ -206,7 +207,7 @@ private def linkedObjectPattern (j : Json) : Except String (List (Name × Name))
     unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
     let target ← p.getObjVal? "value"
     unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
-    return (key, ← localBinding target)
+    return (key, ← binder target)
 
 /-- These expressions produce strings whenever they complete normally. Loose equality and inequality
 between two such operands never invoke numeric or object coercion. -/
@@ -788,20 +789,39 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
 
 end
 
-/-- Function declarations initialize their module cells at link time. Recursive reads resolve
-through the module scope. -/
-def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) : Except String (Name × Stmt) := do
-  if (← field j "type") == "FunctionDeclaration" then
+/-- Lower one module declaration and list its declared names in binding order.
+Function declarations initialize their cells at link time. -/
+def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :
+    Except String (List Name × Stmt) := do
+  match ← field j "type" with
+  | "FunctionDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
-    return (name, .funDecl (← linkedFunction profile imports .normal name false j))
-  if (← field j "type") == "ClassDeclaration" then
+    return ([name], .funDecl (← linkedFunction profile imports .normal name false j))
+  | "ClassDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
-    return (name, .decl .let_ name (← linkedClass profile imports false name j))
-  declarationWith moduleBinding (linkedExpr profile imports false) j
+    return ([name], .decl .let_ name (← linkedClass profile imports false name j))
+  | "VariableDeclaration" =>
+    let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
+    let kind ← field j "kind"
+    let id ← d.getObjVal? "id"
+    if (← field id "type") != "ObjectPattern" then
+      let (name, s) ← declaratorWith moduleBinding (linkedExpr profile imports false) kind d
+      return ([name], s)
+    unless kind == "var" do throw "unsupported module lexical object pattern"
+    unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
+    let bindings ← linkedObjectPattern id moduleBinding
+    let init ← d.getObjVal? "init"
+    if init == .null then throw "object pattern declaration needs an initializer"
+    let value ← linkedExpr profile imports false "" init
+    -- Only the saved initializer is block-local. The var names still belong to the module.
+    let saved := ":destructure"
+    let reads := bindings.map fun (key, name) => Stmt.decl .var name (.get (.var saved) (.str key))
+    return (bindings.map Prod.snd, .block (.decl .const saved value :: reads))
+  | _ => throw "expected a module declaration"
 
 /-- A top-level executable statement of the linked fragment. -/
 def linkedUnit (imports : List Name) (j : Json) (profile : HostProfile := .empty) : Except String Stmt := do
-  if ["FunctionDeclaration", "ClassDeclaration"].contains (← field j "type") then
+  if ["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"].contains (← field j "type") then
     return (← linkedDeclaration imports j profile).2
   linkedStatement profile imports false j
 
