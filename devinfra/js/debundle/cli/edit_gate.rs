@@ -57,8 +57,8 @@ use serde::Serialize;
 use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
-    ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, is_module_yaml,
-    module_claims, module_path_from_file, read_module_claims,
+    ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, module_claims,
+    module_path_from_file, read_module_claims,
 };
 use spec_tree::ModuleTreeScope;
 
@@ -90,6 +90,14 @@ pub struct GraphEditArgs {
     pub format: Option<peel::OutputFormat>,
 }
 impl GraphEditArgs {
+    pub(super) fn edits_with_graph(&self) -> bool {
+        self.dependency_graph_path.is_some()
+    }
+
+    pub(super) fn writes_with_graph(&self) -> bool {
+        self.edits_with_graph() && !self.dry_run
+    }
+
     pub fn gate<'a>(
         &'a self,
         source_context: Option<&'a VerifiedGraphSourceContext>,
@@ -908,8 +916,9 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
             continue;
         }
         modules.push(PostEditModule {
-            path: file.clone(),
-            claims: read_gate_claims(&file)?,
+            claims: read_module_claims(&file)
+                .with_context(|| format!("reading module {}", file.display()))?,
+            path: file,
         });
     }
     Ok(PostEditSpec { modules })
@@ -943,15 +952,6 @@ pub fn post_edit_spec_from_docs(
         });
     }
     Ok(PostEditSpec { modules })
-}
-
-/// Parse a spec module YAML and return the source unit claims its
-/// `members:` and `anonymous_statements:` entries declare.
-pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
-    if !is_module_yaml(path) {
-        return Ok(ModuleClaims::default());
-    }
-    read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
 }
 
 fn gate_post_edit_assignment_with_expected(
