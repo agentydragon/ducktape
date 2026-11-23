@@ -66,7 +66,7 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
 def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat) (constructor : Bool) :
     M W Val := do
   let a ← alloc {
-    proto := some functionProto, code := some (.opaque code part cells),
+    proto := some functionProto, code := some (.opaque code part cells constructor),
     props := [("length", .data (.num (Float.ofNat length)) false false true),
       ("name", .data (.str name) false false true)] }
   (if constructor then addPrototype a else pure ())
@@ -155,7 +155,7 @@ def isConstructor (v : Val) : M W Bool := do
     | some .derived => pure true
     | some (.closure f _ _) => pure (f.kind == .normal || f.kind == .classCtor)
     | some (.host name) => if name == "Function.prototype" then pure false else unknown "host constructor capability"
-    | some (.opaque ..) => unknown "opaque constructor capability"
+    | some (.opaque _ _ _ constructor) => pure constructor
     | none => pure false
   | .host _ => unknown "host constructor capability"
   | _ => pure false
@@ -423,7 +423,7 @@ def callFn : Nat → Val → Val → List Val → M W Val
           | .ret v => pure v
           | _ => pure .undef
       | some (.host name) => hostCall name this args
-      | some (.opaque code part cells) => do
+      | some (.opaque code part cells _) => do
         converse n code cells (.run code part (← toW callee) (← toW this) (← args.mapM toW) false)
       | none => throwErr .type "not a function"
     | .host name => hostCall name this args
@@ -462,7 +462,8 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         | .error kind msg => pure (.error kind msg)
         | .host name => unknown s!"host value {name} is inspected"
         | _ => pure (.obj this)
-      | some (.opaque code part cells) => do
+      | some (.opaque _ _ _ false) => throwErr .type "not a constructor"
+      | some (.opaque code part cells true) => do
         let proto ← getProp (callFn n) newTarget (.str "prototype")
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         match ← converse n code cells (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true) with
