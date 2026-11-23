@@ -22,8 +22,8 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import piraeus_storage
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -41,10 +41,8 @@ def _databases(chart: Chart) -> None:
         chart,
         "praefect-password",
         name=app.PRAEFECT_PASSWORD.name,
-        namespace=app.NAMESPACE,
+        cluster=app.GITLAB_DB,
         role=app.PRAEFECT_DATABASE,
-        host=app.GITLAB_DB.rw.host,
-        port=app.GITLAB_DB.rw.port.number,
         database=app.PRAEFECT_DATABASE,
     )
     postgres = cluster.cluster(

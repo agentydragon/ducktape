@@ -22,7 +22,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_database import Database, role_secret_name
 from cluster.cdk8s.cnpg import cluster as cnpg  # Local `cluster` parameters shadow the module name.
 from cluster.cdk8s.cnpg.cluster import ClusterPlacement
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 
 _CLUSTER_NAME = "postgres"
@@ -53,10 +53,8 @@ def _role_credentials(
         scope,
         id,
         name=role_secret_name(role),
-        namespace=cluster.namespace,
+        cluster=cluster,
         role=role,
-        host=cluster.rw.host,
-        port=cluster.rw.port.number,
         database=database_name or role,
         url_key="uri",
     )

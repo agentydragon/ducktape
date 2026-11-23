@@ -32,8 +32,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.health import database_health
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -131,10 +131,8 @@ def chart(app: App) -> Chart:
             chart,
             f"{store.id}-credentials",
             name=store.source_secret,
-            namespace=NAMESPACE,
+            cluster=DATABASE,
             role=store.role,
-            host=DATABASE.rw.host,
-            port=DATABASE.rw.port.number,
             database=store.database,
             url_key="uri",
         )
