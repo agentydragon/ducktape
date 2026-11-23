@@ -188,44 +188,6 @@ theorem access_newCallback {r R cells A} (away : Away r R A) (call : Call W)
   simp [Obj.nodes, Property.nodes, Val.nodes] at hn
   exact hn.elim (fun h => h ▸ root) (opaqueCapturesAccessible hs code part node)
 
-private theorem frames_modifyObj {r R} (a : Addr) (ha : a.region ≠ r) (f : Obj → Obj) :
-    Frames r R (modifyObj a f : M W Unit) := by
-  constructor
-  · intro s H C hr
-    have hh : (s.heap.set! r H)[a.region]? = s.heap[a.region]? := by simp [Ne.symm ha]
-    simp only [modifyObj, Res.put, State.put]
-    rw [modify_eq_set! _ _ _ #[], modify_eq_set! _ _ _ #[], hh, set!_comm _ (Ne.symm ha)]
-  · intro s hr
-    exact ⟨by simp [Array.getElem?_modify, ha], rfl, fun _ _ => rfl, rfl⟩
-
-/-- Edges retained from the old record, and new edges into the accessible envelope,
-are safe even when the update completes a cycle. -/
-private theorem reachFrame_modifyObj {r R cells A} (away : Away r R A) (a : Addr) (ha : A (.obj a))
-    (f : Obj → Obj) (edges : ∀ o n, n ∈ (f o).nodes → n ∈ o.nodes ∨ A n) :
-    ReachFrame r R cells A (fun _ => True) (modifyObj a f : M W Unit) := by
-  apply ReachFrame.of_frames (frames_modifyObj a (away.region _ ha) f)
-  intro s hs hr
-  refine ⟨trivial, hs.handed, hs.supplied, ?_⟩
-  intro node target hn he
-  cases he with
-  | cell hc hm => exact hs.closed _ _ hn (.cell hc hm)
-  | @obj b obj target ho hm =>
-    by_cases hba : b = a
-    · subst b
-      have own : ({ s with heap := s.heap.modify a.region (·.modify a.index f) } : State W).objAt a =
-          (s.objAt a).map f := by
-        simp only [State.objAt, Array.getElem?_modify, ↓reduceIte]
-        cases s.heap[a.region]? <;> simp [Array.getElem?_modify]
-      rw [own] at ho
-      cases old : s.objAt a with
-      | none => simp [old] at ho
-      | some o =>
-        simp only [old, Option.map_some, Option.some.injEq] at ho
-        subst obj
-        exact (edges o target hm).elim (fun h => hs.closed _ _ hn (.obj old h)) id
-    · rw [objAt_modify _ _ _ _ hba] at ho
-      exact hs.closed _ _ hn (.obj ho hm)
-
 /-- Constructible functions allocate their own prototype object and set both links
 before publishing the function handle. -/
 theorem frames_newConstructor (r R) (call : Call W) (construct : Val → List Val → M W Val)

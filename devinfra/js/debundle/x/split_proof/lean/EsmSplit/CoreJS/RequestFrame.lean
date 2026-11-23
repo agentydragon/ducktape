@@ -225,25 +225,67 @@ theorem reachFrame_writeCell {r R cells A} (away : Away r R A) (a : Addr) (ha : 
         · exact ⟨by simp [SafeVal, Val.nodes], hs⟩
         · exact hset.accessible s hs hr
 
+theorem reachFrame_getObj {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a)) :
+    ReachFrame r R cells A (fun o => ∀ n ∈ o.nodes, A n) (getObj a : M W Obj) := by
+  constructor
+  · intro s H C _ _
+    have har : a.region ≠ r := away.region _ ha
+    have same : (s.put r H C).objAt a = s.objAt a := by rw [State.objAt_put, ite_eq_right har]
+    simp only [getObj, same]
+    cases s.objAt a <;> rfl
+  · intro s _ _
+    simp only [getObj]
+    cases s.objAt a <;> exact Preserves.refl r R s
+  · intro s hs _
+    simp only [getObj]
+    cases ho : s.objAt a with
+    | none => exact hs
+    | some o => exact ⟨fun n hn => hs.closed _ _ ha (.obj ho hn), hs⟩
+
+theorem frames_modifyObj {r R} (a : Addr) (ha : a.region ≠ r) (f : Obj → Obj) :
+    Frames r R (modifyObj a f : M W Unit) := by
+  constructor
+  · intro s H C hr
+    have hh : (s.heap.set! r H)[a.region]? = s.heap[a.region]? := by simp [Ne.symm ha]
+    simp only [modifyObj, Res.put, State.put]
+    rw [modify_eq_set! _ _ _ #[], modify_eq_set! _ _ _ #[], hh, set!_comm _ (Ne.symm ha)]
+  · intro s hr
+    exact ⟨by simp [Array.getElem?_modify, ha], rfl, fun _ _ => rfl, rfl⟩
+
+/-- Edges retained from the old record, and new edges into the accessible envelope,
+are safe even when the update completes a cycle. -/
+theorem reachFrame_modifyObj {r R cells A} (away : Away r R A) (a : Addr) (ha : A (.obj a))
+    (f : Obj → Obj) (edges : ∀ o n, n ∈ (f o).nodes → n ∈ o.nodes ∨ A n) :
+    ReachFrame r R cells A (fun _ => True) (modifyObj a f : M W Unit) := by
+  apply ReachFrame.of_frames (frames_modifyObj a (away.region _ ha) f)
+  intro s hs hr
+  refine ⟨trivial, hs.handed, hs.supplied, ?_⟩
+  intro node target hn he
+  cases he with
+  | cell hc hm => exact hs.closed _ _ hn (.cell hc hm)
+  | @obj b obj target ho hm =>
+    by_cases hba : b = a
+    · subst b
+      have own : ({ s with heap := s.heap.modify a.region (·.modify a.index f) } : State W).objAt a =
+          (s.objAt a).map f := by
+        simp only [State.objAt, Array.getElem?_modify, ↓reduceIte]
+        cases s.heap[a.region]? <;> simp [Array.getElem?_modify]
+      rw [own] at ho
+      cases old : s.objAt a with
+      | none => simp [old] at ho
+      | some o =>
+        simp only [old, Option.map_some, Option.some.injEq] at ho
+        subst obj
+        exact (edges o target hm).elim (fun h => hs.closed _ _ hn (.obj old h)) id
+    · rw [objAt_modify _ _ _ _ hba] at ho
+      exact hs.closed _ _ hn (.obj ho hm)
+
 theorem reachFrame_ownKeys {r R cells A} (away : Away r R A) (v : Val) (hv : SafeVal A v) :
     ReachFrame r R cells A (fun _ => True) (ownKeys v : M W (List String)) := by
   cases v <;> try exact reachFrame_unknown r R cells A _ _
   case obj a =>
-    have har : a.region ≠ r := away.region _ (safeVal_obj.1 hv)
-    constructor
-    · intro s H C hs hr
-      have ho : (s.put r H C).objAt a = s.objAt a := by rw [State.objAt_put, ite_eq_right har]
-      simp only [ownKeys, M.bind_apply, getObj]
-      rw [ho]
-      cases s.objAt a <;> rfl
-    · intro s hs hr
-      simp only [ownKeys, M.bind_apply, getObj]
-      cases s.objAt a <;> exact Preserves.refl r R s
-    · intro s hs hr
-      simp only [ownKeys, M.bind_apply, getObj]
-      cases s.objAt a
-      · exact hs
-      · exact ⟨trivial, hs⟩
+    exact (reachFrame_getObj away (safeVal_obj.1 hv)).bind fun o _ =>
+      reachFrame_pure r R cells A (ownPropertyKeys o.props) trivial
 
 /-- The currently proved request family: binding reads and writes, initialization, and own-key enumeration. -/
 def Request.bindingOrKeys : Request → Bool

@@ -1,12 +1,14 @@
 import EsmSplit.CoreJS.HostFrame
 
 /-!
-# Reachability of prototype lookup
+# Reachability of property requests
 
 The lookup budget counts every object in the heap. Replacing a protected
 region can change that count, even when the receiver cannot reach the region.
 A successful search has a first hit along a path of distinct objects, so
 the object count of either heap is enough for the same path.
+Property writes preserve the envelope when both the target and inserted
+values are accessible. Property deletion only removes existing edges.
 -/
 
 namespace CoreJS
@@ -302,7 +304,7 @@ private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some v) : Safe
         subst v
         simp [SafeVal, Val.nodes]
 
-private theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
+theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
     (framed : ∀ f base, SafeVal A f → SafeVal A base →
       ReachFrame r R cells A (SafeVal A) (call f base []))
     (root : A (.obj objectProto)) (base key : Val) (hb : SafeVal A base) :
@@ -340,5 +342,211 @@ theorem perform_get {r R cells A} (away : Away r R A) (call : Call W)
     (reachFrame_fromW r R cells A key).bind fun k _ =>
       (reachFrame_getProp away call framed root o k ho).bind fun result safe =>
         (reachFrame_toW r R cells A result safe).bind fun w _ => reachFrame_pure r R cells A (Told.value w) trivial
+
+private theorem deleteProps_keeps_edges (o : Obj) (key : String) :
+    ∀ node ∈ ({ o with props := o.props.filter (·.1 != key) }).nodes, node ∈ o.nodes := by
+  intro node hn
+  simp only [Obj.nodes, List.mem_append] at hn ⊢
+  rcases hn with (h | h) | h
+  · exact Or.inl (Or.inl h)
+  · obtain ⟨p, hp, hnode⟩ := List.mem_flatMap.mp h
+    exact Or.inl (Or.inr (List.mem_flatMap.mpr ⟨p, (List.mem_filter.mp hp).1, hnode⟩))
+  · exact Or.inr h
+
+private theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val) (hb : SafeVal A base) :
+    ReachFrame r R cells A (SafeVal A) (deleteProp base key : M W Val) := by
+  cases base <;> simp only [deleteProp] <;>
+    try first
+    | exact reachFrame_throwErr r R cells A _ _ _
+    | exact reachFrame_unknown r R cells A _ _
+  case obj a =>
+    have ha := safeVal_obj.1 hb
+    apply (reachFrame_toKey r R cells A key).bind
+    intro k _
+    apply (reachFrame_getObj away ha).bind
+    intro o _
+    have ok : ReachFrame r R cells A (SafeVal A) (pure (Val.bool true) : M W Val) :=
+      reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
+    cases hk : o.props.lookup k with
+    | none => exact ok
+    | some p =>
+      simp only []
+      split
+      · exact (reachFrame_modifyObj away a ha _ (fun o n h => Or.inl (deleteProps_keeps_edges o k n h))).bind
+          (fun _ _ => ok)
+      · exact reachFrame_throwErr r R cells A _ _ _
+
+/-- Deleting an own property removes edges from the reachable object. -/
+theorem perform_delete {r R cells A} (away : Away r R A) (call : Call W)
+    (construct : Val → List Val → M W Val) (code : Nat) (base key : WVal) :
+    ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.delete base key)) :=
+  (reachFrame_fromW r R cells A base).bind fun o ho =>
+    (reachFrame_fromW r R cells A key).bind fun k _ =>
+      (reachFrame_deleteProp away o k ho).bind fun result safe =>
+        (reachFrame_toW r R cells A result safe).bind fun w _ => reachFrame_pure r R cells A (Told.value w) trivial
+
+private def SafeDesc (A : HeapNode → Prop) (d : Desc) : Prop :=
+  (∀ v, v ∈ d.value → SafeVal A v) ∧ (∀ v, v ∈ d.get → SafeVal A v) ∧
+    (∀ v, v ∈ d.set → SafeVal A v)
+
+private theorem safe_default {A : HeapNode → Prop} {v : Option Val} {fallback : Val}
+    (hv : ∀ x, x ∈ v → SafeVal A x) (hf : SafeVal A fallback) : SafeVal A (v.getD fallback) := by
+  cases v with
+  | none => exact hf
+  | some x => exact hv x rfl
+
+private theorem applyDesc_nodes {A : HeapNode → Prop} (d : Desc) (hd : SafeDesc A d)
+    {old : Option Property} (ho : ∀ p, p ∈ old → ∀ n ∈ p.nodes, A n)
+    {p : Property} (h : applyDesc old d = .ok (some p)) : ∀ n ∈ p.nodes, A n := by
+  have undef : SafeVal A .undef := fun _ hn => by cases hn
+  have data (v : Val) (w e c : Bool) (hv : SafeVal A v) :
+      ∀ n ∈ (Property.data (d.value.getD v) w e c).nodes, A n := safe_default hd.1 hv
+  have accessor (g setter : Val) (e c : Bool) (hg : SafeVal A g) (hs : SafeVal A setter) :
+      ∀ n ∈ (Property.accessor (d.get.getD g) (d.set.getD setter) e c).nodes, A n := by
+    intro n hn
+    rcases List.mem_append.mp hn with h | h
+    · exact safe_default hd.2.1 hg _ h
+    · exact safe_default hd.2.2 hs _ h
+  cases old with
+  | none =>
+    simp only [applyDesc, pure, Except.pure] at h
+    split at h
+    · cases h; exact accessor .undef .undef _ _ undef undef
+    · cases h; exact data .undef _ _ _ undef
+  | some old =>
+    have oldNodes := ho old rfl
+    cases old with
+    | data v w e c =>
+      have vv : SafeVal A v := oldNodes
+      simp [applyDesc, bind, Except.bind, pure, Except.pure] at h
+      repeat' (split at h)
+      all_goals cases h <;> first
+        | exact data _ _ _ _ vv
+        | exact accessor .undef .undef _ _ undef undef
+    | accessor g setter e c =>
+      have gg : SafeVal A g := fun n hn => oldNodes n (List.mem_append_left _ hn)
+      have ss : SafeVal A setter := fun n hn => oldNodes n (List.mem_append_right _ hn)
+      simp [applyDesc, bind, Except.bind, pure, Except.pure] at h
+      repeat' (split at h)
+      all_goals cases h <;> first
+        | exact data .undef _ _ _ undef
+        | exact accessor _ _ _ _ gg ss
+
+private theorem setOwn_nodes (o : Obj) (k : String) (p : Property) :
+    ∀ node ∈ ({ o with props := setOwn o.props k p }).nodes, node ∈ o.nodes ∨ node ∈ p.nodes := by
+  intro node h
+  simp only [Obj.nodes, List.mem_append] at h ⊢
+  rcases h with (h | h) | h
+  · exact Or.inl (Or.inl (Or.inl h))
+  · obtain ⟨entry, member, edge⟩ := List.mem_flatMap.mp h
+    unfold setOwn at member
+    split at member
+    · obtain ⟨old, hOld, rfl⟩ := List.mem_map.mp member
+      rcases old with ⟨oldKey, oldProperty⟩
+      by_cases same : (oldKey == k) = true
+      · simp only [same, ↓reduceIte] at edge
+        exact Or.inr edge
+      · simp only [same] at edge
+        exact Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨(oldKey, oldProperty), hOld, edge⟩)))
+    · rcases List.mem_append.mp member with hOld | hNew
+      · exact Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨entry, hOld, edge⟩)))
+      · simp only [List.mem_singleton] at hNew
+        subst entry
+        exact Or.inr edge
+  · exact Or.inl (Or.inr h)
+
+
+private theorem reachFrame_applyDesc {r R cells A} (old : Option Property) (d : Desc)
+    (safe : SafeDesc A d) (oldSafe : ∀ p, p ∈ old → ∀ node ∈ p.nodes, A node) :
+    ReachFrame r R cells A (fun result => ∀ p, p ∈ result → ∀ node ∈ p.nodes, A node)
+      (lift (applyDesc old d) : M W (Option Property)) := by
+  cases h : applyDesc old d with
+  | ok result =>
+    apply reachFrame_pure r R cells A result
+    intro p hp
+    cases hp
+    exact applyDesc_nodes d safe oldSafe h
+  | error why =>
+    cases why with
+    | error kind message => exact reachFrame_throwErr r R cells A _ kind message
+    | unknown message => exact reachFrame_unknown r R cells A _ message
+
+private theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
+    (key : String) (d : Desc) (safe : SafeDesc A d) :
+    ReachFrame r R cells A (fun _ => True) (defineOwn a key d : M W Unit) := by
+  unfold defineOwn
+  apply (reachFrame_getObj away ha).bind
+  intro current currentSafe
+  split
+  · exact reachFrame_unknown r R cells A _ _
+  · have ownSafe : ∀ p, p ∈ current.props.lookup key → ∀ node ∈ p.nodes, A node := by
+      intro p hp node edge
+      have member := lookup_mem (show current.props.lookup key = some p from hp)
+      exact currentSafe node (List.mem_append_left _ (List.mem_append_right _
+        (List.mem_flatMap.mpr ⟨(key, p), member, edge⟩)))
+    apply (reachFrame_applyDesc (current.props.lookup key) d safe ownSafe).bind
+    intro result guard
+    cases result with
+    | none => exact reachFrame_throwErr r R cells A _ _ _
+    | some p =>
+      exact reachFrame_modifyObj away a ha _ fun o node edge =>
+        (setOwn_nodes o key p node edge).imp id (guard p rfl node)
+
+private theorem reachFrame_setValue {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
+    (key : String) (value : Val) (safe : SafeVal A value) :
+    ReachFrame r R cells A (fun _ => True) (do
+      defineOwn a key (if ((← getObj a).props.lookup key).isSome then { value := some value } else
+        { value := some value, writable := some true, enumerable := some true, configurable := some true }) : M W Unit) := by
+  apply (reachFrame_getObj away ha).bind
+  intro o _
+  have opt (v : Val) (hv : v ∈ some value) : SafeVal A v := by
+    cases hv
+    exact safe
+  have empty (v : Val) (hv : v ∈ (none : Option Val)) : SafeVal A v := by cases hv
+  split <;> exact reachFrame_defineOwn away ha key _ ⟨opt, empty, empty⟩
+
+theorem reachFrame_setProp {r R cells A} (away : Away r R A) (call : Call W)
+    (framed : ∀ f base v, SafeVal A f → SafeVal A base → SafeVal A v →
+      ReachFrame r R cells A (SafeVal A) (call f base [v]))
+    (base key value : Val) (safeBase : SafeVal A base) (safeValue : SafeVal A value) :
+    ReachFrame r R cells A (fun _ => True) (setProp call base key value) := by
+  cases base <;> simp only [setProp] <;>
+    try first
+    | exact reachFrame_throwErr r R cells A _ _ _
+    | exact reachFrame_unknown r R cells A _ _
+  case obj a =>
+    have ha := safeVal_obj.1 safeBase
+    apply (reachFrame_toKey r R cells A key).bind
+    intro k _
+    apply (reachFrame_lookupProp away ha k).bind
+    intro result accessible
+    cases result with
+    | none => exact reachFrame_setValue away ha k value safeValue
+    | some p =>
+      have hp := accessible p rfl
+      cases p with
+      | data _ writable =>
+        cases writable
+        · exact reachFrame_throwErr r R cells A _ _ _
+        · exact reachFrame_setValue away ha k value safeValue
+      | accessor getter setter =>
+        have hs : SafeVal A setter := fun n hn => hp n (List.mem_append_right _ hn)
+        cases setter
+        case undef => exact reachFrame_throwErr r R cells A _ _ _
+        all_goals exact (framed _ _ _ hs safeBase safeValue).bind fun _ _ =>
+          reachFrame_pure r R cells A () trivial
+
+/-- Setting a property keeps reachable edges local, provided invoking an accessible setter does. -/
+theorem perform_set {r R cells A} (away : Away r R A) (call : Call W)
+    (construct : Val → List Val → M W Val) (code : Nat)
+    (framed : ∀ f base value, SafeVal A f → SafeVal A base → SafeVal A value →
+      ReachFrame r R cells A (SafeVal A) (call f base [value]))
+    (base key value : WVal) :
+    ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.set base key value)) :=
+  (reachFrame_fromW r R cells A base).bind fun o ho =>
+    (reachFrame_fromW r R cells A key).bind fun k _ =>
+      (reachFrame_fromW r R cells A value).bind fun v hv =>
+        (reachFrame_setProp away call framed o k v ho hv).bind fun _ _ =>
+          reachFrame_pure r R cells A (Told.value (.prim .undef)) trivial
 
 end CoreJS
