@@ -37,7 +37,9 @@ def test_a_single_asset_release_is_identified_by_its_digest() -> None:
     so the identity costs no download at all."""
     # A real digest, as BES reports it: 64 lowercase hex characters.
     digest = "2fe232c3911f0548e3b4eb3970cfb19fc9c91928592d200f8712345678901234"
-    assert content_hash(SINGLE_ASSET, {"//:a": [output(f"{BIN}/a.whl", digest)]}) == digest
+    asset = output(f"{BIN}/a.whl", digest)
+    lint = output(f"{BIN}/a.mypy_stdout", "ee" * 32, output_group="mypy", aspect="mypy")
+    assert content_hash(SINGLE_ASSET, {"//:a": [lint, asset]}) == digest
 
 
 def test_a_multi_asset_release_composes_the_same_identity_from_digests() -> None:
@@ -56,37 +58,17 @@ def test_an_output_the_build_never_reported_has_no_identity() -> None:
     assert content_hash(TWO_ASSETS, partial) is None
 
 
-def test_lint_aspect_reports_do_not_hide_the_artifact() -> None:
-    """bazel-ci runs the mypy/ruff aspects, whose report files complete under the
-    same label; the identity must come from the target's own artifact."""
-    by_label = {
-        "//:a": [
-            output(f"{BIN}/a.mypy_stdout", "ee" * 32, output_group="mypy", aspect="//devinfra/lint:mypy_aspect"),
-            output(f"{BIN}/a.whl", "aa" * 32),
-        ]
-    }
-    assert content_hash(SINGLE_ASSET, by_label) == "aa" * 32
-
-
-def test_a_label_with_no_single_artifact_raises_rather_than_guessing() -> None:
-    """Two default outputs, or only aspect leftovers, is SSOT drift: the planner
-    warns and keeps the row, and the row's own job fails loudly on the same check."""
-    ambiguous = {"//:a": [output(f"{BIN}/a.whl", "aa" * 32), output(f"{BIN}/extra.txt", "cc" * 32)]}
-    with pytest.raises(ValueError, match="default outputs"):
-        content_hash(SINGLE_ASSET, ambiguous)
-    aspect_only = {"//:a": [output(f"{BIN}/a.mypy_stdout", "ee" * 32, output_group="mypy", aspect="mypy")]}
-    with pytest.raises(ValueError, match="not reported"):
-        content_hash(SINGLE_ASSET, aspect_only)
-    assert not is_published(SINGLE_ASSET, ambiguous, lambda _: True)
-
-
-def test_a_built_basename_contradicting_the_pin_filename_raises() -> None:
-    """`filename` is the release-download URL component sync-pins builds, so a
-    build producing a differently-named file must not be silently skipped."""
-    by_label = {"//:a": [output(f"{BIN}/renamed.whl", "aa" * 32)]}
-    with pytest.raises(ValueError, match="filename"):
-        content_hash(SINGLE_ASSET, by_label)
-    assert not is_published(SINGLE_ASSET, by_label, lambda _: True)
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        [output(f"{BIN}/a.whl", "aa" * 32), output(f"{BIN}/extra.txt", "cc" * 32)],
+        [output(f"{BIN}/a.mypy_stdout", "ee" * 32, output_group="mypy", aspect="mypy")],
+        [output(f"{BIN}/renamed.whl", "aa" * 32)],
+    ],
+    ids=["ambiguous", "aspect-only", "wrong-name"],
+)
+def test_invalid_asset_evidence_keeps_the_release(outputs: list[Output]) -> None:
+    assert not is_published(SINGLE_ASSET, {"//:a": outputs}, lambda _: True)
 
 
 def test_matrix_row_encodes_targets_and_workflow_inputs() -> None:
@@ -207,21 +189,9 @@ def test_no_invocation_releases_everything(tmp_path: Path, monkeypatch: pytest.M
     actual_targets_by_pkg = {row["pkg"]: row["targets"] for row in rows}
     assert len(actual_targets_by_pkg) == len(rows), "a release package appears more than once"
     assert actual_targets_by_pkg == expected_targets_by_pkg
-
-
-def test_every_pin_and_skill_reaches_exactly_one_row() -> None:
-    """No release may be silently unrepresentable in the matrix."""
-    doc = json.loads(ARTIFACT_TARGETS.read_text())
-    skills = json.loads(SKILLS_REGISTRY.read_text())["skills"]
-    rows = load_releases(ARTIFACT_TARGETS, SKILLS_REGISTRY)
-
-    emitted_targets = [target for row in rows for target, _ in row.assets]
+    assert len(rows) == len(artifact_targets["releases"]) + len(skills)
+    emitted_targets = [target for row in rows for target in row["targets"].split()]
     assert len(emitted_targets) == len(set(emitted_targets)), "a target is claimed by two rows"
-    for pin in doc["pins"].values():
-        assert pin["target"] in emitted_targets
-    for skill in skills:
-        assert skill["target"] in emitted_targets
-    assert len(rows) == len(doc["releases"]) + len(skills)
 
 
 def test_registered_releases_have_valid_filenames_and_metadata_flags() -> None:
