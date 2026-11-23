@@ -1,41 +1,60 @@
+/* Solarized: https://ethanschoonover.com/solarized/ */
+html {
+  --page: #002b36;
+  --text: #839496;
+  --panel: #073642;
+  --heading: #93a1a1;
+  --accent: #dc322f;
+  --visited: #cb4b16;
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    --page: #fdf6e3;
+    --text: #657b83;
+    --panel: #eee8d5;
+    --heading: #586e75;
+  }
+}
+
 html body {
-  background-color: #002b36;
-  color: #839496;
+  background-color: var(--page);
+  color: var(--text);
 }
 html header {
-  background-color: #073642;
-  border-bottom-color: #dc322f;
+  background-color: var(--panel);
+  border-bottom-color: var(--accent);
   position: sticky;
   top: 0;
   left: 0;
   right: 0;
 }
 html header a.logo {
-  color: #93a1a1;
+  color: var(--heading);
 }
 html header a {
-  color: #dc322f;
+  color: var(--accent);
 }
 html footer {
-  border-top-color: #dc322f;
-  border-bottom-color: #dc322f;
-  background-color: #073642;
+  border-top-color: var(--accent);
+  border-bottom-color: var(--accent);
+  background-color: var(--panel);
 }
 html code {
-  background-color: #073642;
+  background-color: var(--panel);
 }
 html a {
-  color: #dc322f;
+  color: var(--accent);
 }
 html a:visited {
-  color: #cb4b16;
+  color: var(--visited);
 }
 html #articles article {
-  border-top: 1px solid #073642;
+  border-top: 1px solid var(--panel);
 }
 html pre {
-  border-top-color: #dc322f;
-  border-bottom-color: #dc322f;
+  border-top-color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 html h1,
 html h2,
@@ -43,58 +62,9 @@ html h3,
 html h4,
 html h5,
 html h6 {
-  color: #93a1a1;
+  color: var(--heading);
 }
 
-@media (prefers-color-scheme: dark) {
-  html body {
-    background-color: #fdf6e3;
-    color: #657b83;
-  }
-  html header {
-    background-color: #eee8d5;
-    border-bottom-color: #dc322f;
-    position: sticky;
-    top: 0;
-    left: 0;
-    right: 0;
-  }
-  html header a.logo {
-    color: #586e75;
-  }
-  html header a {
-    color: #dc322f;
-  }
-  html footer {
-    border-top-color: #dc322f;
-    border-bottom-color: #dc322f;
-    background-color: #eee8d5;
-  }
-  html code {
-    background-color: #eee8d5;
-  }
-  html a {
-    color: #dc322f;
-  }
-  html a:visited {
-    color: #cb4b16;
-  }
-  html #articles article {
-    border-top: 1px solid #eee8d5;
-  }
-  html pre {
-    border-top-color: #dc322f;
-    border-bottom-color: #dc322f;
-  }
-  html h1,
-  html h2,
-  html h3,
-  html h4,
-  html h5,
-  html h6 {
-    color: #586e75;
-  }
-}
 html * {
   color-profile: sRGB;
   rendering-intent: auto;
