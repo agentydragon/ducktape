@@ -251,6 +251,7 @@ py_test(
         ":registry",
         ":routes",
         "//:conftest",
+        "//testing:threaded_http",
         "@pypi//fastapi",
         "@pypi//httpx2",  # keep: starlette.testclient imports it at runtime
         "@pypi//pydantic",

@@ -15,6 +15,7 @@ from websockets.sync.server import ServerConnection, serve
 from platform_sessions.provider.cdp_browser import CdpBrowser
 from platform_sessions.provider.interactive_browser import InteractiveBrowserRuntime
 from testing.browser.launcher import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from testing.threaded_http import serve_http_in_thread
 
 
 @pytest.fixture
@@ -51,14 +52,8 @@ def upstream() -> Iterator[tuple[str, list[str]]]:
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
-        worker = threading.Thread(target=server.serve_forever)
-        worker.start()
-        try:
-            yield f"http://127.0.0.1:{server.server_port}", hits
-        finally:
-            server.shutdown()
-            worker.join(timeout=5)
+    with serve_http_in_thread(ThreadingHTTPServer(("127.0.0.1", 0), Handler)) as server:
+        yield f"http://127.0.0.1:{server.server_port}", hits
 
 
 def guarded_browser(playwright: Playwright, profile: Path) -> CdpBrowser:
