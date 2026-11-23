@@ -27,8 +27,7 @@ mypy_cli(
 # ESLint binary for JS/TS linting
 # Used by lint_eslint_aspect in linters.bzl
 #
-# Unlike Prettier (which is invoked directly via `bazel run`), ESLint is
-# invoked by the lint_eslint_aspect which sets BAZEL_BINDIR to ctx.bin_dir.path
+# lint_eslint_aspect sets BAZEL_BINDIR to ctx.bin_dir.path
 # in the action env. Do NOT set BAZEL_BINDIR here — the binary's env export
 # would override the aspect's, causing `cd` to the execroot instead of bin dir,
 # which breaks source file resolution for copy_files_to_bin_actions copies.

@@ -11,7 +11,7 @@
   [eslint.config.js](../../eslint.config.js) and [.prettierrc.cjs](../../.prettierrc.cjs)
   own each tool's rules. Do not add package-level Ruff or mypy configuration.
 
-Bazel runs ESLint and mypy. Pre-commit runs Buildifier from the Nix devshell.
+Bazel runs ESLint and mypy. Pre-commit runs Buildifier and Prettier from the Nix devshell.
 
 A hook that runs `bazel` serializes pre-commit's parallel batches on the Bazel
 client lock; `bazel run --script_path` writes a launcher that runs after Bazel
