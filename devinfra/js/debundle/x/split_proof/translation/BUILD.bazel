@@ -265,6 +265,14 @@ js_test(
 )
 
 js_test(
+    name = "linked_identifier_assignment_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_identifier_assignment_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "linked_logical_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,
