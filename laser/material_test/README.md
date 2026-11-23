@@ -157,26 +157,13 @@ padded a configurable amount outside the grid cells.
 For `.rd` output, the whole grid is shifted so the border starts at `(0, 0)`;
 the configured padding between the border and cells is preserved.
 
-### LightBurn Layer Structure
+### Layer order
 
-| Layer index      | Content                                        |
-| ---------------- | ---------------------------------------------- |
-| 0                | All text (title, labels, values, in-cell text) |
-| 1 … N×M          | One cut layer per grid cell (N cols × M rows)  |
-| N×M+1 (optional) | Border rectangle layer                         |
-
-Each grid cell gets its own `CutSetting` because the combination of X and Y parameter
-values is unique per cell. Layer 0 uses a distinct, low-power cut setting for marking.
-
-#### Layer structure (3D/4D)
-
-| Layer index    | Content                                             |
-| -------------- | --------------------------------------------------- |
-| 0              | All text (title, labels, values, in-cell text)      |
-| 1 … T          | One cut layer per cell, sequential across sub-grids |
-| T+1 (optional) | Border rectangle layer                              |
-
-Cells are numbered sequentially: outer_row × outer_col × inner_row × inner_col.
+Both exporters give each cell its own layer and sort all cells by
+`max_power × num_passes / speed` in ascending order to start with lower-energy cuts.
+Ties keep grid order, traversing the sub-grids and then their cells row by row.
+LightBurn reserves layer 0 for low-power text marking. Ruida starts with the first
+cell at layer 0. In both formats, the optional border has the last layer.
 
 ### 3D/4D Layout Details
 
