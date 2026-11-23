@@ -313,7 +313,7 @@ def arrayProto : Addr := ⟨0, 2⟩
 def asyncFunctionProto : Addr := ⟨0, 3⟩
 
 def Func.intrinsicProto (f : Func) : Addr :=
-  if f.kind == .asyncMethod then asyncFunctionProto else functionProto
+  if f.kind == .asyncFn then asyncFunctionProto else functionProto
 
 /-- The string-keyed members of `Object.prototype`. A program reads one from any object that has no property of that name. -/
 def objectProtoNames : List String :=

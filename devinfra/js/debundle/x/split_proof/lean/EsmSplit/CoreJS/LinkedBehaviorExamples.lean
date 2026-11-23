@@ -217,7 +217,7 @@ private theorem objectSpreadExecution : LinkedBehavior.Equivalent objectSpreadPr
 
 -- Inspect the CoreJS heap as well as checking the emitted JavaScript in Node.
 private def asyncMethodShape : M World.probe Bool := do
-  let fn ← makeFunc ⟨[], .undef⟩ (.opaque "read" .asyncMethod false 1 0 1 [] (some "deferred"))
+  let fn ← makeFunc ⟨[], .undef⟩ (.opaque "read" .asyncFn false 1 0 1 [] (some "deferred"))
   let .obj proto ← prim (callFn 8) .getPrototypeOf [fn] | return false
   let .obj parent ← prim (callFn 8) .getPrototypeOf [.obj proto] | return false
   let .str name ← getProp (callFn 8) fn (.str "name") | return false
