@@ -20,6 +20,14 @@ class Poll:
     used: float
     reset: datetime | None
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> Poll:
+        return cls(
+            parse_time(row["observed_at"]),
+            row["used_percent"],
+            parse_time(row["reset_at"]) if row["reset_at"] else None,
+        )
+
 
 @dataclass(frozen=True)
 class ObservedRate:
@@ -110,13 +118,7 @@ def summarize_quota(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
         if identity in seen:
             continue
         seen.add(identity)
-        groups[key].append(
-            Poll(
-                parse_time(row["observed_at"]),
-                row["used_percent"],
-                parse_time(row["reset_at"]) if row["reset_at"] else None,
-            )
-        )
+        groups[key].append(Poll.from_row(row))
     cutoff = max(p.at for group in groups.values() for p in group)
     summaries, timelines = [], []
     for (provider, seconds, name), polls in groups.items():

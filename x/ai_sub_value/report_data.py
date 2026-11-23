@@ -13,7 +13,6 @@ from typing import Any
 from x.ai_sub_value.analyze import (
     Poll,
     discontinuity,
-    parse_time,
     read_rows,
     require_single_quota_account,
     summarize_accounting,
@@ -22,7 +21,7 @@ from x.ai_sub_value.analyze import (
 )
 from x.ai_sub_value.plan_history import (
     CodexPlanPeriod,
-    codex_plan_at,
+    quota_plan_period,
     read_codex_plan_history,
     validate_reported_codex_plan_types,
 )
@@ -114,21 +113,10 @@ def quota_weekly(
     groups: dict[tuple[str, int, str, CodexPlanPeriod | None], dict[str, Poll]] = defaultdict(dict)
     reported_plan_types: dict[tuple[str, int, str, CodexPlanPeriod | None], set[str]] = defaultdict(set)
     for row in rows:
-        at = parse_time(row["observed_at"])
-        plan_period = None
-        if row["provider"] == "codex" and not row["window_name"]:
-            if not codex_plan_periods:
-                raise ValueError("Codex quota summaries require a timestamped --codex-plan-history input")
-            plan_period = codex_plan_at(at, codex_plan_periods)
-            if plan_period is None:
-                raise ValueError(
-                    f"Codex quota poll at {at.isoformat()} is outside the supplied plan history; "
-                    "extend the history so every Codex poll has an exact plan label"
-                )
+        poll = Poll.from_row(row)
+        plan_period = quota_plan_period(row["provider"], row["window_name"], poll.at, codex_plan_periods)
         group = (row["provider"], row["window_seconds"], row["window_name"], plan_period)
-        groups[group][row["event_id"]] = Poll(
-            at, row["used_percent"], parse_time(row["reset_at"]) if row["reset_at"] else None
-        )
+        groups[group][row["event_id"]] = poll
         if row.get("reported_plan_type"):
             reported_plan_types[group].add(str(row["reported_plan_type"]))
     for (*_, plan_period), reported in reported_plan_types.items():
