@@ -6,6 +6,16 @@ load(":splitter_launcher.bzl", "splitter_launcher")
 
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
+filegroup(
+    name = "analysis_inventory_sources",
+    srcs = [
+        "EsmSplit/Effects.lean",
+        "EsmSplit/IntrinsicMembers.lean",
+        "EsmSplit/Intrinsics.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
 lean_library(
     name = "plan",
     srcs = [
@@ -39,11 +49,9 @@ lean_library(
 lean_library(
     name = "effects",
     srcs = [
-        "EsmSplit/Effects.lean",
-        "EsmSplit/IntrinsicMembers.lean",
-        "EsmSplit/Intrinsics.lean",
         "EsmSplit/Lower.lean",
         "EsmSplit/TranslateInput.lean",
+        ":analysis_inventory_sources",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
     deps = [":estree"],

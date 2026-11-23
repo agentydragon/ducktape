@@ -6,12 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import shiftFuzzer from "shift-fuzzer";
-import codegen from "shift-codegen";
-import { composeModernExpressions } from "./modern_syntax.mjs";
 import { lowerDump } from "../lowering/dump_core.mjs";
+import { shiftCandidate } from "./shift_candidate.mjs";
+import { walk } from "./syntax_inventory.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
-import { mulberry32 } from "../seeded_random.mjs";
 
 // Named source-syntax families from the input requirements. Counts describe
 // syntactic presence, not execution of every branch or semantic equivalence.
@@ -113,13 +111,9 @@ const features = [
   "UpdateExpression:++",
   "UpdateExpression:--",
 ];
-function syntaxFeatures(node, found = new Set()) {
-  if (!node || typeof node !== "object") return found;
-  if (Array.isArray(node)) {
-    for (const item of node) syntaxFeatures(item, found);
-    return found;
-  }
-  if (node.type) {
+function syntaxFeatures(root, found = new Set(), types) {
+  walk(root, (node) => {
+    types?.add(node.type);
     found.add(node.type);
     if (node.type === "VariableDeclaration") found.add(`${node.type}:${node.kind}`);
     if (node.operator) found.add(`${node.type}:${node.operator}`);
@@ -142,8 +136,7 @@ function syntaxFeatures(node, found = new Set()) {
     if (node.type === "Literal" && node.regex) found.add("literal:regexp");
     if (node.type === "Literal" && node.bigint !== undefined) found.add("literal:bigint");
     if (node.type === "MetaProperty") found.add(`meta:${node.meta.name}.${node.property.name}`);
-  }
-  for (const value of Object.values(node)) if (value && typeof value === "object") syntaxFeatures(value, found);
+  });
   return found;
 }
 function emptyCoverage() {
@@ -160,11 +153,8 @@ function emptyCoverage() {
         emitterRejected: 0,
         acceptedThrowing: 0,
         acceptedSame: 0,
-        acceptedSameOk: 0,
         acceptedSameReordered: 0,
-        acceptedSameOkReordered: 0,
         acceptedSameInSide: 0,
-        acceptedSameOkInSide: 0,
       },
     ])
   );
@@ -228,83 +218,23 @@ const stats = {
 const coverage = emptyCoverage();
 const syntax = new Set(),
   acceptedSyntax = new Set();
-function collect(node, target) {
-  if (!node || typeof node !== "object") return;
-  if (Array.isArray(node)) return node.forEach((child) => collect(child, target));
-  if (typeof node.type === "string") target.add(node.type);
-  for (const value of Object.values(node)) if (value && typeof value === "object") collect(value, target);
-}
 for (let seed = startSeed; seed < startSeed + count; seed++) {
   stats.attempted++;
-  const random = mulberry32(seed);
-  const shift = (scriptGrammar ? shiftFuzzer.fuzzScript : shiftFuzzer.fuzzModule)(
-    new shiftFuzzer.FuzzerState({ maxDepth: 4, rng: random })
-  );
-  let source = codegen.default ? codegen.default(shift) : codegen(shift);
-  let parsed;
-  try {
-    parsed = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
-  } catch {
-    stats.parseRejected++;
+  const candidate = shiftCandidate(seed, { script: scriptGrammar, modern });
+  const { ast: parsed, random, shift, marker, sites, skip } = candidate;
+  if (sites) stats.modernComposed++;
+  if (!parsed) {
+    stats[skip]++;
     continue;
   }
-  let marker = null;
-  if (modern) {
-    marker = `__shift_modern_marker_${seed}`;
-    // Restrict generated code that could discover the non-enumerable marker
-    // through the VM global or dynamic code. The marker is also excluded from
-    // the original source, so it cannot be shadowed or referenced directly.
-    const forbidden = new Set([
-      "globalThis",
-      "global",
-      "self",
-      "window",
-      "eval",
-      "Function",
-      "Reflect",
-      "Proxy",
-      marker,
-    ]);
-    let unsafe = false;
-    (function scan(node) {
-      if (!node || typeof node !== "object") return;
-      if (Array.isArray(node)) return node.forEach(scan);
-      if (
-        node.type === "ThisExpression" ||
-        node.type === "ImportExpression" ||
-        (node.type === "Identifier" && forbidden.has(node.name))
-      )
-        unsafe = true;
-      for (const value of Object.values(node)) if (value && typeof value === "object") scan(value);
-    })(parsed);
-    if (unsafe) {
-      stats.instrumentationRejected++;
-      continue;
-    }
-    const composed = composeModernExpressions(source, parsed, mulberry32(seed ^ 0x8b11c5), marker);
-    if (composed.sites) stats.modernComposed++;
-    source = composed.source;
-    try {
-      parsed = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
-    } catch {
-      stats.parseRejected++;
-      continue;
-    }
-  }
-  collect(parsed, syntax);
-  const present = syntaxFeatures(parsed);
+  const present = syntaxFeatures(parsed, new Set(), syntax);
   const record = (outcome, selected = present) => {
     for (const feature of features) if (selected.has(feature)) coverage[feature][outcome]++;
   };
   record("parsed");
-  if (parsed.body.some((s) => /^(Import|Export)/.test(s.type))) {
-    stats.moduleSyntax++;
-    record("moduleSyntax");
-    continue;
-  }
-  if (parsed.body.length < 2 || parsed.body.length > 30) {
-    stats.small++;
-    record("small");
+  if (skip) {
+    stats[skip]++;
+    record(skip);
     continue;
   }
   // Observe initialized top-level values without accessing arbitrary object
@@ -317,7 +247,9 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
         : []
   );
   const unique = [...new Set(names)].slice(0, 8);
-  source += `\nconsole.log("__bindings", ${unique.map((n) => `(typeof ${n} === "object" || typeof ${n} === "function" ? typeof ${n} : ${n})`).join(", ")});\n`;
+  const source =
+    candidate.source +
+    `\nconsole.log("__bindings", ${unique.map((n) => `(typeof ${n} === "object" || typeof ${n} === "function" ? typeof ${n} : ${n})`).join(", ")});\n`;
   const dir = path.join(root, `seed-${seed}`);
   const out = path.join(dir, "out");
   mkdirSync(out, { recursive: true });
@@ -343,14 +275,15 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     record("loweringRejected");
     continue;
   }
-  const total = topLevelStatements(dump).length;
+  // Source units exclude the binding observer appended to the entry module.
+  const units = topLevelStatements(parsed);
   const side = [];
-  for (let i = 0; i < total - 1; i++) if (random() < 0.5) side.push(i);
+  for (let i = 0; i < units.length; i++) if (random() < 0.5) side.push(i);
   if (!side.length) side.push(0);
   const spec = {
     entry: "entry.mjs",
     modules: {
-      "entry.mjs": Array.from({ length: total }, (_, i) => i)
+      "entry.mjs": Array.from({ length: units.length + 1 }, (_, i) => i)
         .filter((i) => !side.includes(i))
         .map((i) => `#${i}`),
       "side.mjs": side.map((i) => `#${i}`),
@@ -385,7 +318,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   }
   stats.accepted++;
   if (baseline.status === "ok") stats.acceptedOk++;
-  collect(parsed, acceptedSyntax);
+  walk(parsed, (node) => acceptedSyntax.add(node.type));
   const executed =
     modern && baseline.status === "ok"
       ? Object.keys(stats.modernExecuted).filter((kind) => baseline.modern.includes(kind))
@@ -425,13 +358,8 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   record("acceptedSame");
   if (reordered) record("acceptedSameReordered");
   const sideFeatures = new Set();
-  for (const index of side) syntaxFeatures(parsed.body[index], sideFeatures);
+  for (const index of side) syntaxFeatures(units[index].node, sideFeatures);
   record("acceptedSameInSide", sideFeatures);
-  if (baseline.status === "ok") {
-    record("acceptedSameOk");
-    if (reordered) record("acceptedSameOkReordered");
-    record("acceptedSameOkInSide", sideFeatures);
-  }
 }
 for (const row of Object.values(coverage)) {
   assert.equal(
@@ -445,8 +373,12 @@ for (const row of Object.values(coverage)) {
       row.acceptedThrowing +
       row.acceptedSame
   );
-  assert(row.acceptedSameOkInSide <= row.acceptedSameInSide && row.acceptedSameInSide <= row.acceptedSame);
-  assert(row.acceptedSameOkReordered <= row.acceptedSameReordered && row.acceptedSameReordered <= row.acceptedSame);
+  assert(row.acceptedSameInSide <= row.acceptedSame);
+  assert(row.acceptedSameReordered <= row.acceptedSame);
+  // The report retains its Ok fields. Under P4 only completing baselines reach the comparison.
+  row.acceptedSameOk = row.acceptedSame;
+  row.acceptedSameOkInSide = row.acceptedSameInSide;
+  row.acceptedSameOkReordered = row.acceptedSameReordered;
 }
 if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
   writeFileSync(

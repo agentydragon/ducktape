@@ -17,13 +17,9 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import * as acorn from "acorn";
-import shiftFuzzer from "shift-fuzzer";
-import codegen from "shift-codegen";
 import { DEFAULT_LEAN_DIR, readAnalysisInventory } from "./analysis_inventory.mjs";
-import { composeModernExpressions } from "./modern_syntax.mjs";
+import { shiftCandidate } from "./shift_candidate.mjs";
 import { FORMS, NODE_TYPES, featuresOf, parseModule } from "./syntax_inventory.mjs";
-import { mulberry32 } from "../seeded_random.mjs";
 import { spawnAndWait } from "./spawn_and_wait.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -52,39 +48,15 @@ const fuzzBundles =
       .map((f) => ({ source: readFileSync(path.join(dir, f), "utf8") }));
   };
 
-/** The programs of `shift_fuzz_test.mjs`: Shift's grammar, printed, parsed as a module, without import and export
-declarations and with 2 to 30 statements (what the test keeps). `modern` composes the modern expressions in. */
+/** Sample the emitter test's candidates before it appends its binding observer. */
 const shiftPrograms =
-  ({ script, modern }) =>
-  async ({ count, seed }) => {
-    const programs = [];
-    for (let s = seed; s < seed + count; s++) {
-      const random = mulberry32(s);
-      const tree = (script ? shiftFuzzer.fuzzScript : shiftFuzzer.fuzzModule)(
-        new shiftFuzzer.FuzzerState({ maxDepth: 4, rng: random })
-      );
-      let source = codegen.default ? codegen.default(tree) : codegen(tree);
-      let prelude = "";
-      try {
-        let ast = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
-        if (modern) {
-          const marker = `__shift_modern_marker_${s}`;
-          source = composeModernExpressions(source, ast, mulberry32(s ^ 0x8b11c5), marker).source;
-          ast = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
-          prelude = `globalThis.${marker} = (kind, value) => value;\n`;
-        }
-        if (ast.body.some((st) => /^(Import|Export)/.test(st.type)) || ast.body.length < 2 || ast.body.length > 30) {
-          programs.push({ source, skipped: "the test skips it" });
-          continue;
-        }
-      } catch {
-        programs.push({ source, skipped: "does not parse" });
-        continue;
-      }
-      programs.push({ source, prelude });
-    }
-    return programs;
-  };
+  (options) =>
+  ({ count, seed }) =>
+    Array.from({ length: count }, (_, i) => {
+      const { source, marker, skip } = shiftCandidate(seed + i, options);
+      if (skip) return { source, skipped: skip === "parseRejected" ? "does not parse" : "the test skips it" };
+      return { source, prelude: marker ? `globalThis.${marker} = (kind, value) => value;\n` : "" };
+    });
 
 export const GENERATORS = [
   { id: "templates", title: "`fuzz.mjs`: unit templates", produce: fuzzBundles([]) },

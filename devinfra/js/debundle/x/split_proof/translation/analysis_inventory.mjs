@@ -2,7 +2,7 @@
 // (`eval`, `exec`, `evalClass`, `bindPattern`; any other type is a give-up, which makes its unit touch the world), the
 // rows of the table of standard functions (`Intrinsics.lean`) and the members the standard objects have
 // (`IntrinsicMembers.lean`). A text scan: it stays right while the sources keep the shapes it reads, and
-// `coverage_audit_test.mjs` runs it on small samples of those shapes.
+// `coverage_audit_test.mjs` runs it on the same sources as the report.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,10 +32,14 @@ export function nodeTypeArms(source, name) {
 
 /** Keys of the `table` of `Intrinsics.lean`, with the rows of `iteratorHelperRows` expanded. */
 export function tableKeys(source) {
-  const table = source.slice(source.search(/^def table\b/m));
-  const end = table.search(/\] : List \(String × Summary\)/);
-  if (end < 0) throw new Error("the end of `table` was not found");
-  const keys = [...table.slice(0, end).matchAll(/\("([^"]+)",\s*\{/g)].map((m) => m[1]);
+  const table = definitionText(source, "table");
+  const end = /^\](.*)$/m.exec(table);
+  if (!end) throw new Error("the end of `table` was not found");
+  const keys = [...table.slice(0, end.index).matchAll(/\("([^"]+)",\s*\{/g)].map((m) => m[1]);
+  const suffix = end[1].trim();
+  if (!suffix) return keys;
+  // Older --lean inputs appended generated iterator rows to the literal table.
+  if (suffix !== ": List (String × Summary)) ++ iteratorHelperRows)") throw new Error("unknown intrinsic table suffix");
   const helpers = source.match(
     /def iteratorHelperRows[\s\S]*?\[([^\]]*)\]\.flatMap fun m =>\s*\[([^\]]*)\]\.map fun c/
   );
@@ -53,14 +57,6 @@ export function memberPaths(source) {
   return [...list.matchAll(/^\s*"([^"]+)",?$/gm)].map((m) => m[1]);
 }
 
-/** A `List String` definition such as `intrinsicGlobals`. */
-export function stringList(source, name) {
-  const start = source.search(new RegExp(`def ${name}\\b`));
-  if (start < 0) throw new Error(`no definition of ${name}`);
-  const open = source.indexOf("[", start);
-  return [...source.slice(open, source.indexOf("]", open)).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-}
-
 export function readAnalysisInventory(leanDir = DEFAULT_LEAN_DIR) {
   const read = (file) => readFileSync(path.join(leanDir, file), "utf8");
   const effects = read("Effects.lean");
@@ -69,6 +65,5 @@ export function readAnalysisInventory(leanDir = DEFAULT_LEAN_DIR) {
     arms: Object.fromEntries(INTERPRETER_FUNCTIONS.map((f) => [f, nodeTypeArms(effects, f)])),
     tableKeys: tableKeys(intrinsics),
     memberPaths: memberPaths(read("IntrinsicMembers.lean")),
-    intrinsicGlobals: stringList(intrinsics, "intrinsicGlobals"),
   };
 }
