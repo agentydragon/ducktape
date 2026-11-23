@@ -120,4 +120,27 @@ theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : Checked
   unfold runProgram
   rw [M.bind_apply, checked.equation]
 
+/-- Keep the unit identity, complete statement, receiver and bindings the statement uses. -/
+def captureUnits (us : List (Nat × Stmt × Env)) : List (Nat × Stmt × Env) :=
+  us.map fun (id, stmt, env) => (id, stmt, env.capture stmt.free)
+
+theorem runUnits_capture (fuel : Nat) (us : List (Nat × Stmt × Env)) :
+    (runUnits fuel (captureUnits us) : M w Unit) = runUnits fuel us := by
+  induction us with
+  | nil => rfl
+  | cons u us ih =>
+    obtain ⟨id, stmt, env⟩ := u
+    simp only [captureUnits, List.map_cons, runUnits, runUnit] at ih ⊢
+    rw [capture_faithful fuel env stmt stmt.free (fun _ h => h), ih]
+
+/-- Once the two real links agree on the hoisted state and the ordered captured
+units, every bounded run agrees, including for unknown host behavior. -/
+theorem run_eq_of_ordered_links {source candidate : Program} {w : World}
+    (fuel : Nat) (sourceLink : CheckedLink source w) (candidateLink : CheckedLink candidate w)
+    (ready : sourceLink.ready = candidateLink.ready)
+    (schedule : captureUnits (unitsOf sourceLink.linked) = captureUnits (unitsOf candidateLink.linked)) :
+    runProgram w fuel source = runProgram w fuel candidate := by
+  rw [run_after_link fuel sourceLink, run_after_link fuel candidateLink, ready,
+    ← runUnits_capture fuel (unitsOf sourceLink.linked), schedule, runUnits_capture]
+
 end CoreJS.LinkedBehavior

@@ -77,6 +77,27 @@ theorem movedClosure : LinkedBehavior.Equivalent source candidate ∧ LinkedBeha
 
 #audit_linked_programs movedClosure
 
+-- The call moves with the provider import. Its module loses the unrelated
+-- binding "moved" and the entry receives "created" through a glue import.
+private def ordered : Program where
+  entry := "main"
+  modules := [provider, ⟨"split", entry.imports, [callUnit], [("created", "created")]⟩,
+    { entry with imports := [⟨"split", [("created", "created")]⟩], body := [movedUnit] }]
+
+private noncomputable def sourceLink (w : World) : Option (LinkedBehavior.CheckedLink source w) := by
+  check_linked_layout
+
+private noncomputable def orderedLink (w : World) : Option (LinkedBehavior.CheckedLink ordered w) := by
+  check_linked_layout
+
+private def premises : HostPremises := {}
+
+theorem orderedClosure :
+    LinkedBehavior.EquivalentFor premises source ordered ∧ LinkedBehavior.SameExports source ordered := by
+  verify_ordered_linked_programs 16 sourceLink orderedLink premises
+
+#audit_linked_programs orderedClosure
+
 open Lean (Json)
 
 -- The insertion order and a negative decimal distinguish this literal from a reparse of

@@ -648,6 +648,23 @@ macro "verify_linked_exports_from " source:ident candidate:ident : tactic =>
      rw [(($source w).get (by rfl)).equation, (($candidate w).get (by rfl)).equation]
      first | rfl | cbv <;> rfl))
 
+/-- Compare the two post-hoist states and captured schedules without evaluating their statements. -/
+macro "check_ordered_linked_runs " fuel:num source:ident candidate:ident world:term : tactic =>
+  `(tactic|
+    (apply run_eq_of_ordered_links $fuel (($source $world).get (by rfl)) (($candidate $world).get (by rfl))
+     all_goals first | rfl | cbv <;> rfl))
+
+macro "verify_ordered_linked_programs " fuel:num source:ident candidate:ident premises:ident : tactic =>
+  `(tactic|
+    (constructor
+     · apply of_host_evaluation (premises := $premises) $fuel
+       intro w
+       constructor
+       · rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl))]
+         first | cbv <;> rfl | rfl
+       · check_ordered_linked_runs $fuel $source $candidate (HostPremises.specialize $premises w)
+     · verify_linked_exports_from $source $candidate))
+
 /-- Reuse each checked link between execution and export matching. -/
 macro "verify_linked_programs_from " fuel:num source:ident candidate:ident premises:ident : tactic => do
   let reduce ← `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩)
@@ -823,12 +840,16 @@ private def layoutDeclaration (visibility program : String) : String :=
 
 /-- Three separately compiled modules check the shared result state before the
 ordinary AST gate imports their execution theorem. -/
-private def checkpointText (preamble options declarations correspondence : String) (fuel : Nat) (stageLink : Bool) : CheckpointText :=
+private def checkpointText (preamble options declarations correspondence : String) (fuel : Nat) (stageLink ordered : Bool) : CheckpointText :=
   let sourceLayout := if stageLink then layoutDeclaration "" "source" else ""
   let candidateLayout := if stageLink then layoutDeclaration "private " "candidate" else ""
   let reduceSource := if stageLink then s!"    reduce_linked_run_from {fuel} sourceLink w\n"
     else "    (conv =>\n      lhs\n      cbv) <;> rfl\n"
-  let reduceCandidate := if stageLink then s!"  reduce_linked_run_from {fuel} candidateLink w\n"
+  let candidateProof := if ordered then
+      s!"  have same : runProgram w {fuel} source = runProgram w {fuel} candidate := by\n" ++
+      s!"    check_ordered_linked_runs {fuel} sourceLink candidateLink w\n" ++
+      "  exact same.symm.trans (sourceWitness w).property\n"
+    else if stageLink then s!"  reduce_linked_run_from {fuel} candidateLink w\n"
     else "  (conv =>\n    lhs\n    cbv) <;> rfl\n"
   let checkExports := if stageLink then "  · verify_linked_exports_from sourceLink candidateLink\n"
     else "  · apply LinkedBehavior.sameExports_of_match\n    intro w\n    first | rfl | cbv <;> rfl\n"
@@ -847,7 +868,7 @@ private def checkpointText (preamble options declarations correspondence : Strin
     candidateLayout ++
     "private theorem candidateRun (w : World) :\n" ++
     s!"    runProgram w {fuel} candidate = .ok () (sourceWitness w).val := by\n" ++
-    reduceCandidate ++
+    candidateProof ++
     "theorem executions : LinkedBehavior.EquivalentFor {} source candidate ∧\n" ++
     "    LinkedBehavior.SameExports source candidate := by\n" ++
     "  constructor\n" ++
@@ -922,10 +943,16 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
     | .browserPage => "CoreJS.HostProfile.browserPage"
   let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
   -- Larger module graphs can spend most of one reduction budget on linking.
-  let stageLink := (source.modules.map (·.body.length)).sum ≥ 32
+  -- This only selects the proof attempt. The theorem checks the complete units,
+  -- free-name cells, hoisted state and entry exports from the actual links.
+  let order := fun (p : Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
+  let ordered := order source == order candidate
+  let stageLink := ordered || (source.modules.map (·.body.length)).sum ≥ 32
   let (layouts, tactic) := if stageLink then
     (layoutDeclaration "private " "source" ++ layoutDeclaration "private " "candidate",
-     s!"  first\n  | verify_linked_programs_from {fuel} sourceLink candidateLink premises\n  | {ordinaryTactic}\n")
+     "  first\n" ++
+     (if ordered then s!"  | verify_ordered_linked_programs {fuel} sourceLink candidateLink premises\n" else "") ++
+     s!"  | verify_linked_programs_from {fuel} sourceLink candidateLink premises\n  | {ordinaryTactic}\n")
     else ("", s!"  {ordinaryTactic}\n")
   let options := "\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
@@ -953,7 +980,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let checkpoint := if premises = {} ∧ writes.batches.isEmpty ∧ expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024 then
       -- Wide records also benefit from staging the link below the statement cutoff.
       some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel
-        (stageLink || hasWideRecord))
+        (stageLink || hasWideRecord) ordered)
     else none
   return { preamble, execution, correspondence, stagedGate, checkpoint, premises }
 
