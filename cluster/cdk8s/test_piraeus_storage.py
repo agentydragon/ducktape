@@ -54,7 +54,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(values: dict[str, Any]) -
 
     satellites = values["linstorSatelliteConfigurations"]
     assert satellites
-    [reactor_patch] = satellites[0]["patches"]
+    [reactor_patch] = [patch for patch in satellites[0]["patches"] if patch["target"]["kind"] == "ConfigMap"]
     assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
     # Scope the patch to Reactor's metrics configuration. The satellite's LINSTOR listener
     # is managed separately; a stray bind directive there can disconnect the node.
