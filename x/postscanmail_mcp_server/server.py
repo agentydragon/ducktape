@@ -22,8 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from collections.abc import Mapping
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 import httpx
 import uvicorn
@@ -118,20 +117,6 @@ class AutomationRulesPage(_Pagination):
     rules: list[AutomationRule]
 
 
-def _pagination(inner: Mapping[str, Any]) -> dict[str, Any]:
-    return {f: inner[f] for f in _Pagination.model_fields if f in inner}
-
-
-def _items_page(raw: Mapping[str, Any]) -> MailItemsPage:
-    inner = raw["data"]
-    return MailItemsPage(items=[MailItem.model_validate(r) for r in inner["data"]], **_pagination(inner))
-
-
-def _rules_page(raw: Mapping[str, Any]) -> AutomationRulesPage:
-    inner = raw["data"]
-    return AutomationRulesPage(rules=[AutomationRule.model_validate(r) for r in inner["data"]], **_pagination(inner))
-
-
 def _json(response: httpx.Response) -> object:
     """Read JSON from a 2xx response as opaque ``object``.
 
@@ -157,7 +142,8 @@ def build_mcp(client: httpx.AsyncClient) -> FastMCP:
         """
         resp = await client.get("/items", params={"sort_order": sort_order, "page": page})
         resp.raise_for_status()
-        return _items_page(resp.json())
+        paginator = resp.json()["data"]
+        return MailItemsPage.model_validate({**paginator, "items": paginator["data"]})
 
     @mcp.tool(annotations=_READ_ONLY)
     async def list_automation_rules(sort_order: SortOrder = "desc", page: int = 1) -> AutomationRulesPage:
@@ -169,7 +155,8 @@ def build_mcp(client: httpx.AsyncClient) -> FastMCP:
             "/user-defined-rules/system-user-defined-rules", params={"sort_order": sort_order, "page": page}
         )
         resp.raise_for_status()
-        return _rules_page(resp.json())
+        paginator = resp.json()["data"]
+        return AutomationRulesPage.model_validate({**paginator, "rules": paginator["data"]})
 
     @mcp.tool(annotations=_AUTOMATION_TOGGLE)
     async def set_automation_rule(automation_name: AutomationName, is_active: bool) -> object:
