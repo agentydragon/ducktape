@@ -17,7 +17,7 @@ data:
       millicpu: 4000
       # 7 GiB of the VM's 8 GiB; sizing evidence is beside the VM memory in cluster/cdk8s/buildbuddy_kvm_worker.py.
       memory_bytes: 7516192768
-      max_concurrent_tasks: 1
+      max_concurrent_tasks: 2
       runner_pool:
         # Allow 2 GiB of paused runners alongside a KVM test estimated at 5 GiB.
         # Discard a larger completed runner before it can evict smaller reusable runners.

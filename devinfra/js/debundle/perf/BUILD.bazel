@@ -17,8 +17,8 @@ _INPUT_ENV = {
     "DEBUNDLE_BENCH_SPEC_MARKER": "$(rlocationpath //devinfra/js/debundle/excalidraw:spec_vendor_marks)",
 }
 
-# Run on the single-action kvm-vm workers to reduce contention during timing
-# and profiling. The tools image supplies GNU time and optional profilers.
+# The timed benchmark reserves the full worker CPU and RAM to reduce contention.
+# The tools image supplies GNU time and optional profilers.
 _BENCH_TOOLS_IMAGE = "docker://" + BUILDBUDDY_REMOTE_RUNNER_IMAGE + "@" + BUILDBUDDY_REMOTE_RUNNER_DIGEST
 
 _BENCH_EXEC_PROPERTIES = {

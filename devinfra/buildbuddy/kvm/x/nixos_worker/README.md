@@ -40,8 +40,8 @@ real runtime directory and exposed at `/etc/rancher/k3s` for the executor's
 container bind mount. Each VM reports its SMBIOS product UUID as its unique
 executor hostname.
 
-The guest preserves the current worker's single-task executor configuration,
-advertised 4 vCPUs and 7 GiB memory, 24-hour task limit plus shutdown grace,
+The guest loads the worker's executor configuration from the ConfigMap. It preserves
+the advertised 4 vCPUs and 7 GiB memory, 24-hour task limit plus shutdown grace,
 Docker seccomp profile, ext4 data disk, nested KVM and kernel/sysctl settings,
 and disabled SSH. Node exporter listens on port 9100; the executor's host
 metrics and readiness endpoints use ports 9090 and 8080.

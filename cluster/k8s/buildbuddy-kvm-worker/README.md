@@ -1,7 +1,7 @@
 # KVM workers
 
 A KubeVirt `VirtualMachinePool` runs one BuildBuddy executor per VM in pool
-`kvm-vm`, with one action slot per executor. KEDA permits two to eight members.
+`kvm-vm`, with up to two concurrent actions per executor. KEDA permits two to eight members.
 Each guest has four vCPUs and 8 GiB RAM. Its launcher requests two CPUs and can
 use four. Members require nested KVM and a node-local SSD work volume.
 They may share a host. Required VM-test routing is configured separately.
@@ -85,8 +85,8 @@ also hold the current count. Flux initializes `spec.replicas` to KEDA's minimum
 of two for the KubeVirt scale subresource, then ignores HPA changes to that field.
 
 The dashboard also plots a shadow recommendation, `buildbuddy_kvm:shadow_target_workers`.
-Mimir evaluates it against the required KubeVirt suite's four CPUs, 7 GiB of
-RAM and 30 GiB of available work-disk space on the same healthy worker. A local
+Mimir checks for four CPUs, 7 GiB of RAM and 30 GiB of available work-disk
+space on the same healthy worker. A local
 reservation holds the desired count if a worker has room, or proposes one more
 VM otherwise, up to eight. Empty queues propose the number of busy workers with
 a floor of two. Incomplete worker telemetry or a VM still registering holds the
@@ -94,11 +94,11 @@ requested size. Missing pool telemetry leaves a gap. Compare this series with
 actual queue-to-start latency and idle VM-hours before wiring it to KEDA. A
 reservation can represent a smaller action or duplicate an action already running.
 
-The executor advertises four CPUs and 7 GiB, leaving 1 GiB for the guest. Each
-KVM suite declares its scheduling estimates. The required Agentplane VM suite
-uses four CPUs, 7 GiB of memory and 30 GiB of free disk. BuildBuddy parses the
-suite's `EstimatedFreeDiskBytes=30GB` in binary units. These allocations and
-the one-task limit stay independent of the image pin. The
+The executor advertises four CPUs and 7 GiB, leaving 1 GiB for the guest.
+KubeVirt and Firecracker each request all four CPUs and 5 GiB of RAM, so each
+occupies a worker alone. BuildBuddy interprets their free-disk requests of
+`30GB` and `20GB` as 30 GiB and 20 GiB, respectively. Two smaller actions can
+share a worker when their combined CPU and RAM estimates fit. The
 [worker comparison](https://agentydragon.github.io/ducktape/latency/#worker-image-comparison)
 measured faster cached startup without demonstrating faster tests, RAM savings
 or additional safe replicas.
