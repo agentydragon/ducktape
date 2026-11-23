@@ -55,6 +55,14 @@ private def unaryCall : Program := Program.single [
 
 example (W : World) : LinkedBehavior.normal (runProgram W 16 unaryCall) = true := by cbv
 
+-- The linked reducer must finish a wide dense array even with the ordinary
+-- argument recursion hidden from `cbv`.
+private def denseArray : Program := Program.single [
+  .decl .const "values" (.arr (List.replicate 16 (.arr [.str "item"]))) ]
+
+attribute [local cbv_opaque] evalArgs in
+example (W : World) : LinkedBehavior.normal (runProgram W 32 denseArray) = true := by cbv
+
 /-- Moving the independent closure to a dependency evaluates it before the imported
 factory call. The public export and the returned closure still refer to the same cells. -/
 theorem movedClosure : LinkedBehavior.Equivalent source candidate ∧ LinkedBehavior.SameExports source candidate := by

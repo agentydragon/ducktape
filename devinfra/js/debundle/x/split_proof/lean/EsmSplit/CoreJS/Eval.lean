@@ -191,6 +191,12 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
   initSelf env self name (.obj c)
   pure (.obj c)
 
+/-- The descriptors of a freshly allocated dense array, in element order. -/
+def arrayObject (vs : List Val) : Obj :=
+  let items := vs.zipIdx.map fun (v, i) => (toString i, Property.data v true true true)
+  { proto := some arrayProto, array := true,
+    props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
+
 mutual
 
 def evalExpr : Nat → Env → Expr → M W Val
@@ -212,10 +218,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       pure (.obj a)
     | .arr elems => do
       let vs ← evalArgs n env elems
-      let items := vs.zipIdx.map fun (v, i) => (toString i, Property.data v true true true)
-      let a ← alloc {
-        proto := some arrayProto, array := true,
-        props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
+      let a ← alloc (arrayObject vs)
       pure (.obj a)
     | .arrWithSpread _ => unknown "array spread requires iterator semantics"
     | .cls name self ctor members => do
