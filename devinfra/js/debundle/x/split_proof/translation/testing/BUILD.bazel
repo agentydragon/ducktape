@@ -43,6 +43,11 @@ js_library(
 )
 
 js_library(
+    name = "lint_sources",
+    srcs = glob(["**/*.mjs"]),
+)
+
+js_library(
     name = "linked_programs",
     srcs = ["linked_programs.mjs"],
     deps = [

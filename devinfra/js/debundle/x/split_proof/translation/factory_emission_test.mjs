@@ -20,37 +20,29 @@ function emit(name, code, selectedSide, force = false) {
   );
   return { ...fixture, result };
 }
+function assertOutput({ result, source, dir }, expected) {
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const before = run(process.execPath, [source]);
+  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(before.status, 0, before.stderr);
+  assert.equal(after.status, 0, after.stderr);
+  assert.equal(after.stdout, before.stdout);
+  assert.equal(after.stdout, expected);
+}
+
 const goodResult = emit("good", good);
-assert.equal(goodResult.result.status, 0, `${goodResult.result.stdout}\n${goodResult.result.stderr}`);
-const before = run(process.execPath, [goodResult.source]);
-const after = run(process.execPath, [path.join(goodResult.dir, "entry.mjs")]);
-assert.equal(before.status, 0, before.stderr);
-assert.equal(after.status, 0, after.stderr);
-assert.equal(after.stdout, before.stdout);
-assert.equal(after.stdout, "side\ncallback\n");
+assertOutput(goodResult, "side\ncallback\n");
 const checked = checkTranslation(frontBundle(goodResult.source), goodResult.dir);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 const multi = good
   .replace("const result = factory(callback);", "const result = factory(callback);\nconst result2 = factory(callback);")
   .replace("result();", "void (result(), result2());");
 const multiResult = emit("multi", multi);
-assert.equal(multiResult.result.status, 0, `${multiResult.result.stdout}\n${multiResult.result.stderr}`);
-const multiBefore = run(process.execPath, [multiResult.source]);
-const multiAfter = run(process.execPath, [path.join(multiResult.dir, "entry.mjs")]);
-assert.equal(multiBefore.status, 0, multiBefore.stderr);
-assert.equal(multiAfter.status, 0, multiAfter.stderr);
-assert.equal(multiAfter.stdout, multiBefore.stdout);
-assert.equal(multiAfter.stdout, "side\ncallback\ncallback\n");
+assertOutput(multiResult, "side\ncallback\ncallback\n");
 // An external observer receives the actual fresh closure and invokes it later.
 const escape = `globalThis.capture = f => { globalThis.saved = f; };\n${good.replace("result();", "globalThis.capture(result);\nglobalThis.saved();")}`;
 const escapeResult = emit("escape", escape, [0, 4]);
-assert.equal(escapeResult.result.status, 0, `${escapeResult.result.stdout}\n${escapeResult.result.stderr}`);
-const escapeBefore = run(process.execPath, [escapeResult.source]);
-const escapeAfter = run(process.execPath, [path.join(escapeResult.dir, "entry.mjs")]);
-assert.equal(escapeBefore.status, 0, escapeBefore.stderr);
-assert.equal(escapeAfter.status, 0, escapeAfter.stderr);
-assert.equal(escapeAfter.stdout, escapeBefore.stdout);
-assert.equal(escapeAfter.stdout, "side\ncallback\n");
+assertOutput(escapeResult, "side\ncallback\n");
 // Moving an observer/call before the result exists must be rejected.
 for (const observer of ["result();", "globalThis.observe(result);"]) {
   const bad = good.replace('console.log("side");', observer);

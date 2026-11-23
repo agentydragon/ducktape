@@ -66,10 +66,7 @@ eslint_test(
     name = "eslint_test",
     srcs = [
         ":lint_sources",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:lint_sources",
     ],
 )
 
