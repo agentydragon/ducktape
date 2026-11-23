@@ -1387,11 +1387,16 @@ def register_batch_tools(
 
         return {"kind": "ok", "cleared": len(items)}
 
-    async def _fetch_volatile_with_maps(client: GrocyClient) -> tuple[dict[str, Any], dict[int, str], dict[int, str]]:
-        """Fetch ``/stock/volatile`` and build QU + location name maps in one shot."""
+    async def _fetch_volatile(client: GrocyClient) -> dict[str, Any]:
         r = await _retry(lambda: client.get("/stock/volatile"))
         r.raise_for_status()
         data: dict[str, Any] = r.json()
+        return data
+
+    async def _fetch_volatile_with_locations(
+        client: GrocyClient,
+    ) -> tuple[dict[str, Any], dict[int, str], dict[int, str]]:
+        data = await _fetch_volatile(client)
         qu_names, location_names = await asyncio.gather(
             client.entity_name_map(EntityType.QUANTITY_UNIT), client.entity_name_map(EntityType.LOCATION)
         )
@@ -1415,8 +1420,9 @@ def register_batch_tools(
         already-expired stock use `get_expired_stock`; for low-stock use
         `get_below_minimum_stock`.
         """
-        data, qu_names, location_names = await _fetch_volatile_with_maps(client)
-        cutoff = datetime.now(tz=UTC).date() + timedelta(days=days_ahead)
+        data, qu_names, location_names = await _fetch_volatile_with_locations(client)
+        today = datetime.now(tz=UTC).date()
+        cutoff = today + timedelta(days=days_ahead)
         result = []
 
         for entry in data.get("due_products", []):
@@ -1433,7 +1439,7 @@ def register_batch_tools(
                     "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
                     "location_name": _lookup_name(product, "location_id", location_names),
                     "best_before_date": entry.get("best_before_date"),
-                    "days_until_expiry": (expiry_date - datetime.now(tz=UTC).date()).days,
+                    "days_until_expiry": (expiry_date - today).days,
                 }
             )
         return result
@@ -1448,7 +1454,8 @@ def register_batch_tools(
         via `products_create` / `products_edit`. See also
         `get_expiring_stock` and `get_expired_stock`.
         """
-        data, qu_names, _ = await _fetch_volatile_with_maps(client)
+        data = await _fetch_volatile(client)
+        qu_names = await client.entity_name_map(EntityType.QUANTITY_UNIT)
 
         result = []
         for entry in data.get("missing_products", []):
@@ -1478,13 +1485,14 @@ def register_batch_tools(
         but not yet expired, use `get_expiring_stock`. For low-stock,
         use `get_below_minimum_stock`.
         """
-        data, qu_names, location_names = await _fetch_volatile_with_maps(client)
+        data, qu_names, location_names = await _fetch_volatile_with_locations(client)
+        today = datetime.now(tz=UTC).date()
 
         result = []
         for entry in data.get("expired_products", []):
             product = entry.get("product") or {}
             expiry_date = _parse_date(entry.get("best_before_date"))
-            days_overdue = (datetime.now(tz=UTC).date() - expiry_date).days if expiry_date else 0
+            days_overdue = (today - expiry_date).days if expiry_date else 0
 
             result.append(
                 {
