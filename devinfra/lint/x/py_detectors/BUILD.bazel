@@ -16,7 +16,7 @@
 
 """Python detectors package — entry points and shared infrastructure."""
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//devinfra/lint/x/py_detectors:__subpackages__"])
 
@@ -73,4 +73,14 @@ py_binary(
     main_module = "devinfra.lint.x.py_detectors.main",
     visibility = ["//visibility:private"],
     deps = [":main"],
+)
+
+py_test(
+    name = "test_import_graph",
+    srcs = ["test_import_graph.py"],
+    deps = [
+        ":import_graph",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )
