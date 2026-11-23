@@ -1,7 +1,8 @@
 // Tables from the JSON lines `run_splits.mjs` wrote.
+// Uses Map.groupBy (Node.js 21+).
 //
 //   node summarize.mjs results/*.jsonl
-import { groupBy, markdownTable, readJsonLines } from "../../reporting.mjs";
+import { markdownTable, readJsonLines } from "../../reporting.mjs";
 
 const rows = readJsonLines(process.argv.slice(2));
 const count = (rs, p) => rs.filter(p).length;
@@ -18,7 +19,7 @@ const header = [
   "Rejected splits that fail each check",
 ];
 const body = [];
-for (const [key, rs] of groupBy(rows, (r) => `${r.bundle}\t${r.strategy}`)) {
+for (const [key, rs] of Map.groupBy(rows, (r) => `${r.bundle}\t${r.strategy}`)) {
   const rejected = rs.filter((r) => r.verdict === "reject");
   const why = {};
   for (const r of rejected)

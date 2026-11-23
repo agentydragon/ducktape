@@ -9,17 +9,6 @@ export function readJsonLines(paths) {
   );
 }
 
-export function groupBy(items, key) {
-  const groups = new Map();
-  for (const item of items) {
-    const value = key(item);
-    const group = groups.get(value);
-    if (group) group.push(item);
-    else groups.set(value, [item]);
-  }
-  return groups;
-}
-
 // Match Prettier's padding so generated tables can be checked in directly.
 export function markdownTable(header, body) {
   const all = [header, ...body];
