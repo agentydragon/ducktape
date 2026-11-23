@@ -73,7 +73,7 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 		return nil, err
 	}
 	result := &bbapipb.InvocationExport{TestStatus: map[string]bespb.TestStatus{}}
-	for _, artifact := range artifacts {
+	for _, artifact := range artifacts.files {
 		if artifact.Kind == kindBuild {
 			result.Outputs = append(result.Outputs, artifact.Artifact)
 		}

@@ -51,7 +51,7 @@ func parseOrFail(t *testing.T, stream string) []artifact {
 	if err != nil {
 		t.Fatalf("parseArtifacts: %v", err)
 	}
-	return got
+	return got.files
 }
 
 func find(artifacts []artifact, name string) (artifact, bool) {
@@ -305,6 +305,39 @@ func TestNearArtifacts(t *testing.T) {
 	}
 }
 
+func TestRunnerArtifactsIncludeChildTargetsAndRunnerUploads(t *testing.T) {
+	streams := map[string]string{
+		"runner": `[
+            {"children":[{"childInvocationCompleted":{"invocationId":"bazel"}}]},
+            {"id":{"targetCompleted":{"label":"steps[0]"}},"completed":{"outputGroup":[{"fileSets":[{"id":"command-0"}]}]}},
+            {"id":{"namedSet":{"id":"command-0"}},"namedSetOfFiles":{"files":[{"name":"generated.patch","uri":"bytestream://host/blobs/abc/7"}]}}
+        ]`,
+		"bazel": besStream,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stream, ok := streams[r.URL.Query().Get("invocation_id")]
+		if !ok || r.URL.Query().Get("artifact") != "raw_json" {
+			http.Error(w, "unexpected invocation", http.StatusBadRequest)
+			return
+		}
+		_, _ = io.WriteString(w, stream)
+	}))
+	defer server.Close()
+
+	files, err := listArtifactsResolved(&client{baseURL: server.URL, http: server.Client()}, "runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch, err := resolveArtifact(files, "steps[0]/generated.patch")
+	if err != nil || patch.GetInvocationId() != "runner" {
+		t.Fatalf("runner patch: %v, %v", patch, err)
+	}
+	log, err := resolveArtifact(files, "test.log")
+	if err != nil || log.GetInvocationId() != "bazel" {
+		t.Fatalf("child test log: %v, %v", log, err)
+	}
+}
+
 func TestArtifactAndToolLogDownloadsIncludeInvocationID(t *testing.T) {
 	const (
 		invocationID = "old-invocation-id"
@@ -323,7 +356,7 @@ func TestArtifactAndToolLogDownloadsIncludeInvocationID(t *testing.T) {
 			name:   "artifact cat",
 			stream: artifactStream,
 			downloaded: func(t *testing.T, c *client) ([]byte, error) {
-				artifacts, err := listArtifacts(c, invocationID)
+				artifacts, err := listArtifactsResolved(c, invocationID)
 				if err != nil {
 					return nil, err
 				}
@@ -337,7 +370,7 @@ func TestArtifactAndToolLogDownloadsIncludeInvocationID(t *testing.T) {
 			name:   "artifact download",
 			stream: artifactStream,
 			downloaded: func(t *testing.T, c *client) ([]byte, error) {
-				artifacts, err := listArtifacts(c, invocationID)
+				artifacts, err := listArtifactsResolved(c, invocationID)
 				if err != nil {
 					return nil, err
 				}

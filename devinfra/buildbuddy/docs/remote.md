@@ -418,8 +418,9 @@ bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
 bbapi invocation "$(cat /tmp/bbr-inv)"
 ```
 
-`bbapi` commands take either ID (outer auto-resolves to children), but the
-inner one names the targets/logs/artifacts directly.
+Use the inner ID for a single Bazel invocation. With the outer ID,
+`bbapi artifact list` includes both the child Bazel outputs and any files
+the runner uploaded from its steps.
 
 **Rejected: reading the ID back from `--invocation_id_file`.** bb writes that
 file once, at the end of a successfully tracked run, and bbr pointed every run
@@ -469,31 +470,18 @@ mkdir -p "$BUILDBUDDY_ARTIFACTS_DIRECTORY"
 git diff --binary -- cluster/generated cluster/k8s cluster/parked model_catalog/claude-wrappers.json > "$BUILDBUDDY_ARTIFACTS_DIRECTORY/model-manifests.patch"'
 ```
 
-Use the task's start date and scratch name. Record the **outer** invocation ID from
+Use the task's start date and scratch name. Set `invocation_id` to the **outer** invocation ID from
 `Streaming remote runner logs to:`. The script's Bazel invocations have separate IDs.
 Keep these generated files unchanged locally until applying the patch. The diff above
 captures tracked files only; a generator adding files also needs `git add -N` for those
 output paths on the remote runner before exporting the diff.
 
-Agentplane retrieval using its reviewed BuildBuddy egress placeholder (check
-`agentplane egress rules` first):
+After the script exits successfully, download the patch by its step label and filename.
+In Agentplane, check `agentplane egress rules` and set `BUILDBUDDY_API_KEY` to the
+reviewed `agentplane-credential-buildbuddy` placeholder for the local `bbapi` command.
 
 ```bash
-invocation_id=OUTER_INVOCATION_UUID
-curl -fsSL -H 'x-buildbuddy-api-key: agentplane-credential-buildbuddy' \
-  -H 'Content-Type: application/json' \
-  --data "$(jq -nc --arg id "$invocation_id" '{lookup:{invocation_id:$id}}')" \
-  https://app.buildbuddy.io/rpc/BuildBuddyService/GetInvocation \
-  -o "$scratch/invocation.json"
-jq -e '.invocation[0] | .success == true and .invocationStatus == "COMPLETE_INVOCATION_STATUS"' \
-  "$scratch/invocation.json"
-artifact_uri=$(jq -er '[.invocation[].targetGroups[]?.targets[]?.files[]? |
-  select(.name == "model-manifests.patch")] |
-  if length == 1 then .[0].uri else error("expected one patch") end' "$scratch/invocation.json")
-curl -fsSL -G -H 'x-buildbuddy-api-key: agentplane-credential-buildbuddy' \
-  --data-urlencode "invocation_id=$invocation_id" \
-  --data-urlencode "bytestream_url=$artifact_uri" \
-  https://app.buildbuddy.io/file/download -o "$scratch/model-manifests.patch"
+bbapi artifact download "$invocation_id" 'steps[0]/model-manifests.patch' -o "$scratch/model-manifests.patch"
 git apply --check "$scratch/model-manifests.patch"
 git apply "$scratch/model-manifests.patch"
 bbr test //cluster/cdk8s:test_generate_manifests //model_catalog:test_nix

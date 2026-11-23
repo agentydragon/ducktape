@@ -483,20 +483,26 @@ func saveArtifact(c *client, a artifact, dest string) error {
 	return nil
 }
 
-// listArtifactsResolved lists artifacts, auto-resolving workflow invocations to children.
+type invocationArtifacts struct {
+	files    []artifact
+	children []string
+}
+
+// The runner uploads its own step outputs. Keep child results first for existing substring lookups.
 func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
-	ids, err := resolveInvocationIDs(c, invocationID)
+	parent, err := listArtifacts(c, invocationID)
 	if err != nil {
 		return nil, err
 	}
-	all := make([]artifact, 0)
-	for _, id := range ids {
-		arts, err := listArtifacts(c, id)
+	var all []artifact
+	for _, id := range parent.children {
+		child, err := listArtifacts(c, id)
 		if err != nil {
-			return nil, fmt.Errorf("list artifacts for %s: %w", id, err)
+			return nil, err
 		}
-		all = append(all, arts...)
+		all = append(all, child.files...)
 	}
+	all = append(all, parent.files...)
 	kept, err := filterKind(all, artifactKind)
 	if err != nil {
 		return nil, err
@@ -504,17 +510,17 @@ func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
 	return filterResults(kept, artifactShard, artifactFailed), nil
 }
 
-func listArtifacts(c *client, invocationID string) ([]artifact, error) {
+func listArtifacts(c *client, invocationID string) (*invocationArtifacts, error) {
 	data, err := readInvocationEvents(c, invocationID)
 	if err != nil {
-		return nil, fmt.Errorf("fetch BES event stream: %w", err)
+		return nil, fmt.Errorf("read artifacts for %s: %w", invocationID, err)
 	}
 	artifacts, err := parseArtifacts(data)
 	if err != nil {
 		return nil, err
 	}
-	for i := range artifacts {
-		artifacts[i].InvocationId = invocationID
+	for _, a := range artifacts.files {
+		a.InvocationId = invocationID
 	}
 	return artifacts, nil
 }
@@ -526,12 +532,13 @@ func listArtifacts(c *client, invocationID string) ([]artifact, error) {
 // and may reference further sets, since Bazel shares subsets between targets
 // rather than repeating them. So the sets are indexed first, then walked
 // transitively per target.
-func parseArtifacts(data []byte) ([]artifact, error) {
+func parseArtifacts(data []byte) (*invocationArtifacts, error) {
 	var rawEvents []json.RawMessage
 	if err := json.Unmarshal(data, &rawEvents); err != nil {
 		return nil, fmt.Errorf("parse BES event stream: %w", err)
 	}
 	events := make([]*bespb.BuildEvent, 0, len(rawEvents))
+	result := &invocationArtifacts{}
 	fileSets := map[string]*bespb.NamedSetOfFiles{}
 	// How many shards and runs each test had, which only its summary, last in the stream, says.
 	type summaryKey struct{ label, configuration string }
@@ -542,6 +549,7 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 			return nil, fmt.Errorf("parse BES event: %w", err)
 		}
 		events = append(events, &ev)
+		result.children = appendAnnouncedChildren(result.children, &ev)
 		if ns := ev.GetNamedSetOfFiles(); ns != nil {
 			fileSets[ev.GetId().GetNamedSet().GetId()] = ns
 		}
@@ -551,7 +559,6 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 		}
 	}
 
-	var result []artifact
 	seen := map[string]bool{}
 	add := func(a artifact) error {
 		encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(a.Artifact)
@@ -561,7 +568,7 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 		key := string(encoded)
 		if !seen[key] {
 			seen[key] = true
-			result = append(result, a)
+			result.files = append(result.files, a)
 		}
 		return nil
 	}

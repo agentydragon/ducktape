@@ -119,6 +119,9 @@ bbapi artifact cat <invocation-id> <name-substring>
 # override with -o/--output)
 bbapi artifact download <invocation-id> <name-substring> [-o PATH]
 
+# Files uploaded by a remote script appear under its step label on the runner invocation
+bbapi artifact download <runner-invocation-id> 'steps[0]/generated.patch' -o generated.patch
+
 # List invocation-level build tool logs such as Bazel command profiles
 bbapi tool-log list <invocation-id>
 
