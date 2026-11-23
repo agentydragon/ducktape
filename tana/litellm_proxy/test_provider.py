@@ -18,40 +18,25 @@ from tana.litellm_proxy.provider import (
     TanaLiteLLM,
     TanaProxyClient,
     TanaProxyConfig,
+    _CredentialAwareChatClient,
     read_refresh_token_from_config,
     register_litellm_provider,
 )
+from tana.litellm_proxy.testing.client import StubTanaClient
 
 
 class _ModelResponseWithUsage(Protocol):
     usage: Usage
 
 
-class _NoStreamingClient:
-    def stream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-    ) -> Iterator[GenericStreamingChunk]:
-        raise AssertionError("non-streaming test should not call stream_completion")
-
-    async def astream_completion(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-    ) -> AsyncIterator[GenericStreamingChunk]:
-        raise AssertionError("non-streaming test should not call astream_completion")
-        yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
-
-
 class _TanaLiteLLMWithTestClient(TanaLiteLLM):
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: _CredentialAwareChatClient) -> None:
         super().__init__()
         self._test_client = client
 
-    def _make_client(self, config: TanaProxyConfig) -> Any:
+    def _make_client(self, config: TanaProxyConfig) -> _CredentialAwareChatClient:
         del config
         return self._test_client
-
-
-def _handler_with_test_client(client: Any) -> TanaLiteLLM:
-    return _TanaLiteLLMWithTestClient(client)
 
 
 def _refresh_token_response() -> httpx.Response:
@@ -550,8 +535,8 @@ _FINISH_SSE = (
 )
 
 
-async def _anthropic_echo_tool_stream_events(client: Any) -> list[dict[str, Any]]:
-    register_litellm_provider(_handler_with_test_client(client))
+async def _anthropic_echo_tool_stream_events(client: _CredentialAwareChatClient) -> list[dict[str, Any]]:
+    register_litellm_provider(_TanaLiteLLMWithTestClient(client))
     stream = await litellm.anthropic.messages.acreate(
         model="tana/claude-test",
         api_key="refresh-1",
@@ -628,12 +613,7 @@ async def test_anthropic_messages_stream_has_single_merged_tool_block(
 
 
 async def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(isolated_litellm_provider) -> None:
-    class FakeClient(_NoStreamingClient):
-        async def chat_completion(
-            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-        ) -> TanaChatResult:
-            raise AssertionError("streaming test should not call non-streaming chat_completion")
-
+    class FakeClient(StubTanaClient):
         async def astream_completion(
             self,
             model: str,
@@ -766,7 +746,7 @@ async def test_client_refreshes_id_token_from_original_refresh_token_source(
 
 
 async def test_litellm_handler_returns_model_response() -> None:
-    class FakeClient(_NoStreamingClient):
+    class FakeClient(StubTanaClient):
         async def chat_completion(
             self,
             model: str,
@@ -780,7 +760,7 @@ async def test_litellm_handler_returns_model_response() -> None:
             assert optional_params == {"temperature": 0.0}
             return TanaChatResult(text="pong", usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2})
 
-    handler = _handler_with_test_client(FakeClient())
+    handler = _TanaLiteLLMWithTestClient(FakeClient())
     response = await handler.acompletion(
         model="claude-test",
         messages=[{"role": "user", "content": "hi"}],
@@ -799,7 +779,7 @@ async def test_litellm_handler_returns_model_response() -> None:
 
 
 async def test_litellm_handler_returns_tool_calls() -> None:
-    class FakeClient(_NoStreamingClient):
+    class FakeClient(StubTanaClient):
         async def chat_completion(
             self,
             model: str,
@@ -819,7 +799,7 @@ async def test_litellm_handler_returns_tool_calls() -> None:
                 usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             )
 
-    handler = _handler_with_test_client(FakeClient())
+    handler = _TanaLiteLLMWithTestClient(FakeClient())
     response = await handler.acompletion(
         model="claude-test",
         messages=[{"role": "user", "content": "call the tool"}],
@@ -840,17 +820,7 @@ async def test_litellm_handler_returns_tool_calls() -> None:
 
 
 def test_litellm_routes_streaming_to_custom_provider() -> None:
-    class FakeClient:
-        async def chat_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
-            *,
-            refresh_token: str | None = None,
-        ) -> TanaChatResult:
-            raise AssertionError("streaming test should not call non-streaming chat_completion")
-
+    class FakeClient(StubTanaClient):
         def stream_completion(
             self,
             model: str,
@@ -865,13 +835,7 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
             yield GenericStreamingChunk(text="pong", is_finished=False, finish_reason="", usage=None, index=0)
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
-        async def astream_completion(
-            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-        ) -> AsyncIterator[GenericStreamingChunk]:
-            raise AssertionError("sync streaming test should not call astream_completion")
-            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
-
-    register_litellm_provider(_handler_with_test_client(FakeClient()))
+    register_litellm_provider(_TanaLiteLLMWithTestClient(FakeClient()))
     stream = litellm.completion(
         model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], api_key="refresh-1", stream=True
     )
@@ -883,12 +847,7 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
 
 
 async def test_litellm_routes_async_streaming_to_custom_provider() -> None:
-    class FakeClient(_NoStreamingClient):
-        async def chat_completion(
-            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-        ) -> TanaChatResult:
-            raise AssertionError("async streaming test should not call non-streaming chat_completion")
-
+    class FakeClient(StubTanaClient):
         async def astream_completion(
             self,
             model: str,
@@ -909,7 +868,7 @@ async def test_litellm_routes_async_streaming_to_custom_provider() -> None:
             yield GenericStreamingChunk(text="after-terminal", is_finished=False, finish_reason="", usage=None, index=0)
 
     async def collect_chunks() -> list[Any]:
-        register_litellm_provider(_handler_with_test_client(FakeClient()))
+        register_litellm_provider(_TanaLiteLLMWithTestClient(FakeClient()))
         # An empty api_base must behave as unset, not as a Functions base URL override.
         stream = await litellm.acompletion(
             model="tana/claude-test",
@@ -933,8 +892,8 @@ def test_registers_tana_as_litellm_custom_provider() -> None:
     assert "tana" in litellm.model_list_set
 
 
-async def test_registered_tana_provider_handles_async_litellm_completion(isolated_litellm_provider) -> None:
-    class FakeClient(_NoStreamingClient):
+async def test_registered_tana_provider_handles_async_litellm_completion(unregistered_tana_provider) -> None:
+    class FakeClient(StubTanaClient):
         async def chat_completion(
             self,
             model: str,
@@ -948,12 +907,7 @@ async def test_registered_tana_provider_handles_async_litellm_completion(isolate
             assert optional_params == {}
             return TanaChatResult(text="pong")
 
-    litellm.custom_provider_map = []
-    litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
-    litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
-    litellm.model_list_set.discard("tana")
-
-    register_litellm_provider(_handler_with_test_client(FakeClient()))
+    register_litellm_provider(_TanaLiteLLMWithTestClient(FakeClient()))
 
     response = await litellm.acompletion(
         model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], api_key="refresh-1"
@@ -1022,7 +976,7 @@ async def test_astream_completion_raises_rate_limit_error_on_429() -> None:
 async def test_429_surfaces_through_litellm_acompletion_as_rate_limit_error(isolated_litellm_provider) -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
         client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-        register_litellm_provider(_handler_with_test_client(client))
+        register_litellm_provider(_TanaLiteLLMWithTestClient(client))
         with pytest.raises(litellm.RateLimitError) as exc_info:
             await litellm.acompletion(
                 model="tana/claude-test",

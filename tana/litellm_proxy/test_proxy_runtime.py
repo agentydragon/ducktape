@@ -5,13 +5,12 @@ import os
 import shutil
 import subprocess
 import textwrap
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
-import litellm
 import openai
 import pytest
 import pytest_bazel
@@ -19,12 +18,12 @@ from anthropic import APIStatusError, AsyncAnthropic
 from anthropic.types import MessageParam, TextBlockParam, ToolParam, ToolUseBlockParam
 from litellm.proxy import proxy_server
 from litellm.proxy.proxy_server import ProxyConfig
-from litellm.types.utils import GenericStreamingChunk
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from python.runfiles import Runfiles
 
 from tana.litellm_proxy import custom_handler
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM, TanaProxyClient, TanaProxyConfig
+from tana.litellm_proxy.testing.client import StubTanaClient
 from testing.asgi import serve_app_in_loop
 
 
@@ -57,7 +56,7 @@ def test_litellm_proxy_binary_imports_server(runfiles: Runfiles, tmp_path: Path)
 
 
 async def test_litellm_proxy_config_registers_custom_provider_before_router_build(
-    runfiles: Runfiles, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider: None
+    runfiles: Runfiles, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unregistered_tana_provider: None
 ) -> None:
     runfiles_root = runfiles.root()
     handler_path = tmp_path / "tana/litellm_proxy/custom_handler.py"
@@ -66,7 +65,7 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
     config_path = tmp_path / "config.yaml"
     config_path.write_text((runfiles_root / "ducktape/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
 
-    class FakeClient:
+    class FakeClient(StubTanaClient):
         async def chat_completion(
             self,
             model: str,
@@ -79,22 +78,6 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
             assert messages == [{"role": "user", "content": "hi"}]
             assert refresh_token == "refresh-token"
             return TanaChatResult(text="pong")
-
-        def stream_completion(
-            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-        ) -> Iterator[GenericStreamingChunk]:
-            raise AssertionError("non-streaming test should not call stream_completion")
-
-        async def astream_completion(
-            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-        ) -> AsyncIterator[GenericStreamingChunk]:
-            raise AssertionError("non-streaming test should not call astream_completion")
-            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
-
-    litellm.custom_provider_map = []
-    litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
-    litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
-    litellm.model_list_set.discard("tana")
 
     router, _, _ = await ProxyConfig().load_config(router=None, config_file_path=str(config_path))
 
