@@ -4192,15 +4192,6 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
-              version: v1
         podTemplate:
           spec:
             containers:
@@ -4272,15 +4263,6 @@ spec:
             target:
               kind: ConfigMap
               name: reactor-config
-              version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
               version: v1
         podTemplate:
           spec:
@@ -4354,15 +4336,6 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
-              version: v1
         podTemplate:
           spec:
             containers:
@@ -4435,15 +4408,6 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
-              version: v1
         podTemplate:
           spec:
             containers:
@@ -4515,15 +4479,6 @@ spec:
             target:
               kind: ConfigMap
               name: reactor-config
-              version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
               version: v1
         podTemplate:
           spec:
@@ -4600,15 +4555,6 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
-              version: v1
         podTemplate:
           spec:
             containers:
@@ -4683,15 +4629,6 @@ spec:
             target:
               kind: ConfigMap
               name: reactor-config
-              version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
               version: v1
         podTemplate:
           spec:
@@ -4768,15 +4705,6 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
-              version: v1
         podTemplate:
           spec:
             containers:
@@ -4847,15 +4775,6 @@ spec:
             target:
               kind: ConfigMap
               name: reactor-config
-              version: v1
-          - patch: |
-              - op: add
-                path: /spec/updateStrategy
-                value: {type: OnDelete}
-            target:
-              group: apps
-              kind: DaemonSet
-              name: linstor-satellite
               version: v1
         podTemplate:
           spec:
