@@ -71,13 +71,15 @@ Linked ordinary functions and arrows accept nonempty flat object patterns in par
 
 In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
 
+Linked sequence expressions evaluate their operands from left to right, stop at the first abrupt completion, and return the final operand's value. A sequence used as a call's callee supplies `undefined` as `this`, including when its last operand reads a member.
+
 Linked member expressions support dot access and computed keys with modeled primitive
 property names. A member call evaluates its receiver and key once, reads the callee before
 evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
 receiver and arrows capture the surrounding `this`. Optional chains, private names, and
 `super` are outside the linked fragment.
 
-Linked object literals may contain distinct identifier or string keys. Property values may be supported primitive literals, binding reads, nested object and dense array literals, nonoptional member reads, or supported calls. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. A call in one property's value can stop evaluation before the following property. Computed property definitions, `__proto__`, methods, accessors, and spread are outside this fragment. A direct function expression or arrow as a property value is also outside the fragment, since an anonymous function in that position would take its name from the property key.
+Linked object literals may contain distinct identifier or string keys. Property values may be supported primitive literals, binding reads, nested object and dense array literals, nonoptional member reads, supported calls, or sequence expressions. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. If one property's value throws, evaluation stops before the following property. Computed property definitions, `__proto__`, methods, accessors, and spread are outside this fragment. A direct function expression or arrow as a property value is also outside the fragment, since an anonymous function in that position would take its name from the property key.
 
 Linked dense array literals evaluate their elements left to right. Inside function bodies the checker also records array spread elements and the bindings their operands capture. If initialization reaches such a literal, CoreJS stops with an unknown result because iterator behavior is outside the model. Top-level array spread and array holes are rejected during lowering.
 

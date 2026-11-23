@@ -51,6 +51,10 @@ private partial def exprEq : MatchEq Expr
     let ⟨yes⟩ ← exprEq t t'
     let ⟨no⟩ ← exprEq e e'
     return ⟨test ▸ yes ▸ no ▸ rfl⟩
+  | .seq a b, .seq a' b' => do
+    let ⟨left⟩ ← exprEq a a'
+    let ⟨right⟩ ← exprEq b b'
+    return ⟨left ▸ right ▸ rfl⟩
   | .get o k, .get o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
