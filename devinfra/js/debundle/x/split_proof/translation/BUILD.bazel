@@ -233,6 +233,14 @@ js_test(
 )
 
 js_test(
+    name = "linked_arithmetic_observer_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_arithmetic_observer_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "linked_arrays_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,
