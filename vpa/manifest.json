@@ -1,6 +1,6 @@
 {
   "source_devel_commit": "834559a35bf3efea8e16607ff9b45b60ca341f19",
-  "audited_at_utc": "2026-11-23T01:16:57Z",
+  "audited_at_utc": "2026-11-23T01:29:11+00:00",
   "snapshot_utc": "2026-11-23T01:00:14Z",
   "scope": "Live VPA policies, admitted CPU and memory requests and latest workload rollout checks. Pods, hosts and dynamic owners use snapshot-local aliases.",
   "current_inventory_collection_started_utc": "2026-11-23T00:59:58Z",
@@ -9,14 +9,14 @@
   "current_inventory_seven_day_queries_end_utc": "2026-11-23T01:00:03Z",
   "rollout_observed_utc": "2026-11-22T11:07:34Z",
   "gitlab_model_source_devel_commit": "bfa209746f112ed329ea7ab1f1f3b28ba5f48404",
-  "previous_report_commit": "8c7a41ed8799e5c78a5fa0795a4c4d4d6b7b2c30",
+  "previous_report_commit": "e41fbf698d605f7e6a6bde6b9ba793c1d886c9d2",
   "archived_evidence_snapshot_utc": "2026-11-20T02:58:40Z",
   "archived_evidence_source_devel_commit": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
-  "report_html_sha256": "0d7240787fb164db2f286309aec5091c82b136e7122e8bb8a1f6aa3277a26a24",
-  "report_script_sha256": "ac15696e286ce6ae690820ebe742cec2281090a0ec0f0df88f807f2d31463f14",
+  "report_html_sha256": "193fe8aab7a01e96107bcdc62d13f08e137a7db37d30b668eee51c733f99a359",
+  "report_script_sha256": "bc63e74445fc1b6a072b9c07efa1b1bc6f0f12c0ac768cf9b2dec37e5b36699a",
   "inventory_sha256": "ab9cc977335bead8da5319d60495cebea0968113fc5c4cce96bb9e796c782b95",
   "inventory_collector_sha256": "08b284c5eed215a4953af66991548b7040c622124f0d0aa006b93b00236836fd",
-  "rollout_evidence_sha256": "6ec3a9e1185c5f769228eb689f99469f2650f997e2a2de16e3d627fb494b1cd9",
+  "rollout_evidence_sha256": "1082ca85f2a6912277353d0cd2421d2bf2135860af8d39744ce87d985d8fe0d6",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "cnpg_switchover_observed_utc": "2026-11-22T11:24:45Z",
   "piraeus_management_lease_acquired_utc": "2026-11-22T23:14:21.174600Z",
@@ -28,5 +28,6 @@
   "piraeus_ha_source_devel_commit": "08bc433f8dcf9098b5abb66d151ed5eed9da0299",
   "piraeus_rolling_policy_restored_devel_commit": "e93a1343d30ab698f8ea35654d902c839675d94c",
   "piraeus_fleet_verified_utc": "2026-11-23T00:58:19Z",
-  "initial_admission_observed_utc": "2026-11-23T01:16:57Z"
+  "initial_admission_observed_utc": "2026-11-23T01:16:57Z",
+  "wave_plan_preflight_utc": "2026-11-23T01:25:28+00:00"
 }

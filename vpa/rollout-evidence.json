@@ -703,5 +703,359 @@
         "running_requests": {}
       }
     ]
+  },
+  "remaining_wave_plan": {
+    "inventory_utc": "2026-11-23T01:00:14Z",
+    "preflight_utc": "2026-11-23T01:25:28+00:00",
+    "waves": [
+      {
+        "label": "Existing Initial policies",
+        "containers": 7,
+        "action": "Verify the next ordinary replacements",
+        "anchor": "initial-admission"
+      },
+      {
+        "label": "Alertmanager reloaders",
+        "containers": 2,
+        "action": "Set requests through the Alertmanager owner",
+        "anchor": "operator-waves"
+      },
+      {
+        "label": "NVIDIA device plugin",
+        "containers": 1,
+        "action": "Size one DaemonSet in a GPU maintenance window",
+        "anchor": "operator-waves"
+      },
+      {
+        "label": "LINSTOR API",
+        "containers": 1,
+        "action": "Schedule a singleton storage API interruption",
+        "anchor": "piraeus-next"
+      },
+      {
+        "label": "CDviz PostgreSQL",
+        "containers": 2,
+        "action": "Prove committed writes through switchover",
+        "anchor": "cnpg-next"
+      },
+      {
+        "label": "Other replicated PostgreSQL",
+        "containers": 30,
+        "action": "Roll 15 databases individually after the pilot",
+        "anchor": "cnpg-sequence"
+      },
+      {
+        "label": "Singleton PostgreSQL",
+        "containers": 2,
+        "action": "Arrange two separate backup and recovery windows",
+        "anchor": "cnpg-sequence"
+      }
+    ],
+    "daemonset_and_reloader_checks": [
+      {
+        "namespace": "monitoring",
+        "kind": "DaemonSet",
+        "name": "prometheus-node-exporter",
+        "container": "node-exporter",
+        "runningOrPendingGaps": 1,
+        "vpa_mode": "Initial",
+        "target": {
+          "cpu": "15m",
+          "memory": "100Mi"
+        },
+        "dryRunRequests": {
+          "cpu": "15m",
+          "memory": "100Mi"
+        },
+        "matchedVpa": true
+      },
+      {
+        "namespace": "kube-system",
+        "kind": "DaemonSet",
+        "name": "cilium-envoy",
+        "container": "cilium-envoy",
+        "runningOrPendingGaps": 1,
+        "vpa_mode": "Initial",
+        "target": {
+          "cpu": "49m",
+          "memory": "225384266"
+        },
+        "dryRunRequests": {
+          "cpu": "49m",
+          "memory": "225384266"
+        },
+        "matchedVpa": true
+      },
+      {
+        "namespace": "monitoring",
+        "kind": "StatefulSet",
+        "name": "alertmanager-monitoring",
+        "container": "config-reloader",
+        "runningOrPendingGaps": 2,
+        "vpa_mode": "Initial",
+        "target": null
+      },
+      {
+        "namespace": "nvidia-device-plugin",
+        "kind": "DaemonSet",
+        "name": "nvidia-device-plugin",
+        "container": "nvidia-device-plugin-ctr",
+        "runningOrPendingGaps": 1,
+        "vpa_mode": "Off",
+        "target": {
+          "cpu": "15m",
+          "memory": "100Mi"
+        }
+      }
+    ],
+    "alertmanager_vpa_conditions": ["ConfigUnsupported", "NoPodsMatched"],
+    "affected_databases": [
+      {
+        "namespace": "agentplane-staging",
+        "name": "postgres",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "authentik",
+        "name": "authentik-db-ovh",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "cdviz",
+        "name": "db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "claude-session-sync",
+        "name": "claude-session-sync-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "forgejo",
+        "name": "forgejo-db-ssd",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "haku-console",
+        "name": "haku-console-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "haku-mailbox",
+        "name": "haku-mailbox-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "home-assistant",
+        "name": "home-assistant-db",
+        "instances": 1,
+        "ready": 1,
+        "archiving": "True"
+      },
+      {
+        "namespace": "langfuse",
+        "name": "langfuse-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "litellm",
+        "name": "litellm-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "matrix",
+        "name": "matrix-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "mcp-oauth-state",
+        "name": "mcp-oauth-state-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "monitoring",
+        "name": "grafana-db-ovh",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "nix-cache",
+        "name": "attic-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "ntfy",
+        "name": "ntfy-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "plaid-mcp",
+        "name": "plaid-mcp-db",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      },
+      {
+        "namespace": "session-backup",
+        "name": "session-archive-db-hdd",
+        "instances": 1,
+        "ready": 1,
+        "archiving": null
+      },
+      {
+        "namespace": "tofu-state",
+        "name": "tofu-state-db-ovh",
+        "instances": 2,
+        "ready": 2,
+        "archiving": "True"
+      }
+    ],
+    "staging_before_promotion": [
+      {
+        "name": "actions",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "app",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "central-sampler",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "egress",
+        "ready": 3,
+        "desired": 3,
+        "readyHosts": 3,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "electric",
+        "ready": 1,
+        "desired": 1,
+        "readyHosts": 1,
+        "allowed": null,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "environments",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "frontend",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Recreate",
+        "recommendation": true
+      },
+      {
+        "name": "history-service",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Recreate",
+        "recommendation": true
+      },
+      {
+        "name": "llm-ingress",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "mcp-edge",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "notifications",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Recreate",
+        "recommendation": true
+      },
+      {
+        "name": "policy-controller",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      },
+      {
+        "name": "sessions",
+        "ready": 2,
+        "desired": 2,
+        "readyHosts": 2,
+        "allowed": 1,
+        "mode": "Initial",
+        "recommendation": true
+      }
+    ],
+    "staging_pr": 19245
   }
 }

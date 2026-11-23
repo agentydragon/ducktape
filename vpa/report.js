@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611230116`);
+      const response = await fetch(`${path}?v=202611230127`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -408,7 +408,8 @@ function Report() {
     <${Text} size="lg" mt="sm"
       >All nine Piraeus satellites are sized. Only the central LINSTOR API still
       lacks requests in Piraeus. Across the cluster, PostgreSQL accounts for 34
-      of the 45 remaining regular containers with a request gap.<//
+      of 45 remaining regular-container request gaps. The wave plan assigns all
+      45 and tracks staging VPA promotions separately.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -591,11 +592,69 @@ function Report() {
 
     <section id="remaining-work">
       <span id="batches"></span><span id="adoption-progress"></span>
-      <${Title} order=${2} mt="xl">Next waves<//>
+      <${Title} order=${2} mt="xl">Remaining rollout waves<//>
+      <${Text} component="p"
+        >The 01:00 UTC inventory on 23 November found 45 regular containers
+        missing requests. Each appears once below. Observe ordinary replacements
+        as they happen. Prepare the two operator changes, the LINSTOR window and
+        the CDviz pilot in parallel. Run the LINSTOR and database maintenance
+        windows separately so storage delays can be distinguished from database
+        reconnects.<//
+      >
+      <${Table}
+        striped
+        withTableBorder
+        aria-label="Plan for the 45 missing container requests"
+      >
+        <${Table.Thead}
+          ><${Table.Tr}
+            ><${Table.Th} scope="col">Workload<//
+            ><${Table.Th} scope="col">Gaps<//
+            ><${Table.Th} scope="col">Next action<//><//
+          ><//
+        >
+        <${Table.Tbody}
+          >${review.remaining_wave_plan.waves.map(
+            (w) =>
+              html`<${Table.Tr} key=${w.label}
+                ><${Table.Th} scope="row">${w.label}<//
+                ><${Table.Td}>${w.containers}<//
+                ><${Table.Td}
+                  ><${Anchor} href=${"#" + w.anchor}>${w.action}<//><//
+                ><//
+              >`,
+          )}<//
+        >
+      <//>
       <${Stack} id="open-rollout-decisions" gap="sm" mt="sm">
+        <section id="operator-waves">
+          <${Title} order=${3} size="h4">Two independent operator changes<//>
+          <${Text} component="p"
+            ><strong>Alertmanager config-reloader · 2 containers.</strong>
+            ${" "}The existing Initial VPA reports ConfigUnsupported and
+            NoPodsMatched because it targets an operator-owned StatefulSet. Set
+            CPU and memory requests for the named config-reloader in
+            kube-prometheus-stack’s alertmanagerSpec.containers. Measure reload
+            CPU and startup memory before choosing values; the seven-day
+            working-set peak was 35 MiB. Render the named override, keep one
+            replica serving while the other rolls, and verify both applied a new
+            configuration and a test notification reached its receiver. Pause if
+            reload or delivery fails.<//
+          >
+          <${Text} component="p"
+            ><strong>NVIDIA device plugin · 1 container.</strong> ${" "}Keep its
+            VPA Off and set requests in the device plugin Helm release. Start
+            the sizing review at its 15m CPU and 100 MiB recommendation against
+            the 53 MiB seven-day peak. Check startup CPU, node reservations and
+            running GPU jobs before changing the single eligible Pod. Record the
+            node’s GPU count, then verify it advertises the same capacity and a
+            disposable GPU workload can use a device. Revert the chart change if
+            registration fails.<//
+          >
+        </section>
         <${Text} id="piraeus-next">
           <strong
-            >1. Finish Piraeus with a scheduled LINSTOR API replacement.</strong
+            >Finish Piraeus with a scheduled LINSTOR API replacement.</strong
           >
           ${" "}At 01:00 UTC on 23 November, 91 of 92 Piraeus containers had
           both requests. Propose 350m CPU and 1536Mi memory through the
@@ -623,7 +682,7 @@ function Report() {
         <//>
         <${Text} id="cnpg-next">
           <strong
-            >2. Pilot one replicated CNPG database before sizing the
+            >Pilot one replicated CNPG database before sizing the
             cohort.</strong
           >
           ${" "}PostgreSQL accounts for 34 gaps across 16 two-instance clusters
@@ -642,6 +701,54 @@ function Report() {
             >CNPG rollout procedure<//
           >.
         <//>
+        <section id="cnpg-sequence">
+          <${Title} order=${3} size="h4"
+            >After CDviz: 15 replicated clusters, then two singletons<//
+          >
+          <${Text} component="p"
+            >Each replicated cluster contributes two postgres containers.
+            Prepare sizing in groups, then apply one cluster per observed
+            switchover. Set each cluster’s own requests using its normal,
+            startup and promoted-primary load. Confirm recent backups, WAL
+            catch-up, eligible capacity and a working application probe before
+            each change. Hold the next cluster on a missing commit, stalled
+            reconnect, unhealthy replica or broken archiving.<//
+          >
+          <ul>
+            <li>
+              <strong>Telemetry, caches and sync · 10 containers.</strong> Start
+              with claude-session-sync, langfuse, monitoring, nix-cache and
+              ntfy. For each service, write a disposable record or artifact
+              through its client and retrieve it after reconnect.
+            </li>
+            <li>
+              <strong>Session and messaging services · 10.</strong> Continue
+              with agentplane-staging, haku-console, haku-mailbox, matrix and
+              litellm. Verify a uniquely identified session event, message or
+              service record survives. Give the staging database its own window
+              after staging VPA activity settles.
+            </li>
+            <li>
+              <strong
+                >Identity, repositories and application state · 10.</strong
+              >
+              Schedule authentik, forgejo, mcp-oauth-state, plaid-mcp and
+              tofu-state with their owners. Use a disposable transaction for
+              each and verify the application can read it after failover. Check
+              authentication and state locking where applicable.
+            </li>
+          </ul>
+          <${Text} component="p"
+            ><strong>Home Assistant and Session Backup · 1 each.</strong> Each
+            loses its sole database endpoint on restart. Confirm a usable backup
+            and rehearse the restore path before scheduling each outage. Home
+            Assistant reported healthy archiving. Session Backup’s Cluster has
+            no backup plugin or ContinuousArchiving condition; establish a
+            usable recovery source before proceeding. Afterward verify a new
+            recorder event or archive record and a pre-existing one through the
+            respective application.<//
+          >
+        </section>
         <section id="initial-admission">
           <${Title} order=${3} size="h4"
             >Five containers passed Initial admission<//
@@ -684,7 +791,50 @@ function Report() {
               >Exact quantities and admission evidence<//
             >.
           <//>
+          <${Text} component="p"
+            ><strong>Two more Initial checks passed on wyrm2.</strong>
+            ${" "}DaemonSet-owned dry runs returned 15m CPU and 100 MiB for
+            node-exporter, and 49m and about 215 MiB for Cilium Envoy. Each
+            still has one running container without requests. At ordinary
+            replacement, confirm both fields plus a fresh node scrape or a
+            successful Gateway request. Coordinate Envoy with the network
+            owner’s rollout. The Cilium operator change tracks separate Helm
+            drift. ${" "}<${Anchor} href=${github + "pull/18520"}
+              >Cilium PR #18520<//
+            >.<//
+          >
         </section>
+        <${Title} order=${3} id="promotion-waves"
+          >Automatic eviction and policy coverage<//
+        >
+        <${Text}
+          ><strong>Agentplane staging · ten proposed promotions.</strong> Nine
+          replicated Deployments and singleton Electric would join the three
+          already in Recreate. All twelve replicated services had Ready Pods on
+          distinct hosts and one allowed disruption each. Electric uses
+          minReplicas 1; its owner accepts a sync outage. These policies change
+          eviction eligibility. They close none of the 45 gaps above. After
+          merge, verify all thirteen live modes and watch updater events, PDBs,
+          replacement scheduling, Session and Action traffic, and an Electric
+          shape reconnect that receives a new change. Budgets are per service;
+          replacements can overlap across services. ${" "}<${Anchor}
+            href=${github + "pull/19245"}
+            >Staging promotion PR<//
+          >.<//
+        >
+        <${Text}
+          ><strong>Five other replicated candidates.</strong> After the nine
+          staging candidates, the snapshot’s Recreate queue contains CoreDNS,
+          the VPA admission controller, the Cilium operator and two KubeVirt
+          controllers. Prepare CoreDNS and admission-controller checks
+          independently: continuously resolve a Service name or submit
+          owner-backed dry-run Pod creates through a one-replica handoff. Verify
+          two ready hosts, PDB and capacity before promotion. For Cilium, first
+          clear the bootstrap drift in #18520 and verify new Gateway programming
+          through leader handoff. For virt-api and virt-controller, verify
+          client reconnect and VMI reconciliation. Promote only the services
+          that pass their own probe.<//
+        >
         <${Text}>
           <strong
             >Observe Notifications during its first confirmed updater
@@ -747,6 +897,18 @@ function Report() {
         <//>
       <//>
       <${Title} order=${3} mt="lg">Review cohorts<//>
+      <${Text} component="p"
+        >For the one resource-extension candidate, crossplane-rbac-manager, the
+        CPU request and limit are both 100m and its VPA owns memory only. Review
+        the CPU limit and startup demand together before extending its policy.
+        For the 14 Initial candidates, inspect singleton admission first for the
+        two session-backup Deployments and GitLab toolbox. Test backup
+        completion or a toolbox job and check eligible-node capacity. Group the
+        SeaweedFS endpoints and operator with their storage owner, retain
+        Piraeus’s verified static reservations, and review GPU placement, VM
+        restart behavior and Valkey operator reconciliation individually for the
+        other candidates. These queues overlap the gap work.<//
+      >
       <${Text} component="p">
         Counts are review queues from this snapshot. A workload can appear in
         both the resource and Recreate queues. Confirm ownership and restart
@@ -836,9 +998,9 @@ function Report() {
                 : "The current inventory has no ntfy Deployment row."
             }
             ${" "}Size new Pods without VPA eviction while the service runs one
-            replica. CDviz's collector and the staging Electric singleton also
-            need non-evicting sizing. Check their work and recovery paths before
-            proposing a restart mode.
+            replica. CDviz’s collector also needs a delivery and reconnect check
+            before promotion. Staging Electric’s owner accepts downtime for its
+            proposed singleton eviction.
           <//>
         <//>
       <//>
