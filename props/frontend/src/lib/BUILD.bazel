@@ -205,6 +205,8 @@ ts_library(
         ":EntityLink",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend:node_modules/react-router",
+        "//props/frontend/src/components:CopyButton",
     ],
 )
 

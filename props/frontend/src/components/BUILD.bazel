@@ -206,7 +206,6 @@ ts_library(
     srcs = ["IssueComment.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
-        ":CopyButton",
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",

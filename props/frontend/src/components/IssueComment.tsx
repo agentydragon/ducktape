@@ -3,8 +3,7 @@ import type { GradingEdgeInfo, LocationAnchor } from "../lib/schema";
 import { CheckCircle, Link, XCircle } from "../lib/icons";
 import { issueColors } from "../lib/colors";
 import { formatLocationAnchor } from "../lib/formatters";
-import OccurrenceLink from "../lib/OccurrenceLink";
-import CopyButton from "./CopyButton";
+import OccurrenceLink, { CopyOccurrenceLink } from "../lib/OccurrenceLink";
 
 interface Props {
   kind: "tp" | "fp" | "critique";
@@ -15,7 +14,8 @@ interface Props {
   expanded?: boolean;
   onToggle?: () => void;
   gradingEdges?: GradingEdgeInfo[];
-  copyUrl?: string;
+  occurrenceId?: string;
+  filePath: string;
   snapshotSlug?: string;
 }
 
@@ -28,7 +28,8 @@ export default function IssueComment({
   expanded = false,
   onToggle,
   gradingEdges = [],
-  copyUrl,
+  occurrenceId,
+  filePath,
   snapshotSlug,
 }: Props) {
   const critiqueType =
@@ -59,16 +60,22 @@ export default function IssueComment({
         className={`w-full px-3 py-2 ${styling.colors.headerBg} flex items-center gap-2 hover:opacity-80 transition-opacity`}
       >
         <Icon size={16} className={styling.colors.text} />
-        <span className="font-mono text-sm font-medium">{issueId}</span>
+        <span className="font-mono text-sm font-medium">{occurrenceId ? `${issueId}/${occurrenceId}` : issueId}</span>
         <span className={`text-xs ${styling.colors.textDark} font-medium`}>{styling.label}</span>
         <span className="ml-auto text-gray-400 dark:text-gray-500 text-xs">{expanded ? "▼" : "▶"}</span>
       </UnstyledButton>
 
       {expanded ? (
         <div className="px-3 py-2 space-y-2 text-sm">
-          {copyUrl ? (
+          {snapshotSlug && occurrenceId ? (
             <div className="flex justify-end">
-              <CopyButton text={copyUrl} label="Copy Link" />
+              <CopyOccurrenceLink
+                snapshotSlug={snapshotSlug}
+                issueId={issueId}
+                occurrenceId={occurrenceId}
+                filePath={filePath}
+                label="Copy Link"
+              />
             </div>
           ) : null}
           <div>

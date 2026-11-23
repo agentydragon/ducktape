@@ -91,10 +91,24 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         await expect(occurrence_link).to_have_attribute(
             "href", f"#/snapshots/{slug}/example-issue/example-occurrence?file={quote(file_path, safe='')}"
         )
+        await view.page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+        expected_url = await occurrence_link.evaluate("(link) => link.href")
+        await view.page.get_by_role("button", name="Copy URL", exact=True).click()
+        await expect(view.page.get_by_text("Copied!", exact=True)).to_be_visible()
+        assert await view.page.evaluate("navigator.clipboard.readText()") == expected_url
         await occurrence_link.click()
         await expect(view.page.get_by_text("# Encoded routing example", exact=True)).to_be_visible()
         selected_marker = view.page.get_by_role("button", name="example-issue/example-occurrence TP")
         await expect(selected_marker).to_be_in_viewport()
+        # Only the issue named in the link should carry the selection ring.
+        highlighted = view.page.locator(".ring-2").get_by_role("button")
+        await expect(highlighted).to_have_count(1)
+        await expect(selected_marker.and_(highlighted)).to_be_visible()
+        await view.page.evaluate('navigator.clipboard.writeText("")')
+        await selected_marker.click()
+        await view.page.get_by_role("button", name="Copy Link", exact=True).click()
+        await expect(view.page.get_by_text("Copied!", exact=True)).to_be_visible()
+        assert await view.page.evaluate("navigator.clipboard.readText()") == expected_url
         assert file_requests[-1] == f"/api/gt/snapshots/{slug}/files/{quote(file_path)}"
         await view.page.go_back()
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()

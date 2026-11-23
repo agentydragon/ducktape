@@ -336,7 +336,7 @@ py_visual_test(
     assets = [":harness_bundle"],
     harness = ":harness_js",
     inline_page = True,
-    page_url = "http://props.test/",
+    page_url = "https://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
         "//testing/frontend_visual:capture",

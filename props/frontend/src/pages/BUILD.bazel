@@ -138,7 +138,6 @@ ts_library(
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:BackButton",
         "//props/frontend/src/components:Breadcrumb",
-        "//props/frontend/src/components:CopyButton",
         "//props/frontend/src/components:FileTree",
         "//props/frontend/src/components:FileViewer",
         "//props/frontend/src/components/stats:CreditBadge",

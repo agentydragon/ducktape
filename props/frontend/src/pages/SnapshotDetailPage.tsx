@@ -20,7 +20,6 @@ import {
 
 import BackButton from "../components/BackButton";
 import Breadcrumb from "../components/Breadcrumb";
-import CopyButton from "../components/CopyButton";
 import FileTree from "../components/FileTree";
 import FileViewer from "../components/FileViewer";
 import OccurrenceStats from "../components/stats/OccurrenceStats";
@@ -37,7 +36,7 @@ import { splitColor } from "../lib/colors";
 import { formatLocationAnchor } from "../lib/formatters";
 import { useSearchParams } from "react-router";
 import { toast } from "../lib/toast";
-import OccurrenceLink from "../lib/OccurrenceLink";
+import OccurrenceLink, { CopyOccurrenceLink } from "../lib/OccurrenceLink";
 import { snapshotDetailQueryKey } from "../lib/queryKeys";
 import RunIdLink from "../lib/RunIdLink";
 
@@ -187,12 +186,6 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
     ];
   }, [selectedFile, snapshot, snapshotSlug]);
 
-  function getOccurrenceUrl(targetIssueId: string, occurrenceId: string, filePath?: string): string {
-    const routePath = `/snapshots/${snapshotSlug}/${targetIssueId}/${occurrenceId}`;
-    const query = filePath ? `?file=${encodeURIComponent(filePath)}` : "";
-    return new URL(`#${routePath}${query}`, window.location.href).href;
-  }
-
   function renderIssueList(issues: SnapshotIssue[], isTruePositive: boolean) {
     if (issues.length === 0) {
       return <Text c="dimmed">No {isTruePositive ? "true" : "false"} positives</Text>;
@@ -241,6 +234,12 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                         const stats = isTruePositive
                           ? occurrenceStatsMap.get(`${currentIssueId}:${occurrence.occurrence_id}`)
                           : undefined;
+                        const link = {
+                          snapshotSlug,
+                          issueId: currentIssueId,
+                          occurrenceId: occurrence.occurrence_id,
+                          filePath: occurrence.locations[0]?.file,
+                        };
                         const highlighted =
                           issueId === currentIssueId && routeOccurrenceId === occurrence.occurrence_id;
                         return (
@@ -252,22 +251,10 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                           >
                             <Group justify="space-between" align="flex-start">
                               <Group gap="xs">
-                                <OccurrenceLink
-                                  snapshotSlug={snapshot?.slug ?? snapshotSlug}
-                                  issueId={currentIssueId}
-                                  occurrenceId={occurrence.occurrence_id}
-                                  filePath={occurrence.locations[0]?.file}
-                                />
+                                <OccurrenceLink {...link} />
                                 {stats && <CreditBadge meanCredit={stats.mean_credit} nRuns={stats.n_runs} />}
                               </Group>
-                              <CopyButton
-                                text={getOccurrenceUrl(
-                                  currentIssueId,
-                                  occurrence.occurrence_id,
-                                  occurrence.locations[0]?.file
-                                )}
-                                label="Copy URL"
-                              />
+                              <CopyOccurrenceLink {...link} label="Copy URL" />
                             </Group>
                             <Stack gap={2} mt="xs">
                               {occurrence.locations.map((location, index) => (

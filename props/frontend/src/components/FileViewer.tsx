@@ -195,12 +195,6 @@ export default function FileViewer({
     });
   }
 
-  function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
-    if (!snapshotSlug) return undefined;
-    const routePath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}?file=${encodeURIComponent(file.path)}`;
-    return new URL(`#${routePath}`, window.location.href).href;
-  }
-
   const tpCount = allIssues.filter((issue) => issue.kind === "tp").length;
   const fpCount = allIssues.filter((issue) => issue.kind === "fp").length;
   const critiqueCount = allIssues.filter((issue) => issue.kind === "critique").length;
@@ -282,9 +276,6 @@ export default function FileViewer({
 
                       const isTarget = targetIssueId === issue.issueId && targetOccurrenceId === issue.occurrenceId;
                       const issueKey = getIssueKey(issue);
-                      const copyUrl = issue.occurrenceId
-                        ? getOccurrenceUrl(issue.issueId, issue.occurrenceId)
-                        : undefined;
                       return (
                         <tr key={`${issueKey}-${issueIndex}`}>
                           <td colSpan={2} className="px-4 py-1">
@@ -294,14 +285,15 @@ export default function FileViewer({
                             >
                               <IssueComment
                                 kind={issue.kind}
-                                issueId={issue.occurrenceId ? `${issue.issueId}/${issue.occurrenceId}` : issue.issueId}
+                                issueId={issue.issueId}
+                                occurrenceId={issue.occurrenceId}
                                 rationale={issue.rationale}
                                 note={issue.note}
                                 allLocations={issue.allLocations}
                                 expanded={expandedIssues.has(issueKey)}
                                 onToggle={() => toggleIssue(issueKey)}
                                 gradingEdges={issue.gradingEdges}
-                                copyUrl={copyUrl}
+                                filePath={file.path}
                                 snapshotSlug={snapshotSlug}
                               />
                             </div>
