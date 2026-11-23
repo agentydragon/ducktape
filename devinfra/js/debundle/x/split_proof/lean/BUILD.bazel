@@ -639,6 +639,15 @@ sh_test(
 )
 
 lean_test(
+    name = "corejs_uint8_test",
+    srcs = [
+        "EsmSplit/CoreJS/Number.lean",
+        "EsmSplit/CoreJS/Uint8Examples.lean",
+    ],
+    entry = "EsmSplit/CoreJS/Uint8Examples.lean",
+)
+
+lean_test(
     name = "experiments_test",
     srcs = [
         "Experiments.lean",

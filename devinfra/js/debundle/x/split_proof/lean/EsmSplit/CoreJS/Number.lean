@@ -3,7 +3,7 @@
 
 A JavaScript number is an IEEE double: Lean's `Float`. `+ - * /` and the comparisons are the processor's.
 What ECMAScript defines beyond them is computed here exactly, on the bits, with `Nat` arithmetic:
-`Number::toString` (the shortest digits that round to the number), `StringToNumber`, `%`, `ToInt32` and `ToUint32`.
+`Number::toString` (the shortest digits that round to the number), `StringToNumber`, `%`, `ToInt32`, `ToUint32` and `ToUint8`.
 There is no `**`: the specification leaves its result to the implementation, and the C library's differs from V8's.
 -/
 
@@ -42,7 +42,7 @@ def decompose (x : Float) : Bool × Nat × Int :=
 
 def isNegZero (x : Float) : Bool := x == 0.0 && (decompose x).1
 
-/-- A double with its fraction dropped; 0 for a NaN or an infinity (`ToIntegerOrInfinity`, as `ToInt32` uses it). -/
+/-- A double with its fraction dropped, or 0 for NaN and infinities, as needed by fixed-width integer conversions. -/
 def truncInt (x : Float) : Int :=
   if x.isNaN || x.isInf then 0 else
   let (neg, m, e) := decompose x
@@ -50,6 +50,9 @@ def truncInt (x : Float) : Int :=
   if neg then -(a : Int) else a
 
 def toUint32 (x : Float) : Nat := (Int.emod (truncInt x) (2 ^ 32)).toNat
+
+/-- The Number step of ECMAScript's `ToUint8`, after value-to-number coercion. -/
+def toUint8 (x : Float) : UInt8 := UInt8.ofNat (Int.emod (truncInt x) (2 ^ 8)).toNat
 
 def toInt32 (x : Float) : Int :=
   let u := toUint32 x
