@@ -151,8 +151,8 @@ def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [
   });
 }
 
-// Seed 6 generates a script with observable global access. The emitter runs it
-// without instrumentation and excludes it from the modern-marker corpus.
+// Seed 6 contains a ThisExpression. Its script is eligible without instrumentation
+// and excluded when observing modern-marker execution.
 {
   const sample = { count: 1, seed: 6 };
   const script = GENERATORS.find((g) => g.id === "shift-script");

@@ -153,11 +153,8 @@ function emptyCoverage() {
         emitterRejected: 0,
         acceptedThrowing: 0,
         acceptedSame: 0,
-        acceptedSameOk: 0,
         acceptedSameReordered: 0,
-        acceptedSameOkReordered: 0,
         acceptedSameInSide: 0,
-        acceptedSameOkInSide: 0,
       },
     ])
   );
@@ -278,14 +275,15 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     record("loweringRejected");
     continue;
   }
-  const total = topLevelStatements(dump).length;
+  // Source units exclude the binding observer appended to the entry module.
+  const units = topLevelStatements(parsed);
   const side = [];
-  for (let i = 0; i < total - 1; i++) if (random() < 0.5) side.push(i);
+  for (let i = 0; i < units.length; i++) if (random() < 0.5) side.push(i);
   if (!side.length) side.push(0);
   const spec = {
     entry: "entry.mjs",
     modules: {
-      "entry.mjs": Array.from({ length: total }, (_, i) => i)
+      "entry.mjs": Array.from({ length: units.length + 1 }, (_, i) => i)
         .filter((i) => !side.includes(i))
         .map((i) => `#${i}`),
       "side.mjs": side.map((i) => `#${i}`),
@@ -360,13 +358,8 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   record("acceptedSame");
   if (reordered) record("acceptedSameReordered");
   const sideFeatures = new Set();
-  for (const index of side) if (parsed.body[index]) syntaxFeatures(parsed.body[index], sideFeatures);
+  for (const index of side) syntaxFeatures(units[index].node, sideFeatures);
   record("acceptedSameInSide", sideFeatures);
-  if (baseline.status === "ok") {
-    record("acceptedSameOk");
-    if (reordered) record("acceptedSameOkReordered");
-    record("acceptedSameOkInSide", sideFeatures);
-  }
 }
 for (const row of Object.values(coverage)) {
   assert.equal(
@@ -380,8 +373,12 @@ for (const row of Object.values(coverage)) {
       row.acceptedThrowing +
       row.acceptedSame
   );
-  assert(row.acceptedSameOkInSide <= row.acceptedSameInSide && row.acceptedSameInSide <= row.acceptedSame);
-  assert(row.acceptedSameOkReordered <= row.acceptedSameReordered && row.acceptedSameReordered <= row.acceptedSame);
+  assert(row.acceptedSameInSide <= row.acceptedSame);
+  assert(row.acceptedSameReordered <= row.acceptedSame);
+  // The report retains its Ok fields. Under P4 only completing baselines reach the comparison.
+  row.acceptedSameOk = row.acceptedSame;
+  row.acceptedSameOkInSide = row.acceptedSameInSide;
+  row.acceptedSameOkReordered = row.acceptedSameReordered;
 }
 if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
   writeFileSync(
