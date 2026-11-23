@@ -573,9 +573,8 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
     IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
   let t4 ← lap "mkPlan" t3
-  let layoutOk ← timePhase timings "plan_checks" fun _ => do
-    reportLayout B S P required.isNone
   if let some request := required then
+    let layoutOk ← timePhase timings "plan_checks" fun _ => reportLayout B S P false
     -- Only the closed-declaration theorem needs the footprint-based order check.
     let declaration := if layoutOk && !bad then declarationProof? program B P else none
     if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
@@ -615,8 +614,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       let active ← used.get
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
-  let orderOk ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
-  let ok := layoutOk && orderOk
+  let ok ← reportPlanChecks B S P
   let t5 ← lap "all checks" t4
   let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then

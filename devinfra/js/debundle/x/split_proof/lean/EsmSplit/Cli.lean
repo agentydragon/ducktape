@@ -36,6 +36,11 @@ def reportLayout (B : Bundle) (S : Spec) (P : Plan) (verbose : Bool) : IO Bool :
              ← check "Permutes" fun _ => decide (Permutes B P)]
   return rs.all id
 
+def reportPlanChecks (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
+  let layout ← reportLayout B S P true
+  let order ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
+  return layout && order
+
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
 Module order follows the sorted keys of the parsed object; `order` is optional and keeps its order;
 `"sequential": true` makes the modules run in exactly that order (`Spec.sequential`). -/
