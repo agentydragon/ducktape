@@ -65,19 +65,29 @@ private partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
-  | .assign (.var x) rhs, .assign (.var x') rhs' => do
-    let ⟨name⟩ ← scalarEq x x'
-    let ⟨value⟩ ← exprEq rhs rhs'
-    return ⟨name ▸ value ▸ rfl⟩
-  | .assign (.frozen x) rhs, .assign (.frozen x') rhs' => do
-    let ⟨name⟩ ← scalarEq x x'
-    let ⟨value⟩ ← exprEq rhs rhs'
-    return ⟨name ▸ value ▸ rfl⟩
-  | .assign (.member o k) rhs, .assign (.member o' k') rhs' => do
+  | .delete o k, .delete o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
+    return ⟨base ▸ key ▸ rfl⟩
+  | .assign t rhs, .assign t' rhs' => do
+    let ⟨target⟩ ← targetEq t t'
     let ⟨value⟩ ← exprEq rhs rhs'
-    return ⟨base ▸ key ▸ value ▸ rfl⟩
+    return ⟨target ▸ value ▸ rfl⟩
+  | .assignOp t op rhs, .assignOp t' op' rhs' => do
+    let ⟨target⟩ ← targetEq t t'
+    let ⟨operator⟩ ← scalarEq op op'
+    let ⟨value⟩ ← exprEq rhs rhs'
+    return ⟨target ▸ operator ▸ value ▸ rfl⟩
+  | .assignLogical t op rhs, .assignLogical t' op' rhs' => do
+    let ⟨target⟩ ← targetEq t t'
+    let ⟨operator⟩ ← scalarEq op op'
+    let ⟨value⟩ ← exprEq rhs rhs'
+    return ⟨target ▸ operator ▸ value ▸ rfl⟩
+  | .update t inc pre, .update t' inc' pre' => do
+    let ⟨target⟩ ← targetEq t t'
+    let ⟨increment⟩ ← scalarEq inc inc'
+    let ⟨isPrefix⟩ ← scalarEq pre pre'
+    return ⟨target ▸ increment ▸ isPrefix ▸ rfl⟩
   | .callMethod o k args, .callMethod o' k' args' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
@@ -104,6 +114,15 @@ private partial def exprEq : MatchEq Expr
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨callee ▸ arguments ▸ rfl⟩
   | .func a, .func b => (funcEq a b).map fun h => ⟨congrArg Expr.func h.down⟩
+  | _, _ => none
+
+private partial def targetEq : MatchEq Target
+  | .var x, .var x' => (scalarEq x x').map fun h => ⟨congrArg Target.var h.down⟩
+  | .frozen x, .frozen x' => (scalarEq x x').map fun h => ⟨congrArg Target.frozen h.down⟩
+  | .member o k, .member o' k' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    return ⟨base ▸ key ▸ rfl⟩
   | _, _ => none
 
 private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
