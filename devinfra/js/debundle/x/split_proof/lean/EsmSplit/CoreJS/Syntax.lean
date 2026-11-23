@@ -100,6 +100,8 @@ inductive Expr where
   | callMethod (o k : Expr) (args : List Expr)
   /-- `o?.m(args)`: evaluate the receiver once, short circuit a nullish value, and keep the receiver as `this`. -/
   | callOptionalReceiver (o k : Expr) (args : List Expr)
+  /-- `o.m?.(args)`: look up the callee once and keep `o` as `this` if called. -/
+  | callOptionalCallee (o k : Expr) (args : List Expr)
   | new (f : Expr) (args : List Expr)
   | prim (p : Prim) (args : List Expr)
   | unary (op : UnOp) (e : Expr)
@@ -285,7 +287,8 @@ def Expr.free : Expr → List Name
   | .assignLogical t _ rhs => t.free ++ rhs.free
   | .update t _ _ => t.free
   | .call f args => f.free ++ freeExprs args
-  | .callMethod o k args | .callOptionalReceiver o k args => o.free ++ (k.free ++ freeExprs args)
+  | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args =>
+    o.free ++ (k.free ++ freeExprs args)
   | .new f args => f.free ++ freeExprs args
   | .prim _ args => freeExprs args
   | .unary _ e => e.free
