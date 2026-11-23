@@ -1189,6 +1189,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:imagepolicy",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "//cluster/cdk8s/providers/flux:imageupdateautomation",
+        "//devinfra/oci:image_tags",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],

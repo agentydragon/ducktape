@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from devinfra.ci.push_image import pinned_tag
+from devinfra.oci.image_tags import pinned_tag
 
 logger = logging.getLogger(__name__)
 

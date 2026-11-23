@@ -29,6 +29,7 @@ DIGEST = "sha256:" + "a" * 64
         ("latest", "latest"),
         ("_upload", "upload-session"),
         ("v1.61.1-noble", "unrecognized"),
+        ("devel-20261108205121-bb2dec00", "unrecognized"),
     ],
 )
 def test_classify_shape(version: str, shape: str) -> None:

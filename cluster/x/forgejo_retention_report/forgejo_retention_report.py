@@ -19,14 +19,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from devinfra.oci.image_tags import pinned_tag_pattern
+
 _REGISTRY_PREFIX = re.escape("git.allegedly.works/")
-_DATED_TAG_SUFFIX = r"[0-9]{14}-[0-9a-f]{7}"
 _DIGEST = r"sha256:[0-9a-f]{64}"
-TAG = re.compile("devel-" + _DATED_TAG_SUFFIX)
+TAG = re.compile(pinned_tag_pattern("devel"))
 SHAPES = (
     ("dated-devel", TAG),
-    ("dated-main", re.compile("main-" + _DATED_TAG_SUFFIX)),
-    ("pr-merge", re.compile(r"[0-9]+-merge-" + _DATED_TAG_SUFFIX)),
+    ("dated-main", re.compile(pinned_tag_pattern("main"))),
+    ("pr-merge", re.compile(r"[0-9]+-" + pinned_tag_pattern("merge"))),
     ("digest", re.compile(_DIGEST)),
     ("bare-hash", re.compile(r"[0-9a-f]{7,40}")),
     ("latest", re.compile(r"latest")),

@@ -3222,7 +3222,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
+    pattern: ^main-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: platform-sessions-blueshield
   policy:
@@ -3247,7 +3247,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
+    pattern: ^main-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: platform-sessions-chatgpt
   policy:
@@ -3272,7 +3272,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
+    pattern: ^main-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: platform-sessions-myquest
   policy:
@@ -3297,7 +3297,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
+    pattern: ^main-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: platform-sessions-providers
   policy:
@@ -3322,7 +3322,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
+    pattern: ^main-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: platform-sessions-quest-scheduler
   policy:

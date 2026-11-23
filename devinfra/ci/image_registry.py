@@ -6,6 +6,7 @@ import re
 from enum import StrEnum
 
 from devinfra.oci.crane import Crane, CraneError
+from devinfra.oci.image_tags import pinned_tag_pattern
 
 
 class Registry(StrEnum):
@@ -40,7 +41,7 @@ def registry_digest(crane: Crane, repo: str) -> str | None:
 
 def newest_pinned_digest(crane: Crane, repo: str, tag_prefix: str) -> str | None:
     """Read the newest immutable branch tag selected by Flux."""
-    pattern = re.compile(rf"{re.escape(tag_prefix)}-[0-9]{{14}}-[0-9a-f]{{7}}")
+    pattern = re.compile(pinned_tag_pattern(tag_prefix))
     try:
         tags = crane.tags(repo)
     except CraneError as exc:

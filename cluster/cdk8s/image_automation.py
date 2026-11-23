@@ -4,7 +4,6 @@ repository through the ducktape-automation GitHub App."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
@@ -40,6 +39,7 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 )
 
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
+from devinfra.oci.image_tags import pinned_tag_pattern
 
 # The ducktape-automation GitHub App's credentials: a SOPS Secret Flux decrypts into flux-system
 # (cluster/k8s/flux/flux-system). A GitRepository's secretRef resolves in its own namespace.
@@ -63,7 +63,7 @@ def newest_ci_tag_policy(scope: Construct, repository: ImageRepository, *, prefi
         f"image-policy-{repository.name}",
         metadata=ApiObjectMetadata(name=repository.name, namespace=repository.metadata.namespace),
         image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=f"^{re.escape(prefix)}" + r"-\d{14}-[0-9a-f]{7}$"),
+        filter_tags=ImagePolicySpecFilterTags(pattern=f"^{pinned_tag_pattern(prefix)}$"),
         policy=ImagePolicySpecPolicy(
             alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
         ),

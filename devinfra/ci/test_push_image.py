@@ -6,8 +6,9 @@ import pytest
 import pytest_bazel
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX, newest_pinned_digest
-from devinfra.ci.push_image import pinned_tag, push
+from devinfra.ci.push_image import push
 from devinfra.oci.crane import Crane, CraneError
+from devinfra.oci.image_tags import pinned_tag, pinned_tag_pattern
 
 
 class FakeCrane(Crane):
@@ -89,6 +90,7 @@ def test_digest_first_compares_the_newest_branch_tag_without_writing(tmp_path: P
                 "main-20260826000000-def0123": "sha256:older",
                 "main-20260827000000-def4567": "sha256:current",
                 "devel-20260828000000-def4567": "sha256:other-branch",
+                "main-20260828000000-def45678": "sha256:longer-commit",
                 "latest": "sha256:latest",
             }
         }
@@ -118,12 +120,9 @@ def test_first_publish_accepts_missing_repository_but_rejects_denied() -> None:
 
 
 def test_the_pinned_tag_is_the_shape_flux_filters_on() -> None:
-    """The one contract this repository owes the cluster: ImagePolicy selects on
-    `devel-<14 digits>-<7 hex>` and orders newest-alphabetical. Nothing reads tags
-    back through it, so this is where that shape is pinned."""
     when = datetime.datetime(2026, 8, 27, 5, 41, 43, tzinfo=datetime.UTC)
     tag = pinned_tag(when, "96b61f595fc218770e98e9c4a0f728c52b033a99")
-    assert re.fullmatch(r"devel-\d{14}-[0-9a-f]{7}", tag)
+    assert re.fullmatch(pinned_tag_pattern("devel"), tag)
     assert tag == "devel-20260827054143-96b61f5"
     later = pinned_tag(when + datetime.timedelta(seconds=1), "0000000000000000000000000000000000000000")
     assert later > tag, "newest-alphabetical only holds if the timestamp leads"

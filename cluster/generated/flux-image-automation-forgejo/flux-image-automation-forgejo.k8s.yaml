@@ -16,7 +16,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-action-service
   policy:
@@ -41,7 +41,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-app
   policy:
@@ -66,7 +66,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-central-sampler
   policy:
@@ -91,7 +91,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-egress-proxy
   policy:
@@ -116,7 +116,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-egress-sidecar
   policy:
@@ -141,7 +141,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-environment-firecracker
   policy:
@@ -166,7 +166,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-environment-vm
   policy:
@@ -191,7 +191,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-environments
   policy:
@@ -216,7 +216,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-firecracker-launcher
   policy:
@@ -241,7 +241,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-frontend
   policy:
@@ -266,7 +266,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-history-service
   policy:
@@ -291,7 +291,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-llm-ingress
   policy:
@@ -316,7 +316,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-mcp-edge
   policy:
@@ -341,7 +341,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-notification-service
   policy:
@@ -366,7 +366,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-policy-controller
   policy:
@@ -391,7 +391,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-runner-disk
   policy:
@@ -416,7 +416,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-sandbox
   policy:
@@ -441,7 +441,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-sandbox-build
   policy:
@@ -466,7 +466,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-sessions
   policy:
@@ -491,7 +491,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: ai-session-archive-importer
   policy:
@@ -516,7 +516,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: ai-session-archive-web
   policy:
@@ -541,7 +541,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: aiquota-api
   policy:
@@ -566,7 +566,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: airlock
   policy:
@@ -591,7 +591,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: att-gateway-exporter
   policy:
@@ -616,7 +616,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: attic-jwt-rotation
   policy:
@@ -641,7 +641,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: authentik-jwt-rotation
   policy:
@@ -666,7 +666,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: aw-server
   policy:
@@ -691,7 +691,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: claude-session-sync
   policy:
@@ -716,7 +716,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: cli-proxy-api
   policy:
@@ -741,7 +741,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: cpap-gateway
   policy:
@@ -766,7 +766,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: cpap-sync
   policy:
@@ -791,7 +791,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: crossplane-provider-buildbuddy
   policy:
@@ -816,7 +816,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: environment-tools
   policy:
@@ -841,7 +841,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: forgejo-token-rotation
   policy:
@@ -866,7 +866,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: github-graphql-rate-exporter
   policy:
@@ -891,7 +891,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: google-mcp
   policy:
@@ -916,7 +916,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: grocy-mcp-oidc-server
   policy:
@@ -941,7 +941,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: grocy-user-perms-provisioner
   policy:
@@ -966,7 +966,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: haku-console
   policy:
@@ -991,7 +991,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: haku-console-static
   policy:
@@ -1016,7 +1016,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: homeassistant-component-installer
   policy:
@@ -1041,7 +1041,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: homeassistant-onboarding
   policy:
@@ -1066,7 +1066,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: homeassistant-token-provisioner
   policy:
@@ -1091,7 +1091,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: loki-read-proxy
   policy:
@@ -1116,7 +1116,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: matrix-user-provisioner
   policy:
@@ -1141,7 +1141,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: mcp-oauth-facade
   policy:
@@ -1166,7 +1166,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: plaid-mcp-server
   policy:
@@ -1191,7 +1191,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: plaid-mcp-sync
   policy:
@@ -1216,7 +1216,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: plaid-spend
   policy:
@@ -1241,7 +1241,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: platform-sessions-gateway
   policy:
@@ -1266,7 +1266,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: props-backend
   policy:
@@ -1291,7 +1291,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: props-llm-proxy
   policy:
@@ -1316,7 +1316,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: props-registry-proxy
   policy:
@@ -1341,7 +1341,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: public-coder-agent
   policy:
@@ -1366,7 +1366,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: roaming-node-controller
   policy:
@@ -1391,7 +1391,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: rtl-tcp
   policy:
@@ -1416,7 +1416,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: ssh-mcp
   policy:
@@ -1441,7 +1441,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: stalwart
   policy:
@@ -1466,7 +1466,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: study-casino
   policy:
@@ -1491,7 +1491,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: tana-firebase-resigner
   policy:
@@ -1516,7 +1516,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: tana-litellm-proxy
   policy:
@@ -1541,7 +1541,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: tana-mcp
   policy:
@@ -1566,7 +1566,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: vm-image-restart
   policy:
@@ -1591,7 +1591,7 @@ metadata:
   namespace: flux-system
 spec:
   filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+    pattern: ^devel-[0-9]{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: website
   policy:
