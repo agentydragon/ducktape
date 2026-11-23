@@ -24,7 +24,6 @@ const placement = (moved) => ({
   order: [scroll],
   sequential: true,
 });
-const trial = placement(selected);
 const code = readFileSync(path.join(chunks, "editor.js"), "utf8");
 const parsed = parseModule(code, acorn.parse, eslintScope);
 const program = dumpParsed(parsed);
@@ -93,9 +92,6 @@ report.providerProbe = {
 
 const ast = path.join(process.env.TEST_TMPDIR, "editor.json");
 writeFileSync(ast, JSON.stringify(program));
-const spec = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-spec.json");
-writeFileSync(spec, JSON.stringify(trial, null, 2));
-const out = path.join(process.env.TEST_TMPDIR, "modules");
 // The authoring snapshot renames selected chunks. Resolve its editor alias back to
 // esbuild's output tree, where the original relative imports resolve on disk.
 const roster = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/js-files.txt"));
@@ -107,6 +103,10 @@ const editor = readFileSync(roster, "utf8")
 assert(bundle && editor?.[1]);
 const strictSource = path.join(bundle, editor[1]);
 assert.equal(readFileSync(strictSource, "utf8"), code);
+const strictSelection = process.argv.includes("--strict-single") ? selected.slice(0, 1) : selected;
+const spec = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-spec.json");
+writeFileSync(spec, JSON.stringify(placement(strictSelection), null, 2));
+const out = path.join(process.env.TEST_TMPDIR, "modules");
 const run = spawnSync(process.env.LOWERSPLIT, [strictSource, spec, out, "--require", "normal-completion"], {
   encoding: "utf8",
 });
@@ -120,7 +120,7 @@ writeFileSync(
   JSON.stringify(
     {
       input: editor[1],
-      selected,
+      selected: strictSelection,
       units: selectors.length,
       firstStatement: first.type,
       source: first.source?.lit,
@@ -182,7 +182,9 @@ writeFileSync(
   path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "entry-exports.json"),
   JSON.stringify(surfaces, null, 2)
 );
-const single = surfaces[1];
+const [pair, single] = surfaces;
+assert.deepEqual(pair.extra, ["Eb$1", "Lm", "qb$1"]);
+assert.deepEqual(pair.missing, []);
 assert.deepEqual(single.extra, []);
 assert.deepEqual(single.missing, []);
 const conflicts = single.orderConflicts.pairs;

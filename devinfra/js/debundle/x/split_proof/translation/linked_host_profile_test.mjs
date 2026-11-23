@@ -91,6 +91,47 @@ for (const [name, body, reason] of [
   assert(!existsSync(test.out));
 }
 
+// The Excalidraw scroll replay reaches an ambient Symbol.for inside a factory
+// when the decoder lowers the factory body. The provider defers invoking it.
+for (const shadowed of [false, true]) {
+  const dir = path.join(root, shadowed ? "deferred-local-symbol" : "deferred-ambient-symbol");
+  const local = shadowed ? "const Symbol = { for: (key) => key };" : "";
+  const files = prepare(dir, {
+    source: `
+      import { defer } from "./provider.mjs";
+      const load = defer(() => {
+        ${local}
+        return Symbol.for("fixture");
+      });
+      const moved = () => 17;
+      export { load, moved };
+    `,
+    provider: "export const defer = (factory) => () => factory();",
+    spec: {
+      entry,
+      modules: { [entry]: ["#0", "#1", "#3"], "worker.mjs": ["#2"] },
+      order: ["worker.mjs"],
+      sequential: true,
+    },
+  });
+  const original = await import(pathToFileURL(files.sourceFile).href);
+  assert.equal(original.moved(), 17);
+  assert.equal(original.load(), shadowed ? "fixture" : Symbol.for("fixture"));
+
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  if (shadowed) {
+    assert.equal(verdict.status, "certified", log);
+    const after = await import(pathToFileURL(path.join(out, entry)).href);
+    assert.equal(after.moved(), 17);
+    assert.equal(after.load(), "fixture");
+  } else {
+    assert.equal(verdict.status, "rejected", log);
+    assert.equal(verdict.reason, "statement 1: unsupported global Symbol", log);
+    assert(!existsSync(out));
+  }
+}
+
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {
     const construction = { type: "NewExpression", callee: id("Error"), arguments: args };

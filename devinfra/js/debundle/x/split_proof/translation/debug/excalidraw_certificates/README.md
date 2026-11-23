@@ -75,18 +75,22 @@ Both replays stop at structural checks before reaching the module URL guard.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_certificate
+bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_single_certificate
 ```
 
 The generated editor spec assigns `#1337` and `#1338` to
-`packages/excalidraw/scene/scroll.mjs`. This trial keeps those two selections
-and assigns the other 1,785 units to `entry.mjs` in source order. The replay resolves
+`packages/excalidraw/scene/scroll.mjs`. CI checks the pair in strict mode. The
+on-demand single trial moves only `#1337`. Each assigns the other units to
+`entry.mjs` in source order. The replay resolves
 the stable `editor.js` alias via the generated JS roster and runs the normal splitter
-on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. With
-`--require normal-completion`, the linked CoreJS decoder stops at statement 5
-with `unsupported global Symbol`. The splitter publishes no modules. The test outputs
-include the source filename, placement spec and verdict. [Full editor replay](https://app.buildbuddy.io/invocation/d012db57-2734-5886-84e9-b2e9e7b7d7ae)
+on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. Both
+strict trials stop at statement 5 with `unsupported global Symbol`. The first
+ambient use is `Symbol.for` inside the React factory passed to an imported lazy
+wrapper. The decoder lowers the factory body when it reads the declaration.
+Neither strict trial publishes modules. Each target records the source filename,
+placement spec and verdict. [Strict replay of both placements](https://app.buildbuddy.io/invocation/9ddc5596-7aeb-4436-9b08-ab34d00996e9)
 
-The same target renders two diagnostic placements with `--diagnostic … --force` into separate
+Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.
 Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
 Lean's structural checker; it is diagnostic evidence only.
@@ -114,13 +118,13 @@ The separate CoreJS theorem covers wrapper creation and the independent arrow de
 a common linked environment. Both orders reach exactly the same successful final states.
 [Linked reproduction](../../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
 
-The single-arrow replay now records the ordinary move plan's 259 structural source-order
-conflicts. All cross the moved unit `#1337`; one is the conflict with the first source unit
-after imports. The replay makes no linked-provider proof claim for this complete editor chunk;
-the source-level strict trial is rejected as described above. The generic plan evidence is published
-as `scroll-move-report.json`, alongside `import-boundary.json` and `entry-exports.json`.
-The small source-file E2E target exercises linked named providers and output verification:
-`bbr test //devinfra/js/debundle/x/split_proof/translation:linked_provider_programs_test`.
+The single-arrow move plan records 259 structural source-order conflicts. All
+cross `#1337`, including the conflict with the first source unit after imports.
+The test records them in `scroll-move-report.json` alongside
+`import-boundary.json` and `entry-exports.json`. The reduced case in
+[`linked_host_profile_test.mjs`](../../linked_host_profile_test.mjs) uses a
+small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
+lexical `Symbol` binding passes strict certification and the Node control.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
 ### Direct AST lowering for negated initializers
