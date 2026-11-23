@@ -779,7 +779,7 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
       have hjn := hlt md' hmd' j hj
       obtain ⟨a, ha⟩ := hframe_some hjn hxj
       refine ⟨a, ?_, (henv_decl hjn hxj).trans ha⟩
-      simp only [hf, Option.map_some, Option.getD_some]
+      simp only [Option.map_some, Option.getD_some]
       exact Program.importCell_local (by rw [split_find, hf, Option.map_some])
         (moduleOf_exports md' (by simpa using hexp) (hexpU md' hmd'))
         ((scope_lookup_decl hfp hF hud (hin md' hj hjn) hjn hxj).trans ha)
