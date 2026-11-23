@@ -218,7 +218,7 @@ private def linkedObject (lower : Json → Except String Expr) (j : Json) : Exce
     -- A direct anonymous function initializer would take its name from the property key.
     let value ← match ← field v "type" with
       | "Literal" | "Identifier" | "ObjectExpression" | "ArrayExpression" | "MemberExpression"
-      | "CallExpression" => lower v
+      | "CallExpression" | "SequenceExpression" => lower v
       | kind => throw s!"unsupported object property value {kind}"
     props := props.push (.init (.str key) value)
   return .obj props.toList
@@ -308,6 +308,11 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let lower := linkedExpr imports inFunction ""
     return .cond (← lower (← j.getObjVal? "test")) (← lower (← j.getObjVal? "consequent"))
       (← lower (← j.getObjVal? "alternate"))
+  | "SequenceExpression" =>
+    let expressions ← j.getObjValAs? (List Json) "expressions"
+    let first :: second :: rest := expressions | throw "expected at least two sequence operands"
+    let lower := linkedExpr imports inFunction ""
+    (second :: rest).foldlM (fun acc operand => return .seq acc (← lower operand)) (← lower first)
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr imports inFunction ""
