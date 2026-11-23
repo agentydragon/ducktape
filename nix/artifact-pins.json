@@ -25,8 +25,8 @@
       "sha256": "MoGvOcGiZJkXyqtla6jTt8u5v4ZABGBxcR650NhvLS8="
     },
     "difftree": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-44642a1bc6b3/difftree-0.1.0-py3-none-any.whl",
-      "sha256": "RGQqG8azEaF7GhFsD8YQW08uIpjikE741MSAlMHckGc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-73bb62f1c48c/difftree-0.1.0-py3-none-any.whl",
+      "sha256": "c7ti8cSM5/cTUZAIV73rsC+ea97wjjwmbTBgeddqYcw="
     },
     "gmail-archiver": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-fd14d9e2a7d1/gmail_archiver-0.1.0-py3-none-any.whl",
@@ -85,8 +85,8 @@
       "sha256": "qimnY10Aku0YYGC8RVroDJHJyeD0cYK0TZCr3Tzrlqw="
     },
     "skill-buildbuddy_api": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-4a4e3f10e7e6/buildbuddy_api.skill",
-      "sha256": "Sk4/EOfmxpePoADCQPFsnDlHMBiGeA5hVGxJkcdsBFk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-93c2f215a3a0/buildbuddy_api.skill",
+      "sha256": "k8LyFaOgWjiLtuh5cesvAq6kwuvdX6ny5+EQl7wuiyQ="
     },
     "skill-cihealth": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-d45692b86126/cihealth.skill",
