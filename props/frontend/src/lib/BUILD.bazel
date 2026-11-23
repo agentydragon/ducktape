@@ -1,3 +1,5 @@
+load("@aspect_bazel_lib//lib:jq.bzl", "jq")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
@@ -23,6 +25,18 @@ filegroup(
 openapi_js_library(
     name = "schema",
     schema = "//props/backend:openapi_schema",
+)
+
+jq(
+    name = "run_filter_values",
+    srcs = ["//props/backend:openapi_schema"],
+    out = "run_filter_values.json",
+    filter = ".components.schemas | {statuses: [.AgentRunStatus.enum[]], agentTypes: [.AgentType.enum[]]}",
+)
+
+js_library(
+    name = "run_filters",
+    srcs = [":run_filter_values"],
 )
 
 ts_library(
@@ -112,15 +126,6 @@ ts_library(
     deps = [
         ":schema",
         "//props/frontend:node_modules/date-fns",
-    ],
-)
-
-ts_library(
-    name = "status",
-    srcs = ["status.ts"],
-    tsconfig = "//props/frontend:tsconfig",
-    deps = [
-        ":schema",
     ],
 )
 
