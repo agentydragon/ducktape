@@ -93,7 +93,8 @@ private theorem objValSizeOfLt {j v : Json} {key : String}
 
 /-- Read a scope-annotated reference. The linked fragment also accepts local references
 inside function bodies. -/
-private def reference (imports : List Name) (inFunction : Bool) (j : Json) : Except String Expr := do
+private def reference (imports : List Name) (inFunction : Bool) (j : Json)
+    (profile : HostProfile := .empty) : Except String Expr := do
   let x ← identifier j
   match ← field j "k" with
   | "T" => return .var x
@@ -105,6 +106,7 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json) : Exc
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
+    if profile == .browserPage && x == "window" then return .prim (.globalRef x) []
     match x with
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
@@ -323,7 +325,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   let kind ← field j "type"
   match kind with
   | "Literal" => literal (← field j "lit")
-  | "Identifier" => reference imports inFunction j
+  | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
   | "MemberExpression" =>
     let (base, key) ← linkedMember (linkedExpr profile imports inFunction "") j

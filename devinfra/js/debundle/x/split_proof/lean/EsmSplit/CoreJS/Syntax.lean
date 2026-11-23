@@ -41,6 +41,7 @@ inductive LogOp where
 /-- The standard functions the model defines. A call of any other one is unknown code. -/
 inductive Prim where
   | globalTypeof (binding : String)
+  | globalRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
