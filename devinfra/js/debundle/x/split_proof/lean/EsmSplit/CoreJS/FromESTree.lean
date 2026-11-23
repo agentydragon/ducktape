@@ -329,6 +329,18 @@ private partial def containsBreak (j : Json) : Bool :=
   | .arr items => items.any containsBreak
   | _ => false
 
+/-- A retained body has no model for its source module or a method's home object.
+Direct eval could also refer to cells absent from the static capture list. -/
+private partial def needsOpaqueContext (j : Json) : Bool :=
+  match j with
+  | .obj fields =>
+    let kind := (field j "type").toOption.getD ""
+    ["Super", "MetaProperty", "ImportExpression"].contains kind ||
+      (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
+      fields.toList.any (fun (_, child) => needsOpaqueContext child)
+  | .arr items => items.any needsOpaqueContext
+  | _ => false
+
 mutual
 
 private partial def linkedExpr (profile : HostProfile) (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -548,11 +560,20 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
-  let stmts ← if (← field body "type") == "BlockStatement" then
+  let lowered := if (← field body "type") == "BlockStatement" then
     linkedFunctionBody profile imports body (allowFunctions := true)
   else if kind == .arrow then
-    pure [.ret (← linkedExpr profile imports true "" body)]
+    linkedExpr profile imports true "" body |>.map (fun e => [.ret e])
   else throw "expected a function body block"
+  if let .error reason := lowered then
+    if !hasDefaults && (kind == .normal || kind == .arrow) && !needsOpaqueContext j then
+      let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
+      let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
+      let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
+      -- CoreJS does not allocate the enclosing function's implicit arguments cell.
+      if captures.contains "arguments" then throw reason
+      return .opaque name kind self params.size code part captures (some reason)
+  let stmts ← lowered
   let functions := (funDecls stmts).map Func.name
   let bodyVars := if hasDefaults || !functions.isEmpty then varNamesOf stmts else []
   -- CoreJS allocates every function name in its own body-scope cell. JavaScript

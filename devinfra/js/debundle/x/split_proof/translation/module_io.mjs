@@ -7,9 +7,11 @@ import * as eslintScope from "eslint-scope";
 import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
 import { lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
 
+const linkedAnnotations = { includeOpaqueCaptures: true };
+
 function program(file) {
   try {
-    return lowerDump(fs.readFileSync(file, "utf8"), acorn, eslintScope);
+    return lowerDump(fs.readFileSync(file, "utf8"), acorn, eslintScope, linkedAnnotations);
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
@@ -66,6 +68,7 @@ function comparableAst(node, source, description, taggedTemplateQuasi = false) {
   for (const [key, value] of Object.entries(node)) {
     const isAnnotation =
       (node.type === "Program" && (key === "sourceText" || key === "annotationVersion")) ||
+      key === "opaqueCaptures" ||
       (node.type === "Literal" && (key === "raw" || key === "lit")) ||
       (node.type === "Identifier" && ["k", "b", "d"].includes(key));
     if (ignoredAstFields.has(key) || isAnnotation) continue;
@@ -187,9 +190,9 @@ try {
         !isDeepStrictEqual(snapshot, lowerDump(snapshot.sourceText, acorn, eslintScope))
       )
         throw new Error("input annotations differ from a fresh parse of sourceText");
-      writeJson(output, snapshot);
+      writeJson(output, lowerDump(snapshot.sourceText, acorn, eslintScope, linkedAnnotations));
     } else {
-      writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope));
+      writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope, linkedAnnotations));
     }
   } else if (mode === "--check-output") {
     const [manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath] = args;

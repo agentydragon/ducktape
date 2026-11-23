@@ -84,12 +84,10 @@ on-demand single trial moves only `#1337`. Each assigns the other units to
 `entry.mjs` in source order. The replay resolves
 the stable `editor.js` alias via the generated JS roster and runs the normal splitter
 on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. The
-decoder lowers the React factory body when it reads the declaration in
-statement 5. It retains the deferred `Symbol.for` calls and the read of
-`Symbol.iterator`, then lowers the nested function declaration `Mf`.
-Both trials stop at the later ambient `Object` reference and leave the output
-directory absent. Each target records the source filename, placement spec
-and verdict.
+decoder retains the React factory in statement 5. The factory’s
+`Object.assign` read is inside its deferred body. Both trials stop at the
+eager `new Uint8Array` in statement 41 and leave the output directory absent.
+Each target records the source filename, placement spec and verdict.
 
 Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.

@@ -163,6 +163,51 @@ const reachedIterator = fixture(
 assert.match(reachedIterator.run().reason, /unknown.*ambient member Symbol\.iterator is reached/);
 assert(!existsSync(reachedIterator.out));
 
+{
+  const dir = path.join(root, "deferred-ambient-object");
+  const files = prepare(dir, {
+    source: `
+      import { defer } from "./provider.mjs";
+      const load = defer(function summarize(prefix) {
+        return Object.assign({}, { label: prefix + moved() });
+      });
+      const moved = () => "fixture";
+      export { load, moved };
+    `,
+    provider: "export const defer = (factory) => factory;",
+    spec: {
+      entry,
+      modules: { [entry]: ["#0", "#1", "#3"], "worker.mjs": ["#2"] },
+      order: ["worker.mjs"],
+      sequential: true,
+    },
+  });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const { load } = await import(pathToFileURL(file).href);
+    assert.equal(load.name, "summarize");
+    assert.equal(load.length, 1);
+    assert.deepEqual(load("deferred "), { label: "deferred fixture" });
+  }
+}
+
+const reachedBody = fixture(
+  "reached-retained-body",
+  `const read = () => {
+    const unopened = () => document.title;
+    const called = () => Object.keys({});
+    try { return called(); } catch { return "caught"; }
+  };
+  const result = read();
+  export { result };`
+);
+assert.match(reachedBody.run().reason, /unknown.*deferred function called: unsupported global Object/);
+assert(!existsSync(reachedBody.out));
+
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {
     const construction = { type: "NewExpression", callee: id("Error"), arguments: args };

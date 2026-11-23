@@ -70,6 +70,8 @@ Lean lowers the original and generated module ASTs to CoreJS, checking statement
 
 For large certificates, the checker can elaborate AST correspondence in a separate Lean process. That check imports the execution theorem compiled for the current certificate and audits the result. For large linked programs that need neither host premises nor file-local write-batch rules, the checker also proves the source run first and records its complete final state. The candidate must reach that same state. If a checkpoint stage fails, the checker retries with the ordinary execution proof.
 
+The linked checker can retain an ordinary function whose body fails lowering. It checks the callable's source spelling, original unit and lexical position, and captured bindings in both trees. The interpreter allocates the closure and its properties as usual. Calling or constructing it then yields an unknown result with the body’s lowering error. Retention excludes functions with default parameters and bodies that require a module URL, method home object, enclosing implicit `arguments`, or direct `eval`.
+
 A named export list such as `export { local as publicName }` can publish an imported binding.
 Imports can follow a chain of these aliases to the declaration's live cell. A chain that
 cycles without reaching a declaration fails to link. Lean checks that each entry export
