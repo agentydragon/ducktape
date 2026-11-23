@@ -485,9 +485,17 @@ def looseEq (a b : Val) : Except Abort Bool :=
     | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
     | _, _ => do pure ((← toNumber a) == (← toNumber b))
 
-/-- `a < b` and its three relatives: strings compare by code unit, anything else as numbers. -/
-def relational (num : Float → Float → Bool) (str : String → String → Bool) : Val → Val → Except Abort Bool
-  | .str a, .str b => pure (str a b)
+private def utf16CodeUnits (s : String) : List Nat :=
+  s.toList.flatMap fun c =>
+    let code := c.toNat
+    if code ≤ 0xffff then [code] else
+    let offset := code - 0x10000
+    [0xd800 + offset / 0x400, 0xdc00 + offset % 0x400]
+
+/-- The relational operators compare two strings by UTF-16 code unit and convert other
+primitive operands to numbers. IEEE comparisons all return false for an unordered pair. -/
+def relational (num : Float → Float → Bool) (str : Ordering → Bool) : Val → Val → Except Abort Bool
+  | .str a, .str b => pure (str (compare (utf16CodeUnits a) (utf16CodeUnits b)))
   | a, b => do pure (num (← toNumber a) (← toNumber b))
 
 /-- An int32 as its 32 bits, and back. -/
@@ -530,10 +538,10 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .ne => (fun r => .bool !r) <$> looseEq a b
   | .strictEq => .bool <$> strictEq a b
   | .strictNe => (fun r => .bool !r) <$> strictEq a b
-  | .lt => .bool <$> relational (fun x y => decide (x < y)) (fun x y => decide (x < y)) a b
-  | .le => .bool <$> relational (fun x y => decide (x ≤ y)) (fun x y => !decide (y < x)) a b
-  | .gt => .bool <$> relational (fun x y => decide (x > y)) (fun x y => decide (y < x)) a b
-  | .ge => .bool <$> relational (fun x y => decide (x ≥ y)) (fun x y => !decide (x < y)) a b
+  | .lt => .bool <$> relational (fun x y => decide (x < y)) (· == .lt) a b
+  | .le => .bool <$> relational (fun x y => decide (x ≤ y)) (· != .gt) a b
+  | .gt => .bool <$> relational (fun x y => decide (x > y)) (· == .gt) a b
+  | .ge => .bool <$> relational (fun x y => decide (x ≥ y)) (· != .lt) a b
 
 /-- String operands of loose inequality compare their contents without coercion. -/
 theorem binop_ne_strings (a b : String) :

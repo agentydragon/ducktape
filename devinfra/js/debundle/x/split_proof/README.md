@@ -102,6 +102,8 @@ Untagged template literals use their cooked text and evaluate substitutions from
 
 Linked binary `+`, `-`, `*`, `/`, and `%` evaluate both operands in source order and then apply CoreJS primitive coercion. Addition concatenates when either primitive operand is a string. Numeric operations use binary64, including signed zero, infinities, NaN, and JavaScript’s signed remainder. Object-to-primitive conversion and host values reach an unknown result when evaluated. BigInt, Symbol, exponentiation, and bitwise operators remain outside the linked fragment.
 
+Linked `<`, `<=`, `>`, and `>=` evaluate operands in source order. CoreJS compares two strings by UTF-16 code unit and converts other primitive pairs to numbers. A numeric comparison with NaN is false. Supplementary Unicode characters are supported in string literals used directly as comparison operands. Isolated UTF-16 surrogates are refused. Reached object-to-primitive conversion remains unknown.
+
 Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. For `==` and `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
 
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
