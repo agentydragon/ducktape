@@ -421,7 +421,11 @@ export function coreFromParsed(
         break;
       case "ObjectExpression":
         for (const p of node.properties) {
-          if (p.type === "SpreadElement") refuse(p, "a spread property");
+          if (p.type === "SpreadElement") {
+            expr(p.argument);
+            emit("spreadProp");
+            continue;
+          }
           if (p.kind !== "init") {
             if (p.computed) refuse(p, "an accessor named by a computed key");
             key(p.key, false);

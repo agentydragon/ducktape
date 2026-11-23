@@ -488,7 +488,7 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
           refine (ihE env v he.1 fun z hz => hw z (by simp [readsNowProps, hz])).bind' fun _ => ?_
           exact (local_defineOwn ha name _).bind' fun _ =>
             ihP env a ps he.2 (fun z hz => hw z (by simp [readsNowProps, hz])) ha
-        | getter | setter | proto => simp only [allocOnlyProps, Bool.false_eq_true] at he
+        | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 
 /-- **A declaration whose initializer only allocates is local**: run in region `r`, it sees region `r` and the
 bindings of the names its initializer reads, and changes region `r`, when its own binding is in region `r`. -/

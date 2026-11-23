@@ -926,4 +926,26 @@ def ownKeys (v : Val) : M W (List String) :=
   | .obj a => do pure (ownPropertyKeys (← getObj a).props)
   | _ => unknown "the own keys of a value that is not an object of the program"
 
+/-- Copy enumerable own properties in key order. A getter can delete or redefine later keys,
+so each own descriptor is read when its turn arrives. -/
+def copySpreadKeys (call : Call W) (target source : Addr) : List String → M W Unit
+  | [] => pure ()
+  | key :: rest => do
+    if ((← getObj source).props.lookup key).any Property.enumerable then
+      createData target key (← getFrom call source (.obj source) key)
+    copySpreadKeys call target source rest
+
+/-- CopyDataProperties for an object literal. Snapshot keys before the first getter runs. -/
+def copySpread (call : Call W) (target : Addr) : Val → M W Unit
+  | .obj source => do
+    copySpreadKeys call target source (← ownKeys (.obj source))
+  | .undef | .null | .num _ | .bool _ => pure ()
+  | .str s => do
+    unless (Primitive.str s).inModel do
+      unknown "object spread requires individual UTF-16 code units"
+    for (c, i) in s.toList.zipIdx do
+      createData target (toString i) (.str (String.singleton c))
+  | .host name => unknown s!"object spread inspects host value {name}"
+  | .error .. => unknown "object spread inspects an engine error"
+
 end CoreJS
