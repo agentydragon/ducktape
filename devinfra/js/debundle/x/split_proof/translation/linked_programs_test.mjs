@@ -97,6 +97,37 @@ for (const [index, [left, op, right, expected]] of [
   );
 }
 
+// A void operand still runs. Failing any assertion during initialization
+// prevents an identical lowering mistake in both modules from certifying.
+assertWorkerResult(
+  "void-observes-operand",
+  `const worker = () => {
+    const box = {value: 0};
+    const discarded = void (box.value = 4);
+    if (discarded !== undefined || box.value !== 4) throw "operand";
+    try { return void (() => { throw "abrupt"; })(); }
+    catch (error) { return error; }
+  };
+  export const result = worker();`,
+  "abrupt"
+);
+
+{
+  const voidExpr = (argument) => ({ type: "UnaryExpression", operator: "void", argument, prefix: true });
+  const operands = [literal(0), literal(null), arrow([], literal(3)), call(arrow([], literal("returned")))];
+  const checks = operands.map((operand) => ({
+    type: "IfStatement",
+    test: { type: "BinaryExpression", operator: "!==", left: voidExpr(operand), right: id("undefined") },
+    consequent: throws(literal("unexpected value")),
+    alternate: null,
+  }));
+  assertWorkerResult(
+    "generated-void-operands",
+    observedProgram(arrow([], block([...checks, returns(literal(true))])), call(id("worker"))),
+    true
+  );
+}
+
 // Exercise both direct evaluation and calls during initialization. The first seed
 // reproduces the proof-cost regression on a moved worker returning "undefined" != typeof undefined.
 for (const [index, [operand, tag, expected]] of [
