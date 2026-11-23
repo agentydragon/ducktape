@@ -169,10 +169,10 @@ assertWorkerResult(
   "const worker = { field: 1 }; export const result = { key: worker?.field };",
   { key: 1 }
 );
+assertWorkerResult("record-spread", "const worker = () => ({ ...worker }); export const result = worker();", {});
 for (const [name, expr, reason] of [
   ["record-computed", '({ ["key"]: 1 })', /static data property/],
   ["computed-getter", '({ get ["key"]() { return 1; } })', /static data property/],
-  ["record-spread", "({ ...worker })", /static data property/],
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
   ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
