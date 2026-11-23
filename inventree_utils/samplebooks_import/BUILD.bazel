@@ -28,6 +28,7 @@ py_test(
         ":samplebooks_parts_data",
         "//:conftest",
         "@pypi//inventree",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
