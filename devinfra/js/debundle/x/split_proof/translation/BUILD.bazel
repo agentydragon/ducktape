@@ -225,6 +225,14 @@ _LINKED_PROGRAMS_TEST_DATA = [
 _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
 js_test(
+    name = "linked_arithmetic_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_arithmetic_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "linked_arrays_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,
