@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -20,7 +20,6 @@ import {
 
 import BackButton from "../components/BackButton";
 import Breadcrumb from "../components/Breadcrumb";
-import CopyButton from "../components/CopyButton";
 import FileTree from "../components/FileTree";
 import FileViewer from "../components/FileViewer";
 import OccurrenceStats from "../components/stats/OccurrenceStats";
@@ -37,7 +36,7 @@ import { splitColor } from "../lib/colors";
 import { formatLocationAnchor } from "../lib/formatters";
 import { useSearchParams } from "react-router";
 import { toast } from "../lib/toast";
-import OccurrenceLink from "../lib/OccurrenceLink";
+import OccurrenceLink, { CopyOccurrenceLink } from "../lib/OccurrenceLink";
 import { snapshotDetailQueryKey } from "../lib/queryKeys";
 import RunIdLink from "../lib/RunIdLink";
 
@@ -123,11 +122,9 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
   const selectedFile = selectedFileQuery.data ?? null;
   const loadingFile = selectedFilePath !== null && selectedFileQuery.isPending;
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(() => new Set());
-  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
 
   useEffect(() => {
     setFileSelection(null);
-    setPendingScrollTarget(null);
     setExpandedIssues(new Set());
   }, [snapshotSlug]);
 
@@ -153,61 +150,33 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
     }
   }, [selectedFileQuery.error]);
 
-  const handleFileClick = useCallback(
-    (path: string) => {
-      setFileSelection({ snapshotSlug, path });
-    },
-    [snapshotSlug]
-  );
-
-  const toggleExpanded = useCallback((id: string) => {
+  function toggleExpanded(id: string) {
     setExpandedIssues((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }, []);
-
-  const expandIssue = useCallback((id: string) => {
-    setExpandedIssues((current) => (current.has(id) ? current : new Set(current).add(id)));
-  }, []);
-
-  const findAndNavigateToOccurrence = useCallback(
-    (targetIssueId: string, occurrenceId: string, filePath?: string) => {
-      if (!snapshot) return;
-      const issues: SnapshotIssue[] = [...snapshot.true_positives, ...snapshot.false_positives];
-      for (const issue of issues) {
-        const currentIssueId = "tp_id" in issue ? issue.tp_id : issue.fp_id;
-        if (currentIssueId !== targetIssueId) continue;
-        const occurrence = issue.occurrences.find((item) => item.occurrence_id === occurrenceId);
-        if (!occurrence?.locations.length) return;
-
-        void handleFileClick(filePath || occurrence.locations[0].file);
-        expandIssue(targetIssueId);
-        setActiveTab("files");
-        setPendingScrollTarget(`${targetIssueId}-${occurrenceId}`);
-        return;
-      }
-    },
-    [snapshot, handleFileClick, expandIssue]
-  );
+  }
 
   useEffect(() => {
-    if (issueId && routeOccurrenceId && snapshot) {
-      findAndNavigateToOccurrence(issueId, routeOccurrenceId, targetFile);
+    if (!snapshot) return;
+    let path = targetFile;
+    if (issueId && routeOccurrenceId) {
+      const issue =
+        snapshot.true_positives.find((tp) => tp.tp_id === issueId) ??
+        snapshot.false_positives.find((fp) => fp.fp_id === issueId);
+      const occurrence = issue?.occurrences.find((item) => item.occurrence_id === routeOccurrenceId);
+      if (!occurrence?.locations.length) return;
+
+      path ??= occurrence.locations[0].file;
+      setExpandedIssues((current) => (current.has(issueId) ? current : new Set(current).add(issueId)));
     }
-  }, [issueId, routeOccurrenceId, snapshot, targetFile, findAndNavigateToOccurrence]);
-
-  useEffect(() => {
-    if (!pendingScrollTarget || !selectedFile || loadingFile) return;
-    const target = pendingScrollTarget;
-    setPendingScrollTarget(null);
-    const frame = requestAnimationFrame(() => {
-      document.getElementById(target)?.scrollIntoView({ block: "center" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pendingScrollTarget, selectedFile, loadingFile]);
+    if (path) {
+      setFileSelection({ snapshotSlug, path });
+      setActiveTab("files");
+    }
+  }, [snapshot, snapshotSlug, targetFile, issueId, routeOccurrenceId]);
 
   const breadcrumbs = useMemo(() => {
     if (!selectedFile || !snapshot) return [{ label: snapshotSlug }];
@@ -216,12 +185,6 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
       ...selectedFile.path.split("/").map((part) => ({ label: part })),
     ];
   }, [selectedFile, snapshot, snapshotSlug]);
-
-  function getOccurrenceUrl(targetIssueId: string, occurrenceId: string, filePath?: string): string {
-    const routePath = `/snapshots/${snapshotSlug}/${targetIssueId}/${occurrenceId}`;
-    const query = filePath ? `?file=${encodeURIComponent(filePath)}` : "";
-    return new URL(`#${routePath}${query}`, window.location.href).href;
-  }
 
   function renderIssueList(issues: SnapshotIssue[], isTruePositive: boolean) {
     if (issues.length === 0) {
@@ -271,34 +234,27 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                         const stats = isTruePositive
                           ? occurrenceStatsMap.get(`${currentIssueId}:${occurrence.occurrence_id}`)
                           : undefined;
+                        const link = {
+                          snapshotSlug,
+                          issueId: currentIssueId,
+                          occurrenceId: occurrence.occurrence_id,
+                          filePath: occurrence.locations[0]?.file,
+                        };
                         const highlighted =
                           issueId === currentIssueId && routeOccurrenceId === occurrence.occurrence_id;
                         return (
                           <Paper
                             key={occurrence.occurrence_id}
-                            id={`${currentIssueId}-${occurrence.occurrence_id}`}
                             withBorder
                             p="sm"
                             style={highlighted ? { outline: "2px solid var(--mantine-color-blue-5)" } : undefined}
                           >
                             <Group justify="space-between" align="flex-start">
                               <Group gap="xs">
-                                <OccurrenceLink
-                                  snapshotSlug={snapshot?.slug ?? snapshotSlug}
-                                  issueId={currentIssueId}
-                                  occurrenceId={occurrence.occurrence_id}
-                                  filePath={occurrence.locations[0]?.file}
-                                />
+                                <OccurrenceLink {...link} />
                                 {stats && <CreditBadge meanCredit={stats.mean_credit} nRuns={stats.n_runs} />}
                               </Group>
-                              <CopyButton
-                                text={getOccurrenceUrl(
-                                  currentIssueId,
-                                  occurrence.occurrence_id,
-                                  occurrence.locations[0]?.file
-                                )}
-                                label="Copy URL"
-                              />
+                              <CopyOccurrenceLink {...link} label="Copy URL" />
                             </Group>
                             <Stack gap={2} mt="xs">
                               {occurrence.locations.map((location, index) => (
@@ -401,9 +357,7 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                   </Text>
                   <FileTree
                     nodes={tree.tree}
-                    onFileClick={(path) => {
-                      void handleFileClick(path);
-                    }}
+                    onFileClick={(path) => setFileSelection({ snapshotSlug, path })}
                     selectedPath={selectedFile?.path}
                   />
                 </Box>
@@ -423,7 +377,9 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
                         tps={snapshot.true_positives}
                         fps={snapshot.false_positives}
                         snapshotSlug={snapshot.slug}
-                        targetOccurrenceId={routeOccurrenceId}
+                        targetOccurrence={
+                          issueId && routeOccurrenceId ? { issueId, occurrenceId: routeOccurrenceId } : undefined
+                        }
                       />
                     </>
                   ) : (
