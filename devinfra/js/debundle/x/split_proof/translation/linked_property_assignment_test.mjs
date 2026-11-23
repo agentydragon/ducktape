@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { parse } from "acorn";
 import path from "node:path";
 import {
   arrow,
@@ -59,6 +61,46 @@ const guard = (actual, expected) => ({
   consequent: throws(literal("unexpected assignment behavior")),
   alternate: null,
 });
+
+// Relocate a complete numeric enum initializer. Duplicate numeric values keep
+// both forward names and replace the reverse name on the second assignment.
+for (const values of [[3, 0, 3], Array.from({ length: 12 }, (_, i) => (i * 7) % 13)]) {
+  const object = id("table");
+  const expected = {};
+  const writes = values.map((value, i) => {
+    const name = `Member${i}`;
+    expected[name] = value;
+    expected[value] = name;
+    const forward = assignment(member(object, i % 2 ? literal(name) : id(name), Boolean(i % 2)), literal(value));
+    return assignment(member(object, forward, true), literal(name));
+  });
+  const initial = { type: "LogicalExpression", operator: "||", left: id("codes"), right: record() };
+  const initializer = call(arrow([object], sequence(...writes, object)), [initial]);
+  const source = program([variable("var", "codes", initializer), exportNamed([["codes", "Codes"]])]);
+  const { files, out, verdict, log } = split(`numeric-enum-${values.length}`, source, {
+    [worker]: ["#0"],
+    [entry]: ["#1"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  assert.deepEqual(moduleEvaluationOrder(out, entry), [worker, entry]);
+  const ownerAST = parse(readFileSync(path.join(out, worker), "utf8"), { ecmaVersion: "latest", sourceType: "module" });
+  assert(
+    ownerAST.body.some((stmt) =>
+      (stmt.declaration ?? stmt).declarations?.some((d) => d.id.name === "codes" && d.init?.type === "CallExpression")
+    )
+  );
+
+  const disk = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
+  assert.equal(disk.verdict.status, "certified", disk.log);
+  assert.equal(disk.verdict.guarantee, "normal-completion", disk.log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const namespace = await import(pathToFileURL(file).href);
+    assert.deepEqual(Object.keys(namespace), ["Codes"]);
+    assert.deepEqual(Reflect.ownKeys(namespace.Codes), Reflect.ownKeys(expected));
+    assert.deepEqual(Object.getOwnPropertyDescriptors(namespace.Codes), Object.getOwnPropertyDescriptors(expected));
+  }
+}
 
 // Guard the model itself against evaluating an operand out of order or twice.
 for (const [name, key, computed, value] of [
