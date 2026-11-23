@@ -119,46 +119,52 @@ assertCertified(split("generated-optional-reads", generated), [
   [0, "present"],
 ]);
 
-// The receiver and method getter each run once before arguments. Changing the
-// lexical base during argument evaluation leaves the call's receiver intact.
-const receivers = split(
-  "optional-method-receivers",
+// An evaluated receiver runs once per call. Only the reached call looks up a
+// method and computes the argument, in that order.
+const evaluated = split(
+  "optional-method-evaluated-receiver",
   `const run = () => {
     let trace = "";
-    const selected = {
-      value: "selected",
+    let current = null;
+    const holder = { get parent() { trace += "p"; return current; } };
+    const argument = () => { trace += "a"; };
+    const skipped = holder.parent?.method(argument()) === undefined;
+    current = {
+      value: 42,
       get method() {
         trace += "g";
-        return function (seen) { return [this.value, seen]; };
+        return function () { return this.value; };
       }
     };
-    let receiver = selected;
-    const argument = () => {
-      const seen = trace;
-      trace += "a";
-      receiver = { value: "replacement" };
-      return seen;
-    };
-    const absent = { get parent() { trace += "n"; return null; } };
-    const holder = { get parent() { trace += "p"; return selected; } };
-    if (absent.parent?.method(argument()) !== undefined) throw "null receiver";
-    const nested = holder.parent?.method(argument());
-    receiver = selected;
-    const lexical = receiver?.method(argument());
-    receiver = undefined;
-    if (receiver?.method(argument()) !== undefined) throw "undefined receiver";
-    const missingMethod = {};
-    let caught = false;
-    try { missingMethod?.method(argument()); } catch { caught = true; }
-    return [nested, lexical, trace, caught];
+    const result = holder.parent?.method(argument());
+    return [skipped, result, trace];
   };
   const result = run();
   export { result };`
 );
-assertCertified(receivers, [["selected", "npg"], ["selected", "npgag"], "npgagaa", true]);
+assertCertified(evaluated, [true, 42, "ppga"]);
 assert.deepEqual(
-  lower(receivers.files.sourceFile, receivers.files.specFile, receivers.out, ["--check-output"]).verdict,
-  receivers.verdict
+  lower(evaluated.files.sourceFile, evaluated.files.specFile, evaluated.out, ["--check-output"]).verdict,
+  evaluated.verdict
+);
+
+// Changing the lexical binding during argument evaluation leaves the original
+// receiver in the call. An undefined receiver skips that change altogether.
+assertCertified(
+  split(
+    "optional-method-lexical-receiver",
+    `const run = () => {
+      let target;
+      const argument = () => { target = null; return 2; };
+      const skipped = target?.method(argument()) === undefined && target === undefined;
+      target = { value: 5, method(delta) { return this.value + delta; } };
+      const result = target?.method(argument());
+      return [skipped, result, target === null];
+    };
+    const result = run();
+    export { result };`
+  ),
+  [true, 7, true]
 );
 
 const optionalMethod = (object, method, args) => ({
@@ -194,14 +200,21 @@ const generatedCalls = program([
     type: "ArrayExpression",
     elements: [
       literal(null),
-      id("undefined"),
-      { type: "ObjectExpression", properties: [method, property("value", literal(7))] },
       { type: "ObjectExpression", properties: [method, property("value", literal(false))] },
     ].map((base) => call(id("invoke"), [base])),
   }),
   exportNamed([["result", "result"]]),
 ]);
-assertCertified(split("generated-optional-method-calls", generatedCalls), [null, null, 7, false]);
+assertCertified(split("generated-optional-method-calls", generatedCalls), [null, false]);
+
+const missingMethod = split(
+  "optional-method-falsy-receiver",
+  `const run = (target) => target?.method();
+    const result = run(false);
+    export { result };`
+);
+assertRejected(missingMethod, /original threw during linked initialization/);
+assert.deepEqual(observe(missingMethod.files.sourceFile, "result"), { error: "TypeError" });
 
 const uninitialized = split(
   "optional-method-tdz",
