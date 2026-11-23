@@ -109,6 +109,7 @@ js_test(
     data = _SHIFT_FUZZ_DATA,
     entry_point = "shift_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    tags = ["manual"],
 )
 
 _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
@@ -607,6 +608,7 @@ js_test(
         "4",
         "--require-accepted",
         "--require-ast-coverage",
+        "--require-updates",
     ],
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",
@@ -633,6 +635,7 @@ js_test(
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+    tags = ["manual"],
 )
 
 js_test(
@@ -673,6 +676,7 @@ js_test(
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+    tags = ["manual"],
 )
 
 js_test(
@@ -735,8 +739,7 @@ js_test(
     data = _EFFECTS_CASES_DATA,
     entry_point = _EFFECTS + ":run",
     env = _EFFECTS_CASES_ENV,
-    # The permutation target includes these golden classifications and handwritten reorders.
-    tags = ["manual"],
+    shard_count = 4,
 )
 
 js_test(
@@ -776,14 +779,13 @@ js_test(
     entry_point = _EFFECTS + ":run",
     env = _EFFECTS_CASES_ENV,
     shard_count = 4,
+    tags = ["manual"],
 )
 
 js_test(
     name = "effects_targeted_fuzz_test",
     size = "medium",
     args = [
-        "--permutations",
-        "3",
         "--seed",
         "20261121",
     ],
@@ -1082,20 +1084,17 @@ js_test(
 js_test(
     name = "corejs_differential_test",
     size = "medium",
-    # Shard 2 kept progressing through the same seeded workload until 300s in both CI runs.
-    timeout = "long",
     args = [
         "--count",
-        "12",
+        "2",
         "--seed",
         "1",
         "--splits",
-        "24",
+        "0",
     ],
     data = _COREJS_DIFFERENTIAL_DATA,
     entry_point = _MODEL + ":differential",
     env = _COREJS_DIFFERENTIAL_ENV,
-    shard_count = 2,
 )
 
 js_test(

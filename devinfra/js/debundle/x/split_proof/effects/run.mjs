@@ -87,8 +87,8 @@ assert(
     shardIndex >= 0 &&
     shardIndex < shardCount
 );
-const goldenPermutations = permutations > 0 && !process.env.CASES;
-assert(shardCount === 1 || goldenPermutations, "only the golden permutation suite supports sharding");
+const golden = !auditGaps && !generatedGaps && !process.env.CASES;
+assert(shardCount === 1 || golden, "only the golden suite supports sharding");
 if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
 
 const work = mkdtempSync(path.join(tmpdir(), "effects_"));
@@ -197,8 +197,8 @@ for (const [n, raw] of cases.entries()) {
   if (!ok) failures++;
   console.log(`${ok ? "pass" : "FAIL"}  ${c.name}`);
   const lines = c.source.trim().split("\n");
-  const original = c.reorders?.length || permutations ? nodeOutput(source) : undefined;
-  if (goldenPermutations)
+  const original = golden || c.reorders?.length || permutations ? nodeOutput(source) : undefined;
+  if (golden)
     assert.equal(
       original.status !== 0,
       Boolean(c.throwsInNode),
