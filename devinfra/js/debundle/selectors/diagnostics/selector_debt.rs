@@ -380,7 +380,7 @@ fn compute_selector_debt_impl(
 
         for claim in &module.source_matches {
             source_match_total += 1;
-            let selector = claim.source_match().selector();
+            let selector = claim.selector();
             let exact_body_indices = collect_source_aware_debt(
                 &mut source_aware_checked,
                 &mut source_aware_unique,

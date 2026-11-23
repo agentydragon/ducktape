@@ -4,27 +4,35 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
-use source_match::ExplainRangeKind;
+use source_match::{ExplainRangeKind, ParsedSourceMatchSelector, SelectorField};
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use spec_modules::{read_flat_transform_spec, read_module_file};
 
 #[derive(Debug, Serialize)]
 pub(super) struct SelectedSelector {
     pub origin: String,
-    #[serde(rename = "match")]
-    pub match_source: String,
-    pub identifiers: SourceMatchIdentifierMode,
-    pub target_binding: Option<String>,
+    #[serde(flatten)]
+    pub parsed: ParsedSourceMatchSelector,
     pub kind: ExplainRangeKind,
 }
 
 impl SelectedSelector {
-    pub fn selector(&self) -> AnonymousStatementSelector {
-        AnonymousStatementSelector {
-            match_source: self.match_source.clone(),
-            identifiers: self.identifiers,
-            target_binding: self.target_binding.clone(),
-        }
+    fn parse(
+        origin: String,
+        selector: &AnonymousStatementSelector,
+        kind: ExplainRangeKind,
+    ) -> Result<Self> {
+        let parsed = ParsedSourceMatchSelector::parse(
+            &origin,
+            format!("<{origin}>"),
+            selector,
+            SelectorField::SourceMatch,
+        )?;
+        Ok(Self {
+            origin,
+            parsed,
+            kind,
+        })
     }
 }
 
@@ -32,18 +40,20 @@ pub(super) fn inline_selector(
     match_source: String,
     target_binding: Option<String>,
     anonymous: bool,
-) -> SelectedSelector {
-    SelectedSelector {
-        origin: "--match".to_string(),
-        match_source,
-        identifiers: SourceMatchIdentifierMode::AlphaAll,
-        target_binding,
-        kind: if anonymous {
+) -> Result<SelectedSelector> {
+    SelectedSelector::parse(
+        "--match".to_string(),
+        &AnonymousStatementSelector {
+            match_source,
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding,
+        },
+        if anonymous {
             ExplainRangeKind::Anonymous
         } else {
             ExplainRangeKind::Member
         },
-    }
+    )
 }
 
 /// `file.yaml#/source_matches/0`, or `--spec file.yaml --selector '#/…'`.
@@ -119,17 +129,16 @@ pub(super) fn load_selectors(
                 );
             }
             Ok(members
-                .iter()
-                .map(|member| member.parsed_selector.selector())
-                .filter(|selector| {
-                    target_binding
-                        .is_none_or(|target| selector.target_binding.as_deref() == Some(target))
+                .into_iter()
+                .map(|member| member.parsed_selector)
+                .filter(|parsed| {
+                    target_binding.is_none_or(|target| {
+                        parsed.selector().target_binding.as_deref() == Some(target)
+                    })
                 })
-                .map(|selector| SelectedSelector {
+                .map(|parsed| SelectedSelector {
                     origin: origin.clone(),
-                    match_source: selector.match_source.clone(),
-                    identifiers: selector.identifiers,
-                    target_binding: selector.target_binding.clone(),
+                    parsed,
                     kind: ExplainRangeKind::BindingGroup,
                 })
                 .collect())
@@ -143,14 +152,11 @@ pub(super) fn load_selectors(
                 .anonymous_statements
                 .get(index)
                 .with_context(|| format!("selector address {origin} does not exist"))?;
-            let selector = statement.selector()?;
-            Ok(vec![SelectedSelector {
+            Ok(vec![SelectedSelector::parse(
                 origin,
-                match_source: selector.match_source,
-                identifiers: selector.identifiers,
-                target_binding: selector.target_binding,
-                kind: ExplainRangeKind::Anonymous,
-            }])
+                &statement.selector()?,
+                ExplainRangeKind::Anonymous,
+            )?])
         }
         _ => bail!("selector address must name a source_matches or anonymous_statements entry"),
     }
