@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -18,25 +19,16 @@ func migrationExec(t *testing.T, db *sql.DB, query string, args ...any) {
 	}
 }
 
-func migrationCount(t *testing.T, db *sql.DB, query string, args ...any) int {
-	t.Helper()
-	var count int
-	if err := db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
-}
-
 func TestFreshSamplerBaseline(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=15 AND is_applied`); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=15 AND is_applied`); count != 1 {
 		t.Fatal("baseline not recorded")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
 		t.Fatal("provider attempt migration not recorded")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_conversation WHERE id=$1 AND api='responses'`, session.ConversationID); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_conversation WHERE id=$1 AND api='responses'`, session.ConversationID); count != 1 {
 		t.Fatal("current session was not created")
 	}
 }
@@ -88,15 +80,15 @@ func TestMigrationDeletesRetainedPreIdentitySamplerSessions(t *testing.T) {
 			"sampler_event":             "session_id",
 			"sampler_export_checkpoint": "session_id",
 		} {
-			if count := migrationCount(t, store.DB(), "SELECT count(*) FROM "+table+" WHERE "+column+"=$1", deleted.ID); count != 0 {
+			if count := postgres.Count(t, store.DB(), "SELECT count(*) FROM "+table+" WHERE "+column+"=$1", deleted.ID); count != 0 {
 				t.Fatalf("pre-Identity Session %s retained %d rows in %s", deleted.ID, count, table)
 			}
 		}
-		if count := migrationCount(t, store.DB(), "SELECT count(*) FROM sampler_conversation WHERE id=$1", deleted.ConversationID); count != 0 {
+		if count := postgres.Count(t, store.DB(), "SELECT count(*) FROM sampler_conversation WHERE id=$1", deleted.ConversationID); count != 0 {
 			t.Fatalf("pre-Identity conversation %s remains", deleted.ConversationID)
 		}
 	}
-	if count := migrationCount(t, store.DB(), "SELECT count(*) FROM sampler_session WHERE id=$1", retained.ID); count != 1 {
+	if count := postgres.Count(t, store.DB(), "SELECT count(*) FROM sampler_session WHERE id=$1", retained.ID); count != 1 {
 		t.Fatalf("current Session count=%d, want 1", count)
 	}
 }
@@ -137,13 +129,13 @@ func TestSamplerBaselineAdoptsCompletedRewriteWithoutTouchingData(t *testing.T) 
 	if got.ConversationID != session.ConversationID || got.SourceID != session.SourceID || got.Cursor != session.Cursor {
 		t.Fatal("adoption changed session identity")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id BETWEEN 1 AND 16 AND is_applied`); count != 16 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id BETWEEN 1 AND 16 AND is_applied`); count != 16 {
 		t.Fatal("adoption rewrote Goose history")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM pg_class WHERE oid=$1 AND relname='sampler_event'`, relation); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM pg_class WHERE oid=$1 AND relname='sampler_event'`, relation); count != 1 {
 		t.Fatal("adoption recreated event table")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_export_checkpoint WHERE session_id=$1 AND destination='fixture-history' AND cursor=73`, session.ID); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_export_checkpoint WHERE session_id=$1 AND destination='fixture-history' AND cursor=73`, session.ID); count != 1 {
 		t.Fatal("adoption changed export checkpoint")
 	}
 }
@@ -186,10 +178,10 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=15 AND is_applied`); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=15 AND is_applied`); count != 1 {
 		t.Fatal("baseline recorded more than once")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
 		t.Fatal("provider attempt migration recorded more than once")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 func TestContentAndContextShareHashesAndFollowCallerRollback(t *testing.T) {
@@ -98,10 +99,7 @@ func TestContentAndContextShareHashesAndFollowCallerRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"sampler_content", "sampler_context"} {
-		var count int
-		if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
+		count := postgres.Count(t, db, `SELECT COUNT(*) FROM `+table)
 		if count != 0 {
 			t.Fatalf("%s rows after caller rollback = %d, want 0", table, count)
 		}
