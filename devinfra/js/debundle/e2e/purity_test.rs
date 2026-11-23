@@ -412,20 +412,9 @@ export { a1, a2, b1 };
 // Declared purity — author asserts purity via `member.purity = "pure"`.
 // ---------------------------------------------------------------------------
 
-#[test]
-fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
-    // `dispatcher` does dynamic property access into a
-    // registry — recursive purity analysis can't statically
-    // prove the lookup is pure (the registry value at the
-    // dynamic key could be a getter or a function that
-    // mutates state). The spec author knows the registry
-    // entries are all pure handlers, so they annotate the
-    // `dispatcher` member with `purity: "pure"`. The
-    // validator trusts the assertion and stops emitting
-    // `S` edges for `dispatcher(...)` call sites.
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const registry = {
+fn dispatcher_fixture(dispatcher: Member) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"const registry = {
   alpha: function (x) { return { handled: "alpha", x }; },
   beta: function (x) { return { handled: "beta", x }; },
   gamma: function (x) { return { handled: "gamma", x }; },
@@ -439,24 +428,28 @@ const C = dispatcher({ kind: "gamma", payload: 3 });
 console.log(A.handled, B.handled, C.handled);
 export { A, B, C, dispatcher };
 "#,
-            vec![
-                logical_module(
-                    "mod_a",
-                    &[
-                        Member::new("A"),
-                        Member::new("C"),
-                        // Author asserts: calls to `dispatcher` have no
-                        // observable side effects. Both call sites in
-                        // mod_a (A, C) and the one in mod_b (B) drop
-                        // their `S` edges.
-                        Member::new("dispatcher").with_purity(MemberPurity::Pure),
-                    ],
-                ),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-    );
+        vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("C"), dispatcher]),
+            logical_module("mod_b", &[Member::new("B")]),
+        ],
+    )
+    .with_import_order(&["mod_a", "mod_b", "residual"])
+}
+
+#[test]
+fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
+    // `dispatcher` does dynamic property access into a
+    // registry — recursive purity analysis can't statically
+    // prove the lookup is pure (the registry value at the
+    // dynamic key could be a getter or a function that
+    // mutates state). The spec author knows the registry
+    // entries are all pure handlers, so they annotate the
+    // `dispatcher` member with `purity: "pure"`. The
+    // validator trusts the assertion and stops emitting
+    // `S` edges for `dispatcher(...)` call sites.
+    let fixture = run_fixture(dispatcher_fixture(
+        Member::new("dispatcher").with_purity(MemberPurity::Pure),
+    ));
     assert_entry_output(&fixture, "alpha beta gamma\n");
 }
 
@@ -505,42 +498,19 @@ fn canonical_source_match_purity_annotation_contributes_to_analysis_inputs() {
     // prove pure, so the `purity` on its source_match member is the only
     // thing that drops the `S` edges of the interleaved call sites. The
     // unannotated control keeps that premise from silently going vacuous.
-    const ENTRY: &str = r#"const registry = {
-  alpha: function (x) { return { handled: "alpha", x }; },
-  beta: function (x) { return { handled: "beta", x }; },
-  gamma: function (x) { return { handled: "gamma", x }; },
-};
-function dispatcher(req) {
-  return registry[req.kind](req.payload);
-}
-const A = dispatcher({ kind: "alpha", payload: 1 });
-const B = dispatcher({ kind: "beta", payload: 2 });
-const C = dispatcher({ kind: "gamma", payload: 3 });
-console.log(A.handled, B.handled, C.handled);
-export { A, B, C, dispatcher };
-"#;
     let dispatcher = || {
         Member::source_alpha(
             "dispatcher",
             r#"function dispatcher(req) { return registry[req.kind](req.payload); }"#,
         )
     };
-    let modules = |dispatcher: Member| {
-        vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("C"), dispatcher]),
-            logical_module("mod_b", &[Member::new("B")]),
-        ]
-    };
-
     expect_rejection_containing_all(
-        FixtureOpts::new(ENTRY, modules(dispatcher()))
-            .with_import_order(&["mod_a", "mod_b", "residual"]),
+        dispatcher_fixture(dispatcher()),
         &["cycle", "mod_a", "mod_b", "side-effect"],
     );
-    let fixture = run_fixture(
-        FixtureOpts::new(ENTRY, modules(dispatcher().with_purity(MemberPurity::Pure)))
-            .with_import_order(&["mod_a", "mod_b", "residual"]),
-    );
+    let fixture = run_fixture(dispatcher_fixture(
+        dispatcher().with_purity(MemberPurity::Pure),
+    ));
     assert_entry_output(&fixture, "alpha beta gamma\n");
 }
 
