@@ -131,6 +131,16 @@ fn get_snapshot_paths(config: &Config) -> Vec<String> {
     paths
 }
 
+fn asset_totals_by_denomination(
+    source_snapshots: &[SourceSnapshot],
+) -> HashMap<&Denomination, Decimal> {
+    let mut totals = HashMap::new();
+    for asset in source_snapshots.iter().flat_map(|source| &source.snapshot) {
+        *totals.entry(&asset.denomination).or_insert(Decimal::ZERO) += asset.amount;
+    }
+    totals
+}
+
 async fn model_and_show(
     config: &Config,
     converter_snapshots: &[ConverterSnapshot],
@@ -145,16 +155,7 @@ async fn model_and_show(
         .collect();
     info!("All conversions: {all_conversions:?}");
 
-    // TODO: deduplicate
-    let mut all_assets = HashMap::new();
-    for ss in source_snapshots.iter() {
-        for asset in ss.snapshot.iter() {
-            all_assets
-                .entry(asset.denomination.clone())
-                .or_insert(Decimal::ZERO);
-            *all_assets.get_mut(&asset.denomination).unwrap() += asset.amount;
-        }
-    }
+    let all_assets = asset_totals_by_denomination(source_snapshots);
     info!("All assets: {all_assets:?}");
 
     let in_common_currency = common_currency::in_common_currency(&all_conversions, &base);
@@ -362,13 +363,7 @@ async fn model_and_show(
     // TODO(agentydragon): Make configurable
     // How many more years to model for (i.e., remaining lifetime)
     let deadline = dec!(75.0);
-    render_table(
-        deadline,
-        &total,
-        &config.modelling,
-        &base,
-        &in_common_currency,
-    );
+    render_table(deadline, &total, &config.modelling, &in_common_currency);
     total
 }
 
@@ -391,16 +386,7 @@ async fn main() {
             // TODO(agentydragon): would be quite nice to do this via futures...
             let source_snapshots = get_source_snapshots(&config.source_config).await;
 
-            // TODO: deduplicate
-            let mut all_assets = HashMap::new();
-            for ss in source_snapshots.iter() {
-                for asset in ss.snapshot.iter() {
-                    all_assets
-                        .entry(asset.denomination.clone())
-                        .or_insert(Decimal::ZERO);
-                    *all_assets.get_mut(&asset.denomination).unwrap() += asset.amount;
-                }
-            }
+            let all_assets = asset_totals_by_denomination(&source_snapshots);
             info!("All assets: {all_assets:?}");
 
             // TODO: check it exists
@@ -409,7 +395,7 @@ async fn main() {
             };
 
             let converter_snapshots = get_converter_snapshots(
-                &all_assets.keys().collect::<Vec<_>>(),
+                &all_assets.keys().copied().collect::<Vec<_>>(),
                 &config.converter_config,
                 &base,
             )
@@ -476,7 +462,6 @@ fn render_table(
     deadline: Decimal,
     total: &Asset,
     modelling: &config::ModellingConfig,
-    base: &Denomination,
     in_common_currency: &HashMap<Denomination, Decimal>,
 ) {
     let mut table = Table::new();
@@ -526,29 +511,29 @@ fn render_table(
         results.push(TableCell::new(format!("{}", asset_to_money(goal))));
 
         for yearly_yield in &modelling.yearly_yields {
-            let result = model_fi_info(
+            let result = model_in_common_currency(
                 total,
                 in_common_currency,
                 *yearly_yield,
-                goal.clone(),
+                goal,
                 &modelling.monthly_saving,
                 deadline,
             );
             use model_rs::State::*;
-            results.push(TableCell::new(match result.model_fi_info.state {
+            results.push(TableCell::new(match result.state {
                 NotReached { .. } => {
                     // 2693 = unicode anchor
                     // 1F4B0 = bag with money
                     format!(
                         "💰 ≥{}\n{}",
                         asset_to_money(&Asset {
-                            amount: result.model_fi_info.need_to_last_until_deadline,
-                            denomination: base.clone()
+                            amount: result.need_to_last_until_deadline,
+                            denomination: total.denomination.clone()
                         }),
-                        result.model_fi_info.lasts_until_short_string()
+                        result.lasts_until_short_string()
                     )
                 }
-                Reached { .. } => result.model_fi_info.lasts_until_short_string(),
+                Reached { .. } => result.lasts_until_short_string(),
             }));
         }
         table.add_row(Row::new(results));
@@ -556,10 +541,7 @@ fn render_table(
     print!("{}", table.render());
 }
 
-struct FiInfo {
-    model_fi_info: model_rs::FiInfo,
-}
-
+// TODO(agentydragon): Also show a monthly spend bounded by the modelling deadline.
 fn get_perpetual(
     total: &Asset,
     yearly_yield: Decimal,
@@ -573,37 +555,20 @@ fn get_perpetual(
     }
 }
 
-// Yearly yield: 0.03 means assumed yearly yield of 3%.
-fn model_fi_info(
+fn model_in_common_currency(
     total: &Asset,
     common_prices: &HashMap<Denomination, Decimal>,
     yearly_yield: Decimal,
-    monthly_goal: Asset,
+    monthly_goal: &Asset,
     monthly_saving: &Asset,
     deadline: Decimal,
-) -> FiInfo {
-    // TODO(agentydragon): make the monthly spend limited to the deadline, not
-    // perpetual
-    //
-    // does not seem to work so well - sometimes is smaller than perpetual,
-    // which it should not be:
-    //
-    //i_prime := math.Log(1 + yearly_yield)
-    //f := math.Pow(1+yearly_yield, deadline)
-    //projectedInCommon := (total.Amount * i_prime * f / (f - 1)) / 12
-    //projectedMonthlySpend :=
-    //	makeCurrency(monthly_goal.Denomination.Symbol, projectedInCommon/common_prices[monthly_goal.Denomination])
-    //fmt.Printf("yearly yield %.2g%%, monthly goal %s, projected monthly spend %s, perpetual %s\n", yearly_yield*100.0, monthly_goal,
-    //	projectedMonthlySpend)
-
+) -> model_rs::FiInfo {
     let to_common = |x: &Asset| -> Decimal { common_prices[&x.denomination] * x.amount };
-    FiInfo {
-        model_fi_info: model_rs::model_fi_info(
-            to_common(total),
-            yearly_yield,
-            to_common(&monthly_goal),
-            to_common(monthly_saving),
-            deadline,
-        ),
-    }
+    model_rs::model_fi_info(
+        to_common(total),
+        yearly_yield,
+        to_common(monthly_goal),
+        to_common(monthly_saving),
+        deadline,
+    )
 }
