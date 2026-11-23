@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,12 +14,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 )
 
 // callerHeader is how the test's core client tells the fake core which caller a call's context carried, standing in
@@ -132,15 +130,10 @@ type harness struct {
 // newHarness serves options, with the test's resource metadata URL and logger.
 func newHarness(t *testing.T, core *fakeCore, options Options) *harness {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
 	pb.RegisterActionServiceServer(grpcServer, core)
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(grpcServer.Stop)
-	connection, err := grpc.NewClient(
-		"passthrough:///test-core",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+	connection := grpcserver.ConnectInMemory(
+		t, grpcServer,
 		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, request, reply any, cc *grpc.ClientConn,
 			invoker grpc.UnaryInvoker, options ...grpc.CallOption,
 		) error {
@@ -152,10 +145,6 @@ func newHarness(t *testing.T, core *fakeCore, options Options) *harness {
 			return streamer(stampCaller(ctx), desc, cc, method, options...)
 		}),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close() })
 	options.ResourceMetadataURL = "https://test-actions.example/.well-known/oauth-protected-resource/mcp"
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.NewTextHandler(t.Output(), nil))
