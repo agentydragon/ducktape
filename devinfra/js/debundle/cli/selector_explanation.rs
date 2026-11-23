@@ -7,9 +7,7 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use serde::Serialize;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
-use source_match::{
-    ParsedSourceMatchSelector, RangeExplanation, explain_range, template_free_identifiers,
-};
+use source_match::{RangeExplanation, explain_range, template_free_identifiers};
 
 use crate::selector_input::{SelectedSelector, inline_selector, load_selectors};
 use selector_codemod::source_input::resolve_chunk_source_file;
@@ -57,7 +55,7 @@ pub(super) fn explain(config: &ExplanationConfig) -> Result<ExplanationReport> {
                 pattern.clone(),
                 config.target_binding.clone(),
                 config.anonymous,
-            )],
+            )?],
             (None, Some(address)) => load_selectors(
                 address,
                 config.spec_file.as_deref(),
@@ -67,14 +65,8 @@ pub(super) fn explain(config: &ExplanationConfig) -> Result<ExplanationReport> {
         };
         let mut comparisons = Vec::new();
         for selector in selectors {
-            let parsed = ParsedSourceMatchSelector::parse(
-                &selector.origin,
-                format!("<{}>", selector.origin),
-                &selector.selector(),
-                source_match::SelectorField::SourceMatch,
-            )?;
-            let external_identifiers = template_free_identifiers(&parsed);
-            let mut result = explain_range(&parsed, selected, selector.kind);
+            let external_identifiers = template_free_identifiers(&selector.parsed);
+            let mut result = explain_range(&selector.parsed, selected, selector.kind);
             for index in result.aligned_statements.iter_mut().flatten() {
                 *index += config.statements.start;
             }
@@ -112,16 +104,16 @@ pub(super) fn render(report: &ExplanationReport, out: &mut String) {
         }
     }
     for comparison in &report.comparisons {
-        let selector = &comparison.selector;
+        let parsed = comparison.selector.parsed.selector();
         let _ = writeln!(
             out,
             "Selector: {} ({:?}, {:?}, target: {})",
-            selector.origin,
-            selector.kind,
-            selector.identifiers,
-            selector.target_binding.as_deref().unwrap_or("<inferred>")
+            comparison.selector.origin,
+            comparison.selector.kind,
+            parsed.identifiers,
+            parsed.target_binding.as_deref().unwrap_or("<inferred>")
         );
-        for line in selector.match_source.lines() {
+        for line in parsed.match_source.lines() {
             let _ = writeln!(out, "    {line}");
         }
         if !comparison.external_identifiers.is_empty() {

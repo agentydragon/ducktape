@@ -1,18 +1,19 @@
 # Plan: from "a valid translation" to nice code with a proof
 
-State: `translate` accepts a tree that is the bundle renamed and reshuffled, and lists **obligations**: pairs of conflicting units whose order changed. Units bind named cells (`Stmt.writes`), so a statement that assigns a variable, or changes an object, conflicts only with the ones that read or write it. Footprints come from [`../effects/`](../effects/README.md), which runs the bundle's top level over abstract values. Almost every obligation left is an effect-effect pair of units that run code it cannot see.
+Work remaining for the [translation validator](README.md).
 
 Acceptance for every step: the fixtures and mutants of `:fixtures_test` still pass, and the step's own check shows the change on a real bundle.
 
 ## 1. Effect summaries: obligations become justified
 
-Delivered: [`../effects/`](../effects/README.md) computes footprints by abstract interpretation, and `translate`, `lower` and `lowersplit` use it. On the large bundle there are 865,930 obligations with no assumption beyond the printed ones (2,059 effect units) and 669,532 with premise P3 (1,583 effect units). Every remaining obligation is an effect-effect pair of units that run code the analysis cannot see ([experiments § 13](../experiments/README.md#13-footprints-by-abstract-interpretation)). Left:
+The [bundle measurements](../experiments/README.md#13-footprints-by-abstract-interpretation)
+record obligation counts, vendor experiments and cost. Open work:
 
-- **A reviewed vendor table.** Imports from outside the tree are the world unless listed. One import is called by 511 effect units and 40 imports by about half of them; 40 entries (keyed by minified names, unreviewed) halve the obligations again, to 344,781. A real table is keyed by package and export path, never by a minified name; agents draft entries one package at a time and a person reviews them; the checker prints the entries it used. `translate --table` already lists the imports a tree relies on.
-- **Decorators and registrations.** 527 units apply a decorator helper to a class or a prototype, and all run unknown code because the decorators are vendor functions. A decorator only touches its target and a registry, so two such units on different targets commute. That is a hint (step 2), checked from the footprints.
-- **Cost and budget.** 114 s for 9,707 units; 135 units run out of the 100,000-step budget and fall back to unknown code. Profile with the real profilers before raising either.
-- **Fewer rules to trust.** Prove each rule of the interpreter against a small semantics of the fragment it mentions, starting with the ones the audit found wrong (calls that are run later or not looked into). The tests are Node-checked reorders and a fuzzer, not proofs.
-- **Premise review.** P3 (the world adds no accessors or conversion hooks to program objects) is what lets a property of an escaped object be read like any other; without it every such access is unknown code (865,930 obligations, 669,532 with it). Decide whether it holds for the libraries of each bundle (an observable-state library that defines accessors on instances would break it).
+- **Reviewed vendor table.** Key entries by package and export path. Draft one package at a time, review each entry and report which entries the checker used. `translate --table` lists the rewrites a tree relies on.
+- **Decorators and registrations.** Establish which targets and registries each vendor helper can change before allowing applications on different targets to commute (§ 2).
+- **Cost and budget.** Profile before raising the step budget. Exhausted units must fall back to unknown code. [Measured costs](../effects/README.md#cost)
+- **Proved rules.** Use the [footprint certificate plan](../docs/footprint_soundness.md) for the interpreter proof work. Prioritize rules that failed audits, including deferred or skipped calls.
+- **Premise P3.** Check whether a bundle's world can install accessors or conversion hooks on escaped objects before relying on P3. An observable-state library defining accessors on instances can invalidate it. [Premises](../effects/README.md#premises)
 
 ## 2. Hints for what is left
 
@@ -38,8 +39,13 @@ Only the entry's export list is checked. Other chunks import from the tree. Chec
 
 ## 7. A generator that can reach any program, and a footprint oracle
 
-The fuzzers use three generators, each narrow in its own way: 60 hand-written unit templates (`fuzz.mjs`), a scope-aware corpus of 20 AST node types (`testing/ast_generator.mjs`), and a grammar fuzzer whose programs rarely do anything observable (`shift_fuzz_test.mjs`; premise P4 drops the ones that throw). The reorder oracle also sees a wrong footprint only when a reorder happens to change the output. The [footprint oracle](README.md#the-footprint-oracle) checks footprints directly; what is left is its input:
+Extend the inputs to the existing [footprint oracle](README.md#the-footprint-oracle).
+Use the [coverage audit](COVERAGE.md#gaps) to find unevaluated Effects cases and
+uncalled intrinsic summaries. Remaining syntax includes export forms, `using`,
+top-level `await` and JSON import attributes. The translation checker refuses
+default and source-bearing exports, and the oracle refuses top-level `await`.
+Teach the fuzzer's splitter to emit an aliased export before testing alias placement.
 
-- **A generator whose range is the whole language.** [`testing/gen/`](README.md#the-generator-of-the-whole-language) has the families `expressions`, `statements`, `functions`, `classes`, `patterns`, `protocols`, `modules` and `unmodeled`. Left: the export forms (`export default`, `export … from` and `export *` are refused by the translation checker, an aliased export needs the splitter to export by alias), `using`, a top-level `await` (the oracle refuses it) and a JSON import with attributes. Steer it by the inventory: every construct `Effects.lean` evaluates and every row of `Intrinsics.lean` gets a production.
-
-A wrong footprint that the oracle or a generator finds is a runnable program in [`debug/generator_findings/`](debug/generator_findings/README.md), and a case in `effects/cases_general.mjs` once the analysis refuses it.
+Save a wrong footprint as a runnable [finding](debug/generator_findings/README.md)
+and add a case to [`effects/cases_general.mjs`](../effects/cases_general.mjs) when
+the analysis refuses the unsafe permutation.

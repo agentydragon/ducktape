@@ -1195,9 +1195,9 @@ fn patch_plan_rows(
             .iter()
             .map(|patch_set| SourceClaimSet {
                 module_path: &patch_set.file,
-                member_selectors: &patch_set.member_selectors,
-                source_matches: &patch_set.source_matches,
-                anonymous_selectors: &patch_set.anonymous_selectors,
+                member_selectors: &patch_set.claims.member_selectors,
+                source_matches: &patch_set.claims.source_matches,
+                anonymous_selectors: &patch_set.claims.anonymous_selectors,
             })
             .collect::<Vec<_>>(),
     )?;
@@ -1206,13 +1206,12 @@ fn patch_plan_rows(
         .zip(resolved_by_set)
         .map(|(patch_set, resolved)| {
             let claimed_bindings: BTreeSet<String> = patch_set
-                .bindings
-                .iter()
-                .chain(&resolved.bindings)
-                .cloned()
+                .claims
+                .binding_pins()
+                .map(str::to_owned)
+                .chain(resolved.bindings)
                 .collect();
-            let mut requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
-            requested_binding_ids.sort();
+            let requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
 
             let mut requested_source_unit_ids = BTreeSet::<String>::new();
             let mut unknown_binding_ids = Vec::<String>::new();
@@ -1311,10 +1310,7 @@ fn patch_plan_rows(
 struct PatchSet {
     path: String,
     file: PathBuf,
-    bindings: BTreeSet<String>,
-    member_selectors: Vec<(String, spec::MemberSelectorSpec)>,
-    anonymous_selectors: BTreeSet<spec::AnonymousStatementSelector>,
-    source_matches: Vec<spec::SourceMatchClaim>,
+    claims: spec_modules::ModuleClaims,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1327,10 +1323,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
         sets.push(PatchSet {
             path: module_path_from_file(&file, modules_root),
             file,
-            bindings: claims.bindings,
-            member_selectors: claims.member_selectors,
-            anonymous_selectors: claims.anonymous_selectors,
-            source_matches: claims.source_matches,
+            claims,
         });
     }
     Ok(sets)
@@ -1533,11 +1526,11 @@ fn resolve_module_path_source_unit_ids(
     let binding_to_source_units = binding_to_source_units(graph);
     let mut source_unit_ids = BTreeSet::<String>::new();
     let mut unknown_binding_ids = Vec::<String>::new();
-    for binding in &claims.bindings {
+    for binding in claims.binding_pins().collect::<BTreeSet<_>>() {
         if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
             source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
         } else {
-            unknown_binding_ids.push(binding.clone());
+            unknown_binding_ids.push(binding.to_owned());
         }
     }
     // The module's claims resolve jointly with every other module's, as in

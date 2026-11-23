@@ -61,7 +61,7 @@ from devinfra.pr_visuals.publisher import (
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
 from devinfra.pr_visuals.targets import list_ci_failures
-from devinfra.pr_visuals.testing.outputs import Blob, output_observation, result_artifact
+from devinfra.pr_visuals.testing.outputs import Blob, FakeArtifactRunner, output_observation, result_artifact
 from devinfra.testing.output_writer import BoundTestOutputs
 
 if TYPE_CHECKING:
@@ -262,17 +262,6 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
     assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
 
-def _download_runner(blobs: dict[str, bytes]) -> Callable[..., subprocess.CompletedProcess[str]]:
-    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-        for item in manifest:
-            Path(item["destination"]).write_bytes(blobs[item["uri"]])
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    return run
-
-
 def test_collection_preserves_case_and_checkpoint_identity(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     body = b"png"
     observations = tuple(
@@ -298,7 +287,7 @@ def test_collection_preserves_case_and_checkpoint_identity(monkeypatch: pytest.M
     assert len({asset.review_filename for asset in tests[0].assets}) == 2
     assert all(not asset.variants[0].local_path.exists() for asset in tests[0].assets)
     materialize_visual_tests(
-        tests, required_pixel_digests={hashlib.sha256(body).hexdigest()}, run=_download_runner({Blob(body).uri: body})
+        tests, required_pixel_digests={hashlib.sha256(body).hexdigest()}, run=FakeArtifactRunner({Blob(body).uri: body})
     )
     assert all(asset.variants[0].local_path.read_bytes() == body for asset in tests[0].assets)
 
@@ -659,7 +648,6 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
     failed_image = _png(tmp_path / "failed.png", color=(255, 0, 0, 255)).read_bytes()
     artifacts: dict[str, list[BuildBuddyArtifact]] = {}
     blobs: dict[str, bytes] = {}
-    downloaded: set[str] = set()
     filenames: dict[tuple[str, str | None], str] = {}
     specs = [
         ("first", 1, 1, "FAILED"),
@@ -705,18 +693,7 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
                 )
             )
 
-    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        if "artifact" in words:
-            invocation = words[words.index("list") + 1]
-            return subprocess.CompletedProcess(
-                command, 0, json.dumps([item.model_dump(by_alias=True) for item in artifacts[invocation]]), ""
-            )
-        manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-        for item in manifest:
-            downloaded.add(item["uri"])
-            Path(item["destination"]).write_bytes(blobs[item["uri"]])
-        return subprocess.CompletedProcess(command, 0, "", "")
+    run = FakeArtifactRunner(blobs, artifacts)
 
     tests = collect_visual_tests(["first", "second"], tmp_path / "downloaded", repository="owner/repo", run=run)
     materialize_visual_tests(
@@ -750,6 +727,7 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
             ("second", 1 if asset.case_id == "dialog/mobile" else 2, 1),
         }
         assert (tmp_path / "site" / "assets" / f"{variant.sha256}.png").read_bytes() == image
+    downloaded = {entry["uri"] for manifest in run.manifests for entry in manifest}
     assert Blob(image).uri in downloaded
     assert Blob(failed_image).uri not in downloaded
     assert Blob(b"diagnostics").uri not in downloaded
@@ -1530,7 +1508,7 @@ def test_candidate_image_must_be_verified_before_page_publication(
     variants = test.assets[0].variants
     if invalid == "size":
         variants[0] = replace(variants[0], size=len(delivered) + 1)
-    run = _download_runner({Blob(advertised).uri: delivered})
+    run = FakeArtifactRunner({Blob(advertised).uri: delivered})
     materialization = materialize_visual_tests(
         [test], required_pixel_digests=set() if deferred else {variants[0].sha256}, run=run
     )
@@ -1554,20 +1532,12 @@ def test_missing_cas_image_is_downloaded_once_for_duplicate_targets(tmp_path: Pa
     tests = [_unmaterialized_test(tmp_path / "candidate", body, label=label) for label in ("//a:visual", "//b:visual")]
     deferred = materialize_visual_tests(tests, required_pixel_digests=set())
     bundle = build_bundle(tests, tmp_path / "site", commit_sha="a" * 40, repository="r", image_materialization=deferred)
-    manifests: list[list[dict[str, str]]] = []
-
-    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-        manifests.append(manifest)
-        for entry in manifest:
-            Path(entry["destination"]).write_bytes(body)
-        return subprocess.CompletedProcess(command, 0, "", "")
+    run = FakeArtifactRunner({Blob(body).uri: body})
 
     client = PublishedObjects()
     _upload(bundle, client, candidates=tests, run=run)
-    assert len(manifests) == 1
-    assert len(manifests[0]) == 1
+    assert len(run.manifests) == 1
+    assert len(run.manifests[0]) == 1
     assert len(client.puts) == 1
     assert client.events[-1] == "reviews/a/index.html"
 
@@ -1588,7 +1558,7 @@ def test_wrong_size_existing_image_cannot_publish_a_review(tmp_path: Path) -> No
     client = WrongSizeBucket()
     client.objects[image_key] = b"wrong size"
     with pytest.raises(ValueError, match="wrong size"):
-        _upload(bundle, client, candidates=[test], run=_download_runner({Blob(body).uri: body}))
+        _upload(bundle, client, candidates=[test], run=FakeArtifactRunner({Blob(body).uri: body}))
     assert client.events == []
 
 
@@ -1615,15 +1585,7 @@ def test_pr_materializes_only_a_candidate_that_needs_pixel_comparison(tmp_path: 
     resolved: dict[str, ResolvedBaseline | None] = {
         test.slug: ResolvedBaseline(commit_sha="b" * 40, metadata=baseline, fallback=False)
     }
-    manifests: list[list[dict[str, str]]] = []
-
-    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-        manifests.append(manifest)
-        for entry in manifest:
-            Path(entry["destination"]).write_bytes(candidate_body)
-        return subprocess.CompletedProcess(command, 0, "", "")
+    run = FakeArtifactRunner({Blob(candidate_body).uri: candidate_body})
 
     deferred = materialize_visual_tests(
         [test], required_pixel_digests=required_candidate_pixels([test], resolved), run=run
@@ -1640,7 +1602,7 @@ def test_pr_materializes_only_a_candidate_that_needs_pixel_comparison(tmp_path: 
     )
     review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     assert review.assets[0].classification == ("modified" if changed else "unchanged")
-    assert len(manifests) == int(changed)
+    assert len(run.manifests) == int(changed)
     assert test.assets[0].variants[0].local_path.exists() == changed
 
 

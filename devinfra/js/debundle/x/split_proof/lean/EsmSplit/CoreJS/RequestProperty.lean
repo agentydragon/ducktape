@@ -7,6 +7,7 @@ The lookup budget counts every object in the heap. Replacing a protected
 region can change that count, even when the receiver cannot reach the region.
 A successful search has a first hit along a path of distinct objects, so
 the object count of either heap is enough for the same path.
+The same path proof bounds the cycle check before changing a prototype.
 Property writes preserve the envelope when both the target and inserted
 values are accessible. Property deletion only removes existing edges.
 -/
@@ -15,49 +16,61 @@ namespace CoreJS
 
 variable {W : World}
 
-private inductive PropertyPath (s : State W) (key : String) (p : Property) : Addr → List Addr → Prop
-  | own {a o} : s.objAt a = some o → o.props.lookup key = some p → PropertyPath s key p a [a]
-  | inherited {a o parent rest} : s.objAt a = some o → o.props.lookup key = none →
-      o.proto = some parent → PropertyPath s key p parent rest → PropertyPath s key p a (a :: rest)
+variable {α : Type}
 
-private theorem findProp_path {s : State W} {key p} {budget : Nat} {a : Addr}
-    (h : findProp s budget a key = some p) :
-    ∃ path, PropertyPath s key p a path ∧ path.length ≤ budget := by
+private def findOnPrototype (s : State W) (test : Addr → Obj → Option α) : Nat → Addr → Option α
+  | 0, _ => none
+  | steps + 1, a =>
+    match s.objAt a with
+    | none => none
+    | some o =>
+      match test a o with
+      | some result => some result
+      | none => o.proto.bind (findOnPrototype s test steps)
+
+private inductive PrototypePath (s : State W) (test : Addr → Obj → Option α) (p : α) : Addr → List Addr → Prop
+  | own {a o} : s.objAt a = some o → test a o = some p → PrototypePath s test p a [a]
+  | inherited {a o parent rest} : s.objAt a = some o → test a o = none →
+      o.proto = some parent → PrototypePath s test p parent rest → PrototypePath s test p a (a :: rest)
+
+private theorem findOnPrototype_path {s : State W} {test : Addr → Obj → Option α} {p} {budget : Nat} {a : Addr}
+    (h : findOnPrototype s test budget a = some p) :
+    ∃ path, PrototypePath s test p a path ∧ path.length ≤ budget := by
   induction budget generalizing a with
-  | zero => simp [findProp] at h
+  | zero => simp [findOnPrototype] at h
   | succ n ih =>
     cases ho : s.objAt a with
-    | none => simp [findProp, ho] at h
+    | none => simp [findOnPrototype, ho] at h
     | some o =>
-      cases hk : o.props.lookup key with
+      cases hk : test a o with
       | some q =>
-        simp only [findProp, ho, hk, Option.some.injEq] at h
+        simp only [findOnPrototype, ho, hk, Option.some.injEq] at h
         subst q
         exact ⟨[a], .own ho hk, by simp⟩
       | none =>
         cases hp : o.proto with
-        | none => simp [findProp, ho, hk, hp] at h
+        | none => simp [findOnPrototype, ho, hk, hp] at h
         | some parent =>
-          have ht : findProp s n parent key = some p := by simpa [findProp, ho, hk, hp] using h
+          have ht : findOnPrototype s test n parent = some p := by simpa [findOnPrototype, ho, hk, hp] using h
           obtain ⟨rest, ht, hn⟩ := ih ht
           exact ⟨a :: rest, .inherited ho hk hp ht, by simpa using Nat.succ_le_succ hn⟩
 
-private theorem PropertyPath.found {s : State W} {key p a path} (hp : PropertyPath s key p a path)
-    {budget : Nat} (hbudget : path.length ≤ budget) : findProp s budget a key = some p := by
+private theorem PrototypePath.found {s : State W} {test : Addr → Obj → Option α} {p a path} (hp : PrototypePath s test p a path)
+    {budget : Nat} (hbudget : path.length ≤ budget) : findOnPrototype s test budget a = some p := by
   induction hp generalizing budget with
   | own ho hk =>
     cases budget with
     | zero => simp at hbudget
-    | succ n => simp [findProp, ho, hk]
+    | succ n => simp [findOnPrototype, ho, hk]
   | inherited ho hk hproto _ ih =>
     cases budget with
     | zero => simp at hbudget
     | succ n =>
-      simp only [findProp, ho, hk, hproto, Option.bind_some]
+      simp only [findOnPrototype, ho, hk, hproto, Option.bind_some]
       exact ih (by simpa using hbudget)
 
-private theorem PropertyPath.beforeHit {s : State W} {key p a path} (hp : PropertyPath s key p a path)
-    {budget : Nat} (hbudget : budget < path.length) : findProp s budget a key = none := by
+private theorem PrototypePath.beforeHit {s : State W} {test : Addr → Obj → Option α} {p a path} (hp : PrototypePath s test p a path)
+    {budget : Nat} (hbudget : budget < path.length) : findOnPrototype s test budget a = none := by
   induction hp generalizing budget with
   | own ho hk =>
     cases budget with
@@ -67,12 +80,12 @@ private theorem PropertyPath.beforeHit {s : State W} {key p a path} (hp : Proper
     cases budget with
     | zero => rfl
     | succ n =>
-      simp only [findProp, ho, hk, hproto, Option.bind_some]
+      simp only [findOnPrototype, ho, hk, hproto, Option.bind_some]
       exact ih (by simpa using hbudget)
 
-private theorem PropertyPath.suffix {s : State W} {key p a path} (hp : PropertyPath s key p a path)
+private theorem PrototypePath.suffix {s : State W} {test : Addr → Obj → Option α} {p a path} (hp : PrototypePath s test p a path)
     {b : Addr} (hb : b ∈ path) :
-    ∃ rest, PropertyPath s key p b rest ∧ rest.length ≤ path.length := by
+    ∃ rest, PrototypePath s test p b rest ∧ rest.length ≤ path.length := by
   induction hp with
   | @own addr o ho hk =>
     simp only [List.mem_singleton] at hb
@@ -84,20 +97,20 @@ private theorem PropertyPath.suffix {s : State W} {key p a path} (hp : PropertyP
     · obtain ⟨suffix, hp, hlen⟩ := ih hb
       exact ⟨suffix, hp, Nat.le_trans hlen (Nat.le_succ _)⟩
 
-private theorem PropertyPath.nodup {s : State W} {key p a path}
-    (hp : PropertyPath s key p a path) : path.Nodup := by
+private theorem PrototypePath.nodup {s : State W} {test : Addr → Obj → Option α} {p a path}
+    (hp : PrototypePath s test p a path) : path.Nodup := by
   induction hp with
   | own => simp
   | @inherited addr o parent rest ho hk hproto ht ih =>
     refine List.nodup_cons.mpr ⟨fun h => ?_, ih⟩
     obtain ⟨suffix, hf, hlen⟩ := ht.suffix h
-    have never := (PropertyPath.inherited ho hk hproto ht).beforeHit
+    have never := (PrototypePath.inherited ho hk hproto ht).beforeHit
       (budget := suffix.length) (by simpa using Nat.lt_succ_of_le hlen)
     rw [hf.found (Nat.le_refl _)] at never
     contradiction
 
-private theorem PropertyPath.existsObject {s : State W} {key p a path}
-    (hp : PropertyPath s key p a path) : ∀ b ∈ path, ∃ o, s.objAt b = some o := by
+private theorem PrototypePath.existsObject {s : State W} {test : Addr → Obj → Option α} {p a path}
+    (hp : PrototypePath s test p a path) : ∀ b ∈ path, ∃ o, s.objAt b = some o := by
   induction hp with
   | own ho _ => simpa using (show ∃ o, s.objAt _ = some o from ⟨_, ho⟩)
   | inherited ho _ _ _ ih =>
@@ -136,8 +149,8 @@ private theorem objectAddresses_mem {regions : List (Array Obj)} (base region in
       exact List.mem_append_right _
         (by simpa [Nat.add_assoc, Nat.add_comm 1 r] using ih (base + 1) r h)
 
-private theorem PropertyPath.withinCount {s : State W} {key p a path}
-    (hp : PropertyPath s key p a path) : path.length ≤ s.objectCount := by
+private theorem PrototypePath.withinCount {s : State W} {test : Addr → Obj → Option α} {p a path}
+    (hp : PrototypePath s test p a path) : path.length ≤ s.objectCount := by
   have bound := hp.nodup.length_le_of_subset (l₂ := objectAddresses s.heap.toList 0) (by
     intro b hb
     obtain ⟨_, h⟩ := hp.existsObject b hb
@@ -152,17 +165,28 @@ private theorem Access.prototype {cells A} {s : State W} (hs : Access cells A s)
     A (.obj parent) :=
   hs.closed _ _ ha (.obj ho (by simp [Obj.nodes, hp]))
 
-private theorem PropertyPath.transfer {cells A} {s t : State W} (hs : Access cells A s)
+private theorem PrototypePath.transfer {cells A} {s t : State W} (hs : Access cells A s)
     (same : ∀ a, A (.obj a) → s.objAt a = t.objAt a)
-    {key p a path} (hp : PropertyPath s key p a path) (ha : A (.obj a)) :
-    PropertyPath t key p a path := by
+    {test : Addr → Obj → Option α} {p a path} (hp : PrototypePath s test p a path) (ha : A (.obj a)) :
+    PrototypePath t test p a path := by
   induction hp with
   | own ho hk => exact .own ((same _ ha).symm.trans ho) hk
   | inherited ho hk hproto _ ih =>
     exact .inherited ((same _ ha).symm.trans ho) hk hproto (ih (hs.prototype ha ho hproto))
 
-private theorem PropertyPath.safe {cells A} {s : State W} (hs : Access cells A s)
-    {key p a path} (hp : PropertyPath s key p a path) (ha : A (.obj a)) :
+private theorem findProp_eq_findOnPrototype (s : State W) (n : Nat) (a : Addr) (key : String) :
+    findProp s n a key = findOnPrototype s (fun _ o => o.props.lookup key) n a := by
+  induction n generalizing a with
+  | zero => rfl
+  | succ n ih =>
+    cases ho : s.objAt a with
+    | none => simp [findProp, findOnPrototype, ho]
+    | some o =>
+      cases h : o.props.lookup key <;> simp only [findProp, findOnPrototype, ho, h]
+      cases o.proto <;> simp [ih]
+
+private theorem PrototypePath.propertySafe {cells A} {s : State W} (hs : Access cells A s)
+    {key p a path} (hp : PrototypePath s (fun _ o => o.props.lookup key) p a path) (ha : A (.obj a)) :
     ∀ node ∈ p.nodes, A node := by
   induction hp with
   | own ho hk =>
@@ -174,23 +198,29 @@ private theorem PropertyPath.safe {cells A} {s : State W} (hs : Access cells A s
     exact List.mem_flatMap.mpr ⟨(key, p), lookup_mem hk, hn⟩
   | inherited ho _ hproto _ ih => exact ih (hs.prototype ha ho hproto)
 
-private theorem findProp_same {cells A} {s t : State W} (hs : Access cells A s) (ht : Access cells A t)
-    (same : ∀ a, A (.obj a) → s.objAt a = t.objAt a) {a key} (ha : A (.obj a)) :
-    findProp s s.objectCount a key = findProp t t.objectCount a key := by
-  cases h : findProp s s.objectCount a key with
+private theorem findOnPrototype_same {cells A} {s t : State W} (hs : Access cells A s) (ht : Access cells A t)
+    (same : ∀ a, A (.obj a) → s.objAt a = t.objAt a) {a} (test : Addr → Obj → Option α) (ha : A (.obj a)) :
+    findOnPrototype s test s.objectCount a = findOnPrototype t test t.objectCount a := by
+  cases h : findOnPrototype s test s.objectCount a with
   | some p =>
-    obtain ⟨_, path, _⟩ := findProp_path h
+    obtain ⟨_, path, _⟩ := findOnPrototype_path h
     have target := path.transfer hs same ha
     exact (target.found target.withinCount).symm
   | none =>
-    cases h' : findProp t t.objectCount a key with
+    cases h' : findOnPrototype t test t.objectCount a with
     | none => rfl
     | some p =>
-      obtain ⟨_, path, _⟩ := findProp_path h'
+      obtain ⟨_, path, _⟩ := findOnPrototype_path h'
       have target := path.transfer ht (fun addr accessible => (same addr accessible).symm) ha
       have present := target.found target.withinCount
       rw [h] at present
       contradiction
+
+private theorem findProp_same {cells A} {s t : State W} (hs : Access cells A s) (ht : Access cells A t)
+    (same : ∀ a, A (.obj a) → s.objAt a = t.objAt a) {a key} (ha : A (.obj a)) :
+    findProp s s.objectCount a key = findProp t t.objectCount a key := by
+  rw [findProp_eq_findOnPrototype, findProp_eq_findOnPrototype]
+  exact findOnPrototype_same hs ht same (fun _ o => o.props.lookup key) ha
 
 /-- Prototype lookup stays within the capability envelope, including when a
 replacement changes the total heap size used as the walk's budget. -/
@@ -209,8 +239,9 @@ theorem reachFrame_lookupProp {r R cells A} (away : Away r R A) {a : Addr} (ha :
     exact Preserves.refl r R s
   · intro s hs _
     refine ⟨fun p hp => ?_, hs⟩
-    obtain ⟨_, path, _⟩ := findProp_path hp
-    exact path.safe hs ha
+    rw [findProp_eq_findOnPrototype] at hp
+    obtain ⟨_, path, _⟩ := findOnPrototype_path hp
+    exact path.propertySafe hs ha
 
 private theorem reachFrame_throwErr {α : Type} (r R cells A) (P : α → Prop) (kind : ErrorKind) (message : String) :
     ReachFrame r R cells A P (throwErr kind message : M W α) :=
@@ -218,14 +249,8 @@ private theorem reachFrame_throwErr {α : Type} (r R cells A) (P : α → Prop) 
     fun _ hs _ => ⟨by simp [SafeVal, Val.nodes], hs⟩⟩
 
 private theorem reachFrame_toKey (r R cells A) (v : Val) :
-    ReachFrame r R cells A (fun _ => True) (toKey v : M W String) := by
-  unfold toKey
-  cases h : toStr v with
-  | ok key => exact reachFrame_pure r R cells A key trivial
-  | error abort =>
-    cases abort with
-    | error kind why => exact reachFrame_throwErr r R cells A _ kind why
-    | unknown why => exact reachFrame_unknown r R cells A _ why
+    ReachFrame r R cells A (fun _ => True) (toKey v : M W String) :=
+  reachFrame_lift (toStr v) (fun _ _ => trivial)
 
 private theorem reachFrame_hasProp {r R cells A} (away : Away r R A) (key base : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (hasProp key base : M W Val) := by
@@ -460,16 +485,10 @@ private theorem reachFrame_applyDesc {r R cells A} (old : Option Property) (d : 
     (safe : SafeDesc A d) (oldSafe : ∀ p, p ∈ old → ∀ node ∈ p.nodes, A node) :
     ReachFrame r R cells A (fun result => ∀ p, p ∈ result → ∀ node ∈ p.nodes, A node)
       (lift (applyDesc old d) : M W (Option Property)) := by
-  cases h : applyDesc old d with
-  | ok result =>
-    apply reachFrame_pure r R cells A result
-    intro p hp
-    cases hp
-    exact applyDesc_nodes d safe oldSafe h
-  | error why =>
-    cases why with
-    | error kind message => exact reachFrame_throwErr r R cells A _ kind message
-    | unknown message => exact reachFrame_unknown r R cells A _ message
+  apply reachFrame_lift
+  intro result h p hp
+  cases hp
+  exact applyDesc_nodes d safe oldSafe h
 
 private theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
     (key : String) (d : Desc) (safe : SafeDesc A d) :
@@ -548,5 +567,321 @@ theorem perform_set {r R cells A} (away : Away r R A) (call : Call W)
       (reachFrame_fromW r R cells A value).bind fun v hv =>
         (reachFrame_setProp away call framed o k v ho hv).bind fun _ _ =>
           reachFrame_pure r R cells A (Told.value (.prim .undef)) trivial
+
+
+private theorem safe_arg {A : HeapNode → Prop} {args : List Val} (safe : ∀ x ∈ args, SafeVal A x) (i : Nat) :
+    SafeVal A (args.getD i .undef) := by
+  rw [List.getD_eq_getElem?_getD]
+  cases h : args[i]? with
+  | none => exact fun _ hn => by cases hn
+  | some x => exact safe x (list_index_mem h)
+
+theorem reachFrame_requireObj {r R cells A} (what : String) (v : Val) (safe : SafeVal A v) :
+    ReachFrame r R cells A (fun a => A (.obj a)) (requireObj what v : M W Addr) := by
+  cases v <;>
+    first
+    | exact reachFrame_unknown r R cells A _ _
+    | exact reachFrame_throwErr r R cells A _ _ _
+    | exact reachFrame_pure r R cells A _ (safeVal_obj.1 safe)
+
+private theorem reachFrame_isCallable {r R cells A} (away : Away r R A) (v : Val) (safe : SafeVal A v) :
+    ReachFrame r R cells A (fun _ => True) (do pure (isCallable (← getState) v) : M W Bool) := by
+  constructor
+  · intro s H C _ _
+    cases v <;> try rfl
+    case obj a =>
+      have ha : a.region ≠ r := away.region _ (safeVal_obj.1 safe)
+      simp only [M.bind_apply, getState, isCallable, State.objAt_put, ite_eq_right ha]
+      rfl
+  · intro s _ _
+    exact Preserves.refl r R s
+  · intro s h _
+    exact ⟨trivial, h⟩
+
+private theorem reachFrame_descField {r R cells A} (away : Away r R A) (call : Call W)
+    (framed : ∀ f base, SafeVal A f → SafeVal A base →
+      ReachFrame r R cells A (SafeVal A) (call f base []))
+    (root : A (.obj objectProto)) {a : Addr} (ha : A (.obj a)) (v : Val) (safe : SafeVal A v)
+    (key : String) :
+    ReachFrame r R cells A (fun o => ∀ x, x ∈ o → SafeVal A x) (do
+      if (← lookupProp a key).isSome then some <$> getProp call v (.str key) else pure none) := by
+  apply (reachFrame_lookupProp away ha key).bind
+  intro result _
+  split
+  · exact (reachFrame_getProp away call framed root v (.str key) safe).bind fun x hx =>
+      reachFrame_pure r R cells A (some x) (fun _ hx' => by cases hx'; exact hx)
+  · exact reachFrame_pure r R cells A none (fun _ h => by cases h)
+
+private theorem reachFrame_descFlag {r R cells A} {m : M W (Option Val)}
+    (frame : ReachFrame r R cells A (fun o => ∀ x, x ∈ o → SafeVal A x) m) :
+    ReachFrame r R cells A (fun _ => True) (do
+      match ← m with
+      | some x => some <$> lift (toBoolean x)
+      | none => pure none) := by
+  apply frame.bind
+  intro result _
+  cases result with
+  | none => exact reachFrame_pure r R cells A none trivial
+  | some x =>
+    change ReachFrame r R cells A _ ((lift (toBoolean x)) >>= fun flag => pure (some flag))
+    exact (reachFrame_lift (P := fun _ => True) (toBoolean x) (fun _ _ => trivial)).bind fun b _ =>
+      reachFrame_pure r R cells A (some b) trivial
+
+private theorem reachFrame_descCallable {r R cells A} (away : Away r R A) {m : M W (Option Val)}
+    (frame : ReachFrame r R cells A (fun o => ∀ x, x ∈ o → SafeVal A x) m) (key : String) :
+    ReachFrame r R cells A (fun o => ∀ x, x ∈ o → SafeVal A x) (do
+      match ← m with
+      | some (.host name) => unknown s!"host value {name} is inspected"
+      | some .undef => pure (some .undef)
+      | some f => if isCallable (← getState) f then pure (some f) else throwErr .type s!"{key}ter must be a function"
+      | none => pure none) := by
+  apply frame.bind
+  intro result safe
+  cases result with
+  | none => exact reachFrame_pure r R cells A none safe
+  | some f =>
+    have hf := safe f rfl
+    have check : ReachFrame r R cells A (fun o => ∀ x, x ∈ o → SafeVal A x) (do
+        if (← (do pure (isCallable (← getState) f) : M W Bool)) then pure (some f)
+        else throwErr .type s!"{key}ter must be a function") :=
+      by
+        apply (reachFrame_isCallable away f hf).bind
+        intro yes _
+        split
+        · exact reachFrame_pure r R cells A (some f) safe
+        · exact reachFrame_throwErr r R cells A _ .type s!"{key}ter must be a function"
+    cases f
+    case undef => exact reachFrame_pure r R cells A (some Val.undef) safe
+    case host name => exact reachFrame_unknown r R cells A _ _
+    all_goals exact check
+
+private theorem reachFrame_toDesc {r R cells A} (away : Away r R A) (call : Call W)
+    (framed : ∀ f base, SafeVal A f → SafeVal A base →
+      ReachFrame r R cells A (SafeVal A) (call f base []))
+    (root : A (.obj objectProto)) (v : Val) (safe : SafeVal A v) :
+    ReachFrame r R cells A (SafeDesc A) (toDesc call v) := by
+  unfold toDesc
+  apply (reachFrame_requireObj "property description" v safe).bind
+  intro a ha
+  have field := reachFrame_descField away call framed root ha v safe
+  apply (reachFrame_descFlag (field "enumerable")).bind
+  intro enumerable _
+  apply (reachFrame_descFlag (field "configurable")).bind
+  intro configurable _
+  apply (field "value").bind
+  intro value hv
+  apply (reachFrame_descFlag (field "writable")).bind
+  intro writable _
+  apply (reachFrame_descCallable away (field "get") "get").bind
+  intro getter hg
+  apply (reachFrame_descCallable away (field "set") "set").bind
+  intro setter hs
+  split
+  · exact reachFrame_throwErr r R cells A _ _ _
+  · exact reachFrame_pure r R cells A _ ⟨hv, hg, hs⟩
+
+/-- Object.defineProperty only installs reachable descriptor values and accessor functions. -/
+theorem reachFrame_prim_defineProperty {r R cells A} (away : Away r R A) (call : Call W)
+    (framed : ∀ f base, SafeVal A f → SafeVal A base →
+      ReachFrame r R cells A (SafeVal A) (call f base []))
+    (root : A (.obj objectProto)) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
+    ReachFrame r R cells A (SafeVal A) (prim call .defineProperty args) := by
+  unfold prim
+  apply (reachFrame_requireObj "Object.defineProperty target" _ (safe_arg safe 0)).bind
+  intro a ha
+  apply (reachFrame_toKey r R cells A _).bind
+  intro key _
+  apply (reachFrame_toDesc away call framed root _ (safe_arg safe 2)).bind
+  intro desc hd
+  exact (reachFrame_defineOwn away ha key desc hd).bind fun _ _ =>
+    reachFrame_pure r R cells A _ (safe_arg safe 0)
+
+private def prototypeTarget (target a : Addr) (_ : Obj) : Option Unit :=
+  if a == target then some () else none
+
+private theorem reaches_eq_findOnPrototype (s : State W) (target : Addr) {o : Obj}
+    (present : s.objAt target = some o) (n : Nat) (start : Option Addr) :
+    reaches s target n start =
+      (start.bind (findOnPrototype s (prototypeTarget target) n)).isSome := by
+  induction n generalizing start with
+  | zero => cases start <;> rfl
+  | succ n ih =>
+    cases start with
+    | none => rfl
+    | some a =>
+      by_cases same : a = target
+      · subst a
+        simp [reaches, findOnPrototype, prototypeTarget, present]
+      · have different : (a == target) = false := by simpa using same
+        cases h : s.objAt a with
+        | none => simp [reaches, findOnPrototype, h, different]
+        | some obj => simp [reaches, findOnPrototype, h, different, prototypeTarget, ih, same]
+
+private theorem reaches_same {cells A} {s t : State W} (hs : Access cells A s) (ht : Access cells A t)
+    (same : ∀ a, A (.obj a) → s.objAt a = t.objAt a)
+    {target : Addr} {o : Obj} (present : s.objAt target = some o) (ha : A (.obj target))
+    (parent : Option Addr) (parentSafe : ∀ a ∈ parent, A (.obj a)) :
+    reaches s target s.objectCount parent = reaches t target t.objectCount parent := by
+  rw [reaches_eq_findOnPrototype s target present,
+    reaches_eq_findOnPrototype t target ((same _ ha).symm.trans present)]
+  cases parent with
+  | none => rfl
+  | some p =>
+    simp only [Option.bind_some]
+    rw [findOnPrototype_same hs ht same _ (parentSafe p rfl)]
+
+private theorem reachFrame_checkPrototype {r R cells A} (away : Away r R A)
+    {target : Addr} (safeTarget : A (.obj target)) (parent : Option Addr)
+    (safeParent : ∀ a ∈ parent, A (.obj a)) :
+    ReachFrame r R cells A (fun _ => True) (do
+      let s ← getState
+      if (← getObj target).proto == parent then pure false
+      else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      else pure true : M W Bool) := by
+  constructor
+  · intro s H C hs _
+    let t := s.put r H C
+    have same (a : Addr) (ha : A (.obj a)) : s.objAt a = t.objAt a := by
+      have excluded : a.region ≠ r := away.region _ ha
+      rw [State.objAt_put, ite_eq_right excluded]
+    have sameTarget : (s.put r H C).objAt target = s.objAt target := (same target safeTarget).symm
+    simp only [M.bind_apply, getState, getObj]
+    rw [sameTarget]
+    cases hs' : s.objAt target with
+    | none => rfl
+    | some o =>
+      dsimp only
+      have cycle := reaches_same hs (hs.put away H C) same hs' safeTarget parent safeParent
+      rw [← cycle]
+      split
+      · rfl
+      · split <;> rfl
+  · intro s _ _
+    simp only [M.bind_apply, getState, getObj]
+    cases s.objAt target with
+    | none => exact Preserves.refl r R s
+    | some o =>
+      dsimp only
+      split
+      · exact Preserves.refl r R s
+      · split <;> exact Preserves.refl r R s
+  · intro s hs _
+    simp only [M.bind_apply, getState, getObj]
+    cases s.objAt target with
+    | none => exact hs
+    | some o =>
+      dsimp only
+      split
+      · exact ⟨trivial, hs⟩
+      · split
+        · exact ⟨(fun _ hn => by cases hn), hs⟩
+        · exact ⟨trivial, hs⟩
+
+private theorem reachFrame_setPrototype {r R cells A} (away : Away r R A)
+    {target : Addr} (safeTarget : A (.obj target)) (parent : Option Addr)
+    (safeParent : ∀ a ∈ parent, A (.obj a)) :
+    ReachFrame r R cells A (SafeVal A) (do
+      let s ← getState
+      if (← getObj target).proto == parent then pure (.obj target)
+      else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      else
+        modifyObj target fun o => { o with proto := parent }
+        pure (.obj target) : M W Val) := by
+  have operation : ReachFrame r R cells A (SafeVal A) (do
+      let update ← (do
+        let s ← getState
+        if (← getObj target).proto == parent then pure false
+        else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+        else pure true)
+      if update then modifyObj target fun o => { o with proto := parent }
+      pure (.obj target) : M W Val) := by
+    apply (reachFrame_checkPrototype away safeTarget parent safeParent).bind
+    intro update _
+    cases update
+    · exact reachFrame_pure r R cells A _ (safeVal_obj.2 safeTarget)
+    · apply (reachFrame_modifyObj away target safeTarget _ ?_).bind
+      · intro _ _
+        exact reachFrame_pure r R cells A _ (safeVal_obj.2 safeTarget)
+      · intro o node h
+        simp only [Obj.nodes, List.mem_append] at h
+        rcases h with (hp | props) | code
+        · obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hp
+          exact Or.inr (safeParent a (Option.mem_toList.mp ha))
+        · exact Or.inl (List.mem_append_left _ (List.mem_append_right _ props))
+        · exact Or.inl (List.mem_append_right _ code)
+  refine Eq.mpr (congrArg (ReachFrame r R cells A (SafeVal A)) ?_) operation
+  funext s
+  simp only [M.bind_apply, getState, getObj]
+  cases s.objAt target with
+  | none => rfl
+  | some o =>
+    dsimp only
+    split
+    · rfl
+    · split <;> rfl
+
+/-- The built-in prototype read exposes only a reachable prototype. -/
+theorem reachFrame_prim_getPrototypeOf {r R cells A} (away : Away r R A) (call : Call W)
+    (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
+    ReachFrame r R cells A (SafeVal A) (prim call .getPrototypeOf args) := by
+  have arg := safe_arg safe 0
+  simp only [prim]
+  generalize (args.getD 0 .undef) = v at arg ⊢
+  cases v <;> simp only [] <;>
+    try first
+    | exact reachFrame_throwErr r R cells A _ _ _
+    | exact reachFrame_unknown r R cells A _ _
+  case obj a =>
+    apply (reachFrame_getObj away (safeVal_obj.1 arg)).bind
+    intro o ho
+    cases h : o.proto with
+    | none =>
+      exact reachFrame_pure r R cells A Val.null (fun _ hn => by cases hn)
+    | some p =>
+      exact reachFrame_pure r R cells A (Val.obj p) (safeVal_obj.2 (ho _ (by simp [Obj.nodes, h])))
+
+private theorem reachFrame_prototypeArg {r R cells A} (v : Val) (safe : SafeVal A v) :
+    ReachFrame r R cells A (fun parent => ∀ a ∈ parent, A (.obj a)) (match v with
+      | .null => pure none
+      | v => some <$> requireObj "object prototype" v : M W (Option Addr)) := by
+  have require := (reachFrame_requireObj (W := W) (r := r) (R := R) (cells := cells) "object prototype" v safe).bind
+    (fun a ha => reachFrame_pure r R cells A (P := fun parent => ∀ p ∈ parent, A (.obj p)) (some a)
+      (fun p hp => by cases hp; exact ha))
+  cases v
+  case null => exact reachFrame_pure r R cells A none (fun _ h => by cases h)
+  all_goals exact require
+
+/-- A prototype update checks the actual accessible chain for a cycle before installing its edge. -/
+theorem reachFrame_prim_setPrototypeOf {r R cells A} (away : Away r R A) (call : Call W)
+    (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
+    ReachFrame r R cells A (SafeVal A) (prim call .setPrototypeOf args) := by
+  have base := safe_arg safe 0
+  simp only [prim]
+  generalize args.getD 0 .undef = v at base ⊢
+  let finish (parent : Option Addr) : M W Val := match v with
+    | .obj target => do
+      let s ← getState
+      if (← getObj target).proto == parent then pure v
+      else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      else
+        modifyObj target fun o => { o with proto := parent }
+        pure v
+    | .host name => unknown s!"host value {name} is inspected"
+    | .error .. => unknown "an engine error is inspected"
+    | v => pure v
+  have framed (parent : Option Addr) (hp : ∀ a ∈ parent, A (.obj a)) :
+      ReachFrame r R cells A (SafeVal A) (finish parent) := by
+    cases v
+    case obj a => exact reachFrame_setPrototype away (safeVal_obj.1 base) parent hp
+    case host name => exact reachFrame_unknown r R cells A _ _
+    case error kind msg => exact reachFrame_unknown r R cells A _ _
+    all_goals exact reachFrame_pure r R cells A _ base
+  have hp := safe_arg safe 1
+  generalize (args.getD 1 .undef) = p at hp ⊢
+  have update := (reachFrame_prototypeArg p hp).bind framed
+  cases v
+  case undef => exact reachFrame_throwErr r R cells A _ _ _
+  case null => exact reachFrame_throwErr r R cells A _ _ _
+  all_goals cases p <;> exact update
 
 end CoreJS

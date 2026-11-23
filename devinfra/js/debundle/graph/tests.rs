@@ -80,32 +80,26 @@ mod chunk_constraining_module_edges_tests {
         assert!(canonical.edges.is_empty());
     }
 
-    /// `chunk_source_import_order_from_adjacency` returns every module of
-    /// the canonical set plus the `extra_nodes`, which have no canonical
-    /// edges.
     #[test]
-    fn chunk_source_import_order_includes_extra_nodes() {
-        // Simple two-module DAG.
-        let source = "const a = 1; const b = a + 1;";
+    fn chunk_source_import_order_keeps_lazy_only_members_and_isolated_nodes() {
+        let source = "const a = () => c(); const b = a; function c() { return b; }";
         let dependency_graph = parse_and_build(source);
         let mut assignment = ModuleAssignment::new(
             &dependency_graph,
             crate::EntryDestination::from_module_id(ModuleId(0)),
         );
         assignment.set(SourceUnitId(1), ModuleId(1));
+        assignment.set(SourceUnitId(2), ModuleId(2));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        let extra: BTreeSet<ModuleId> = BTreeSet::from([ModuleId(5), ModuleId(0)]);
+        let linker_position = position_lookup(&chunk_linker_order_from_pairs(canonical.pairs()));
         let order = chunk_source_import_order_from_adjacency(
-            canonical.pairs(),
+            &linker_position,
             &canonical.i_successors,
-            &extra,
+            &BTreeSet::from([ModuleId(5)]),
         );
-        assert!(
-            order.contains(&ModuleId(5)),
-            "extra node must be included; got {order:?}"
-        );
-        assert!(order.contains(&ModuleId(0)));
-        assert!(order.contains(&ModuleId(1)));
+        // The a/b/c import cycle has one eager read, b -> a. Visit b
+        // before a to rescue that read, then the lazy-only c and isolated 5.
+        assert_eq!(order, [ModuleId(1), ModuleId(0), ModuleId(2), ModuleId(5)]);
     }
 }
 

@@ -341,6 +341,11 @@ export const cases = [
     `,
   },
   {
+    name: "Object.create with a null prototype refuses unmodeled property descriptors",
+    source: `console.log(Object.create(null, { x: { value: 7 } }).x);`,
+    end: "unknown",
+  },
+  {
     name: "setPrototypeOf: a new chain, a cycle, a primitive",
     source: `
       const a = { from: "a" }; const b = { from: "b" }; const o = Object.create(a);

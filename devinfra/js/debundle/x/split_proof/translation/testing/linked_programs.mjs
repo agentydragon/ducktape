@@ -174,6 +174,17 @@ export function prepare(dir, { source, provider, extras = {}, sourceName = "sour
   return { sourceFile, providerFile, specFile };
 }
 
+export function threeUnitFixture(name, source, entry = "entry.mjs") {
+  const dir = path.join(root, name);
+  const files = prepare(dir, {
+    source,
+    provider: "",
+    spec: { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"], sequential: true },
+  });
+  const out = path.join(dir, "out");
+  return { ...files, out, run: (...opts) => lower(files.sourceFile, files.specFile, out, opts).verdict };
+}
+
 // Compute evaluation order from the emitted requests, including the cycle a fixed
 // schedule can introduce when the second provider reads the first provider.
 export function moduleEvaluationOrder(directory, entry) {

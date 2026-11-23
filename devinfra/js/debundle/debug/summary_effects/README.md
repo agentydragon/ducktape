@@ -893,5 +893,5 @@ Only `--chunk` is required; `--effect-report` supplies the emitted order.
 every chunk of the program for the cycle check and the census; `--premises
 <json>` is described under § Premises.
 Without `--examples` the report holds counts, ordinals, classes and timings
-only: no source text, identifiers or property names. `--mode points-to` takes
+only: no source text, identifiers or property names. `--mode points_to` takes
 `--function-heap {site,function,global}`.

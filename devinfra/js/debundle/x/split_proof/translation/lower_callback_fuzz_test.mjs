@@ -1,38 +1,15 @@
 // Deterministic generated cases through the actual LowerSplit emitter. Unsafe
 // plans must be rejected normally and their force-emitted output must diverge.
 import { strict as assert } from "node:assert";
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
 import { lcg32 } from "../seeded_random.mjs";
+import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
-const tmp = process.env.TEST_TMPDIR;
-assert(tmp);
-const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
-function emit(name, code, side, force = false) {
-  const dir = path.join(tmp, name);
-  mkdirSync(dir, { recursive: true });
-  const ast = path.join(dir, "ast.json");
-  const spec = path.join(dir, "spec.json");
-  const parsed = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
-  writeFileSync(ast, JSON.stringify(lowerDump(code, acorn, eslintScope)));
-  writeFileSync(
-    spec,
-    JSON.stringify({
-      entry: "entry.mjs",
-      modules: {
-        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
-        "side.mjs": side.map((i) => `#${i}`),
-      },
-    })
-  );
-  return {
-    dir,
-    result: run(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, dir, ...(force ? ["--force"] : [])]),
-  };
+function emit(name, code, side, ...flags) {
+  const fixture = prepareSideSplit(name, code, side);
+  return { ...fixture, result: lowerDiagnostic(fixture, ...flags) };
 }
 
 // Two workers use disjoint case directories and inherit the same immutable runfiles.
@@ -72,13 +49,11 @@ if (process.argv[2] !== "--worker") {
     const base = `function ${callback}() { console.log(${value}); }\nfunction ${factory}(f) { ${call} }\n${extra}`;
     const shift = extra ? 1 : 0;
     const safe = `${base}const ${result} = ${factory}(${callback});\nconsole.log("side-${value}");\n${result}();`;
-    const source = path.join(tmp, `safe-${i}.mjs`);
-    writeFileSync(source, safe);
     // Some plans move the factory with the side effect; others import it from entry.
     const safeSide = i % 4 >= 2 ? [1, 3 + shift] : [3 + shift];
     const emitted = emit(`safe-${i}`, safe, safeSide);
     assert.equal(emitted.result.status, 0, `${i}: ${emitted.result.stdout}\n${emitted.result.stderr}`);
-    const original = run(process.execPath, [source]);
+    const original = run(process.execPath, [emitted.source]);
     const split = run(process.execPath, [path.join(emitted.dir, "entry.mjs")]);
     assert.equal(original.status, 0, original.stderr);
     assert.equal(split.status, 0, split.stderr);
@@ -103,16 +78,14 @@ if (process.argv[2] !== "--worker") {
     const [suffix, rawSide] = forms[i % forms.length];
     const side = rawSide.map((index) => index + shift);
     const bad = base + suffix;
-    const badSource = path.join(tmp, `unsafe-${i}.mjs`);
-    writeFileSync(badSource, bad);
     const rejected = emit(`unsafe-${i}`, bad, side);
     assert.equal(rejected.result.status, 1, `${i}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
     assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, `unsafe ${i}`);
     assert(!existsSync(path.join(rejected.dir, "entry.mjs")), `unsafe ${i} emitted without --force`);
-    const forced = emit(`forced-${i}`, bad, side, true);
+    const forced = emit(`forced-${i}`, bad, side, "--force");
     assert.equal(forced.result.status, 1, `forced ${i}`);
     assert.match(forced.result.stdout, /FAIL\s+OrderOk/, `forced ${i}`);
-    const before = run(process.execPath, [badSource]);
+    const before = run(process.execPath, [rejected.source]);
     const after = run(process.execPath, [path.join(forced.dir, "entry.mjs")]);
     assert.equal(before.status, 0, before.stderr);
     assert.equal(before.stdout, `${value}\n`);

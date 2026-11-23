@@ -160,6 +160,7 @@ inductive HostResult where
 inductive HostRef where
   | binding (name : String)
   | property (receiver key : String)
+  deriving DecidableEq, Repr
 
 /-- **The world**: the host functions that work on primitives, without their definitions. It has a state of its own
 and one deterministic step: the host function `fn`, called with the receiver `this` and the arguments `args` in a
@@ -683,7 +684,7 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
   if ((hostNamespaces.lookup name).getD []).contains k then pure (.host s!"{name}.{k}")
-  else if name == "window" && k == "Error" then readHostRef (.property name k)
+  else if name == "window" || name.startsWith "window." then readHostRef (.property name k)
   else unknown s!"a property of host value {name}"
 
 /-- `base[key]`. A getter runs with `base` as `this`. -/
@@ -808,12 +809,11 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     modifyState fun s => { s with out := s.out.push (" ".intercalate line) }
     pure .undef
   | .create =>
-    match arg 0 with
-    | .null => .obj <$> alloc { proto := none, props := [] }
-    | v => do
-      let parent ← requireObj "object prototype" v
-      if (arg 1) matches .undef then .obj <$> alloc { proto := some parent, props := [] }
-      else unknown "Object.create with properties"
+    let parent ← match arg 0 with
+      | .null => pure none
+      | v => some <$> requireObj "object prototype" v
+    if (arg 1) matches .undef then .obj <$> alloc { proto := parent, props := [] }
+    else unknown "Object.create with properties"
   | .getPrototypeOf =>
     match arg 0 with
     | .undef | .null => throwErr .type "cannot convert undefined or null to object"

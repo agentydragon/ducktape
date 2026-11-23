@@ -25,6 +25,59 @@ structure ReachFrame (r : Nat) (R : Addr → Prop) (cells : List (Option Addr)) 
   preserves : ∀ s, Access cells A s → s.region ≠ r → (m s).Preserves r R s
   accessible : ∀ s, Access cells A s → s.region ≠ r → (m s).Accessible cells A P
 
+/-- Selecting a unit's allocation region leaves the stored graph and its roots intact. -/
+private theorem Access.with_region {cells A} {s : State W} (hs : Access cells A s) (region : Nat) :
+    Access cells A { s with region } := by
+  refine ⟨hs.handed, hs.supplied, ?_⟩
+  intro src dst hsrc edge
+  cases edge with
+  | obj ho hm => exact hs.closed _ _ hsrc (.obj ho hm)
+  | cell hc hm => exact hs.closed _ _ hsrc (.cell hc hm)
+
+/-- A successful crossed unit preserves the condition needed at the next swap. -/
+theorem ReachFrame.runUnit_access {r R cells A Q n j env st} (hf : ReachFrame r R cells A Q (execStmt n env st : M W Flow))
+    (hj : j + 1 ≠ r) {s t : State W} {f : Flow} (hs : Access cells A s) (run : runUnit n env j st s = .ok f t) :
+    Access cells A t := by
+  obtain ⟨u, hu, rfl⟩ := runUnit_ok run
+  have hp := hf.accessible _ (hs.with_region _) hj
+  rw [hu] at hp
+  exact hp.2.with_region 0
+
+/-- Both orders have the same successful outcomes from states with the required capability envelope. -/
+theorem ReachFrame.local_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R cells A Q}
+    (hf : ReachFrame (i + 1) R cells A Q (execStmt n e2 st2 : M W Flow)) (hij : i ≠ j)
+    (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow)) :
+    CommuteOn (Access cells A) (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) ∧
+    CommuteOn (Access cells A) (runUnit n e2 j st2 : M W Flow) (runUnit n e1 i st1) := by
+  have hj : j + 1 ≠ i + 1 := by omega
+  have frame (s : State W) (hs : Access cells A s) :
+      FramesAt (i + 1) R (execStmt n e2 st2) { s with region := j + 1 } :=
+    ⟨fun H C => hf.replace _ H C (hs.with_region _) hj, hf.preserves _ (hs.with_region _) hj⟩
+  exact ⟨local_frame_units_commuteOn hl frame, frame_local_units_commuteOn hl frame⟩
+
+/-- Move a local unit across a block with one closed heap envelope. Each crossed
+unit may receive different binding cells, all of which must lie inside the envelope. -/
+theorem runUnits_reachFrame_pivot (n i : Nat) (env : Env) (st : Stmt) (R : Addr → Prop) (A : HeapNode → Prop)
+    (pre crossed suffix : List (Nat × Stmt × Env)) (s s' : State W)
+    (localUnit : Local (i + 1) R (execStmt n env st : M W Flow))
+    (hprefix : ∀ t, runUnits n pre s = .ok () t → Access [] A t)
+    (framed : ∀ u ∈ crossed, i ≠ u.1 ∧ ∃ cells,
+      (∀ a, some a ∈ cells → A (.cell a)) ∧
+      ReachFrame (i + 1) R cells A (fun _ => True) (execStmt n u.2.2 u.2.1 : M W Flow)) :
+    runUnits n (pre ++ [(i, st, env)] ++ crossed ++ suffix) s = .ok () s' ↔
+      runUnits n (pre ++ crossed ++ [(i, st, env)] ++ suffix) s = .ok () s' := by
+  apply runUnits_pivot n pre crossed suffix (i, st, env) (Access [] A) s s' hprefix
+  · intro u hu t t' f ht run
+    obtain ⟨hij, cells, roots, hf⟩ := framed u hu
+    have next := hf.runUnit_access (show u.1 + 1 ≠ i + 1 by omega) (s := t)
+      ⟨ht.handed, roots, ht.closed⟩ run
+    exact ⟨next.handed, by simp, next.closed⟩
+  · intro u hu
+    obtain ⟨hij, cells, roots, hf⟩ := framed u hu
+    obtain ⟨forward, backward⟩ := hf.local_commuteOn hij localUnit
+    exact ⟨fun t ht => forward t ⟨ht.handed, roots, ht.closed⟩,
+      fun t ht => backward t ⟨ht.handed, roots, ht.closed⟩⟩
+
 theorem ReachFrame.of_frames {r R cells A P} {m : M W α} (h : Frames r R m)
     (hs : ∀ s, Access cells A s → s.region ≠ r → (m s).Accessible cells A P) : ReachFrame r R cells A P m :=
   ⟨fun s H C _ hr => h.replace s H C hr, fun s _ hr => h.preserves s hr, hs⟩
@@ -96,6 +149,18 @@ theorem reachFrame_pure (r R cells A) {P : α → Prop} (a : α) (hp : P a) :
 theorem reachFrame_unknown (r R cells A) (P : α → Prop) (why : String) :
     ReachFrame r R cells A P (unknown why : M W α) :=
   .of_frames (frames_unknown r R why) (fun _ hs _ => hs)
+
+theorem reachFrame_lift {r R cells A} {P : α → Prop} (result : Except Abort α)
+    (safe : ∀ a, result = .ok a → P a) :
+    ReachFrame r R cells A P (lift result : M W α) := by
+  cases result with
+  | ok value => exact reachFrame_pure r R cells A value (safe value rfl)
+  | error why =>
+    cases why with
+    | unknown reason => exact reachFrame_unknown r R cells A P reason
+    | error kind message =>
+      exact ReachFrame.of_frames (frames_throwVal r R (.error kind message))
+        (fun _ hs _ => ⟨(fun _ h => by cases h), hs⟩)
 
 theorem list_index_mem {α : Type} : ∀ {xs : List α} {i : Nat} {a : α}, xs[i]? = some a → a ∈ xs
   | [], _, _, h => by simp at h

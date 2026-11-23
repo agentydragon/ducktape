@@ -1,18 +1,5 @@
 use super::*;
 
-fn parsed_source_match(
-    request_id: &str,
-    selector_label: SelectorField,
-    source_match: &SourceMatch,
-) -> MatchResult<ParsedSourceMatchSelector> {
-    ParsedSourceMatchSelector::parse(
-        request_id,
-        format!("<source_match in {request_id}>"),
-        &source_match.selector(),
-        selector_label,
-    )
-}
-
 pub fn source_match_claim_member_selectors(
     request_id: &str,
     claim: &SourceMatchClaim,
@@ -24,8 +11,12 @@ pub fn source_match_claim_member_selectors(
         ));
     }
 
-    let source_match = claim.source_match();
-    let parsed = parsed_source_match(request_id, SelectorField::SourceMatches, &source_match)?;
+    let parsed = ParsedSourceMatchSelector::parse(
+        request_id,
+        format!("<source_match in {request_id}>"),
+        &claim.selector(),
+        SelectorField::SourceMatches,
+    )?;
     let declared = parsed.declared_binding_names();
     let mut declared_set = BTreeSet::new();
     let mut duplicate_declared = BTreeSet::new();

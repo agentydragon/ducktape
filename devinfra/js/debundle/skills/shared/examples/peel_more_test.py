@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 import yaml
-from python.runfiles import runfiles
+from python.runfiles import Runfiles
 
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import recorded_run
 
@@ -22,17 +22,12 @@ def entry_source_units(graph_path: Path) -> set[str]:
     return {node["id"] for node in graph["nodes"] if node["destination"] in entry_keys}
 
 
-def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(tmp_path: Path) -> None:
-    files = runfiles.Create()
-    assert files is not None
-    engine = files.Rlocation(os.environ["DEBUNDLE_PEEL_ENGINE"])
-    node = files.Rlocation(os.environ["DEBUNDLE_PEEL_NODE"])
-    skill = files.Rlocation(os.environ["DEBUNDLE_PEEL_SKILL"])
-    fixture = files.Rlocation("ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
-    assert engine is not None
-    assert node is not None
-    assert skill is not None
-    assert fixture is not None
+def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(runfiles: Runfiles, tmp_path: Path) -> None:
+    files = runfiles.root()
+    engine = str(files / os.environ["DEBUNDLE_PEEL_ENGINE"])
+    node = str(files / os.environ["DEBUNDLE_PEEL_NODE"])
+    skill = str(files / os.environ["DEBUNDLE_PEEL_SKILL"])
+    fixture = str(files / "ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
     original = tmp_path / "inputs"
     shutil.copytree(Path(fixture).parent, original)
     (original / "modules/main/calculation.yaml").unlink()

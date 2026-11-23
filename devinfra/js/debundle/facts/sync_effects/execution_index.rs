@@ -1817,6 +1817,21 @@ enum NativeReceiverRoot {
     BundleGlobal,
 }
 
+impl NativeReceiverRoot {
+    fn intrinsic_root(&self) -> Option<NativeIntrinsic> {
+        match self {
+            Self::Intrinsic(root)
+            | Self::IntrinsicPrototype(root)
+            | Self::IntrinsicDescendant(root) => Some(*root),
+            Self::ArrayIteratorPrototype
+            | Self::SetIteratorPrototype
+            | Self::OrdinaryDirect { .. }
+            | Self::OrdinaryDescendant { .. }
+            | Self::BundleGlobal => None,
+        }
+    }
+}
+
 type NativeReceiverRoots = BTreeSet<NativeReceiverRoot>;
 
 /// Global-object names the native census resolves.
@@ -5617,7 +5632,7 @@ impl ExecutionIndex {
             let check_known_identity =
                 matches!(initializer, ValueExpr::Binding(_) | ValueExpr::Member(..));
             if check_known_identity {
-                let roots = intrinsic_roots(
+                let mut roots = intrinsic_roots(
                     initializer,
                     raw_aliases,
                     &self.census_globals,
@@ -5625,19 +5640,12 @@ impl ExecutionIndex {
                     &BTreeMap::new(),
                     &CallableReturnInputs::default(),
                 );
+                roots.remove(&NativeReceiverRoot::Intrinsic(
+                    NativeIntrinsic::UnknownGlobalValue,
+                ));
                 let contradictions: BTreeSet<_> = roots
                     .iter()
-                    .filter_map(|root| match root {
-                        NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => None,
-                        NativeReceiverRoot::Intrinsic(root)
-                        | NativeReceiverRoot::IntrinsicPrototype(root)
-                        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
-                        NativeReceiverRoot::OrdinaryDirect { .. }
-                        | NativeReceiverRoot::OrdinaryDescendant { .. }
-                        | NativeReceiverRoot::ArrayIteratorPrototype
-                        | NativeReceiverRoot::SetIteratorPrototype
-                        | NativeReceiverRoot::BundleGlobal => None,
-                    })
+                    .filter_map(NativeReceiverRoot::intrinsic_root)
                     .collect();
                 if !contradictions.is_empty() {
                     self.value_input_errors.push(format!(
@@ -5761,27 +5769,19 @@ impl ExecutionIndex {
                 &BTreeMap::new(),
                 &CallableReturnInputs::default(),
             );
-            let contradiction = roots.iter().any(|root| {
-                matches!(
-                    root,
-                    NativeReceiverRoot::Intrinsic(root)
-                        | NativeReceiverRoot::IntrinsicPrototype(root)
-                        | NativeReceiverRoot::IntrinsicDescendant(root)
-                        if *root != NativeIntrinsic::UnknownGlobalValue
-                )
-            });
+            let contradiction = roots
+                .iter()
+                .filter_map(NativeReceiverRoot::intrinsic_root)
+                .any(|root| root != NativeIntrinsic::UnknownGlobalValue);
             if contradiction {
                 self.value_input_errors.push(format!(
                     "{request} contradicts a recognized native/global initializer in this prepared AST"
                 ));
                 continue;
             }
-            if !roots.iter().any(|root| {
-                matches!(
-                    root,
-                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
-                )
-            }) {
+            if !roots.contains(&NativeReceiverRoot::Intrinsic(
+                NativeIntrinsic::UnknownGlobalValue,
+            )) {
                 self.value_input_errors.push(format!(
                     "{request} cannot refine this binding because source-only analysis did not establish an existing unknown-global receiver root"
                 ));

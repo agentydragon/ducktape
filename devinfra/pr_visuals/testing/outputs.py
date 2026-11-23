@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import json
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from devinfra.pr_visuals.artifacts import (
     BESArtifactId,
@@ -74,3 +77,28 @@ def output_observation(
         label=label,
         title=title,
     )
+
+
+@dataclass
+class FakeArtifactRunner:
+    """Serve artifact listings by invocation and download the requested blobs from memory."""
+
+    blobs: dict[str, bytes]
+    listings: dict[str, list[BuildBuddyArtifact]] = field(default_factory=dict)
+    download_limit: int | None = None
+    download_error: str = ""
+    manifests: list[list[dict[str, str]]] = field(default_factory=list, init=False)
+
+    def __call__(self, command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(word) for word in command]
+        if words[1:3] == ["artifact", "list"]:
+            artifacts = self.listings[words[3]]
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps([a.model_dump(by_alias=True) for a in artifacts]), ""
+            )
+        assert words[3:5] == ["blob", "download"], f"unexpected bbapi command: {words}"
+        manifest: list[dict[str, str]] = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+        self.manifests.append(manifest)
+        for entry in manifest[: self.download_limit]:
+            Path(entry["destination"]).write_bytes(self.blobs[entry["uri"]])
+        return subprocess.CompletedProcess(command, int(bool(self.download_error)), "", self.download_error)

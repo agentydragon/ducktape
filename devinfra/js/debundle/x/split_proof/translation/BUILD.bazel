@@ -66,10 +66,7 @@ eslint_test(
     name = "eslint_test",
     srcs = [
         ":lint_sources",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:lint_sources",
     ],
 )
 
@@ -153,9 +150,10 @@ js_test(
     name = "identity_emission_test",
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
-        ":pair",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
     ],
     entry_point = "identity_emission_test.mjs",
     env = {
@@ -198,7 +196,11 @@ js_test(
 js_test(
     name = "lower_callback_fuzz_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + [_SEEDED_RANDOM],
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _SEEDED_RANDOM,
+    ],
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -207,7 +209,11 @@ js_test(
     name = "lower_callback_fuzz_extended_test",
     size = "medium",
     args = ["64"],
-    data = _LOWER_CALLBACK_FUZZ_DATA + [_SEEDED_RANDOM],
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _SEEDED_RANDOM,
+    ],
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
     tags = ["manual"],
@@ -233,6 +239,7 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_arithmetic_test",
         "linked_arrays_test",
         "linked_bitwise_test",
+        "linked_browser_globals_test",
         "linked_classes_test",
         "linked_composition_test",
         "linked_default_parameters_test",
@@ -321,7 +328,10 @@ js_test(
 js_test(
     name = "unary_literal_safety_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA,
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+    ],
     entry_point = "unary_literal_safety_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -366,12 +376,14 @@ js_test(
 
 js_test(
     name = "inert_escape_test",
-    data = _CHECKER_RUNFILES + [
+    data = [
         "testdata/inert_escape/seed2026_round3.js.txt",
         "testdata/inert_escape/seed2026_round8.js.txt",
-        ":pair",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        ":frontend",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _TRANSLATE,
     ],
     entry_point = "inert_escape_test.mjs",
     env = {
@@ -382,10 +394,12 @@ js_test(
 
 js_test(
     name = "factory_emission_test",
-    data = _CHECKER_RUNFILES + [
-        ":pair",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    data = [
+        ":frontend",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _TRANSLATE,
     ],
     entry_point = "factory_emission_test.mjs",
     env = {
@@ -1188,6 +1202,7 @@ py_test(
 js_library(
     name = "frontend",
     srcs = ["frontend.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__"],
     deps = [
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
@@ -1198,6 +1213,7 @@ js_library(
 js_library(
     name = "pair",
     srcs = ["pair.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__"],
     deps = [":frontend"],
 )
 

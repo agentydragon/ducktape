@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 import yaml
-from python.runfiles import runfiles
+from python.runfiles import Runfiles
 
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import (
     Snapshot,
@@ -26,15 +26,11 @@ def run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: Path) -> None:
-    files = runfiles.Create()
-    assert files is not None
-    engine = files.Rlocation(os.environ["DEBUNDLE_HANDOFF_ENGINE"])
-    node = files.Rlocation(os.environ["DEBUNDLE_HANDOFF_NODE"])
-    fixture_config = files.Rlocation("ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
-    assert engine is not None
-    assert node is not None
-    assert fixture_config is not None
+def test_worker_patch_is_integrated_only_after_baseline_verification(runfiles: Runfiles, tmp_path: Path) -> None:
+    files = runfiles.root()
+    engine = str(files / os.environ["DEBUNDLE_HANDOFF_ENGINE"])
+    node = str(files / os.environ["DEBUNDLE_HANDOFF_NODE"])
+    fixture_config = str(files / "ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
     evidence = undeclared_outputs_dir() / "delegation"
     evidence.mkdir()
     original = tmp_path / "original inputs"

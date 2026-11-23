@@ -8,14 +8,10 @@ from pathlib import Path
 from python.runfiles import Runfiles
 
 
-def test_selected_graph_cli_uses_relocated_subset_runfile() -> None:
-    runfiles = Runfiles.Create()
-    assert runfiles is not None
-    runner = runfiles.Rlocation(os.environ["RUNNER"])
-    workspace = runfiles.Rlocation("_main")
-    assert runner is not None
-    assert workspace is not None
-    root = Path(workspace).resolve()
+def test_selected_graph_cli_uses_relocated_subset_runfile(runfiles: Runfiles) -> None:
+    files = runfiles.root()
+    runner = str(files / os.environ["RUNNER"])
+    root = (Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"]).resolve()
     result = subprocess.run(
         [
             runner,
