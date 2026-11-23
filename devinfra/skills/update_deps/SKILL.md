@@ -348,7 +348,7 @@ Run `bazel build //... && bazel test //...` to verify. If something breaks:
 
 ### Snapshot tests
 
-For intentional snapshot changes, [update the snapshots on RBE](../../docs/syrupy_snapshots.md#updating-snapshots),
+For intentional snapshot changes, [update the snapshots on RBE](https://github.com/agentydragon/ducktape/blob/devel/devinfra/docs/syrupy_snapshots.md#updating-snapshots),
 review the downloaded diff, and commit it with the dependency update.
 
 ## Commit & Push
