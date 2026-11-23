@@ -5,18 +5,9 @@ import os
 from dotenv import load_dotenv
 
 
-def load_api_key(*, exit_on_missing: bool = True) -> str | None:
-    """Load the Habitify API key from environment.
-
-    Returns the API key if found, None if not found and exit_on_missing is False.
-    Raises SystemExit if exit_on_missing is True and no API key is found.
-    """
+def load_api_key(explicit: str | None = None) -> str | None:
+    """Use a supplied key, then the environment with .env as a fallback."""
+    if explicit:
+        return explicit
     load_dotenv()
-    api_key = os.environ.get("HABITIFY_API_KEY")
-
-    if not api_key and exit_on_missing:
-        raise SystemExit(
-            "HABITIFY_API_KEY environment variable is required. Set it in .env or export HABITIFY_API_KEY=your_key"
-        )
-
-    return api_key
+    return os.environ.get("HABITIFY_API_KEY")

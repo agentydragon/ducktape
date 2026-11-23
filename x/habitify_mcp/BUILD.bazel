@@ -45,7 +45,6 @@ py_library(
     srcs = ["utils/cli_utils.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":config",
         ":habitify_client",
         "@pypi//rich",
         "@pypi//typer",
@@ -119,10 +118,11 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cli_utils",
+        ":config",
         ":habitify_client",
         ":server",
         ":types",
-        "@pypi//python_dotenv",
+        "//util:typer",
         "@pypi//rich",
         "@pypi//typer",
     ],
@@ -136,7 +136,6 @@ py_binary(
     main = "cli.py",
     deps = [
         ":cli",
-        "@pypi//python_dotenv",
         "@pypi//rich",
         "@pypi//typer",
     ],
