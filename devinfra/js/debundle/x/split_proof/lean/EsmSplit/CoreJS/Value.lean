@@ -780,6 +780,7 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   match p with
   | .globalTypeof name => observeGlobalTypeof name
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
+  | .opaqueSymbolForRef => unknown "ambient call Symbol.for is reached"
   | .log =>
     match args with
     | .str format :: _ :: _ => if format.contains '%' then unknown "console.log with a format string" else pure ()

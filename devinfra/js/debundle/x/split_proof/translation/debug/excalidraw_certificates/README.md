@@ -83,12 +83,12 @@ The generated editor spec assigns `#1337` and `#1338` to
 on-demand single trial moves only `#1337`. Each assigns the other units to
 `entry.mjs` in source order. The replay resolves
 the stable `editor.js` alias via the generated JS roster and runs the normal splitter
-on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. Both
-strict trials stop at statement 5 with `unsupported global Symbol`. The first
-ambient use is `Symbol.for` inside the React factory passed to an imported lazy
-wrapper. The decoder lowers the factory body when it reads the declaration.
-Neither strict trial publishes modules. Each target records the source filename,
-placement spec and verdict. [Strict replay of both placements](https://app.buildbuddy.io/invocation/9ddc5596-7aeb-4436-9b08-ab34d00996e9)
+on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. The
+decoder lowers the React factory body when it reads the declaration in
+statement 5. It retains the deferred `Symbol.for` calls and stops at the
+`Symbol.iterator` read in the same factory. Both trials refuse and leave the
+output directory absent. Each target records the source filename, placement spec
+and verdict.
 
 Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.

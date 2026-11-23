@@ -51,6 +51,8 @@ Pass the source module, placement spec and a fresh output directory to the norma
 bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output
 ```
 
+An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
+
 For browser module scripts, the `browser-page` contract also permits `.js` output paths on emission and disk checking.
 
 For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. This lets the linked proof assume that evaluating an ambient `typeof window` returns `"object"` without observable effects throughout initialization. Lean still resolves a local or imported binding named `window` through its actual cell. The verdict lists the selected profile and premises. A bare read of the ambient `window`, a member access, or a host call requires additional semantics. The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Carrying the operation in an unexecuted branch uses no assumption about constructor behavior. The caller is responsible for choosing a profile that holds in the deployment.
