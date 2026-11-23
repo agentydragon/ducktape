@@ -315,6 +315,11 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let left ← lower (← j.getObjVal? "left")
     let right ← lower (← j.getObjVal? "right")
     match op with
+    | "+" => return .binary .add left right
+    | "-" => return .binary .sub left right
+    | "*" => return .binary .mul left right
+    | "/" => return .binary .div left right
+    | "%" => return .binary .mod left right
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
     | "!=" =>
