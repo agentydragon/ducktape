@@ -20,7 +20,7 @@ from pathlib import Path
 import FreeCAD
 import Part
 
-from skills.freecad.examples.freecad_helpers import init_gui, log, pump, run_gui_script
+from skills.freecad.examples.freecad_helpers import init_gui, landscape_page, log, pump, run_gui_script
 
 input_path = os.environ.get("INPUT", "bearing_block.FCStd")
 outdir = os.environ.get("OUTDIR", ".")
@@ -53,13 +53,7 @@ def _main() -> None:
     total_h = base_h + boss_h
 
     # === TechDraw Page ===
-    tmpl_path = os.path.join(  # noqa: PTH118
-        FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg"
-    )
-    page = doc.addObject("TechDraw::DrawPage", "Page")
-    tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
-    tmpl.Template = tmpl_path
-    page.Template = tmpl
+    page = landscape_page(doc)
 
     # === Views ===
     # Layout on A4 Landscape (297 x 210 mm):
