@@ -314,11 +314,26 @@ async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete(cluster
     client.delete_sandbox.assert_not_awaited()
 
 
-async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
-    client = create_autospec(Client, instance=True)
-    views = _create_targets(client, ("owned-0", "owned-1"))
+_OWNER_NAMES = ("owned-0", "owned-1")
 
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(views))
+
+@pytest.fixture
+def ready_pair_client(monkeypatch: pytest.MonkeyPatch) -> Client:
+    client = create_autospec(Client, instance=True)
+    targets = _create_targets(client, _OWNER_NAMES)
+    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(targets))
+    return cast(Client, client)
+
+
+async def _release_ready_pair(cluster: Cluster, client: Client) -> None:
+    async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
+        for name in _OWNER_NAMES:
+            await create(name)
+
+
+async def test_scope_releases_owned_sandboxes_concurrently(
+    cluster: Cluster, ready_pair_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
     started: set[str] = set()
     all_started = asyncio.Event()
     release = asyncio.Event()
@@ -326,19 +341,14 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
 
     async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
         started.add(name)
-        if started == set(views):
+        if started == set(_OWNER_NAMES):
             all_started.set()
         await release.wait()
         finished.add(name)
 
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
-        async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
-            await create("owned-0")
-            await create("owned-1")
-
-    closing = asyncio.create_task(use_scope())
+    closing = asyncio.create_task(_release_ready_pair(cluster, ready_pair_client))
     try:
         await asyncio.wait_for(all_started.wait(), timeout=5)
     except TimeoutError:
@@ -347,17 +357,13 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
         raise
     release.set()
     await closing
-    assert started == set(views)
-    assert finished == set(views)
+    assert started == set(_OWNER_NAMES)
+    assert finished == set(_OWNER_NAMES)
 
 
 async def test_scope_drains_other_owners_when_one_cleanup_fails(
-    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+    cluster: Cluster, ready_pair_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
-    views = _create_targets(client, ("owned-0", "owned-1"))
-
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(views))
     started: set[str] = set()
     peer_started = asyncio.Event()
     release_peer = asyncio.Event()
@@ -376,12 +382,7 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
 
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
-        async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
-            await create("owned-0")
-            await create("owned-1")
-
-    closing = asyncio.create_task(use_scope())
+    closing = asyncio.create_task(_release_ready_pair(cluster, ready_pair_client))
     try:
         await asyncio.wait_for(failed_owner.wait(), timeout=5)
     except TimeoutError:
@@ -392,22 +393,20 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
     release_peer.set()
     with pytest.raises(RuntimeError, match="test cleanup failure"):
         await closing
-    assert started == set(views)
+    assert started == set(_OWNER_NAMES)
     assert finished == {"owned-0"}
 
 
-async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
-    client = create_autospec(Client, instance=True)
-    views = _create_targets(client, ("owned-0", "owned-1"))
-
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(views))
+async def test_scope_preserves_multiple_cleanup_failures(
+    cluster: Cluster, ready_pair_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
     started: set[str] = set()
     all_started = asyncio.Event()
     release = asyncio.Event()
 
     async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
         started.add(name)
-        if started == set(views):
+        if started == set(_OWNER_NAMES):
             all_started.set()
         await release.wait()
         failure = RuntimeError(f"{name} cleanup failure")
@@ -416,12 +415,7 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
 
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
-        async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
-            await create("owned-0")
-            await create("owned-1")
-
-    closing = asyncio.create_task(use_scope())
+    closing = asyncio.create_task(_release_ready_pair(cluster, ready_pair_client))
     try:
         await asyncio.wait_for(all_started.wait(), timeout=5)
     except TimeoutError:
@@ -432,7 +426,7 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
     release.set()
     with pytest.raises(ExceptionGroup, match="Sandbox cleanup failed") as raised:
         await closing
-    assert started == set(views)
+    assert started == set(_OWNER_NAMES)
     assert len(raised.value.exceptions) == 2
     assert {str(error) for error in raised.value.exceptions} == {"owned-0 cleanup failure", "owned-1 cleanup failure"}
     assert {note for error in raised.value.exceptions for note in error.__notes__} == {
@@ -463,13 +457,13 @@ async def test_scope_keeps_scenario_error_when_sandbox_and_identity_cleanup_fail
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", fail_sandbox_cleanup)
     monkeypatch.setattr(app_sandbox, "delete_scenario_identity", fail_identity_cleanup)
 
-    async def use_scope() -> None:
+    async def failing_scenario() -> None:
         async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
             await create("owned")
             raise scenario_error
 
     with pytest.raises(AssertionError, match="scenario failure") as raised:
-        await use_scope()
+        await failing_scenario()
 
     assert raised.value is scenario_error
     assert raised.value.__notes__ == [
@@ -498,12 +492,9 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
     monkeypatch.setattr(app_sandbox, "wait_until_running", not_ready)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
+    with pytest.raises(RuntimeError, match="boot did not become ready"):
         async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
             await create("failed-boot")
-
-    with pytest.raises(RuntimeError, match="boot did not become ready"):
-        await use_scope()
     assert cleanup == [(created.name, created.uid)]
 
 
@@ -552,12 +543,9 @@ async def test_scope_rejects_ready_view_without_runner_binding(
     monkeypatch.setattr(app_sandbox, "wait_until_running", AsyncMock(return_value=view))
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", AsyncMock())
 
-    async def use_scope() -> None:
+    with pytest.raises(SandboxNotReadyError, match="without a runner credential binding"):
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create("unbound-ready")
-
-    with pytest.raises(SandboxNotReadyError, match="without a runner credential binding"):
-        await use_scope()
 
 
 async def test_scope_rejects_malformed_ready_runner_binding(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -568,12 +556,9 @@ async def test_scope_rejects_malformed_ready_runner_binding(cluster: Cluster, mo
     monkeypatch.setattr(app_sandbox, "wait_until_running", AsyncMock(return_value=view))
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", AsyncMock())
 
-    async def use_scope() -> None:
+    with pytest.raises(ValueError, match=r"runnerCredential\.kind must be a string"):
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create("malformed-ready")
-
-    with pytest.raises(ValueError, match=r"runnerCredential\.kind must be a string"):
-        await use_scope()
 
 
 async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_error(
@@ -605,12 +590,9 @@ async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_e
     monkeypatch.setattr(app_sandbox.boot_rcu, "capture_readiness_failure", capture)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
+    with pytest.raises(SandboxNotReadyError, match="did not reach Ready") as raised:
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create(created.name, template="renamed-kvm-template")
-
-    with pytest.raises(SandboxNotReadyError, match="did not reach Ready") as raised:
-        await use_scope()
 
     assert raised.value is readiness_error
     assert events == ["capture", "suspend-delete"]
@@ -643,12 +625,9 @@ async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
     monkeypatch.setattr(app_sandbox.boot_rcu, "capture_readiness_failure", capture)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
+    with pytest.raises(SandboxNotReadyError, match="VM was replaced") as raised:
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create("failed-vm", template="renamed-kvm-template")
-
-    with pytest.raises(SandboxNotReadyError, match="VM was replaced") as raised:
-        await use_scope()
 
     assert raised.value is readiness_error
     assert replacement.target.uid != created.uid
@@ -733,12 +712,9 @@ async def test_scope_keeps_generic_diagnostics_when_failed_readiness_has_no_bind
     monkeypatch.setattr(app_sandbox.boot_rcu, "capture_readiness_failure", capture)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", AsyncMock())
 
-    async def use_scope() -> None:
+    with pytest.raises(SandboxNotReadyError, match="did not reach Ready") as raised:
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create("unbound-failure", template="environment-vm-old-pod")
-
-    with pytest.raises(SandboxNotReadyError, match="did not reach Ready") as raised:
-        await use_scope()
 
     assert raised.value is readiness_error
     assert diagnostic_views == [view]
@@ -746,12 +722,8 @@ async def test_scope_keeps_generic_diagnostics_when_failed_readiness_has_no_bind
 
 
 async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
-    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+    cluster: Cluster, ready_pair_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
-    views = _create_targets(client, ("owned-0", "owned-1"))
-
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(views))
     body_started = asyncio.Event()
     cleanup_started = asyncio.Event()
     release = asyncio.Event()
@@ -760,7 +732,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
 
     async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
         started.add(name)
-        if started == set(views):
+        if started == set(_OWNER_NAMES):
             cleanup_started.set()
         await release.wait()
         if name == "owned-1":
@@ -772,9 +744,9 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
     async def use_scope() -> None:
-        async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
-            await create("owned-0")
-            await create("owned-1")
+        async with app_sandbox.sandbox_scope(cluster, ready_pair_client, trace.get_tracer(__name__)) as create:
+            for name in _OWNER_NAMES:
+                await create(name)
             body_started.set()
             await asyncio.Event().wait()
 
@@ -793,7 +765,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     with pytest.raises(asyncio.CancelledError) as raised:
         await running
     assert str(raised.value) == "body cancellation"
-    assert started == set(views)
+    assert started == set(_OWNER_NAMES)
     assert finished == {"owned-0"}
     cleanup_error = raised.value.__cause__
     assert isinstance(cleanup_error, RuntimeError)
@@ -802,12 +774,8 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
 
 
 async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
-    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+    cluster: Cluster, ready_pair_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
-    views = _create_targets(client, ("owned-0", "owned-1"))
-
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(views))
     cleanup_started = asyncio.Event()
     release = asyncio.Event()
     started: set[str] = set()
@@ -815,19 +783,14 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
 
     async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
         started.add(name)
-        if started == set(views):
+        if started == set(_OWNER_NAMES):
             cleanup_started.set()
         await release.wait()
         finished.add(name)
 
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
-    async def use_scope() -> None:
-        async with app_sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
-            await create("owned-0")
-            await create("owned-1")
-
-    closing = asyncio.create_task(use_scope())
+    closing = asyncio.create_task(_release_ready_pair(cluster, ready_pair_client))
     try:
         await asyncio.wait_for(cleanup_started.wait(), timeout=5)
     except TimeoutError:
@@ -838,8 +801,8 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await closing
-    assert started == set(views)
-    assert finished == set(views)
+    assert started == set(_OWNER_NAMES)
+    assert finished == set(_OWNER_NAMES)
 
 
 if __name__ == "__main__":
