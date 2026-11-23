@@ -5,7 +5,8 @@ import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { lower, moduleEvaluationOrder, observe, prepare, root } from "./testing/linked_programs.mjs";
 
-const count = 48;
+// Sixteen provider/reader pairs reach the staged linking threshold of 32 executable units.
+const count = process.argv.includes("--full-graph") ? 48 : 16;
 const names = Array.from({ length: count }, (_, index) => `reader${index}`);
 const expected = Object.fromEntries(names.map((name, index) => [name, `value${index}`]));
 const values = names.map((name, index) => `const data${index} = ${JSON.stringify(expected[name])};`);

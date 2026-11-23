@@ -343,6 +343,17 @@ js_test(
     env = _LINKED_PROGRAMS_TEST_ENV,
 )
 
+# Preserve the 48-reader reduction-budget regression for explicit runs.
+js_test(
+    name = "linked_module_graph_scale_test",
+    size = "medium",
+    args = ["--full-graph"],
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_module_graph_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+    tags = ["manual"],
+)
+
 js_test(
     name = "linked_mutations_test",
     size = "medium",

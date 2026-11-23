@@ -152,11 +152,11 @@ Linked refusals from AST lowering and the concrete probe include a `reason_code`
 
 Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.
 
-For public comparisons, use the wide-table reversal and linked module graph:
+For public comparisons, use the wide-table reversal and the 48-reader linked module graph:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
-bbr test "$p/translation:linked_wide_table_reversal_test" "$p/translation:linked_module_graph_test" \
+bbr test "$p/translation:linked_wide_table_reversal_test" "$p/translation:linked_module_graph_scale_test" \
   --test_env=SPLIT_PROOF_TIMINGS=1 --test_output=all --nocache_test_results
 ```
 
