@@ -41,6 +41,11 @@ private partial def exprEq : MatchEq Expr
     let ⟨left⟩ ← exprEq a a'
     let ⟨right⟩ ← exprEq b b'
     return ⟨o ▸ left ▸ right ▸ rfl⟩
+  | .logical op a b, .logical op' a' b' => do
+    let ⟨o⟩ ← scalarEq op op'
+    let ⟨left⟩ ← exprEq a a'
+    let ⟨right⟩ ← exprEq b b'
+    return ⟨o ▸ left ▸ right ▸ rfl⟩
   | .cond c t e, .cond c' t' e' => do
     let ⟨test⟩ ← exprEq c c'
     let ⟨yes⟩ ← exprEq t t'
