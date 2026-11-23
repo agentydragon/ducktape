@@ -122,6 +122,17 @@ for (const [name, body, reason] of [
 
 {
   const test = fixture(
+    "module-try-typed-array",
+    "try { new Uint8Array(1); } catch {} const result = 1; export { result };"
+  );
+  const verdict = test.run("--host-contract", profile);
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, /host value window\.Uint8Array is constructed/);
+  assert(!existsSync(test.out));
+}
+
+{
+  const test = fixture(
     "bulk-browser-bindings",
     "const read = () => [typeof document, typeof fetch, typeof process, Object.defineProperty, globalThis.Object.defineProperty, URL, (() => FileReader)]; const result = read(); export { result };"
   );

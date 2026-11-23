@@ -19,6 +19,39 @@ import {
 
 const entry = "entry.mjs";
 
+{
+  const source = `
+    var seen = "", outer = 7;
+    const before = captured;
+    try {
+      seen += typeof shadow;
+      let shadow = 10;
+    } catch {
+      seen += "tdz";
+    }
+    try {
+      var captured = 41;
+      throw 1;
+    } catch (caught) {
+      let outer = caught;
+      captured += outer;
+    } finally {
+      seen += "!";
+    }
+    export { before, captured, outer, seen };
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-try", source, {
+    "worker.mjs": ["#0", "#1", "#2", "#3", "#4"],
+    [entry]: ["#5"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  const exports = ["before", "captured", "outer", "seen"];
+  const expected = { before: undefined, captured: 42, outer: 7, seen: "tdz!" };
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, exports), expected);
+  }
+}
+
 for (const [name, body, expected] of [
   [
     "var-hoist-and-lexical-scope",
