@@ -84,3 +84,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_registry",
+    srcs = ["test_registry.py"],
+    deps = [
+        ":models",
+        ":registry",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
