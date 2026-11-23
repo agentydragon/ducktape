@@ -27,16 +27,19 @@ def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch)
     assert calls == [["all", "--no-prs"]]
 
 
-# Branch names that look like numbers: `tabulate` rewrites a column whose every cell does.
-_NUMERIC_LOOKING_BRANCHES = ["1e5", "2.10", "1.0", "007"]
+def _cells(report: str, column: int) -> list[str]:
+    """One column of a rendered table's rows, excluding the header and summary."""
+    return sorted(line.split()[column] for line in report.splitlines()[1:-1])
 
 
-def _scan_numeric_looking_branches(
+def test_reports_print_numeric_looking_branch_names_verbatim(
     repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
-) -> workspace_scan.WorkspaceScan:
-    for index, branch in enumerate(_NUMERIC_LOOKING_BRANCHES):
-        repo.worktree(f"wt{index}", branch)  # an empty branch: its worktree and branch are both prunable
-    return workspace_scan.scan_workspace(
+) -> None:
+    # Tabulate rewrites a column when every cell looks like a number.
+    branches = ["1e5", "2.10", "1.0", "007"]
+    for index, branch in enumerate(branches):
+        repo.worktree(f"wt{index}", branch)  # Empty branches and their worktrees are prunable.
+    scan = workspace_scan.scan_workspace(
         repo.path,
         main="main",
         default_branch="main",
@@ -46,32 +49,11 @@ def _scan_numeric_looking_branches(
         mountinfo_path=mountinfo,
     )
 
+    worktrees = workspace_gc.render_worktrees(scan.worktrees, include_kept=False)
+    local_branches = workspace_gc.render_branches(scan.branches, include_kept=False)
 
-def _cells(report: str, column: int) -> list[str]:
-    """One column of a rendered table's rows: not its header line, nor its trailing summary line."""
-    return sorted(line.split()[column] for line in report.splitlines()[1:-1])
-
-
-def test_render_worktrees_prints_numeric_looking_branch_names_verbatim(
-    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
-) -> None:
-    scan = _scan_numeric_looking_branches(repo, proc, mountinfo)
-
-    report = workspace_gc.render_worktrees(scan.worktrees, include_kept=False)
-
-    # STATUS, LAST ACTIVITY, WORKTREE, BRANCH: the fourth cell of a row.
-    assert _cells(report, 3) == sorted(_NUMERIC_LOOKING_BRANCHES)
-
-
-def test_render_branches_prints_numeric_looking_branch_names_verbatim(
-    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
-) -> None:
-    scan = _scan_numeric_looking_branches(repo, proc, mountinfo)
-
-    report = workspace_gc.render_branches(scan.branches, include_kept=False)
-
-    # STATUS, BRANCH: the second cell of a row. The default branch is kept, so it is not a row.
-    assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
+    assert _cells(worktrees, 3) == sorted(branches)  # STATUS, LAST ACTIVITY, WORKTREE, BRANCH
+    assert _cells(local_branches, 1) == sorted(branches)  # STATUS, BRANCH
 
 
 def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
