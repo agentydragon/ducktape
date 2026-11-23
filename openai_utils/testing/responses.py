@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from typing import Any
+from typing import Any, Self
 
 import pydantic_core
 from pydantic import BaseModel, TypeAdapter
@@ -78,18 +78,18 @@ class DecoratorMock(Model):
 
     model = "test-model"
 
-    def __init__(self, play_fn: Callable[[DecoratorMock], PlayGen]) -> None:
+    def __init__(self, play_fn: Callable[[Self], PlayGen]) -> None:
         self._call_id_seq = 0
         self._reasoning_seq = 0
         self._gen = play_fn(self)
         next(self._gen)
 
     @classmethod
-    def mock[T: DecoratorMock](cls: type[T]) -> Callable[[Callable[[T], PlayGen]], T]:
+    def mock(cls) -> Callable[[Callable[[Self], PlayGen]], Self]:
         """Decorate a generator that receives an instance of this mock class."""
 
-        def decorator(fn: Callable[[T], PlayGen]) -> T:
-            return cls(fn)  # type: ignore[arg-type]  # The constructor calls fn with a T.
+        def decorator(fn: Callable[[Self], PlayGen]) -> Self:
+            return cls(fn)
 
         return decorator
 

@@ -121,12 +121,11 @@ async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: Fu
 
     @DecoratorMock.mock()
     def client(m: DecoratorMock) -> PlayGen:
-        req = yield
-        while True:
-            if len(req.input) == 1:
-                req = yield list(first_turn_calls)
-            else:
-                req = yield m.assistant_text("I received an error")
+        first_request = yield
+        assert len(first_request.input) == 1
+        retry = yield list(first_turn_calls)
+        assert len(retry.input) > 1
+        yield m.assistant_text("I received an error")
 
     capture = TextCaptureHandler()
     agent = Agent(tool_provider=mcp_tool_provider_echo, client=client, handlers=[capture], tool_policy=RequireAnyTool())
