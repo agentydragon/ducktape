@@ -20,8 +20,6 @@ from itertools import repeat
 from pathlib import Path
 from typing import Any, get_args
 
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine, make_url
@@ -78,6 +76,7 @@ from study_casino.stats import (
     TimeBucketStats,
     WagerBucketStats,
 )
+from util.alembic_upgrade import upgrade
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -88,11 +87,8 @@ _ACTION_RESULT_ADAPTER: TypeAdapter[ActionResult] = TypeAdapter(ActionResult)
 
 
 def _run_alembic_migrations(engine: Engine) -> None:
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "head")
+        upgrade(conn, _MIGRATIONS_DIR)
 
 
 @dataclass(frozen=True)

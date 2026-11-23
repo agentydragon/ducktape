@@ -5,13 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, select, text
 
 from haku.console.database_schema import metadata
+from util.alembic_upgrade import upgrade
 from util.db_url import render_postgresql_url
 
 # SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
@@ -36,11 +35,7 @@ class MigrationSettings(BaseSettings):
 
 def run_migrations_for_connection(conn: Any) -> None:
     conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
-    cfg.attributes["connection"] = conn
-    cfg.attributes["target_metadata"] = metadata
-    alembic_command.upgrade(cfg, "head")
+    upgrade(conn, _MIGRATIONS_DIR, metadata=metadata)
     verify_schema_for_connection(conn)
 
 

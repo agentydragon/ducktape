@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -16,6 +14,7 @@ from study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportR
 from study_casino.models import Game, GameEventRow, GameEventSource, LedgerEventRow, StateSnapshotRow
 from study_casino.state import BalanceRead
 from study_casino.store import ActionMutation, ActionRejectedError, SqlStore, locked_balance
+from util.alembic_upgrade import upgrade
 
 
 @pytest.fixture
@@ -120,12 +119,10 @@ def _ledger_rows(store: SqlStore, username: str = _U) -> list[LedgerEventRow]:
 
 def test_economy_rebalance_migration_preserves_progress(empty_postgres_url: str) -> None:
     engine = create_engine(empty_postgres_url)
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    scripts = Path(__file__).parent / "migrations"
 
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "0004")
+        upgrade(conn, scripts, "0004")
         conn.execute(text("INSERT INTO balance (user_id, credits, tokens) VALUES ('auragon', 60000, 23114)"))
         conn.execute(
             text(
@@ -136,8 +133,7 @@ def test_economy_rebalance_migration_preserves_progress(empty_postgres_url: str)
         )
 
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "head")
+        upgrade(conn, scripts, "head")
         assert conn.execute(text("SELECT tokens FROM balance WHERE user_id = 'auragon'")).scalar_one() == 13868
         assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'chair'")).scalar_one() == 21600
         assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'small'")).scalar_one() == 1

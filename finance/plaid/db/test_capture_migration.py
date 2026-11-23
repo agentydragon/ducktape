@@ -10,8 +10,6 @@ from decimal import Decimal
 
 import pytest
 import pytest_bazel
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, insert, select, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +25,7 @@ from finance.plaid.db.models import (
     SecurityRow,
 )
 from testing.postgres import DatabaseNames, create_temporary_database
+from util.alembic_upgrade import upgrade
 from util.db_url import render_postgresql_url
 
 
@@ -39,15 +38,8 @@ def _connection(db_url: str) -> Iterator[Connection]:
 
 
 def _upgrade_to_revision(db_url: str, revision: str) -> None:
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
-    engine = create_engine(db_url)
-    try:
-        with engine.begin() as connection:
-            cfg.attributes["connection"] = connection
-            alembic_command.upgrade(cfg, revision)
-    finally:
-        engine.dispose()
+    with _connection(db_url) as connection:
+        upgrade(connection, _MIGRATIONS_DIR, revision)
 
 
 def _insert_holding_snapshot(connection: Connection, *, capture_linked: bool) -> int:

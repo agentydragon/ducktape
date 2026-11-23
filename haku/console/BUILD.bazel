@@ -73,8 +73,8 @@ py_library(
     data = ["//haku/console/migrations:files"],
     deps = [
         ":database_schema",
+        "//util:alembic_upgrade",
         "//util:db_url",
-        "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
