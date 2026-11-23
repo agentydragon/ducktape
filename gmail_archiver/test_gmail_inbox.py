@@ -7,7 +7,8 @@ import pytest
 import pytest_bazel
 from rich.console import Console
 
-from gmail_archiver.gmail_api_models import GmailHeader, GmailMessagePayload, GmailMessageWithHeaders
+from gmail_api.messages import MessagePartHeader
+from gmail_archiver.gmail_api_models import GmailMessagePayload, GmailMessageWithHeaders
 from gmail_archiver.gmail_client import GmailClient
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
@@ -88,8 +89,8 @@ def test_metadata_fetch_uses_metadata_cache_for_all_message_ids() -> None:
                     internal_date="1793145600000",
                     payload=GmailMessagePayload(
                         headers=[
-                            GmailHeader(name="Subject", value=f"Subject for {message_id}"),
-                            GmailHeader(name="From", value=f"{message_id}@example.invalid"),
+                            MessagePartHeader(name="Subject", value=f"Subject for {message_id}"),
+                            MessagePartHeader(name="From", value=f"{message_id}@example.invalid"),
                         ]
                     ),
                 )
