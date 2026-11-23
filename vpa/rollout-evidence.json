@@ -1057,5 +1057,131 @@
       }
     ],
     "staging_pr": 19245
+  },
+  "agentplane_staging_recreate_rollout": {
+    "observation_started_utc": "2026-11-23T01:34:47+00:00",
+    "observation_finished_utc": "2026-11-23T01:47:38+00:00",
+    "merge_commit": "2f9ba018bd2a3a1d191c42708b56d72e2a781070",
+    "pull_request": 19245,
+    "flux": {
+      "kustomization": "ducktape-flux/agentplane-staging-vpa",
+      "revision": "latest@sha256:2109e4f4a374842449181af0d61d4e53347e7842edaf02aacd338b94f10e09ea",
+      "healthy_reconcile_origin": "devel@sha1:7cf5339f68c96a15eb77136992d19550db018bf5",
+      "initial_health_check_timeout_utc": "2026-11-23T01:44:54Z",
+      "recommender_interval": "15m",
+      "vpas_with_current_observed_generation": 13,
+      "healthy_at_utc": "2026-11-23T01:46:25Z"
+    },
+    "mode": "Recreate",
+    "all_have_recommendations": true,
+    "services": {
+      "actions": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "app": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "central-sampler": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "egress": {
+        "ready": 3,
+        "desired": 3,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "electric": {
+        "ready": 1,
+        "desired": 1,
+        "previous_mode": "Initial",
+        "pod_replacements": 1
+      },
+      "environments": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "frontend": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Recreate",
+        "pod_replacements": 0
+      },
+      "history-service": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Recreate",
+        "pod_replacements": 0
+      },
+      "llm-ingress": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "mcp-edge": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "notifications": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Recreate",
+        "pod_replacements": 0
+      },
+      "policy-controller": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      },
+      "sessions": {
+        "ready": 2,
+        "desired": 2,
+        "previous_mode": "Initial",
+        "pod_replacements": 0
+      }
+    },
+    "electric": {
+      "min_replicas": 1,
+      "updater_event": "EvictedByVPA",
+      "evicted_utc": "2026-11-23T01:35:28Z",
+      "postgres_replication_start_logged_utc": "2026-11-23T01:35:49Z",
+      "replacement_ready_utc": "2026-11-23T01:35:54Z",
+      "eviction_to_ready_seconds": 26,
+      "previous_requests": {
+        "cpu": "100m",
+        "memory": "256Mi"
+      },
+      "admitted_requests": {
+        "cpu": "109m",
+        "memory": "448Mi"
+      },
+      "ready_serving_endpoints": 1,
+      "read_only_shape_check": {
+        "checked_utc": "2026-11-23T01:39:14+00:00",
+        "method": "Port-forward to the Pod selected by Service electric",
+        "response_statuses": [200, 200],
+        "table": "thread_entity",
+        "filter": "all-zero thread ID",
+        "controls": ["snapshot-end", "up-to-date"],
+        "row_count": 0
+      },
+      "client_observation": "Client reconnect and delivery of a new shape change were not measured."
+    },
+    "replicated_services_with_one_disruption_allowed": 12,
+    "application_traffic_check": "No end-to-end Session or Action request was measured during the handoff."
   }
 }

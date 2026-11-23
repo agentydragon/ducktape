@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611230127`);
+      const response = await fetch(`${path}?v=202611230147`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -808,32 +808,38 @@ function Report() {
           >Automatic eviction and policy coverage<//
         >
         <${Text}
-          ><strong>Agentplane staging · ten proposed promotions.</strong> Nine
-          replicated Deployments and singleton Electric would join the three
-          already in Recreate. All twelve replicated services had Ready Pods on
-          distinct hosts and one allowed disruption each. Electric uses
-          minReplicas 1; its owner accepts a sync outage. These policies change
-          eviction eligibility. They close none of the 45 gaps above. After
-          merge, verify all thirteen live modes and watch updater events, PDBs,
-          replacement scheduling, Session and Action traffic, and an Electric
-          shape reconnect that receives a new change. Budgets are per service;
-          replacements can overlap across services. ${" "}<${Anchor}
+          ><strong
+            >Agentplane staging · all 13 services now use Recreate.</strong
+          >
+          ${" "}Flux applied the ten promotions on 23 November. At 01:47 UTC,
+          all 26 replicas were Ready and every VPA had a recommendation. The
+          twelve replicated services kept their original Pods. Their disruption
+          budgets each allowed one eviction, so future replacements can overlap
+          across services. The 45 request gaps above are a separate count.<//
+        >
+        <${Text}>
+          <strong>Electric was the only Pod the updater evicted.</strong>${" "}
+          Its requests rose from 100m CPU and 256 MiB memory to 109m and 448
+          MiB. Electric reconnected to PostgreSQL 21 seconds after eviction and
+          became Ready after 26 seconds. A read-only shape returned a snapshot
+          and a working cursor. Recovery of an existing client through delivery
+          of its next change still needs an end-to-end check. ${" "}<${Anchor}
             href=${github + "pull/19245"}
-            >Staging promotion PR<//
+            >Merged staging promotion<//
           >.<//
         >
         <${Text}
-          ><strong>Five other replicated candidates.</strong> After the nine
-          staging candidates, the snapshot’s Recreate queue contains CoreDNS,
-          the VPA admission controller, the Cilium operator and two KubeVirt
-          controllers. Prepare CoreDNS and admission-controller checks
-          independently: continuously resolve a Service name or submit
-          owner-backed dry-run Pod creates through a one-replica handoff. Verify
-          two ready hosts, PDB and capacity before promotion. For Cilium, first
-          clear the bootstrap drift in #18520 and verify new Gateway programming
-          through leader handoff. For virt-api and virt-controller, verify
-          client reconnect and VMI reconciliation. Promote only the services
-          that pass their own probe.<//
+          ><strong>Five other replicated candidates.</strong> The snapshot’s
+          remaining Recreate candidates are CoreDNS, the VPA admission
+          controller, the Cilium operator and two KubeVirt controllers. Prepare
+          CoreDNS and admission-controller checks independently: continuously
+          resolve a Service name or submit owner-backed dry-run Pod creates
+          through a one-replica handoff. Verify two ready hosts, PDB and
+          capacity before promotion. For Cilium, first clear the bootstrap drift
+          in #18520 and verify new Gateway programming through leader handoff.
+          For virt-api and virt-controller, verify client reconnect and VMI
+          reconciliation. Promote only the services that pass their own
+          probe.<//
         >
         <${Text}>
           <strong
@@ -999,8 +1005,8 @@ function Report() {
             }
             ${" "}Size new Pods without VPA eviction while the service runs one
             replica. CDviz’s collector also needs a delivery and reconnect check
-            before promotion. Staging Electric’s owner accepts downtime for its
-            proposed singleton eviction.
+            before promotion. Staging Electric’s owner accepted the singleton
+            outage and the service recovered after its first updater eviction.
           <//>
         <//>
       <//>
