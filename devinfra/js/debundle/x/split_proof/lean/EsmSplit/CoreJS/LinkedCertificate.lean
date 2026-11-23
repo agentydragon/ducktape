@@ -910,9 +910,15 @@ private def witnessFuel (profile : HostProfile) (source candidate : Program) : E
     if let some witness ← test limit then return witness
   throw s!"linked initialization exhausted the fuel search budget ({limit})"
 
-/-- The generated module proves an all-world, fuel-independent claim for these two programs.
-The caller accepts only successful elaboration and kernel checking of the complete file. -/
-def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String (String × HostProfile) := do
+/-- Both compilation layouts use these same declarations and the same final axiom audit. -/
+structure Certificate where
+  preamble : String
+  execution : String
+  correspondence : String
+  premises : HostProfile
+
+/-- Generate the all-world execution theorem and bind it to the concrete ASTs and plan. -/
+def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String Certificate := do
   let records ← recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
@@ -956,23 +962,24 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
      "  check_linked_layout\n",
      s!"  first\n  | verify_linked_programs_from {fuel} sourceLink candidateLink\n  | {ordinaryTactic}\n")
     else ("", s!"  {ordinaryTactic}\n")
-  let code := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
-    "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
-    recordTerms ++ String.join writeTerms ++
-    String.join asts.toList ++
-    "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
-    "private def source : Program := " ++ s ++ "\n" ++
-    "private def candidate : Program := " ++ c ++ "\n" ++
-    "private def profile := " ++ profileTerm profile ++ "\n" ++
-    "private def premises := " ++ profileTerm premises ++ "\n" ++
+  let preamble := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
+    "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n"
+  let execution := "namespace LinkedExecutionProof\n" ++ recordTerms ++ String.join writeTerms ++
+    "def source : Program := " ++ s ++ "\n" ++
+    "def candidate : Program := " ++ c ++ "\n" ++
+    "def profile := " ++ profileTerm profile ++ "\n" ++
+    "def premises := " ++ profileTerm premises ++ "\n" ++
     layouts ++
-    "private theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
+    "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++
+    "end LinkedExecutionProof\n"
+  let correspondence := "open LinkedExecutionProof\n" ++ String.join asts.toList ++
+    "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
     "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan)) :=\n" ++
     "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions\n" ++
     "#audit_linked_programs verified\n" ++
     "#eval IO.ofExcept (verified.map fun _ => ())\n"
 
-  return (code, premises)
+  return ⟨preamble, execution, correspondence, premises⟩
 
 end CoreJS.LinkedBehavior

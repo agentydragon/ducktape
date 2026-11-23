@@ -398,15 +398,10 @@ def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec
   | .error why => [if why.startsWith "the plan to keep the order" then s!"  model diagnostic: none. {kept} needs {why}"
       else s!"  model diagnostic: none. {kept} and {moves} need {why}"]
 
-/-- Elaborate the concrete execution proof with the same toolchain and compiled model
-as the splitter. Publication waits for the kernel to accept it. -/
-private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
-    (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
-  let file := work / "LinkedExecution.lean"
-  let (code, premises) ← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
-  IO.FS.writeFile file code
+/-- Use the same Lean toolchain and compiled model as the running splitter. -/
+private def checkLean (work : System.FilePath) (args : Array String) : IO Unit := do
   let exe ← IO.appPath
-  let args := #["-DwarningAsError=true", s!"--root={work}", file.toString]
+  let args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
   let proc ← if exe.fileName == some "lean" then
       IO.Process.output { cmd := exe.toString, args }
     else do
@@ -418,7 +413,29 @@ private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePa
     let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
     let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
     throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
-  return premises
+
+/-- Compile large execution proofs before elaborating the quoted ASTs. The second
+process imports the specific module checked in this invocation's temporary directory. -/
+private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
+    (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
+  let cert ← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
+  let file := work / "LinkedExecution.lean"
+  if cert.correspondence.utf8ByteSize < 512 * 1024 then
+    IO.FS.writeFile file (cert.preamble ++ cert.execution ++ cert.correspondence)
+    checkLean work #[file.toString]
+  else
+    let proof := work / "LinkedExecutionProof.lean"
+    let compiled := work / "LinkedExecutionProof.olean"
+    IO.FS.writeFile proof (cert.preamble ++ cert.execution)
+    checkLean work #["-o", compiled.toString, proof.toString]
+    let setup : Lean.ModuleSetup := {
+      name := `LinkedExecution
+      importArts := ({} : Lean.NameMap _).insert `LinkedExecutionProof (.ofArrays #[#[compiled]]) }
+    let setupFile := work / "LinkedExecution.setup.json"
+    IO.FS.writeFile setupFile (toJson setup).compress
+    IO.FS.writeFile file ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence)
+    checkLean work #[s!"--setup={setupFile}", file.toString]
+  return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
   let fields := match outcome with
