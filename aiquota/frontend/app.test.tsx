@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { cleanupMounted, renderWithMantine } from "../../util/frontend/testing/react";
 import { App } from "./app";
 
 class Stream extends EventTarget {
@@ -25,30 +24,18 @@ class Stream extends EventTarget {
   }
 }
 
-let root: Root;
 let container: HTMLDivElement;
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("EventSource", Stream);
   vi.stubGlobal("fetch", vi.fn());
   Stream.instances = [];
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  act(() =>
-    root.render(
-      <MantineProvider env="test">
-        <App />
-      </MantineProvider>
-    )
-  );
+  container = await renderWithMantine(<App />);
 });
 
-afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
+afterEach(async () => {
+  await cleanupMounted();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });

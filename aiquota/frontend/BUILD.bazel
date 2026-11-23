@@ -43,7 +43,10 @@ typed_eslint_test(
         ":main",
         ":typed_lint_program_data",
     ],
-    source_data = ["//aiquota/shared:presentation.ts"],
+    source_data = [
+        "//aiquota/shared:presentation.ts",
+        "//util/frontend:typed_lint_srcs",
+    ],
     tsconfig = "tsconfig.json",
 )
 
@@ -210,12 +213,10 @@ aiquota_vitest_test(
     deps = [
         ":board",
         ":schema",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -225,12 +226,10 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":app",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
