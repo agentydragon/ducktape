@@ -446,6 +446,17 @@ js_test(
 )
 
 js_test(
+    name = "linked_table_lookups_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA + [
+        ":node_modules/acorn",
+        ":node_modules/astring",
+    ],
+    entry_point = "linked_table_lookups_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "linked_wide_records_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,
