@@ -23,7 +23,9 @@ Then, by TLS client:
 - **C `git` / `curl` / OpenSSL CLI**: the bundle lands at the default path, so they find
   it automatically. Also set `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` (via
   `py_image_env(extra_env=...)`) for any OpenSSL consumer.
-- **`pygit2` / `libgit2`**: it ignores `SSL_CERT_FILE`/`GIT_SSL_CAINFO`; call
+- **`pygit2` / `libgit2`**: the pygit2 1.20.1 Linux wheel used by the Beancount exporter
+  honors `SSL_CERT_FILE` set at startup. For builds whose TLS backend does not
+  read it, call
   `pygit2.settings.set_ssl_cert_locations("/etc/ssl/certs/ca-certificates.crt", None)`.
 - **Python `requests`/`httpx`, Rust `reqwest` (rustls)**: these bundle their own roots
   (`certifi` / webpki), so they need **no** CA layer at all.
