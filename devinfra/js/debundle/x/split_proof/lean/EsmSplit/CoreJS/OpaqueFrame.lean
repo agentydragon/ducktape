@@ -235,45 +235,52 @@ theorem inRegion_result (id : Nat) (m : M W α) (s : State W) :
   simp only [inRegion, M.bind_apply, modifyState]
   cases m { s with region := id + 1 } <;> rfl
 
-/-- A unit executing outside the protected region inherits replacement naturality. -/
-theorem Frames.runUnit_replace {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt}
-    (hf : Frames r R (execStmt n env st : M W Flow)) (hj : j + 1 ≠ r)
-    (s : State W) (H : Array Obj) (C : Array Binding) :
+/-- The two observations needed for a swap, required only at its starting state. -/
+structure FramesAt (r : Nat) (R : Addr → Prop) (m : M W α) (s : State W) : Prop where
+  replace : ∀ H C, m (s.put r H C) = (m s).put r H C
+  preserves : (m s).Preserves r R s
+
+theorem Frames.atState {r R} {m : M W α} (hf : Frames r R m) (s : State W) (hr : s.region ≠ r) :
+    FramesAt r R m s := ⟨fun H C => hf.replace s H C hr, hf.preserves s hr⟩
+
+/-- Running a framed unit ignores a replacement of the protected region at its starting state. -/
+private theorem FramesAt.runUnit_replace {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt} {s : State W}
+    (hf : FramesAt r R (execStmt n env st) { s with region := j + 1 }) (H : Array Obj) (C : Array Binding) :
     runUnit n env j st (s.put r H C) = (runUnit n env j st s).put r H C := by
   simp only [runUnit, inRegion_result]
   have hs : ({ s.put r H C with region := j + 1 } : State W) = { s with region := j + 1 }.put r H C := rfl
-  rw [hs, hf.replace _ H C hj]
+  rw [hs, hf.replace H C]
   cases execStmt n env st { s with region := j + 1 } <;> rfl
 
 /-- Running the framed unit preserves the view needed to replay a local unit. -/
-theorem Frames.runUnit_sees {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt}
-    (hf : Frames r R (execStmt n env st : M W Flow)) (hj : j + 1 ≠ r)
-    {s t : State W} {f : Flow} (h : runUnit n env j st s = .ok f t) :
+private theorem FramesAt.runUnit_sees {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt} {s : State W}
+    (hf : FramesAt r R (execStmt n env st) { s with region := j + 1 })
+    {t : State W} {f : Flow} (h : runUnit n env j st s = .ok f t) :
     Sees r R { s with region := r } { t with region := r } := by
   obtain ⟨u, hu, rfl⟩ := runUnit_ok h
-  have hp := hf.preserves { s with region := j + 1 } hj
+  have hp := hf.preserves
   rw [hu] at hp
   exact ⟨rfl, rfl, hp.heap.symm, hp.cells.symm, fun c hc => (hp.reads c hc).symm⟩
 
 /-- An allocating local unit commutes past a unit that frames its region and its read bindings. -/
-theorem local_frame_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
-    (hij : i ≠ j) (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
-    (hf : Frames (i + 1) R (execStmt n e2 st2 : M W Flow)) :
-    Commute (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) := by
-  intro s u v a b ha hb
-  have hji : j + 1 ≠ i + 1 := by omega
+theorem local_frame_units_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
+    {P : State W → Prop} (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
+    (frame : ∀ s, P s → FramesAt (i + 1) R (execStmt n e2 st2) { s with region := j + 1 }) :
+    CommuteOn P (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) := by
+  intro s hP u v a b ha hb
+  have hf := frame s hP
   obtain ⟨u0, hu0, rfl⟩ := runUnit_ok ha
   obtain ⟨H, C, rfl, _⟩ := hl _ _ a u0 (Sees.refl rfl) hu0
   have hb' : runUnit n e2 j st2 (s.put (i + 1) H C) = .ok b v := by
     change runUnit n e2 j st2 { s.put (i + 1) H C with region := 0 } = .ok b v at hb
     rw [runUnit_region] at hb
     exact hb
-  rw [hf.runUnit_replace hji] at hb'
+  rw [hf.runUnit_replace] at hb'
   cases ht : runUnit n e2 j st2 s with
   | ok b' t =>
     rw [ht] at hb'
     cases hb'
-    have hs := hf.runUnit_sees hji ht
+    have hs := hf.runUnit_sees ht
     obtain ⟨H', C', he, ha'⟩ := hl _ _ a _ hs hu0
     have hp : t.put (i + 1) H C = t.put (i + 1) H' C' :=
       State.put_congr_view hs.heap hs.cells he
@@ -286,18 +293,30 @@ theorem local_frame_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {
   | fuel => rw [ht] at hb'; cases hb'
 
 /-- The reverse direction: a framed unit can move after the local allocating unit. -/
-theorem frame_local_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
-    (hij : i ≠ j) (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
-    (hf : Frames (i + 1) R (execStmt n e2 st2 : M W Flow)) :
-    Commute (runUnit n e2 j st2 : M W Flow) (runUnit n e1 i st1) := by
-  intro s u v b a hb ha
-  have hji : j + 1 ≠ i + 1 := by omega
-  have hs := hf.runUnit_sees hji hb
+theorem frame_local_units_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
+    {P : State W → Prop} (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
+    (frame : ∀ s, P s → FramesAt (i + 1) R (execStmt n e2 st2) { s with region := j + 1 }) :
+    CommuteOn P (runUnit n e2 j st2 : M W Flow) (runUnit n e1 i st1) := by
+  intro s hP u v b a hb ha
+  have hf := frame s hP
+  have hs := hf.runUnit_sees hb
   obtain ⟨v0, hv0, rfl⟩ := runUnit_ok ha
   obtain ⟨H, C, rfl, ha'⟩ := hl _ _ a v0 hs.symm hv0
   refine ⟨_, runUnit_of ha', ?_⟩
-  rw [runUnit_region, hf.runUnit_replace hji, runUnit_region, hb]
+  rw [runUnit_region, FramesAt.runUnit_replace (s := { s with region := i + 1 }) hf, runUnit_region, hb]
   exact congrArg (fun t : State W => Res.ok b (t.put (i + 1) H C)) (runUnit_region_zero hb)
+
+theorem local_frame_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
+    (hij : i ≠ j) (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
+    (hf : Frames (i + 1) R (execStmt n e2 st2 : M W Flow)) :
+    Commute (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) :=
+  fun s => local_frame_units_commuteOn (P := fun _ => True) hl (fun t _ => hf.atState _ (show j + 1 ≠ i + 1 by omega)) s trivial
+
+theorem frame_local_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
+    (hij : i ≠ j) (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
+    (hf : Frames (i + 1) R (execStmt n e2 st2 : M W Flow)) :
+    Commute (runUnit n e2 j st2 : M W Flow) (runUnit n e1 i st1) :=
+  fun s => frame_local_units_commuteOn (P := fun _ => True) hl (fun t _ => hf.atState _ (show j + 1 ≠ i + 1 by omega)) s trivial
 
 /-- An allocation-only declaration and opaque world statement commute in both directions when the actual world's
 requests frame the declaration's region and read cells. This is a semantic premise, not a syntax-only verdict. -/
