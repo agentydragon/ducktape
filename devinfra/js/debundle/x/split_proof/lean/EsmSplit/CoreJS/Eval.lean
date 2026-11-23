@@ -255,6 +255,8 @@ def evalExpr : Nat → Env → Expr → M W Val
     | .assign t rhs => do
       let r ← evalTarget n env t
       let v ← evalExpr n env rhs
+      -- A property reference carries its raw key. PutValue checks the base and
+      -- converts the key after the RHS has finished.
       putRef (callFn n) env r v
       pure v
     | .assignOp t op rhs => do
