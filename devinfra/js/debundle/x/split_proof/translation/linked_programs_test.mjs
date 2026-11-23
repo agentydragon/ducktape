@@ -128,6 +128,8 @@ assertWorkerResult(
   );
 }
 
+const typeOf = (argument) => ({ type: "UnaryExpression", operator: "typeof", prefix: true, argument });
+
 // Exercise both direct evaluation and calls during initialization. The first seed
 // reproduces the proof-cost regression on a moved worker returning "undefined" != typeof undefined.
 for (const [index, [operand, tag, expected]] of [
@@ -136,12 +138,52 @@ for (const [index, [operand, tag, expected]] of [
   [literal(null), "object", false],
   [literal(3), "string", true],
 ].entries()) {
-  const type = { type: "UnaryExpression", operator: "typeof", prefix: true, argument: operand };
+  const type = typeOf(operand);
   const [left, right] = index % 2 === 0 ? [literal(tag), type] : [type, literal(tag)];
   const expr = { type: "BinaryExpression", operator: "!=", left, right };
   const source = index < 2 ? observedProgram(arrow([], expr), call(id("worker"))) : observedProgram(expr, id("worker"));
   assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
 }
+
+// If the model gets a branch wrong, the initializer throws before certification.
+for (const [index, [left, right, equal]] of [
+  [literal("01"), literal("1"), false],
+  [literal("undefined"), typeOf(id("undefined")), true],
+  [typeOf(literal(null)), typeOf(literal(3)), false],
+].entries()) {
+  const comparison = { type: "BinaryExpression", operator: "==", left, right };
+  const wrong = call(arrow([], block([throws(literal("wrong equality result"))])));
+  const expected = literal(equal);
+  const result = conditional(comparison, equal ? expected : wrong, equal ? wrong : expected);
+  const source = observedProgram(arrow([], result), call(id("worker")));
+  assertWorkerResult(`generated-string-equality-${index}`, source, equal);
+}
+
+assertWorkerResult(
+  "string-equality-operand-order",
+  `const worker = () => {
+    const trace = { step: "start" };
+    const left = () => {
+      if (trace.step !== "start") throw "left repeated";
+      trace.step = "left";
+    };
+    const right = () => {
+      if (trace.step !== "left") throw "right out of order";
+      trace.step = "right";
+      return 1;
+    };
+    if (typeof left() == typeof right()) throw "unexpected equality";
+    const failing = () => { trace.step = "failed"; throw "left stopped"; };
+    try { typeof failing() == typeof right(); }
+    catch (error) {
+      if (error !== "left stopped" || trace.step !== "failed") throw error;
+      return "done";
+    }
+    throw "missing throw";
+  };
+  export const result = worker();`,
+  "done"
+);
 
 // Vary the number, spelling and values of static properties across a module boundary.
 for (const seed of [0, 1, 2, 3, 14]) {
@@ -390,6 +432,9 @@ for (const [name, expr, reason] of [
   ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
   ["record-optional-member", "({ key: worker?.field })", /unsupported linked expression ChainExpression/],
+  ["mixed-equality", '"01" == 1', /linked == requires two string operands/],
+  ["unguarded-equality", "worker == worker", /linked == requires two string operands/],
+  ["host-equality-typeof", '"undefined" == typeof window', /unsupported global window/],
   ["mixed-inequality", '"01" != 1', /requires two string operands/],
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {

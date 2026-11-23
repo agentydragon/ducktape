@@ -194,8 +194,8 @@ private def linkedObjectPattern (j : Json) : Except String (List (Name × Name))
     unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
     return (key, ← localBinding target)
 
-/-- These expressions produce strings whenever they complete normally. Loose inequality
-between two such operands never invokes numeric or object coercion. -/
+/-- These expressions produce strings whenever they complete normally. Loose equality and inequality
+between two such operands never invoke numeric or object coercion. -/
 private def stringOperand : Expr → Bool
   | .str _ | .unary .typeof _ => true
   | _ => false
@@ -323,10 +323,10 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
     | "in" => return .hasProp left right
-    | "!=" =>
+    | "==" | "!=" =>
       unless stringOperand left && stringOperand right do
-        throw "linked != requires two string operands (string literals or typeof expressions)"
-      return .binary .ne left right
+        throw s!"linked {op} requires two string operands (string literals or typeof expressions)"
+      return .binary (if op == "==" then .eq else .ne) left right
     | _ => throw s!"unsupported linked binary operator {op}"
   | "LogicalExpression" =>
     let op : LogOp ← match ← field j "operator" with
