@@ -527,6 +527,7 @@ lean_axiom_test(
         "CoreJS.access_reachable",
         "CoreJS.accessOk_iff",
         "CoreJS.ReachabilityExamples.hoisted_capture_check",
+        "CoreJS.ReachabilityExamples.async_hoisted_capture_check",
         "CoreJS.Access.put",
         "CoreJS.Access.assign",
         "CoreJS.reachFrame_alloc",

@@ -59,7 +59,8 @@ private def opaqueUnits (input : Json) : Except String Json := do
       | .closures [] => pure "skip"
       | .closures _ => throw "unexpected closure initializer"
     units := units.push (.arr #[toJson code, toJson (decls.map fun (n, k) => [n, kind k]),
-      .arr (funs.toArray.map fun (n, arity, ctor) => .arr #[toJson n, toJson arity, toJson ctor]),
+      .arr (funs.toArray.map fun (n, arity, kind) => .arr #[toJson n, toJson arity, match kind with
+        | .ordinary ctor => toJson ctor | .asyncFn => toJson "async"]),
       toJson free, toJson body])
   return .arr units
 

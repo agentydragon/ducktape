@@ -435,7 +435,7 @@ theorem converse_reachFrame (r R cells A) (code n : Nat)
 /-- Execute a world-backed statement, including publishing its receiver and handing the conversation
 its actual declaration and capture cells. -/
 theorem opaque_world_reachFrame (r R A) (n : Nat) (env : Env) (code : Nat)
-    (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name)
+    (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name)
     (receiver : SafeVal A env.this)
     (requests : ∀ k < n, ∀ req, (∃ msg state, (W.talk msg state).1 = req) →
       ReachFrame r R (opaqueCells env decls funs free) A (fun _ => True)

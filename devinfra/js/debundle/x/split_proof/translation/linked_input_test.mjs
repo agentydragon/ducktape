@@ -154,6 +154,14 @@ for (const [opts, expected] of [
   cases.push({ kind: "imports", input: dynamicGraph(opts), expected });
 }
 
+cases.push({
+  kind: "opaque",
+  input: parse("const load = 0; async function open(...args) { return (await load).default(...args); }"),
+  expected: [
+    [0, [["load", "const"]], [], [], "world"],
+    [1, [], [["open", 0, "async"]], ["load"], "skip"],
+  ],
+});
 // A public alias through a glue import must resolve to the same declaration.
 cases.push({ kind: "linked", input: linked({ exposesGlue: true }), expected: orders });
 cases.push({
@@ -186,7 +194,7 @@ for (const [source, reason] of [
   ['function read() { return eval("value"); }', /direct `eval`/],
   ['const later = () => import("./later.mjs");', /source-module or method context/],
   ["const base = import.meta.url;", /source-module or method context/],
-  ["function* steps() { yield 3; }", /async or generator/],
+  ["function* steps() { yield 3; }", /unsupported opaque generator/],
 ]) {
   cases.push({ kind: "opaque", input: parse(source), expected: reason });
 }

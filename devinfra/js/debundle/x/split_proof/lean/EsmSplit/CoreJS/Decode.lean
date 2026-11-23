@@ -247,8 +247,10 @@ def token (tag : String) (args : List Json) : D Unit := do
     let decls ← (← pairs decls).mapM fun (x, kind) => do pure (← str x, ← declKind (← str kind))
     let funs ← (← liftM (m := Except String) funs.getArr?).toList.mapM fun f => do
       match (← liftM (m := Except String) f.getArr?).toList with
-      | [x, length, constructor] => pure (← str x, ← nat length, ← bool constructor)
-      | _ => fail "a function of an opaque statement is [name, length, constructor]"
+      | [x, length, kind] =>
+        let kind ← if kind == .str "async" then pure OpaqueHoistKind.asyncFn else pure (.ordinary (← bool kind))
+        pure (← str x, ← nat length, kind)
+      | _ => fail "an opaque hoist is [name, length, constructibility or async]"
     let free ← (← liftM (m := Except String) free.getArr?).toList.mapM str
     -- `null`: the world runs it; else the functions it makes, `[name, length, constructor]` for each declaration
     let run ← if run.isNull then pure OpaqueRun.world else
