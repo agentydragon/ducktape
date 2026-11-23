@@ -450,19 +450,6 @@ py_test(
 )
 
 py_library(
-    name = "session_setup",
-    srcs = ["session_setup.py"],
-    deps = [
-        ":tracing",
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:history_reads",
-        "//agentplane/proto:session_pb2",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "harness_pair",
     srcs = ["harness_pair.py"],
     deps = [
