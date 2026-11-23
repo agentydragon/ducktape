@@ -200,23 +200,45 @@ private def stringOperand : Expr → Bool
   | .str _ | .unary .typeof _ => true
   | _ => false
 
-/-- Static own data properties, evaluated in source order on a fresh ordinary object. -/
-private def linkedObject (lower : Name → Json → Except String Expr) (j : Json) : Except String Expr := do
-  let mut seen : Std.HashSet String := {}
+/-- Decimal conversion is exact for nonnegative safe integer property names. -/
+private def staticPropertyName (key : Json) : Except String Name := do
+  if (← field key "type") == "Literal" then
+    if let .ok annotation := field key "lit" then
+      if annotation.startsWith "n:" then
+        let n ← key.getObjValAs? Nat "value"
+        unless n ≤ 9007199254740991 && annotation == s!"n:{n}" do throw "unsupported numeric property key"
+        return toString n
+  moduleExportName key
+
+/-- Evaluate static-name elements in source order. Only a colon-form __proto__ initializer
+sets the prototype. Shorthand properties and methods with that name define own properties. -/
+private def linkedObject (lower : Name → Json → Except String Expr)
+    (method : Name → Json → Except String Func) (j : Json) : Except String Expr := do
+  let mut seen : Std.HashMap String String := {}
   let mut props := #[]
   for p in ← j.getObjValAs? (Array Json) "properties" do
-    unless (← field p "type") == "Property" do throw "expected a static data property"
-    unless (← field p "kind") == "init" &&
-        !(← p.getObjValAs? Bool "computed") && !(← p.getObjValAs? Bool "method") do
-      throw "expected a static data property"
-    let key ← moduleExportName (← p.getObjVal? "key")
-    unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
-    if key == "__proto__" then throw "unsupported __proto__ property"
-    if seen.contains key then throw "duplicate object property"
-    seen := seen.insert key
-    -- NamedEvaluation supplies the static key to a directly anonymous function.
-    let value ← lower key (← p.getObjVal? "value")
-    props := props.push (.init (.str key) value)
+    unless (← field p "type") == "Property" do throw "expected a static data property or method"
+    if ← p.getObjValAs? Bool "computed" then throw "expected a static data property or method"
+    let key ← staticPropertyName (← p.getObjVal? "key")
+    let keyExpr ← stringExpr key
+    let kind ← field p "kind"
+    if let some previous := seen[key]? then
+      unless (previous == "get" && kind == "set") || (previous == "set" && kind == "get") do
+        throw "duplicate object property"
+      seen := seen.insert key "pair"
+    else seen := seen.insert key kind
+    let value ← p.getObjVal? "value"
+    let prop ← match kind with
+      | "get" => pure (.getter keyExpr (← method ("get " ++ key) value))
+      | "set" => pure (.setter keyExpr (← method ("set " ++ key) value))
+      | "init" =>
+        if ← p.getObjValAs? Bool "method" then
+          pure (.init keyExpr (.func (← method key value)))
+        else if key == "__proto__" && !(← p.getObjValAs? Bool "shorthand") then
+          pure (.proto (← lower "" value))
+        else pure (.init keyExpr (← lower key value))
+      | _ => throw "unsupported object property kind"
+    props := props.push prop
   return .obj props.toList
 
 /-- In an untagged template each substitution is converted before the next
@@ -288,7 +310,8 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
       let (base, key) ← linkedMember lower target
       return .assign (.member base key) (← lower rhs)
     | kind => throw s!"unsupported linked assignment target {kind}"
-  | "ObjectExpression" => linkedObject (linkedExpr imports inFunction) j
+  | "ObjectExpression" =>
+    linkedObject (linkedExpr imports inFunction) (fun name => linkedFunction imports .method name false) j
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr imports inFunction ""
