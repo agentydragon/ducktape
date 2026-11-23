@@ -282,3 +282,26 @@ BuildBuddy ran the revisions on separate workers. The parsed-to-projected median
 shifted from 13 to 8 ms, so the timing changes include run-to-run variation. Dispatch and
 the work between sampling result and turn completion still take seconds on this fixture.
 Repeat these boundaries on a long staging Qwen call after rollout.
+
+### Staging after snapshot reuse and lease coalescing
+
+Both staging replicas were Ready on `c32fe8c` by 21:28:22 UTC on November 23. This image
+included snapshot reuse and lease coalescing with the default 30 s interval. The preceding
+image, `7d58197`, already renewed leases in the evidence transaction. On the same Qwen
+thread, compare first-attempt HTTP 200 calls with linked dispatch, response head, parsed
+DONE and sampling result. Exclude rollout handoffs. The new sampler pod claimed generation
+8 at 21:29:07 UTC, before the first included dispatch.
+
+| Journal interval                                                | 7d58197 median / max, n |     c32fe8c median / max, n |
+| --------------------------------------------------------------- | ----------------------: | --------------------------: |
+| Turn started to sampling dispatch                               |     2,055 / 2,112 ms, 2 |                 1,901 ms, 1 |
+| Previous cell result to next sampling dispatch in the same turn |     2,028 / 3,254 ms, 6 |         1,115 / 1,126 ms, 2 |
+| Sampling dispatch to recorded HTTP head                         |    1,059 / 13,277 ms, 8 |           872 / 1,030 ms, 3 |
+| Parsed DONE to sampling result                                  |         234 / 324 ms, 8 |               27 / 32 ms, 3 |
+| Parsed DONE to completed turn                                   |     2,277 / 2,819 ms, 3 | No completed turn in window |
+
+The earlier calls ran from 21:19:43 to 21:27:27 UTC with 48,402–52,640 prompt tokens
+(176–192 request records). The three later calls ran from 21:29:09 to 21:31:01 UTC with
+52,736–54,233 tokens (196–201 records). Their DONE-to-result times were 32, 27 and 21 ms.
+The staging sample combines both changes and live concurrency varied. The controlled
+replay above measured snapshot reuse separately.
