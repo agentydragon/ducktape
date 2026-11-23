@@ -297,8 +297,10 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let argument ← j.getObjVal? "argument"
     let op ← field j "operator"
     let lower := linkedExpr imports inFunction ""
-    if op == "typeof" then return .unary .typeof (← lower argument)
-    unary op argument (fun _ => lower argument)
+    match op with
+    | "typeof" => return .unary .typeof (← lower argument)
+    | "void" => return .unary .void (← lower argument)
+    | _ => unary op argument (fun _ => lower argument)
   | "BinaryExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr imports inFunction ""

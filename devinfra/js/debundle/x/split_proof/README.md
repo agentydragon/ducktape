@@ -85,6 +85,8 @@ Linked object literals may contain distinct identifier or string keys. Property 
 
 A logical expression in a static data property, such as `{mode: config.mode || "default"}`, evaluates its left operand first. Only the selected operand supplies the property value, and an abrupt completion stops construction of the record.
 
+A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
+
 Linked dense array literals evaluate their elements left to right. Inside function bodies the checker also records array spread elements and the bindings their operands capture. If initialization reaches such a literal, CoreJS stops with an unknown result because iterator behavior is outside the model. Top-level array spread and array holes are rejected during lowering.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
