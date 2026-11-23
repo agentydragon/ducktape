@@ -142,7 +142,7 @@ theorem eval_local : ∀ (n : Nat) (e : Expr) (w : World) (R : List Name) (G G' 
 /-! ## Statements and footprints
 
 A statement declares some names, has an initializer, and may be a hoisted function declaration.
-The footprint is computed from the syntax, the way `extract.mjs` does for JavaScript:
+MiniJS computes the footprint directly from its syntax:
 a statement that calls anything may call any closure it mentions, so there all names are eager. -/
 
 structure MStmt where

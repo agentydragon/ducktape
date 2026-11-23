@@ -230,6 +230,7 @@ lean_binary(
     name = "lowersplit_core",
     srcs = [
         "EsmSplit/ESTreeEmit.lean",
+        "EsmSplit/InstanceSource.lean",
         # The verdict checks order preservation, syntax moves, and certified binding moves.
         "EsmSplit/LowerSplit.lean",
         "EsmSplit/LowerSplitMain.lean",

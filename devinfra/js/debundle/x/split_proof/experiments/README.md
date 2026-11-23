@@ -180,7 +180,7 @@ Adding precision is the only way to get something wrong. So I compared against t
 | scoping stress file ([`torture.mjs`](../lowering/torture.mjs)) | 28         | 28    | 0      | 10                | 0                 | 0                    | 100%                     |
 | the 12-statement example                                       | 12         | 10    | 2      | 4                 | 0                 | 0                    | 100%                     |
 
-That is 3,767 real statements with no missed free variable. A minified bundle has the statements of the readable one: its declarator lists are split. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. On the example, `extract.mjs` (the first prototype, which counts every call as an effect) and the Lean analysis give identical footprints for 10 of 12 statements: the other two are the calls `register(…)`, where Lean sees that the callee only writes `registry`.
+That is 3,767 real statements with no missed free variable. A minified bundle has the statements of the readable one: its declarator lists are split. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. Lean records both `register(…)` calls in the example as writes to `registry`.
 No real bundle contained a node type the analysis does not recognize, so the fallback was exercised on a synthetic unknown node: it recorded the type and still collected every identifier below it.
 
 **Does a zero mean anything?** I injected bugs into `Lower.lean` and scored them against the oracle.
@@ -198,7 +198,7 @@ One mutant, forgetting a catch parameter is local, is on the safe side and is co
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
 **End to end in one program.** [`LowerSplit.lean`](../lean/EsmSplit/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
-plans, checks, writes the modules, and in diagnostic mode with `--lean` writes a legacy Lean file for the kernel. On the example the modules are identical to the ones produced through `extract.mjs`
+plans, checks, writes the modules, and in diagnostic mode with `--lean` writes a legacy Lean file for the kernel. On the example the modules are identical to the first prototype’s output
 except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
 The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
 

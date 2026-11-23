@@ -34,8 +34,8 @@ To refresh the checked-in example instance after changing the inputs:
 
 ```sh
 dir=devinfra/js/debundle/x/split_proof
-bb build "//$dir:generated_instance" --remote_download_outputs=toplevel
-cp "bazel-bin/$dir/generated/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
+bbr build "//$dir/lean/generated:generate_instance" --remote_build_event_upload=all --remote_download_outputs=toplevel
+cp "bb-out/bazel-out/k8-fastbuild/bin/$dir/lean/generated/EsmSplit/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
 bbr test "//$dir/lean:instance_freshness_test"
 ```
 
@@ -324,13 +324,13 @@ The main development does not use `native_decide`, so the compiler is not truste
    The checker trusts the interpreter's rules and its printed premises ([`effects/`](effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
    golden cases with reorders, fuzzers over random bundles and splits, a mutation harness that removes one rule at a time. A wrong rule shows up as a wrong accept.
    A `var` inside a top-level block declares a module-scope name ([`debundle_cases/`](debundle_cases/README.md)).
-   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. The legacy `lowersplit --diagnostic … --lean` instance writer uses the interpreter's footprints, but does not certify emitted artifacts.
+   `lowersplit --diagnostic … --lean` uses the same analysis to generate the 12 statement footprints in [`Instance.lean`](lean/EsmSplit/Instance.lean). Lean checks the generated plan, including the accepted cycle and the three rejected placement specs.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
 5. **Emission.** Lean builds the output module ASTs and Astring prints them. A binding that the glue exports under another name is imported back under its own. The standalone kernel example renders its embedded statement strings with [`FixtureRender.lean`](lean/Experiments/FixtureRender.lean).
-6. **The lowering front end around the model.** Lean checks the generated module trees before printing. The shared parser, scope annotations and printer are part of the trusted boundary. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes CoreJS directly from supported source syntax. Its agreement with JavaScript semantics is tested against Node. An external `--corejs` program and the legacy `--lean` instance writer are available only under `--diagnostic`; neither certifies a split.
+6. **The lowering front end around the model.** Lean checks the generated module trees before printing. The shared parser, scope annotations and printer are part of the trusted boundary. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes CoreJS directly from supported source syntax. Its agreement with JavaScript semantics is tested against Node. An external `--corejs` program and the `--lean` structural plan writer are available under `--diagnostic`. Use the normal splitter command to certify emitted artifacts.
    - **One statement per declarator.** Lean splits a top-level `var`, `let` or `const` list into one AST node per declarator, including under `export`. The declaration extraction theorem relates these units to the original lists for the supported CoreJS subset.
    - **Imports and exports stay in the entry.** The normal command rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. Diagnostic mode may still write a preview after this rejection, but it cannot certify it. Moving the rule into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
    - **Outside modules run first.** The model has no outside modules. An `import` statement declares nothing and does nothing in it, and an imported name is a global: the same binding in every module. [The output AST builder](lean/EsmSplit/ESTreeEmit.lean) places the entry's `import` and `export … from` statements before its glue imports, in their order, so the outside modules run before every statement and in the bundle's order. Another module gets an `import` line of its own for the outside names it mentions. That this keeps the order is argued, not proved. It assumes that no outside module awaits at its top level, and that the modules are written where the bundle was, so a relative specifier names the same file. `export * from` is rejected.
@@ -385,7 +385,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 ## Limits
 
 - **Syntax.** The front end handles a small subset. It fails loudly outside it.
-- **Conservative.** Any call is an effect. `const banner = shout("x")` cannot move past a `register(...)`. A `/* @__PURE__ */` convention would lift this.
+- **Conservative.** Unknown calls can have effects, so the structural checker preserves their order relative to other effects.
 - **Sufficient, not necessary.** A rejected spec may be fine.
 - **Scale.** Compiled, the whole check takes 0.04 s for lodash (670 statements), 0.2 s for zod (1,072) and 10 s for 21,440 statements
   (32 renamed copies of lodash, 119 MB). Before the checks were indexed, lodash took 54 s and minified zod did not finish in 240 s.
@@ -393,7 +393,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
   In the kernel it is slow and needs memory: `decide +kernel` takes 23 s for 96 statements, 45 s for 144; at 288 it hit my 12 GB limit (numeric names would make it 1.7× faster, not 10×).
   `native_decide` runs the same decision procedure compiled and trusts Lean's compiler (2.3 s for lodash). The theorem does not depend on size.
   All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
-- **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
+- **Reassignment.** The structural checker orders writes to `let` and `var` cells and keeps their assignments with the declaration (`AssignsHome`) because ES imports are read-only.
 - **Outside the accepted subset:** [`SUPPORT.md`](SUPPORT.md) § Not supported.
 - **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
 
@@ -435,7 +435,6 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 | `lean/EsmSplit/Controls.lean`               | buggy-splitter plans, semantic non-vacuity                                                                                                                                                 |
 | `lean/EsmSplit/Audit.lean`                  | `#print axioms`                                                                                                                                                                            |
 | `lean/Main.lean`                            | the `render` executable                                                                                                                                                                    |
-| `extract/`                                  | JavaScript front end for the example (`extract.mjs`)                                                                                                                                       |
 | `example/`                                  | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                               |
 | `fuzz/`                                     | fuzzer and mutation test                                                                                                                                                                   |
 | `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by the Bazel commands above                                                                                                               |
