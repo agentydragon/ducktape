@@ -20,6 +20,10 @@
 ducktapePkgs
 // gafferPkgs
 // {
+  github-actions-ci-image = import ../../devinfra/ci/github_actions_image.nix {
+    inherit pkgs;
+    inherit (ducktapePkgs) bb bbapi;
+  };
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";
