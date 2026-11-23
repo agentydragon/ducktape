@@ -1,38 +1,82 @@
-name: Remote Bazel Benchmark
-
+name: Hosted CI launcher benchmark
 on: workflow_dispatch
 
 permissions:
   contents: read
 
-env:
-  GIT_REPO_DEFAULT_BRANCH: devel
-
 jobs:
-  bench:
-    name: Benchmark (bb remote)
+  publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#runner-image-tools"
+      - name: Build and publish the candidate
+        id: publish
+        env:
+          GH_REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          nix build .#github-actions-ci-image
+          image="ghcr.io/$GITHUB_REPOSITORY_OWNER/ducktape-ci-launcher-candidate"
+          printf '%s' "$GH_REGISTRY_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+          skopeo copy --retry-times 2 --digestfile "$RUNNER_TEMP/digest" docker-archive:result "docker://$image:$GITHUB_SHA"
+          echo "image=$image@$(cat "$RUNNER_TEMP/digest")" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3]
+    container:
+      image: ${{ needs.publish.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-
+          fetch-depth: 2
+      - name: Verify source
+        run: python3 devinfra/ci/pr_mergeability.py verify-source
+      - name: BuildBuddy ready
+        run: |
+          bb version --cli
+          bbapi --help >/dev/null
+      - name: Check Nix and the store database
+        shell: bash
+        run: |
+          nix eval --expr '1 + 2'
+          nix path-info "$(dirname "$(dirname "$(readlink -f "$(command -v bb)")")")"
+          test -s /etc/ssl/certs/ca-bundle.crt
+  current:
+    needs: publish
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Verify source
+        run: python3 devinfra/ci/pr_mergeability.py verify-source
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          installables: ".#bb"
-
-      - name: Create local ref for default branch
-        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
-
-      - name: Build
-        uses: ./.github/actions/bb-remote
-        with:
-          args: build --keep_going //...
-
-      - name: Test
-        uses: ./.github/actions/bb-remote
-        with:
-          args: test --keep_going //...
+          installables: ".#bb .#bbapi"
+      - name: BuildBuddy ready
+        run: |
+          bb version --cli
+          bbapi --help >/dev/null
