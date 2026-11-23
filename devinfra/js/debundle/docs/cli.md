@@ -2,17 +2,16 @@
 
 Cross-command semantics of the `debundle` CLI: conventions, pipelines, and
 interactions that span commands. The per-command and per-flag reference is
-the clap doc-comments themselves — `debundle <command> --help` — and the
-code wins wherever prose and binary disagree. Future CLI ideas live in
-`TODO.md`.
+available through `debundle <command> --help`. See the [task chooser](../README.md#choose-a-task)
+for authoring workflows and `TODO.md` for open requests.
 
 The source-built CLI target is `@ducktape//devinfra/js/debundle:debundle` in
 consuming repositories, or `//devinfra/js/debundle:debundle` inside Ducktape.
 Prefer the project's CLI wrapper when provided: it supplies the matching
-graph, modules tree, and source root. All commands share the same
-JSON-on-stdout / readable-diagnostic-on-stderr convention.
+graph, modules tree, and source root. See [output formats](#output-format)
+for interactive output and machine-readable reports.
 
-## Find a workflow
+## Inspect static import paths
 
 To inspect original static ESM loading paths before a spec passes validation,
 run `debundle static-imports` with the same flat-spec or tree inputs as `run`:
@@ -38,12 +37,6 @@ without graph edges; calls through an alias are not traced. The command
 does not assert the original host-loader identity or clear runtime blockers.
 `--max-interop-sites` limits detailed site rows while per-chunk kind counts
 remain complete.
-
-The README's [task chooser](../README.md#choose-a-task) links to the recipe for
-inspection, extraction, reorganization, naming, selector stabilization, gate
-diagnosis, or delegation.
-
-Use `debundle <command> --help` for the current command and flag inventory.
 
 ## Delegating with an input snapshot
 

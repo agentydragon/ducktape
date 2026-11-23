@@ -21,44 +21,26 @@ the validator enforces) before working on the splitting pipeline.
   apply only justified edits, validate the exact source/spec pair, and report
   remaining mismatches.
 - Heuristics produce diagnostics and candidate sets only; the spec author decides.
-- Use `modules check` for explicit destination batches. Whole-assignment acceptance
-  includes structural atoms and ESM evaluation under the supplied chunk priority;
-  default checks also preflight the source writer before returning a plan.
-  Use explicit `--graph-only` for graph inspection/oracles; it never returns a
-  plan. Local probes and proposal readiness labels cannot replace a complete
-  check. Recheck combined batches, and keep graph acceptance distinct from
-  selector realization and emitted runtime evidence.
-- For residual placement, use `modules propose` on the current graph or the
-  configured corpus (`--graphs` plus `--tree-config`). Start without selecting
-  already-known movable units. Inspect the discovered groups in source.
-  Review the full mapping, check and preview/apply its saved plan, and run
-  materialization plus relevant behavior
-  checks. A completed negative rules out only the advertised append-one-owner,
-  baseline-preserving family of entry-residual peels. Unsupported routing,
-  interruption, errors and empty output are not exhaustion. Derive all-seed
-  feasibility from atom closure SCCs and event bounds; expand one selected
-  closure and certify it once. Never fall through to partition enumeration,
-  arbitrary schedule solving or an unnamed heuristic. Keep graph
-  acceptance distinct from selector realization and runtime evidence. The CLI
-  workflow is in <docs/module_proposals.md>; the construction proof is in
-  <docs/placement_algorithm.md>. Preserve the real-source CLI and property/oracle
-  tests when changing candidate generation, scheduling, gate checks, or plan
-  application.
-- Selected-ownership plans use chunk-local owner paths. Stage new ordinary
-  selectors in the captured view's `placements` map, preserve the complete base
-  premise/anchor tree, and compare the realized complete assignment with the
-  graph-checked candidate before offering or applying an executable plan.
-  Corpus proposals share source/base preparation only for an identical verified
-  capture. Consume each resolved target once; candidate claims and priorities
-  stay local. Preserve multi-chunk runtime and input-invalidation coverage.
-- Materialized chunks require `import_order` with every nonentry emitted owner
-  exactly once. Check that concrete witness through the shared verifier and
-  retain it through emission. Never repair it implicitly. Plans carry ordering
-  and ownership together; changed snapshots or combined plans require recheck.
-- Do not clone/project the entire source graph or run global certification per
-  inventory seed. Prepare the canonical finest quotient once and derive
-  summaries on its SCC DAG. Compare cheap decisions with independent small
-  subset/import-list oracles; certify the selected complete plan once.
+- Follow <docs/module_proposals.md> for residual discovery and explicit batches.
+  Start discovery unseeded. Review destinations in source, check and preview the
+  complete plan, materialize, and run behavior checks. `--graph-only` returns
+  no executable plan. Only a completed negative excludes the advertised
+  baseline-preserving, append-one-owner family.
+- Preserve the complexity bound in <docs/placement_algorithm.md>. Prepare the
+  finest quotient once, derive feasibility for all seeds from closure SCCs and
+  event bounds, then expand and certify one selected closure. Keep full graph
+  copies, per-seed global checks and arbitrary partition/order searches out of
+  this path. Retain real-source CLI tests and independent small subset and
+  import-list oracles.
+- Carry ownership and `import_order` together. The shared verifier must check
+  the supplied priority over every nonentry owner exactly once, and emission
+  must use it. Recheck changed snapshots and combined plans.
+- Selected views use chunk-local paths and stage ordinary selectors in
+  `placements`. Preserve the full premise/anchor tree and compare the realized
+  assignment with the checked one before offering or applying a plan. Share
+  corpus preparation only across identical verified captures, consume each
+  prepared chunk once and keep candidate claims and priorities local. Retain
+  multi-chunk runtime and input-invalidation tests.
 - When a new bundle shape exposes a missing capability, extend the debundler,
   reproducing the failure minimally first. When debundle tooling blocks a task,
   follow <docs/bug_reproductions.md> before working around it. Keep private source
