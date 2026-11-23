@@ -42,6 +42,7 @@ inductive LogOp where
 inductive Prim where
   | globalTypeof (binding : String)
   | globalRef (binding : String)
+  | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf

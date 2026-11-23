@@ -156,6 +156,11 @@ inductive HostResult where
   | throw (v : Primitive)
   | error (kind : ErrorKind) (msg : String)
 
+/-- Ambient bindings and properties of opaque host objects are distinct observations. -/
+inductive HostRef where
+  | binding (name : String)
+  | property (receiver key : String)
+
 /-- **The world**: the host functions that work on primitives, without their definitions. It has a state of its own
 and one deterministic step: the host function `fn`, called with the receiver `this` and the arguments `args` in a
 state, ends as `step` says and leaves the next state. The model says which functions it asks the world about
@@ -167,8 +172,8 @@ structure World where
   step : (fn : String) → (this : Primitive) → (args : List Primitive) → σ → HostResult × σ
   /-- An ambient `typeof` observation may fail, throw, or change host state. -/
   globalTypeof : String → σ → Option (HostResult × σ) := fun _ _ => none
-  /-- Read an ambient object as a host-owned identity and the resulting state. -/
-  globalRef : String → σ → Option (String × σ) := fun _ _ => none
+  /-- Read a host-owned identity and the resulting state. -/
+  hostRef : HostRef → σ → Option (String × σ) := fun _ _ => none
   /-- **Stage two**: opaque code, a conversation. Told what to run, or how its last request ended, the world makes its
   next request. It sees the program's objects only through what it was handed, and its own state. -/
   talk : Told → σ → Request × σ
@@ -666,9 +671,19 @@ the host, or else what `Object.prototype` has. -/
 def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) (k : String) : M W Val :=
   if names.contains k then pure (.host s!"{owner}.{k}") else getFrom call objectProto base k
 
+def readHostRef (ref : HostRef) : M W Val := fun s =>
+  match W.hostRef ref s.world.state with
+  | some (identity, state) => .ok (.host identity) { s with world := { s.world with state } }
+  | none =>
+    let name := match ref with
+      | .binding n => n
+      | .property receiver key => s!"{receiver}.{key}"
+    .unknown s!"unsupported host reference {name}" s
+
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
   if ((hostNamespaces.lookup name).getD []).contains k then pure (.host s!"{name}.{k}")
+  else if name == "window" && k == "Error" then readHostRef (.property name k)
   else unknown s!"a property of host value {name}"
 
 /-- `base[key]`. A getter runs with `base` as `this`. -/
@@ -777,16 +792,12 @@ def observeGlobalTypeof (name : String) : M W Val := fun s =>
   | some (result, state) => fromWorld { s with world := { s.world with state } } result
   | none => .unknown s!"unsupported host typeof {name}" s
 
-def readGlobalRef (name : String) : M W Val := fun s =>
-  match W.globalRef name s.world.state with
-  | some (identity, state) => .ok (.host identity) { s with world := { s.world with state } }
-  | none => .unknown s!"unsupported host reference {name}" s
-
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
   | .globalTypeof name => observeGlobalTypeof name
-  | .globalRef name => readGlobalRef name
+  | .globalRef name => readHostRef (.binding name)
+  | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
   | .log =>
