@@ -116,6 +116,44 @@ for (const [opts, expected] of [
   cases.push({ kind: "location", input: locations(opts), expected });
 }
 
+// A lazy module imports the editor through a helper. Its internal static cycle must terminate.
+function dynamicGraph({ target = "assets/lazy.js", helper, omitHelper = false, after = {} } = {}) {
+  const helperName = "assets/helper.js";
+  const source = {
+    [target]: 'import "./helper.js"; import "../runtime.js"; export default import.meta.url;',
+    [helperName]: helper ?? 'import "./lazy.js"; import { api as read } from "../editor.js"; export { read };',
+  };
+  const resources = Object.fromEntries(Object.entries(source).map(([path, source]) => [path, resource(path, source)]));
+  const parsed = Object.fromEntries(Object.entries(source).map(([path, source]) => [path, parse(source)]));
+  if (omitHelper) delete parsed[helperName];
+  return { target, linked: ["editor.js", "runtime.js"], parsed, before: resources, after: { ...resources, ...after } };
+}
+cases.push({
+  kind: "imports",
+  input: dynamicGraph(),
+  expected: [
+    ["assets/lazy.js", "assets/helper.js"],
+    [
+      ["assets/helper.js", "editor.js", ["api"]],
+      ["assets/lazy.js", "runtime.js", []],
+    ],
+  ],
+});
+for (const [opts, expected] of [
+  [{ target: "editor.js" }, /directly requests a linked namespace/],
+  [{ omitHelper: true }, /missing parsed dynamic dependency assets\/helper.js/],
+  [
+    { after: { "assets/helper.js": resource("assets/helper.js", "export const changed = true;") } },
+    /URL or source changed/,
+  ],
+  [{ helper: 'import * as editor from "../editor.js";' }, /expected a named import/],
+  [{ helper: 'export { api } from "../editor.js";' }, /unsupported re-export/],
+  [{ helper: 'const next = () => import("../editor.js");' }, /nested dynamic import/],
+  [{ helper: "await start();" }, /top-level `await`/],
+]) {
+  cases.push({ kind: "imports", input: dynamicGraph(opts), expected });
+}
+
 // A public alias through a glue import must resolve to the same declaration.
 cases.push({ kind: "linked", input: linked({ exposesGlue: true }), expected: orders });
 cases.push({

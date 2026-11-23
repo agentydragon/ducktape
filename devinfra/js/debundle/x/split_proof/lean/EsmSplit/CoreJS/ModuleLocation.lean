@@ -32,7 +32,8 @@ private def importMeta (j : Json) : Bool :=
     (j.getObjVal? "meta" >>= FromESTree.identifier).toOption == some "import" &&
     (j.getObjVal? "property" >>= FromESTree.identifier).toOption == some "meta"
 
-private partial def uses (entry : String) (j : Json) : Except String (Array Use) := do
+/-- URL dependencies present in a parsed node, including nested function bodies. -/
+partial def uses (entry : String) (j : Json) : Except String (Array Use) := do
   if Lower.typ j == "MemberExpression" && importMeta (Lower.fld j "object") then
     unless (← j.getObjValAs? Bool "computed") == false &&
         (j.getObjVal? "property" >>= FromESTree.identifier).toOption == some "url" do
@@ -47,6 +48,23 @@ private partial def uses (entry : String) (j : Json) : Except String (Array Use)
   let mut out := #[]
   for child in Lower.children j do out := out ++ (← uses entry child)
   return out
+
+private def checkedEntryUses (source : Json) (sourceEntry sourceText : String) :
+    Except String (Nat × Array (Nat × Use)) := do
+  EsmSplit.validateModulePaths [sourceEntry]
+  unless (← source.getObjValAs? String "sourceText") == sourceText do throw "parsed source differs from original resource"
+  let nodes ← ESTreeUnits.checkedNodes source sourceText
+  let mut sites := #[]
+  for (node, id) in nodes.zipIdx do
+    if let some why := Lower.outsideModel false node then throw s!"unit {id}: {why}"
+    for use in (← (uses sourceEntry node).mapError fun why => s!"unit {id}: {why}") do
+      sites := sites.push (id, use)
+  return (nodes.size, sites)
+
+/-- Discover the literal target paths to collect from the deployment, using the same checked
+source, ranges and ordinals as the full location check. -/
+def entryUses (source : Json) (sourceEntry sourceText : String) : Except String (Array (Nat × Use)) :=
+  Prod.snd <$> checkedEntryUses source sourceEntry sourceText
 
 /-- Check every URL-sensitive source ordinal against the placement, equal effective entry URLs,
 and the same effective target URL and source for every literal relative dynamic import. The plan
@@ -64,21 +82,16 @@ def check (source : Json) (sourceEntry : String) (P : EsmSplit.Plan)
   unless !old.effectiveUrl.isEmpty && old.effectiveUrl == new.effectiveUrl do throw "effective entry URL changed"
   for name in names do
     if name != P.entry && (before name).isSome then throw s!"output path already exists: {name}"
-  unless (← source.getObjValAs? String "sourceText") == old.source do throw "parsed source differs from original resource"
-  let nodes ← ESTreeUnits.checkedNodes source old.source
-  unless (P.mods.flatMap (·.stmts)).Perm (List.range nodes.size) do throw "placement must cover every original unit once"
+  let (count, sites) ← checkedEntryUses source sourceEntry old.source
+  unless (P.mods.flatMap (·.stmts)).Perm (List.range count) do throw "placement must cover every original unit once"
   let retained := Std.HashSet.ofList entry.stmts
-  let mut sites := #[]
-  for (node, id) in nodes.zipIdx do
-    if let some why := Lower.outsideModel false node then throw s!"unit {id}: {why}"
-    for use in (← (uses sourceEntry node).mapError fun why => s!"unit {id}: {why}") do
-      unless retained.contains id do throw s!"URL-sensitive unit {id} moved from the entry"
-      if let .dynamicImport _ target := use then
-        if names.contains target then throw s!"dynamic target is an output module: {target}"
-        let some resource := before target | throw s!"missing original dynamic target {target}"
-        unless !resource.effectiveUrl.isEmpty && after target == some resource do
-          throw s!"dynamic target URL or source changed: {target}"
-      sites := sites.push (id, use)
+  for (id, use) in sites do
+    unless retained.contains id do throw s!"URL-sensitive unit {id} moved from the entry"
+    if let .dynamicImport _ target := use then
+      if names.contains target then throw s!"dynamic target is an output module: {target}"
+      let some resource := before target | throw s!"missing original dynamic target {target}"
+      unless !resource.effectiveUrl.isEmpty && after target == some resource do
+        throw s!"dynamic target URL or source changed: {target}"
   return sites
 
 end CoreJS.ModuleLocation
