@@ -46,10 +46,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(migrations.Up, func(database *postgres.Database) int {
-		deliveryDatabase = database
+	os.Exit(postgres.RunIntegrationTests(func() int {
 		return kubeapiserver.Run(m, func(server *kubeapiserver.Server) error { deliveryAPI = server; return nil })
-	}))
+	}, migrations.Up, &deliveryDatabase))
 }
 
 type observedCatalog struct {

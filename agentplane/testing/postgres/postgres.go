@@ -44,9 +44,9 @@ type Database struct {
 	clones int
 }
 
-// RunIntegrationTests starts the PostgreSQL fixture, then runs the package tests and closes the fixture.
+// runIntegrationTests starts the PostgreSQL fixture, then runs the package tests and closes the fixture.
 // Startup and migrations share a three-minute bound; tests run without that startup deadline.
-func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(*Database) int) int {
+func runIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(*Database) int) int {
 	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 	database, err := Start(ctx, migrate)
 	cancel()
@@ -65,18 +65,18 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 	return code
 }
 
-// RunIntegrationTestsWithDatabase sets the package fixture before running its tests.
-func RunIntegrationTestsWithDatabase(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
-	return RunIntegrationTests(migrate, func(database *Database) int {
+// RunIntegrationTests sets the package fixture before running its tests.
+func RunIntegrationTests(run func() int, migrate func(context.Context, *sql.DB) error, destination **Database) int {
+	return runIntegrationTests(migrate, func(database *Database) int {
 		*destination = database
-		return m.Run()
+		return run()
 	})
 }
 
 // RunIntegrationTestsWithCloneTemplate snapshots the migrated database before running tests.
 // Use it when tests share the migrated database and also need pristine clones.
 func RunIntegrationTestsWithCloneTemplate(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
-	return RunIntegrationTests(migrate, func(database *Database) int {
+	return runIntegrationTests(migrate, func(database *Database) int {
 		ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 		err := database.prepareCloneTemplate(ctx)
 		cancel()

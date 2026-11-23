@@ -35,7 +35,7 @@ type requestReadStream struct {
 var rpcIntegrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &rpcIntegrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &rpcIntegrationDatabase))
 }
 
 func newTestStore(t testing.TB) *sessionstore.Store {

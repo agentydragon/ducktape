@@ -15,10 +15,7 @@ import (
 var testDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(func(context.Context, *sql.DB) error { return nil }, func(database *postgres.Database) int {
-		testDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTests(m.Run, func(context.Context, *sql.DB) error { return nil }, &testDatabase))
 }
 
 func TestUpFreshDatabaseCreatesCurrentSchema(t *testing.T) {

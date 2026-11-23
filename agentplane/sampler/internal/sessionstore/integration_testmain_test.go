@@ -15,7 +15,7 @@ var integrationDatabase *postgres.Database
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &integrationDatabase))
 }
 
 func newTestStoreWithDSN(t testing.TB) (*Store, string) {
