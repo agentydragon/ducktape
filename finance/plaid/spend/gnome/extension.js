@@ -759,7 +759,6 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
           '<method name="GetPanelState"><arg type="s" direction="out" name="state"/></method>' +
-          '<method name="SetPanelSettings"><arg type="s" direction="in" name="settings"/></method>' +
           '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
@@ -804,16 +803,6 @@ const PlaidSpendIndicator = GObject.registerClass(
               level: this._panelLevel,
               window: this._settings.get_string("pace-window"),
             });
-          },
-          SetPanelSettings: (raw) => {
-            const config = JSON.parse(raw);
-            if (config.order) this._settings.set_strv("panel-order", config.order);
-            if (config.visible) this._settings.set_strv("panel-visible", config.visible);
-            if (config.window) this._settings.set_string("pace-window", config.window);
-            if ("anchorZero" in config) this._settings.set_boolean("sparkline-anchor-zero", config.anchorZero);
-            if ("showLeash" in config) this._settings.set_boolean("sparkline-show-leash", config.showLeash);
-            if ("leashColor" in config) this._settings.set_string("sparkline-leash-color", config.leashColor);
-            if (config.historyDays) this._settings.set_string("sparkline-history-days", String(config.historyDays));
           },
           GetDaemonOwner: () => this._proxy?.g_name_owner || "",
           GetMenuText: () =>
