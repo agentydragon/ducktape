@@ -244,6 +244,13 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let (base, key) ← linkedMember (linkedExpr imports inFunction "") j
     return .get base key
   | "ObjectExpression" => linkedObject imports inFunction j
+  | "ArrayExpression" =>
+    let elements ← j.getObjValAs? (List Json) "elements"
+    let values ← elements.mapM fun element => do
+      if element == .null then throw "unsupported array hole"
+      if (← field element "type") == "SpreadElement" then throw "unsupported array spread"
+      linkedExpr imports inFunction "" element
+    return .arr values
   | "TemplateLiteral" => linkedTemplate (linkedExpr imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
