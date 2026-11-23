@@ -19,16 +19,15 @@ def normal {W : World} : Res W Unit → Bool
   | .ok .. => true
   | _ => false
 
-/-- Kernel reduction discharges both premises with a symbolic world. A matching throw,
-unknown result or exhausted bound cannot discharge the first premise. -/
+/-- Normal completion and execution equality share the source result during
+kernel reduction in a symbolic world. -/
 theorem of_evaluation {source candidate : Program} (fuel : Nat)
-    (completed : ∀ W, normal (runProgram W fuel source) = true)
-    (equal : ∀ W, runProgram W fuel source = runProgram W fuel candidate) :
+    (checks : ∀ W, normal (runProgram W fuel source) = true ∧
+      runProgram W fuel source = runProgram W fuel candidate) :
     Equivalent source candidate := by
   apply of_runs fuel
   intro W
-  have h := completed W
-  have eq := equal W
+  obtain ⟨h, eq⟩ := checks W
   cases hs : runProgram W fuel source with
   | ok _ t => exact ⟨t, rfl, eq.symm.trans hs⟩
   | _ => simp [hs, normal] at h
