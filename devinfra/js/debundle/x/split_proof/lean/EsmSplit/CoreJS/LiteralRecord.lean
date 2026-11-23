@@ -92,10 +92,15 @@ private theorem lookup_fields (fields : Fields) (props : List (String × Propert
       simp only [Option.orElse, Option.or, Option.map, addField, lookup_setOwn, matchKey, Bool.false_eq_true,
         ↓reduceIte]
 
-/-- A lookup sees the last definition of a field, or `none` for an absent key. -/
+/-- A lookup sees the last definition of a field, or `none` for an absent key.
+The certificate can register concrete field equations on this function. `cbv`
+tries those equations before unfolding the fallback scan. -/
+def lookupLiteralProperty (fields : List (String × String)) (key : String) : Option Property :=
+  (fields.reverse.lookup key).map literalDataProperty
+
 theorem lookup_literalProperties (fields : List (String × String)) (key : String) :
-    (literalProperties fields).lookup key = (fields.reverse.lookup key).map literalDataProperty := by
-  simp [literalProperties, lookup_fields]
+    (literalProperties fields).lookup key = lookupLiteralProperty fields key := by
+  simp [literalProperties, lookup_fields, lookupLiteralProperty]
 
 private theorem modify_allocated (s : State W) (objs : Array Obj)
     (o : Obj) (f : Obj → Obj) :

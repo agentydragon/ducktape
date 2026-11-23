@@ -482,8 +482,8 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
       | none => "none"
     definitions := definitions ++
       s!"@[cbv_eval] private theorem {stem}Read{i} :\n" ++
-      s!"    (CoreJS.literalProperties {stem}Fields).lookup {key.quote} = {result} := by\n" ++
-      s!"  rw [CoreJS.lookup_literalProperties, {stem}Eq] <;> rfl\n"
+      s!"    CoreJS.lookupLiteralProperty {stem}Fields {key.quote} = {result} := by\n" ++
+      s!"  rw [CoreJS.lookupLiteralProperty, {stem}Eq] <;> rfl\n"
   return definitions
 
 private inductive WriteWitness where
