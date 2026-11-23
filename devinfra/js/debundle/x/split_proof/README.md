@@ -68,6 +68,12 @@ Ordinary top-level function declarations with identifier parameters are initiali
 
 In linked programs, a conditional expression evaluates its test once and runs the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes.
 
+Linked member expressions support dot access and computed keys with modeled primitive
+property names. A member call evaluates its receiver and key once, reads the callee before
+evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
+receiver and arrows capture the surrounding `this`. Optional chains, private names, and
+`super` are outside the linked fragment.
+
 Linked object literals may contain distinct identifier or string keys and values that are supported primitive literals or binding reads. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. Computed keys, `__proto__`, methods, accessors, and spread are outside this fragment.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.

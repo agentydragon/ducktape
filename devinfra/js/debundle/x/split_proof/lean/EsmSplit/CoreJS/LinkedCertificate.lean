@@ -20,7 +20,7 @@ private def listEq (item : MatchEq α) : MatchEq (List α)
 
 mutual
 private partial def exprEq : MatchEq Expr
-  | .undef, .undef | .null, .null => some ⟨rfl⟩
+  | .undef, .undef | .null, .null | .this, .this => some ⟨rfl⟩
   | .str a, .str b => (scalarEq a b).map fun h => ⟨congrArg Expr.str h.down⟩
   | .num a, .num b => (scalarEq a b).map fun h => ⟨congrArg Expr.num h.down⟩
   | .bool a, .bool b => (scalarEq a b).map fun h => ⟨congrArg Expr.bool h.down⟩
@@ -40,6 +40,15 @@ private partial def exprEq : MatchEq Expr
     let ⟨yes⟩ ← exprEq t t'
     let ⟨no⟩ ← exprEq e e'
     return ⟨test ▸ yes ▸ no ▸ rfl⟩
+  | .get o k, .get o' k' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    return ⟨base ▸ key ▸ rfl⟩
+  | .callMethod o k args, .callMethod o' k' args' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨arguments⟩ ← listEq exprEq args args'
+    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
   | .call f args, .call f' args' => do
     let ⟨callee⟩ ← exprEq f f'
     let ⟨arguments⟩ ← listEq exprEq args args'

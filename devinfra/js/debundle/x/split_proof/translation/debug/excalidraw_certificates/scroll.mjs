@@ -135,7 +135,7 @@ assert.equal(verdict.requested, "normal-completion");
 assert.equal(verdict.status, "rejected");
 assert.equal(verdict.guarantee, null);
 assert.equal(verdict.scope, "linked-programs");
-assert.equal(verdict.reason, "statement 5: unsupported linked expression MemberExpression");
+assert.equal(verdict.reason, "statement 5: unsupported global Symbol");
 assert(!existsSync(out), "a rejected trial published modules");
 
 // The pinned editor exposes its public names through an export list. Read the actual
