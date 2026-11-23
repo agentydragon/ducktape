@@ -1,10 +1,8 @@
 # Local `bb` and Bazel startup directives
 
-Startup forwarding was verified on **bb 5.0.466**, the repo pin at the time.
-The repo now pins **bb 5.0.500** (`nix/packages/bb.nix`); the probe below has
-not been repeated on that release. The earlier observation that local
-`bb build` / `bb test` silently dropped startup directives was made with
-**5.0.339** and was superseded by the 5.0.466 probe.
+The local startup probe below passed on **bb 5.0.500** (the repo pin on 2026-11-23)
+and **5.0.466** (2026-10-30). The earlier observation that local
+`bb build` / `bb test` dropped startup directives came from **5.0.339**.
 
 Checked 2026-10-30 against bb 5.0.466 and upstream
 [`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11),
@@ -23,7 +21,7 @@ and this `.bazelrc`:
 startup --host_jvm_args=-XX:CliDocAuditInvalidOption
 ```
 
-Running bb 5.0.466 with `--nosystem_rc --nohome_rc`, an isolated
+Running each CLI version with `--nosystem_rc --nohome_rc`, an isolated
 `--output_user_root`, and `version` produced this JVM error in `server/jvm.out`:
 
 ```text

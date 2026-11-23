@@ -5,8 +5,8 @@ runner. Bare source paths refer to the
 [BuildBuddy source](https://github.com/buildbuddy-io/buildbuddy).
 
 Configuration behavior was checked on 2026-10-30 against CLI **5.0.466**, the
-repo pin at the time. The repo now pins **5.0.500** (`nix/packages/bb.nix`);
-version-specific checks below have not been repeated on that release. The
+repo pin at the time. The repo now pins **5.0.500** (`nix/packages/bb.nix`).
+The remote-specific parser checks below still refer to 5.0.466. The
 upstream source was checked at commit
 [`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11).
 CLI behavior and hosted-service behavior have separate versions; upstream server
@@ -31,7 +31,8 @@ Direct local `bb build` / `bb test` instead expand both `.bbrc` and Bazel rc
 files locally. In the 5.0.466 parser checked below, startup directives were
 forwarded and `--ignore_all_rc_files` was added to prevent Bazel loading those
 files a second time.
-The older startup-option loss is historical; see <bazelrc_startup.md>.
+See [the local startup probe](bazelrc_startup.md) for the check on 5.0.500
+and the historical startup-option loss.
 
 **bb remote flags**: `bb help remote` lists the current set. Two matter for
 git-state sync: `--skip_auto_checkout` skips the runner's automatic GitHub
@@ -411,11 +412,12 @@ A remote run produces two invocations:
 before the run and in the post-run summary. For scripting, either pass your
 own `--invocation_id=<uuid>` after the verb (adopted, not overridden) or use
 bbr's own `--invocation-id-file=PATH` flag, which writes the ID to that path
-before the run:
+before the run. Use the current task's start date and scratch directory:
 
 ```bash
-bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
-bbapi invocation "$(cat /tmp/bbr-inv)"
+scratch="${TMPDIR:-/tmp}/agents/2026_11_23/build-diagnosis"
+bbr --invocation-id-file="$scratch/invocation-id" test //devinfra/buildbuddy/ci:test_live_test_status
+bbapi invocation "$(cat "$scratch/invocation-id")"
 ```
 
 Use the inner ID for a single Bazel invocation. With the outer ID,
@@ -442,12 +444,7 @@ Outputs fetched back by `--remote_download_outputs=toplevel` or
 our standard Linux x86_64 RBE builds. **There is NO
 `bb-out/bazel-bin/<pkg>/<name>` convenience symlink** — it exists only in
 local Bazel workspaces. Consumers of bb-remote-built artifacts (e.g.
-`publish-oci-image.yml`) must use the full path:
-
-```bash
-bbr build //:requirements --remote_download_regex='.*requirements\.out'
-cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
-```
+`publish-oci-image.yml`) must use the full path. For a worked example, see the [Python lockfile workflow](../../docs/lockfiles.md#python-requirements).
 
 ### Run repository writers remotely and retrieve a patch
 
