@@ -1,38 +1,350 @@
-name: Remote Bazel Benchmark
-
+# Temporary dispatch on the dedicated branch. Immutable source allowlist; no PR or Attic writes.
+name: Trusted historical CI replay
 on: workflow_dispatch
-
 permissions:
   contents: read
-
 env:
   GIT_REPO_DEFAULT_BRANCH: devel
-
 jobs:
-  bench:
-    name: Benchmark (bb remote)
+  bazel:
+    name: Bazel / ${{ matrix.sample }} / ${{ matrix.arm }}
+    if: github.repository == 'agentydragon/ducktape' && github.ref == 'refs/heads/codex/ci-feedback-matched-dispatch' && github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sample: green
+            source: 7a9a2298e08ca300c337309fcacfccb6724a7c7d
+            base: 7cf5339f68c96a15eb77136992d19550db018bf5
+            head: 4956f79c64bd0662937cde4dffe9678906206540
+            arm: control
+          - sample: green
+            source: 7a9a2298e08ca300c337309fcacfccb6724a7c7d
+            base: 7cf5339f68c96a15eb77136992d19550db018bf5
+            head: 4956f79c64bd0662937cde4dffe9678906206540
+            arm: candidate
+          - sample: red
+            source: 44f97064a138c1a2f62b18acea0f519f4b3d66f6
+            base: 33a2740f5528f6763b2fbc68c38ef0c108280217
+            head: 58ad28db31a9e2529b7a49f421e79c1fda3fa3c0
+            arm: control
+          - sample: red
+            source: 44f97064a138c1a2f62b18acea0f519f4b3d66f6
+            base: 33a2740f5528f6763b2fbc68c38ef0c108280217
+            head: 58ad28db31a9e2529b7a49f421e79c1fda3fa3c0
+            arm: candidate
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out exact historical merge (full)
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-
+          ref: ${{ matrix.source }}
+          fetch-depth: 2
+          persist-credentials: false
+        if: matrix.arm == 'control'
+      - name: Check out exact historical merge (sparse)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.source }}
+          fetch-depth: 2
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            devinfra/bazel
+            devinfra/buildbuddy/ci
+            devinfra/ci
+            nix
+        if: matrix.arm == 'candidate'
+      - name: Verify source revision and both parents
+        id: source
+        env:
+          SOURCE_COMMIT: ${{ matrix.source }}
+          EXPECTED_HEAD_SHA: ${{ matrix.head }}
+          REPLAY_BASE: ${{ matrix.base }}
+        run: |
+          python3 devinfra/ci/pr_mergeability.py verify-source
+          test "$(git rev-parse HEAD^1)" = "$REPLAY_BASE"
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          installables: ".#bb"
-
-      - name: Create local ref for default branch
-        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
-
-      - name: Build
+          installables: .#bb .#bbapi
+        if: matrix.arm == 'control'
+      - name: Stage the exact direct-install helper
+        if: matrix.arm == 'candidate'
+        run: |
+          helper="$RUNNER_TEMP/install-buildbuddy-clis.py"
+          curl --fail --silent --show-error --location "https://raw.githubusercontent.com/agentydragon/ducktape/c1bc2f21a88771b67006e382749cb0a56292b3cc/devinfra/buildbuddy/ci/install_clis.py" -o "$helper"
+          printf "%s  %s\n" "0e5c4cedf16b47b390be6023387b872081e694548b9df270c49e18a679aa277d" "$helper" | sha256sum --check --status
+      - name: Install pinned BuildBuddy CLIs directly
+        if: matrix.arm == 'candidate'
+        run: |
+          bin_dir="$RUNNER_TEMP/ducktape-buildbuddy-bin"
+          python3 "$RUNNER_TEMP/install-buildbuddy-clis.py" --pins nix/artifact-pins.json --bin-dir "$bin_dir"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+      - name: Derive BuildBuddy invocation IDs
+        id: invocation-ids
+        run: python3 devinfra/buildbuddy/ci/invocation_ids.py --run-id "$GITHUB_RUN_ID-$REPLAY_SCOPE" --attempt "$GITHUB_RUN_ATTEMPT" --bazel-ci-outputs "$GITHUB_OUTPUT"
+        env:
+          REPLAY_SCOPE: ${{ format('{0}-{1}', matrix.sample, matrix.arm) }}
+      - name: Test + Build + lint
+        id: bb-remote
         uses: ./.github/actions/bb-remote
         with:
-          args: build --keep_going //...
-
-      - name: Test
-        uses: ./.github/actions/bb-remote
+          compute_units: 8
+          runner_recycling_key: ci-feedback-matched-replay-bazel-v1
+          run_from_commit: ${{ steps.source.outputs.sha }}
+          linkage_roles: ${{ steps.invocation-ids.outputs.linkage_roles }}
+          bazel_invocation_ids: ${{ steps.invocation-ids.outputs.all_invocation_ids }}
+          env_overrides: |
+            GITHUB_EVENT_NAME=pull_request
+            PR_HEAD_SHA=${{ matrix.head }}
+            PR_BASE_SHA=${{ matrix.base }}
+            ${{ steps.invocation-ids.outputs.env_overrides }}
+          script: python3 devinfra/ci/bazel_ci.py
+      - name: Upload BuildBuddy linkage
+        if: always() && steps.source.outcome == 'success'
+        uses: actions/upload-artifact@v7
         with:
-          args: test --keep_going //...
+          name: replay-bazel-${{ matrix.sample }}-${{ matrix.arm }}
+          path: ${{ steps.bb-remote.outputs.linkage_json_path }}
+          if-no-files-found: warn
+  pre-commit:
+    name: Pre-commit / ${{ matrix.sample }}
+    if: github.repository == 'agentydragon/ducktape' && github.ref == 'refs/heads/codex/ci-feedback-matched-dispatch' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sample: green
+            source: 7a9a2298e08ca300c337309fcacfccb6724a7c7d
+            base: 7cf5339f68c96a15eb77136992d19550db018bf5
+            head: 4956f79c64bd0662937cde4dffe9678906206540
+          - sample: red
+            source: 44f97064a138c1a2f62b18acea0f519f4b3d66f6
+            base: 33a2740f5528f6763b2fbc68c38ef0c108280217
+            head: 58ad28db31a9e2529b7a49f421e79c1fda3fa3c0
+    steps:
+      - name: Check out exact historical merge
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify source revision and both parents
+        id: source
+        env:
+          SOURCE_COMMIT: ${{ matrix.source }}
+          EXPECTED_HEAD_SHA: ${{ matrix.head }}
+          REPLAY_BASE: ${{ matrix.base }}
+        run: |
+          python3 devinfra/ci/pr_mergeability.py verify-source
+          test "$(git rev-parse HEAD^1)" = "$REPLAY_BASE"
+      - name: Discover changed files for pre-commit
+        id: changed-files
+        env:
+          EXPECTED_HEAD_SHA: ${{ matrix.head }}
+          REPLAY_SOURCE: ${{ matrix.source }}
+        run: GITHUB_EVENT_NAME=pull_request GITHUB_SHA="$REPLAY_SOURCE" python3 -m devinfra.ci.precommit_file_selection
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: .#precommit
+      - name: Restore Ansible Galaxy roles cache
+        id: cache-ansible-roles-restore
+        if: steps.changed-files.outputs.needs_ansible_roles == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
+      - name: Install Ansible Galaxy roles
+        if: steps.changed-files.outputs.needs_ansible_roles == 'true'
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+      - name: Run pre-commit
+        env:
+          SKIP: no-commit-to-branch
+        run: |
+          GITHUB_EVENT_NAME=pull_request
+          # Avoid injecting global-agent into the Nix-provided Node tools.
+          unset NODE_OPTIONS
+          set -euo pipefail
+
+          # PRs: check only files changed in the PR (fast feedback).
+          # Branch pushes + manual runs: check all files (full gate before merge).
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            mapfile -d '' -t changed < "$RUNNER_TEMP/pre-commit-changed-files"
+            if [ "${#changed[@]}" -eq 0 ]; then
+              echo "No files changed; nothing for pre-commit to check."
+              exit 0
+            fi
+            echo "Running pre-commit on ${#changed[@]} changed file(s):"
+            printf '  %s\n' "${changed[@]}"
+            pre-commit run --files "${changed[@]}" --show-diff-on-failure -v
+          else
+            pre-commit run --all-files --show-diff-on-failure -v
+          fi
+  artifacts-green:
+    name: Artifacts + imports / green
+    if: github.repository == 'agentydragon/ducktape' && github.ref == 'refs/heads/codex/ci-feedback-matched-dispatch' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - name: Check out exact historical merge
+        uses: actions/checkout@v7
+        with:
+          ref: 7a9a2298e08ca300c337309fcacfccb6724a7c7d
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify source revision and both parents
+        id: source
+        env:
+          SOURCE_COMMIT: 7a9a2298e08ca300c337309fcacfccb6724a7c7d
+          EXPECTED_HEAD_SHA: 4956f79c64bd0662937cde4dffe9678906206540
+          REPLAY_BASE: 7cf5339f68c96a15eb77136992d19550db018bf5
+        run: |
+          python3 devinfra/ci/pr_mergeability.py verify-source
+          test "$(git rev-parse HEAD^1)" = "$REPLAY_BASE"
+      - uses: ./.github/actions/setup-nix-attic
+        with:
+          attic_token: ${{ secrets.ATTIC_READ_TOKEN }}
+          upload: "false"
+      - name: Install pinned BuildBuddy CLIs
+        run: nix profile install .#bb .#bbapi
+      - name: Compute build inputs
+        id: inputs
+        run: python3 -m devinfra.ci.release_assets nix-wheel-inputs >> "$GITHUB_OUTPUT"
+      - name: Choose artifact build invocation
+        id: invocation
+        run: |
+          invocation_id="$(python3 devinfra/buildbuddy/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build --scope "green")"
+          echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
+      - parallel:
+          - name: Check generated command policies
+            run: |
+              nix build --no-link --print-out-paths \
+                .#checks.x86_64-linux.claude-code-permissions \
+                .#checks.x86_64-linux.codex-execpolicy-evaluation \
+                .#checks.x86_64-linux.gemini-cli-integration
+          - name: Build artifacts from source
+            uses: ./.github/actions/bb-remote
+            with:
+              args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
+              linkage_roles: nix-wheel-build
+              bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
+              runner_recycling_key: ci-feedback-matched-replay-nix-v1
+              run_from_commit: ${{ steps.source.outputs.sha }}
+      - name: Fetch artifacts and assemble overrides
+        id: overrides
+        env:
+          INVOCATIONS: ${{ steps.invocation.outputs.id }}
+        run: |
+          set -euo pipefail
+          overrides="$(python3 -m devinfra.ci.nix_artifact_overrides --invocations "$INVOCATIONS")"
+          {
+            echo 'overrides<<EOF'
+            echo "$overrides"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Nix build + imports check
+        env:
+          DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
+        run: |
+          nix build --impure --no-link --print-out-paths \
+            ${{ steps.inputs.outputs.nix_checks }} > "$RUNNER_TEMP/artifact-check-paths"
+          cat "$RUNNER_TEMP/artifact-check-paths"
+  artifacts-red:
+    name: Artifacts + imports / red
+    if: github.repository == 'agentydragon/ducktape' && github.ref == 'refs/heads/codex/ci-feedback-matched-dispatch' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - name: Check out exact historical merge
+        uses: actions/checkout@v7
+        with:
+          ref: 44f97064a138c1a2f62b18acea0f519f4b3d66f6
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify source revision and both parents
+        id: source
+        env:
+          SOURCE_COMMIT: 44f97064a138c1a2f62b18acea0f519f4b3d66f6
+          EXPECTED_HEAD_SHA: 58ad28db31a9e2529b7a49f421e79c1fda3fa3c0
+          REPLAY_BASE: 33a2740f5528f6763b2fbc68c38ef0c108280217
+        run: |
+          python3 devinfra/ci/pr_mergeability.py verify-source
+          test "$(git rev-parse HEAD^1)" = "$REPLAY_BASE"
+      - uses: ./.github/actions/setup-nix-attic
+        with:
+          attic_token: ${{ secrets.ATTIC_READ_TOKEN }}
+          upload: "false"
+      - name: Install pinned BuildBuddy CLIs
+        run: nix profile install .#bb .#bbapi
+      - name: Compute build inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          spec=devinfra/ci/artifact_targets.json
+          bazel_targets=$(jq -r '
+            . as $doc |
+            [$doc.pins | to_entries[] |
+               select($doc.releases[.value.release].nixPackage) |
+               .value.target] | join(" ")
+          ' "$spec")
+          nix_checks=$(jq -r '
+            [.releases | to_entries[] |
+               select(.value.nixPackage) |
+               ".#checks.x86_64-linux.artifact-\(.key)"] | join(" ")
+          ' "$spec")
+          echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
+          echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
+      - name: Choose artifact build invocation
+        id: invocation
+        run: |
+          invocation_id="$(python3 devinfra/buildbuddy/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build --scope "red")"
+          echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
+      - parallel:
+          - name: Check generated command policies
+            run: |
+              nix build --no-link --print-out-paths \
+                .#checks.x86_64-linux.claude-code-permissions \
+                .#checks.x86_64-linux.codex-execpolicy-evaluation \
+                .#checks.x86_64-linux.gemini-cli-integration
+          - name: Build artifacts from source
+            uses: ./.github/actions/bb-remote
+            with:
+              args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
+              linkage_roles: nix-wheel-build
+              bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
+              runner_recycling_key: ci-feedback-matched-replay-nix-v1
+              run_from_commit: ${{ steps.source.outputs.sha }}
+      - name: Fetch artifacts and assemble overrides
+        id: overrides
+        env:
+          INVOCATIONS: ${{ steps.invocation.outputs.id }}
+        run: |
+          set -euo pipefail
+          overrides="$(python3 -m devinfra.ci.nix_artifact_overrides --invocations "$INVOCATIONS")"
+          {
+            echo 'overrides<<EOF'
+            echo "$overrides"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Nix build + imports check
+        env:
+          DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
+        run: |
+          nix build --impure --no-link --print-out-paths \
+            ${{ steps.inputs.outputs.nix_checks }} > "$RUNNER_TEMP/artifact-check-paths"
+          cat "$RUNNER_TEMP/artifact-check-paths"
