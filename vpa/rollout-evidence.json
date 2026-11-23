@@ -493,5 +493,127 @@
       },
       "scope": "Regular containers in non-terminating Running or Pending Pods, counted from admitted Pod spec requests. A gap is a missing or zero CPU or memory request."
     }
+  },
+  "piraeus_ha_and_satellite_rollout": {
+    "observed_utc": "2026-11-23T00:58:19Z",
+    "ha": {
+      "pr": 19220,
+      "ready": 9,
+      "requests_per_pod": {
+        "cpu": "50m",
+        "memory": "128Mi"
+      },
+      "minimum_reconciliation_loops_per_new_pod": 2,
+      "namespace_gaps_after": 19
+    },
+    "satellites": {
+      "canary_pr": 19229,
+      "fleet_pr": 19232,
+      "rolling_update_restored_pr": 19235,
+      "ready": 9,
+      "online": 9,
+      "canary": {
+        "n": 566,
+        "max_gap_s": 1.477,
+        "fresh_s": 9.195,
+        "replaced": ["wyrm2"],
+        "prior_wyrm_attachments_removed": 0
+      },
+      "replicated_ovh_probe": {
+        "n": 574,
+        "max_gap_s": 1.172,
+        "first": "2026-11-23T00:42:49.397Z",
+        "last": "2026-11-23T00:52:22.922Z"
+      },
+      "original_attached_volumes": 108,
+      "original_volumes_still_attached": 108,
+      "original_resource_assignments": 240,
+      "original_assignments_preserved": 240,
+      "final_disconnected_peers": 0,
+      "satellite_container_restarts": 0,
+      "pods_replaced_when_restoring_strategy": 0,
+      "probe_volumes_reclaimed": 3
+    },
+    "namespace_recount": {
+      "regular_containers": 92,
+      "missing_requests": ["linstor-controller"]
+    }
+  },
+  "linstor_controller_planning": {
+    "observation_utc": "2026-11-23T01:00:14Z",
+    "vpa": {
+      "cpu": "163m",
+      "memory": "1312092764"
+    },
+    "replicas": 1,
+    "deployment_strategy": "Recreate",
+    "vpa_mode": "Off",
+    "pod_created_utc": "2026-11-20T05:15:56Z",
+    "current_ready_condition_since_utc": "2026-11-20T05:33:27Z",
+    "container_restarts": 6,
+    "most_recent_exit": {
+      "reason": "Error",
+      "code": 1
+    },
+    "measurements": {
+      "week": {
+        "start": "2026-11-16T01:01:03+00:00",
+        "end": "2026-11-23T01:01:03+00:00",
+        "step_s": 60,
+        "cpu_m": {
+          "peak": 275.9,
+          "p95": 81.4,
+          "samples": 10080
+        },
+        "working_set_mib": {
+          "peak": 1121.8,
+          "p95": 1062.6,
+          "samples": 10081
+        }
+      },
+      "startup": {
+        "start": "2026-11-20T05:15:56+00:00",
+        "end": "2026-11-20T05:45:56+00:00",
+        "step_s": 30,
+        "cpu_m": {
+          "peak": 300.4,
+          "p95": 245.4,
+          "samples": 59
+        },
+        "working_set_mib": {
+          "peak": 1064.2,
+          "p95": 1064.2,
+          "samples": 61
+        }
+      }
+    },
+    "proposed_requests": {
+      "cpu": "350m",
+      "memory": "1536Mi"
+    },
+    "capacity": {
+      "eligible_selector_matches": 6,
+      "least_unreserved_cpu_m": 1566,
+      "least_unreserved_memory_mib": 2797,
+      "basis": "Node allocatable minus all scheduled Pod requests before adding controller requests, sampled 23 Nov at 01:01 UTC."
+    }
+  },
+  "cnpg_wave_planning": {
+    "inventory_observed_utc": "2026-11-23T01:00:14Z",
+    "postgres_containers_without_requests": 34,
+    "two_instance_clusters": 16,
+    "singletons": ["home-assistant", "session-backup"],
+    "proposed_pilot": {
+      "namespace": "cdviz",
+      "cluster": "db",
+      "ready_instances": 2,
+      "direct_vpa": false,
+      "conditions_true": [
+        "Ready",
+        "ContinuousArchiving",
+        "LastBackupSucceeded"
+      ],
+      "required_application_check": "Match uniquely identified collector events to committed database rows through a controlled switchover."
+    }
   }
 }

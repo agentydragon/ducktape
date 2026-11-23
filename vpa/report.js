@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611222356`);
+      const response = await fetch(`${path}?v=202611230101`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -336,7 +336,7 @@ function Report() {
   const { inventory, review } = snapshot;
   const { counts, workloads } = inventory;
   const nodeRollout = review.piraeus_csi_node_rollout;
-  const piraeus = nodeRollout.namespace_recount;
+  const fleet = review.piraeus_ha_and_satellite_rollout.satellites;
   const io = nodeRollout.wyrm2.continuous_probe;
   const fresh = nodeRollout.wyrm2.fresh_probe;
   const gitlab = review.gitlab_capacity;
@@ -406,9 +406,9 @@ function Report() {
     <${Anchor} href="../">← All reports<//>
     <${Title} order=${1} mt="md">Cluster VPA rollout<//>
     <${Text} size="lg" mt="sm"
-      >All nine Piraeus CSI node plugins registered after receiving static
-      requests. A mounted volume on wyrm2 passed every sampled readback through
-      replacement. The next storage sizing review covers nine HA controllers.<//
+      >All nine Piraeus satellites are sized. Only the central LINSTOR API still
+      lacks requests in Piraeus. Across the cluster, PostgreSQL accounts for 34
+      of the 45 remaining regular containers with a request gap.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -479,6 +479,28 @@ function Report() {
 
     <section id="rollout-status">
       <${Title} order=${2} mt="xl">Recent rollouts<//>
+      <${Text} mt="sm" id="piraeus-satellites">
+        <strong>All nine satellites and nine HA controllers recovered.</strong>
+        ${" "}The HA agents each reserved 50m CPU and 128 MiB and completed at
+        least two reconciliation loops. On wyrm2, an existing mount passed 566
+        consecutive fsync/readback checks through satellite replacement. A fresh
+        local SSD claim verified its first 1 MiB in 9.2 seconds. During the
+        other eight replacements, a two-replica OVH volume passed 574
+        consecutive checks with a longest interval of 1.172 seconds. The probe
+        covered the mounting node and both diskful nodes. All
+        ${fleet.original_attached_volumes} original attachments and
+        ${fleet.original_resource_assignments} resource assignments survived.
+        All nine satellites were online with zero container restarts at 00:58
+        UTC on 23 November. Restoring RollingUpdate preserved all nine Pod UIDs.
+        The probes exercised mounted I/O and fresh provisioning; storage-fault
+        failover timing remains unmeasured. ${" "}<${Anchor}
+          href=${github + "pull/19220"}
+          >HA agents<//
+        >
+        ${" · "}<${Anchor} href=${github + "pull/19229"}>Canary<//>
+        ${" · "}<${Anchor} href=${github + "pull/19232"}>Fleet sizing<//>
+        ${" · "}<${Anchor} href=${github + "pull/19235"}>Restored policy<//>.
+      <//>
       <${Text} mt="sm" id="piraeus-csi">
         <strong>All nine CSI node plugins registered with kubelet.</strong>
         ${" "}Each node now reserves 105m CPU and 192 MiB for the driver,
@@ -570,8 +592,77 @@ function Report() {
       <span id="batches"></span><span id="adoption-progress"></span>
       <${Title} order=${2} mt="xl">Next waves<//>
       <${Stack} id="open-rollout-decisions" gap="sm" mt="sm">
+        <${Text} id="piraeus-next">
+          <strong
+            >1. Finish Piraeus with a scheduled LINSTOR API replacement.</strong
+          >
+          ${" "}At 01:00 UTC on 23 November, 91 of 92 Piraeus containers had
+          both requests. Propose 350m CPU and 1536Mi memory through the
+          controller Pod template. Keep its VPA in Off. The seven-day peaks were
+          276m CPU and 1122 MiB working set. The current Pod’s first 30 minutes
+          peaked at 300m and 1064 MiB. CPU uses five-minute averages. The VPA
+          target was 163m and 1251 MiB. All six selector-matching nodes had room
+          for the proposed requests at the capacity check.
+        <//>
+        <${Text}>
+          The Deployment runs one replica with Recreate. New provisioning and
+          attachment operations can wait or retry while its API is unavailable.
+          The current Pod recorded six restarts and reached its current Ready
+          condition 17m 31s after creation. Review that startup history and
+          confirm a tolerable API outage before merging. Recheck node headroom,
+          record attachments and replica health, and start an authenticated API
+          read loop plus a mounted fsync/readback probe. Time the API gap and a
+          disposable PVC requested during turnover through binding, attachment
+          and first verified write. Stop on I/O failure or replica degradation.
+          If recovery stalls, inspect startup and revert the request change if
+          it blocks scheduling. Close after all nine satellites reconnect,
+          original attachments persist and the test volume is reclaimed.
+          ${" "}<${Anchor} href="./rollout-evidence.json">Sizing measurements<//
+          >.
+        <//>
+        <${Text} id="cnpg-next">
+          <strong
+            >2. Pilot one replicated CNPG database before sizing the
+            cohort.</strong
+          >
+          ${" "}PostgreSQL accounts for 34 gaps across 16 two-instance clusters
+          and two singletons. Start with cdviz/db. Both instances were Ready and
+          archiving was healthy. Size its two postgres containers through
+          Cluster.spec.resources. It has no direct VPA. Keep any future database
+          VPA recommendation-only. Confirm a usable backup, streaming replica
+          caught up to a recorded WAL position and placement headroom. Use
+          CNPG’s switchover update method. Track unique collector events through
+          reconnect and query their committed rows for loss or duplication. The
+          previous Study Casino test measured an 11.1-second read gap and did
+          not exercise writes. Advance one replicated database at a time after
+          that check, replication and archiving pass. Home Assistant and Session
+          Backup each need a singleton maintenance window. ${" "}<${Anchor}
+            href=${github + "blob/devel/cluster/docs/cnpg_conventions.md#r7-cnpg-vpas-are-recommendation-only"}
+            >CNPG rollout procedure<//
+          >.
+        <//>
+        <${Text}>
+          <strong
+            >In parallel, verify existing Initial policies on ordinary
+            admissions.</strong
+          >
+          ${" "}Hubble UI’s two containers and the BuildBuddy, LiteLLM and
+          OpenTofu Crossplane provider containers have recommendations but still
+          have empty admitted requests. Check owner-backed Pod admission with a
+          server dry run, then inspect the next naturally created Pod. If either
+          request is still absent, fix the policy or owning template. This
+          checks five gaps without forcing a singleton restart.
+        <//>
+        <${Text}>
+          <strong
+            >Observe Notifications during its first confirmed updater
+            eviction.</strong
+          >
+          ${" "}Verify a serving endpoint, replacement capacity, SQL readiness
+          and delivery of a webhook through runner confirmation.
+        <//>
         <${Text} id="worker-loss-placement">
-          <strong>1. Keep Rails admission sizing in draft.</strong> The fresh
+          <strong>Hold Rails admission sizing in draft.</strong> The 22 November
           model is ${remaining(railsSurge.target.min_remaining_mib)} for a Rails
           surge and either Rails-host failure at current targets. The loss case
           reaches ${remaining(railsSurge.sensitivity.min_remaining_mib)} at the
@@ -617,39 +708,10 @@ function Report() {
           >.
         <//>
         <${Text}>
-          <strong>2. Prove KubeVirt client recovery.</strong> Exercise an
-          ordinary API client through turnover, verify placement headroom and
-          PDBs, and evaluate Recreate per controller. The VMI result clears the
-          new-instance check for the observed handoff.
-        <//>
-        <${Text} id="piraeus-next">
-          <strong>3. Size the nine Piraeus HA controllers next.</strong>
-          ${` At ${clock(piraeus.observed_utc)} UTC on ${piraeus.observed_utc.slice(0, 10)}, ${piraeus.missing_either_request} of ${piraeus.regular_containers} regular containers in piraeus-datastore lacked a CPU or memory request. `}
-          The count fell from 61 to 55 after the central CSI rollout, then by 27
-          after the node plugin rollout. These containers belong to storage
-          infrastructure Pods. Application Pods mount their volumes through the
-          node plugin. Measure the HA controller’s request needs and verify its
-          failover responsibilities during a one-node replacement. The other 19
-          gaps are nine LINSTOR satellites, nine drbd-reactor containers and the
-          singleton LINSTOR API container. Its Recreate strategy warrants a
-          separate API interruption check.
-        <//>
-        <${Text}>
-          <strong>4. Observe the first Notifications updater eviction.</strong>
-          Confirm one endpoint keeps serving, the replacement schedules with the
-          recommended requests, and a webhook reaches runner confirmation. Check
-          for SQL readiness stalls during that observation.
-        <//>
-        <${Text}>
-          <strong>5. Size the remaining CNPG databases individually.</strong>
-          ${" "}Keep their VPAs recommendation-only. For a replicated database,
-          evaluate a planned switchover and client recovery before its next
-          request change; singletons need a separate maintenance plan. Verify
-          backup, replication, capacity and application behavior for each
-          rollout. ${" "}<${Anchor}
-            href=${github + "blob/devel/cluster/docs/cnpg_conventions.md#r7-cnpg-vpas-are-recommendation-only"}
-            >CNPG conventions<//
-          >.
+          <strong>Prove KubeVirt client recovery before mode promotion.</strong>
+          Exercise an ordinary API client through turnover, verify placement
+          headroom and PDBs, and evaluate Recreate per controller. The VMI
+          result clears the new-instance check for the observed handoff.
         <//>
       <//>
       <${Title} order=${3} mt="lg">Review cohorts<//>
