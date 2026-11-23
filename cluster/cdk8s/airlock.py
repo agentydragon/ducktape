@@ -228,9 +228,7 @@ def _session_secret(chart: Chart) -> None:
     mint_bearer_secret(
         chart,
         "session-secret",
-        name=_SESSION.secret.name,
-        namespace=_SESSION.secret.namespace,
-        key=_SESSION.key,
+        target=_SESSION,
         length=64,
         digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,

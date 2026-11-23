@@ -353,9 +353,7 @@ def _direct_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "direct-token",
-        name=DIRECT_TOKEN.secret.name,
-        namespace=DIRECT_TOKEN.secret.namespace,
-        key=DIRECT_TOKEN.key,
+        target=DIRECT_TOKEN,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,

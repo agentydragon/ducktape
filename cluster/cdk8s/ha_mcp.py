@@ -124,12 +124,7 @@ class HaMcpApp(Construct):
         # (cluster/cdk8s/agentplane/staging.py): this namespace also holds the Home Assistant admin
         # token, which no store may reach.
         mint_bearer_secret(
-            self,
-            "bearer-external-secret",
-            name=BEARER.secret.name,
-            namespace=BEARER.secret.namespace,
-            key=BEARER.key,
-            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            self, "bearer-external-secret", target=BEARER, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
         )
         config_map = self._add_config_map()
         deployment = self._add_deployment(config_map)

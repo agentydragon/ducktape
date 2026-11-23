@@ -90,12 +90,7 @@ def _service(instance: str) -> ServiceRef:
 
 def _read_token(chart: Chart) -> None:
     mint_bearer_secret(
-        chart,
-        "read-token",
-        name=_READ_TOKEN.secret.name,
-        namespace=_READ_TOKEN.secret.namespace,
-        key=_READ_TOKEN.key,
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        chart, "read-token", target=_READ_TOKEN, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
     )
 
 

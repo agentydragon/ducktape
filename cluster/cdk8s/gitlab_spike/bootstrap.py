@@ -52,8 +52,7 @@ def namespace_chart(app: App) -> Chart:
         labels={"pod-security.kubernetes.io/enforce": "baseline"},
     )
     for secret_key in (ROOT_PASSWORD, BOOTSTRAP_TOKEN):
-        secret = secret_key.secret
-        mint_bearer_secret(chart, secret.name, name=secret.name, namespace=secret.namespace, key=secret_key.key)
+        mint_bearer_secret(chart, secret_key.secret.name, target=secret_key)
     bootstrap_script = (
         Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/bootstrap.rb"
     ).read_text()

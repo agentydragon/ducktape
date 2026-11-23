@@ -91,12 +91,7 @@ class GoogleMcpApp(Construct):
         # (cluster/cdk8s/agentplane/staging.py): this namespace also holds the write-scoped Google
         # token, which no store may reach.
         mint_bearer_secret(
-            self,
-            "bearer-external-secret",
-            name=BEARER.secret.name,
-            namespace=BEARER.secret.namespace,
-            key=BEARER.key,
-            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            self, "bearer-external-secret", target=BEARER, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
         )
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=NAME)
         deployment = self._add_deployment()

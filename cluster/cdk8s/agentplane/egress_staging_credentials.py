@@ -771,9 +771,9 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         "plaid-pgweb",
         reader=reader,
         credentials_namespace=credentials_namespace,
-        source_namespace=plaid_pgweb.AUTH.namespace,
-        source=plaid_pgweb.AUTH.name,
-        key=plaid_pgweb.AUTH_KEY,
+        source_namespace=plaid_pgweb.AUTH.secret.namespace,
+        source=plaid_pgweb.AUTH.secret.name,
+        key=plaid_pgweb.AUTH.key,
     )
     _credential(
         scope,
@@ -788,7 +788,7 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
             "transactions and holdings -- and Agentplane's egress rules present the password only on "
             "pgweb's query API."
         ),
-        secret=plaid_pgweb.AUTH.name,
-        key=plaid_pgweb.AUTH_KEY,
+        secret=plaid_pgweb.AUTH.secret.name,
+        key=plaid_pgweb.AUTH.key,
         target=_BASIC_PASSWORD,
     )

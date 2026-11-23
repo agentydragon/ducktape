@@ -53,6 +53,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:opentofu",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/platform_sessions:app",
         "//cluster/cdk8s/providers/flux:notification",

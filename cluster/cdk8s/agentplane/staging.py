@@ -1048,9 +1048,7 @@ def _add_session_secret(scope: Chart) -> None:
     mint_bearer_secret(
         scope,
         "session-external-secret",
-        name=_OIDC_SESSION_SECRET,
-        namespace=STAGING_NAMESPACE,
-        key="session-secret",
+        target=SecretRef(namespace=STAGING_NAMESPACE, name=_OIDC_SESSION_SECRET).key("session-secret"),
         length=64,
         digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
