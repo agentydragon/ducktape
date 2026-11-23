@@ -285,8 +285,7 @@ Neither constitutes a capacity measurement.
 
 Ollama GGUF context facts are now source-owned separately from requested `num_ctx`;
 they do not establish generative pairs. The [migration inventory](migration_inventory.md#token-metadata-ownership-migration)
-records remaining provenance and mode-specific gaps. The tracker owns current
-PR/rollout status; dated research remains evidence rather than an activation claim.
+records remaining provenance and mode-specific gaps.
 
 ## Proposed shape and rollout
 

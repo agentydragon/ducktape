@@ -81,5 +81,8 @@ applied to the launch forms and retained the runtime adapter and existing sessio
 
 Staging includes Claude offerings again. [#13085](https://github.com/agentydragon/ducktape/pull/13085)
 Preset defaults remain explicit in [`staging_config.py`](../cdk8s/agentplane/staging_config.py).
-When changing those defaults, preserve compatible choices for retained Threads and
-check launch forms and session behavior separately from rollout.
+Check launch forms and session behavior separately from rollout.
+
+Claude supports model changes within the same configured context window or between
+two unlisted routes. Changing the window or switching between a configured and an
+unlisted route requires a new session. [Session protocol](../../agentplane/env/runtime/docs/session_protocol.md#commands-and-effects)
