@@ -42,9 +42,16 @@ in total, 8 MiB per file, and 100,000 files. Exceeding a limit rejects the whole
 use `IGNORE` or explicitly raise limits for larger sources. Snapshot contents are held in
 memory during ingestion, so size the pod for the tree plus parsing and database buffers.
 
-Provide PostgreSQL with the pgvector extension available. Startup creates the extension and
-the service-owned `agentplane_index` schema, so the initial database role needs those
-privileges. Existing Haku tables and migrations are not used. The schema has no upgrade
+Use a PostgreSQL image that ships pgvector. In the cluster, declare `vector` with
+`ensure: present` on each CloudNativePG `Database`, as in the
+[indexing chart](../../../cluster/cdk8s/agentplane_index/workers.py) and the
+[former Haku Console declaration](https://github.com/agentydragon/ducktape/blob/2727474b3ba423f6c94a73d3ec8ab5968fab392a/cluster/cdk8s/haku/database.py#L43-L55).
+CNPG installs the extension before the worker starts, so the worker's
+`CREATE EXTENSION IF NOT EXISTS vector` is a no-op. Its role still needs permission to
+create the service-owned `agentplane_index` schema. For standalone PostgreSQL,
+preinstall the extension or use a role that can install it at startup.
+
+The schema has no upgrade
 migrations; an incompatible change must ship one or require a separate database. Startup
 rejects a changed model or chunking configuration.
 
