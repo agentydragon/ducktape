@@ -80,7 +80,7 @@ private def readProviders (profile : HostProfile) (providers : List (String × J
   return modules.toList
 
 private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
-    (m : EsmSplit.Module) : Except String Module := do
+    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) : Except String Module := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
   let p ← parse profile m.name nodes
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
@@ -98,7 +98,7 @@ private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan)
   unless glue = expectedGlue do throw "module's glue imports differ from the plan"
   let expectedExports := m.exports ++ (if m.name == P.entry then original.exports else [])
   unless p.exports.Perm expectedExports do throw "module's named exports differ from the plan"
-  let placed := m.stmts.filterMap fun i => (original.units.lookup i).map (i, ·.2)
+  let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (i, ·)
   unless p.units.length == placed.length do throw "emitted body length differs from the placement"
   let body ← (p.units.zip placed).mapM fun ((_, actual, ast), (id, expected)) => do
     unless unitSyntax ast == unitSyntax expected do throw s!"emitted syntax differs from original unit {id}"
@@ -136,9 +136,11 @@ private def checkScopes (before after : Program) : Except String Unit := do
   let b ← scopes after
   let exports ← entryExports before.entry a
   unless exports.Perm (← entryExports after.entry b) do throw "entry exports resolve to different linked cells"
-  let bs := unitsOf b
+  -- Placement is checked in decodePair. Provider ordinals follow the
+  -- source and use disjoint ranges, so each ordinal has only one linked unit.
+  let bs := Std.HashMap.ofList (unitsOf b)
   for (id, s, env) in unitsOf a do
-    let some (s', env') := bs.lookup id | throw s!"missing linked unit {id}"
+    let some (s', env') := bs[id]? | throw s!"missing linked unit {id}"
     for x in (s.free ++ s'.free).eraseDups do
       let some cell := env.vars.lookup x | throw s!"original unit {id} has an unbound reference to {x}"
       unless env'.vars.lookup x == some cell do throw s!"unit {id}: reference to {x} resolves to a different linked cell"
@@ -166,8 +168,9 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
   let shared ← readProviders profile ps nodes.size
   let before : Program := { entry := P.entry, modules := original.numbered P.entry 0 :: shared }
+  let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
-    (readSplit profile files P providerNames original m).mapError fun why => s!"{m.name}: {why}"
+    (readSplit profile files P providerNames original originalSyntax m).mapError fun why => s!"{m.name}: {why}"
   let after : Program := { entry := P.entry, modules := split ++ shared }
   checkScopes before after
   return (before, after)
