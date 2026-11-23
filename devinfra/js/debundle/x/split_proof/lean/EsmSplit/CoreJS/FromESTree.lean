@@ -269,6 +269,16 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
     result := .binary .add result (← cooked quasi)
   return result
 
+private def ambientSymbolMember? (j : Json) : Option Name := do
+  let receiver ← (j.getObjVal? "object").toOption
+  if (field receiver "k").toOption != some "G" || (identifier receiver).toOption != some "Symbol" ||
+      (j.getObjValAs? Bool "computed").toOption != some false ||
+      (j.getObjValAs? Bool "optional").toOption != some false then
+    none
+  else
+    let prop ← (j.getObjVal? "property").toOption
+    (identifier prop).toOption
+
 /-- Decode a property access, retaining the receiver and the unevaluated key for
 the interpreter's property read, call, or write. -/
 private def linkedMember (lower : Json → Except String Expr) (j : Json) (allowOptional := false) :
@@ -278,6 +288,7 @@ private def linkedMember (lower : Json → Except String Expr) (j : Json) (allow
   let prop ← j.getObjVal? "property"
   if (← field obj "type") == "Super" then throw "unsupported super member access"
   if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
+  if let some member := ambientSymbolMember? j then throw s!"unsupported ambient member Symbol.{member}"
   let base ← lower obj
   let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
   return (base, key)
@@ -481,6 +492,10 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let args ← j.getObjValAs? (List Json) "arguments"
     match ← field callee "type" with
     | "MemberExpression" =>
+      if ambientSymbolMember? callee == some "for" then
+        -- Retain deferred arguments and their captures. Initialization stops at
+        -- the opaque callee reference before it can evaluate an argument.
+        return .call (.prim .opaqueSymbolForRef []) (← args.mapM lower)
       let (base, key) ← linkedMember lower callee
       return .callMethod base key (← args.mapM lower)
     | "ChainExpression" =>

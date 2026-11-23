@@ -38,10 +38,11 @@ inductive LogOp where
   | and | or | nullish
   deriving DecidableEq, Repr
 
-/-- The standard functions the model defines. A call of any other one is unknown code. -/
+/-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
   | globalTypeof (binding : String)
   | opaqueConstructorRef (binding : String)
+  | opaqueSymbolForRef
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 

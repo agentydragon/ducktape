@@ -91,15 +91,15 @@ for (const [name, body, reason] of [
   assert(!existsSync(test.out));
 }
 
-// The Excalidraw scroll replay reaches an ambient Symbol.for inside a factory
-// when the decoder lowers the factory body. The provider defers invoking it.
+// Preserve the ambient call and its captured initializer across the split.
+// The provider defers invoking the factory until after initialization.
 {
   const dir = path.join(root, "deferred-ambient-symbol");
   const files = prepare(dir, {
     source: `
       import { defer } from "./provider.mjs";
-      const load = defer(() => Symbol.for("fixture"));
-      const moved = () => 17;
+      const load = defer(() => Symbol.for(moved()));
+      const moved = () => "fixture";
       export { load, moved };
     `,
     provider: "export const defer = (factory) => () => factory();",
@@ -110,16 +110,31 @@ for (const [name, body, reason] of [
       sequential: true,
     },
   });
-  const original = await import(pathToFileURL(files.sourceFile).href);
-  assert.equal(original.moved(), 17);
-  assert.equal(original.load(), Symbol.for("fixture"));
-
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "rejected", log);
-  assert.equal(verdict.reason, "statement 1: unsupported global Symbol", log);
-  assert(!existsSync(out));
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  assert.equal(verdict.hostProfile, undefined);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const namespace = await import(pathToFileURL(file).href);
+    assert.equal(namespace.moved(), "fixture");
+    assert.equal(namespace.load(), Symbol.for("fixture"));
+  }
 }
+
+const caughtSymbol = fixture(
+  "caught-opaque-symbol-for",
+  'const read = () => { try { return Symbol.for((() => { throw "argument"; })()); } catch { return "caught"; } }; const result = read(); export { result };'
+);
+assert.match(caughtSymbol.run().reason, /unknown.*ambient call Symbol\.for is reached/);
+assert(!existsSync(caughtSymbol.out));
+
+const otherSymbol = fixture(
+  "unsupported-symbol-member",
+  "const read = () => Symbol.iterator; const result = read; export { result };"
+);
+assert.match(otherSymbol.run().reason, /unsupported ambient member Symbol\.iterator/);
+assert(!existsSync(otherSymbol.out));
 
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {
