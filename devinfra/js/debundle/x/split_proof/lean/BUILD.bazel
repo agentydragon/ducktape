@@ -219,6 +219,7 @@ lean_library(
         "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/Move.lean",
         "EsmSplit/CoreJS/OpaqueFrame.lean",
+        "EsmSplit/CoreJS/OpaqueInput.lean",
         "EsmSplit/CoreJS/Reachability.lean",
         "EsmSplit/CoreJS/Scope.lean",
         "EsmSplit/CoreJS/Split.lean",
