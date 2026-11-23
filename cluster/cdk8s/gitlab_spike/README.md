@@ -67,18 +67,15 @@ resource use, clone/fetch behavior and observed recovery alongside request laten
 
 ## OpenTofu controller handoff
 
-The staged handoff suspends the `flux-system/gitlab-spike` Terraform CR and
-creates a paused Crossplane Workspace with the same `gitlab_spike` PostgreSQL
-schema and `default` workspace identity. Suspension does not stop a Terraform
-run already in progress. Before activating Crossplane, verify the suspended CR
-has reconciled, the last runner has exited, and no state lock remains. Compare a
-read-only plan against the existing state and resolve any unexpected changes;
-do not allow both controllers to reconcile the root. The paused Workspace is
-not evidence that Crossplane has authenticated or planned successfully.
+The Crossplane Workspace uses the existing `gitlab_spike` PostgreSQL schema
+and `default` workspace identity. The migration staged a suspended Terraform CR,
+then ran the Workspace in observe-only mode before enabling writes. Suspension
+does not stop an already-started Terraform run; never run both controllers at
+once. Preserve the state and confirm the old runner has exited before handoff.
 
 After activation, verify the Workspace is Synced and Ready, inspect its plan
 and reconciliation logs, and check the GitLab project, Flux source, runner,
 webhook and benchmark credentials without exposing their values. Keep the
 Terraform CR's resource-destruction setting disabled and preserve state. For
-rollback, pause the Workspace and confirm it is idle before resuming the old
-Terraform CR. Do not remove state or credentials to force reconciliation.
+rollback, pause the Workspace and confirm it is idle before restoring and
+resuming the old Terraform CR. Do not remove state or credentials to force reconciliation.

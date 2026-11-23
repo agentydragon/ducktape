@@ -1478,11 +1478,7 @@ def generate_manifests(root: Path) -> None:
     gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
     gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
         flux_chart,
-        write_directory(
-            root,
-            gitlab_spike_gitops_artifact,
-            lambda app: gitlab_spike_flux.gitops_chart(app, module=gitlab_spike_module),
-        ),
+        write_directory(root, gitlab_spike_gitops_artifact, gitlab_spike_flux.gitops_chart),
         gitlab_spike_bootstrap_kustomization,
         tofu_controller_kustomization,
         forgejo_kustomization,
