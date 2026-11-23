@@ -1,9 +1,9 @@
 import EsmSplit.CoreJS.RequestFrame
 
-/-! # Opaque object creation
+/-! # Opaque object and callback allocation
 
 Allocation extends a closed capability envelope by the newly issued object address.
-Only the default-prototype case introduces a built-in root. -/
+An intrinsic prototype must already belong to the envelope. -/
 
 namespace CoreJS
 
@@ -93,6 +93,38 @@ theorem frames_newObject (r R) (call : Call W) (construct : Val → List Val →
     (frames_alloc r R { proto := parent, props := [] }).bind' fun a =>
       (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
 
+/-- Publishing a fresh object whose outgoing edges are already accessible extends
+the capability envelope by that object's address. -/
+private theorem access_alloc_publish {r R cells A} (away : Away r R A) (o : Obj)
+    (safe : ∀ node ∈ o.nodes, A node) (s : State W) (hs : Access cells A s) (hr : s.region ≠ r) :
+    ∃ B, (∀ node, A node → B node) ∧ Away r R B ∧
+      ((do
+        let a ← alloc o
+        let w ← toW (.obj a)
+        pure (Told.value w)) s).Accessible cells B (fun _ => True) := by
+  rw [M.bind_apply]
+  cases ha : alloc o s with
+  | ok a u =>
+    have har : a.region ≠ r := alloc_region ha ▸ hr
+    let B := withObject A a
+    have hb : Away r R B := by
+      constructor
+      · intro node hn; rcases hn with hn | rfl
+        · exact away.region _ hn
+        · exact har
+      · intro b hb; rcases hb with hb | hb
+        · exact away.reads _ hb
+        · cases hb
+    refine ⟨B, fun _ hn => Or.inl hn, hb, ?_⟩
+    have hu := access_alloc hs safe ha
+    have hv : SafeVal B (.obj a) := safeVal_obj.2 (Or.inr rfl)
+    have hue := (alloc_ok ha).2.region
+    exact ((reachFrame_toW r R cells B _ hv).bind fun w _ =>
+      reachFrame_pure r R cells B (Told.value w) trivial).accessible u hu (hue ▸ hr)
+  | fuel | throw | unknown =>
+    unfold alloc at ha
+    split at ha <;> cases ha <;> exact ⟨A, fun _ h => h, away, hs⟩
+
 /-- After the actual request, the accessible envelope can grow while still excluding the protected region
 and read bindings. A supplied prototype must come through the handle table. Default construction needs
 the intrinsic Object.prototype inside the initial envelope. -/
@@ -115,28 +147,33 @@ theorem access_newObject {r R cells A} (away : Away r R A) (call : Call W)
     let o : Obj := { proto := parent, props := [] }
     have safe : ∀ node ∈ o.nodes, A node := by
       cases parent <;> simp_all [o, Obj.nodes]
-    simp only []
-    rw [M.bind_apply]
-    cases ha : alloc o t with
-    | ok a u =>
-      have har : a.region ≠ r := (alloc_region ha).trans hframe.region ▸ hr
-      let B := withObject A a
-      have hb : Away r R B := by
-        constructor
-        · intro node hn; rcases hn with hn | rfl
-          · exact away.region _ hn
-          · exact har
-        · intro b hb; rcases hb with hb | hb
-          · exact away.reads _ hb
-          · cases hb
-      refine ⟨B, fun _ hn => Or.inl hn, hb, ?_⟩
-      have hu := access_alloc hp.2 safe ha
-      have hv : SafeVal B (.obj a) := safeVal_obj.2 (Or.inr rfl)
-      have hue := (alloc_ok ha).2.region
-      exact ((reachFrame_toW r R cells B _ hv).bind fun w _ =>
-        reachFrame_pure r R cells B (Told.value w) trivial).accessible u hu (hue.trans hframe.region ▸ hr)
-    | fuel | throw | unknown =>
-      unfold alloc at ha
-      split at ha <;> cases ha <;> exact ⟨A, fun _ h => h, away, hp.2⟩
+    exact access_alloc_publish away o safe t hp.2 (hframe.region ▸ hr)
+
+/-- Allocating and handing the world a nonconstructible callback does not touch a protected region. -/
+theorem frames_newCallback (r R) (call : Call W) (construct : Val → List Val → M W Val)
+    (code cells part name length) : Frames r R (perform call construct code cells (.newFunction part name length false)) := by
+  simp only [perform, makeOpaque, Bool.false_eq_true, ↓reduceIte, M.bind_assoc, M.pure_bind]
+  exact (frames_alloc r R _).bind' fun a =>
+    (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
+
+/-- The new callback exposes its prototype and precisely the supplied captures.
+Missing bindings give the world no edge to a cell. -/
+theorem access_newCallback {r R cells A} (away : Away r R A) (call : Call W)
+    (construct : Val → List Val → M W Val) (code part name length) (root : A (.obj functionProto))
+    (s : State W) (hs : Access cells A s) (hr : s.region ≠ r) :
+    ∃ B, (∀ node, A node → B node) ∧ Away r R B ∧
+      (perform call construct code cells (.newFunction part name length false) s).Accessible cells B (fun _ => True) := by
+  simp only [perform, makeOpaque, Bool.false_eq_true, ↓reduceIte, M.bind_assoc, M.pure_bind]
+  apply access_alloc_publish away _ _ s hs hr
+  intro node hn
+  simp [Obj.nodes, Code.nodes, Property.nodes, Val.nodes] at hn
+  rcases hn with rfl | ⟨slot, hslot, eq⟩
+  · exact root
+  · cases slot with
+    | none => simp at eq
+    | some a =>
+      simp at eq
+      subst node
+      exact hs.supplied a hslot
 
 end CoreJS
