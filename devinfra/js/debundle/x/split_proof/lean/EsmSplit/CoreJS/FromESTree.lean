@@ -339,6 +339,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
   | "MemberExpression" =>
+    if inFunction && ambientSymbolMember? j == some "iterator" then
+      return .prim (.opaqueAmbientMemberRef "Symbol" "iterator") []
     let (base, key) ← linkedMember (linkedExpr profile imports inFunction "") j
     return .get base key
   | "ChainExpression" =>
@@ -497,7 +499,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       if ambientSymbolMember? callee == some "for" then
         -- Retain deferred arguments and their captures. Initialization stops at
         -- the opaque callee reference before it can evaluate an argument.
-        return .call (.prim .opaqueSymbolForRef []) (← args.mapM lower)
+        return .call (.prim (.opaqueAmbientMemberRef "Symbol" "for") []) (← args.mapM lower)
       let (base, key) ← linkedMember lower callee
       return .callMethod base key (← args.mapM lower)
     | "ChainExpression" =>
