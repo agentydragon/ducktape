@@ -67,7 +67,10 @@ open Lean (Json)
 -- The insertion order and a negative decimal distinguish this literal from a reparse of
 -- canonical printed JSON. The string also exercises quotes, escapes and Lean comment syntax.
 private def jsonFixture := Json.mkObj [
-  ("z", .num ⟨-20, 1⟩), ("a", .arr #[.null, .bool false]),
+  ("z", .num ⟨-20, 1⟩), ("a", .arr #[.null, .bool false,
+    Json.mkObj [("x", .str "one"), ("y", .num ⟨20, 1⟩)],
+    Json.mkObj [("x", .str "two"), ("y", .num ⟨2, 0⟩)],
+    Json.mkObj [("y", .str "three"), ("x", .null)]]),
   ("q", .str "\"\\\n/- -- #eval λ"), ("b", .bool true)]
 
 private def wideJsonFixture : Json :=

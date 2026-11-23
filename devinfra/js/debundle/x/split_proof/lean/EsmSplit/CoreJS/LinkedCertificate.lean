@@ -623,12 +623,36 @@ private def writeBatchDefinitions (index : Nat) (batch : WriteBatch) : Except St
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
 
-private abbrev JsonQuote := StateM (Array String)
+private structure JsonDefs where
+  definitions : Array String := #[]
+  objectBuilders : Std.HashMap String String := {}
+
+private abbrev JsonQuote := StateM JsonDefs
 
 private def arrayFragment (stem term : String) : JsonQuote String := do
-  let definitions ← get
-  let name := s!"{stem}_array_{definitions.size}"
-  set (definitions.push s!"private def {name} : Array Lean.Json := {term}\n")
+  let name := s!"{stem}_array_{(← get).definitions.size}"
+  let definition := s!"private def {name} : Array Lean.Json := {term}\n"
+  modify fun s => { s with definitions := s.definitions.push definition }
+  return name
+
+private abbrev JsonTree := Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json)
+
+private def objectTree [Monad m] (value : Lean.Json → m String) : JsonTree → m String
+  | .leaf => pure ".leaf"
+  | .inner sz key val left right => do
+    let fieldTerm ← value val
+    let leftTerm ← objectTree value left
+    let rightTerm ← objectTree value right
+    return s!"(.inner {sz} {key.quote} {fieldTerm} {leftTerm} {rightTerm})"
+
+/-- AST nodes with the same raw object tree can use one definition. The keys, tree
+sizes and child positions are part of the cache key. Only the values are parameters. -/
+private def objectBuilder (stem body : String) (arity : Nat) : JsonQuote String := do
+  if let some name := (← get).objectBuilders[body]? then return name
+  let name := s!"{stem}_object_{(← get).objectBuilders.size}"
+  let params := String.intercalate " " ((List.range arity).map fun i => s!"v{i}")
+  let definition := s!"private def {name} ({params} : Lean.Json) : Lean.Json := .obj ⟨⟨{body}⟩⟩\n"
+  modify fun s => { definitions := s.definitions.push definition, objectBuilders := s.objectBuilders.insert body name }
   return name
 
 mutual
@@ -638,7 +662,18 @@ private partial def jsonLiteral (stem : String) : Lean.Json → JsonQuote String
   | .num n => pure ("(Lean.Json.num ⟨(" ++ toString n.mantissa ++ ")," ++ toString n.exponent ++ "⟩)")
   | .str s => pure ("(Lean.Json.str " ++ s.quote ++ ")")
   | .arr a => do return "(Lean.Json.arr " ++ (← arrayLiteral stem a 0 a.size) ++ ")"
-  | .obj ⟨⟨o⟩⟩ => do return "(Lean.Json.obj ⟨⟨" ++ (← objectLiteral stem o) ++ "⟩⟩)"
+  | .obj ⟨⟨o⟩⟩ => do
+    -- Large dictionaries and the empty tree need no parameterized constructor.
+    if o.size == 0 || o.size > 16 then
+      return "(Lean.Json.obj ⟨⟨" ++ (← objectTree (jsonLiteral stem) o) ++ "⟩⟩)"
+    let parameter (v : Lean.Json) : StateM (Array Lean.Json) String := do
+      let args ← get
+      set (args.push v)
+      pure s!"v{args.size}"
+    let (body, args) := (objectTree parameter o).run #[]
+    let name ← objectBuilder stem body args.size
+    let values ← args.toList.mapM (jsonLiteral stem)
+    return "(" ++ String.intercalate " " (name :: values) ++ ")"
 
 /-- Elaborate wide arrays as separate, bounded-size definitions. Join chunks in a
 balanced tree to keep the depth of the definition dependencies logarithmic. -/
@@ -656,22 +691,13 @@ private partial def arrayLiteral (stem : String) (a : Array Lean.Json) (start st
     let left ← arrayLiteral stem a start middle
     let right ← arrayLiteral stem a middle stop
     arrayFragment stem s!"Array.append {left} {right}"
-
-private partial def objectLiteral (stem : String) :
-    Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json) → JsonQuote String
-  | .leaf => pure ".leaf"
-  | .inner sz key val left right => do
-    let value ← jsonLiteral stem val
-    let l ← objectLiteral stem left
-    let r ← objectLiteral stem right
-    return s!"(.inner {sz} {key.quote} {value} {l} {r})"
 end
 
 /-- Quote the exact Lean JSON value, including the raw object tree and each number's
 mantissa and decimal exponent. No parsing or field reinsertion is needed in the certificate. -/
 def jsonDefinitions (name : String) (json : Lean.Json) : Array String :=
-  let (value, definitions) := (jsonLiteral name json).run #[]
-  definitions.push s!"private def {name} : Lean.Json := {value}\n"
+  let (value, state) := (jsonLiteral name json).run {}
+  state.definitions.push s!"private def {name} : Lean.Json := {value}\n"
 
 /-- The equation compiler puts a negative premise on the general unary case because
 `typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
