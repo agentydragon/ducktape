@@ -289,7 +289,7 @@ func (s *Service) listIdentityEnvironments(
 			response.NextPageToken = response.Items[len(response.Items)-1].GetTarget().GetName()
 			break
 		}
-		descriptor, err := s.describe(ctx, object, nil, caller)
+		descriptor, err := s.describe(ctx, object, caller)
 		if err != nil {
 			return nil, err
 		}
@@ -318,11 +318,7 @@ func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnviro
 	response := &environmentpb.ListEnvironmentsResponse{NextPageToken: list.Continue}
 	for i := range list.Items {
 		object := &list.Items[i]
-		execution, _, err := s.sandboxes.ExecutionAccount(ctx, &sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)})
-		if err != nil {
-			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
-		}
-		descriptor, err := s.describe(ctx, object, execution, caller)
+		descriptor, err := s.describe(ctx, object, caller)
 		if err != nil {
 			return nil, err
 		}
@@ -398,15 +394,6 @@ func (s *Service) getEnvironment(
 	if view.Identity.Uid != target.GetUid() || (deleting(view.Resource) && !broad) {
 		return nil, "", status.Error(codes.NotFound, "environment not found")
 	}
-	var execution *sandboxreader.ServiceAccountIdentity
-	found := false
-	if broad {
-		execution, found, err = s.sandboxes.ExecutionAccount(ctx, view.Identity)
-		if err != nil {
-			slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
-			return nil, "", status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
-		}
-	}
 	if !broad {
 		if identity.identity == nil {
 			return nil, "", status.Error(codes.NotFound, "environment not found")
@@ -420,12 +407,9 @@ func (s *Service) getEnvironment(
 			return nil, "", status.Error(codes.NotFound, "environment not found")
 		}
 	}
-	descriptor, err := s.describe(ctx, view.Resource, execution, identity)
+	descriptor, err := s.describe(ctx, view.Resource, identity)
 	if err != nil {
 		return nil, "", err
-	}
-	if !found || identity.isIdentity() {
-		descriptor.ExecutionAccount = nil
 	}
 	visible, err := s.revalidateDescriptor(ctx, descriptor, identity, broad)
 	if err != nil {
@@ -506,7 +490,6 @@ func (s *Service) revalidateDescriptor(
 func (s *Service) describe(
 	ctx context.Context,
 	object *api.Sandbox,
-	execution *sandboxreader.ServiceAccountIdentity,
 	caller environmentCaller,
 ) (*environmentpb.EnvironmentDescriptor, error) {
 	var pod *corev1.Pod
@@ -564,12 +547,9 @@ func (s *Service) describe(
 	}
 	if caller.isIdentity() {
 		automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE
-		descriptor.ExecutionAccount = nil
 		if eligibility == nil {
 			generation = 0
 		}
-	} else {
-		descriptor.ExecutionAccount = execution
 	}
 	descriptor.Actions = &environmentpb.EnvironmentActions{
 		AutomaticWake: automaticWake, ResumeEligibility: eligibility, WakeGeneration: generation,

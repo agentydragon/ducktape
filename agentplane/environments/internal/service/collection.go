@@ -237,14 +237,7 @@ func (s *Service) collection(ctx context.Context, caller environmentCaller, broa
 	for i := range resources {
 		resource := &resources[i]
 		target := &sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)}
-		var execution *sandboxreader.ServiceAccountIdentity
-		if broad {
-			var err error
-			execution, _, err = s.sandboxes.ExecutionAccount(ctx, target)
-			if err != nil {
-				return nil, watchFailure(ctx, err)
-			}
-		} else {
+		if !broad {
 			if caller.identity == nil || resource.Spec.Identity == nil || resource.Spec.Identity.Name != caller.identity.Name {
 				continue
 			}
@@ -256,7 +249,7 @@ func (s *Service) collection(ctx context.Context, caller environmentCaller, broa
 				continue
 			}
 		}
-		value, err := s.describe(ctx, resource, execution, caller)
+		value, err := s.describe(ctx, resource, caller)
 		if status.Code(err) == codes.NotFound {
 			// The Sandbox was deleted or replaced while its eligibility was read. The
 			// already-open Kubernetes watch will deliver the corresponding update.
@@ -295,13 +288,7 @@ func (s *Service) collectionItem(ctx context.Context, caller environmentCaller, 
 	if resource.Status.Incarnation != nil {
 		podName = resource.Status.Incarnation.Name
 	}
-	var execution *sandboxreader.ServiceAccountIdentity
-	if broad {
-		execution, _, err = s.sandboxes.ExecutionAccount(ctx, v.Identity)
-		if err != nil {
-			return nil, "", watchFailure(ctx, err)
-		}
-	} else {
+	if !broad {
 		if resource.Spec.Identity == nil || resource.Spec.Identity.Name != caller.identity.Name {
 			return nil, podName, nil
 		}
@@ -313,7 +300,7 @@ func (s *Service) collectionItem(ctx context.Context, caller environmentCaller, 
 			return nil, podName, nil
 		}
 	}
-	item, err := s.describe(ctx, resource, execution, caller)
+	item, err := s.describe(ctx, resource, caller)
 	if status.Code(err) == codes.NotFound {
 		// A concurrent deletion or replacement is an inventory change, not a
 		// failure of the whole collection watch. Its event will refresh this name.
