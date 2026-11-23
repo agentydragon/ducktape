@@ -12,6 +12,7 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
+	historytesting "github.com/agentydragon/ducktape/agentplane/history_service/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
@@ -429,31 +430,7 @@ func samplerHistoryPayload(t *testing.T, fixture samplerExportFixture, sessionID
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := fixture.historyDB.QueryContext(t.Context(), `SELECT text FROM thread_payload_chunk
-		WHERE thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND owner_id = $4
-		AND field = 'output' AND generation = $5 AND chunk_index < $6 ORDER BY chunk_index`,
-		threadID, reference.GetProjectionEpoch(), reference.GetOwnerCursor(), reference.GetOwnerId(),
-		reference.GetGeneration(), reference.GetChunkCount())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var body strings.Builder
-	for rows.Next() {
-		var encoded []byte
-		var chunk string
-		if err := rows.Scan(&encoded); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(encoded, &chunk); err != nil {
-			t.Fatal(err)
-		}
-		body.WriteString(chunk)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return body.String()
+	return historytesting.PayloadText(t, fixture.historyDB, threadID, reference, "output")
 }
 
 func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing.T) {
