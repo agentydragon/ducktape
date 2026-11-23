@@ -27,6 +27,6 @@ external OR-Tools messages.
   contract without acquiring runtime resources (databases, clients, config files); never a schema-only app or a
   fake-dependency exporter. The Python app factories expose a routes-only constructor the exporter calls.
 - **Import generated names directly.** See [STYLE.md § TypeScript](../../STYLE.md#typescript).
-- **Gotcha:** every TypeScript converter and `quicktype_codegen` runs under `//devinfra/js:schema_remote_fetch_guard`,
-  which answers any HTTP `$ref` with a 400 during generation. A schema that resolves a remote reference fails the build;
-  declare the referenced file in `schema_files` instead.
+- The OpenAPI converters and `quicktype_codegen` reject HTTP `$ref` via `//devinfra/js:schema_remote_fetch_guard`.
+  `json-schema-to-typescript` disables its HTTP resolver directly. Declare local referenced files in `schema_files`
+  for the TypeScript converters.
