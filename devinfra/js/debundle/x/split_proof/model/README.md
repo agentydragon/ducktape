@@ -54,27 +54,21 @@ declaration itself. Accepted normal `moves` runs also compare the final model-st
 hash in the bundle's recorded world; the hash omits full function bodies and world state.
 Order-kept splits retain the corresponding check for every ending.
 
-The separate required `corejs_binding_differential_test` (`--bindings-only`) requires a different move: each assignment stays in its
-declaration's module, while independent assignments change relative order. Every seed
-runs four families: literals/bindings, binary operations with writes in both operands,
-heap-free unary operations, and conditional/short-circuit branches. Each executes through the `moves (certified
-bindings)` slice. Each seed also supplies a dependency-bearing binding-assignment
-variant that the real checker must reject.
-The handwritten cases also copy and compare object references without inspecting
-their heap records during the moved statements, and check that `typeof` gains no permission. A mutation control obtains the actual Effects output, reloads it,
-then removes a required write and requires the semantic certificate to reject it.
-Successful certified splits receive the same four-way execution and final model-state
-hash comparisons as the other proved moves. Exact final-state equality is the Lean
-theorem’s guarantee; the runtime hash comparison is a regression oracle with the
-omissions described above. The broad `corejs_differential_test` retains
-the interpreter families, linked graphs, opaque cases, and original named splits.
-All three targets run in CI; splitting their workloads keeps their coverage assertions
-and execution independent as the certificate families grow.
+The `corejs_binding_differential_test` (`--bindings-only`) requires
+`moves (certified bindings)` for reordered independent assignments. Each
+assignment stays with its declaration. Seeds cover literals and bindings, binary
+expressions with two writes, heap-free unary operations, and conditional or
+short-circuit branches. The corresponding dependency-bearing plan must be refused.
+The cases also check object-reference copies, the `typeof` boundary and refusal
+after removing an actual Effects write summary. Accepted diagnostic splits
+retain the four-way comparison and the final-state hash check described above.
+[Binding certificates](../docs/footprint_soundness.md#initial-certificate-fragment)
 
-The broad [`translation/gen`](../translation/testing/gen/) sample remains separate: the harness
-reports units accepted alone and units surviving dependency/unknown-code filtering.
-Those counts do not measure which syntax executed. Random plans remain manual-first
-and bounded by `--splits`; the dedicated generator's required moves bypass that budget.
+The separate [general generator](../translation/testing/gen/) sample reports
+units accepted alone and units surviving dependency/unknown-code filtering.
+Those counts measure admission. Use the required family executions above for
+runtime coverage. The sweep's `--splits` argument bounds random plans. The
+dedicated generator's required moves bypass that budget.
 
 Opaque scripts observe the requests `readVar`, `writeVar`, `initVar`, `get`, `set`,
 `delete`, `has`, `call`, `construct`, `newObject`, `newFunction` and `prim` through Node
@@ -162,7 +156,5 @@ They must get a negative guard result while continuing to match runtime
 observations and the final model-state hash. A handwritten control checks the
 structural rejection of a crossed read of the moving subclass.
 
-The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
-case labels, CoreJS batch boundaries, and module-order/split subprocess boundaries for timeout diagnosis. The inheritance
-suite has its own test budget; the original broad suite retains its seeds and
-split-plan budget.
+For a timeout, inspect `progress.log` in Bazel's undeclared outputs. It records
+Node case labels, CoreJS batches, and module-order and split subprocess boundaries.
