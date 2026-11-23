@@ -39,6 +39,16 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         },
         f"/api/gt/snapshots/{slug}/clusters": {"clusters": []},
         "/api/stats/occurrences": {"occurrences": []},
+        "/api/stats/examples": {
+            "snapshot_slug": slug,
+            "example_kind": "file_set",
+            "files_hash": "eefac986",
+            "split": "valid",
+            "recall_denominator": 1,
+            "files": [file_path],
+            "definitions": [],
+            "credit_stats": None,
+        },
     }
     file_requests: list[str] = []
 
@@ -81,6 +91,13 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         await expect(view.page.get_by_role("cell", name=slug, exact=True)).to_be_visible()
         await view.page.go_forward()
         await expect(view.page.get_by_role("heading", name=slug, exact=True)).to_be_visible()
+
+        await view.page.evaluate(
+            "hash => { window.location.hash = hash; }",
+            f"/examples?snapshot_slug={slug}&example_kind=file_set&files_hash=eefac986",
+        )
+        await view.page.get_by_role("link", name=file_path, exact=True).click()
+        await expect(view.page.get_by_text("# Encoded routing example", exact=True)).to_be_visible()
 
 
 async def test_snapshot_rejected_token_returns_to_login(visual: VisualHarness) -> None:
