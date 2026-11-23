@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<node>
+  <interface name="works.allegedly.PlaidSpendTest">
+    <method name="Reload">
+      <arg name="path" type="s" direction="in"/>
+    </method>
+    <method name="AdvanceClock">
+      <arg name="seconds" type="d" direction="in"/>
+    </method>
+    <method name="OpenMenu"/>
+    <method name="OpenPreferences"/>
+    <method name="HideOverview"/>
+    <method name="GetOverviewVisible">
+      <arg name="visible" type="b" direction="out"/>
+    </method>
+    <method name="WaitForPaint"/>
+    <method name="CloseMenu"/>
+    <method name="GetPanelLabel">
+      <arg name="label" type="s" direction="out"/>
+    </method>
+    <method name="GetPanelState">
+      <arg name="state" type="s" direction="out"/>
+    </method>
+    <method name="GetDaemonOwner">
+      <arg name="owner" type="s" direction="out"/>
+    </method>
+    <method name="GetMenuText">
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetMenuGeometry">
+      <arg name="rect" type="(iiii)" direction="out"/>
+    </method>
+    <method name="GetSparklineGeometry">
+      <arg name="rect" type="(iiii)" direction="out"/>
+    </method>
+  </interface>
+</node>

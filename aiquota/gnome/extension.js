@@ -6,6 +6,7 @@ import Clutter from "gi://Clutter";
 import Pango from "gi://Pango";
 import Atk from "gi://Atk";
 
+import { loadInterfaceXml } from "./dbus.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
@@ -37,17 +38,7 @@ function nowMs() {
 
 const BUS_NAME = "works.allegedly.AiQuota";
 const OBJECT_PATH = "/works/allegedly/AiQuota";
-const INTERFACE_NAME = "works.allegedly.AiQuota1";
-const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
-  `<node><interface name="${INTERFACE_NAME}">
-    <method name="GetView"><arg name="view" type="s" direction="out"/></method>
-    <signal name="ViewChanged"><arg name="view" type="s"/></signal>
-    <property name="Status" type="s" access="read"/>
-    <property name="Error" type="s" access="read"/>
-    <property name="LastAttemptAt" type="d" access="read"/>
-    <property name="NextRetryAt" type="d" access="read"/>
-  </interface></node>`
-).lookup_interface(INTERFACE_NAME);
+const [INTERFACE_INFO] = Gio.DBusNodeInfo.new_for_xml(loadInterfaceXml("daemon.xml")).interfaces;
 
 const TINT_CLASSES = [
   "quota-cool",
@@ -319,173 +310,136 @@ const QuotaIndicator = GObject.registerClass(
       //   OpenMenu / CloseMenu — toggle popup, no animation.
       //   GetMenuGeometry      — screen-space (x,y,w,h) bounding box of
       //                          the open menu, for precise screenshot crop.
-      this._testIface = Gio.DBusExportedObject.wrapJSObject(
-        '<node><interface name="works.allegedly.AiQuotaTest">' +
-          '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
-          '<method name="SetStreamStatus"><arg type="s" direction="in" name="status"/><arg type="s" direction="in" name="error"/></method>' +
-          '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
-          '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
-          '<method name="GetBalanceText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetGrantText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetReadingGroups"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="groups"/></method>' +
-          '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetBurnText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetSpendText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetRowPositions"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="positions"/></method>' +
-          '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetPanelProviders"><arg type="s" direction="out" name="providers"/></method>' +
-          '<method name="SetDetailsOpen"><arg type="s" direction="in" name="provider"/><arg type="b" direction="in" name="open"/></method>' +
-          '<method name="ActivateMeter"><arg type="s" direction="in" name="provider"/><arg type="u" direction="in" name="index"/><arg type="b" direction="out" name="hit"/></method>' +
-          '<method name="GetDetailsOpen"><arg type="s" direction="in" name="provider"/><arg type="b" direction="out" name="open"/></method>' +
-          '<method name="GetDetailsText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetConnectionDetails"><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetEmptyLabelText"><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
-          '<method name="SetPresentationTime"><arg type="d" direction="in" name="now"/></method>' +
-          '<method name="GetMeterAccessibility"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="meters"/></method>' +
-          '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
-          '<method name="ConnectDaemon"/>' +
-          '<method name="FetchView"/>' +
-          '<method name="GetCurrentView"><arg type="s" direction="out" name="view"/></method>' +
-          '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
-          '<method name="OpenMenu"/>' +
-          '<method name="WaitForPaint"/>' +
-          '<method name="CloseMenu"/>' +
-          '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
-          "</interface></node>",
-        {
-          Reload: (path) => {
-            const [ok, bytes] = GLib.file_get_contents(path);
-            if (!ok) throw new Error(`fixture not readable: ${path}`);
-            this._loadFixtureView(decodeBytes(bytes));
-          },
-          SetStreamStatus: (status, error) => this._setStreamState(status, error),
-          GetBalanceText: (provider) => this._readingText(provider, "balanceRow"),
-          GetGrantText: (provider) => this._readingText(provider, "grantRow"),
-          GetReadingGroups: (provider) =>
-            JSON.stringify(
-              this._providers
-                .find(({ id }) => id === provider)
-                ?.readingSections.map((section) => ({
-                  header: section.header?.label.get_text() ?? "",
-                  balance: section.balanceRow.visible ? section.balanceRow._summaryLabel.get_text() : "",
-                  grants: section.grantRow.visible ? section.grantRow._summaryLabel.get_text() : "",
-                })) ?? []
-            ),
-          GetStatusText: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
-          GetBurnText: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.burnRow?._summaryLabel.get_text() ?? "",
-          GetSpendText: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.spendRow?._summaryLabel.get_text() ?? "",
-          GetRowPositions: (provider) => {
-            const p = this._providers.find(({ id }) => id === provider);
-            if (!p) return "{}";
-            return JSON.stringify({
-              status: p.statusRow.get_transformed_position()[1],
-              balance: p.readingSections[0].balanceRow.get_transformed_position()[1],
-              spend: p.spendRow.get_transformed_position()[1],
-              window: p.windowRows[0].get_transformed_position()[1],
-            });
-          },
-          GetResetText: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
-          GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",
-          GetPanelProviders: () =>
-            JSON.stringify(this._providers.filter((provider) => provider.icon).map(({ id }) => id)),
-          SetDetailsOpen: (provider, open) => {
-            const menu = this._providers.find(({ id }) => id === provider)?.detailsItem.menu;
-            if (open) menu.open(false);
-            else menu.close(false);
-          },
-          ActivateMeter: (provider, index) => {
-            const p = this._providers.find(({ id }) => id === provider);
-            const track = p?.windowRows[index]?._quotaBar.track;
-            if (!track?.visible) return false;
-            const [x, y] = track.get_transformed_position();
-            const [width, height] = track.get_transformed_size();
-            const hit = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x + width / 2, y + height / 2);
-            if (hit !== p.detailsItem) return false;
-            p.detailsItem.activate(null);
-            return true;
-          },
-          GetDetailsOpen: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.detailsItem.menu.isOpen ?? false,
-          GetDetailsText: (provider) =>
+      this._testIface = Gio.DBusExportedObject.wrapJSObject(loadInterfaceXml("shell-test.xml"), {
+        Reload: (path) => {
+          const [ok, bytes] = GLib.file_get_contents(path);
+          if (!ok) throw new Error(`fixture not readable: ${path}`);
+          this._loadFixtureView(decodeBytes(bytes));
+        },
+        SetStreamStatus: (status, error) => this._setStreamState(status, error),
+        GetBalanceText: (provider) => this._readingText(provider, "balanceRow"),
+        GetGrantText: (provider) => this._readingText(provider, "grantRow"),
+        GetReadingGroups: (provider) =>
+          JSON.stringify(
             this._providers
               .find(({ id }) => id === provider)
-              ?.detailsItem?._detailRows.map((row) => row.label.get_text())
-              .join("\n") ?? "",
-          GetConnectionDetails: () =>
-            this._connectionDetailsItem?._detailRows.map((row) => row.label.get_text()).join("\n") ?? "",
-          GetEmptyLabelText: () => (this._emptyLabel.visible ? this._emptyLabel.get_text() : ""),
-          GetHeaderText: (provider) => {
-            const item = this._providers.find(({ id }) => id === provider)?.header;
-            return item?.label.get_text() ?? "";
-          },
-          GetWindowRows: (provider) => {
-            const rows = this._providers
+              ?.readingSections.map((section) => ({
+                header: section.header?.label.get_text() ?? "",
+                balance: section.balanceRow.visible ? section.balanceRow._summaryLabel.get_text() : "",
+                grants: section.grantRow.visible ? section.grantRow._summaryLabel.get_text() : "",
+              })) ?? []
+          ),
+        GetStatusText: (provider) =>
+          this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
+        GetBurnText: (provider) =>
+          this._providers.find(({ id }) => id === provider)?.burnRow?._summaryLabel.get_text() ?? "",
+        GetSpendText: (provider) =>
+          this._providers.find(({ id }) => id === provider)?.spendRow?._summaryLabel.get_text() ?? "",
+        GetRowPositions: (provider) => {
+          const p = this._providers.find(({ id }) => id === provider);
+          if (!p) return "{}";
+          return JSON.stringify({
+            status: p.statusRow.get_transformed_position()[1],
+            balance: p.readingSections[0].balanceRow.get_transformed_position()[1],
+            spend: p.spendRow.get_transformed_position()[1],
+            window: p.windowRows[0].get_transformed_position()[1],
+          });
+        },
+        GetResetText: (provider) =>
+          this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
+        GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",
+        GetPanelProviders: () =>
+          JSON.stringify(this._providers.filter((provider) => provider.icon).map(({ id }) => id)),
+        SetDetailsOpen: (provider, open) => {
+          const menu = this._providers.find(({ id }) => id === provider)?.detailsItem.menu;
+          if (open) menu.open(false);
+          else menu.close(false);
+        },
+        ActivateMeter: (provider, index) => {
+          const p = this._providers.find(({ id }) => id === provider);
+          const track = p?.windowRows[index]?._quotaBar.track;
+          if (!track?.visible) return false;
+          const [x, y] = track.get_transformed_position();
+          const [width, height] = track.get_transformed_size();
+          const hit = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x + width / 2, y + height / 2);
+          if (hit !== p.detailsItem) return false;
+          p.detailsItem.activate(null);
+          return true;
+        },
+        GetDetailsOpen: (provider) =>
+          this._providers.find(({ id }) => id === provider)?.detailsItem.menu.isOpen ?? false,
+        GetDetailsText: (provider) =>
+          this._providers
+            .find(({ id }) => id === provider)
+            ?.detailsItem?._detailRows.map((row) => row.label.get_text())
+            .join("\n") ?? "",
+        GetConnectionDetails: () =>
+          this._connectionDetailsItem?._detailRows.map((row) => row.label.get_text()).join("\n") ?? "",
+        GetEmptyLabelText: () => (this._emptyLabel.visible ? this._emptyLabel.get_text() : ""),
+        GetHeaderText: (provider) => {
+          const item = this._providers.find(({ id }) => id === provider)?.header;
+          return item?.label.get_text() ?? "";
+        },
+        GetWindowRows: (provider) => {
+          const rows = this._providers
+            .find(({ id }) => id === provider)
+            ?.windowRows.filter((row) => row.visible)
+            .map((row) => row._summaryLabel.get_text());
+          return JSON.stringify(rows ?? []);
+        },
+        GetMeterAccessibility: (provider) =>
+          JSON.stringify(
+            this._providers
               .find(({ id }) => id === provider)
               ?.windowRows.filter((row) => row.visible)
-              .map((row) => row._summaryLabel.get_text());
-            return JSON.stringify(rows ?? []);
-          },
-          GetMeterAccessibility: (provider) =>
-            JSON.stringify(
-              this._providers
-                .find(({ id }) => id === provider)
-                ?.windowRows.filter((row) => row.visible)
-                .map((row) => {
-                  const accessible = row._quotaBar.track.get_accessible();
-                  return {
-                    role: Atk.role_get_name(accessible.get_role()),
-                    name: accessible.get_name(),
-                    description: accessible.get_description(),
-                    value: accessible.accessible_value,
-                    minimum: accessible.get_minimum_value(),
-                    maximum: accessible.get_maximum_value(),
-                  };
-                }) ?? []
-            ),
-          SetSyncState: (lastAttemptAt, nextRetryAt, now) => {
-            this._lastAttemptAt = lastAttemptAt;
-            this._nextRetryAt = nextRetryAt;
-            this._testNow = now;
-            this._renderPopup();
-          },
-          GetStreamStatus: () => this._statusRow._summaryLabel.get_text(),
-          SetPresentationTime: (now) => {
-            fixtureNowMs = now;
-            this._renderPanel();
-            this._renderPopup();
-          },
-          SetViewForTest: (view) => this._acceptView(view),
-          ConnectDaemon: () => this._connectDaemon(),
-          FetchView: () => this._fetchView(),
-          GetCurrentView: () => this._remoteView,
-          GetDaemonOwner: () => this._proxy?.g_name_owner ?? "",
-          WaitForPaintAsync: (_params, invocation) => {
-            const signal = global.stage.connect("after-paint", () => {
-              global.stage.disconnect(signal);
-              GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-                invocation.return_value(null);
-                return GLib.SOURCE_REMOVE;
-              });
+              .map((row) => {
+                const accessible = row._quotaBar.track.get_accessible();
+                return {
+                  role: Atk.role_get_name(accessible.get_role()),
+                  name: accessible.get_name(),
+                  description: accessible.get_description(),
+                  value: accessible.accessible_value,
+                  minimum: accessible.get_minimum_value(),
+                  maximum: accessible.get_maximum_value(),
+                };
+              }) ?? []
+          ),
+        SetSyncState: (lastAttemptAt, nextRetryAt, now) => {
+          this._lastAttemptAt = lastAttemptAt;
+          this._nextRetryAt = nextRetryAt;
+          this._testNow = now;
+          this._renderPopup();
+        },
+        GetStreamStatus: () => this._statusRow._summaryLabel.get_text(),
+        SetPresentationTime: (now) => {
+          fixtureNowMs = now;
+          this._renderPanel();
+          this._renderPopup();
+        },
+        SetViewForTest: (view) => this._acceptView(view),
+        ConnectDaemon: () => this._connectDaemon(),
+        FetchView: () => this._fetchView(),
+        GetCurrentView: () => this._remoteView,
+        GetDaemonOwner: () => this._proxy?.g_name_owner ?? "",
+        WaitForPaintAsync: (_params, invocation) => {
+          const signal = global.stage.connect("after-paint", () => {
+            global.stage.disconnect(signal);
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+              invocation.return_value(null);
+              return GLib.SOURCE_REMOVE;
             });
-            global.stage.queue_redraw();
-          },
-          OpenMenu: () => this.menu.open(false),
-          CloseMenu: () => this.menu.close(false),
-          GetMenuGeometry: () => {
-            const actor = this.menu.actor;
-            const [x, y] = actor.get_transformed_position();
-            const [w, h] = actor.get_transformed_size();
-            return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
-          },
-        }
-      );
+          });
+          global.stage.queue_redraw();
+        },
+        OpenMenu: () => this.menu.open(false),
+        CloseMenu: () => this.menu.close(false),
+        GetMenuGeometry: () => {
+          const actor = this.menu.actor;
+          const [x, y] = actor.get_transformed_position();
+          const [w, h] = actor.get_transformed_size();
+          return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
+        },
+      });
       this._testIface.export(Gio.DBus.session, "/works/allegedly/AiQuotaTest");
       this._testBusOwnerId = Gio.bus_own_name(
         Gio.BusType.SESSION,
@@ -506,7 +460,7 @@ const QuotaIndicator = GObject.registerClass(
         INTERFACE_INFO,
         BUS_NAME,
         OBJECT_PATH,
-        INTERFACE_NAME,
+        INTERFACE_INFO.name,
         null,
         (source, result) => {
           if (this._destroyed) return;

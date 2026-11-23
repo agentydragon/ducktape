@@ -188,6 +188,11 @@ def gnome_session(
     container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")
     container.with_volume_mapping(
+        str(fake_daemon_script.parent / "dbus/fake-control.xml"), "/dbus/fake-control.xml", "ro"
+    )
+    container.with_volume_mapping(str(extension_dir / "dbus.js"), "/dbus.js", "ro")
+    container.with_volume_mapping(str(extension_dir / "dbus/daemon.xml"), "/dbus/daemon.xml", "ro")
+    container.with_volume_mapping(
         str(Runfiles.CreateOrRaise().root() / "ducktape/gnome/testing/fake-daemon.js"), "/gnome-fake-daemon.js", "ro"
     )
     container.with_volume_mapping(str(screenshot_dir), "/out", "rw")

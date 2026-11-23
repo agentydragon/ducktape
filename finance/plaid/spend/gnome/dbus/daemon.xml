@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<node>
+  <interface name="works.allegedly.PlaidSpend1">
+    <method name="GetView">
+      <arg name="view" type="s" direction="out"/>
+    </method>
+    <method name="GetPaceHistory">
+      <arg name="history" type="s" direction="out"/>
+    </method>
+    <method name="Login"/>
+    <signal name="ViewChanged">
+      <arg name="view" type="s"/>
+    </signal>
+    <property name="Status" type="s" access="read"/>
+    <property name="LastError" type="s" access="read"/>
+    <property name="LastAttemptAt" type="d" access="read"/>
+    <property name="NextRetryAt" type="d" access="read"/>
+  </interface>
+</node>

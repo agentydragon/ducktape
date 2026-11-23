@@ -8,6 +8,8 @@ load("//gnome:devkit.bzl", "gnome_devkit")
 pkg_files(
     name = "extension_files",
     srcs = [
+        "dbus/daemon.xml",
+        "dbus/shell-test.xml",
         "extension.js",
         "metadata.json",
         "panelOrder.js",
@@ -21,7 +23,10 @@ pkg_files(
 
 pkg_zip(
     name = "plaid_spend_extension",
-    srcs = [":extension_files"],
+    srcs = [
+        ":extension_files",
+        "//gnome:dbus_loader",
+    ],
     out = "plaid-spend-desktop.zip",
     visibility = ["//visibility:public"],
 )
@@ -36,6 +41,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    data = ["dbus/fake-control.xml"],
     deps = ["//gnome/testing:fake_daemon_js"],
 )
 
