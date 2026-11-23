@@ -93,6 +93,31 @@ theorem frames_newObject (r R) (call : Call W) (construct : Val → List Val →
     (frames_alloc r R { proto := parent, props := [] }).bind' fun a =>
       (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
 
+/-- The continuation may allocate further objects and extend the envelope again. -/
+private theorem access_alloc_bind {r R cells A} (away : Away r R A) (o : Obj)
+    (safe : ∀ node ∈ o.nodes, A node) (s : State W) (hs : Access cells A s) (hr : s.region ≠ r)
+    (k : Addr → M W α) (P : α → Prop)
+    (next : ∀ a t, Away r R (withObject A a) → Access cells (withObject A a) t → t.region ≠ r →
+      ∃ B, (∀ node, withObject A a node → B node) ∧ Away r R B ∧ (k a t).Accessible cells B P) :
+    ∃ B, (∀ node, A node → B node) ∧ Away r R B ∧ ((alloc o >>= k) s).Accessible cells B P := by
+  rw [M.bind_apply]
+  cases ha : alloc o s with
+  | ok a u =>
+    have har : a.region ≠ r := alloc_region ha ▸ hr
+    have hb : Away r R (withObject A a) := by
+      constructor
+      · intro node hn; rcases hn with hn | rfl
+        · exact away.region _ hn
+        · exact har
+      · intro b hb; rcases hb with hb | hb
+        · exact away.reads _ hb
+        · cases hb
+    obtain ⟨B, incl, hB, rest⟩ := next a u hb (access_alloc hs safe ha) ((alloc_ok ha).2.region ▸ hr)
+    exact ⟨B, fun _ hn => incl _ (Or.inl hn), hB, rest⟩
+  | fuel | throw | unknown =>
+    unfold alloc at ha
+    split at ha <;> cases ha <;> exact ⟨A, fun _ h => h, away, hs⟩
+
 /-- Publishing a fresh object whose outgoing edges are already accessible extends
 the capability envelope by that object's address. -/
 private theorem access_alloc_publish {r R cells A} (away : Away r R A) (o : Obj)
@@ -102,28 +127,12 @@ private theorem access_alloc_publish {r R cells A} (away : Away r R A) (o : Obj)
         let a ← alloc o
         let w ← toW (.obj a)
         pure (Told.value w)) s).Accessible cells B (fun _ => True) := by
-  rw [M.bind_apply]
-  cases ha : alloc o s with
-  | ok a u =>
-    have har : a.region ≠ r := alloc_region ha ▸ hr
-    let B := withObject A a
-    have hb : Away r R B := by
-      constructor
-      · intro node hn; rcases hn with hn | rfl
-        · exact away.region _ hn
-        · exact har
-      · intro b hb; rcases hb with hb | hb
-        · exact away.reads _ hb
-        · cases hb
-    refine ⟨B, fun _ hn => Or.inl hn, hb, ?_⟩
-    have hu := access_alloc hs safe ha
-    have hv : SafeVal B (.obj a) := safeVal_obj.2 (Or.inr rfl)
-    have hue := (alloc_ok ha).2.region
-    exact ((reachFrame_toW r R cells B _ hv).bind fun w _ =>
-      reachFrame_pure r R cells B (Told.value w) trivial).accessible u hu (hue ▸ hr)
-  | fuel | throw | unknown =>
-    unfold alloc at ha
-    split at ha <;> cases ha <;> exact ⟨A, fun _ h => h, away, hs⟩
+  apply access_alloc_bind away o safe s hs hr
+  intro a u hb hu hr'
+  refine ⟨_, fun _ h => h, hb, ?_⟩
+  have hv : SafeVal (withObject A a) (.obj a) := safeVal_obj.2 (Or.inr rfl)
+  exact ((reachFrame_toW r R cells _ _ hv).bind fun w _ =>
+    reachFrame_pure r R cells _ (Told.value w) trivial).accessible u hu hr'
 
 /-- After the actual request, the accessible envelope can grow while still excluding the protected region
 and read bindings. A supplied prototype must come through the handle table. Default construction needs
@@ -156,6 +165,16 @@ theorem frames_newCallback (r R) (call : Call W) (construct : Val → List Val �
   exact (frames_alloc r R _).bind' fun a =>
     (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
 
+private theorem opaqueCapturesAccessible {cells A} {s : State W} (hs : Access cells A s)
+    (code part node) (h : node ∈ (Code.opaque code part cells).nodes) : A node := by
+  obtain ⟨slot, hslot, eq⟩ := List.mem_filterMap.mp h
+  cases slot with
+  | none => simp at eq
+  | some a =>
+    simp at eq
+    subst node
+    exact hs.supplied a hslot
+
 /-- The new callback exposes its prototype and precisely the supplied captures.
 Missing bindings give the world no edge to a cell. -/
 theorem access_newCallback {r R cells A} (away : Away r R A) (call : Call W)
@@ -166,14 +185,94 @@ theorem access_newCallback {r R cells A} (away : Away r R A) (call : Call W)
   simp only [perform, makeOpaque, Bool.false_eq_true, ↓reduceIte, M.bind_assoc, M.pure_bind]
   apply access_alloc_publish away _ _ s hs hr
   intro node hn
-  simp [Obj.nodes, Code.nodes, Property.nodes, Val.nodes] at hn
-  rcases hn with rfl | ⟨slot, hslot, eq⟩
-  · exact root
-  · cases slot with
-    | none => simp at eq
-    | some a =>
-      simp at eq
-      subst node
-      exact hs.supplied a hslot
+  simp [Obj.nodes, Property.nodes, Val.nodes] at hn
+  exact hn.elim (fun h => h ▸ root) (opaqueCapturesAccessible hs code part node)
+
+private theorem frames_modifyObj {r R} (a : Addr) (ha : a.region ≠ r) (f : Obj → Obj) :
+    Frames r R (modifyObj a f : M W Unit) := by
+  constructor
+  · intro s H C hr
+    have hh : (s.heap.set! r H)[a.region]? = s.heap[a.region]? := by simp [Ne.symm ha]
+    simp only [modifyObj, Res.put, State.put]
+    rw [modify_eq_set! _ _ _ #[], modify_eq_set! _ _ _ #[], hh, set!_comm _ (Ne.symm ha)]
+  · intro s hr
+    exact ⟨by simp [Array.getElem?_modify, ha], rfl, fun _ _ => rfl, rfl⟩
+
+/-- Edges retained from the old record, and new edges into the accessible envelope,
+are safe even when the update completes a cycle. -/
+private theorem reachFrame_modifyObj {r R cells A} (away : Away r R A) (a : Addr) (ha : A (.obj a))
+    (f : Obj → Obj) (edges : ∀ o n, n ∈ (f o).nodes → n ∈ o.nodes ∨ A n) :
+    ReachFrame r R cells A (fun _ => True) (modifyObj a f : M W Unit) := by
+  apply ReachFrame.of_frames (frames_modifyObj a (away.region _ ha) f)
+  intro s hs hr
+  refine ⟨trivial, hs.handed, hs.supplied, ?_⟩
+  intro node target hn he
+  cases he with
+  | cell hc hm => exact hs.closed _ _ hn (.cell hc hm)
+  | @obj b obj target ho hm =>
+    by_cases hba : b = a
+    · subst b
+      have own : ({ s with heap := s.heap.modify a.region (·.modify a.index f) } : State W).objAt a =
+          (s.objAt a).map f := by
+        simp only [State.objAt, Array.getElem?_modify, ↓reduceIte]
+        cases s.heap[a.region]? <;> simp [Array.getElem?_modify]
+      rw [own] at ho
+      cases old : s.objAt a with
+      | none => simp [old] at ho
+      | some o =>
+        simp only [old, Option.map_some, Option.some.injEq] at ho
+        subst obj
+        exact (edges o target hm).elim (fun h => hs.closed _ _ hn (.obj old h)) id
+    · rw [objAt_modify _ _ _ _ hba] at ho
+      exact hs.closed _ _ hn (.obj ho hm)
+
+/-- Constructible functions allocate their own prototype object and set both links
+before publishing the function handle. -/
+theorem frames_newConstructor (r R) (call : Call W) (construct : Val → List Val → M W Val)
+    (code cells part name length) : Frames r R (perform call construct code cells (.newFunction part name length true)) := by
+  simp only [perform, makeOpaque, ↓reduceIte, addPrototype, M.bind_assoc, M.pure_bind]
+  apply (frames_alloc r R _).bind
+  intro a ⟨s, t, hr, run⟩
+  exact (frames_alloc r R _).bind' fun p =>
+    (frames_modifyObj a (alloc_region run ▸ hr) _).bind' fun _ =>
+    (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
+
+/-- A constructible callback and its new prototype can point to each other.
+The reachable envelope includes both fresh addresses, every supplied captured cell,
+and both intrinsic prototypes. -/
+theorem access_newConstructor {r R cells A} (away : Away r R A) (call : Call W)
+    (construct : Val → List Val → M W Val) (code part name length)
+    (functionRoot : A (.obj functionProto)) (objectRoot : A (.obj objectProto))
+    (s : State W) (hs : Access cells A s) (hr : s.region ≠ r) :
+    ∃ B, (∀ node, A node → B node) ∧ Away r R B ∧
+      (perform call construct code cells (.newFunction part name length true) s).Accessible cells B (fun _ => True) := by
+  simp only [perform, makeOpaque, ↓reduceIte, addPrototype, M.bind_assoc, M.pure_bind]
+  apply access_alloc_bind away _ _ s hs hr
+  · intro a t ha ht hr'
+    apply access_alloc_bind ha _ _ t ht hr'
+    · intro p u hp hu hr''
+      let B := withObject (withObject A a) p
+      have fa : B (.obj a) := Or.inl (Or.inr rfl)
+      have fp : B (.obj p) := Or.inr rfl
+      refine ⟨B, fun _ h => h, hp, ?_⟩
+      apply (ReachFrame.bind (reachFrame_modifyObj hp a fa _ ?_) ?_).accessible u hu hr''
+      · intro o node hn
+        simp [Obj.nodes, Property.nodes, Val.nodes] at hn ⊢
+        rcases hn with h | h | h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inl (Or.inr (Or.inl h))
+        · subst node; exact Or.inr fp
+        · exact Or.inl (Or.inr (Or.inr h))
+      · intro _ _
+        exact (reachFrame_toW r R cells B _ (safeVal_obj.2 fa)).bind fun w _ =>
+          reachFrame_pure r R cells B (Told.value w) trivial
+    · intro node hn
+      simp [Obj.nodes, Property.nodes, Val.nodes] at hn
+      rcases hn with rfl | rfl
+      · exact Or.inl objectRoot
+      · exact Or.inr rfl
+  · intro node hn
+    simp [Obj.nodes, Property.nodes, Val.nodes] at hn
+    exact hn.elim (fun h => h ▸ functionRoot) (opaqueCapturesAccessible hs code part node)
 
 end CoreJS
