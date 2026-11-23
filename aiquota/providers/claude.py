@@ -8,8 +8,10 @@ an external credential owner must use a non-file credential source instead.
 """
 
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Self
 from uuid import UUID
 
 import httpx
@@ -274,6 +276,25 @@ class ClaudeProvider(Provider):
         self.settings = settings
         self.client_factory = client_factory
         self.management_client = management_client
+        self._organization_id: UUID | None = None
+
+    @classmethod
+    async def for_managed_account(cls, settings: ClaudeSettings, management: CLIProxyAPIManagementClient) -> Self:
+        profile = await cls._fetch_managed_profile(management)
+        if profile.account is None:
+            raise ValueError("Claude account identity is unavailable")
+        account_id = f"{profile.account.uuid}:{profile.organization.uuid}"
+        provider = cls(settings, management.client_factory, replace(management, account_id=account_id))
+        provider.account_id = account_id
+        provider._organization_id = profile.organization.uuid
+        return provider
+
+    @classmethod
+    async def _fetch_managed_profile(cls, management: CLIProxyAPIManagementClient) -> _ClaudeProfileResponse:
+        body = await management.fetch_usage(
+            cls.name, PROFILE_URL, _OAUTH_HEADERS, capture_key="claude_profile", capture_response=False
+        )
+        return _ClaudeProfileResponse.model_validate_json(body)
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -329,10 +350,10 @@ class ClaudeProvider(Provider):
             return PrepaidBalanceUnavailable()
 
     async def _fetch_prepaid_balance(self, token: str | None) -> PrepaidBalanceAvailable:
+        organization_id = self._organization_id
         if self.management_client:
-            profile_body = await self.management_client.fetch_usage(
-                self.name, PROFILE_URL, _OAUTH_HEADERS, capture_key="claude_profile", capture_response=False
-            )
+            if organization_id is None:
+                organization_id = (await self._fetch_managed_profile(self.management_client)).organization.uuid
         else:
             if token is None:
                 raise ValueError("Claude access token is unavailable")
@@ -341,10 +362,9 @@ class ClaudeProvider(Provider):
                     PROFILE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
                 )
             profile_response.raise_for_status()
-            profile_body = profile_response.text
+            organization_id = _ClaudeProfileResponse.model_validate_json(profile_response.text).organization.uuid
 
-        profile = _ClaudeProfileResponse.model_validate_json(profile_body)
-        balance_url = f"https://api.anthropic.com/api/oauth/organizations/{profile.organization.uuid}/prepaid/credits"
+        balance_url = f"https://api.anthropic.com/api/oauth/organizations/{organization_id}/prepaid/credits"
         if self.management_client:
             balance_body = await self.management_client.fetch_usage(
                 self.name, balance_url, _OAUTH_HEADERS, capture_key=PREPAID_BALANCE_CAPTURE_KEY
