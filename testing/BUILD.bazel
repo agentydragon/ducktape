@@ -165,3 +165,9 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "threaded_http",
+    srcs = ["threaded_http.py"],
+    visibility = ["//visibility:public"],
+)

@@ -4,6 +4,10 @@ Use `util.net.listen_tcp()` when a test needs ownership of a listening TCP port,
 `refusing_tcp_endpoint()` when it needs a reliably closed endpoint. Both keep the
 bound socket for the whole context and set no address or port reuse options.
 
+For standard-library HTTP fixtures, pass the bound `HTTPServer` or
+`ThreadingHTTPServer` to `testing.threaded_http.serve_http_in_thread()`. Its
+context runs the server and closes its socket at teardown.
+
 For ASGI tests, `serve_app()` starts the app in a dedicated thread and yields its
 ready origin. Use `serve_app_in_loop()` when the app shares loop-bound test
 resources, or `serve_app_sync()` from synchronous code. Each helper owns its

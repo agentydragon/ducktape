@@ -16,6 +16,8 @@ from google.protobuf.message import DecodeError
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2, trace_service_pb2_grpc
 from opentelemetry.proto.common.v1.common_pb2 import KeyValue
 
+from testing.threaded_http import serve_http_in_thread
+
 if TYPE_CHECKING:
     from opentelemetry.proto.trace.v1.trace_pb2 import Span
 
@@ -192,12 +194,7 @@ class ProcessTraces:
                 def log_message(self, format: str, *args: object) -> None:
                     pass
 
-            http = ThreadingHTTPServer((self._host, 0), Handler)
-            cleanup.callback(http.server_close)
-            thread = threading.Thread(target=http.serve_forever, name="otlp-http", daemon=True)
-            thread.start()
-            cleanup.callback(thread.join)
-            cleanup.callback(http.shutdown)
+            http = cleanup.enter_context(serve_http_in_thread(ThreadingHTTPServer((self._host, 0), Handler)))
             self.grpc_port = grpc_port
             self.http_port = http.server_port
             self._receiver = receiver

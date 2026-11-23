@@ -2,7 +2,6 @@
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import PurePosixPath
-from threading import Thread
 
 import pytest_bazel
 from fastapi.testclient import TestClient
@@ -14,6 +13,7 @@ from platform_sessions.proxy import HeaderPolicy, ProxyInstance, ProxyRequest, P
 from platform_sessions.proxy_support import HttpSessionTransport
 from platform_sessions.registry import IntegrationInstance
 from platform_sessions.routes import Route
+from testing.threaded_http import serve_http_in_thread
 
 
 class Settings(BaseModel):
@@ -37,20 +37,13 @@ def test_session_transport_uses_configured_http_proxy(monkeypatch):
         def load(self):
             return object()
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
+    with serve_http_in_thread(HTTPServer(("127.0.0.1", 0), Handler)) as server:
         monkeypatch.setenv("HTTP_PROXY", f"http://127.0.0.1:{server.server_port}")
         monkeypatch.setenv("NO_PROXY", "")
         transport = HttpSessionTransport(Store(), lambda session: ())
         response = transport._request(ProxyRequest("GET", "http://upstream.invalid/resource", b"", (), b""))
         assert response.body == b"proxied"
         assert paths == ["http://upstream.invalid/resource"]
-    finally:
-        server.shutdown()
-        thread.join()
-        server.server_close()
 
 
 class Transport:

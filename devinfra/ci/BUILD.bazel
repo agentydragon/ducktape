@@ -337,6 +337,7 @@ py_test(
         ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/buildbuddy/ci:invocation_ids",
+        "//testing:threaded_http",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
