@@ -757,6 +757,7 @@ def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(session: Gn
         daemon.call("ReleaseGetView")
         assert string_reply(session.call("GetCurrentView")) == signal_view
         assert daemon.counters() == (1, 1, 0)
+        assert string_reply(session.call("GetStreamStatus")) == "Connected"
 
         daemon.call("SetViewSilently", _view_json(3))
         session.call("FetchView")
