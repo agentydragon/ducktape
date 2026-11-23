@@ -306,6 +306,7 @@ lean_binary(
 lean_axiom_test(
     name = "corejs_axioms_test",
     srcs = [
+        "EsmSplit/CoreJS/BindingFrame.lean",
         "EsmSplit/CoreJS/CellFootprintExamples.lean",
         "EsmSplit/CoreJS/DataProjection.lean",
         "EsmSplit/CoreJS/DeclarationArtifactsExamples.lean",
@@ -323,6 +324,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.BatchState",
         "EsmSplit.CoreJS.BindingCertificate",
         "EsmSplit.CoreJS.BindingFootprint",
+        "EsmSplit.CoreJS.BindingFrame",
         "EsmSplit.CoreJS.BindingMoves",
         "EsmSplit.CoreJS.CellFootprint",
         "EsmSplit.CoreJS.CellFootprintExamples",
@@ -483,6 +485,10 @@ lean_axiom_test(
         "CoreJS.perform_newObject",
         "CoreJS.perform_newFunction",
         "CoreJS.perform_bindingOrKeys",
+        "CoreJS.reachFrame_newCell",
+        "CoreJS.reachFrame_declare",
+        "CoreJS.Env.nodes_capture",
+        "CoreJS.reachFrame_initSelf",
         "CoreJS.reachFrame_lookupProp",
         "CoreJS.perform_has",
         "CoreJS.perform_get",
