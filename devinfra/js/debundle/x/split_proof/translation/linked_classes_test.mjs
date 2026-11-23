@@ -9,20 +9,12 @@ import {
   lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
-  root,
+  sequentialSplit,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
-function split(name, source, modules, order) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
 for (const [name, source, expected] of [
   [
     "default-derived",
@@ -64,7 +56,7 @@ for (const [name, source, expected] of [
     "after",
   ],
 ]) {
-  const test = split(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
+  const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "certified", name + ": " + test.log);
   if (name === "eager-heritage") {
     assert.equal(
@@ -106,7 +98,7 @@ for (const isStatic of [false, true]) {
       exportNamed([["result", "result"]]),
     ]);
     const order = ["box.mjs", "seed.mjs"];
-    const test = split(
+    const test = sequentialSplit(
       `field-${isStatic}-${dependent}`,
       source,
       { "seed.mjs": ["#0"], "box.mjs": ["#1"], [entry]: ["#2", "#3"] },
@@ -140,7 +132,7 @@ for (const [name, source, expectedReason] of [
   ["computed", "const B = class { ['x']() {} }; export const result = 1;", /computed class key/],
   ["static-block", "const B = class { static {} }; export const result = 1;", /StaticBlock/],
 ]) {
-  const test = split(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
+  const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "rejected", test.log);
   assert.match(test.verdict.reason, expectedReason);
   assert(!existsSync(test.out));

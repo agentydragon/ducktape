@@ -48,6 +48,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                 DET_NAME,
                 PROP,
                 path,
+                source,
                 n.lineno,
                 n.end_lineno,
                 "Casting PathLike to str for a PathLike-accepting API; pass Path directly.",

@@ -443,6 +443,7 @@ py_library(
     testonly = True,
     srcs = ["process_traces.py"],
     deps = [
+        "//testing:threaded_http",
         "@pypi//grpcio",
         "@pypi//opentelemetry_proto",
         "@pypi//protobuf",

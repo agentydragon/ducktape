@@ -63,20 +63,6 @@ jobs:
       - name: Run ansible-lint (thorough mode)
         run: .github/scripts/run-ansible-lint.sh
 
-      - name: Generate ansible-lint summary
-        if: always()
-        run: |
-          echo "### Ansible-lint Results (Full Mode)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Mode**: Full validation with dependencies" >> $GITHUB_STEP_SUMMARY
-          echo "**Flags**: No NODEPS, no --offline (complete checking)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ All playbooks passed ansible-lint" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
-          fi
-
       - name: Save Ansible Galaxy roles cache
         if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6

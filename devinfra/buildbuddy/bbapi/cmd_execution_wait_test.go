@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"reflect"
 	"strings"
 	"sync"
@@ -181,22 +180,17 @@ func TestExecutionWaitRejectsUnknownOutcomes(t *testing.T) {
 
 func TestExecutionWaitCommandCredentialsAndOutput(t *testing.T) {
 	s := &executionWaitServer{updates: []*longrunningpb.Operation{waitTestOperation(t, true, &repb.ExecuteResponse{Result: &repb.ActionResult{}})}}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	repb.RegisterExecutionServer(server, s)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
 	t.Setenv("BUILDBUDDY_API_KEY", "test-secret-key")
-	previousJSON, previousTimeout := jsonOutput, requestTimeout
-	jsonOutput, requestTimeout = true, 5*time.Second
-	t.Cleanup(func() { jsonOutput, requestTimeout = previousJSON, previousTimeout })
+	setJSONOutput(t, true)
+	previousTimeout := requestTimeout
+	requestTimeout = 5 * time.Second
+	t.Cleanup(func() { requestTimeout = previousTimeout })
 	var output bytes.Buffer
 	cmd := executionWaitCmd()
 	cmd.SetOut(&output)
-	cmd.SetArgs([]string{"--target", "http://" + listener.Addr().String(), waitTestID})
+	cmd.SetArgs([]string{"--target", startGRPCTestServer(t, server), waitTestID})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -219,10 +213,6 @@ func TestExecutionWaitCommandCredentialsAndOutput(t *testing.T) {
 
 func runExecutionWaitTest(t *testing.T, s *executionWaitServer, emitOverride ...func(executionWaitUpdate) error) ([]executionWaitUpdate, error) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.StreamInterceptor(func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		s.mu.Lock()
 		s.methods = append(s.methods, info.FullMethod)
@@ -235,9 +225,7 @@ func runExecutionWaitTest(t *testing.T, s *executionWaitServer, emitOverride ...
 		return handler(ctx, req)
 	}))
 	repb.RegisterExecutionServer(server, s)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	conn, err := newRPCConnection("http://"+listener.Addr().String(), "test-key", time.Second, 3)
+	conn, err := newRPCConnection(startGRPCTestServer(t, server), "test-key", time.Second, 3)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,6 @@
 import dataclasses
 import json
 import os
-import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,6 +13,7 @@ from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, Test
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci import publication_evidence
 from devinfra.ci.publication_test_verdicts import TestEvidence, TestGate, verify
+from testing.threaded_http import serve_http_in_thread
 
 RUN_ID = "4077673030700"
 ATTEMPT = "1"
@@ -412,16 +412,10 @@ def test_publication_reads_retry_evidence_through_the_real_go_exporter(
     monkeypatch.setenv("GITHUB_RUN_ID", RUN_ID)
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", ATTEMPT)
     monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
-    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
-        try:
-            monkeypatch.setenv("BUILDBUDDY_URL", f"http://127.0.0.1:{server.server_port}")
-            evidence = publication_evidence.load(
-                ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
-            ).tests
-        finally:
-            server.shutdown()
-            thread.join()
+    with serve_http_in_thread(ThreadingHTTPServer(("127.0.0.1", 0), Handler)) as server:
+        monkeypatch.setenv("BUILDBUDDY_URL", f"http://127.0.0.1:{server.server_port}")
+        evidence = publication_evidence.load(
+            ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
+        ).tests
     assert evidence.is_covered("//a:test")[0] is retry_passed
     assert evidence.already_failed("//a:test")[0] is not retry_passed

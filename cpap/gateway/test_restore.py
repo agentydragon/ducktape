@@ -4,13 +4,13 @@ from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Thread
 from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from cpap.gateway.restore import RestoreError, restore_card
+from testing.threaded_http import serve_http_in_thread
 
 EXPECTED_MAC = "02:13:24:35:46:57"
 NEW_SSID = "Test AP_1"
@@ -144,19 +144,11 @@ def local_servers() -> Iterator[_LocalServers]:
         card_state = _CardState()
         card_server = _CardServer(("127.0.0.1", 0), _CardHandler)
         card_server.state = card_state
-        stack.enter_context(card_server)
-        card_thread = Thread(target=card_server.serve_forever)
-        card_thread.start()
-        stack.callback(card_thread.join)
-        stack.callback(card_server.shutdown)
+        stack.enter_context(serve_http_in_thread(card_server))
 
         redirect_server = _RedirectServer(("127.0.0.1", 0), _RedirectHandler)
         redirect_server.requests = []
-        stack.enter_context(redirect_server)
-        redirect_thread = Thread(target=redirect_server.serve_forever)
-        redirect_thread.start()
-        stack.callback(redirect_thread.join)
-        stack.callback(redirect_server.shutdown)
+        stack.enter_context(serve_http_in_thread(redirect_server))
 
         card_host, card_port = cast(tuple[str, int], card_server.server_address)
         redirect_host, redirect_port = cast(tuple[str, int], redirect_server.server_address)

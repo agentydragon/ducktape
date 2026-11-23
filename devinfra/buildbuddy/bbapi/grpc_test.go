@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net"
 	"strings"
 	"testing"
 	"time"
@@ -31,15 +30,9 @@ func (s *largeInvocationServer) GetInvocation(ctx context.Context, req *invocati
 }
 
 func TestGRPCInvocationAcceptsLargeAuthenticatedResponse(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	bbspb.RegisterBuildBuddyServiceServer(server, &largeInvocationServer{key: "test-key"})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	conn, err := newRPCConnection("http://"+listener.Addr().String(), "test-key", 5*time.Second, 0)
+	conn, err := newRPCConnection(startGRPCTestServer(t, server), "test-key", 5*time.Second, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

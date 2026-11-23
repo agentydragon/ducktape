@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import {
   array,
   arrow,
+  assertCertifiedResult,
+  assertRejected,
   binary,
   block,
   call,
@@ -11,14 +11,12 @@ import {
   exportNamed,
   id,
   literal,
-  lower,
   member,
   observe,
-  prepare,
   program,
   property,
   returns,
-  root,
+  sequentialSplit,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
@@ -27,25 +25,9 @@ const entry = "entry.mjs";
 const worker = "worker.mjs";
 const includesCase = caseShard();
 
-function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, provider = "") {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider, spec: { entry, modules, order: [worker], sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, out, verdict, log }, result) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result });
-  assert.deepEqual(observe(path.join(out, entry), "result"), { result });
-}
-
-function assertRejected({ files, out, verdict, log }, reason, observation) {
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
-  assert(!existsSync(out));
-  assert.deepEqual(observe(files.sourceFile, "result"), observation);
+function assertRejectedObservation(test, reason, observation) {
+  assertRejected(test, reason);
+  assert.deepEqual(observe(test.files.sourceFile, "result"), observation);
 }
 
 const assign = (operator, left, right) => ({ type: "AssignmentExpression", operator, left, right });
@@ -90,7 +72,7 @@ for (const [operator, initial, rhs, expected, onMember] of [
     expect(target, expected),
     returns(target),
   ]);
-  assertCertified(split(operator, source), expected);
+  assertCertifiedResult(sequentialSplit(operator, source), expected);
 }
 
 for (const [operator, initial, selectsRhs, onMember] of [
@@ -117,7 +99,7 @@ for (const [operator, initial, selectsRhs, onMember] of [
     expect(selectsRhs ? call(target) : target, selectsRhs ? 42 : initial),
     returns(readResult),
   ]);
-  assertCertified(split(name, source), expected);
+  assertCertifiedResult(sequentialSplit(name, source), expected);
 }
 
 for (const [operator, prefix, onMember, updated] of [
@@ -137,12 +119,12 @@ for (const [operator, prefix, onMember, updated] of [
     expect(target, updated),
     returns(array([id("assigned"), target])),
   ]);
-  assertCertified(split(name, source), [expected, updated]);
+  assertCertifiedResult(sequentialSplit(name, source), [expected, updated]);
 }
 
 if (includesCase("reference-order")) {
-  assertCertified(
-    split(
+  assertCertifiedResult(
+    sequentialSplit(
       "reference-order",
       `const run = () => {
       let phase = "start";
@@ -176,8 +158,8 @@ if (includesCase("reference-order")) {
 }
 
 if (includesCase("abrupt-read")) {
-  assertCertified(
-    split(
+  assertCertifiedResult(
+    sequentialSplit(
       "abrupt-read",
       `const run = () => {
       try { target += (() => { throw "RHS ran"; })(); let target = 1; }
@@ -191,8 +173,8 @@ if (includesCase("abrupt-read")) {
 }
 
 if (includesCase("delete-own-property")) {
-  assertCertified(
-    split(
+  assertCertifiedResult(
+    sequentialSplit(
       "delete-own-property",
       `const run = () => {
       const list = [5];
@@ -214,13 +196,14 @@ for (const [name, mutation] of [
   ["short-circuited-import", 'shared ||= "updated"'],
 ]) {
   if (!includesCase(name)) continue;
-  assertRejected(
-    split(
+  assertRejectedObservation(
+    sequentialSplit(
       name,
       `import { shared } from "./provider.mjs";
       const run = () => { try { return ${mutation}; } catch { return shared; } };
       export const result = run();`,
       { [entry]: ["#0", "#2"], [worker]: ["#1"] },
+      [worker],
       'export let shared = "original";'
     ),
     /unsupported linked assignment to imported binding shared/,
@@ -240,5 +223,5 @@ for (const [name, mutation, reason, result] of [
 ]) {
   if (!includesCase(name)) continue;
   const source = `const run = () => { ${mutation} }; const result = run(); export { result };`;
-  assertRejected(split(name, source), reason, { result });
+  assertRejectedObservation(sequentialSplit(name, source), reason, { result });
 }

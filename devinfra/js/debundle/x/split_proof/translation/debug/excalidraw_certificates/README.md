@@ -127,6 +127,23 @@ lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
+### Browser smoke
+
+Run these opt-in targets on RBE:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof/translation
+bbr test "$p:excalidraw_original_editor_browser_smoke"
+bbr test "$p:excalidraw_certified_scroll_browser_smoke"
+```
+
+The baseline loads the pinned editor. The split test first certifies the single
+move with the `browser-page` profile and repeats certification with
+`--check-output`. After certification, Chromium draws a rectangle, calls the
+moved export and compares the entry's exported names with the baseline. It also
+checks that the browser loaded the exact certified entry and scroll bytes.
+[Smoke test](browser_smoke_test.py)
+
 ### Direct AST lowering for negated initializers
 
 On the same authored placement, adding logical negation and negated number literals to Lean's ESTree lowerer gave these counts. Each row counts source units after static imports are removed. In each replay's `moves.json`, subtract `externallyLowered` from `statements.length` to get the number Lean lowered directly.

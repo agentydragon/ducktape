@@ -3,20 +3,19 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  assertCertifiedResult,
   binary,
   call,
   exportNamed,
   forcePreview,
   id,
   literal,
-  lower,
   member,
   moduleEvaluationOrder,
   observe,
-  prepare,
+  sequentialSplit,
   program,
   property,
-  root,
   variable,
 } from "./testing/linked_programs.mjs";
 
@@ -26,17 +25,7 @@ const observer = "observer.mjs";
 const oneCall = { [owner]: ["#0"], [observer]: ["#1"], [entry]: ["#2"] };
 
 function split(name, source, modules = oneCall, order = [owner, observer]) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, dir, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, out, verdict, log }, result) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result });
-  assert.deepEqual(observe(path.join(out, entry), "result"), { result });
+  return sequentialSplit(name, source, modules, order);
 }
 
 const position = `function position(index, values) {
@@ -44,7 +33,7 @@ const position = `function position(index, values) {
 }`;
 
 // The exported Boolean records an eager call through the split's import.
-assertCertified(
+assertCertifiedResult(
   split(
     "position-observer",
     `${position}
@@ -77,7 +66,7 @@ for (const [name, length, index, result] of [
     ),
     exportNamed([["result", "result"]]),
   ]);
-  assertCertified(split(name, source), result);
+  assertCertifiedResult(split(name, source), result);
 }
 
 // Both schedules finish. In the forced split, the eager call sees the hoisted
@@ -90,7 +79,7 @@ for (const [name, length, index, result] of [
     export { result };`;
   const state = "state.mjs";
   const modules = { [owner]: ["#0"], [state]: ["#1", "#2"], [observer]: ["#3"], [entry]: ["#4"] };
-  assertCertified(split("after-length-write", source, modules, [owner, state, observer]), true);
+  assertCertifiedResult(split("after-length-write", source, modules, [owner, state, observer]), true);
 
   const order = [owner, observer, state];
   const early = split("before-length-write", source, modules, order);

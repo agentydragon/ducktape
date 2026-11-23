@@ -22,6 +22,7 @@ py_test(
     deps = [
         ":restore",
         "//:conftest",
+        "//testing:threaded_http",
         "@pypi//pytest",
     ],
 )

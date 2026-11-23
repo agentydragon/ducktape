@@ -13,24 +13,16 @@ import {
   lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
   returns,
-  root,
+  sequentialSplit,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
-function split(name, source, modules, order) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
 // The update gets a fresh lexical cell. A closure made before continue must still
 // see the first iteration's value, even after the update and the second iteration.
-const capture = split(
+const capture = sequentialSplit(
   "iteration-capture",
   `const capture = () => {
     let first;
@@ -87,7 +79,12 @@ for (const kind of ["ForStatement", "WhileStatement"]) {
       exportNamed([["result", "result"]]),
     ]);
     const order = ["result.mjs", "ready.mjs"];
-    const test = split(kind + dependent, source, { "ready.mjs": ["#0"], "result.mjs": ["#1"], [entry]: ["#2"] }, order);
+    const test = sequentialSplit(
+      kind + dependent,
+      source,
+      { "ready.mjs": ["#0"], "result.mjs": ["#1"], [entry]: ["#2"] },
+      order
+    );
     assert.deepEqual(observe(test.files.sourceFile, "result"), { result: kind });
     let candidate = test.out;
     if (dependent) {

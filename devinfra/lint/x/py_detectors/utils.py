@@ -32,17 +32,3 @@ def is_broad_exception(handler: ast.ExceptHandler) -> bool:
     if handler.type is None:
         return True
     return isinstance(handler.type, ast.Name) and handler.type.id in {"Exception", "BaseException"}
-
-
-def read_snippet(path: Path, start: int, end: int | None, context: int = 0) -> str:
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        # File unreadable - return empty snippet
-        return ""
-    lines = text.splitlines()
-    s = max(1, start - context)
-    e = min(len(lines), (end or start) + context)
-    # 1-based indexing for display
-    out = [f"{i:>5}: {lines[i - 1]}" for i in range(s, e + 1)]
-    return "\n".join(out)

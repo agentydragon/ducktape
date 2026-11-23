@@ -248,11 +248,9 @@ def test_the_annual_section_is_not_mistaken_for_monthly_rows() -> None:
     assert date(1927, 1, 1) not in frame.get_column("month").to_list()
 
 
-def test_a_gap_in_the_monthly_series_is_rejected() -> None:
-    """Row count against the date span. A dropped month would silently shorten every window in
-    the historical replay and misalign it against the other evidence series."""
-
-    body = _FRENCH_BODY.replace("192608,   2.64,  -1.20,   3.82,   0.25\n", "")
+def test_a_duplicate_cannot_mask_a_missing_month() -> None:
+    # July, July, September has the expected row count for a three-month range.
+    body = _FRENCH_BODY.replace("192608,", "192607,")
     with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
         french_factors_frame(_french_zip(body), FRENCH_FACTORS)
 
@@ -336,7 +334,7 @@ def test_international_market_is_the_all_country_dollar_mkt_column_as_decimals()
 @pytest.mark.parametrize(
     ("rows", "message"),
     [
-        ([("197501", 1.0), ("197503", 3.0)], "gapless"),
+        ([("197501", 1.0), ("197503", 3.0)], "gap or duplicate"),
         ([("197501", 1.0), ("197502", -99.99), ("197503", 3.0)], "missing in 1975-02-01"),
     ],
 )

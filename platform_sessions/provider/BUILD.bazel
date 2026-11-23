@@ -241,6 +241,7 @@ py_test(
         ":cdp_browser",
         ":interactive_browser",
         "//:conftest",
+        "//testing:threaded_http",
         "//testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",

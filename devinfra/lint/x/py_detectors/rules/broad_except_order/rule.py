@@ -25,6 +25,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                 DET_NAME,
                 PROP,
                 path,
+                source,
                 broad.lineno,
                 broad.end_lineno,
                 "Broad except precedes specific handler; later handler is unreachable.",

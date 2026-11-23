@@ -180,6 +180,7 @@ py_test(
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "//props:conftest",
+        "//testing:threaded_http",
         "@pypi//pytest",
         "@rules_python//python/runfiles",
     ],

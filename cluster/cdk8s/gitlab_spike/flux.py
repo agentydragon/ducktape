@@ -1,12 +1,11 @@
 """Deployment order for the GitLab evaluation instance and its proof integrations."""
 
-from cdk8s import App, Chart, JsonPatch
+from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from pydantic import BaseModel
 from python.runfiles import Runfiles
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -26,7 +25,7 @@ class Variables(BaseModel):
     human_ssh_keys: dict[str, SshKey]
 
 
-def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
+def gitops_chart(app: App) -> Chart:
     chart = Chart(app, GITOPS_NAME, disable_resource_name_hashes=True)
     runfiles_root = Runfiles.CreateOrRaise().root()
     variables = Variables(
@@ -35,8 +34,6 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
             for host in ("atlas", "iguana", "rugged", "wyrm2")
         }
     )
-    old = terraform.gitops_terraform(chart, "terraform", module=module, variables=variables)
-    old.add_json_patch(JsonPatch.add("/spec/suspend", True))
     identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
     for access_id, namespace, reads, writes in (
         (
@@ -56,7 +53,7 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         "workspace",
         name="gitlab-spike",
         provider_config_name="crossplane-gitlab-spike",
-        management_policies=["Observe"],
+        management_policies=["Observe", "Create", "Update"],
         kubernetes_identity=KUBERNETES_IDENTITY,
         variables=variables,
     )

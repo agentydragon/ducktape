@@ -23,6 +23,7 @@ go_test(
         "integration_testmain_test.go",
         "numeric_consumer_integration_test.go",
         "numeric_overlap_integration_test.go",
+        "numeric_retirement_integration_test.go",
         "upgrade_integration_test.go",
     ],
     embed = [":migrations"],

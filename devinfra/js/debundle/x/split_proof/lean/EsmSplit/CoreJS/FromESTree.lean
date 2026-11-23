@@ -106,7 +106,9 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
-    if profile == .browserPage && x == "window" then return .prim (.globalRef x) []
+    if profile.pageBindings.contains x then return .prim (.globalRef x) []
+    -- A successful typeof guard does not establish what a direct lookup would do.
+    if profile == .browserPage && x == "global" then return .prim (.opaqueAmbientRef x) []
     match x with
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
@@ -440,7 +442,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | other => throw s!"unsupported unary operator {other}"
     if op == .typeof && (← field argument "type") == "Identifier" && (field argument "k").toOption == some "G" then
       let name ← identifier argument
-      if (profile.stableTypeof name).isSome then return .prim (.globalTypeof name) []
+      if (profile.typeofBindings.lookup name).isSome then return .prim (.globalTypeof name) []
     return .unary op (← linkedExpr profile imports inFunction "" argument)
   | "BinaryExpression" =>
     let op ← field j "operator"

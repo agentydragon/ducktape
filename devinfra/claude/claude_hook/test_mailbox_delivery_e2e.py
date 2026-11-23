@@ -25,10 +25,10 @@ _CONTAINER_NAME = "ducktape-mailbox-e2e"
 
 
 @pytest.fixture
-def staged_project(tmp_path: Path) -> Path:
+def staged_project(runfiles: Runfiles, tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    profile_src = Runfiles.CreateOrRaise().root() / _TEST_PROFILE
+    profile_src = runfiles.root() / _TEST_PROFILE
     (project / "mailbox_test_profile.yaml").write_bytes(profile_src.read_bytes())
     (project / ".git").mkdir()
     return project
