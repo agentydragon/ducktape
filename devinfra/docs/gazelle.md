@@ -1,18 +1,13 @@
 # Gazelle
 
-Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates them;
-a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
-unresolvable import) is the drift check, and CI runs it on every PR (§ Drift check).
-For generator changes, `bb run //devinfra:gazelle -- -mode=diff` builds the
-current generator and checks the local tree in one invocation.
-Code-shape conventions (per-file libraries, `main_module` binaries, test-glob
-reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
+Run `gazelle` from the devshell after adding, moving or deleting Python files or
+changing imports. Use `gazelle -mode=diff` to check for BUILD drift and unresolved
+imports without writing files. The released binary reads the
+[Python import manifest](../gazelle_python.yaml) and BUILD directives from the checkout.
 
-The same binary is released (the `gazelle` pin in <../../nix/artifact-pins.json>) and
-the devshell puts it on PATH: `gazelle` from anywhere in a checkout regenerates BUILD
-files, `gazelle -mode=diff` checks drift, no Bazel involved. The plugin and patch are
-compiled in; the manifest (<../gazelle_python.yaml>) and directives are read from the
-tree.
+Use `bb run //devinfra:gazelle` to build and run the generator from the current
+tree. Add `-- -mode=diff` to check a change to the generator itself.
+[STYLE.md](../../STYLE.md#gazelle) owns BUILD conventions.
 
 ## Plugin and patch
 
@@ -45,8 +40,7 @@ and lazy imports belong in `deps`.
 Import validation is on; every escape is explicit and local:
 
 - `# gazelle:ignore <mod>` in the `.py` file for imports the environment provides
-  (`FreeCAD`, `gi`, `PySide6`, `pivy`) or that resolve to a
-  Bazel-generated `__init__` stub with no target of its own.
+  (`FreeCAD`, `gi`, `PySide6`, `pivy`).
 - `# gazelle:include_dep <label>` in the `.py` file for runtime-only deps the import
   scan cannot see, placed in the module that triggers the hidden import: SQLAlchemy
   dialect drivers, wheel extras imported at module load (py-key-value backends,
