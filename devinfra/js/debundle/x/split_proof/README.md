@@ -67,7 +67,7 @@ resolves to the same live cell in both graphs. Source-bearing re-exports such as
 
 Ordinary top-level function declarations with identifier parameters are initialized when the modules link. A call can reach a declared function before its statement executes, while its closed-over lexical bindings still observe their own initialization order. The checker uses the same scope correspondence for recursive references and deferred function bodies. Nested declarations, async and generator functions, and default parameters remain outside this fragment.
 
-In linked programs, a conditional expression evaluates its test once and runs the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes.
+In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
 
 Linked member expressions support dot access and computed keys with modeled primitive
 property names. A member call evaluates its receiver and key once, reads the callee before
