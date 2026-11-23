@@ -1,5 +1,5 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
-load("//devinfra/lint:linters.bzl", "eslint_test")
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("//devinfra/lint:module_entry_points.bzl", "eslint_entry_points")
 
 _EVALORDER = "//devinfra/js/debundle/x/split_proof/lean:evalorder"
 
@@ -21,13 +21,4 @@ js_test(
     tags = ["manual"],
 )
 
-js_library(
-    name = "lint_sources",
-    testonly = True,
-    srcs = ["check.mjs"],
-)
-
-eslint_test(
-    name = "eslint_test",
-    srcs = [":lint_sources"],
-)
+eslint_entry_points(name = "eslint_entry_points_test")

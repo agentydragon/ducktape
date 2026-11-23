@@ -22,14 +22,10 @@ js_library(
     deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
 )
 
-# Include first-party runfile helpers as lint sources.
-js_library(
-    name = "lint_sources",
-    testonly = True,
-    srcs = glob(["*.mjs"]),
-)
-
 eslint_test(
     name = "eslint_test",
-    srcs = [":lint_sources"],
+    srcs = [
+        ":differential",
+        ":sources",
+    ],
 )
