@@ -47,10 +47,11 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(
     gateway_integrations = json.loads(remote.CANARY_CONFIG.data["gateway-integrations.json"])["integrations"]
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert "myquest-canary" not in json.loads(remote.CONFIG.data["connections.json"])
+    shared_image = find_resource(direct_workloads, "ImageRepository", remote.SHARED_PROVIDERS_IMAGE)["spec"]["image"]
     assert {
         find_resource(direct_workloads, "Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
-    } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
+    } == {f"{shared_image}:unset"}
     assert (
         sum(
             item["kind"] == "ImagePolicy" and item["metadata"]["name"] == remote.SHARED_PROVIDERS_IMAGE

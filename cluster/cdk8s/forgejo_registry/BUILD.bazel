@@ -7,14 +7,17 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "image_automation",
     srcs = ["image_automation.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/platform_sessions:__pkg__",
+    ],
     deps = [
+        ":pull_credentials",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "@pypi//cdk8s",
-        "@pypi//constructs",
     ],
 )
 
