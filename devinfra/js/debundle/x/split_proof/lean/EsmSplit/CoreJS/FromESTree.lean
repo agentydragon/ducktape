@@ -310,12 +310,13 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let rhs ← j.getObjVal? "right"
     match ← field target "type" with
     | "Identifier" =>
-      -- Linked import reads share the exporter's cell, but writes through an import are read-only.
-      if (← field target "k") == "V" then
-        throw s!"unsupported linked assignment to imported binding {← identifier target}"
       let .var name ← reference imports inFunction target
-        | throw "expected a local or module binding in linked assignment"
-      return .assign (.var name) (← linkedExpr imports inFunction name rhs)
+        | throw "expected a binding in linked assignment"
+      -- Emission may introduce a glue import without changing the original module
+      -- reference annotation. Function-local references still shadow imports.
+      let scope ← field target "k"
+      let destination : Target := if scope != "L" && imports.contains name then .frozen name else .var name
+      return .assign destination (← linkedExpr imports inFunction name rhs)
     | "MemberExpression" =>
       let lower := linkedExpr imports inFunction ""
       let (base, key) ← linkedMember lower target
