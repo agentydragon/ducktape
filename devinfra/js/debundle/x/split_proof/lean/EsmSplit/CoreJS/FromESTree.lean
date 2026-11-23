@@ -317,6 +317,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     match op with
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
+    | "in" => return .hasProp left right
     | "!=" =>
       unless stringOperand left && stringOperand right do
         throw "linked != requires two string operands (string literals or typeof expressions)"
