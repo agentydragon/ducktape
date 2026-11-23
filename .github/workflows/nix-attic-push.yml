@@ -64,13 +64,3 @@ jobs:
 
       - name: Build and push ${{ matrix.cache }} outputs
         run: devinfra/ci/nix_attic_build_and_push.sh "${{ matrix.cache }}"
-
-      - name: Generate summary
-        if: always()
-        run: |
-          echo "### Nix Attic Push" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "${{ matrix.cache }} outputs built and pushed to cache" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "${{ matrix.cache }} outputs failed to build" >> $GITHUB_STEP_SUMMARY
-          fi
