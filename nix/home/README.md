@@ -38,20 +38,6 @@ Files at the root level (`claude_code/`, `gemini_cli.nix`, etc.) are **personal 
 - Wire up personal settings and preferences
 - Connect multiple generic modules together
 
-Example:
-
-```nix
-# gemini_cli.nix - personal integration (abridged)
-let
-  allowed = import ./allowed-commands.nix;
-in {
-  programs.gemini-cli = {
-    enable = true;
-    policies.allowed-commands = map (toGeminiRule 300) allowed.noSudo;
-  };
-}
-```
-
 ### Single Source of Truth (SSOT) Files
 
 - **`allowed-commands.nix`**: Allowed bash commands for Claude Code, Gemini CLI, and Codex execpolicy

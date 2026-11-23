@@ -1,48 +1,5 @@
-# Generic Gemini CLI home-manager module
-#
-# This is a standard home-manager module that could potentially be upstreamed.
-# It provides declarative configuration for Gemini CLI.
-#
-# Example usage:
-#   programs.gemini-cli = {
-#     enable = true;
-#     package = pkgs.gemini-cli;
-#
-#     settings = {
-#       general = {
-#         defaultApprovalMode = "default";
-#         enableAutoUpdate = true;
-#         sessionRetention.maxAge = 9999;
-#       };
-#       ui = {
-#         theme = "dark";
-#         autoThemeSwitching = true;
-#       };
-#       context = {
-#         fileName = [ "AGENTS.md" "GEMINI.md" ];
-#         includeDirectories = [ "/code" ];
-#       };
-#     };
-#
-#     policies = {
-#       allowed-commands = [
-#         {
-#           toolName = "run_shell_command";
-#           commandPrefix = "git status";
-#           decision = "allow";
-#           priority = 300;
-#         }
-#       ];
-#       inspection-commands = [
-#         {
-#           toolName = "run_shell_command";
-#           commandPrefix = "sudo lshw";
-#           decision = "allow";
-#           priority = 350;
-#         }
-#       ];
-#     };
-#   };
+# Policy and skill extensions to the former Home Manager Gemini CLI module.
+# See ../home.nix for the disabled imports and ../gemini_cli.nix for the consumer.
 {
   config,
   lib,
