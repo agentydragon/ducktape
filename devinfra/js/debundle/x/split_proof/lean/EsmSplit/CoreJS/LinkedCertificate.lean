@@ -6,6 +6,7 @@ import EsmSplit.CertificateData
 import EsmSplit.CoreJS.BatchState
 import EsmSplit.CoreJS.ClassParents
 import EsmSplit.CoreJS.DenseArray
+import EsmSplit.CoreJS.LinkedLocalMove
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.LiteralRecord
@@ -228,7 +229,7 @@ private def indexTreeExpr (tree : LiteralFieldIndex.Tree) : Lean.Expr :=
 /-- The syntax retains the checked original field list. Wide records expose
 individual lookups, while small records expose their full property list so
 later operations can inspect or replace its descriptors. -/
-private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) :
+private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) (checkMove : Bool) :
     EsmSplit.CertificateData.Quotes ε String := do
   let stem := s!"record{index}"
   -- Many static reads amortize quoting a tree. Its projection must retain the
@@ -263,6 +264,10 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
     s!"rfl {stem}Width fuel env\n" ++
     s!"@[cbv_eval] private theorem {stem}Reverse : {stem}Fields.reverse = {stem}Data.reverse :=\n" ++
     s!"  congrArg List.reverse {stem}Eq\n"
+  if checkMove then
+    definitions := definitions ++
+      s!"@[cbv_eval] private theorem {stem}Reads : CoreJS.readsNowProps {stem}Props = [] := LinkedBehavior.literalReads {stem}Fields\n" ++
+      s!"@[cbv_eval] private theorem {stem}Allocs : CoreJS.allocOnlyProps {stem}Props = true := LinkedBehavior.literalAllocs {stem}Fields\n"
   if fields.length < wideRecordMinFields then
     let props ← EsmSplit.CertificateData.quote (stem ++ "OwnProperties") (Lean.toExpr (literalProperties fields))
     return definitions ++ s!"@[cbv_eval] private theorem {stem}OwnProperties :\n" ++
@@ -841,7 +846,8 @@ private def layoutDeclaration (visibility program : String) : String :=
 
 /-- Three separately compiled modules check the shared result state before the
 ordinary AST gate imports their execution theorem. -/
-private def checkpointText (preamble options declarations correspondence : String) (fuel : Nat) (stageLink ordered : Bool) : CheckpointText :=
+private def checkpointText (preamble options declarations correspondence : String) (fuel : Nat)
+    (stageLink ordered : Bool) (move : Option (Nat × Nat)) : CheckpointText :=
   let sourceLayout := if stageLink then layoutDeclaration "" "source" else ""
   let candidateLayout := if stageLink then layoutDeclaration "private " "candidate" else ""
   let reduceSource := if stageLink then s!"    reduce_linked_run_from {fuel} sourceLink w\n"
@@ -853,6 +859,12 @@ private def checkpointText (preamble options declarations correspondence : Strin
       s!"  | have same : runProgram w {fuel} source = runProgram w {fuel} candidate := by\n" ++
       s!"      check_ordered_linked_runs {fuel} sourceLink candidateLink w\n" ++
       "    exact same.symm.trans (sourceWitness w).property\n" ++
+      "  | " ++ replay
+    else if let some (start, width) := move then
+      "  first\n" ++
+      s!"  | apply LinkedBehavior.run_ok_of_moved_link (start := {start}) (width := {width}) " ++
+      "((sourceLink w).get (by rfl)) ((candidateLink w).get (by rfl)) _ _ (sourceWitness w).property\n" ++
+      "    · rfl\n    · cbv <;> rfl\n" ++
       "  | " ++ replay
     else "  " ++ replay
   let checkExports := if stageLink then "  · verify_linked_exports_from sourceLink candidateLink\n"
@@ -928,11 +940,13 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let s ← EsmSplit.CertificateData.quote "source" sourceData
   let c ← EsmSplit.CertificateData.quote "candidate" candidateData
   let hasWideRecord := records.fields.any (·.length ≥ wideRecordMinFields)
+  let checkpointed := premises = {} && writes.batches.isEmpty && expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024
+  let move := if checkpointed then earlierMove? source candidate else none
   let recordTerms ← if records.fields.isEmpty then pure "" else do
     let keys := if hasWideRecord then
       (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
     else #[]
-    let definitions ← records.fields.zipIdx.toList.mapM fun (fields, index) => recordDefinitions index fields keys
+    let definitions ← records.fields.zipIdx.toList.mapM fun (fields, index) => recordDefinitions index fields keys move.isSome
     pure ("attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++ String.join definitions)
   let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
   let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
@@ -981,10 +995,9 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let correspondence := "open LinkedExecutionProof\n" ++ raw ++ gate
   -- The measured 384-field and 705-field cases benefit from separate processes.
   -- Smaller proofs avoid their startup cost. Write batches use file-local CBV rules.
-  let checkpoint := if premises = {} ∧ writes.batches.isEmpty ∧ expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024 then
-      -- Wide records also benefit from staging the link below the statement cutoff.
+  let checkpoint := if checkpointed then
       some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel
-        (stageLink || hasWideRecord) ordered)
+        (stageLink || hasWideRecord || move.isSome) ordered move)
     else none
   return { preamble, execution, correspondence, stagedGate, checkpoint, premises }
 

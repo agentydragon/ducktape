@@ -98,6 +98,30 @@ theorem orderedClosure :
 
 #audit_linked_programs orderedClosure
 
+-- Both graphs link two independent allocations and run them in opposite order.
+-- Reading the other allocation by its local binding makes the swap ineligible.
+private def allocationPair (value : Expr) (swap : Bool) : Program :=
+  let a := (0, Stmt.decl .const "a" (.arr []))
+  let b := (1, Stmt.decl .const "b" value)
+  ⟨"main", [⟨"main", [], if swap then [b, a] else [a, b], []⟩]⟩
+
+#guard LinkedBehavior.earlierMove? (allocationPair (.arr []) false) (allocationPair (.arr []) true) == some (0, 1)
+#guard (LinkedBehavior.earlierMove? (allocationPair (.var "a") false) (allocationPair (.var "a") true)).isNone
+
+private noncomputable def allocationLink (w : World) :
+    Option (LinkedBehavior.CheckedLink (allocationPair (.arr []) false) w) := by check_linked_layout
+
+private noncomputable def swappedLink (w : World) :
+    Option (LinkedBehavior.CheckedLink (allocationPair (.arr []) true) w) := by check_linked_layout
+
+example (w : World) (final : State w)
+    (sourceRun : runProgram w 16 (allocationPair (.arr []) false) = .ok () final) :
+    runProgram w 16 (allocationPair (.arr []) true) = .ok () final := by
+  apply LinkedBehavior.run_ok_of_moved_link (start := 0) (width := 1)
+    ((allocationLink w).get (by rfl)) ((swappedLink w).get (by rfl)) _ _ sourceRun
+  · rfl
+  · cbv <;> rfl
+
 open Lean (Json)
 
 -- The insertion order and a negative decimal distinguish this literal from a reparse of
