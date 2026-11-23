@@ -454,6 +454,36 @@ bb ssh my-debug-session
 
 This gives a full shell on the executor for investigating build failures, inspecting the filesystem, testing commands interactively, etc.
 
+### Persistent dev boxes with `bb box`
+
+`bb box create [name]` submits a 24-hour `bb execute` action that runs `bb ssh-server` inside a
+Firecracker VM, then exits, leaving the VM reachable over SSH. The optional name becomes the action's
+`runner-recycling-key`, so creating the same box again reconnects to the same runner; an unnamed box is
+ephemeral. The grace period only applies after the last SSH client disconnects: the VM stays alive while
+a client is connected, then survives the grace period before `bb ssh-server` exits and the runner is
+released. `bb ssh-server` defaults that period to 1 minute and caps it at 5 minutes.
+
+`bb box create` cannot size the VM. Requesting CPU, memory or disk means running the SSH server action
+directly with the sizing exec properties, which is the one mechanism for a custom-sized box:
+
+```bash
+bb execute --remote_timeout=24h \
+  -exec_properties=workload-isolation-type=firecracker \
+  -exec_properties=network=external \
+  -exec_properties=DockerUser=buildbuddy \
+  -exec_properties=recycle-runner=true \
+  -exec_properties="runner-recycling-key=my-dev-box" \
+  -exec_properties="container-image=docker://ghcr.io/agentydragon/rbe-container-image:latest" \
+  -exec_properties="EstimatedCPU=4" \
+  -exec_properties="EstimatedMemory=8GB" \
+  -exec_properties="EstimatedFreeDiskBytes=20GB" \
+  -- bb ssh-server --grace_period=5m --idle_timeout=5m my-dev-box
+```
+
+Connect from another terminal with `bb ssh my-dev-box`. `bb ssh` tunnels over a userspace WireGuard
+interface and carries SSH only: no port forwarding, and UDP cannot cross an HTTPS-only egress proxy, so
+the client needs a network path that allows UDP to the WireGuard gateway.
+
 ## BuildBuddy Concepts
 
 **Group ID**: BuildBuddy's organization identifier (e.g., `GR7963402054611859571`).
