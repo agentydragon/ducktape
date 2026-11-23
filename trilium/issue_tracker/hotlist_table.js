@@ -57,32 +57,20 @@ class IssueTable {
   }
 
   getIssues() {
-    let searchString = "#issue";
-    if (this.stateIds && this.stateIds.length > 0) {
-      searchString += " AND ";
-      if (this.stateIds.length > 1) {
-        searchString += "(";
+    const terms = ["#issue"];
+    for (const [relation, ids, exclude] of [
+      ["state", this.stateIds, false],
+      ["hotlist", this.hotlistIncludeIds, false],
+      ["hotlist", this.hotlistExcludeIds, true],
+    ]) {
+      if (ids.length === 0) {
+        continue;
       }
-      searchString += this.stateIds.map((stateId) => "~state.noteId=" + stateId).join(" OR ");
-      if (this.stateIds.length > 1) {
-        searchString += ")";
-      }
+      const matches = ids.map((id) => `~${relation}.noteId=${id}`).join(" OR ");
+      const grouped = ids.length > 1 || exclude ? `(${matches})` : matches;
+      terms.push(exclude ? `NOT ${grouped}` : grouped);
     }
-    if (this.hotlistIncludeIds.length > 0) {
-      searchString += " AND ";
-      if (this.hotlistIncludeIds.length > 1) {
-        searchString += "(";
-      }
-      searchString += this.hotlistIncludeIds.map((hotlistId) => "~hotlist.noteId=" + hotlistId).join(" OR ");
-      if (this.hotlistIncludeIds.length > 1) {
-        searchString += ")";
-      }
-    }
-    if (this.hotlistExcludeIds.length > 0) {
-      searchString += " AND NOT (";
-      searchString += this.hotlistExcludeIds.map((hotlistId) => "~hotlist.noteId=" + hotlistId).join(" OR ");
-      searchString += ")";
-    }
+    const searchString = terms.join(" AND ");
     console.log("search string", searchString);
 
     return api.runOnBackend(
@@ -110,7 +98,7 @@ class IssueTable {
 
       const link = $('<a href="#">')
         .text(note.title)
-        .click(() => this.toggleHotlist(note.noteId));
+        .click(() => this.toggleHotlist(note.noteId, item));
       item.append(link);
       this.$hotlistList.append(item);
     }
@@ -156,18 +144,17 @@ class IssueTable {
     }
   }
 
-  async toggleHotlist(hotlistId) {
-    this.$hotlistList.find("[data-hotlist-id]").removeClass("active");
+  async toggleHotlist(hotlistId, item) {
     if (this.hotlistIncludeIds.includes(hotlistId)) {
       this.hotlistIncludeIds = this.hotlistIncludeIds.filter((id) => id !== hotlistId);
       this.hotlistExcludeIds.push(hotlistId);
-      this.$hotlistList.find("[data-hotlist-id=" + hotlistId + "]").addClass("excluded");
+      item.removeClass("active").addClass("excluded");
     } else if (this.hotlistExcludeIds.includes(hotlistId)) {
       this.hotlistExcludeIds = this.hotlistExcludeIds.filter((id) => id !== hotlistId);
-      this.$hotlistList.find("[data-hotlist-id=" + hotlistId + "]").removeClass("excluded");
+      item.removeClass("excluded");
     } else {
       this.hotlistIncludeIds.push(hotlistId);
-      this.$hotlistList.find("[data-hotlist-id=" + hotlistId + "]").addClass("active");
+      item.addClass("active");
     }
     await this.fillIssueTable();
   }
