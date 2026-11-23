@@ -30,12 +30,31 @@ assert.deepEqual(
   Object.entries(await import(pathToFileURL(path.join(out, entry)))),
   Object.entries(await import(pathToFileURL(source)))
 );
+// Run the corpus consumer in a new realm, including after changing the provider.
+function probe() {
+  const script = "const {default: read} = await import(process.argv[1]); read(await import(process.argv[2]));";
+  const run = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      script,
+      pathToFileURL(process.env.PROBE).href,
+      pathToFileURL(path.join(out, entry)).href,
+    ],
+    { encoding: "utf8" }
+  );
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout;
+}
+assert.equal(probe(), "1\n");
 check(out, "certified", "--check-output");
 const file = path.join(out, provider);
 const body = readFileSync(file, "utf8");
 const changed = body.replace("1", "2");
 assert.notEqual(body, changed);
 writeFileSync(file, changed);
+assert.equal(probe(), "2\n");
 check(out, "rejected", "--check-output");
 place({ [entry]: ["#0"], [provider]: ["#1"] });
 const bad = path.join(process.env.TEST_TMPDIR, "bad");

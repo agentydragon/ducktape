@@ -1383,6 +1383,9 @@ debundle_e2e_test(
 )
 
 exports_files(
-    ["cases/emission/catchall_export_consumer/app.js"],
+    [
+        "cases/emission/catchall_export_consumer/app.js",
+        "cases/emission/catchall_export_consumer/read.probe.mjs",
+    ],
     visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
 )

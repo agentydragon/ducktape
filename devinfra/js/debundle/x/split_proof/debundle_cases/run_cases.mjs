@@ -13,7 +13,18 @@
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
 import { classify, rejectKind, wanted } from "./verdict.mjs";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  constants,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -362,6 +373,24 @@ function runCase(dir, specName, expected) {
       moved: placed.reduce((sum, [, held]) => sum + held.length, 0),
     };
 
+    // The adapter writes one flat chunk into split/. Debundle's runtime_files
+    // destinations are rooted at the chunk (e.g. main/provider.js).
+    const runtimeFiles = Object.entries(expected.accept?.runtime_files ?? {});
+    for (const [dest, src] of runtimeFiles) {
+      if (!dest.startsWith(chunk + "/")) continue;
+      const relative = dest.slice(chunk.length + 1);
+      if (
+        [relative, src].some(
+          (file) => path.isAbsolute(file) || file.split("/").some((part) => !part || part === "." || part === "..")
+        )
+      ) {
+        throw new Error(`invalid runtime fixture: ${dest}: ${src}`);
+      }
+      const file = path.join(stage, "split", relative);
+      mkdirSync(path.dirname(file), { recursive: true });
+      copyFileSync(path.join(dir, src), file, constants.COPYFILE_EXCL);
+    }
+
     if (keepDir) {
       writeFileSync(path.join(stage, "checker_output.txt"), checked.stdout + checked.stderr);
       cpSync(stage, path.join(keepDir, id), { recursive: true });
@@ -388,8 +417,10 @@ function runCase(dir, specName, expected) {
       },
       unchecked:
         "accept" in expected
-          ? Object.keys(expected.accept).filter((k) =>
-              ["source", "exports", "probes", "check_all_js", "runtime_files"].includes(k)
+          ? Object.keys(expected.accept).filter(
+              (k) =>
+                ["source", "exports", "probes", "check_all_js"].includes(k) ||
+                (k === "runtime_files" && runtimeFiles.some(([dest]) => !dest.startsWith(chunk + "/")))
             )
           : [],
     };
