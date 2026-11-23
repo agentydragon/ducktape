@@ -1234,6 +1234,11 @@ js_library(
 )
 
 js_library(
+    name = "spawn_and_wait",
+    srcs = ["spawn_and_wait.mjs"],
+)
+
+js_library(
     name = "coverage_audit",
     srcs = ["coverage_audit.mjs"],
     deps = [
@@ -1242,6 +1247,7 @@ js_library(
         ":node_modules/acorn",
         ":node_modules/shift-codegen",
         ":node_modules/shift-fuzzer",
+        ":spawn_and_wait",
         ":syntax_inventory",
         "//devinfra/js/debundle/x/split_proof:seeded_random",
     ],
@@ -1254,6 +1260,7 @@ js_library(
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":spawn_and_wait",
         ":syntax_inventory",
     ],
 )
