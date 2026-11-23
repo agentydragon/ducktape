@@ -269,7 +269,7 @@ theorem reachFrame_copyBindings {r R cells A} (away : Away r R A)
     ReachFrame r R cells A (fun env' => ∀ n ∈ env'.nodes, A n) (copyBindings env xs : M W Env) :=
   (reachFrame_boundCells away env xs safe).bind_stateRead fun bs hb => reachFrame_declare away outside env bs safe hb
 
-private theorem reachFrame_addPrototype {r R cells A} (away : Away r R A) (objectRoot : A (.obj objectProto))
+theorem reachFrame_addPrototype {r R cells A} (away : Away r R A) (objectRoot : A (.obj objectProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (a : Addr) (ha : A (.obj a)) :
