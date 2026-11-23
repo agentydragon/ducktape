@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import CTE
 
+from finance.budget.classified_transaction import ClassifiedTransaction
 from finance.budget.schema import (
     AccountCondition,
     AllOfCondition,
@@ -363,24 +364,9 @@ async def read_budget_bucket_transactions(
     return BudgetTransactionsResponse(bucket_id=bucket_id, transactions=transactions)
 
 
-@dataclass(frozen=True)
-class ClassifiedRow:
-    """One live classified transaction, as the Beancount exporter consumes it."""
-
-    transaction_id: str
-    date: date
-    amount: Decimal
-    name: str
-    merchant_name: str | None
-    pfc_primary: str | None
-    pfc_detailed: str | None
-    account_id: str
-    bucket_id: str
-
-
 async def read_all_classified(
     *, session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig, window_start: date, window_end: date
-) -> tuple[ClassifiedRow, ...]:
+) -> tuple[ClassifiedTransaction, ...]:
     """Return every live transaction in [window_start, window_end] with its bucket.
 
     Unlike the snapshot/drilldown readers this returns all buckets at once and applies
@@ -402,18 +388,5 @@ async def read_all_classified(
         classified_tx.c.bucket_id,
     ).order_by(classified_tx.c.date, classified_tx.c.transaction_id)
     async with session_factory() as session:
-        rows = (await session.execute(stmt)).mappings()
-        return tuple(
-            ClassifiedRow(
-                transaction_id=row["transaction_id"],
-                date=row["date"],
-                amount=row["amount"],
-                name=row["name"],
-                merchant_name=row["merchant_name"],
-                pfc_primary=row["pfc_primary"],
-                pfc_detailed=row["pfc_detailed"],
-                account_id=row["account_id"],
-                bucket_id=row["bucket_id"],
-            )
-            for row in rows
-        )
+        rows = await session.execute(stmt)
+        return tuple(ClassifiedTransaction(**row._asdict()) for row in rows)

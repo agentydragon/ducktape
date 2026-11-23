@@ -26,14 +26,13 @@ to cents) so re-running the exporter produces no spurious git commits.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal
 
 from beancount.core import data
 from beancount.core.amount import Amount
 from beancount.parser import printer
 
+from finance.budget.classified_transaction import ClassifiedTransaction
 from finance.budget.schema import BucketDef, BucketKind
 
 _CENTS = Decimal("0.01")
@@ -49,28 +48,6 @@ _KIND_ROOT: dict[BucketKind, str] = {
     BucketKind.INFLOW: "Income",
     BucketKind.TRANSFER: "Equity:Transfers",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class ClassifiedTxn:
-    """One live Plaid transaction with its assigned bucket.
-
-    The funding leg is keyed by ``account_id`` (resolved against the funding-account
-    map passed to :func:`render_ledger`); the contra leg comes from the bucket. The
-    Plaid fields are carried through as ledger metadata for additive reconciliation.
-    """
-
-    transaction_id: str
-    date: date
-    # Plaid sign convention: outflows positive, inflows negative.
-    amount: Decimal
-    name: str
-    account_id: str
-    bucket_id: str
-    merchant_name: str | None = None
-    pfc_primary: str | None = None
-    pfc_detailed: str | None = None
-    iso_currency_code: str | None = None
 
 
 def _segment(bucket_id: str) -> str:
@@ -107,7 +84,7 @@ def _escape_option(value: str) -> str:
 
 
 def render_ledger(
-    txns: Sequence[ClassifiedTxn],
+    txns: Sequence[ClassifiedTransaction],
     buckets: Mapping[str, BucketDef],
     funding_accounts: Mapping[str, str],
     *,
