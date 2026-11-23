@@ -29,15 +29,14 @@ exports_files(["ownership_subset.json"])
 copy_to_directory(
     name = "package_root",
     srcs = ["fixture/package/package.json"],
-    out = "package_root",
     root_paths = [package_name() + "/fixture/package"],
 )
 
 copy_to_directory(
     name = "relocatable_source",
     srcs = [":source"],
-    out = "relocatable_source",
-    root_paths = [package_name()],
+    # Saved graph provenance resolves these files by their workspace-relative paths.
+    root_paths = [],
 )
 
 fixture_analysis(name = "analysis")
