@@ -371,7 +371,7 @@ partial def needsOpaqueContext (j : Json) (checkPrivateNames := false) : Bool :=
 The scope resolver supplies references to cells outside the retained callable. -/
 private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : Bool)
     (arity : Nat) (reason : String) : Except String Func := do
-  if needsOpaqueContext j (checkPrivateNames := kind == .asyncMethod) then throw reason
+  if needsOpaqueContext j (checkPrivateNames := kind == .asyncFn) then throw reason
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
@@ -565,13 +565,15 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
 private partial def linkedFunction (profile : HostProfile) (imports : List Name) (kind : FuncKind) (name : Name) (self : Bool)
     (j : Json) : Except String Func := do
   let async ← j.getObjValAs? Bool "async"
-  if (← j.getObjValAs? Bool "generator") || (async && kind != .method) then
-    throw "unsupported async or generator function"
+  if ← j.getObjValAs? Bool "generator" then
+    throw "unsupported generator function"
   let parameters ← j.getObjValAs? (Array Json) "params"
   let tags ← parameters.mapM fun param => field param "type"
   if async then
     let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
-    return ← deferredFunction j .asyncMethod name self arity "async method invocation requires Promise semantics"
+    -- makeFunc captures the enclosing this as well as named cells. No async
+    -- callable enters the ordinary function evaluator.
+    return ← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics"
   let hasDefaults := tags.contains "AssignmentPattern"
   let mut params : Array (Name × Option Expr) := #[]
   let mut bound : Array Name := #[]

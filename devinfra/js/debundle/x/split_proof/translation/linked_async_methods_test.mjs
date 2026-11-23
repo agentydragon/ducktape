@@ -55,12 +55,46 @@ assert.equal(
 
 assertRejected(
   workerSplit("reached-async-method", "const box = { async run() { return 1; } }; export const value = box.run();"),
-  /deferred function run: async method invocation requires Promise semantics/
+  /deferred function run: async invocation requires Promise semantics/
 );
 assertRejected(
   workerSplit(
     "async-method-needs-home",
     "class Box { async read() { return super.read(); } } export const value = Box;"
   ),
-  /async method/
+  /async invocation/
+);
+
+// An async declaration is callable before its declaration is evaluated. Reading
+// it during initialization is modeled; await the exported callables later in Node.
+const functions = sequentialSplit(
+  "deferred-async-functions",
+  `const offset = 2;
+   const before = read;
+   async function read(x, y = offset) { return await x + y; }
+   const arrow = async (...xs) => (await read(xs[0])) + offset;
+   const named = async function inner(x) { return x ? inner(0) : offset; };
+   export { before, read, arrow, named };`,
+  { "offset.mjs": ["#0"], "funcs.mjs": ["#1", "#2", "#3", "#4"], "entry.mjs": ["#5"] },
+  ["offset.mjs", "funcs.mjs"]
+);
+assert.equal(functions.verdict.status, "certified", functions.log);
+for (const file of [functions.files.sourceFile, path.join(functions.out, "entry.mjs")]) {
+  const { before, read, arrow, named } = await import(pathToFileURL(file).href);
+  assert.equal(before, read);
+  for (const [fn, name, length] of [
+    [read, "read", 1],
+    [arrow, "arrow", 0],
+    [named, "inner", 1],
+  ]) {
+    assert.equal(Object.getPrototypeOf(fn), intrinsic);
+    assert.equal(fn.name, name);
+    assert.equal(fn.length, length);
+    assert.throws(() => new fn(), TypeError);
+  }
+  assert.deepEqual(await Promise.all([read(3), arrow(4), named(1)]), [5, 8, 2]);
+}
+assertRejected(
+  workerSplit("reached-async-function", "async function run() { return 1; } export const value = run();"),
+  /deferred function run: async invocation requires Promise semantics/
 );

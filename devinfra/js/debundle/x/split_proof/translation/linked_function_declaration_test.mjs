@@ -139,8 +139,7 @@ for (const [seed, value] of ["initialized", 42].entries()) {
 }
 
 for (const [name, source, count, reason] of [
-  ["async", "async function read() { return 3; } export { read };", 2, /unsupported async or generator function/],
-  ["generator", "function* read() { return 3; } export { read };", 2, /unsupported async or generator function/],
+  ["generator", "function* read() { return 3; } export { read };", 2, /unsupported generator function/],
   [
     "block-local",
     "function read() { { function nested() { return 3; } return nested(); } } read(); export { read };",
