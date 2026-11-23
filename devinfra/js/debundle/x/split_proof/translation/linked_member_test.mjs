@@ -6,6 +6,7 @@ import {
   arrow,
   block,
   call,
+  conditional,
   forcePreview,
   functionExpression,
   id,
@@ -16,6 +17,7 @@ import {
   property,
   returns,
   root,
+  throws,
   variable,
 } from "./linked_programs_test_support.mjs";
 
@@ -128,4 +130,106 @@ for (const [name, expr, reason] of [
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, reason);
   assert(!existsSync(test.out));
+}
+
+// A wrong presence result must throw during initialization, even if both
+// programs lower the expression the same way.
+for (const [name, key, instance, present] of [
+  [
+    "own",
+    "field",
+    {
+      type: "ObjectExpression",
+      properties: [property("field", id("undefined"))],
+    },
+    true,
+  ],
+  ["inherited", "toString", { type: "ObjectExpression", properties: [] }, true],
+  ["absent", "field", { type: "ObjectExpression", properties: [] }, false],
+  ["index", 0, { type: "ArrayExpression", elements: [literal(null)] }, true],
+]) {
+  const test = { type: "BinaryExpression", operator: "in", left: literal(key), right: id("instance") };
+  const unexpected = call(arrow([], block([throws(literal("wrong presence"))])));
+  const expected = literal(present);
+  const source = program([
+    declaration("instance", instance),
+    {
+      type: "ExportNamedDeclaration",
+      source: null,
+      specifiers: [],
+      declaration: declaration(
+        "result",
+        conditional(test, present ? expected : unexpected, present ? unexpected : expected)
+      ),
+    },
+  ]);
+  await requireCertified(fixture(`in-${name}`, source, 2, [0]), present);
+}
+
+await requireCertified(
+  fixture(
+    "in-primitive-base-before-key-conversion",
+    `const worker = () => {
+      const trace = { step: "start" };
+      const key = () => {
+        if (trace.step !== "start") throw "key repeated";
+        trace.step = "key";
+        return {};
+      };
+      const base = () => {
+        if (trace.step !== "key") throw "base out of order";
+        trace.step = "base";
+        return 1;
+      };
+      try { return key() in base(); }
+      catch (error) {
+        if (typeof error !== "object") throw error;
+        return trace.step;
+      }
+    };
+    export const result = worker();`,
+    2,
+    [0]
+  ),
+  "base"
+);
+
+{
+  const test = fixture(
+    "in-object-key",
+    `const instance = { "[object Object]": true }; export const result = {} in instance;`,
+    2,
+    [0]
+  );
+  assert.equal(test.verdict.status, "rejected", test.log);
+  assert.match(test.verdict.reason, /object is converted to a primitive/);
+  assert(!existsSync(test.out));
+  assert.equal((await load(test.files.sourceFile)).result, true);
+}
+
+// The presence read distinguishes the initial object from its later mutation.
+{
+  const dir = path.join(root, "in-before-write");
+  const files = prepare(dir, {
+    source: `const instance = {};
+      instance.key = true;
+      const present = "key" in instance;
+      export { present as result };`,
+    provider: "",
+    spec: {
+      entry,
+      modules: { "state.mjs": ["#0"], "write.mjs": ["#1"], "check.mjs": ["#2"], [entry]: ["#3"] },
+      order: ["state.mjs", "check.mjs", "write.mjs"],
+      sequential: true,
+    },
+  });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(verdict.reason, /probe executions completed normally with different final states/);
+  assert(!existsSync(out));
+  const preview = path.join(dir, "preview");
+  forcePreview(files, preview);
+  assert.equal((await load(files.sourceFile)).result, true);
+  assert.equal((await load(path.join(preview, entry))).result, false);
 }

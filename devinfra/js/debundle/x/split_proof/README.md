@@ -79,6 +79,13 @@ evaluating arguments, and passes the receiver as `this`. Ordinary functions have
 receiver and arrows capture the surrounding `this`. Optional chains, private names, and
 `super` are outside the linked fragment.
 
+Linked `key in base` evaluates the key expression and then the base expression.
+A primitive base throws before the key is converted. On a modeled object, CoreJS
+converts the primitive key and looks for a property on the object or its prototype
+chain without calling a getter. Reached object-to-primitive conversion stops with
+an unknown result. Symbol keys, proxies, and unmodeled host objects are outside
+the fragment.
+
 Simple assignments to dot and computed properties, such as `record.name = value` and `record[key()] = value`, use CoreJS strict property writes. CoreJS evaluates the receiver, computed key expression, and right-hand side in that order, writes through the original receiver, and returns the assigned value. Object-key coercion, host writes, and array writes can produce an unknown result during initialization.
 
 Plain `=` also writes local and module bindings. It evaluates the right-hand side once before writing and returns the assigned value. An anonymous function on the right-hand side takes the target identifier's name. The checker rejects writes through imports, including placements that would turn a writable reference into an import. An assignment reached before its lexical binding initializes or after a `const` binding initializes throws in CoreJS. Compound, destructuring, and global assignments remain outside the linked lowering.
