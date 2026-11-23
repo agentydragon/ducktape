@@ -930,6 +930,12 @@ these concrete native fields and Go's standard JSON encoder, rather than rerunni
 policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
 commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
 
+For a fresh sampling call, the owner prepares execution and environment notices together with
+the request in the intent transaction. It keeps the decoded transcript and active context until
+the call settles. Preparation and Finish can reuse those items after checking the context heads
+and control values under the owner lock. If either changed, the sampler loads the current items.
+The journal cursor, interrupts and lease checks still come from PostgreSQL at the time of use.
+
 Each sampling and compaction intent also records its provider step, 1-based attempt number, finite
 budget, predecessor, original accepted command, owner generation and PostgreSQL-clock attempt lease;
 an eligible transient abandonment stores its retry due time in that same journal row. Existing

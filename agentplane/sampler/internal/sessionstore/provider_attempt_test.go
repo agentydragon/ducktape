@@ -31,13 +31,17 @@ func providerAttemptTestPolicyPointer() *ProviderAttemptPolicy {
 }
 
 func providerAttemptTestRequest(kind PendingIntentKind) (IntentPayload, requestPreparation) {
+	request, preparation := providerAttemptTestPreparation(kind)
+	return request, requestPreparationFor(preparation)
+}
+
+func providerAttemptTestPreparation(kind PendingIntentKind) (IntentPayload, *providerrequest.Preparation) {
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	model := samplersettings.ModelConfig{
 		Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
 		ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite},
 	}
-	prepare := requestPreparationFor(&providerrequest.Preparation{ModelConfig: model, Compaction: kind == PendingIntentCompaction})
-	return ProviderRequestIntent(kind, connection, model), prepare
+	return ProviderRequestIntent(kind, connection, model), &providerrequest.Preparation{ModelConfig: model, Compaction: kind == PendingIntentCompaction}
 }
 
 func admitProviderCommand(t *testing.T, store *Store, owner Owner, sessionID, commandID string, compact bool) {
