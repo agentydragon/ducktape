@@ -1,7 +1,8 @@
 # Cyclic export-cell observations
 
-Draft [PR #16539](https://github.com/agentydragon/ducktape/pull/16539) contains
-the partial source-derived repair and the abandoned broad candidate.
+Merged [PR #16539](https://github.com/agentydragon/ducktape/pull/16539) contains
+the partial source-derived repair. The broader candidate described below was
+abandoned because it rejected the frozen Excalidraw spec.
 
 ## Reproduction and missing obligation
 
@@ -114,5 +115,52 @@ empty may-read set nor current callback availability proves that future export
 cells are unobservable. Namespace calls and unresolved callable identities are
 also outside this partial projection. The shared source-access relation and its
 bounds are documented in <../docs/inference.md#shared-lexical-access-summaries>.
+
+The standalone flat spec for those two source files is:
+
+```yaml
+inputs:
+  input_root: snapshot
+  js_list_path: snapshot/js-files.txt
+logical_modules:
+  static/app:
+    callbacks/value:
+      members:
+        - name: callback
+          selector:
+            binding: { name: callback }
+import_order:
+  static/app: [callbacks/value]
+unassigned_mode:
+  static/app: { kind: inline_in_entry }
+materialize_logical_modules:
+  prune_other_chunks: false
+  target_dir: modules
+write_js_tree: { out_dir: out }
+```
+
+Place the files at `snapshot/static/app.js` and
+`snapshot/static/observer.js`, plus `snapshot/package.json` containing
+`{"type":"module"}` and `snapshot/js-files.txt` containing the two lines
+`static/app.js` and `static/observer.js`. Run the ordinary CLI with
+`debundle run --spec repro.yaml` (no `--emit-on-rejection`), then compare
+`node snapshot/static/app.js` and `node out/app/static/app/entry.js`.
+
+On `devel` commit `fc6336654ba14c2e87b1c814d7d911ae3d5cb020`, the
+standalone spec above was accepted by the ordinary CLI in BuildBuddy invocation
+`1cb62972-88b5-4fb1-b916-1aad7aa883c1`. The equivalent RBE fixture, with
+generic host and no author purity, commutation, or effect premises, was
+accepted in BuildBuddy RBE invocation
+`0584c531-02f4-47f3-97f4-4a7813727863`. Node printed `undefined` from the
+source and `function` from the emitted entry. The ordinary-gate verdict and
+Node comparison with `--emit-on-rejection` also passed in invocation
+`d9881b0a-fa98-434c-96bc-64c6ab5a4320`. This is a current engine soundness
+defect independent of false author premises, distinct from the fixed direct
+named-import route in <../e2e/callbacks/availability/publication_order.rs>.
+
+The contract boundary and the separate false-author-premise control are in
+<../docs/design.md#soundness-boundary-and-regressions>; follow-up ownership is
+<../TODO.md#cyclic-export-cell-observation-soundness>.
+
 Close those lanes with behavioral CLI refusals and unchanged frozen canonical
 acceptance; do not certify arbitrary opaque execution from this bounded repair.
