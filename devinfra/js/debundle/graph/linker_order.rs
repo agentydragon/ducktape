@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::graphmap::DiGraphMap;
@@ -143,8 +144,7 @@ impl ChunkConstrainingEdgeSet {
 /// when sorting by linker_position so unconstrained modules sort
 /// LAST.
 ///
-/// Callers that need O(1) position lookup should pipe the result
-/// through [`position_lookup`] once.
+/// Use [`position_lookup`] to index the result by module.
 ///
 /// Every pair already satisfies `constrains_init_order()`, so the
 /// toposort runs on the full set — no extra filter needed. If the
@@ -169,15 +169,7 @@ pub fn chunk_linker_order_from_pairs(
     }
 }
 
-/// Build an O(1) position lookup from a canonical linker-order slice.
-/// `result[id] = i` iff `id` is at index `i` in `order`. Modules
-/// absent from `order` are absent from the returned map; callers
-/// fall back to `usize::MAX` when sorting.
-///
-/// This is the one place that materializes the
-/// `BTreeMap<ModuleId, usize>` view of the linker order. Callers
-/// that only need to iterate in order should consume the
-/// `Vec<ModuleId>` directly instead of going through this helper.
+/// Index a module order by module ID.
 pub fn position_lookup(order: &[ModuleId]) -> BTreeMap<ModuleId, usize> {
     order
         .iter()
@@ -187,87 +179,40 @@ pub fn position_lookup(order: &[ModuleId]) -> BTreeMap<ModuleId, usize> {
         .collect()
 }
 
-/// Lemma 2 ordering: sort by `(SCC dep rank ASC, intra-SCC
-/// linker_position DESC)`. SCCs are over the full I-graph
-/// (`i_successors`, lazy edges included); `linker_position` is the
-/// [`chunk_linker_order_from_pairs`] position of `constraining_pairs`.
-/// SCC dep rank = min linker_position of SCC members.
-///
-/// The returned vector is the order in which entry's source-level
-/// `import` directives must appear so the runtime ECMA-262 linker
-/// DFS lands on the desired evaluation order (post-DFS = ESM Phase-2
-/// evaluation). Within each SCC, members with no linker_position
-/// (modules absent from the canonical set — they can only be SCC
-/// members via lazy back-edges; canonical edges are all
-/// init-constraining, so this case is empty by construction — but
-/// the `None`-after-Some clause is kept for robustness against
-/// future filter changes that might admit non-constraining members)
-/// sort AFTER constraining members.
-///
-/// `extra_nodes` — modules that should appear in the result even if
-/// they have no canonical edges (e.g. spec-known logical modules
-/// the emitter wants a deterministic source-order slot for). These
-/// land at the end with `linker_position = None`.
+/// Order modules by their import SCC's earliest linker position, then by
+/// descending linker position within each SCC (Lemma 2). Lazy edges belong
+/// to the import graph, so an SCC can contain modules with no linker
+/// position. Within that SCC they sort after positioned members, in
+/// module ID order. SCCs with no positioned members, including isolated
+/// `extra_nodes`, sort last.
 pub fn chunk_source_import_order_from_adjacency(
-    constraining_pairs: impl IntoIterator<Item = (ModuleId, ModuleId)>,
+    linker_position: &BTreeMap<ModuleId, usize>,
     i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     extra_nodes: &BTreeSet<ModuleId>,
 ) -> Vec<ModuleId> {
     use petgraph::algo::tarjan_scc;
-    // We need O(1) position lookups inside the sort comparator below,
-    // so materialize the linker order into the position-lookup map
-    // once. The canonical linker-order Vec is the toposort output;
-    // `position_lookup` is the small enumerate-collect adapter.
-    let linker_position = position_lookup(&chunk_linker_order_from_pairs(constraining_pairs));
-    // SCCs are computed over the FULL I-graph (constraining + lazy
-    // back-edges) so Lemma 2's intra-SCC `linker_position`-DESC
-    // reversal catches asymmetric cycles. The constraining-only
-    // view would collapse `(constraining-forward, lazy-back)`
-    // shapes into singleton SCCs and miss the rescue.
-    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
-    let mut nodes: BTreeSet<ModuleId> = extra_nodes.iter().copied().collect();
-    for (from, succs) in i_successors {
-        for to in succs {
-            graph.add_edge(*from, *to, ());
-            nodes.insert(*from);
-            nodes.insert(*to);
-        }
-    }
-    for &n in &nodes {
-        graph.add_node(n);
-    }
-    let sccs = tarjan_scc(&graph);
-    let mut scc_of: BTreeMap<ModuleId, usize> = BTreeMap::new();
-    let mut scc_rank: Vec<usize> = Vec::with_capacity(sccs.len());
-    for (idx, scc) in sccs.iter().enumerate() {
-        let min_pos = scc
+
+    let mut graph = DiGraphMap::<ModuleId, ()>::from_edges(
+        i_successors
             .iter()
-            .filter_map(|m| linker_position.get(m).copied())
+            .flat_map(|(&from, targets)| targets.iter().map(move |&to| (from, to))),
+    );
+    for &module in extra_nodes {
+        graph.add_node(module);
+    }
+
+    let mut ranked = Vec::with_capacity(graph.node_count());
+    for component in tarjan_scc(&graph) {
+        let rank = component
+            .iter()
+            .filter_map(|module| linker_position.get(module).copied())
             .min()
             .unwrap_or(usize::MAX);
-        scc_rank.push(min_pos);
-        for m in scc {
-            scc_of.insert(*m, idx);
-        }
+        ranked.extend(component.into_iter().map(|module| {
+            let position = linker_position.get(&module).copied();
+            (rank, Reverse(position), module)
+        }));
     }
-    let mut sorted: Vec<ModuleId> = nodes.into_iter().collect();
-    sorted.sort_by(|a, b| {
-        let a_rank = scc_of
-            .get(a)
-            .and_then(|i| scc_rank.get(*i).copied())
-            .unwrap_or(usize::MAX);
-        let b_rank = scc_of
-            .get(b)
-            .and_then(|i| scc_rank.get(*i).copied())
-            .unwrap_or(usize::MAX);
-        let a_pos = linker_position.get(a).copied();
-        let b_pos = linker_position.get(b).copied();
-        a_rank.cmp(&b_rank).then_with(|| match (a_pos, b_pos) {
-            (Some(a), Some(b)) => b.cmp(&a),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        })
-    });
-    sorted
+    ranked.sort_unstable();
+    ranked.into_iter().map(|(_, _, module)| module).collect()
 }
