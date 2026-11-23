@@ -2,13 +2,6 @@
 # gazelle:resolve py third_party.containers.alloy_config //third_party/containers:alloy_config
 # gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/providers/grafana_operator:grafana
-# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/providers/grafana_operator:grafanadashboard
-# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/providers/grafana_operator:grafanadatasource
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
-# gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
 load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 

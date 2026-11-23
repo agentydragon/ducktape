@@ -1,17 +1,10 @@
 # gazelle:ignore
 # gazelle:resolve py eso_github_access_token_crds //cluster/cdk8s/providers/external_secrets:githubaccesstoken
 
-# gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
-# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 # gazelle:resolve py agentplane_sandboxtemplate_crds //agentplane/crds:sandboxtemplate
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
-# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
-# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
 # gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 

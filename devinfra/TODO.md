@@ -15,11 +15,13 @@ typechecking, cross-tab refresh, and malformed-frame handling.
 
 ## Generated Python import indexing (schema audit F)
 
-Derive Gazelle import-to-target mappings from `cdk8s_import` declarations instead of maintaining a
-second module roster in `cluster/cdk8s/BUILD.bazel`, provider BUILD files, and Agentplane BUILD files.
-Preserve package scope; repeated aliases are not automatically redundant. Done: generated bindings
-resolve from all current consumers, Gazelle converges, and adding an importer requires no second
-hand-maintained mapping. This belongs in generated-module indexing, not CRD schema conversion.
+Derive Gazelle import-to-target mappings from `cdk8s_import` declarations. The Python
+resolver indexes literal `srcs`, and the macro sets those only during Bazel evaluation.
+The cdk8s and Agentplane package trees still need explicit mappings for generated modules.
+Reuse inherited directives and preserve package scope when adding new mappings.
+
+Completion requires Gazelle to converge for all current consumers. A new binding
+should need only its `cdk8s_import` declaration, with no separate consumer mapping.
 
 ## Canonicalize Bazel image pin usage
 

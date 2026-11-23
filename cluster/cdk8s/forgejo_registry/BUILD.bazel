@@ -1,7 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
-# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(

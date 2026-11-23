@@ -1,4 +1,6 @@
 # gazelle:ignore
+# Subpackages inherit these generated import mappings. Add a local directive only
+# for a mapping the subpackage does not already inherit.
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 # gazelle:resolve py external_secret_store_crds //cluster/cdk8s/providers/external_secrets:clustersecretstore

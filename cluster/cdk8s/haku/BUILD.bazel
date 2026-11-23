@@ -1,9 +1,6 @@
 # gazelle:ignore
 
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
-# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])

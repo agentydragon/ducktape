@@ -1,10 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
-# gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/providers/seaweedfs:resourcereferencegrant
-# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/providers/seaweedfs:s3credentials
-# gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/providers/seaweedfs:s3identity
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(

@@ -1,9 +1,6 @@
 # gazelle:ignore
 
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py gateway_api_gateway_crds //cluster/cdk8s/providers/gateway_api:gateway
-# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(

@@ -1,7 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
-# gazelle:resolve py kubevirt_virtualmachinepool_crds //cluster/cdk8s/providers/kubevirt:virtualmachinepool
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
