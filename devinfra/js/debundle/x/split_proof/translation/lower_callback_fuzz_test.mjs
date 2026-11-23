@@ -7,6 +7,7 @@ import path from "node:path";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump } from "../lowering/dump_core.mjs";
+import { lcg32 } from "../seeded_random.mjs";
 
 const tmp = process.env.TEST_TMPDIR;
 assert(tmp);
@@ -56,11 +57,7 @@ if (process.argv[2] !== "--worker") {
   await Promise.all([runWorker(0, Math.ceil(count / 2)), runWorker(Math.ceil(count / 2), count)]);
 } else {
   // Fixed seed and stable PRNG make every failing case reproducible.
-  let seed = 0x91e10da5;
-  function next() {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed;
-  }
+  const next = lcg32(0x91e10da5);
   const start = Number(process.argv[3]);
   const end = Number(process.argv[4]);
   for (let i = 0; i < start; i++) next();

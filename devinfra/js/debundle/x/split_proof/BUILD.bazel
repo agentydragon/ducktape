@@ -38,6 +38,12 @@ js_library(
     deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
 )
 
+js_library(
+    name = "seeded_random",
+    srcs = ["seeded_random.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
+)
+
 # Include first-party runfile helpers as lint sources.
 js_library(
     name = "lint_sources",
@@ -55,7 +61,10 @@ js_library(
 
 eslint_test(
     name = "eslint_test",
-    srcs = [":lint_sources"],
+    srcs = [
+        ":lint_sources",
+        ":seeded_random",
+    ],
 )
 
 # keep

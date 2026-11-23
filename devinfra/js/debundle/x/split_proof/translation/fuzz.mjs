@@ -26,6 +26,7 @@ import { generate as printJs } from "astring";
 import { frontBundle, frontTree } from "./frontend.mjs";
 import { generateAstBundle, astStatistics, generateRenamed } from "./testing/ast_generator.mjs";
 import { generateProgram } from "./testing/gen/index.mjs";
+import { mulberry32 } from "../seeded_random.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
@@ -34,13 +35,7 @@ const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/
 const premises = { noWorldHooks: true };
 
 function rng(seed) {
-  let a = seed >>> 0;
-  const float = () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), a | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const float = mulberry32(seed);
   const int = (n) => Math.floor(float() * n);
   return {
     int,

@@ -23,7 +23,7 @@
 // A program that throws, times out or does not give the same answer twice is not a valid input (premise P4): the oracle
 // fails on it instead of checking. One that patches a standard object breaks premise P1: it is checked all the same (the
 // digests treat the standard objects as opaque, so a patch changes no binding) and the patched objects are listed.
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +32,7 @@ import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { frontBundle } from "./frontend.mjs";
 import { walk } from "./syntax_inventory.mjs";
+import { spawnAndWait } from "./spawn_and_wait.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const harness = pathToFileURL(path.join(here, "oracle_harness.mjs")).href;
@@ -96,35 +97,12 @@ export function instrument(source) {
   return { text, units, names };
 }
 
-function run(command, args, { env, timeoutMs }) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-    child.stderr.on("data", (d) => {
-      if (stderr.length < 65536) stderr += d;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (status) => {
-      clearTimeout(timer);
-      resolve({ status, timedOut, stderr });
-    });
-  });
-}
-
 /** Run the instrumented program once: `{ invalid }` if it is not a valid input, else the harness's report. */
 async function runOnce(text, dir, tag, timeoutMs) {
   const file = path.join(dir, `oracle_${tag}.mjs`);
   const out = path.join(dir, `oracle_${tag}.json`);
   writeFileSync(file, text);
-  const r = await run(process.execPath, ["--max-old-space-size=512", "--import", harness, file], {
+  const r = await spawnAndWait(process.execPath, ["--max-old-space-size=512", "--import", harness, file], {
     env: { ...process.env, ORACLE_OUT: out },
     timeoutMs,
   });

@@ -13,7 +13,6 @@
 // Only programs that complete count: premise P4 drops the rest from every oracle, so a construct that occurs only in
 // programs that throw is as good as missing. The table is a measurement of the sampled seeds, not a proof that a
 // generator cannot produce a construct.
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -24,21 +23,13 @@ import codegen from "shift-codegen";
 import { DEFAULT_LEAN_DIR, readAnalysisInventory } from "./analysis_inventory.mjs";
 import { composeModernExpressions } from "./modern_syntax.mjs";
 import { FORMS, NODE_TYPES, featuresOf, parseModule } from "./syntax_inventory.mjs";
+import { mulberry32 } from "../seeded_random.mjs";
+import { spawnAndWait } from "./spawn_and_wait.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const probe = path.join(here, "intrinsics_probe.mjs");
 
 // ---- the generators
-
-function rng(seed) {
-  let n = seed >>> 0;
-  return () => {
-    n = (n + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(n ^ (n >>> 15), n | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** The bundles `fuzz.mjs --emit` writes for a corpus mode. */
 const fuzzBundles =
@@ -68,7 +59,7 @@ const shiftPrograms =
   async ({ count, seed }) => {
     const programs = [];
     for (let s = seed; s < seed + count; s++) {
-      const random = rng(s);
+      const random = mulberry32(s);
       const tree = (script ? shiftFuzzer.fuzzScript : shiftFuzzer.fuzzModule)(
         new shiftFuzzer.FuzzerState({ maxDepth: 4, rng: random })
       );
@@ -78,7 +69,7 @@ const shiftPrograms =
         let ast = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
         if (modern) {
           const marker = `__shift_modern_marker_${s}`;
-          source = composeModernExpressions(source, ast, rng(s ^ 0x8b11c5), marker).source;
+          source = composeModernExpressions(source, ast, mulberry32(s ^ 0x8b11c5), marker).source;
           ast = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
           prelude = `globalThis.${marker} = (kind, value) => value;\n`;
         }
@@ -122,29 +113,6 @@ export const GENERATORS = [
 ];
 
 // ---- running programs
-
-function spawnAndWait(command, args, { env = process.env, timeoutMs = 120000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-    child.stderr.on("data", (d) => {
-      if (stderr.length < 65536) stderr += d;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (status) => {
-      clearTimeout(timer);
-      resolve({ status, timedOut, stderr });
-    });
-  });
-}
 
 const errorClass = (stderr) =>
   (stderr.match(/\b(ReferenceError|TypeError|SyntaxError|RangeError|URIError|EvalError|Error)\b/) ?? ["unknown"])[1];

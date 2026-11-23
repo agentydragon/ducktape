@@ -8,17 +8,7 @@
 // The entry is the module that holds the last statement, where esbuild puts the bundle's `export { … }`.
 // A module name is `m<j>.mjs`. Modules nobody was assigned are left out.
 
-function rng(seed) {
-  // mulberry32
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { mulberry32 } from "../../seeded_random.mjs";
 
 export function assignment(n, strategy, args = []) {
   const a = new Array(n);
@@ -31,7 +21,7 @@ export function assignment(n, strategy, args = []) {
     for (let i = 0; i < n; i++) a[i] = Math.floor(i / per);
   } else if (strategy === "random") {
     const k = Number(args[0]);
-    const r = rng(Number(args[1]));
+    const r = mulberry32(Number(args[1]));
     for (let i = 0; i < n; i++) a[i] = Math.floor(r() * k);
   } else {
     throw new Error(`unknown strategy ${strategy}`);
