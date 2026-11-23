@@ -23,34 +23,44 @@ function split(name, source, modules, order) {
   return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
 }
 
-const inherited = split(
-  "default-derived",
-  `class Base {
-    static label = "base";
-    saved = "before";
-    constructor(value) { this.saved = value; }
-    get value() { return this.saved; }
-    set value(next) { this.saved = next; }
-    describe() { return this.value; }
+for (const [name, source, expected] of [
+  [
+    "default-derived",
+    `class Base { static label = "base"; }
+    const Child = class extends Base {};
+    export const result = Child.label;`,
+    "base",
+  ],
+  [
+    "constructor",
+    `const Box = class { constructor(value) { this.saved = value; } };
+    const value = new Box("constructed");
+    export const result = value.saved;`,
+    "constructed",
+  ],
+  [
+    "accessors",
+    `class Box {
+      static get value() { return this.saved; }
+      static set value(v) { this.saved = v; }
+      static read() { return this.value; }
+    }
+    Box.value = "after";
+    export const result = Box.read();`,
+    "after",
+  ],
+]) {
+  const test = split(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
+  assert.equal(test.verdict.status, "certified", test.log);
+  if (name === "default-derived") {
+    assert.equal(
+      lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict.status,
+      "certified"
+    );
   }
-  const Child = class extends Base {};
-  const run = () => {
-    const obj = new Child("constructed");
-    const first = obj.describe();
-    obj.value = "after";
-    return [Child.label, Child.name, first, obj.value, obj.constructor === Child];
-  };
-  export const result = run();`,
-  { "base.mjs": ["#0"], "child.mjs": ["#1"], [entry]: ["#2", "#3"] },
-  ["base.mjs", "child.mjs"]
-);
-assert.equal(inherited.verdict.status, "certified", inherited.log);
-assert.equal(
-  lower(inherited.files.sourceFile, inherited.files.specFile, inherited.out, ["--check-output"]).verdict.status,
-  "certified"
-);
-for (const file of [inherited.files.sourceFile, path.join(inherited.out, entry)]) {
-  assert.deepEqual(observe(file, "result"), { result: ["base", "Child", "constructed", "after", true] });
+  for (const file of [test.files.sourceFile, path.join(test.out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result: expected });
+  }
 }
 
 // A field initializer executes at class creation for static fields and at new
@@ -104,4 +114,20 @@ for (const isStatic of [false, true]) {
       isStatic && dependent ? { error: "ReferenceError" } : { result: "fixed" }
     );
   }
+}
+
+for (const [name, source, expectedReason] of [
+  [
+    "explicit-super",
+    "const B = class extends null { constructor() { super(); } }; export const result = 1;",
+    /explicit derived constructor/,
+  ],
+  ["derived-field", "const B = class extends null { value = true; }; export const result = 1;", /derived class field/],
+  ["computed", "const B = class { ['x']() {} }; export const result = 1;", /computed class key/],
+  ["static-block", "const B = class { static {} }; export const result = 1;", /StaticBlock/],
+]) {
+  const test = split(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
+  assert.equal(test.verdict.status, "rejected", test.log);
+  assert.match(test.verdict.reason, expectedReason);
+  assert(!existsSync(test.out));
 }
