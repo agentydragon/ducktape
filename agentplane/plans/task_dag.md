@@ -1355,7 +1355,8 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 **Open staging bug, 2026-11-23; no prerequisites.** The sampler took seconds to project deltas
 already in its input buffer. Across two Responses models, median journal completion lagged provider
 completion by 47–82 seconds. See the [measurements and fix candidates](../sampler/docs/stream_latency.md).
-Compare cheaper lease fencing, fewer round trips and bounded batching. Exit when an identical
+Interrupt polling and export checkpointing held conversation locks while stream writers waited.
+Compare narrower locks, fewer round trips and bounded batching. Exit when an identical
 buffered-stream replay and a bounded staging check show reduced wire-to-projection and terminal lag
 without regressing first-delta latency, ordered replay or rejection of a stale writer.
 
