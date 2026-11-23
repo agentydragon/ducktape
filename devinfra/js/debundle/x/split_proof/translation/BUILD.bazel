@@ -73,14 +73,11 @@ eslint_test(
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
 _SHIFT_FUZZ_DATA = [
-    _SEEDED_RANDOM,
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
-    ":node_modules/shift-codegen",
-    ":node_modules/shift-fuzzer",
-    ":node_modules/shift-parser",
     "shift_fuzz_worker.mjs",
-    ":modern_syntax",
+    ":shift_candidate",
+    ":syntax_inventory",
     ":scope_metadata",
     "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -745,12 +742,8 @@ js_test(
         ":analysis_inventory",
         ":coverage_audit",
         ":frontend",
-        ":modern_syntax",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
-        ":node_modules/shift-codegen",
-        ":node_modules/shift-fuzzer",
-        ":node_modules/shift-parser",
         ":scope_metadata",
         ":syntax_inventory",
     ],
@@ -1255,17 +1248,25 @@ js_library(
 )
 
 js_library(
+    name = "shift_candidate",
+    srcs = ["shift_candidate.mjs"],
+    deps = [
+        ":modern_syntax",
+        ":node_modules/shift-codegen",
+        ":node_modules/shift-fuzzer",
+        ":syntax_inventory",
+        _SEEDED_RANDOM,
+    ],
+)
+
+js_library(
     name = "coverage_audit",
     srcs = ["coverage_audit.mjs"],
     deps = [
         ":analysis_inventory",
-        ":modern_syntax",
-        ":node_modules/acorn",
-        ":node_modules/shift-codegen",
-        ":node_modules/shift-fuzzer",
+        ":shift_candidate",
         ":spawn_and_wait",
         ":syntax_inventory",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
     ],
 )
 

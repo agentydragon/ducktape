@@ -151,6 +151,16 @@ def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [
   });
 }
 
+// Seed 6 generates a script with observable global access. The emitter runs it
+// without instrumentation and excludes it from the modern-marker corpus.
+{
+  const sample = { count: 1, seed: 6 };
+  const script = GENERATORS.find((g) => g.id === "shift-script");
+  const modern = GENERATORS.find((g) => g.id === "shift-modern");
+  assert.equal((await script.produce(sample))[0].skipped, undefined);
+  assert.equal((await modern.produce(sample))[0].skipped, "the test skips it");
+}
+
 // ---- a sample of two generators renders a report with the tables
 {
   const inventory = {
