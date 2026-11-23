@@ -1,9 +1,9 @@
 """Benchmark Ollama models via the LiteLLM OpenAI-compatible proxy.
 
 Measures output speed, input speed at multiple context lengths, and
-needle-in-haystack recall (niah). Each configuration runs for up to
---time-limit seconds (default 60s) or --min-samples samples, whichever comes
-first.
+needle-in-haystack recall (NIAH). Each throughput configuration collects up to
+ten samples and stops starting requests at --time-limit (default 60s).
+A request in flight can run past the time limit. NIAH has its own sample limit.
 
 Usage:
     bb run //x/benchmark_ollama:benchmark_ollama_bin
@@ -18,7 +18,8 @@ Methodology:
     prewarm: one throwaway request per context size to allocate KV cache.
 
     output:  short seed prompt + max_tokens=128, stream=True.
-             Rate = (tokens_generated - 1) / (last_chunk_ts - first_chunk_ts).
+             Rate = (content_chunks - 1) / (last_chunk_ts - first_chunk_ts),
+             counting each chunk containing text as one output token.
              Measures decode (output token generation) speed at minimal context.
 
     decode:  filler prompt of ~N tokens + max_tokens=128, stream=True.
@@ -49,10 +50,12 @@ import secrets
 import statistics
 import time
 import urllib.request
-from dataclasses import asdict, dataclass
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import openai
+from openai.types.chat import ChatCompletionChunk
 
 from devinfra.bazel.workspace import get_build_working_directory
 
@@ -60,7 +63,7 @@ OLLAMA_BASE_URL = "https://litellm.allegedly.works/v1"
 DEFAULT_MODELS = ["gpt-oss-20b-128k", "gpt-oss-120b-128k"]
 
 TIME_LIMIT_S = 60
-MIN_SAMPLES = 10
+MAX_THROUGHPUT_SAMPLES = 10
 NIAH_SAMPLES_DEFAULT = 8
 
 _FILLER_PHRASE = "The quick brown fox jumps over the lazy dog near the riverbank. "
@@ -158,6 +161,19 @@ class NiahSample:
     num_ctx: int
 
 
+@dataclass
+class ContextMeasurements:
+    input_rates: list[float]
+    decode_rates: list[float] = field(default_factory=list)
+    niah: list[NiahSample] = field(default_factory=list)
+
+
+@dataclass
+class ModelMeasurements:
+    output_rates: list[float] = field(default_factory=list)
+    contexts: dict[int, ContextMeasurements] = field(default_factory=dict)
+
+
 # -- Benchmark functions ----------------------------------------------------
 
 
@@ -187,35 +203,41 @@ def unload_model(client: openai.OpenAI, model: str) -> None:
         )
 
 
+def _stream_rate(stream: Iterable[ChatCompletionChunk], deadline: float) -> float | None:
+    first_ts: float | None = None
+    last_ts: float | None = None
+    content_chunks = 0
+    for chunk in stream:
+        if time.monotonic() > deadline:
+            break
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            now = time.monotonic()
+            if first_ts is None:
+                first_ts = now
+            last_ts = now
+            content_chunks += 1
+
+    if first_ts and last_ts and last_ts > first_ts and content_chunks > 1:
+        return (content_chunks - 1) / (last_ts - first_ts)
+    return None
+
+
 def measure_output(client: openai.OpenAI, model: str, time_limit: float) -> list[float]:
     """Measure output (decode) speed: tokens/sec between first and last streaming chunk."""
     results: list[float] = []
     deadline = time.monotonic() + time_limit
 
-    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
-        first_ts: float | None = None
-        last_ts: float | None = None
-        token_count = 0
-
+    while time.monotonic() < deadline and len(results) < MAX_THROUGHPUT_SAMPLES:
         stream = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": OUTPUT_SEED_PROMPT}],
             max_tokens=OUTPUT_MAX_TOKENS,
             stream=True,
         )
-        for chunk in stream:
-            if time.monotonic() > deadline:
-                break
-            delta = chunk.choices[0].delta.content if chunk.choices else None
-            if delta:
-                now = time.monotonic()
-                if first_ts is None:
-                    first_ts = now
-                last_ts = now
-                token_count += 1
-
-        if first_ts and last_ts and last_ts > first_ts and token_count > 1:
-            results.append((token_count - 1) / (last_ts - first_ts))
+        rate = _stream_rate(stream, deadline)
+        if rate is not None:
+            results.append(rate)
 
     return results
 
@@ -230,7 +252,7 @@ def measure_input(client: openai.OpenAI, model: str, target_tokens: int, time_li
     deadline = time.monotonic() + time_limit
     num_ctx = num_ctx_for(target_tokens)
 
-    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
+    while time.monotonic() < deadline and len(results) < MAX_THROUGHPUT_SAMPLES:
         start = time.monotonic()
         try:
             resp = client.chat.completions.create(
@@ -262,11 +284,7 @@ def measure_decode_at_context(client: openai.OpenAI, model: str, target_tokens: 
     deadline = time.monotonic() + time_limit
     num_ctx = num_ctx_for(target_tokens)
 
-    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
-        first_ts: float | None = None
-        last_ts: float | None = None
-        token_count = 0
-
+    while time.monotonic() < deadline and len(results) < MAX_THROUGHPUT_SAMPLES:
         try:
             stream = client.chat.completions.create(
                 model=model,
@@ -275,22 +293,13 @@ def measure_decode_at_context(client: openai.OpenAI, model: str, target_tokens: 
                 stream=True,
                 extra_body={"options": {"num_ctx": num_ctx}},
             )
-            for chunk in stream:
-                if time.monotonic() > deadline:
-                    break
-                delta = chunk.choices[0].delta.content if chunk.choices else None
-                if delta:
-                    now = time.monotonic()
-                    if first_ts is None:
-                        first_ts = now
-                    last_ts = now
-                    token_count += 1
+            rate = _stream_rate(stream, deadline)
         except openai.APIError as exc:
             print(f" [error: {exc}]", flush=True)
             break
 
-        if first_ts and last_ts and last_ts > first_ts and token_count > 1:
-            results.append((token_count - 1) / (last_ts - first_ts))
+        if rate is not None:
+            results.append(rate)
 
     return results
 
@@ -364,6 +373,10 @@ def run_niah(
 # -- Formatting helpers -----------------------------------------------------
 
 
+def _context_label(size: int) -> str:
+    return f"{size // 1000}k" if size % 1000 == 0 else f"{size:,}"
+
+
 def _fmt(values: list[float]) -> str:
     if not values:
         return "N/A"
@@ -390,17 +403,14 @@ def _fmt_niah(samples: list[NiahSample]) -> str:
 
 def benchmark_model(
     client: openai.OpenAI, model: str, context_sizes: list[int], time_limit: float, niah_samples: int, log_path: Path
-) -> tuple[dict[str, list[float]], dict[int, list[NiahSample]]]:
+) -> ModelMeasurements:
     print(f"\n{'=' * 60}", flush=True)
     print(f"Model: {model}", flush=True)
     print(f"{'=' * 60}", flush=True)
 
     if not check_model_available(client, model):
         print("  SKIP: model not available (not yet pulled?)")
-        return {}, {}
-
-    results: dict[str, list[float]] = {}
-    niah_results: dict[int, list[NiahSample]] = {}
+        return ModelMeasurements()
 
     # Output speed (uses server default num_ctx).
     print("  prewarm (loading model)...", end=" ", flush=True)
@@ -408,12 +418,11 @@ def benchmark_model(
     print(f"{warmup_s:.1f}s", flush=True)
 
     print(f"  output (up to {time_limit:.0f}s)...", end=" ", flush=True)
-    output = measure_output(client, model, time_limit)
-    results["output"] = output
-    print(_fmt(output), flush=True)
+    results = ModelMeasurements(output_rates=measure_output(client, model, time_limit))
+    print(_fmt(results.output_rates), flush=True)
 
     for ctx in context_sizes:
-        ctx_label = f"{ctx // 1000}k"
+        ctx_label = _context_label(ctx)
         num_ctx = num_ctx_for(ctx)
 
         # Prewarm: allocate KV cache at this num_ctx (pays reallocation cost once).
@@ -424,7 +433,8 @@ def benchmark_model(
         # Input speed (KV cache already allocated).
         print(f"  input {ctx_label} (up to {time_limit:.0f}s)...", end=" ", flush=True)
         inp = measure_input(client, model, ctx, time_limit)
-        results[f"input{ctx_label}"] = inp
+        measurements = ContextMeasurements(input_rates=inp)
+        results.contexts[ctx] = measurements
         print(_fmt(inp), flush=True)
         if not inp:
             print(f"    (stopped \u2014 likely hit VRAM limit at {ctx:,} tokens)", flush=True)
@@ -432,15 +442,14 @@ def benchmark_model(
 
         # Decode speed at this context size (KV cache filled, then generate).
         print(f"  decode {ctx_label} (up to {time_limit:.0f}s)...", end=" ", flush=True)
-        dec = measure_decode_at_context(client, model, ctx, time_limit)
-        results[f"decode{ctx_label}"] = dec
-        print(_fmt(dec), flush=True)
+        measurements.decode_rates = measure_decode_at_context(client, model, ctx, time_limit)
+        print(_fmt(measurements.decode_rates), flush=True)
 
         # NIAH recall (same num_ctx, no reallocation needed).
         if niah_samples > 0:
             print(f"  niah {ctx_label} (up to {niah_samples} samples, {time_limit:.0f}s)...", flush=True)
             niah = run_niah(client, model, ctx, niah_samples, time_limit)
-            niah_results[ctx] = niah
+            measurements.niah = niah
             found = sum(s.found for s in niah)
             print(f"    recall: {found}/{len(niah)}", flush=True)
 
@@ -448,50 +457,36 @@ def benchmark_model(
                 for sample in niah:
                     f.write(json.dumps(asdict(sample)) + "\n")
 
-    return results, niah_results
+    return results
 
 
 def print_summary(
-    all_results: dict[str, dict[str, list[float]]],
-    all_niah: dict[str, dict[int, list[NiahSample]]],
-    models: list[str],
-    context_sizes: list[int],
+    all_results: dict[str, ModelMeasurements], models: list[str], context_sizes: list[int], time_limit: float
 ) -> None:
     col = 28
-
-    # Build metric list: output, then interleaved (input, decode, niah) per context size.
-    metrics: list[str] = ["output"]
-    for s in context_sizes:
-        label = f"{s // 1000}k"
-        metrics.append(f"input{label}")
-        metrics.append(f"decode{label}")
-        metrics.append(f"niah{label}")
+    rows = [("output", [_fmt_short(all_results[m].output_rates) for m in models])]
+    for size in context_sizes:
+        label = _context_label(size)
+        measurements = [all_results[m].contexts.get(size) for m in models]
+        rows.extend(
+            [
+                (f"input{label}", [_fmt_short(r.input_rates) if r else "N/A" for r in measurements]),
+                (f"decode{label}", [_fmt_short(r.decode_rates) if r else "N/A" for r in measurements]),
+                (f"niah{label}", [_fmt_niah(r.niah) if r else "N/A" for r in measurements]),
+            ]
+        )
 
     print(f"\n{'=' * 70}")
     print("SUMMARY")
     print(f"{'=' * 70}")
-    header = f"{'Metric':<12}" + "".join(f"{m:<{col}}" for m in models)
+    metric_width = max(12, max(len(label) for label, _ in rows) + 1)
+    header = f"{'Metric':<{metric_width}}" + "".join(f"{m:<{col}}" for m in models)
     print(header)
     print("-" * len(header))
 
-    for metric in metrics:
-        row = f"{metric:<12}"
-        any_data = False
-        for m in models:
-            if metric.startswith("niah"):
-                ctx_k = int(metric.removeprefix("niah").removesuffix("k"))
-                samples = all_niah.get(m, {}).get(ctx_k * 1000, [])
-                cell = _fmt_niah(samples)
-                if samples:
-                    any_data = True
-            else:
-                vals = all_results.get(m, {}).get(metric, [])
-                cell = _fmt_short(vals)
-                if vals:
-                    any_data = True
-            row += f"{cell:<{col}}"
-        if any_data:
-            print(row)
+    for label, cells in rows:
+        if any(cell != "N/A" for cell in cells):
+            print(f"{label:<{metric_width}}" + "".join(f"{cell:<{col}}" for cell in cells))
 
     print()
     print("Notes:")
@@ -499,7 +494,7 @@ def print_summary(
     print("  input   = prefill speed (input tok/s, prompt_tokens / wall_clock)")
     print("  decode  = decode speed after prefilling N tokens (output tok/s, streaming)")
     print("  niah    = needle-in-haystack recall (found/total, evenly spaced depths)")
-    print(f"  Each config ran for up to {TIME_LIMIT_S}s")
+    print(f"  Each config used a time limit of {time_limit:g}s")
 
 
 def main() -> None:
@@ -536,22 +531,21 @@ def main() -> None:
     print(f"Time limit:   {args.time_limit:.0f}s per config")
     print(f"Log dir:      {log_dir}")
 
-    all_results: dict[str, dict[str, list[float]]] = {}
-    all_niah: dict[str, dict[int, list[NiahSample]]] = {}
+    all_results: dict[str, ModelMeasurements] = {}
 
     for i, model in enumerate(args.models):
         log_path = log_dir / f"benchmark_{model.replace('/', '_')}_{timestamp_str}.jsonl"
 
-        results, niah = benchmark_model(client, model, args.context_sizes, args.time_limit, args.niah_samples, log_path)
-        all_results[model] = results
-        all_niah[model] = niah
+        all_results[model] = benchmark_model(
+            client, model, args.context_sizes, args.time_limit, args.niah_samples, log_path
+        )
 
         if args.unload_between_models and i < len(args.models) - 1:
             print(f"\n  Unloading {model}...", end=" ", flush=True)
             unload_model(client, model)
             print("done", flush=True)
 
-    print_summary(all_results, all_niah, args.models, args.context_sizes)
+    print_summary(all_results, args.models, args.context_sizes, args.time_limit)
 
 
 if __name__ == "__main__":
