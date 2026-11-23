@@ -470,10 +470,17 @@ theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props :
       exact evalExpr_obj_string_fields n env fields budget
     · rw [evalExpr] <;> rfl
 
-private def indexTreeTerm : LiteralFieldIndex.Tree → String
-  | .leaf => ".leaf"
-  | .inner size key value left right =>
-    s!"(.inner {size} {key.quote} {value.quote} {indexTreeTerm left} {indexTreeTerm right})"
+/-- Quote the specialized raw tree with the same constructors the lookup lemmas reduce. -/
+private def indexTreeExpr (tree : LiteralFieldIndex.Tree) : Lean.Expr :=
+  let str := Lean.toTypeExpr String
+  let ctor := fun name => Lean.mkApp2 (Lean.mkConst name [0, 0]) str (Lean.mkLambda `_ .default str str)
+  let leaf := ctor ``Std.DTreeMap.Internal.Impl.leaf
+  let inner := ctor ``Std.DTreeMap.Internal.Impl.inner
+  let rec visit : LiteralFieldIndex.Tree → Lean.Expr
+    | .leaf => leaf
+    | .inner size key value left right =>
+      Lean.mkApp5 inner (Lean.toExpr size) (Lean.toExpr key) (Lean.toExpr value) (visit left) (visit right)
+  visit tree
 
 /-- The syntax retains the checked original field list. Wide records expose
 individual lookups, while small records expose their full property list so
@@ -485,15 +492,16 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
   -- exact source syntax, so keep the ordered pairs when a key occurs twice.
   let positions := Std.HashMap.ofList (fields.zipIdx.map fun ((k, _), i) => (k, i))
   let indexed := fields.length ≥ wideRecordMinFields && keys.size ≥ 8 && positions.size == fields.length
-  let data := if indexed then Id.run do
-    let names := String.intercalate "," (fields.map fun (k, _) => k.quote)
+  let data ← if indexed then do
+    let names ← EsmSplit.CertificateData.quote (stem ++ "Keys") (Lean.toExpr (fields.map Prod.fst))
     let tree := (Std.TreeMap.ofList fields : Std.TreeMap String String).inner.inner
-    return s!"private def {stem}Keys : List String := [{names}]\n" ++
-      s!"private def {stem}Tree : CoreJS.LiteralFieldIndex.Tree := {indexTreeTerm tree}\n" ++
-      s!"private def {stem}Data := CoreJS.LiteralFieldIndex.fields {stem}Tree {stem}Keys\n"
-    else
-      let pairs := String.intercalate ",\n  " (fields.map fun (k, v) => s!"({k.quote}, {v.quote})")
-      s!"private def {stem}Data : List (String × String) := [\n  {pairs}]\n"
+    let treeTerm ← EsmSplit.CertificateData.quote (stem ++ "Tree") (indexTreeExpr tree)
+    pure (s!"private def {stem}Keys : List String := {names}\n" ++
+      s!"private def {stem}Tree : CoreJS.LiteralFieldIndex.Tree := {treeTerm}\n" ++
+      s!"private def {stem}Data := CoreJS.LiteralFieldIndex.fields {stem}Tree {stem}Keys\n")
+  else do
+    let pairs ← EsmSplit.CertificateData.quote (stem ++ "Pairs") (Lean.toExpr fields)
+    pure s!"private def {stem}Data : List (String × String) := {pairs}\n"
   let widthProof := if indexed then
     s!"exact Nat.le_trans (CoreJS.LiteralFieldIndex.length_le {stem}Tree {stem}Keys) (Nat.le_refl {fields.length})"
     else "exact Nat.le_refl _"
