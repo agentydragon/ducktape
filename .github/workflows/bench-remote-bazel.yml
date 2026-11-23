@@ -48,6 +48,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
+      - name: Trust this job's bind-mounted checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Verify source
         run: python3 devinfra/ci/pr_mergeability.py verify-source
       - name: BuildBuddy ready
@@ -76,6 +78,29 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         with:
           installables: ".#bb .#bbapi"
+      - name: BuildBuddy ready
+        run: |
+          bb version --cli
+          bbapi --help >/dev/null
+
+  direct:
+    needs: publish
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Verify source
+        run: python3 devinfra/ci/pr_mergeability.py verify-source
+      - name: Install pinned BuildBuddy CLIs
+        run: |
+          python3 devinfra/buildbuddy/ci/install_clis.py \
+            --pins nix/artifact-pins.json --bin-dir "$RUNNER_TEMP/buildbuddy-bin"
+          echo "$RUNNER_TEMP/buildbuddy-bin" >> "$GITHUB_PATH"
       - name: BuildBuddy ready
         run: |
           bb version --cli
