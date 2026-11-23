@@ -101,7 +101,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return atStartupStage("logs_directory", err)
 	}
-	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
+	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second, &settings)
 	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel, sessionstore.TurnChannel)
 	if err != nil {
 		return atStartupStage("database_wakeups", err)

@@ -257,7 +257,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	}
 	preparation := adapter.Prepare(session, metadata)
 	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
-	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[session.Model])
+	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[session.Model], frontier)
 	var intentID string
 	var wire []byte
 	var snapshot *sessionstore.ProviderAttemptSnapshot

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/jsonwire"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
@@ -17,25 +18,20 @@ import (
 	"github.com/google/uuid"
 )
 
-const maxProviderAttemptBudget = 16
-
-// MaxProviderBackoff bounds retry delays accepted for durable provider-attempt failures.
-const MaxProviderBackoff = 30 * time.Second
-
 func (policy ProviderAttemptPolicy) validate() error {
-	if policy.Budget <= 0 || policy.Budget > maxProviderAttemptBudget || policy.Lease <= 0 {
+	if policy.Budget <= 0 || policy.Budget > samplersettings.MaxProviderAttemptBudget || policy.Lease <= 0 {
 		return protocol.ErrInvalid
 	}
 	return nil
 }
 
-func validateProviderFailure(failure ProviderAttemptFailure) error {
+func (s *Store) validateProviderFailure(failure ProviderAttemptFailure) error {
 	if failure.Reason == "" || len(failure.Reason) > 4096 {
 		return protocol.ErrInvalid
 	}
 	switch failure.Class {
 	case ProviderAttemptTransient:
-		if failure.RetryAfter <= 0 || failure.RetryAfter > MaxProviderBackoff {
+		if failure.RetryAfter <= 0 || failure.RetryAfter > s.providerRetryMaxBackoff {
 			return protocol.ErrInvalid
 		}
 	case ProviderAttemptPermanent, ProviderAttemptInterrupted, ProviderAttemptDraining:
@@ -51,7 +47,7 @@ func validateProviderFailure(failure ProviderAttemptFailure) error {
 func insertProviderAttempt(ctx context.Context, tx *sql.Tx, id string, owner Owner, requestWire string, session *Session,
 	policy ProviderAttemptPolicy, stepID string, previousID *string, number, budget int,
 ) error {
-	if err := policy.validate(); err != nil || number <= 0 || budget < number || budget > maxProviderAttemptBudget {
+	if err := policy.validate(); err != nil || number <= 0 || budget < number || budget > samplersettings.MaxProviderAttemptBudget {
 		return protocol.ErrInvalid
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(
@@ -230,7 +226,7 @@ func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessi
 // observations remain untouched; sampling partial items are reconciled as ABSENT. Retry time is
 // written on this predecessor, so a crash before creating its successor loses no retry work.
 func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentID string, failure ProviderAttemptFailure) error {
-	if err := validateProviderFailure(failure); err != nil {
+	if err := s.validateProviderFailure(failure); err != nil {
 		return err
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {

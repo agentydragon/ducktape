@@ -604,13 +604,13 @@ state and other live cells/processes. JavaScript syntax errors and exceptions li
 normal `Script failed` output. Internal store, host-protocol and transport failures are not
 classified as model input errors.
 
-Provider sampling and compaction use at most three attempts per prepared step. HTTP 408, 429 and
+Provider sampling and compaction use at most `provider_attempt_budget` attempts per prepared step (default 3, range 1–16). HTTP 408, 429 and
 5xx, upstream transport/truncated-stream failures, response-head/semantic-idle timeouts, and a
 Chat Completions stream that reports `tool_calls` without emitting any calls are transient.
 The sampler logs a warning for the empty tool-call response. After the joined call ends, the
 owner abandons its exact intent, retains raw evidence,
-and records retry due time using PostgreSQL. Backoff starts at one second and doubles, honoring
-`Retry-After` up to 30 seconds. A retry has a fresh intent ID, the same accepted command and step,
+and records retry due time using PostgreSQL. Backoff starts at `provider_retry_initial_backoff_seconds` (default 1) and doubles, honoring
+`Retry-After` up to `provider_retry_max_backoff_seconds` (default 30). A retry has a fresh intent ID, the same accepted command and step,
 and the frozen prepared body; steering input and notifications wait until that step settles.
 Changed routing or parser profiles fail the command rather than silently rerouting its request.
 Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
@@ -953,7 +953,7 @@ lease in the transaction that records the event and its projected observations. 
 timer resets after that transaction commits. Initial leases cover response-head and semantic-idle
 budgets plus three bounded database operations. On semantic progress, the sampler adds the idle
 budget and two operation budgets to the PostgreSQL time and rounds the expiry up to the next
-30-second boundary. It writes the attempt row only when that deadline changes. Every evidence
+`provider_progress_lease_coalescing_seconds` boundary (default 30). It writes the attempt row only when that deadline changes. Every evidence
 append still checks the live lease and owner generation.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,

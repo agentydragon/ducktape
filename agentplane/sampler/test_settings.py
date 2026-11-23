@@ -119,6 +119,26 @@ def test_provider_phase_budgets_are_optional_and_independent() -> None:
     assert configured.provider_idle_timeout_seconds == 600
 
 
+def test_provider_attempt_policy_overrides() -> None:
+    policy = {
+        "provider_progress_lease_coalescing_seconds": 7,
+        "provider_retry_initial_backoff_seconds": 2,
+        "provider_retry_max_backoff_seconds": 40,
+        "provider_attempt_budget": 4,
+    }
+    assert Settings.model_validate({**settings_data(), **policy}).model_dump(include=set(policy)) == policy
+    for invalid in (
+        {"provider_progress_lease_coalescing_seconds": 0},
+        {"provider_progress_lease_coalescing_seconds": MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS},
+        {"provider_retry_initial_backoff_seconds": 31},
+        {"provider_retry_max_backoff_seconds": 0},
+        {"provider_attempt_budget": 0},
+        {"provider_attempt_budget": 17},
+    ):
+        with pytest.raises(ValidationError):
+            Settings.model_validate({**settings_data(), **invalid})
+
+
 def test_model_response_header_timeout_validation() -> None:
     data = settings_data()
     data["models"]["fixture-model"]["response_header_timeout_seconds"] = 360

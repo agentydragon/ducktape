@@ -24,7 +24,7 @@ func NewStore(t testing.TB, database *postgres.Database) *sessionstore.Store {
 	t.Helper()
 	dsn := database.Clone(t)
 	db := postgres.Open(t, dsn)
-	return sessionstore.New(db, 30*time.Second)
+	return sessionstore.New(db, 30*time.Second, nil)
 }
 
 func OpenStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {

@@ -78,7 +78,7 @@ func reopenProviderAttemptStore(t *testing.T, store *Store, dsn string) *Store {
 		t.Fatal(err)
 	}
 	db := postgres.Open(t, dsn)
-	return New(db, 30*time.Second)
+	return New(db, 30*time.Second, nil)
 }
 
 func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
@@ -248,6 +248,44 @@ func TestResponseEvidenceRollsBackLeaseWhenObservationAppendFails(t *testing.T) 
 	}
 	if after.Cursor != before.Cursor || len(events) != 0 {
 		t.Fatalf("failed evidence committed events=%d, cursor before=%d after=%d", len(events), before.Cursor, after.Cursor)
+	}
+}
+
+func TestProviderAttemptAppliesConfiguredCoalescingAndRetryCap(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	const coalescingSeconds, retrySeconds = 61, 45
+	store = New(store.DB(), 30*time.Second, &samplersettings.Settings{
+		ProviderProgressLeaseCoalescingSeconds: new(coalescingSeconds),
+		ProviderRetryMaxBackoffSeconds:         new(retrySeconds),
+	})
+	admitProviderCommand(t, store, owner, session.ID, "configured-provider-timing", false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const progressLease = 2 * time.Minute
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: progressLease}
+	_, before := readProviderAttemptLease(t, store, intentID)
+	if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("semantic evidence")}, true); err != nil {
+		t.Fatal(err)
+	}
+	deadline, after := readProviderAttemptLease(t, store, intentID)
+	if deadline.Unix()%coalescingSeconds != 0 || deadline.Before(before.Add(progressLease)) ||
+		!deadline.Before(after.Add(progressLease+coalescingSeconds*time.Second)) {
+		t.Fatalf("deadline=%s, want a %ds epoch boundary covering the progress lease", deadline, coalescingSeconds)
+	}
+	failure := ProviderAttemptFailure{Class: ProviderAttemptTransient, Reason: "retry configured fixture", RetryAfter: (retrySeconds + 1) * time.Second}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, failure); !errors.Is(err, protocol.ErrInvalid) {
+		t.Fatalf("retry above configured cap: %v", err)
+	}
+	failure.RetryAfter = retrySeconds * time.Second
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, failure); err != nil {
+		t.Fatalf("retry at configured cap: %v", err)
+	}
+	frontier, err := store.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier == nil || !frontier.Retryable || frontier.Ready || frontier.RetryIn <= 0 || frontier.RetryIn > failure.RetryAfter {
+		t.Fatalf("configured retry frontier=%+v err=%v", frontier, err)
 	}
 }
 

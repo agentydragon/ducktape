@@ -30,7 +30,7 @@ type Source struct {
 }
 
 func New(db *sql.DB, operationTimeout time.Duration) *Source {
-	return &Source{store: sessionstore.New(db, operationTimeout)}
+	return &Source{store: sessionstore.New(db, operationTimeout, nil)}
 }
 
 func (s *Source) Outbox() historyexport.Outbox { return s.store }

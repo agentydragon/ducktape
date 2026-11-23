@@ -197,6 +197,80 @@ func TestSettingsRejectProviderPhaseLeaseOverflow(t *testing.T) {
 	}
 }
 
+func TestProviderTimingDefaultsAndConfiguredValues(t *testing.T) {
+	settings := fixtureSettings()
+	if settings.ProviderProgressLeaseCoalescing() != 30*time.Second ||
+		settings.ProviderRetryInitialBackoff() != time.Second ||
+		settings.ProviderRetryMaxBackoff() != 30*time.Second || settings.ProviderAttemptLimit() != 3 {
+		t.Fatal("provider timing defaults changed")
+	}
+	settings.ProviderProgressLeaseCoalescingSeconds = new(19)
+	settings.ProviderRetryInitialBackoffSeconds = new(2)
+	settings.ProviderRetryMaxBackoffSeconds = new(7)
+	settings.ProviderAttemptBudget = new(5)
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err := DecodeSettings(strings.NewReader(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.ProviderProgressLeaseCoalescing() != 19*time.Second ||
+		configured.ProviderRetryInitialBackoff() != 2*time.Second ||
+		configured.ProviderRetryMaxBackoff() != 7*time.Second || configured.ProviderAttemptLimit() != 5 {
+		t.Fatal("configured provider timing did not round-trip")
+	}
+	for _, tc := range []struct {
+		attempt int
+		hint    time.Duration
+		want    time.Duration
+	}{
+		{1, 0, 2 * time.Second},
+		{2, 0, 4 * time.Second},
+		{2, 6 * time.Second, 6 * time.Second},
+		{1, 24 * time.Second, 7 * time.Second},
+		{3, 0, 7 * time.Second},
+	} {
+		if got := configured.ProviderRetryBackoff(tc.attempt, tc.hint); got != tc.want {
+			t.Fatalf("retry delay after attempt %d and hint %s=%s, want %s", tc.attempt, tc.hint, got, tc.want)
+		}
+	}
+}
+
+func TestProviderTimingValidationAndOverflow(t *testing.T) {
+	maxSeconds := int(maxExecutorInitializeTimeoutSeconds)
+	for _, tc := range []struct {
+		field  string
+		mutate func(*Settings)
+	}{
+		{"provider_progress_lease_coalescing_seconds", func(s *Settings) { s.ProviderProgressLeaseCoalescingSeconds = new(0) }},
+		{"provider_progress_lease_coalescing_seconds", func(s *Settings) { s.ProviderProgressLeaseCoalescingSeconds = &maxSeconds }},
+		{"provider_retry_initial_backoff_seconds", func(s *Settings) { s.ProviderRetryInitialBackoffSeconds = new(-1) }},
+		{"provider_retry_max_backoff_seconds", func(s *Settings) { s.ProviderRetryMaxBackoffSeconds = new(maxSeconds + 1) }},
+		{"provider_retry_initial_backoff_seconds", func(s *Settings) { s.ProviderRetryInitialBackoffSeconds = new(31) }},
+		{"provider_attempt_budget", func(s *Settings) { s.ProviderAttemptBudget = new(0) }},
+		{"provider_attempt_budget", func(s *Settings) { s.ProviderAttemptBudget = new(MaxProviderAttemptBudget + 1) }},
+	} {
+		settings := fixtureSettings()
+		tc.mutate(&settings)
+		var invalid *ValidationError
+		if err := settings.Validate(); !errors.As(err, &invalid) || !strings.Contains(invalid.Field(), tc.field) {
+			t.Fatalf("provider timing validation error for %s=%v", tc.field, err)
+		}
+	}
+	settings := fixtureSettings()
+	settings.ProviderRetryInitialBackoffSeconds = new(maxSeconds/2 + 1)
+	settings.ProviderRetryMaxBackoffSeconds = &maxSeconds
+	settings.ProviderAttemptBudget = new(MaxProviderAttemptBudget)
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := settings.ProviderRetryBackoff(MaxProviderAttemptBudget, 0), time.Duration(maxSeconds)*time.Second; got != want {
+		t.Fatalf("retry cap with large delay=%s, want %s", got, want)
+	}
+}
+
 func TestExecutorInitializeTimeoutDefaultsIndependentlyAndCanBeConfigured(t *testing.T) {
 	settings := fixtureSettings()
 	if got := settings.ExecutorInitializeTimeout(); got != 30*time.Second {
