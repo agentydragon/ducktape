@@ -34,6 +34,7 @@ js_library(
     visibility = [
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
     deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
 )

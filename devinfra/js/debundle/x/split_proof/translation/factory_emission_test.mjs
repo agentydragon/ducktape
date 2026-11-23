@@ -1,57 +1,28 @@
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
-const tmp = process.env.TEST_TMPDIR;
-assert(tmp);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
 const good = `function factory(f) { return async (...args) => f(...args); }
 function callback() { console.log("callback"); }
 const result = factory(callback);
 console.log("side");
 result();`;
 function emit(name, code, selectedSide, force = false) {
-  const dir = path.join(tmp, name);
-  mkdirSync(dir, { recursive: true });
-  const ast = path.join(dir, "ast.json");
-  const spec = path.join(dir, "spec.json");
-  const parsed = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
-  const side = selectedSide ?? [parsed.body.length - 2];
-  writeFileSync(ast, JSON.stringify(lowerDump(code, acorn, eslintScope)));
-  writeFileSync(
-    spec,
-    JSON.stringify({
-      entry: "entry.mjs",
-      modules: {
-        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
-        "side.mjs": side.map((i) => `#${i}`),
-      },
-    })
+  const fixture = prepareSideSplit(name, code, selectedSide);
+  const result = lowerDiagnostic(
+    fixture,
+    "--lean",
+    path.join(fixture.dir, "certificate.lean"),
+    ...(force ? ["--force"] : [])
   );
-  return {
-    dir,
-    result: run(process.env.LOWERSPLIT, [
-      "--diagnostic",
-      ast,
-      spec,
-      dir,
-      "--lean",
-      path.join(dir, "certificate.lean"),
-      ...(force ? ["--force"] : []),
-    ]),
-  };
+  return { ...fixture, result };
 }
 const goodResult = emit("good", good);
 assert.equal(goodResult.result.status, 0, `${goodResult.result.stdout}\n${goodResult.result.stderr}`);
-const source = path.join(tmp, "factory-source.mjs");
-writeFileSync(source, good);
-const before = run(process.execPath, [source]);
+const before = run(process.execPath, [goodResult.source]);
 const after = run(process.execPath, [path.join(goodResult.dir, "entry.mjs")]);
 assert.equal(before.status, 0, before.stderr);
 assert.equal(after.status, 0, after.stderr);
@@ -62,7 +33,7 @@ const bundle = path.join(goodResult.dir, "bundle.json");
 const tree = path.join(goodResult.dir, "tree.json");
 const cert = path.join(goodResult.dir, "cert.json");
 for (const args of [
-  [frontend, "bundle", source, "--out", bundle],
+  [frontend, "bundle", goodResult.source, "--out", bundle],
   [frontend, "tree", goodResult.dir, "--entry", "entry.mjs", "--out", tree],
   [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
 ]) {
@@ -76,9 +47,7 @@ const multi = good
   .replace("result();", "void (result(), result2());");
 const multiResult = emit("multi", multi);
 assert.equal(multiResult.result.status, 0, `${multiResult.result.stdout}\n${multiResult.result.stderr}`);
-const multiSource = path.join(tmp, "multi-source.mjs");
-writeFileSync(multiSource, multi);
-const multiBefore = run(process.execPath, [multiSource]);
+const multiBefore = run(process.execPath, [multiResult.source]);
 const multiAfter = run(process.execPath, [path.join(multiResult.dir, "entry.mjs")]);
 assert.equal(multiBefore.status, 0, multiBefore.stderr);
 assert.equal(multiAfter.status, 0, multiAfter.stderr);
@@ -88,9 +57,7 @@ assert.equal(multiAfter.stdout, "side\ncallback\ncallback\n");
 const escape = `globalThis.capture = f => { globalThis.saved = f; };\n${good.replace("result();", "globalThis.capture(result);\nglobalThis.saved();")}`;
 const escapeResult = emit("escape", escape, [0, 4]);
 assert.equal(escapeResult.result.status, 0, `${escapeResult.result.stdout}\n${escapeResult.result.stderr}`);
-const escapeSource = path.join(tmp, "escape-source.mjs");
-writeFileSync(escapeSource, escape);
-const escapeBefore = run(process.execPath, [escapeSource]);
+const escapeBefore = run(process.execPath, [escapeResult.source]);
 const escapeAfter = run(process.execPath, [path.join(escapeResult.dir, "entry.mjs")]);
 assert.equal(escapeBefore.status, 0, escapeBefore.stderr);
 assert.equal(escapeAfter.status, 0, escapeAfter.stderr);
@@ -120,10 +87,8 @@ for (const [name, bad] of [
     ),
   ],
 ]) {
-  const variantSource = path.join(tmp, `${name}-variant.mjs`);
-  writeFileSync(variantSource, bad);
   const forcedVariant = emit(`${name}-forced`, bad, undefined, true);
-  const original = run(process.execPath, [variantSource]);
+  const original = run(process.execPath, [forcedVariant.source]);
   const split = run(process.execPath, [path.join(forcedVariant.dir, "entry.mjs")]);
   assert.notEqual(split.stdout, original.stdout, `${name}: the split should change the output`);
   const { dir, result } = emit(name, bad);
@@ -186,20 +151,18 @@ trigger();`,
   assert.equal(rejected.result.status, 1, `${name}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
   assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, name);
   assert(!existsSync(path.join(rejected.dir, "entry.mjs")), name);
-  const sourceFile = path.join(tmp, `${name}-source.mjs`);
-  writeFileSync(sourceFile, code);
   const forced = emit(`${name}-forced`, code, side, true);
   assert.equal(forced.result.status, 1, name);
-  const original = run(process.execPath, [sourceFile]);
+  const original = run(process.execPath, [forced.source]);
   const emitted = run(process.execPath, [path.join(forced.dir, "entry.mjs")]);
   assert.equal(original.status, 0, original.stderr);
   assert.notEqual(emitted.status, 0, name);
   assert.match(emitted.stderr, /ReferenceError/, name);
-  const originalBundle = path.join(tmp, `${name}-bundle.json`);
-  const outputTree = path.join(tmp, `${name}-tree.json`);
-  const pairing = path.join(tmp, `${name}-pairing.json`);
+  const originalBundle = path.join(process.env.TEST_TMPDIR, `${name}-bundle.json`);
+  const outputTree = path.join(process.env.TEST_TMPDIR, `${name}-tree.json`);
+  const pairing = path.join(process.env.TEST_TMPDIR, `${name}-pairing.json`);
   for (const args of [
-    [frontend, "bundle", sourceFile, "--out", originalBundle],
+    [frontend, "bundle", forced.source, "--out", originalBundle],
     [frontend, "tree", forced.dir, "--entry", "entry.mjs", "--out", outputTree],
     [path.join(here, "pair.mjs"), originalBundle, outputTree, "--out", pairing],
   ]) {

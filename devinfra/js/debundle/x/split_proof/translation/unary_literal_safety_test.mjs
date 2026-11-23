@@ -4,37 +4,9 @@
 // `Symbol.toPrimitive` patched onto `RegExp.prototype` by another script runs when `+/x/` converts (premise P1: the
 // intrinsics are not patched).
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
-
-const temp = process.env.TEST_TMPDIR;
-assert(temp);
-const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
-function prepare(name, code, side) {
-  const dir = path.join(temp, name);
-  mkdirSync(dir, { recursive: true });
-  const source = path.join(temp, `${name}.mjs`);
-  const input = path.join(temp, `${name}-ast.json`);
-  const spec = path.join(temp, `${name}-spec.json`);
-  const parsed = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
-  writeFileSync(source, code);
-  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
-  writeFileSync(
-    spec,
-    JSON.stringify({
-      entry: "entry.mjs",
-      modules: {
-        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
-        "side.mjs": side.map((i) => `#${i}`),
-      },
-    })
-  );
-  return { dir, source, input, spec };
-}
+import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
 for (const [name, expression] of [
   ["number_plus", "+1"],
@@ -45,8 +17,9 @@ for (const [name, expression] of [
   ["number_bitnot", "~1"],
 ]) {
   const code = `const watched = 7;\nconst value = ${expression};\nfunction get() { return watched; }\nconsole.log(get(),String(value));`;
-  const { dir, source, input, spec } = prepare(`safe_${name}`, code, [1]);
-  const checked = run(process.env.LOWERSPLIT, ["--diagnostic", input, spec, dir]);
+  const fixture = prepareSideSplit(`safe_${name}`, code, [1]);
+  const { dir, source } = fixture;
+  const checked = lowerDiagnostic(fixture);
   assert.equal(checked.status, 0, `${name}: ${checked.stdout}\n${checked.stderr}`);
   assert(existsSync(path.join(dir, "entry.mjs")), name);
   const before = run(process.execPath, [source]),

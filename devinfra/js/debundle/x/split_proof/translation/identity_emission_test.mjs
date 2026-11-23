@@ -1,6 +1,5 @@
 // LowerSplit must accept the annotated source before it writes the emitted tree.
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +8,7 @@ import * as eslintScope from "eslint-scope";
 import { bundleFromParsed } from "./frontend.mjs";
 import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
 import { dumpParsed, lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
+import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = process.env.TEST_TMPDIR;
@@ -30,7 +30,6 @@ writeFileSync(
   spec,
   JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["identity", "result", "#3"], "side.mjs": ["#2"] } })
 );
-const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
 const parsed = parseModule(code, acorn.parse, eslintScope);
 // The transported Program keeps its declaration list, import and export. Lean splits the list later.
 const syntax = 'import {x as y} from "./dep.js"; const a = y, b = 1; export {a};';
@@ -176,27 +175,11 @@ for (const [name, unsafe] of [
     `function identity(x) { return x; }\nfunction change() { identity = x => { console.log("changed"); return x; }; }\nchange();\nconst result = identity(1);\nconsole.log("side");\nconsole.log(result);`,
   ],
 ]) {
-  const parsed = acorn.parse(unsafe, { sourceType: "module", ecmaVersion: "latest", ranges: true });
-  const side = parsed.body.length - 2;
-  const unsafeAst = path.join(temp, `${name}.json`);
-  const unsafeSpec = path.join(temp, `${name}-spec.json`);
-  const unsafeOut = path.join(temp, `${name}-out`);
-  mkdirSync(unsafeOut, { recursive: true });
-  writeFileSync(unsafeAst, JSON.stringify(lowerDump(unsafe, acorn, eslintScope)));
-  writeFileSync(
-    unsafeSpec,
-    JSON.stringify({
-      entry: "entry.mjs",
-      modules: {
-        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => i !== side),
-        "side.mjs": [`#${side}`],
-      },
-    })
-  );
-  const rejected = run(process.env.LOWERSPLIT, ["--diagnostic", unsafeAst, unsafeSpec, unsafeOut]);
+  const fixture = prepareSideSplit(name, unsafe);
+  const rejected = lowerDiagnostic(fixture);
   assert.equal(rejected.status, 1, `${name} must be rejected: ${rejected.stdout}\n${rejected.stderr}`);
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
-  assert(!existsSync(path.join(unsafeOut, "entry.mjs")), `${name} must not emit a module`);
+  assert(!existsSync(path.join(fixture.dir, "entry.mjs")), `${name} must not emit a module`);
 }
 
 // An escaped callback may read the result before a reordered initializer. The
@@ -268,32 +251,16 @@ globalThis.cb();`,
     [2, 4, 5],
   ],
 ]) {
-  const dir = path.join(temp, name);
-  mkdirSync(dir, { recursive: true });
-  const original = path.join(temp, `${name}.mjs`);
-  const input = path.join(temp, `${name}-ast.json`);
-  const split = path.join(temp, `${name}-spec.json`);
+  const fixture = prepareSideSplit(name, unsafe, side);
+  const { dir, source: original } = fixture;
   const sourceBundle = path.join(temp, `${name}-bundle.json`);
   const outputTree = path.join(temp, `${name}-tree.json`);
   const pairing = path.join(temp, `${name}-pairing.json`);
-  const parsed = acorn.parse(unsafe, { sourceType: "module", ecmaVersion: "latest" });
-  writeFileSync(original, unsafe);
-  writeFileSync(input, JSON.stringify(lowerDump(unsafe, acorn, eslintScope)));
-  writeFileSync(
-    split,
-    JSON.stringify({
-      entry: "entry.mjs",
-      modules: {
-        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
-        "side.mjs": side.map((i) => `#${i}`),
-      },
-    })
-  );
-  const rejected = run(process.env.LOWERSPLIT, ["--diagnostic", input, split, dir]);
+  const rejected = lowerDiagnostic(fixture);
   assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
   assert(!existsSync(path.join(dir, "entry.mjs")), name);
-  const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", input, split, dir, "--force"]);
+  const emitted = lowerDiagnostic(fixture, "--force");
   assert.equal(emitted.status, 1, `${name}: ${emitted.stdout}\n${emitted.stderr}`);
   assert.match(emitted.stdout, /FAIL\s+OrderOk/);
   const before = run(process.execPath, [original]);
