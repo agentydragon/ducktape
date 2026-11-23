@@ -35,18 +35,25 @@ private def literals : Program := Program.single [
   .expr (.str "\"\\\n/- -- #eval λ"), .expr (.num (Float.ofBits 0x8000000000000000)),
   .expr (.num (Float.ofBits 0x7ff8000000000001))]
 
+private def plan : EsmSplit.Plan :=
+  ⟨"main", [⟨"factory", [0], [], [("fac", "make")]⟩,
+    ⟨"main", [1, 2], [("factory", ["fac"])], [("public", "created")]⟩]⟩
+
 open Lean Elab in
-elab "quotedFixture%" n:ident : term => do
-  let p := if n.getId == `source then source else literals
-  let .ok text := LinkedBehavior.programLiteral p | throwError "could not quote the fixture"
-  let .ok stx := Parser.runParserCategory (← getEnv) `term text | throwError "could not parse the fixture literal"
-  Term.elabTerm stx (some (mkConst ``Program))
+elab "quotedFixture%" n:ident : term <= expectedType => do
+  let fixture := match n.getId with
+    | `source => toExpr source
+    | `plan => toExpr plan
+    | _ => toExpr literals
+  EsmSplit.CertificateData.elaborate fixture expectedType
 
 set_option maxRecDepth 16000
 set_option maxHeartbeats 2000000
 set_option cbv.warning false
 
-theorem literalRoundTrip : (quotedFixture% source) = source ∧ (quotedFixture% literals) = literals := ⟨rfl, rfl⟩
+theorem literalRoundTrip :
+    (quotedFixture% source) = source ∧ (quotedFixture% literals) = literals ∧ (quotedFixture% plan) = plan :=
+  ⟨rfl, rfl, rfl⟩
 
 -- One module, no imports or exports: simply calling an arrow on initialization used
 -- to exhaust the prover when its return expression went through the ordinary unary rule.

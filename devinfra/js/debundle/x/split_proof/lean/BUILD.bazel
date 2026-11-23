@@ -188,6 +188,7 @@ sh_binary(
 lean_library(
     name = "corejs_certificates",
     srcs = [
+        "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/BatchState.lean",
         "EsmSplit/CoreJS/BindingCertificate.lean",
         "EsmSplit/CoreJS/BindingFootprint.lean",
