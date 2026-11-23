@@ -1,4 +1,4 @@
-# Responses stream falls behind generation
+# Sampler journal falls behind provider streams
 
 On 2026-11-23 the staging sampler was still processing Responses API events tens of seconds
 after the provider reported completion. The delay was visible in the sampler journal before
@@ -62,6 +62,63 @@ five-minute means were 0.22 and 2.83 ms. Sampler containers accumulated about 9 
 quota throttling in total. Neither measure accounts for the observed delays; neither excludes
 short I/O stalls, lock contention or time waiting to run.
 
+## TabbyAPI reasoning chunks in staging
+
+On 2026-11-23, the staging sampler at `f0f83ce` took a median **43.35 s** to project a
+Qwen delta after recording its bytes. Both endpoints are sampler journal timestamps. The
+[Chat Completions reader](../providers/chatcompletions/stream.go) emits a text delta for each
+nonempty reasoning chunk during sampling and waits for evidence persistence and its progress hook before
+consuming the next chunk.
+
+| Projected deltas                              | Matches | Wire to projection, median |      p95 |  Maximum |
+| --------------------------------------------- | ------: | -------------------------: | -------: | -------: |
+| Sampled Qwen thread, recent tail (84 minutes) |   2,311 |                    43.35 s | 101.86 s | 135.23 s |
+| Same thread, 49-second lock sample below      |      26 |                    69.21 s |  87.08 s |  91.46 s |
+| Other matched streams in the lock sample      |      72 |                     5.88 s |  28.71 s |  30.55 s |
+
+The replica scan took the latest 10,000 journal entries from the TabbyAPI Qwen thread
+(`c7c5ab39…`) and 2,200 per other Session. It skipped entries of 30,000 stored bytes or
+more and entries that expanded beyond 1 MB. Within each Session and attempt, match a complete SSE
+data line in a wire record to a parsed chunk by canonical JSON, keeping only unique matches.
+Follow the projected text or tool-argument delta's source sequence back to that chunk.
+The short-window rows select by projection time, so the corresponding wire read can be earlier.
+
+During those 49 seconds Qwen accounted for **102 of 577** counted journal entries across four
+active Sessions. All 34 parsed Qwen chunks carried reasoning. This measures journal volume.
+The effect on other conversations remains open.
+
+Across six calls with a recorded HTTP response head, completion-token usage and `[DONE]`,
+effective throughput was **1.27–2.92 completion tokens/s** from head to done. One call
+reported 1,632 completion tokens in 1,285.5 s. Tabby's `created` value stayed constant
+within each call. GPU generation rate and browser paint time remain unmeasured.
+
+## Which transactions held up stream writers?
+
+From 18:29:31.636 to 18:30:21.041 UTC on 2026-11-23, sample the staging primary's
+`pg_stat_activity` and follow `pg_blocking_pids` to the root blocker. All 496 snapshots
+showed sampler database connections waiting on tuple or transaction-ID locks (median 11,
+range 7–14). For 923 observations of a writer waiting on the conversation-header lock,
+920 had a visible root. In **806 of 920**, the root's current or last statement fetched
+`sampler_content` payloads (686) or traversed the recursive `sampler_context` prefix (120).
+The counts weight long waits and repeat a blocker when multiple writers queue behind it.
+A last statement can remain visible while PostgreSQL waits for the client.
+
+Identify transactions by backend PID and transaction start, then look for a statement specific
+to the caller anywhere in that transaction. Two callers appeared at the root of header waits.
+
+- **Interrupt polling.** There were 15 distinct root transactions identified by the pending
+  interrupt query, including two distinct blocker/waiter pairs where the waiter subsequently
+  checked the live provider attempt to append evidence. The [50 ms poll](../internal/residentruntime/session/turn.go)
+  calls [PendingInterrupts](../internal/sessionstore/processes.go), which loads the conversation
+  under the owner lock and discards it before reading the interrupt IDs.
+- **History export.** There were 16 distinct root transactions identified by the export checkpoint
+  upsert. [CommitCheckpoint](../internal/sessionstore/admission.go) locks the Session and
+  loads its conversation before advancing the cursor.
+
+Most root transactions had no caller-specific statement in the sample. These chains establish
+contention on individual conversations. The snapshots have no join from a blocked backend
+to a particular Qwen delta.
+
 ## Fix candidates and what would distinguish them
 
 The [Responses reader](../providers/responses/provider.go) waits for
@@ -79,6 +136,10 @@ requires multiple journal inserts, cursor updates and notifications in one trans
 - **Batch journal writes:** amortize appends, cursor updates and notifications over a bounded
   batch. Measure first-delta delay as well as throughput; preserve ordering, raw evidence and
   reconnect/replay semantics. Reading ahead alone could just move the backlog into memory.
+
+Test interrupt polling and checkpointing with narrow reads while preserving ownership checks and
+monotonic export cursors. To measure cross-session interference, run the same Responses replay
+with interrupt polling and export active, once alongside a Qwen reasoning stream and once alone.
 
 Compare candidates with an identical burst of already-buffered SSE events at multiple context
 lengths. Record per-operation wall time (including pool acquisition), transaction count, first
