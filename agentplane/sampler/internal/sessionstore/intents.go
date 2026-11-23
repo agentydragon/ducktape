@@ -37,59 +37,71 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 	}
 	id := uuid.NewString()
 	var wire []byte
-	var conversation *Conversation
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		var err error
-		conversation, err = lockOwner(ctx, tx, owner)
+		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		if err := checkInterrupt(ctx, tx, owner); err != nil {
-			return err
-		}
-		if conversation.Pending != nil {
-			return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
-		}
-		if request.ProviderRequest != nil {
-			if prepare == nil || request.API != conversation.API {
-				return protocol.ErrInvalid
-			}
-			prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
-			if err != nil {
-				return err
-			}
-			request.ProviderRequest = &prepared
-			wire = rendered
-		}
-		if policy != nil && request.ProviderRequest != nil {
-			request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
-			request.ProviderRequest.SourceControl, err = conversation.contextControl(conversation.Context())
-			if err != nil {
-				return err
-			}
-		}
-		requestWire, err := marshal(request)
-		if err != nil {
+		if err := checkIntentStart(ctx, tx, owner, conversation); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		if policy != nil {
-			if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, *policy, id, nil, 1, policy.Budget); err != nil {
-				return err
-			}
-		} else if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
-			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
-			return err
-		}
-		return s.publishIntent(ctx, tx, conversation, session, id, request)
+		wire, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, prepare, policy)
+		return err
 	})
 	if err != nil {
 		return "", nil, err
 	}
 	return id, wire, nil
+}
+
+func checkIntentStart(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation) error {
+	if err := checkInterrupt(ctx, tx, owner); err != nil {
+		return err
+	}
+	if conversation.Pending != nil {
+		return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
+	}
+	return nil
+}
+
+func (s *Store) beginIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+	id string, request IntentPayload, prepare requestPreparation, policy *ProviderAttemptPolicy,
+) ([]byte, error) {
+	var wire []byte
+	if request.ProviderRequest != nil {
+		if prepare == nil || request.API != conversation.API {
+			return nil, protocol.ErrInvalid
+		}
+		prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
+		if err != nil {
+			return nil, err
+		}
+		if policy != nil {
+			prepared.SourceNativeContextID = conversation.nativeContextID()
+			prepared.SourceControl, err = conversation.contextControl(conversation.Context())
+			if err != nil {
+				return nil, err
+			}
+		}
+		request.ProviderRequest, wire = &prepared, rendered
+	}
+	requestWire, err := marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if policy != nil {
+		if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, *policy, id, nil, 1, policy.Budget); err != nil {
+			return nil, err
+		}
+	} else if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
+		id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+		return nil, err
+	}
+	return wire, s.publishIntent(ctx, tx, conversation, session, id, request)
 }
 
 // publishIntent follows the caller's admission checks and intent insertion in the same transaction.
@@ -107,28 +119,32 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
-	return s.finish(ctx, owner, intentID, result, contextTokens, func(c *Conversation) error {
+	return s.finish(ctx, owner, intentID, result, contextTokens, nil, func(c *Conversation) error {
 		return c.apply(func(state protocol.Context) error { return state.AppendRecords(records) })
 	})
 }
 
 func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call protocol.ToolInvocation, output []protocol.ContentPart) error {
-	return s.finish(ctx, owner, intentID, result, nil, func(c *Conversation) error {
+	return s.finish(ctx, owner, intentID, result, nil, nil, func(c *Conversation) error {
 		return c.appendToolResult(call, output)
 	})
 }
 
-func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result any, contextTokens *int, appendResult func(*Conversation) error) error {
+func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result any, contextTokens *int, snapshot *ProviderAttemptSnapshot, appendResult func(*Conversation) error) error {
 	resultWire, err := marshal(result)
 	if err != nil {
 		return err
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		if !pendingMatches(conversation.Pending, intentID, PendingIntentKind("")) {
+		var kind PendingIntentKind
+		if snapshot != nil {
+			kind = PendingIntentSampling
+		}
+		if !pendingMatches(conversation.Pending, intentID, kind) {
 			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
@@ -138,11 +154,19 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
 		}
+		if snapshot != nil && intent.Kind != IntentSampling {
+			return protocol.ErrPrecondition
+		}
 		if intent.Kind == IntentSampling || intent.Kind == IntentCompaction {
 			if err := checkInterrupt(ctx, tx, owner); err != nil {
 				return err
 			}
 			if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
+				return err
+			}
+		}
+		if snapshot == nil || !conversation.reuseNativeContexts(snapshot.conversation) {
+			if err := loadConversationItems(ctx, tx, conversation); err != nil {
 				return err
 			}
 		}

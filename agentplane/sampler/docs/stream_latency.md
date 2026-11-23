@@ -255,3 +255,30 @@ lengths. Record per-operation wall time (including pool acquisition), transactio
 delta, wire-to-projection p50/p95 and terminal lag. Inject an ownership change mid-stream and
 verify what the successor and History readers observe. Repeat a bounded staging comparison
 before closing the bug: the deployment's database latency is part of this failure.
+
+## Reusing a prepared conversation, 2026-11-23
+
+The buffered Qwen replay compared separate context preparation, dispatch and settlement
+against reusing the decoded native contexts for one fresh attempt. Both runs used three
+trials of three concurrent requests, each with 96 retained messages (498 KB) and 24
+reasoning deltas delivered in one verified wire read. The sampler journal supplied the
+timestamps. Times below are pooled median / p95. With nine calls the p95 is the maximum.
+
+| Interval                                                              | [Separate loads](https://app.buildbuddy.io/invocation/499dbfb6-4958-421d-ae51-b03faf711214) | [Reused snapshot](https://app.buildbuddy.io/invocation/774a95ea-addd-4460-a01b-5641e3dc7d60) |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------: | -------------------------------------------------------------------------------------------: |
+| Turn started to sampling dispatch                                     |                                                                             7.104 / 7.666 s |                                                                              3.688 / 4.024 s |
+| Turn started to HTTP response head                                    |                                                                             7.685 / 7.937 s |                                                                              4.022 / 4.238 s |
+| Parsed DONE to sampling result                                        |                                                                                429 / 487 ms |                                                                                   34 / 47 ms |
+| Parsed DONE to completed turn                                         |                                                                             4.921 / 5.298 s |                                                                              2.933 / 3.451 s |
+| Previous projection to next parsed chunk in the same read (207 pairs) |                                                                                  22 / 63 ms |                                                                                   15 / 46 ms |
+| Wire read to projection (216 deltas)                                  |                                                                              583 / 1,415 ms |                                                                               312 / 1,026 ms |
+
+From admission through runtime shutdown, PostgreSQL counted 323 recursive context reads
+and 314 content fetches on the baseline, and 288 and 279 with snapshot reuse. These totals
+include scheduling and turn completion. The hot path test also makes a transcript-only
+blob unreadable after the driver's initial read and verifies dispatch and settlement still succeed.
+
+BuildBuddy ran the revisions on separate workers. The parsed-to-projected median also
+shifted from 13 to 8 ms, so the timing changes include run-to-run variation. Dispatch and
+the work between sampling result and turn completion still take seconds on this fixture.
+Repeat these boundaries on a long staging Qwen call after rollout.

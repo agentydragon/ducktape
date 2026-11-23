@@ -208,6 +208,17 @@ const conversationColumns = `id::text, generation, owner::text, pending, stopped
 	executor_session, transcript_context_id, active_context_id, transcript_control, active_control, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
+	row, err := lockOwnerWithContextRefs(ctx, tx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := loadConversationItems(ctx, tx, row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func lockOwnerWithContextRefs(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	row, err := scanConversation(tx.QueryRowContext(ctx,
 		`SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -217,9 +228,6 @@ func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, err
 		return nil, err
 	}
 	if err := fenceOwner(ctx, tx, owner); err != nil {
-		return nil, err
-	}
-	if err := loadConversationItems(ctx, tx, row); err != nil {
 		return nil, err
 	}
 	return row, nil

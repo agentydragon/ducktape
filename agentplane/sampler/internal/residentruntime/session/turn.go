@@ -240,7 +240,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		}
 		return sessionstore.TurnCompact, nil
 	}
-	if frontier == nil || frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
+	if frontier != nil && frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
 		if err != nil {
 			return "", &deferredProviderError{cause: err}
@@ -260,8 +260,9 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[session.Model])
 	var intentID string
 	var wire []byte
+	var snapshot *sessionstore.ProviderAttemptSnapshot
 	if frontier == nil {
-		intentID, wire, err = r.store.Begin(ctx, owner, request, preparation, &policy)
+		intentID, wire, snapshot, err = r.store.BeginPreparedSampling(ctx, owner, conversation, state, request, preparation, policy)
 	} else if frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		intentID, wire, err = r.store.BeginSamplingAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, preparation, policy)
 	} else {
@@ -274,25 +275,37 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return "", err
 	}
-	candidate := conversation.Transcript.Clone()
-	err = candidate.AppendRecords(response.Records)
-	if err == nil {
-		var pending []protocol.ToolInvocation
-		pending, err = candidate.PendingCalls()
+	validate := func(transcript protocol.Context) error {
+		pending, err := transcript.PendingCalls()
+		if err != nil {
+			return err
+		}
 		for _, call := range pending {
 			if !call.HasValidShape() || (call.IsConfiguredToolName(config.ExecEncoding) && !call.IsModelTool(config.ExecEncoding)) {
-				err = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
-				break
+				return &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
 			}
 		}
+		return nil
 	}
-	if err != nil {
+	err = r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
+		if snapshot != nil {
+			return r.store.FinishPreparedSampling(writeCtx, owner, intentID, snapshot, response.Audit, response.Records, response.ContextTokens, validate)
+		}
+		// Recovery replays the durable request and has no prepared snapshot.
+		candidate := conversation.Transcript.Clone()
+		if err := candidate.AppendRecords(response.Records); err != nil {
+			return &sessionstore.InvalidSamplingContinuationError{Cause: err}
+		}
+		if err := validate(candidate); err != nil {
+			return &sessionstore.InvalidSamplingContinuationError{Cause: err}
+		}
+		return r.store.Finish(writeCtx, owner, intentID, response.Audit, response.Records, response.ContextTokens)
+	})
+	if errors.As(err, new(*sessionstore.InvalidSamplingContinuationError)) {
 		failure := &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid native conversation continuation", "response": response.Audit, "error": err.Error()}}
 		return "", r.providerFailure(ctx, owner, session, intentID, failure)
 	}
-	if err := r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
-		return r.store.Finish(writeCtx, owner, intentID, response.Audit, response.Records, response.ContextTokens)
-	}); err != nil {
+	if err != nil {
 		return "", err
 	}
 	return sessionstore.TurnSample, nil

@@ -143,8 +143,8 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 
 func (r *Driver) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
 	err := persist(ctx)
-	if err == nil {
-		return nil
+	if err == nil || errors.As(err, new(*sessionstore.InvalidSamplingContinuationError)) {
+		return err
 	}
 	// Re-read the exact intent even if the caller's context expired while COMMIT was in flight.
 	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -160,8 +160,8 @@ func (r *Driver) finishProvider(ctx context.Context, owner sessionstore.Owner, i
 		return &deferredProviderError{cause: err}
 	}
 	// The complete response is still in memory. Retry persistence, never the provider request.
-	if retryErr := persist(readCtx); retryErr == nil {
-		return nil
+	if retryErr := persist(readCtx); retryErr == nil || errors.As(retryErr, new(*sessionstore.InvalidSamplingContinuationError)) {
+		return retryErr
 	} else {
 		err = errors.Join(err, retryErr)
 	}
