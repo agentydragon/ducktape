@@ -5,7 +5,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_module_stdout")
 load("//props:py_test.bzl", "py_test")
 load("//props/specimens:defs.bzl", "specimen_layer_tars")
 
@@ -217,18 +217,11 @@ py_binary(
     ],
 )
 
-py_binary(
-    name = "export_schema_bin",
-    main_module = "props.backend.export_schema",
-    visibility = ["//:__subpackages__"],
-    deps = [":export_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    out = "openapi.json",
+    binary_visibility = ["//:__subpackages__"],
+    module = "export_schema",
     visibility = ["//props/frontend/src/lib:__pkg__"],
 )
 

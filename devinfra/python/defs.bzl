@@ -26,6 +26,32 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
+def py_module_stdout(name, module, out, visibility = None, binary_visibility = None):
+    """Capture stdout from a same-package Python module in a build artifact.
+
+    Args:
+        name: Target for the captured output.
+        module: Module stem and name of its Gazelle-owned py_library.
+        out: Output file path.
+        visibility: Visibility of the output target.
+        binary_visibility: Visibility of the <module>_bin executable target.
+    """
+    package = native.package_name().replace("/", ".")
+    binary = module + "_bin"
+    py_binary(
+        name = binary,
+        main_module = package + "." + module if package else module,
+        visibility = binary_visibility,
+        deps = [":" + module],
+    )
+    native.genrule(
+        name = name,
+        outs = [out],
+        cmd = '$(location :{}) > "$@"'.format(binary),
+        tools = [":" + binary],
+        visibility = visibility,
+    )
+
 # The image name every `requires_docker` test's testcontainers starts. Tests preload the
 # pinned Ryuk layout under this name from the testcontainers configuration. Testcontainers' own
 # default (`testcontainers/ryuk:0.8.1`) is a tag nothing preloads, which the daemon pulls

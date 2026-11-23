@@ -2,7 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_module_stdout", "py_test")
 
 py_library(
     name = "models",
@@ -190,19 +190,11 @@ aspect_py_binary(
     deps = [":server_main"],
 )
 
-# Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.
-py_binary(
-    name = "export_schema_bin",
-    main_module = "aiquota.export_schema",
-    visibility = ["//aiquota/frontend:__pkg__"],
-    deps = [":export_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    out = "openapi.json",
+    binary_visibility = ["//aiquota/frontend:__pkg__"],
+    module = "export_schema",
     visibility = ["//aiquota/frontend:__pkg__"],
 )
 
