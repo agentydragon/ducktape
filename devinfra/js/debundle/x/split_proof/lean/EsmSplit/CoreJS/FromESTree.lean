@@ -291,6 +291,13 @@ private partial def sequenceTree (head : Expr) : List Expr → Expr
   | [] => head
   | next :: tail => sequenceTree (.seq head next) (pairSequences tail)
 
+private partial def containsBreak (j : Json) : Bool :=
+  match j with
+  | .obj fields => (field j "type").toOption == some "BreakStatement" ||
+      fields.toList.any (fun (_, child) => containsBreak child)
+  | .arr items => items.any containsBreak
+  | _ => false
+
 mutual
 
 private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -530,6 +537,43 @@ private partial def linkedFunctionBlock (imports : List Name) (j : Json) : Excep
   unless (← field j "type") == "BlockStatement" do throw "expected a statement block"
   return .block (← linkedFunctionBody imports j)
 
+/-- With no fallthrough and no case-scope lexical bindings, a switch is a chain of
+strict comparisons against a saved discriminant. A trailing default runs only
+after all case tests fail. -/
+private partial def linkedSwitch (imports : List Name) (j : Json) : Except String Stmt := do
+  let lower := linkedExpr imports true ""
+  let discriminant ← lower (← j.getObjVal? "discriminant")
+  let saved := ":switch:discriminant"
+  let mut dispatch := Stmt.block []
+  let mut hasFollowingClause := false
+  let cases ← j.getObjValAs? (Array Json) "cases"
+  for clause in cases.toList.reverse do
+    unless (← field clause "type") == "SwitchCase" do throw "expected a switch case"
+    let test ← clause.getObjVal? "test"
+    if test == .null && hasFollowingClause then throw "unsupported nontrailing switch default"
+    let mut statements ← clause.getObjValAs? (Array Json) "consequent"
+    let terminal := statements.back?.bind fun last => (field last "type").toOption
+    if terminal == some "BreakStatement" then
+      unless (← statements.back!.getObjVal? "label") == .null do
+        throw "unsupported labeled switch break"
+      statements := statements.pop
+    else if hasFollowingClause && terminal != some "ReturnStatement" && terminal != some "ThrowStatement" then
+      throw "unsupported switch fallthrough"
+    let mut body := #[]
+    for statement in statements do
+      let kind ← field statement "type"
+      if kind == "VariableDeclaration" then
+        unless (← field statement "kind") == "var" do throw "unsupported switch lexical declaration"
+      else if ["ClassDeclaration", "FunctionDeclaration"].contains kind then
+        throw "unsupported switch lexical declaration"
+      if containsBreak statement then throw "unsupported nested switch break"
+      body := body.push (← linkedStatement imports true statement)
+    let branch := Stmt.block body.toList
+    dispatch ← if test == .null then pure branch else do
+      pure (.ite (.binary .strictEq (.var saved) (← lower test)) branch dispatch)
+    hasFollowingClause := true
+  return .block [.decl .const saved discriminant, dispatch]
+
 private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j : Json) :
     Except String Stmt := do
   if inFunction then
@@ -545,6 +589,7 @@ private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j
       let alternate ← j.getObjVal? "alternate"
       let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement imports true alternate
       return .ite test consequent elseBranch
+    | "SwitchStatement" => return ← linkedSwitch imports j
     | "VariableDeclaration" =>
       -- An unbraced branch can declare vars, which already belong to the enclosing function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"

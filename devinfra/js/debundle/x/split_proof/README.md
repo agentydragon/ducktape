@@ -71,6 +71,8 @@ Linked ordinary functions and arrows accept nonempty flat object patterns in par
 
 In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
 
+Linked functions can also use `switch` cases ending in `return`, `throw`, or an unlabeled `break` before the next clause. The discriminant is evaluated once. Case tests run in source order and match by strict equality. A trailing `default` runs when no test matches. The checker refuses fallthrough, a nontrailing default, nested breaks, and lexical declarations shared by the clauses. Independently braced case bodies keep their own lexical scopes.
+
 Linked sequence expressions evaluate their operands from left to right, stop at the first abrupt completion, and return the final operand's value. A sequence used as a call's callee supplies `undefined` as `this`, including when its last operand reads a member.
 
 Linked member expressions support dot access and computed keys with modeled primitive
