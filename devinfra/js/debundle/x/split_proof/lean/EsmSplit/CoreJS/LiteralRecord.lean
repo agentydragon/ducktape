@@ -98,6 +98,54 @@ tries those equations before unfolding the fallback scan. -/
 def lookupLiteralProperty (fields : List (String × String)) (key : String) : Option Property :=
   (fields.reverse.lookup key).map literalDataProperty
 
+namespace LiteralFieldIndex
+
+/-- Quote a wide record as its ordered keys and a raw search tree. The linked AST check
+compares the resulting properties, in order, to the actual program. The lookup
+lemmas apply to any tree, including one with missing keys. -/
+abbrev Tree := Std.DTreeMap.Internal.Impl String (fun _ => String)
+
+def read (tree : Tree) (key : String) := Std.DTreeMap.Internal.Impl.Const.get? tree key
+
+/-- A missing key contributes no field. Repeated keys retain their source positions. -/
+def fields (tree : Tree) (keys : List String) : List (String × String) :=
+  keys.filterMap fun k => (read tree k).map (k, ·)
+
+theorem length_le (tree : Tree) (keys : List String) : (fields tree keys).length ≤ keys.length :=
+  List.length_filterMap_le _ _
+
+private theorem lookup (tree : Tree) (keys : List String) (key : String) :
+    (fields tree keys).reverse.lookup key = if key ∈ keys then read tree key else none := by
+  induction keys with
+  | nil => simp [fields]
+  | cons k ks ih =>
+    by_cases h : key = k
+    · subst k
+      cases hv : read tree key with
+      | none => simpa [fields, hv] using ih
+      | some v =>
+        simp only [fields, List.filterMap_cons, hv, Option.map_some, List.reverse_cons,
+          List.lookup_append, List.lookup_cons, beq_self_eq_true, List.mem_cons_self, ite_true]
+        change ((fields tree ks).reverse.lookup key).or (some v) = some v
+        rw [ih, hv]
+        split <;> rfl
+    · cases hv : read tree k with
+      | none => simpa [fields, hv, h] using ih
+      | some v =>
+        simpa [fields, hv, List.lookup_append, List.lookup_cons, h, beq_eq_false_iff_ne.mpr h] using ih
+
+theorem hit {tree : Tree} {keys : List String} {key value : String} {i : Nat}
+    (atIndex : keys[i]? = some key) (atKey : read tree key = some value) :
+    lookupLiteralProperty (fields tree keys) key = some (literalDataProperty value) := by
+  have mem := List.mem_of_getElem? atIndex
+  simp [lookupLiteralProperty, lookup, mem, atKey]
+
+theorem miss {tree : Tree} {keys : List String} {key : String} (atKey : read tree key = none) :
+    lookupLiteralProperty (fields tree keys) key = none := by
+  simp [lookupLiteralProperty, lookup, atKey]
+
+end LiteralFieldIndex
+
 theorem lookup_literalProperties (fields : List (String × String)) (key : String) :
     (literalProperties fields).lookup key = lookupLiteralProperty fields key := by
   simp [literalProperties, lookup_fields, lookupLiteralProperty]

@@ -24,12 +24,18 @@ const member = (object, key, computed = false) => ({
   computed,
   optional: false,
 });
+const sampledFields = [0, 1, 117, 235, 352, 469, 587, 704];
 const source = program([
   variable("const", "left", record),
   variable("const", "right", record),
+  variable("const", "computedKey", literal("field263")),
   variable("const", "result", {
     type: "ArrayExpression",
-    elements: [member("left", "field0"), member("right", "field704"), member("left", "missing")],
+    elements: [
+      ...sampledFields.map((i) => member(i % 2 ? "right" : "left", `field${i}`)),
+      member("left", "missing"),
+      member("right", "computedKey", true),
+    ],
   }),
   exportNamed(["left", "right", "result"].map((name) => [name, name])),
 ]);
@@ -37,7 +43,7 @@ const entry = "entry.mjs";
 const order = ["right.mjs", "left.mjs"];
 const spec = {
   entry,
-  modules: { "left.mjs": ["#0"], "right.mjs": ["#1"], [entry]: ["#2", "#3"] },
+  modules: { "left.mjs": ["#0"], "right.mjs": ["#1"], [entry]: ["#2", "#3", "#4"] },
   order,
   sequential: true,
 };
@@ -53,7 +59,7 @@ assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, v
 for (const file of [sourceFile, path.join(out, entry)]) {
   const ns = await import(pathToFileURL(file).href);
   assert.deepEqual(Object.keys(ns), ["left", "result", "right"]);
-  assert.deepEqual(ns.result, ["value0", "value704", undefined]);
+  assert.deepEqual(ns.result, [...sampledFields.map((i) => `value${i}`), undefined, "value263"]);
   assert.deepEqual(
     Object.keys(ns.left),
     fields.map(({ key }) => key.name)
@@ -67,9 +73,15 @@ for (const file of [sourceFile, path.join(out, entry)]) {
 for (const objectKey of [false, true]) {
   const key = objectKey ? { type: "ObjectExpression", properties: [] } : literal("field95");
   const source = program([
-    variable("const", "table", { type: "ObjectExpression", properties: fields.slice(0, 96) }),
+    variable("const", "table", {
+      type: "ObjectExpression",
+      properties: [...fields.slice(0, 96), property("field2", literal("last"))],
+    }),
     variable("const", "key", key),
-    variable("const", "result", member("table", "key", true)),
+    variable("const", "result", {
+      type: "ArrayExpression",
+      elements: [member("table", "key", true), ...Array.from({ length: 8 }, (_, i) => member("table", `field${i}`))],
+    }),
     exportNamed([["result", "result"]]),
   ]);
   const dir = path.join(root, `computed-record-key-${objectKey}`);
@@ -88,7 +100,17 @@ for (const objectKey of [false, true]) {
     assert.equal(verdict.status, "certified", log);
     for (const file of [sourceFile, path.join(out, entry)]) {
       const { result } = await import(pathToFileURL(file).href);
-      assert.equal(result, "value95");
+      assert.deepEqual(result, [
+        "value95",
+        "value0",
+        "value1",
+        "last",
+        "value3",
+        "value4",
+        "value5",
+        "value6",
+        "value7",
+      ]);
     }
   }
 }
