@@ -36,17 +36,17 @@ theorem of_evaluation {source candidate : Program} (fuel : Nat)
 /-- Two normal probe executions with different final states cannot satisfy the
 all-world linked behavior claim. `Ends.unique` transports each concrete result
 to the shared state required by `Equivalent`. -/
-theorem different_probe_states_refute_equivalence {source candidate : Program} {fuel : Nat}
-    {sourceState candidateState : State World.probe}
-    (sourceRun : runProgram World.probe fuel source = .ok () sourceState)
-    (candidateRun : runProgram World.probe fuel candidate = .ok () candidateState)
+theorem different_probe_states_refute_equivalence {w : World} {source candidate : Program} {fuel : Nat}
+    {sourceState candidateState : State w}
+    (sourceRun : runProgram w fuel source = .ok () sourceState)
+    (candidateRun : runProgram w fuel candidate = .ok () candidateState)
     (different : sourceState ≠ candidateState) :
     ¬ Equivalent source candidate := by
   intro equivalent
-  obtain ⟨shared, sourceEnds, candidateEnds⟩ := equivalent World.probe
-  have sourceProbeEnds : Ends World.probe source (.ok () sourceState) :=
+  obtain ⟨shared, sourceEnds, candidateEnds⟩ := equivalent w
+  have sourceProbeEnds : Ends w source (.ok () sourceState) :=
     ⟨fuel, sourceRun, by simp⟩
-  have candidateProbeEnds : Ends World.probe candidate (.ok () candidateState) :=
+  have candidateProbeEnds : Ends w candidate (.ok () candidateState) :=
     ⟨fuel, candidateRun, by simp⟩
   have sourceStateEq : sourceState = shared := by
     have sameResult := Ends.unique sourceProbeEnds sourceEnds

@@ -165,6 +165,8 @@ structure World where
   σ : Type
   init : σ
   step : (fn : String) → (this : Primitive) → (args : List Primitive) → σ → HostResult × σ
+  /-- An ambient `typeof` observation may fail, throw, or change host state. -/
+  globalTypeof : String → σ → Option (HostResult × σ) := fun _ _ => none
   /-- **Stage two**: opaque code, a conversation. Told what to run, or how its last request ended, the world makes its
   next request. It sees the program's objects only through what it was handed, and its own state. -/
   talk : Told → σ → Request × σ
@@ -768,9 +770,15 @@ def reaches (s : State W) (a : Addr) : Nat → Option Addr → Bool
   | _, none | 0, _ => false
   | steps + 1, some b => b == a || reaches s a steps ((s.objAt b).bind (·.proto))
 
+def observeGlobalTypeof (name : String) : M W Val := fun s =>
+  match W.globalTypeof name s.world.state with
+  | some (result, state) => fromWorld { s with world := { s.world with state } } result
+  | none => .unknown s!"unsupported host typeof {name}" s
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
+  | .globalTypeof name => observeGlobalTypeof name
   | .log =>
     match args with
     | .str format :: _ :: _ => if format.contains '%' then unknown "console.log with a format string" else pure ()

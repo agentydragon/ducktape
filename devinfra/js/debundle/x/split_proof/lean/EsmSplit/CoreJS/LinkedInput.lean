@@ -31,7 +31,7 @@ private structure Parsed where
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
 
-private def parse (path : String) (nodes : Array Json) : Except String Parsed := do
+private def parse (profile : HostProfile) (path : String) (nodes : Array Json) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
@@ -52,11 +52,11 @@ private def parse (path : String) (nodes : Array Json) : Except String Parsed :=
           exports := exports.push (← FromESTree.exportSpec sp)
       else
         unless specs.isEmpty do throw "expected an inline declaration export"
-        let (name, s) ← FromESTree.linkedDeclaration names declaration
+        let (name, s) ← FromESTree.linkedDeclaration names declaration profile
         units := units.push (i, s, declaration)
         exports := exports.push (name, name)
     | _ =>
-      let s ← (FromESTree.linkedUnit names j).mapError fun why => s!"statement {i}: {why}"
+      let s ← (FromESTree.linkedUnit names j profile).mapError fun why => s!"statement {i}: {why}"
       units := units.push (i, s, j)
   return { imports := imports.toList, units := units.toList, exports := exports.toList }
 
@@ -66,23 +66,23 @@ private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module w
   body := p.units.map fun (i, s, _) => (base + i, s)
   exports := p.exports
 
-private def readProviders (providers : List (String × Json)) (base : Nat) : Except String (List Module) := do
+private def readProviders (profile : HostProfile) (providers : List (String × Json)) (base : Nat) : Except String (List Module) := do
   let names := providers.map Prod.fst
   let mut modules := #[]
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse name nodes).mapError fun why => s!"{name}: {why}"
+    let p ← (parse profile name nodes).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
     modules := modules.push (p.numbered name offset)
     offset := offset + nodes.size
   return modules.toList
 
-private def readSplit (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
+private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
     (m : EsmSplit.Module) : Except String Module := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
-  let p ← parse m.name nodes
+  let p ← parse profile m.name nodes
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
     unless p.imports.take original.imports.length == original.imports && external == original.imports do
@@ -147,7 +147,7 @@ private def checkScopes (before after : Program) : Except String Unit := do
 relative filenames in that same root, with no overlap. Plan ordinals refer to the full
 source unit array, including imports and export lists. The two programs share the
 providers, whose stable identities start after that array. -/
-def decodePair (source providers files : Json) (P : EsmSplit.Plan) : Except String (Program × Program) := do
+def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) : Except String (Program × Program) := do
   let fs := (← files.getObj?).toList.map Prod.fst
   let ps := (← providers.getObj?).toList
   let providerNames := ps.map Prod.fst
@@ -161,13 +161,13 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) : Except Stri
   for (j, i) in nodes.zipIdx do
     if ["ImportDeclaration", "ExportNamedDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
-  let original ← parse "bundle.mjs" nodes
+  let original ← parse profile "bundle.mjs" nodes
   for req in original.imports do
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
-  let shared ← readProviders ps nodes.size
+  let shared ← readProviders profile ps nodes.size
   let before : Program := { entry := P.entry, modules := original.numbered P.entry 0 :: shared }
   let split ← P.mods.mapM fun m =>
-    (readSplit files P providerNames original m).mapError fun why => s!"{m.name}: {why}"
+    (readSplit profile files P providerNames original m).mapError fun why => s!"{m.name}: {why}"
   let after : Program := { entry := P.entry, modules := split ++ shared }
   checkScopes before after
   return (before, after)
