@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -737,21 +737,23 @@ def _bj_upcard_key(outcome: BlackjackOutcome) -> str | None:
     return None
 
 
-def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> BlackjackSlice:
-    wins = losses = pushes = 0
-    wagered = 0
-    returned = 0
+def _blackjack_counts(events: list[GameEventRead]) -> tuple[int, int, int, int]:
+    counts: Counter[BlackjackOutcomeKind] = Counter()
     for e in events:
-        wagered += e.wager_credits
-        returned += e.payout_tokens
         assert isinstance(e.outcome, BlackjackOutcome)
-        outcome = e.outcome.outcome
-        if outcome in _BJ_WIN_OUTCOMES:
-            wins += 1
-        elif outcome in _BJ_LOSS_OUTCOMES:
-            losses += 1
-        elif outcome == "push":
-            pushes += 1
+        counts[e.outcome.outcome] += 1
+    return (
+        sum(counts[outcome] for outcome in _BJ_WIN_OUTCOMES),
+        sum(counts[outcome] for outcome in _BJ_LOSS_OUTCOMES),
+        counts["push"],
+        counts["blackjack"],
+    )
+
+
+def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> BlackjackSlice:
+    wins, losses, pushes, _ = _blackjack_counts(events)
+    wagered = sum(e.wager_credits for e in events)
+    returned = sum(e.payout_tokens for e in events)
     net = returned - wagered
     return BlackjackSlice(
         key=key,
@@ -769,18 +771,7 @@ def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> Black
 
 
 def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
-    wins = losses = pushes = blackjacks = 0
-    for e in events:
-        assert isinstance(e.outcome, BlackjackOutcome)
-        outcome = e.outcome.outcome
-        if outcome == "blackjack":
-            blackjacks += 1
-        if outcome in _BJ_WIN_OUTCOMES:
-            wins += 1
-        elif outcome in _BJ_LOSS_OUTCOMES:
-            losses += 1
-        elif outcome == "push":
-            pushes += 1
+    wins, losses, pushes, blackjacks = _blackjack_counts(events)
     count = len(events)
     decided = wins + losses
     return BlackjackSummary(
