@@ -399,7 +399,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | "typeof" => pure .typeof
       | "void" => pure .void
       | other => throw s!"unsupported unary operator {other}"
-    if op == .typeof && (← field argument "type") == "Identifier" && argument.getObjValAs? String "k" == .ok "G" then
+    if op == .typeof && (← field argument "type") == "Identifier" && (field argument "k").toOption == some "G" then
       let name ← identifier argument
       if (profile.stableTypeof name).isSome then return .prim (.globalTypeof name) []
     return .unary op (← linkedExpr profile imports inFunction "" argument)
