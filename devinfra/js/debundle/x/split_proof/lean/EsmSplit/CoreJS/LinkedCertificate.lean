@@ -464,8 +464,8 @@ private partial def collectWriteBatches (collected : WriteBatches) (e : Lean.Exp
 
 private abbrev WriteQuote := StateT (Array String) (Except String)
 
-/-- Each concrete number conversion gets its own bounded reduction. The expression
-witness only refers to these kernel-checked equations. -/
+/-- Each concrete number conversion gets its own checked equation. Definitional
+equality gives a smaller proof when it can compute the conversion. -/
 private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → WriteQuote String
   | .string => pure s!"(WriteExpr.string (n := n + {fuel - 1}))"
   | .number => pure s!"(WriteExpr.number (n := n + {fuel - 1}))"
@@ -484,7 +484,7 @@ private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → Wr
         let definitions ← get
         let fact := s!"{stem}Key{definitions.size}"
         set (definitions.push (s!"private theorem {fact} : toStr {value} = .ok {name.quote} := by\n" ++
-          "  cbv <;> rfl\n"))
+          "  first | rfl | cbv <;> rfl\n"))
         pure fact
     return s!"(WriteExpr.assign (n := n + {fuel - 3}) (name := {name.quote}) {k} {r} {conversion})"
 
@@ -507,7 +507,7 @@ private def writeBatchDefinitions (index : Nat) (batch : WriteBatch) : Except St
     s!"private theorem {stem}Eval " ++ "{W : World} (fuel : Nat) (env : Env) :\n" ++
     s!"    (evalExpr fuel env {stem}Expr : M W Val) =\n" ++
     s!"      evalBatch {receiver} {stem}Left {stem}Right {stem}Fields {minFuel} fuel env :=\n" ++
-    s!"  evalExpr_seq_batch {stem}Writes (by decide +kernel)\n" ++
+    s!"  evalExpr_seq_batch {stem}Writes ((EsmSplit.nodupB_iff _).mp (by decide +kernel))\n" ++
     s!"attribute [local cbv_eval] {stem}Eval\n"
 
 deriving instance Lean.ToExpr for EsmSplit.Module
@@ -671,7 +671,8 @@ def certificate (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (
   let p ← term (Lean.toExpr plan)
   let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
     jsonDefinitions "files" files
-  return "import EsmSplit.CoreJS.LinkedCertificate\n\nopen CoreJS\n" ++
+  let writeImports := if writeTerms.isEmpty then "" else "import EsmSplit.Fast\n"
+  return "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
     recordTerms ++ String.join writeTerms ++
     String.join asts.toList ++
