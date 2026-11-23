@@ -761,15 +761,6 @@ theorem declareTops_regions : ∀ (tops : List (Nat × Stmt)) {s s' : State W} {
       exact (newCells_regions _ hu1).1 p hp
     · exact declareTops_regions rest htail q hq p hp
 
-theorem lookup_mem {α γ : Type} [BEq α] [LawfulBEq α] {k : α} {v : γ} : ∀ {l : List (α × γ)}, l.lookup k = some v → (k, v) ∈ l
-  | [], h => by cases h
-  | (k', v') :: l, h => by
-    by_cases hk : k = k'
-    · subst hk; simp only [List.lookup, beq_self_eq_true, Option.some.injEq] at h; subst h; simp
-    · have : (k == k') = false := beq_false_of_ne hk
-      simp only [List.lookup, this] at h
-      exact List.mem_cons_of_mem _ (lookup_mem h)
-
 /-- A name of the bundle's scope means the binding of the statement that declares it, in that statement's region. -/
 theorem bundleEnv_lookup {ss : List Stmt} {B : EsmSplit.Bundle} {frames : List (Nat × List (Name × Addr))}
     (hfp : FootprintsOfSyntax ss B) (hF : FramesOf ((List.range ss.length).zip ss) frames)

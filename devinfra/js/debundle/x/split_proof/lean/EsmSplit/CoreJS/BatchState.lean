@@ -118,7 +118,7 @@ private theorem checkedTrace {s : State W} (bound : batchReceiver env x s = some
       obtain ⟨⟨⟨⟨ordinary, proto⟩, top⟩, own⟩, inherited⟩ := objects
       have fresh := excludes_fresh own
       have inheritedAbsent : ∀ f ∈ fields, parent.props.lookup f.1 = none :=
-        fun f hf => lookup_eq_none_of (excludes_fresh inherited f hf)
+        fun f hf => lookup_none_iff_not_mem_keys.mpr (excludes_fresh inherited f hf)
       obtain ⟨t, trace⟩ := trace_exists fields bound ho ordinary proto hne hp top unique fresh inheritedAbsent
       let call : Call W := fun _ _ _ => outOfFuel
       have aggregate := setProp_many_fresh call fields ho ordinary proto hne hp top unique fresh inheritedAbsent

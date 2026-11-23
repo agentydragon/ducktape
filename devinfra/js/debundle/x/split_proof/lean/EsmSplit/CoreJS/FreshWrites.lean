@@ -22,7 +22,7 @@ theorem setProp_fresh_data {s : State W} {a : Addr} {o : Obj} {key : String}
 private theorem key_absent (props : List (String × Property)) (key : String)
     (h : key ∉ props.map Prod.fst) :
     props.lookup key = none ∧ props.any (·.1 == key) = false := by
-  refine ⟨lookup_eq_none_of h, List.any_eq_false.mpr ?_⟩
+  refine ⟨lookup_none_iff_not_mem_keys.mpr h, List.any_eq_false.mpr ?_⟩
   intro field member
   exact fun eq => h (beq_iff_eq.mp eq ▸ List.mem_map_of_mem member)
 
