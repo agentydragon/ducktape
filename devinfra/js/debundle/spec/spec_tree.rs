@@ -131,33 +131,15 @@ impl ModuleTreeScope {
     /// roots are configured; `main_chunk_id` does not implicitly add a
     /// separate scope.
     pub fn configured_chunk_ids(config_path: &Path) -> Result<BTreeSet<String>> {
-        let config: AuthoringConfig = read_yaml(config_path)?;
-        validate_module_roots(&config.module_roots)?;
-        Ok(if config.module_roots.is_empty() {
-            [config.main_chunk_id].into_iter().collect()
-        } else {
-            config.module_roots.into_values().collect()
-        })
+        Ok(graph_module_roots(config_path)?.into_keys().collect())
     }
 
     pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
-        let config: AuthoringConfig = read_yaml(config_path)?;
-        validate_module_roots(&config.module_roots)?;
-        let roots = if config.module_roots.is_empty() {
-            if config.main_chunk_id != chunk_id {
-                bail!("tree config has no module root for graph chunk {chunk_id:?}");
-            }
-            vec![PathBuf::new()]
-        } else {
-            config
-                .module_roots
-                .into_iter()
-                .filter_map(|(root, chunk)| (chunk == chunk_id).then_some(root))
-                .collect::<Vec<_>>()
-        };
-        if roots.is_empty() {
-            bail!("tree config has no module root for graph chunk {chunk_id:?}");
-        }
+        let roots = graph_module_roots(config_path)?
+            .remove(chunk_id)
+            .with_context(|| {
+                format!("tree config has no module root for graph chunk {chunk_id:?}")
+            })?;
         Ok(Self { roots })
     }
 
@@ -429,7 +411,6 @@ fn load_module_sources(
         return load_chunk_modules(modules_root, Path::new(""), main_chunk_id);
     }
 
-    validate_module_roots(module_roots)?;
     let mut active = Vec::new();
     for (relative_root, chunk_id) in module_roots {
         active.extend(
