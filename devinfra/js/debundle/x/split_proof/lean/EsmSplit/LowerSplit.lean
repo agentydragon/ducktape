@@ -303,7 +303,7 @@ def Guarantee.label : Guarantee → String
   | .normalCompletion => "normal-completion"
 
 /-- Premises for the closed-declaration artifact theorems. The caller checks Valid
-and checks the reparsed files against these same extracted statements before publishing. -/
+and certifies the output ASTs against these same extracted statements. -/
 private def declarationProof? (program : Json) (B : Bundle) (P : Plan) :
     Option (Guarantee × List CoreJS.Stmt) := do
   let groups ← (CoreJS.DeclarationInput.decode program).toOption
