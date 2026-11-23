@@ -15,11 +15,13 @@
   buildBuddyRunnerTools,
   preCommitPackages,
   devToolPackages,
+  rustfmt,
 }:
 
 ducktapePkgs
 // gafferPkgs
 // {
+  inherit rustfmt;
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";

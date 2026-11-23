@@ -421,6 +421,7 @@
         preCommitPackages
         systemLibs
         devToolPackages
+        rustfmt
         ;
     in
     {
@@ -500,6 +501,7 @@
             buildBuddyRunnerTools
             preCommitPackages
             devToolPackages
+            rustfmt
             ;
         })
         // {
