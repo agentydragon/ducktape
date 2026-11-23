@@ -97,27 +97,30 @@ def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
     if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
   let programs ← timePhase timings "output_ast" fun _ => do
     IO.ofExcept (ESTreeEmit.programs asts B P source)
-  check programs
-  let manifest ← writeProgramManifest programs work
   if checkOnly then
+    let manifest ← writeProgramManifest programs work
     let providerManifest := work / "provider-programs.json"
     IO.FS.writeFile providerManifest providers.compress
     timePhase timings "output_comparison" fun _ => do
       javascript #["--check-output"] #[manifest, input, providerManifest, out]
-  else timePhase timings "output_publication" fun _ => do
-    let parent := out.parent.getD "."
-    IO.FS.createDirAll parent
-    -- A sibling directory makes publication a single same-filesystem rename.
-    let stage := parent / (".split-proof-" ++ work.fileName.get!)
-    IO.FS.createDir stage
-    try
-      javascript #["--print"] #[manifest, stage, input]
-      for (name, ast) in dependencies do
-        let dest := stage / name
-        IO.FS.createDirAll (dest.parent.getD stage)
-        IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-      IO.FS.rename stage out
-    finally
-      if ← stage.pathExists then IO.FS.removeDirAll stage
+    check programs
+  else
+    check programs
+    timePhase timings "output_publication" fun _ => do
+      let manifest ← writeProgramManifest programs work
+      let parent := out.parent.getD "."
+      IO.FS.createDirAll parent
+      -- A sibling directory makes publication a single same-filesystem rename.
+      let stage := parent / (".split-proof-" ++ work.fileName.get!)
+      IO.FS.createDir stage
+      try
+        javascript #["--print"] #[manifest, stage, input]
+        for (name, ast) in dependencies do
+          let dest := stage / name
+          IO.FS.createDirAll (dest.parent.getD stage)
+          IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+        IO.FS.rename stage out
+      finally
+        if ← stage.pathExists then IO.FS.removeDirAll stage
 
 end EsmSplit.SplitFiles

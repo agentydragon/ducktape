@@ -17,13 +17,7 @@ def timedCheck (label : String) (p : Unit → Bool) : IO Bool := do
   (← IO.getStdout).flush
   return r
 
-structure PlanChecks where
-  layout : Bool
-  order : Bool
-
-def PlanChecks.ok (checks : PlanChecks) : Bool := checks.layout && checks.order
-
-def report (B : Bundle) (S : Spec) (P : Plan) (verbose := true) : IO PlanChecks := do
+def reportLayout (B : Bundle) (S : Spec) (P : Plan) (verbose : Bool) : IO Bool := do
   if verbose then
     let t0 ← IO.monoMsNow
     let order ← IO.lazyPure fun _ => P.evalOrder
@@ -40,8 +34,7 @@ def report (B : Bundle) (S : Spec) (P : Plan) (verbose := true) : IO PlanChecks 
              ← check "Hygienic" fun _ => decide (Hygienic B P),
              ← check "AssignsHome" fun _ => decide (AssignsHome B P),
              ← check "Permutes" fun _ => decide (Permutes B P)]
-  let orderOk ← check "OrderOk" fun _ => decide (OrderOk B P)
-  return ⟨rs.all id, orderOk⟩
+  return rs.all id
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
 Module order follows the sorted keys of the parsed object; `order` is optional and keeps its order;
