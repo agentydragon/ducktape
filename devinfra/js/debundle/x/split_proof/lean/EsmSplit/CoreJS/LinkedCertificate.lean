@@ -68,6 +68,10 @@ private partial def exprEq : MatchEq Expr
     let ⟨name⟩ ← scalarEq x x'
     let ⟨value⟩ ← exprEq rhs rhs'
     return ⟨name ▸ value ▸ rfl⟩
+  | .assign (.frozen x) rhs, .assign (.frozen x') rhs' => do
+    let ⟨name⟩ ← scalarEq x x'
+    let ⟨value⟩ ← exprEq rhs rhs'
+    return ⟨name ▸ value ▸ rfl⟩
   | .assign (.member o k) rhs, .assign (.member o' k') rhs' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'

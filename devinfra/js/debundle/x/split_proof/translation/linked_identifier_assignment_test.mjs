@@ -70,11 +70,16 @@ function assertResult(test, expected) {
     assert.equal(service.read(), "updated");
   }
 
-  const modules = { [worker]: ["#0", "#2"], "writer.mjs": ["#1"], [entry]: ["#3", "#4"] };
-  const invalid = split("moved-writer", source, modules, [worker, "writer.mjs"]);
+  const writer = "writer.mjs";
+  const modules = { [worker]: ["#0", "#2"], [writer]: ["#1"], [entry]: ["#3", "#4"] };
+  const invalid = split("moved-writer", source, modules, [worker, writer]);
   requireRejected(invalid, /source placement or module linkage checks failed/);
   const preview = path.join(invalid.dir, "preview");
   forcePreview(invalid.files, preview);
+  assert.deepEqual(moduleEvaluationOrder(preview, entry), [worker, writer, entry]);
+  const original = await load(invalid.files.sourceFile);
+  assert.equal(original.write("updated"), "updated");
+  assert.equal(original.current, "updated");
   const service = await load(path.join(preview, entry));
   assert.equal(service.initial, undefined);
   assert.throws(() => service.write("updated"), TypeError);
@@ -82,23 +87,44 @@ function assertResult(test, expected) {
   assert.equal(service.current, undefined);
 }
 
-// A caught error can hide an imported write at initialization. Reject the write
-// in the syntax instead of treating the import as a mutable alias of its cell.
+// The import aliases a mutable provider cell. Both trees must evaluate the RHS
+// once, catch the failed write, and retain the provider's value.
 {
-  const source = `import { shared } from "./provider.mjs";
+  const source = `import { value as shared } from "./provider.mjs";
+    let evaluations = 0;
+    function write() { return shared = (evaluations = evaluations + 1, "wrong"); }
+    function shadow(shared) {
+      const parameter = (shared = "parameter");
+      {
+        let shared = "before";
+        return [parameter, shared = "block"];
+      }
+    }
     const run = () => {
-      try { return shared = "wrong"; } catch { return shared; }
+      try {
+        write();
+        throw "assignment unexpectedly succeeded";
+      } catch (error) {
+        if (typeof error !== "object" || evaluations !== 1) throw error;
+      }
+      return [shared, evaluations, shadow("argument")];
     };
-    export const result = run();`;
+    const result = run();
+    export { result, write, shared };`;
   const test = split(
     "imported-write",
     source,
-    { [entry]: ["#0", "#2"], [worker]: ["#1"] },
+    { [entry]: ["#0", "#4", "#5", "#6"], [worker]: ["#1", "#2", "#3"] },
     [worker],
-    'export let shared = "original";'
+    'export let value = "original";'
   );
-  assert.deepEqual(observe(test.files.sourceFile, "result"), { result: "original" });
-  requireRejected(test, /unsupported linked assignment to imported binding shared/);
+  assertResult(test, ["original", 1, ["parameter", "block"]]);
+  requireCertified(lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]));
+  for (const file of [test.files.sourceFile, path.join(test.out, entry)]) {
+    const service = await load(file);
+    assert.throws(() => service.write(), TypeError);
+    assert.equal(service.shared, "original");
+  }
 }
 
 // Check the model's abrupt handling as well as the Node results. The attempted
