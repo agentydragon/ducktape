@@ -1,6 +1,8 @@
 import Lean.Elab.Deriving.ToExpr
 import Lean.Elab.Tactic.Cbv
 import Lean.Util.CollectAxioms
+import Lean.Util.ReplaceExpr
+import EsmSplit.CertificateData
 import EsmSplit.CoreJS.BatchState
 import EsmSplit.CoreJS.ClassParents
 import EsmSplit.CoreJS.DenseArray
@@ -338,21 +340,16 @@ deriving instance Lean.ToExpr for CoreJS.Code
 deriving instance Lean.ToExpr for CoreJS.Obj
 deriving instance Lean.ToExpr for CoreJS.Binding
 
-/-- Render only the constructor applications, closed constants and literals produced by
-`ToExpr`. Program strings are data, including line breaks, quotes and Lean comment delimiters. -/
-private partial def termWith (replace : Lean.Expr → Option String) (e : Lean.Expr) : Except String String := do
-  if let some quoted := replace e then return quoted
+private partial def probeTerm (e : Lean.Expr) : Except String String := do
   match e with
   | .app .. => do
-    let f ← termWith replace e.getAppFn
-    let args ← e.getAppArgs.toList.mapM (termWith replace)
+    let f ← probeTerm e.getAppFn
+    let args ← e.getAppArgs.toList.mapM probeTerm
     return "(" ++ String.intercalate " " (f :: args) ++ ")"
   | .const n _ => return "@" ++ n.toString
   | .lit (.strVal s) => return s.quote
   | .lit (.natVal n) => return toString n
   | _ => throw "unsupported expression in quoted CoreJS data"
-
-private def term := termWith (fun _ => none)
 
 /-! `State World.probe` has a closed shape. Keep a canonical projection of every
 field in the run's final state; the probe's host state is `Unit`. Closures retain
@@ -376,7 +373,7 @@ private def observeProbeState (profile : HostProfile) (state : CoreJS.State (pro
     handed := state.world.handed.toList }
 
 private def probeStateLiteral (profile : HostProfile) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : String :=
-  match term (Lean.toExpr (observeProbeState profile state)) with
+  match probeTerm (Lean.toExpr (observeProbeState profile state)) with
   | .ok literal => literal
   | .error _ => ""
 
@@ -385,20 +382,17 @@ This is a refusal check only; matching probes still go through the all-world pro
 def probeStatesEqual (profile : HostProfile) (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
   probeStateLiteral profile left == probeStateLiteral profile right
 
-/-- A closed Lean constructor term for the complete decoded program. -/
-def programLiteral (p : Program) : Except String String := term (Lean.toExpr p)
-
 private abbrev StringFields := List (String × String)
 
 private def wideRecordMinFields : Nat := 96
 
 private structure RecordQuotes where
   fields : Array StringFields := #[]
-  replacements : Std.HashMap Lean.Expr String := {}
+  replacements : Std.HashMap Lean.Expr Lean.Expr := {}
 
 /-- Intern ordered field lists across the two programs. Replace complete top-level
 units, whose source identities distinguish them from statements in function bodies. -/
-private def recordQuotes (source candidate : Program) : Except String RecordQuotes := do
+private def recordQuotes (source candidate : Program) : RecordQuotes := Id.run do
   let mut quotes : RecordQuotes := {}
   for program in [source, candidate] do
     for md in program.modules do
@@ -411,8 +405,11 @@ private def recordQuotes (source candidate : Program) : Except String RecordQuot
           | _ => none) | continue
         let index := (quotes.fields.findIdx? (· == fields)).getD quotes.fields.size
         if index == quotes.fields.size then quotes := { quotes with fields := quotes.fields.push fields }
-        let k ← term (Lean.toExpr kind)
-        let replacement := s!"({ordinal}, CoreJS.Stmt.decl {k} {name.quote} (CoreJS.Expr.obj record{index}Props))"
+        let props := EsmSplit.CertificateData.ref (.mkSimple s!"record{index}Props")
+        let init := Lean.mkApp (Lean.mkConst ``Expr.obj) props
+        let decl := Lean.mkApp3 (Lean.mkConst ``Stmt.decl) (Lean.toExpr kind) (Lean.toExpr name) init
+        let replacement := Lean.mkApp4 (Lean.mkConst ``Prod.mk [0, 0])
+          (Lean.toTypeExpr Nat) (Lean.toTypeExpr Stmt) (Lean.toExpr ordinal) decl
         quotes := { quotes with replacements := quotes.replacements.insert (Lean.toExpr unit) replacement }
   return quotes
 
@@ -465,7 +462,8 @@ private def indexTreeTerm : LiteralFieldIndex.Tree → String
 /-- The syntax retains the checked original field list. Wide records expose
 individual lookups, while small records expose their full property list so
 later operations can inspect or replace its descriptors. -/
-private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) : Except String String := do
+private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) :
+    EsmSplit.CertificateData.Quotes ε String := do
   let stem := s!"record{index}"
   -- Many static reads amortize quoting a tree. Its projection must retain the
   -- exact source syntax, so keep the ordered pairs when a key occurs twice.
@@ -498,7 +496,7 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
     s!"@[cbv_eval] private theorem {stem}Reverse : {stem}Fields.reverse = {stem}Data.reverse :=\n" ++
     s!"  congrArg List.reverse {stem}Eq\n"
   if fields.length < wideRecordMinFields then
-    let props ← term (Lean.toExpr (literalProperties fields))
+    let props ← EsmSplit.CertificateData.quote (stem ++ "OwnProperties") (Lean.toExpr (literalProperties fields))
     return definitions ++ s!"@[cbv_eval] private theorem {stem}OwnProperties :\n" ++
       s!"    CoreJS.literalProperties {stem}Fields = {props} := by\n" ++
       s!"  rw [{stem}Eq] <;> rfl\n"
@@ -612,23 +610,22 @@ private def matchBatch (e : Lean.Expr) : Option WriteBatch := do
 
 private structure WriteBatches where
   batches : Array WriteBatch := #[]
-  replacements : Std.HashMap Lean.Expr String := {}
+  replacements : Std.HashMap Lean.Expr Lean.Expr := {}
 
 /-- Keep only maximal recognized trees and reuse exact matches across both programs. -/
 private partial def collectWriteBatches (collected : WriteBatches) (e : Lean.Expr) : WriteBatches :=
   if collected.replacements.contains e then collected
   else if let some batch := matchBatch e then
-    {
-      batches := collected.batches.push batch
-      replacements := collected.replacements.insert e s!"batch{collected.batches.size}Expr" }
+    let shared := EsmSplit.CertificateData.ref (.mkSimple s!"batch{collected.batches.size}Expr")
+    { batches := collected.batches.push batch, replacements := collected.replacements.insert e shared }
   else if e.isApp then e.getAppArgs.foldl collectWriteBatches collected
   else collected
 
-private abbrev WriteQuote := StateT (Array String) (Except String)
+private abbrev WriteQuote (ε : Type) := StateT (Array String) (EsmSplit.CertificateData.Quotes ε)
 
 /-- Each concrete number conversion gets its own checked equation. Definitional
 equality gives a smaller proof when it can compute the conversion. -/
-private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → WriteQuote String
+private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → WriteQuote ε String
   | .string => pure s!"(WriteExpr.string (n := n + {fuel - 1}))"
   | .number => pure s!"(WriteExpr.number (n := n + {fuel - 1}))"
   | .receiver => pure s!"(WriteExpr.receiverRead (n := n + {fuel - 1}))"
@@ -642,19 +639,19 @@ private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → Wr
     let conversion ← match numberKey with
       | none => pure "rfl"
       | some number => do
-        let value ← liftM (term (Lean.toExpr (.num number : Val)))
         let definitions ← get
         let fact := s!"{stem}Key{definitions.size}"
+        let value ← liftM (EsmSplit.CertificateData.quote (ε := ε) fact (Lean.toExpr (.num number : Val)))
         set (definitions.push (s!"private theorem {fact} : toStr {value} = .ok {name.quote} := by\n" ++
           "  first | rfl | cbv <;> rfl\n"))
         pure fact
     return s!"(WriteExpr.assign (n := n + {fuel - 3}) (name := {name.quote}) {k} {r} {conversion})"
 
-private def writeBatchDefinitions (index : Nat) (batch : WriteBatch) : Except String String := do
+private def writeBatchDefinitions (index : Nat) (batch : WriteBatch) : EsmSplit.CertificateData.Quotes ε String := do
   let stem := s!"batch{index}"
-  let left ← term batch.left
-  let right ← term batch.right
-  let fields ← term (Lean.toExpr batch.matched.fields)
+  let left ← EsmSplit.CertificateData.quote (stem ++ "Left") batch.left
+  let right ← EsmSplit.CertificateData.quote (stem ++ "Right") batch.right
+  let fields ← EsmSplit.CertificateData.quote (stem ++ "Fields") (Lean.toExpr batch.matched.fields)
   let minFuel := batch.matched.minFuel
   let receiver := batch.receiver.quote
   let (witness, conversions) ← (quoteWriteWitness stem minFuel batch.matched.witness).run #[]
@@ -1094,18 +1091,26 @@ private def checkpointText (preamble options declarations correspondence : Strin
   let gate := "import LinkedReplayProof\n" ++ options ++ "open LinkedReplay\n" ++ correspondence
   { input, source, execution, gate }
 
-/-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
-def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) :
-    Except Refusal Certificate := do
-  let preparation := fun reason => ({ code := .proofPreparation, reason } : Refusal)
-  let records ← (recordQuotes source candidate).mapError preparation
+-- Estimate the size of expanded constructor syntax independently of .olean sharing.
+private partial def expandedBytes (expr : Lean.Expr) : Nat :=
+  match expr with
+  | .app .. => expr.getAppArgs.foldl (fun size arg => size + 1 + expandedBytes arg) (2 + expandedBytes expr.getAppFn)
+  | .const name _ => name.toString.utf8ByteSize + 1
+  | .lit (.strVal s) => s.quote.utf8ByteSize
+  | .lit (.natVal n) => (toString n).utf8ByteSize
+  | .fvar id => id.name.toString.utf8ByteSize
+  | _ => 0
+
+private def certificateText (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
+    (source candidate : Program) : EsmSplit.CertificateData.Quotes Refusal Certificate := do
+  let records := recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
   -- Only observations present in the checked programs can need a world hypothesis.
   -- The generated execution theorem independently checks the chosen strength.
   let observes := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Prim.globalTypeof).isSome
   let premises := if observes sourceTerm || observes candidateTerm then profile else .empty
-  let fuel ← witnessFuel premises source candidate
+  let fuel ← liftM (witnessFuel premises source candidate)
   -- An initial reflexivity attempt can expand the parameter prelude before the
   -- reflection tactic uses the evaluator's equations.
   let hasDefaults := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Func.withDefaults).isSome
@@ -1115,18 +1120,18 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
     if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]?
     else if e.isAppOfArity ``Expr.seq 2 then writes.replacements[e]?
     else none
-  let s ← (termWith replace sourceTerm).mapError preparation
-  let c ← (termWith replace candidateTerm).mapError preparation
+  let sourceData := sourceTerm.replace replace
+  let candidateData := candidateTerm.replace replace
+  let s ← EsmSplit.CertificateData.quote "source" sourceData
+  let c ← EsmSplit.CertificateData.quote "candidate" candidateData
   let recordTerms ← if records.fields.isEmpty then pure "" else do
     let keys := if records.fields.any (·.length ≥ wideRecordMinFields) then
       (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
     else #[]
-    let definitions ← (records.fields.zipIdx.toList.mapM fun (fields, index) =>
-      recordDefinitions index fields keys).mapError preparation
+    let definitions ← records.fields.zipIdx.toList.mapM fun (fields, index) => recordDefinitions index fields keys
     pure ("attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++ String.join definitions)
-  let writeTerms ← (writes.batches.zipIdx.toList.mapM fun (batch, index) =>
-    writeBatchDefinitions index batch).mapError preparation
-  let p ← (term (Lean.toExpr plan)).mapError preparation
+  let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
+  let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
   let asts := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
   let writeImports := if writeTerms.isEmpty then "" else "import EsmSplit.Fast\n"
   let profileTerm := fun (p : HostProfile) => match p with
@@ -1142,7 +1147,8 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   let options := "\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
     "\n"
-  let preamble := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ options
+  let preamble := "import EsmSplit.CoreJS.LinkedCertificate\n" ++
+    s!"import {EsmSplit.CertificateData.moduleName}\n" ++ writeImports ++ options
   let data := recordTerms ++ String.join writeTerms
   let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n"
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
@@ -1160,9 +1166,14 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   let correspondence := "open LinkedExecutionProof\n" ++ raw ++ gate
   -- The measured 384-field and 705-field cases benefit from separate processes.
   -- Smaller proofs avoid their startup cost. Write batches use file-local CBV rules.
-  let checkpoint := if premises = .empty ∧ writes.batches.isEmpty ∧ s.utf8ByteSize + c.utf8ByteSize ≥ 40 * 1024 then
+  let checkpoint := if premises = .empty ∧ writes.batches.isEmpty ∧ expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024 then
       some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel stageLink)
     else none
   return { preamble, execution, correspondence, checkpoint, premises }
+
+/-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
+def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
+    (source candidate : Program) : Except Refusal (Certificate × EsmSplit.CertificateData.Entries) :=
+  (certificateText profile sourceAST providers files plan source candidate).run #[]
 
 end CoreJS.LinkedBehavior

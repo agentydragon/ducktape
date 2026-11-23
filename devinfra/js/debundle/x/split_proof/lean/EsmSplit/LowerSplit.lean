@@ -371,9 +371,10 @@ private def checkProofModule (work : System.FilePath) (setup : Lean.ModuleSetup)
   IO.FS.writeFile config (toJson setup).compress
   checkLean work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
 
-private def checkCheckpoint (timings : Bool) (work : System.FilePath) (text : CoreJS.LinkedBehavior.CheckpointText) : IO Unit := do
+private def checkCheckpoint (timings : Bool) (work : System.FilePath) (text : CoreJS.LinkedBehavior.CheckpointText)
+    (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO Unit := do
   let stages := #[(`LinkedReplayInput, text.input), (`LinkedReplaySource, text.source), (`LinkedReplayProof, text.execution)]
-  let mut importArts := ({} : Lean.NameMap _)
+  let mut importArts := dataArts
   for (name, code) in stages do
     let compiled := work / (name.toString ++ ".olean")
     timePhase timings name.toString fun _ => do
@@ -383,31 +384,39 @@ private def checkCheckpoint (timings : Bool) (work : System.FilePath) (text : Co
     checkProofModule work { name := `LinkedReplayGate, importArts } text.gate #[]
 
 /-- The ordinary execution proof can also be imported into a separate AST gate. -/
-private def checkOrdinaryExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate) : IO Unit := do
+private def checkOrdinaryExecution (timings : Bool) (work : System.FilePath)
+    (cert : CoreJS.LinkedBehavior.Certificate) (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO Unit := do
   if cert.correspondence.utf8ByteSize < 512 * 1024 then
-    let file := work / "LinkedExecution.lean"
-    IO.FS.writeFile file (cert.preamble ++ cert.execution ++ cert.correspondence)
     timePhase timings "execution_and_correspondence" fun _ => do
-      checkLean work #[file.toString]
+      checkProofModule work { name := `LinkedExecution, importArts := dataArts }
+        (cert.preamble ++ cert.execution ++ cert.correspondence) #[]
   else
     let name := `LinkedExecutionProof
     let compiled := work / "LinkedExecutionProof.olean"
     timePhase timings "execution_proof" fun _ => do
-      checkProofModule work { name } (cert.preamble ++ cert.execution) #["-o", compiled.toString]
-    let importArts := ({} : Lean.NameMap _).insert name (.ofArrays #[#[compiled]])
+      checkProofModule work { name, importArts := dataArts } (cert.preamble ++ cert.execution) #["-o", compiled.toString]
+    let importArts := dataArts.insert name (.ofArrays #[#[compiled]])
     timePhase timings "ast_correspondence" fun _ => do
       checkProofModule work { name := `LinkedExecution, importArts }
         ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence) #[]
 
+private def writeCertificateData (work : System.FilePath) (terms : CertificateData.Entries) :
+    IO (Lean.NameMap Lean.ImportArtifacts) := do
+  let dataName := CertificateData.moduleName
+  let dataFile := work / (dataName.toString ++ ".olean")
+  CertificateData.write dataFile terms
+  return ({} : Lean.NameMap Lean.ImportArtifacts).insert dataName (.ofArrays #[#[dataFile]])
+
 /-- Publication waits for the kernel-checked executions and the exact AST gate. -/
-private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate) : IO CoreJS.HostProfile := do
+private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate)
+    (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO CoreJS.HostProfile := do
   let accepted ← match cert.checkpoint with
     | none => pure false
     | some checkpoint => try
-        checkCheckpoint timings work checkpoint
+        checkCheckpoint timings work checkpoint dataArts
         pure true
       catch _ => pure false
-  unless accepted do checkOrdinaryExecution timings work cert
+  unless accepted do checkOrdinaryExecution timings work cert dataArts
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
@@ -550,15 +559,23 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
             throw (IO.userError reason)
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
-        let prepared ← timePhase timings "certificate_preparation" fun _ =>
-          IO.lazyPure fun _ => CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-        let cert ← match prepared with
-          | .ok cert => pure cert
+        let prepared ← timePhase timings "certificate_preparation" fun _ => do
+          let result ← IO.lazyPure fun _ =>
+            CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+          match result with
+          | .error refusal => pure (Except.error refusal)
+          | .ok (cert, terms) =>
+            try
+              return .ok (cert, ← writeCertificateData work terms)
+            catch err =>
+              return .error { code := .proofPreparation, reason := err.toString }
+        let (cert, dataArts) ← match prepared with
+          | .ok result => pure result
           | .error refusal =>
             let detail := (refusal.observation.map fun value => ("observation", value)).toList
             errorFields.set (("reason_code", toJson refusal.code.label) :: detail)
             throw (IO.userError refusal.reason)
-        used.set (← verifyExecution timings work cert)
+        used.set (← verifyExecution timings work cert dataArts)
       let active ← used.get
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
