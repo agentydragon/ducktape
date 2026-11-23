@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 	if runtimetesting.RunCodeModePeer() {
 		return
 	}
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &integrationDatabase))
 }
 
 func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
