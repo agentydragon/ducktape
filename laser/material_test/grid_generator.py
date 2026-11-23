@@ -329,24 +329,6 @@ def _auto_label(param: CutParam) -> str:
     return f"{label} [{unit}]" if unit else label
 
 
-def _cell_energy(config: GridConfig, outer_params: list[tuple[CutParam, float]], x_val: float, y_val: float) -> float:
-    """Energy proxy for sort ordering: higher value = more fire risk.
-
-    Computes max_power * num_passes / speed from the effective parameter values.
-    """
-    power = config.cut.power_max_pct
-    speed = config.cut.speed_mm_s
-    passes = config.cut.num_passes
-    for param, val in [(config.x.param, x_val), (config.y.param, y_val), *outer_params]:
-        if param == CutParam.POWER_PCT:
-            power = val
-        elif param == CutParam.SPEED_MM_S:
-            speed = val
-        elif param == CutParam.NUM_PASSES:
-            passes = round(val)
-    return power * passes / speed
-
-
 _SPACING = 3.0  # mm between text elements
 _MARGIN_LEFT = 5.0  # mm left of the Y-axis label
 _MARGIN_TOP = 5.0  # mm above the title
@@ -393,16 +375,9 @@ def _x_label_height(config: GridConfig) -> float:
 
 @dataclass
 class _CellSpec:
-    """A cell's parameter values and grid position indices (no absolute position).
+    """Effective cut settings and grid position before layer indices are assigned."""
 
-    Used for energy-based sorting before assigning layer indices. Both
-    generate() (LightBurn) and generate_rd() (Ruida) compute absolute
-    positions from these grid indices using their own coordinate systems.
-    """
-
-    x_val: float
-    y_val: float
-    outer_params: list[tuple[CutParam, float]]
+    cut: CutSetting
     outer_col: int  # index into config.cols.values (0 if no cols axis)
     outer_row: int  # index into config.rows.values (0 if no rows axis)
     inner_col: int  # index into config.x.values
@@ -425,30 +400,16 @@ def _sorted_cell_specs(config: GridConfig) -> list[_CellSpec]:
 
             for row_i, y_val in enumerate(config.y.values):
                 for col_j, x_val in enumerate(config.x.values):
-                    specs.append(
-                        _CellSpec(
-                            x_val=x_val,
-                            y_val=y_val,
-                            outer_params=outer_params,
-                            outer_col=oc_j,
-                            outer_row=or_i,
-                            inner_col=col_j,
-                            inner_row=row_i,
-                        )
-                    )
+                    cut = config.cut.to_cut_setting(0, "")
+                    _apply_param(cut, config.x.param, x_val)
+                    _apply_param(cut, config.y.param, y_val)
+                    for param, value in outer_params:
+                        _apply_param(cut, param, value)
+                    specs.append(_CellSpec(cut=cut, outer_col=oc_j, outer_row=or_i, inner_col=col_j, inner_row=row_i))
 
-    specs.sort(key=lambda c: _cell_energy(config, c.outer_params, c.x_val, c.y_val))
+    # Cut lower-energy cells first. Use the settings that will actually be emitted.
+    specs.sort(key=lambda cell: cell.cut.max_power * cell.cut.num_passes / cell.cut.speed)
     return specs
-
-
-def _cell_cut_setting(config: GridConfig, spec: _CellSpec, index: int, name: str) -> CutSetting:
-    """Create a CutSetting for a grid cell, applying the cell's parameter values."""
-    cut = config.cut.to_cut_setting(index, name)
-    _apply_param(cut, config.x.param, spec.x_val)
-    _apply_param(cut, config.y.param, spec.y_val)
-    for param, value in spec.outer_params:
-        _apply_param(cut, param, value)
-    return cut
 
 
 def _generate_subgrid_labels(
@@ -778,8 +739,9 @@ def generate(config: GridConfig) -> LightBurnProject:
     sorted_cells = _sorted_cell_specs(config)
     next_layer_index = 1
     for spec in sorted_cells:
-        cut = _cell_cut_setting(config, spec, next_layer_index, f"C{next_layer_index:02d}")
-        cut_settings.append(cut)
+        spec.cut.index = next_layer_index
+        spec.cut.name = f"C{next_layer_index:02d}"
+        cut_settings.append(spec.cut)
 
         sg_top = subgrid_cell_grid_tops[spec.outer_row]
         cx = cell_grid_lefts[spec.outer_col] + config.geometry.cell_size_mm / 2.0 + spec.inner_col * inner_stride
@@ -906,7 +868,7 @@ def generate_rd(config: GridConfig) -> RdJob:
     rects: list[RdRect] = []
 
     for i, spec in enumerate(sorted_cells):
-        cut = _cell_cut_setting(config, spec, i, "")
+        cut = spec.cut
         layers.append(
             RdLayer(
                 index=i,
