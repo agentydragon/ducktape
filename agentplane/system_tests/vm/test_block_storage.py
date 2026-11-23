@@ -37,24 +37,17 @@ _LO_FLAGS_AUTOCLEAR = 4
 async def workspace(api_server: KubernetesApiServer) -> AsyncIterator[tuple[k8s.CoreV1Api, Cluster]]:
     core = k8s.CoreV1Api(api_server.api)
     storage_api = k8s.StorageV1Api(api_server.api)
-    cluster = Cluster(kubeconfig=api_server.kubeconfig, namespace="workspace-test", kubectl_command=("unused-kubectl",))
-    await core.create_namespace(k8s.V1Namespace(metadata=k8s.V1ObjectMeta(name=cluster.namespace)))
+    namespace = await core.create_namespace(k8s.V1Namespace(metadata=k8s.V1ObjectMeta(generate_name="workspace-test-")))
+    cluster = Cluster(
+        kubeconfig=api_server.kubeconfig, namespace=namespace.metadata.name, kubectl_command=("unused-kubectl",)
+    )
     try:
         assert not (await core.list_persistent_volume()).items
         assert not (await storage_api.list_storage_class()).items
         yield core, cluster
     finally:
-        # The provisioner and its loop devices are closed by the test. Envtest has no
-        # controllers to finalize claims, volumes or the namespace after deletion.
-        claims = await core.list_persistent_volume_claim_for_all_namespaces(
-            field_selector=f"metadata.namespace={cluster.namespace}"
-        )
-        for claim in claims.items:
-            await core.delete_namespaced_persistent_volume_claim(claim.metadata.name, cluster.namespace)
-            if claim.metadata.finalizers:
-                await core.patch_namespaced_persistent_volume_claim(
-                    claim.metadata.name, cluster.namespace, [{"op": "remove", "path": "/metadata/finalizers"}]
-                )
+        # Envtest discards the isolated namespace and its claims at session teardown.
+        # Clear cluster-scoped resources after the case stops its provisioner and loop devices.
         for volume in (await core.list_persistent_volume()).items:
             assert volume.spec.claim_ref.namespace == cluster.namespace
             await core.delete_persistent_volume(volume.metadata.name)
@@ -67,10 +60,6 @@ async def workspace(api_server: KubernetesApiServer) -> AsyncIterator[tuple[k8s.
         except ApiException as error:
             if error.status != 404:
                 raise
-        await core.delete_namespace(cluster.namespace)
-        namespace = await core.read_namespace(cluster.namespace)
-        namespace.spec.finalizers = []
-        await core.replace_namespace_finalize(cluster.namespace, namespace)
 
 
 def workspace_claim(name: str, *, storage_class: str = STORAGE_CLASS) -> k8s.V1PersistentVolumeClaim:
