@@ -1,5 +1,7 @@
 # TODO
 
+- **Separate extraction from verification once the Lean experiment matures.** Define the handoff from Rust selector resolution and extraction to Lean verification. Pin the original input and authored spec, record resolved unit owners and import priorities, and bind certification to the exact emitted module graph. Inventory the checks both implementations perform. Keep the Rust verifier in production during the experiment. Once Lean meets the production acceptance contract, evaluate which checks can have a single owner and which early Rust checks still provide useful extraction diagnostics. [Boundary plan](PLAN.md#1-take-selector-resolution-from-debundle-deferred)
+
 - **Explain a linked execution mismatch.** When both initializers finish normally with different exported strings, the current refusal prints the start of a failed Lean state equality. The first 1,200 characters describe built-in heap entries. Use the concrete probe to report a differing exported value when available, keeping the kernel proof as the condition for certification.
 
 - **Derived-class commutation.** Default-derived creation now has model semantics, but `allocOnly` rejects it. Extend replay reasoning to stable superclass/prototype heap reads, with checked exclusion or explicit treatment of accessor effects. Preserve the roughjs alternating plan as the acceptance target; seven inverted pairs cross its derived class. A binding read-set alone cannot justify these reads.
