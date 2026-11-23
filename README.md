@@ -20,7 +20,7 @@ Nix home-manager in `nix/home/`; **never edit dotfiles in `~/`**. Deploy: <nix/R
 ```bash
 nix shell .#precommit -c pre-commit install
 nix shell .#precommit -c pre-commit run --all-files
-bb run //devinfra/lint:buildifier
+nix shell .#precommit -c pre-commit run buildifier --files path/to/BUILD.bazel
 ```
 
 ### Lint/Format Exclusions
