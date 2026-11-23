@@ -1,7 +1,6 @@
 """CLI entry point for difftree."""
 
 import os
-import select
 import stat
 import sys
 
@@ -22,8 +21,22 @@ def validate_columns(ctx, param, value):
         raise click.BadParameter(str(e))
 
 
+def _read_diff_from_stdin() -> str:
+    stdin = sys.stdin
+    if stdin is None:
+        return ""
+    try:
+        mode = os.fstat(stdin.fileno()).st_mode
+    except OSError:
+        return ""
+    # A pipe can be empty while its producer is still generating the diff. Wait for EOF.
+    # Only read pipes and regular files, since terminals and devices may never reach EOF.
+    return stdin.read() if stat.S_ISFIFO(mode) or stat.S_ISREG(mode) else ""
+
+
 @click.command()
 @click.argument("diff_args", nargs=-1)
+@click.option("--cached", is_flag=True, help="Show staged changes when running git diff")
 @click.option(
     "--sort", type=click.Choice(["size", "alpha"]), default="size", help="Sort mode: 'size' (default) or 'alpha'"
 )
@@ -36,7 +49,9 @@ def validate_columns(ctx, param, value):
 )
 @click.option("--bar-width", type=int, default=20, help="Width of each progress bar (default: 20)")
 @click.option("--max-depth", type=int, default=None, help="Maximum tree depth to display")
-def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width: int, max_depth: int | None) -> None:
+def main(
+    diff_args: tuple[str, ...], cached: bool, sort: str, columns: list[Column], bar_width: int, max_depth: int | None
+) -> None:
     """
     Visualize diffs as a tree with progress bars.
 
@@ -70,28 +85,11 @@ def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width
     difftree --columns tree
     """
     try:
-        # Convert sort mode to enum
-        sort_mode = SortMode(sort)
-
-        # Check if stdin has actual data (not just EOF from capture_output=True)
-        has_stdin_data = False
-        if not sys.stdin.isatty():
-            # Try to peek at stdin to see if there's real data
-            try:
-                # Use os.fstat to check if stdin is a regular file or pipe with data
-                mode = os.fstat(sys.stdin.fileno()).st_mode
-                if (stat.S_ISFIFO(mode) or stat.S_ISREG(mode)) and select.select([sys.stdin], [], [], 0.0)[0]:
-                    # Data is available, but it might just be EOF
-                    # Try to peek at one byte (BufferedReader has peek, but type system doesn't know)
-                    peek_data = sys.stdin.buffer.peek(1)  # type: ignore[union-attr]
-                    has_stdin_data = len(peek_data) > 0
-            except OSError, AttributeError:
-                pass
-
-        if has_stdin_data:
-            changes = parse_unified_diff(sys.stdin.read())
+        if diff := _read_diff_from_stdin():
+            # Git can color the patch when difftree is its pager.
+            changes = parse_unified_diff(click.unstyle(diff))
         else:
-            changes = parse_git_diff(list(diff_args) if diff_args else None)
+            changes = parse_git_diff(["--cached", *diff_args] if cached else list(diff_args))
 
         if not changes:
             console = Console(stderr=True)
@@ -99,7 +97,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width
             sys.exit(0)
 
         root = build_tree(changes)
-        root = sort_tree(root, sort_by=sort_mode)
+        root = sort_tree(root, sort_by=SortMode(sort))
         config = RenderConfig(columns=columns, bar_width=bar_width, max_depth=max_depth)
         diff_tree = DiffTree(root, config=config)
         console = Console()

@@ -1,5 +1,7 @@
 """Tests for CLI functionality."""
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -93,6 +95,56 @@ def test_cli_integration_basic(runner, temp_git_repo, run_git, monkeypatch):
     assert result.exit_code == 0
     assert "file.py" in result.output
     assert "+1" in result.output
+
+
+@pytest.fixture
+def staged_and_unstaged_repo(temp_git_repo: Path, run_git) -> Path:
+    for name in ("staged.py", "unstaged.py"):
+        create_file(temp_git_repo, name, "before\n")
+    git_add_commit(run_git)
+    for name in ("staged.py", "unstaged.py"):
+        create_file(temp_git_repo, name, "after\n")
+    run_git("add", "staged.py")
+    return temp_git_repo
+
+
+def test_cli_cached(runner, staged_and_unstaged_repo, monkeypatch):
+    monkeypatch.chdir(staged_and_unstaged_repo)
+    result = runner.invoke(main, ["--cached"])
+
+    assert result.exit_code == 0
+    assert "staged.py" in result.output
+    assert "unstaged.py" not in result.output
+
+
+def test_cli_reads_pipe_before_falling_back(staged_and_unstaged_repo, run_git, monkeypatch, capsys):
+    monkeypatch.chdir(staged_and_unstaged_repo)
+    patch = run_git("diff", "--cached", "--color=always").stdout
+    read_fd, write_fd = os.pipe()
+    with os.fdopen(read_fd) as pipe, os.fdopen(write_fd, "w") as producer:
+        read = pipe.read
+
+        def feed_pipe_and_read() -> str:
+            # Make the producer deliver its patch only once difftree tries to read.
+            producer.write(patch)
+            producer.close()
+            return read()
+
+        monkeypatch.setattr(pipe, "read", feed_pipe_and_read)
+        monkeypatch.setattr(sys, "stdin", pipe)
+        main.main(args=[], standalone_mode=False)
+
+    output = capsys.readouterr().out
+    assert "staged.py" in output
+    assert "unstaged.py" not in output
+
+
+def test_cli_without_stdin(staged_and_unstaged_repo, monkeypatch, capsys):
+    monkeypatch.chdir(staged_and_unstaged_repo)
+    monkeypatch.setattr(sys, "stdin", None)
+    main.main(args=[], standalone_mode=False)
+
+    assert "unstaged.py" in capsys.readouterr().out
 
 
 def test_cli_integration_with_args(runner, temp_git_repo, run_git, monkeypatch):
