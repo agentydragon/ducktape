@@ -511,8 +511,9 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
   let S ← loadSpec specPath
   if required.isSome then
     for name in S.entry :: S.modules.map Prod.fst do
-      unless CoreJS.ModuleInput.supportedFilename name && name.endsWith ".mjs" do
-        throw (IO.userError s!"certified output requires a safe relative .mjs path, got {name}")
+      let moduleExtension := name.endsWith ".mjs" || (profile == .browserPage && name.endsWith ".js")
+      unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
+        throw (IO.userError s!"certified output requires a safe relative .mjs path (.js is supported for browser-page modules), got {name}")
   let t3 ← lap "load spec" t2
   if required.isNone then IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
   -- A rule Lean does not check. It talks about the original statements, so `--replicate` skips it.
