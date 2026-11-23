@@ -134,6 +134,15 @@ private theorem lookup (tree : Tree) (keys : List String) (key : String) :
       | some v =>
         simpa [fields, hv, List.lookup_append, List.lookup_cons, h, beq_eq_false_iff_ne.mpr h] using ih
 
+/-- A computed key need only search the index and check that a matching key
+occurs in the source. It need not reconstruct every property's value. -/
+theorem readProperty (tree : Tree) (keys : List String) (key : String) :
+    lookupLiteralProperty (fields tree keys) key =
+      (read tree key).bind fun value =>
+        if keys.contains key then some (literalDataProperty value) else none := by
+  by_cases h : key ∈ keys <;> cases hv : read tree key <;>
+    simp [lookupLiteralProperty, lookup, hv, h, List.contains_iff_mem]
+
 theorem hit {tree : Tree} {keys : List String} {key value : String} {i : Nat}
     (atIndex : keys[i]? = some key) (atKey : read tree key = some value) :
     lookupLiteralProperty (fields tree keys) key = some (literalDataProperty value) := by

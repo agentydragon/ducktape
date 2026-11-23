@@ -502,6 +502,12 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
     return definitions ++ s!"@[cbv_eval] private theorem {stem}OwnProperties :\n" ++
       s!"    CoreJS.literalProperties {stem}Fields = {props} := by\n" ++
       s!"  rw [{stem}Eq] <;> rfl\n"
+  if indexed then
+    definitions := definitions ++
+      s!"@[cbv_eval] private theorem {stem}DynamicRead (key : String) :\n" ++
+      s!"    CoreJS.lookupLiteralProperty {stem}Fields key = (CoreJS.LiteralFieldIndex.read {stem}Tree key).bind " ++
+      s!"(fun v => if {stem}Keys.contains key then some (CoreJS.literalDataProperty v) else none) := by\n" ++
+      s!"  rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.readProperty _ _ _\n"
   let reversed := fields.reverse
   for (key, i) in keys.zipIdx do
     let result := match reversed.lookup key with

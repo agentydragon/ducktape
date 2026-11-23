@@ -70,12 +70,14 @@ for (const file of [sourceFile, path.join(out, entry)]) {
 
 // A computed key does not get a per-key equation from the quoted syntax.
 // The exact ordinary lookup handles a primitive key and still refuses object coercion.
-for (const objectKey of [false, true]) {
+for (const kind of ["string", "object", "duplicate"]) {
+  const objectKey = kind === "object";
   const key = objectKey ? { type: "ObjectExpression", properties: [] } : literal("field95");
   const source = program([
     variable("const", "table", {
       type: "ObjectExpression",
-      properties: [...fields.slice(0, 96), property("field2", literal("last"))],
+      properties:
+        kind === "duplicate" ? [...fields.slice(0, 96), property("field2", literal("last"))] : fields.slice(0, 96),
     }),
     variable("const", "key", key),
     variable("const", "result", {
@@ -84,7 +86,7 @@ for (const objectKey of [false, true]) {
     }),
     exportNamed([["result", "result"]]),
   ]);
-  const dir = path.join(root, `computed-record-key-${objectKey}`);
+  const dir = path.join(root, `computed-record-key-${kind}`);
   const { sourceFile, specFile } = prepare(dir, {
     source,
     provider: "",
@@ -92,7 +94,11 @@ for (const objectKey of [false, true]) {
   });
   const out = path.join(dir, "out");
   const { verdict, log } = lower(sourceFile, specFile, out);
-  if (objectKey) {
+  if (kind === "duplicate") {
+    assert.equal(verdict.status, "rejected", log);
+    assert.match(verdict.reason, /duplicate object property/);
+    assert(!existsSync(out));
+  } else if (objectKey) {
     assert.equal(verdict.status, "rejected", log);
     assert.match(verdict.reason, /object is converted to a primitive/);
     assert(!existsSync(out));
@@ -104,7 +110,7 @@ for (const objectKey of [false, true]) {
         "value95",
         "value0",
         "value1",
-        "last",
+        "value2",
         "value3",
         "value4",
         "value5",
