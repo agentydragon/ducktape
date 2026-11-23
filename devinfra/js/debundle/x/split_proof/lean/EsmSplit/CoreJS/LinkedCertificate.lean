@@ -443,7 +443,7 @@ def evalQuotedRecordBody {W : World} (fields : List (String × String)) (props :
 /-- The generated equation specializes the usual record rule using the checked
 property list and width. It preserves the ordinary evaluator at insufficient fuel. -/
 theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props : List PropDef} {width : Nat}
-    (props_eq : props = fields.map literalField) (width_eq : fields.length = width)
+    (props_eq : props = fields.map literalField) (width_bound : fields.length ≤ width)
     (fuel : Nat) (env : Env) :
     (evalExpr fuel env (.obj props) : M W Val) = evalQuotedRecordBody fields props width fuel env := by
   cases fuel with
@@ -452,30 +452,49 @@ theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props :
     dsimp only [evalQuotedRecordBody]
     split
     · rename_i h
-      have budget : fields.length < n := by simpa only [width_eq] using h
+      have budget := Nat.lt_of_le_of_lt width_bound h
       rw [props_eq]
       exact evalExpr_obj_string_fields n env fields budget
     · rw [evalExpr] <;> rfl
+
+private def indexTreeTerm : LiteralFieldIndex.Tree → String
+  | .leaf => ".leaf"
+  | .inner size key value left right =>
+    s!"(.inner {size} {key.quote} {value.quote} {indexTreeTerm left} {indexTreeTerm right})"
 
 /-- The syntax retains the checked original field list. Wide records expose
 individual lookups, while small records expose their full property list so
 later operations can inspect or replace its descriptors. -/
 private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) : Except String String := do
   let stem := s!"record{index}"
-  let data := String.intercalate ",\n  " (fields.map fun (k, v) => s!"({k.quote}, {v.quote})")
-  let mut definitions :=
-    s!"private def {stem}Data : List (String × String) := [\n  {data}]\n" ++
+  -- Many static reads amortize quoting a tree. Its projection must retain the
+  -- exact source syntax, so keep the ordered pairs when a key occurs twice.
+  let positions := Std.HashMap.ofList (fields.zipIdx.map fun ((k, _), i) => (k, i))
+  let indexed := fields.length ≥ wideRecordMinFields && keys.size ≥ 8 && positions.size == fields.length
+  let data := if indexed then Id.run do
+    let names := String.intercalate "," (fields.map fun (k, _) => k.quote)
+    let tree := (Std.TreeMap.ofList fields : Std.TreeMap String String).inner.inner
+    return s!"private def {stem}Keys : List String := [{names}]\n" ++
+      s!"private def {stem}Tree : CoreJS.LiteralFieldIndex.Tree := {indexTreeTerm tree}\n" ++
+      s!"private def {stem}Data := CoreJS.LiteralFieldIndex.fields {stem}Tree {stem}Keys\n"
+    else
+      let pairs := String.intercalate ",\n  " (fields.map fun (k, v) => s!"({k.quote}, {v.quote})")
+      s!"private def {stem}Data : List (String × String) := [\n  {pairs}]\n"
+  let widthProof := if indexed then
+    s!"exact Nat.le_trans (CoreJS.LiteralFieldIndex.length_le {stem}Tree {stem}Keys) (Nat.le_refl {fields.length})"
+    else "exact Nat.le_refl _"
+  let mut definitions := data ++
     s!"private opaque {stem}Witness : " ++ "{ v : List (String × String) // v = " ++
     s!"{stem}Data" ++ " } := " ++ s!"⟨{stem}Data, rfl⟩\n" ++
     s!"@[cbv_opaque] private def {stem}Fields := {stem}Witness.val\n" ++
     s!"private theorem {stem}Eq : {stem}Fields = {stem}Data := {stem}Witness.property\n" ++
-    s!"private theorem {stem}Length : {stem}Fields.length = {fields.length} := by rw [{stem}Eq] <;> rfl\n" ++
+    s!"private theorem {stem}Width : {stem}Fields.length ≤ {fields.length} := by rw [{stem}Eq]; {widthProof}\n" ++
     s!"@[cbv_opaque] private def {stem}Props := {stem}Fields.map CoreJS.literalField\n" ++
     s!"@[cbv_eval] private theorem {stem}Eval " ++ "{W : World} (fuel : Nat) (env : Env) :\n" ++
     s!"    (evalExpr fuel env (.obj {stem}Props) : M W Val) =\n" ++
     s!"      CoreJS.LinkedBehavior.evalQuotedRecordBody {stem}Fields {stem}Props {fields.length} fuel env :=\n" ++
     s!"  CoreJS.LinkedBehavior.evalQuotedRecord (W := W) (props := {stem}Props) (fields := {stem}Fields) " ++
-    s!"rfl {stem}Length fuel env\n" ++
+    s!"rfl {stem}Width fuel env\n" ++
     s!"@[cbv_eval] private theorem {stem}Reverse : {stem}Fields.reverse = {stem}Data.reverse :=\n" ++
     s!"  congrArg List.reverse {stem}Eq\n"
   if fields.length < wideRecordMinFields then
@@ -483,15 +502,25 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
     return definitions ++ s!"@[cbv_eval] private theorem {stem}OwnProperties :\n" ++
       s!"    CoreJS.literalProperties {stem}Fields = {props} := by\n" ++
       s!"  rw [{stem}Eq] <;> rfl\n"
+  if indexed then
+    definitions := definitions ++
+      s!"@[cbv_eval] private theorem {stem}DynamicRead (key : String) :\n" ++
+      s!"    CoreJS.lookupLiteralValue {stem}Fields key = (CoreJS.LiteralFieldIndex.read {stem}Tree key).bind " ++
+      s!"(fun v => if {stem}Keys.contains key then some v else none) := by\n" ++
+      s!"  rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.readValue _ _ _\n"
   let reversed := fields.reverse
   for (key, i) in keys.zipIdx do
     let result := match reversed.lookup key with
       | some value => s!"some (CoreJS.literalDataProperty {value.quote})"
       | none => "none"
+    let proof := if !indexed then s!"rw [CoreJS.lookupLiteralProperty, {stem}Eq] <;> rfl" else
+      match positions[key]? with
+      | some pos => s!"rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.hit (tree := {stem}Tree) (keys := {stem}Keys) (i := {pos}) rfl rfl"
+      | none => s!"rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.miss (tree := {stem}Tree) rfl"
     definitions := definitions ++
       s!"@[cbv_eval] private theorem {stem}Read{i} :\n" ++
       s!"    CoreJS.lookupLiteralProperty {stem}Fields {key.quote} = {result} := by\n" ++
-      s!"  rw [CoreJS.lookupLiteralProperty, {stem}Eq] <;> rfl\n"
+      s!"  {proof}\n"
   return definitions
 
 private inductive WriteWitness where

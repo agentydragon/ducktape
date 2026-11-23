@@ -92,15 +92,76 @@ private theorem lookup_fields (fields : Fields) (props : List (String × Propert
       simp only [Option.orElse, Option.or, Option.map, addField, lookup_setOwn, matchKey, Bool.false_eq_true,
         ↓reduceIte]
 
+/-- The fallback after the concrete property equations. Keeping the underlying
+value lookup separate lets indexed records also reduce an arbitrary computed key. -/
+def lookupLiteralValue (fields : List (String × String)) (key : String) : Option String :=
+  fields.reverse.lookup key
+
 /-- A lookup sees the last definition of a field, or `none` for an absent key.
 The certificate can register concrete field equations on this function. `cbv`
 tries those equations before unfolding the fallback scan. -/
 def lookupLiteralProperty (fields : List (String × String)) (key : String) : Option Property :=
-  (fields.reverse.lookup key).map literalDataProperty
+  (lookupLiteralValue fields key).map literalDataProperty
+
+namespace LiteralFieldIndex
+
+/-- Quote a wide record as its ordered keys and a raw search tree. The linked AST check
+compares the resulting properties, in order, to the actual program. The lookup
+lemmas apply to any tree, including one with missing keys. -/
+abbrev Tree := Std.DTreeMap.Internal.Impl String (fun _ => String)
+
+def read (tree : Tree) (key : String) := Std.DTreeMap.Internal.Impl.Const.get? tree key
+
+/-- A missing key contributes no field. Repeated keys retain their source positions. -/
+def fields (tree : Tree) (keys : List String) : List (String × String) :=
+  keys.filterMap fun k => (read tree k).map (k, ·)
+
+theorem length_le (tree : Tree) (keys : List String) : (fields tree keys).length ≤ keys.length :=
+  List.length_filterMap_le _ _
+
+private theorem lookup (tree : Tree) (keys : List String) (key : String) :
+    (fields tree keys).reverse.lookup key = if key ∈ keys then read tree key else none := by
+  induction keys with
+  | nil => simp [fields]
+  | cons k ks ih =>
+    by_cases h : key = k
+    · subst k
+      cases hv : read tree key with
+      | none => simpa [fields, hv] using ih
+      | some v =>
+        simp only [fields, List.filterMap_cons, hv, Option.map_some, List.reverse_cons,
+          List.lookup_append, List.lookup_cons, beq_self_eq_true, List.mem_cons_self, ite_true]
+        change ((fields tree ks).reverse.lookup key).or (some v) = some v
+        rw [ih, hv]
+        split <;> rfl
+    · cases hv : read tree k with
+      | none => simpa [fields, hv, h] using ih
+      | some v =>
+        simpa [fields, hv, List.lookup_append, List.lookup_cons, h, beq_eq_false_iff_ne.mpr h] using ih
+
+/-- A computed key need only search the index and check that a matching key
+occurs in the source. It need not reconstruct every property's value. -/
+theorem readValue (tree : Tree) (keys : List String) (key : String) :
+    lookupLiteralValue (fields tree keys) key =
+      (read tree key).bind fun value => if keys.contains key then some value else none := by
+  by_cases h : key ∈ keys <;> cases hv : read tree key <;>
+    simp [lookupLiteralValue, lookup, hv, h]
+
+theorem hit {tree : Tree} {keys : List String} {key value : String} {i : Nat}
+    (atIndex : keys[i]? = some key) (atKey : read tree key = some value) :
+    lookupLiteralProperty (fields tree keys) key = some (literalDataProperty value) := by
+  have mem := List.mem_of_getElem? atIndex
+  simp [lookupLiteralProperty, lookupLiteralValue, lookup, mem, atKey]
+
+theorem miss {tree : Tree} {keys : List String} {key : String} (atKey : read tree key = none) :
+    lookupLiteralProperty (fields tree keys) key = none := by
+  simp [lookupLiteralProperty, lookupLiteralValue, lookup, atKey]
+
+end LiteralFieldIndex
 
 theorem lookup_literalProperties (fields : List (String × String)) (key : String) :
     (literalProperties fields).lookup key = lookupLiteralProperty fields key := by
-  simp [literalProperties, lookup_fields, lookupLiteralProperty]
+  simp [literalProperties, lookup_fields, lookupLiteralProperty, lookupLiteralValue]
 
 private theorem modify_allocated (s : State W) (objs : Array Obj)
     (o : Obj) (f : Obj → Obj) :
