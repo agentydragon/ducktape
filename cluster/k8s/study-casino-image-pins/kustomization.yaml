@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/study-casino
-    newTag: devel-20261123182546-1d80abf # {"$imagepolicy": "flux-system:study-casino:tag"}
+    newTag: devel-20261123202757-1c77c8a # {"$imagepolicy": "flux-system:study-casino:tag"}
 # `images:` runs before `replacements` within a Component, so STUDY_CASINO_IMAGE_TAG gets the
 # pinned tag.
 replacements:
