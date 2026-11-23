@@ -21,6 +21,7 @@ js_binary(
 
 js_binary(
     name = "summarize_real_splits",
+    data = ["//devinfra/js/debundle/x/split_proof:reporting"],
     entry_point = "summarize.mjs",
     tags = ["manual"],
 )
