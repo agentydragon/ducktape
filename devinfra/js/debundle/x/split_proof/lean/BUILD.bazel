@@ -474,6 +474,8 @@ lean_axiom_test(
         "CoreJS.access_newCallback",
         "CoreJS.frames_newConstructor",
         "CoreJS.access_newConstructor",
+        "CoreJS.perform_newObject",
+        "CoreJS.perform_newFunction",
         "CoreJS.perform_bindingOrKeys",
         "CoreJS.reachFrame_lookupProp",
         "CoreJS.perform_has",

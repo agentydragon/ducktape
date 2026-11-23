@@ -275,4 +275,58 @@ theorem access_newConstructor {r R cells A} (away : Away r R A) (call : Call W)
     simp [Obj.nodes, Property.nodes, Val.nodes] at hn
     exact hn.elim (fun h => h ▸ functionRoot) (opaqueCapturesAccessible hs code part node)
 
+/-- The largest envelope excluding the protected region and the initializer's read cells.
+Its closure under heap edges is still an obligation on the initial state. -/
+def Unprotected (r : Nat) (R : Addr → Prop) : HeapNode → Prop
+  | .obj a => a.region ≠ r
+  | .cell a => a.region ≠ r ∧ ¬R a
+
+theorem unprotected_away (r R) : Away r R (Unprotected r R) := by
+  constructor
+  · intro n hn
+    cases n with
+    | obj => exact hn
+    | cell => exact hn.1
+  · intro a h; exact h.2
+
+/-- An allocation can extend a smaller envelope. Once the envelope is maximal,
+any extension still satisfying separation gives exactly the initial envelope. -/
+theorem ReachFrame.of_growing_unprotected {r R cells P} {m : M W α} (frame : Frames r R m)
+    (grow : ∀ s, Access cells (Unprotected r R) s → s.region ≠ r →
+      ∃ B, (∀ n, Unprotected r R n → B n) ∧ Away r R B ∧ (m s).Accessible cells B P) :
+    ReachFrame r R cells (Unprotected r R) P m := by
+  apply ReachFrame.of_frames frame
+  intro s hs hr
+  obtain ⟨B, incl, away, result⟩ := grow s hs hr
+  have eq : B = Unprotected r R := by
+    funext n
+    apply propext
+    refine ⟨?_, incl n⟩
+    intro h
+    cases n with
+    | obj a => exact away.region (.obj a) h
+    | cell a => exact ⟨away.region (.cell a) h, away.reads a h⟩
+  exact eq ▸ result
+
+/-- A default prototype lives in the intrinsic region. An explicit prototype comes from a handle. -/
+theorem perform_newObject (r R cells) (call : Call W) (construct : Val → List Val → M W Val)
+    (code proto) (root : proto = none → objectProto.region ≠ r) :
+    ReachFrame r R cells (Unprotected r R) (fun _ => True) (perform call construct code cells (.newObject proto)) :=
+  ReachFrame.of_growing_unprotected (frames_newObject r R call construct code cells proto)
+    (access_newObject (unprotected_away r R) call construct code proto root)
+
+/-- Both callback forms inherit from Function.prototype. A constructible callback also
+allocates an own prototype inheriting from Object.prototype in the same intrinsic region. -/
+theorem perform_newFunction (r R cells) (call : Call W) (construct : Val → List Val → M W Val)
+    (code part name length constructible) (root : functionProto.region ≠ r) :
+    ReachFrame r R cells (Unprotected r R) (fun _ => True)
+      (perform call construct code cells (.newFunction part name length constructible)) := by
+  cases constructible with
+  | false =>
+    exact ReachFrame.of_growing_unprotected (frames_newCallback r R call construct code cells part name length)
+      (access_newCallback (unprotected_away r R) call construct code part name length root)
+  | true =>
+    exact ReachFrame.of_growing_unprotected (frames_newConstructor r R call construct code cells part name length)
+      (access_newConstructor (unprotected_away r R) call construct code part name length root root)
+
 end CoreJS
