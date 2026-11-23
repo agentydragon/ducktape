@@ -1,4 +1,4 @@
-"""Run the Runner Gateway against a supplied Kubernetes API and PostgreSQL."""
+"""Run Sessions and its Environments peer against a supplied Kubernetes API and PostgreSQL."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from util.net import listen_tcp
 # gazelle:include_dep @pypi//protobuf
 
 
-_GATEWAY_BINARY = "ducktape/agentplane/session_dispatcher/cmd/runner-gateway_/runner-gateway"
+_SESSIONS_BINARY = "ducktape/agentplane/session_dispatcher/cmd/sessions_/sessions"
 _SESSION_DISPATCHER_URI = "spiffe://agentplane/session-dispatcher"
 
 
@@ -50,10 +50,10 @@ def _migrate(binary: Path, database_url: str, log_path: Path) -> None:
         )
     except subprocess.TimeoutExpired as error:
         log_path.write_text(f"migration timed out\nstdout:\n{error.stdout!r}\nstderr:\n{error.stderr!r}")
-        raise RuntimeError(f"Runner Gateway migration timed out; see {log_path}") from error
+        raise RuntimeError(f"Sessions migration timed out; see {log_path}") from error
     if result.returncode != 0:
         log_path.write_text(f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
-        raise RuntimeError(f"Runner Gateway migration failed with {result.returncode}; see {log_path}")
+        raise RuntimeError(f"Sessions migration failed with {result.returncode}; see {log_path}")
 
 
 @dataclass
@@ -133,11 +133,11 @@ async def run_gateway(
     environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Run the Dispatcher and an independent production Environments Runtime proxy peer."""
-    binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
-    migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
+    binary = Runfiles.CreateOrRaise().root() / _SESSIONS_BINARY
+    migration_log = undeclared_outputs_dir() / f"go-sessions-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, binary, database_url, migration_log)
 
-    log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
+    log_path = undeclared_outputs_dir() / f"go-sessions-{uuid4().hex}.log"
     # The database URL stays out of the file, as in deployment, where it comes from a runtime source.
     # Exact service roles exercise the authoring schema and Go loader contract.
     if environment_runtime_ca is None:

@@ -14,14 +14,14 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 
 pkg_tar(
     name = "binary_layer",
-    srcs = ["//agentplane/session_dispatcher/cmd:runner-gateway"],
+    srcs = ["//agentplane/session_dispatcher/cmd:sessions"],
     package_dir = "/usr/local/bin",
 )
 
 oci_image(
     name = "image",
     base = "@distroless_static_debian13_linux_amd64",
-    entrypoint = ["/usr/local/bin/runner-gateway"],
+    entrypoint = ["/usr/local/bin/sessions"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":binary_layer",

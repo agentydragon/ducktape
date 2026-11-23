@@ -41,7 +41,7 @@ py_test(
     name = "test_migrations",
     size = "medium",
     srcs = ["test_migrations.py"],
-    data = ["//agentplane/session_dispatcher/cmd:runner-gateway"],
+    data = ["//agentplane/session_dispatcher/cmd:sessions"],
     requires_docker = True,
     deps = [
         ":conftest",
