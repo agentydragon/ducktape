@@ -30,6 +30,21 @@ py_library(
 )
 
 py_library(
+    name = "install_clis",
+    srcs = ["install_clis.py"],
+)
+
+py_test(
+    name = "test_install_clis",
+    srcs = ["test_install_clis.py"],
+    deps = [
+        ":install_clis",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "invocation_census",
     srcs = ["invocation_census.py"],
     deps = [
