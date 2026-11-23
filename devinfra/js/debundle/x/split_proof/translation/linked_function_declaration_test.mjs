@@ -123,7 +123,12 @@ for (const [seed, value] of ["initialized", 42].entries()) {
 for (const [name, source, count, reason] of [
   ["async", "async function read() { return 3; } export { read };", 2, /unsupported async or generator function/],
   ["generator", "function* read() { return 3; } export { read };", 2, /unsupported async or generator function/],
-  ["default-param", "function read(x = 3) { return x; } export { read };", 2, /expected an identifier/],
+  [
+    "default-param",
+    "function read(x = 3) { return x; } export { read };",
+    2,
+    /unsupported function parameter AssignmentPattern/,
+  ],
   [
     "nested",
     "function read() { function nested() { return 3; } return nested(); } export { read };",

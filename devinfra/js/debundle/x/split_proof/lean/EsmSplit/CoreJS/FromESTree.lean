@@ -12,7 +12,10 @@ private def field (j : Json) (key : String) := j.getObjValAs? String key
 
 def identifier (j : Json) : Except String Name := do
   unless (← field j "type") == "Identifier" do throw "expected an identifier"
-  field j "name"
+  let name ← field j "name"
+  -- Generated bindings start with a colon, which cannot begin an ECMAScript identifier.
+  if name.startsWith ":" then throw "invalid identifier name"
+  return name
 
 /-- Module requests and quoted export names carry their strings in ESTree's value field.
 Synthesized glue supplies this syntax directly. -/
@@ -174,6 +177,23 @@ private def localBinding (id : Json) : Except String Name := do
   unless (← field id "k") == "L" do throw "expected a function-local binding"
   return name
 
+/-- Flat object-pattern bindings in property evaluation order. Even an empty pattern
+checks coercibility, so it cannot be lowered to an empty sequence of property reads. -/
+private def linkedObjectPattern (j : Json) : Except String (List (Name × Name)) := do
+  unless (← field j "type") == "ObjectPattern" do throw "expected an object pattern"
+  let props ← j.getObjValAs? (List Json) "properties"
+  if props.isEmpty then throw "unsupported empty object pattern"
+  props.mapM fun p => do
+    unless (← field p "type") == "Property" do throw "expected a static object pattern property"
+    unless (← field p "kind") == "init" &&
+        !(← p.getObjValAs? Bool "computed") && !(← p.getObjValAs? Bool "method") do
+      throw "expected a static object pattern property"
+    let key ← moduleExportName (← p.getObjVal? "key")
+    unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
+    let target ← p.getObjVal? "value"
+    unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
+    return (key, ← localBinding target)
+
 /-- These expressions produce strings whenever they complete normally. Loose inequality
 between two such operands never invokes numeric or object coercion. -/
 private def stringOperand : Expr → Bool
@@ -307,21 +327,64 @@ private partial def linkedFunction (imports : List Name) (kind : FuncKind) (name
     (j : Json) : Except String Func := do
   if (← j.getObjValAs? Bool "async") || (← j.getObjValAs? Bool "generator") then
     throw "unsupported async or generator function"
-  let params ← (← j.getObjValAs? (List Json) "params").mapM localBinding
-  unless params.Nodup do throw "duplicate function parameter"
+  let mut params : Array Name := #[]
+  let mut bound : Array Name := #[]
+  let mut bindings : Array Stmt := #[]
+  for (param, i) in (← j.getObjValAs? (Array Json) "params").zipIdx do
+    match ← field param "type" with
+    | "Identifier" =>
+      let x ← localBinding param
+      params := params.push x
+      bound := bound.push x
+    | "ObjectPattern" =>
+      let fields ← linkedObjectPattern param
+      let arg := s!":parameter:{i}"
+      params := params.push arg
+      for (key, x) in fields do
+        bound := bound.push x
+        bindings := bindings.push (.decl .var x (.get (.var arg) (.str key)))
+    | other => throw s!"unsupported function parameter {other}"
+  unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
   let stmts ← if (← field body "type") == "BlockStatement" then
     linkedFunctionBody imports body
   else if kind == .arrow then
     pure [.ret (← linkedExpr imports true "" body)]
   else throw "expected a function body block"
-  return .mk name kind self params stmts
+  -- Static keys and identifier targets have no parameter expressions. The reads
+  -- run before the body, using the same mutable cells as any body var redeclarations.
+  return .mk name kind self params.toList (bindings.toList ++ stmts)
 
-private partial def linkedLocalDeclarations (imports : List Name) (j : Json) : Except String (Array Stmt) := do
+private partial def linkedLocalDeclarations (imports : List Name) (offset : Nat) (j : Json) :
+    Except String (Array Stmt) := do
   let declarations ← j.getObjValAs? (Array Json) "declarations"
   if declarations.isEmpty then throw "expected at least one declarator"
   let kind ← field j "kind"
-  declarations.mapM fun d => Prod.snd <$> declaratorWith localBinding (linkedExpr imports true) kind d
+  let mut result := #[]
+  for d in declarations do
+    let id ← d.getObjVal? "id"
+    if (← field id "type") == "ObjectPattern" then
+      unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
+      let declKind ← match kind with
+        | "var" => pure DeclKind.var
+        | "let" => pure DeclKind.let_
+        | "const" => pure DeclKind.const
+        | _ => throw s!"unsupported declaration {kind}"
+      let bindings ← linkedObjectPattern id
+      let initializer ← d.getObjVal? "init"
+      if initializer == .null then throw "object pattern declaration needs an initializer"
+      let value ← linkedExpr imports true "" initializer
+      if let [(key, bound)] := bindings then
+        result := result.push (.decl declKind bound (.get value (.str key)))
+      else
+        -- Keep the initializer value while each read and binding runs in source order.
+        let source := s!":destructure:{offset + result.size}"
+        result := result.push (.decl .const source value)
+        for (key, bound) in bindings do
+          result := result.push (.decl declKind bound (.get (.var source) (.str key)))
+    else
+      result := result.push (← Prod.snd <$> declaratorWith localBinding (linkedExpr imports true) kind d)
+  return result
 
 /-- Keep every declarator in its enclosing statement list. Function instantiation hoists
 all its vars, and block instantiation creates the lexical bindings before initialization. -/
@@ -329,7 +392,7 @@ private partial def linkedFunctionBody (imports : List Name) (block : Json) : Ex
   let mut result := #[]
   for stmt in ← block.getObjValAs? (Array Json) "body" do
     if (← field stmt "type") == "VariableDeclaration" then
-      result := result ++ (← linkedLocalDeclarations imports stmt)
+      result := result ++ (← linkedLocalDeclarations imports result.size stmt)
     else
       result := result.push (← linkedStatement imports true stmt)
   return result.toList
@@ -355,7 +418,7 @@ private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j
     | "VariableDeclaration" =>
       -- An unbraced branch can declare vars, which already belong to the enclosing function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
-      return .block (← linkedLocalDeclarations imports j).toList
+      return .block (← linkedLocalDeclarations imports 0 j).toList
     | "TryStatement" =>
       let body ← linkedFunctionBlock imports (← j.getObjVal? "block")
       let handler ← j.getObjVal? "handler"
