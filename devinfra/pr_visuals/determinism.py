@@ -84,10 +84,16 @@ class Execution:
 class TargetObservations:
     """Per-invocation test results and attempts without a BuildBuddy invocation record."""
 
-    runs: dict[str, list[TestRun]]
     runs_by_invocation: dict[str, dict[str, list[TestRun]]]
-    invocations: list[str]
     unavailable_invocations: list[str]
+
+    def runs_by_target(self) -> dict[str, list[TestRun]]:
+        """Group all available runs by target for the duration and status report."""
+        grouped: dict[str, list[TestRun]] = defaultdict(list)
+        for invocation in self.runs_by_invocation.values():
+            for label, runs in invocation.items():
+                grouped[label].extend(runs)
+        return grouped
 
 
 def _query_test_labels(expression: str, *, bbr: Path, run: Runner) -> set[str]:
@@ -146,27 +152,18 @@ def observe_targets(invocations: list[str], targets: list[str], *, bbapi: Path, 
     quietly reporting on fewer targets than ran. An invocation BuildBuddy does not know about is
     returned separately so it cannot hide other observations or count as a missing screenshot.
     """
-    by_label: dict[str, list[TestRun]] = defaultdict(list)
     by_invocation: dict[str, dict[str, list[TestRun]]] = {}
-    available_invocations: list[str] = []
     unavailable_invocations: list[str] = []
     for invocation in invocations:
         test_runs = list_test_runs(invocation, targets, bbapi=bbapi, run=run)
         if test_runs is None:
             unavailable_invocations.append(invocation)
             continue
-        available_invocations.append(invocation)
         invocation_runs: dict[str, list[TestRun]] = defaultdict(list)
         for test_run in test_runs:
-            by_label[test_run.label].append(test_run)
             invocation_runs[test_run.label].append(test_run)
         by_invocation[invocation] = dict(invocation_runs)
-    return TargetObservations(
-        runs=dict(by_label),
-        runs_by_invocation=by_invocation,
-        invocations=available_invocations,
-        unavailable_invocations=unavailable_invocations,
-    )
+    return TargetObservations(runs_by_invocation=by_invocation, unavailable_invocations=unavailable_invocations)
 
 
 def from_collection(
@@ -612,14 +609,15 @@ def main() -> None:
 
     attempted_invocations = [execution.invocation for execution in executions]
     target_observations = observe_targets(attempted_invocations, targets, bbapi=args.bbapi, run=subprocess.run)
-    invocations = target_observations.invocations
+    invocations = list(target_observations.runs_by_invocation)
+    runs_by_target = target_observations.runs_by_target()
     observations = observe(
         invocations, targets, target_observations.runs_by_invocation, bbapi=args.bbapi, run=subprocess.run
     )
     summary = report(
         observations,
         invocations,
-        target_observations.runs,
+        runs_by_target,
         executions=executions,
         unavailable_invocations=target_observations.unavailable_invocations,
     )
@@ -637,8 +635,8 @@ def main() -> None:
         or len(invocations) < 2
         or any(execution.returncode != 0 for execution in executions)
         or target_observations.unavailable_invocations
-        or not target_observations.runs
-        or any(test.status != "PASSED" for tests in target_observations.runs.values() for test in tests)
+        or not runs_by_target
+        or any(test.status != "PASSED" for tests in runs_by_target.values() for test in tests)
     ):
         raise SystemExit(1)
 

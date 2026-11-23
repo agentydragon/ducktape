@@ -521,9 +521,8 @@ def test_durations_come_from_buildbuddy_as_wall_time_not_summed_shards() -> None
 
     targets = observe_targets(["run-1"], [_TARGET], bbapi=Path("bbapi"), run=fake_run)
 
-    assert [test_run.summary.shard_count for test_run in targets.runs[_TARGET]] == [4]
-    assert [test_run.summary.wall_time for test_run in targets.runs[_TARGET]] == [timedelta(seconds=11.1)]
-    assert targets.runs_by_invocation["run-1"][_TARGET] == targets.runs[_TARGET]
+    assert [test_run.summary.shard_count for test_run in targets.runs_by_target()[_TARGET]] == [4]
+    assert [test_run.summary.wall_time for test_run in targets.runs_by_target()[_TARGET]] == [timedelta(seconds=11.1)]
 
 
 def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
@@ -538,7 +537,7 @@ def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
 
     timed = observe_targets(["run-1"], ["//ui:early", "//zz:late"], bbapi=Path("bbapi"), run=fake_run)
 
-    assert sorted(timed.runs) == ["//ui:early", "//zz:late"]
+    assert sorted(timed.runs_by_target()) == ["//ui:early", "//zz:late"]
     assert [flags for flags in asked if "--label" in flags] == [
         ["bbapi", "target", "run-1", "--json", "--label", "//zz:late"]
     ]
@@ -554,9 +553,8 @@ def test_unavailable_invocation_is_not_returned_as_a_missing_screenshot_run() ->
 
     observed = observe_targets(["present", "absent"], [_TARGET], bbapi=Path("bbapi"), run=fake_run)
 
-    assert observed.invocations == ["present"]
+    assert list(observed.runs_by_invocation) == ["present"]
     assert observed.unavailable_invocations == ["absent"]
-    assert "absent" not in observed.runs_by_invocation
 
 
 if __name__ == "__main__":
