@@ -8,6 +8,7 @@ import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
+import { panelOrder } from "./panelOrder.js";
 
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";
@@ -202,12 +203,6 @@ function panelSignal(allowance, window) {
   if (pace.ratio > 1.2) return { level: "danger", label: "Pace over 120% of leash" };
   if (pace.ratio > 1) return { level: "caution", label: "Pace above leash" };
   return { level: "good", label: "Pace ≤ leash" };
-}
-
-const PANEL_ITEMS = ["status", "balance", "pace-window", "pace", "sparkline"];
-
-function panelOrder(settings) {
-  return [...new Set([...settings.get_strv("panel-order").filter((id) => PANEL_ITEMS.includes(id)), ...PANEL_ITEMS])];
 }
 
 function formatDaily(minorUnits, currency) {

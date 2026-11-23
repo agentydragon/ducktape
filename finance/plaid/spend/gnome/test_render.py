@@ -523,8 +523,9 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         return cast(dict[str, Any], json.loads(string_reply(session.call("GetPanelState"))))
 
     try:
+        # A saved order can predate current items, repeat one, or name a retired item.
         configure(
-            order=["pace-window", "pace", "sparkline", "status", "balance"],
+            order=["pace-window", "pace", "retired", "pace", "sparkline"],
             visible=["status", "balance", "pace-window", "pace", "sparkline"],
             window="7d",
         )

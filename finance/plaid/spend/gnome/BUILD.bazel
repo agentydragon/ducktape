@@ -10,6 +10,7 @@ pkg_files(
     srcs = [
         "extension.js",
         "metadata.json",
+        "panelOrder.js",
         "prefs.js",
         "schemas/org.gnome.shell.extensions.plaid-spend.gschema.xml",
         "stylesheet.css",

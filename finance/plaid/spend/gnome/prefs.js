@@ -4,20 +4,15 @@ import Gdk from "gi://Gdk";
 import Gtk from "gi://Gtk";
 
 import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
+import { panelOrder } from "./panelOrder.js";
 
-const ITEMS = [
-  ["status", "Status icon"],
-  ["balance", "Available balance"],
-  ["pace-window", "Pace window"],
-  ["pace", "Pace as percentage of leash"],
-  ["sparkline", "Rolling pace sparkline"],
-];
-
-function orderedItems(settings) {
-  const ids = ITEMS.map(([id]) => id);
-  const saved = settings.get_strv("panel-order");
-  return [...new Set([...saved.filter((id) => ids.includes(id)), ...ids])];
-}
+const ITEM_TITLES = {
+  status: "Status icon",
+  balance: "Available balance",
+  "pace-window": "Pace window",
+  pace: "Pace as percentage of leash",
+  sparkline: "Rolling pace sparkline",
+};
 
 export default class PlaidSpendPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window) {
@@ -100,12 +95,11 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
     const rebuild = () => {
       for (const row of rows) group.remove(row);
       rows = [];
-      const order = orderedItems(settings);
+      const order = panelOrder(settings);
       const visible = settings.get_strv("panel-visible");
       sparklineGroup.sensitive = visible.includes("sparkline");
       for (const [index, id] of order.entries()) {
-        const title = ITEMS.find(([item]) => item === id)?.[1] ?? id;
-        const row = new Adw.ActionRow({ title });
+        const row = new Adw.ActionRow({ title: ITEM_TITLES[id] ?? id });
         const enabled = new Gtk.Switch({ active: visible.includes(id), valign: Gtk.Align.CENTER });
         enabled.connect("notify::active", () => {
           const selected = new Set(settings.get_strv("panel-visible"));
