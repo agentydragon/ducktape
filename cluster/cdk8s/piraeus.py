@@ -461,7 +461,16 @@ def cluster_chart(app: App) -> Chart:
                 },
                 # Force-deletes Pods and VolumeAttachments stuck on a node whose DRBD primary lost
                 # quorum, so replicated volumes fail over without manual force-deletes.
-                "highAvailabilityController": {"enabled": True},
+                "highAvailabilityController": {
+                    "enabled": True,
+                    "podTemplate": {
+                        "spec": {
+                            "containers": [
+                                {"name": "ha-controller", "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}}}
+                            ]
+                        }
+                    },
+                },
                 "nfsServer": {"enabled": False},
             },
             "linstorSatelliteConfigurations": [
