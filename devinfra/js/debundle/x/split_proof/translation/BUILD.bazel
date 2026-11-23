@@ -303,6 +303,14 @@ js_test(
 )
 
 js_test(
+    name = "linked_literal_records_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_literal_records_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "linked_logical_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,
@@ -470,6 +478,14 @@ js_test(
         ":node_modules/astring",
     ],
     entry_point = "linked_table_lookups_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
+    name = "linked_templates_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_templates_test.mjs",
     env = _LINKED_PROGRAMS_TEST_ENV,
 )
 

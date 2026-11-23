@@ -118,7 +118,7 @@ after imports. The replay makes no linked-provider proof claim for this complete
 the source-level strict trial is rejected as described above. The generic plan evidence is published
 as `scroll-move-report.json`, alongside `import-boundary.json` and `entry-exports.json`.
 The small source-file E2E target exercises linked named providers and output verification:
-`bbr test //devinfra/js/debundle/x/split_proof/translation:linked_programs_test`.
+`bbr test //devinfra/js/debundle/x/split_proof/translation:linked_provider_programs_test`.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
 ### Direct AST lowering for negated initializers

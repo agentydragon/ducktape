@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import path from "node:path";
 import {
-  root,
   id,
   literal,
   call,
@@ -10,53 +8,11 @@ import {
   returns,
   throws,
   block,
-  tryStatement,
-  catchClause,
   arrow,
-  variables,
-  variable,
-  property,
-  exportNamed,
-  program,
-  observe,
-  lower,
-  prepare,
-  moduleEvaluationOrder,
-  forcePreview,
+  workerSplit,
+  assertWorkerResult,
+  observedProgram,
 } from "./testing/linked_programs.mjs";
-
-// Move the first declaration to its own module and observe the result exported by the entry.
-function workerSplit(name, source) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] }, order: ["worker.mjs"] },
-  });
-  const out = path.join(dir, "out");
-  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertWorkerResult(name, source, expected) {
-  const { files, out, verdict, log } = workerSplit(name, source);
-  assert.equal(verdict.status, "certified", `${name}: ${log}`);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, name);
-  }
-}
-
-function observedProgram(initializer, result) {
-  return program([
-    variable("const", "worker", initializer),
-    {
-      type: "ExportNamedDeclaration",
-      declaration: variable("const", "result", result),
-      specifiers: [],
-      source: null,
-    },
-  ]);
-}
 
 for (const [seed, value] of [0, "taken", "", 3].entries()) {
   const selected = literal(seed + 30);
@@ -185,145 +141,6 @@ assertWorkerResult(
   "done"
 );
 
-// Vary the number, spelling and values of static properties across a module boundary.
-for (const seed of [0, 1, 2, 3, 14]) {
-  const expected = {};
-  const properties = Array.from({ length: seed }, (_, i) => {
-    const key = i % 2 ? `quoted-key-${i}` : `field${i}`;
-    expected[key] = i % 2 ? i : seed;
-    const prop = property(key, i % 2 ? literal(i) : id("worker"));
-    return i % 2 ? { ...prop, key: literal(key) } : prop;
-  });
-  assertWorkerResult(
-    `generated-record-${seed}`,
-    observedProgram(literal(seed), { type: "ObjectExpression", properties }),
-    expected
-  );
-}
-
-assertWorkerResult(
-  "record-nested-values",
-  `const worker = { source: ["first", { value: 42 }] };
-  export const result = {
-    nested: { field: worker.source[1].value },
-    list: [worker.source[0], { key: worker.source.length }],
-  };`,
-  { nested: { field: 42 }, list: ["first", { key: 2 }] }
-);
-
-for (const [seed, key] of [id("value"), literal("quoted-key")].entries()) {
-  const value = seed + 10;
-  const provider = { type: "ObjectExpression", properties: [{ ...property("value", literal(value)), key }] };
-  const read = {
-    type: "MemberExpression",
-    object: id("worker"),
-    property: key,
-    computed: key.type === "Literal",
-    optional: false,
-  };
-  const list = { type: "ArrayExpression", elements: [read, { type: "ObjectExpression", properties: [] }] };
-  const result = { type: "ObjectExpression", properties: [property("read", read), property("list", list)] };
-  assertWorkerResult(`generated-record-values-${seed}`, observedProgram(provider, result), {
-    read: value,
-    list: [value, {}],
-  });
-}
-
-// The first read throws a number. Reading the second value out of order
-// throws a ReferenceError, which must not reach the catch instead.
-assertWorkerResult(
-  "record-value-order",
-  `const worker = () => {
-    const key = () => { throw 7; };
-    try {
-      return { first: ({})[key()], second: later.field };
-      let later;
-    } catch (error) {
-      return typeof error;
-    }
-  };
-  export const result = worker() === "number" ? "number" : (() => { throw 0; })();`,
-  "number"
-);
-
-// The first property must call with its receiver and its throw must skip the second property.
-assertWorkerResult(
-  "record-call-receiver-and-order",
-  `const worker = () => {
-    const read = function () { throw this.value; };
-    const receiver = { value: "first", read };
-    try {
-      return { first: receiver.read(), second: (() => { throw "second"; })() };
-    } catch (error) {
-      return error;
-    }
-  };
-  export const result = worker() === "first" ? "first" : (() => { throw 0; })();`,
-  "first"
-);
-
-// The same call returns the fallback before `later` initializes and reads the live binding after it initializes.
-{
-  const read = arrow(
-    [id("fallback")],
-    block([tryStatement(block([returns(id("later"))]), catchClause(null, block([returns(id("fallback"))])))])
-  );
-  const source = program([
-    variable("const", "read", read),
-    variable("const", "record", {
-      type: "ObjectExpression",
-      properties: [property("value", call(id("read"), [literal("before")]))],
-    }),
-    variable("const", "later", literal("after")),
-    exportNamed([["record", "result"]]),
-  ]);
-  for (const reordered of [false, true]) {
-    const dir = path.join(root, `generated-record-call-reordered-${reordered}`);
-    const spec = {
-      entry: "entry.mjs",
-      modules: { "record.mjs": ["#0", "#1"], "later.mjs": ["#2"], "entry.mjs": ["#3"] },
-      order: reordered ? ["later.mjs", "record.mjs"] : ["record.mjs", "later.mjs"],
-      sequential: true,
-    };
-    const files = prepare(dir, { source, provider: "", spec });
-    const out = path.join(dir, "out");
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-    let candidate = out;
-    if (reordered) {
-      assert.equal(verdict.status, "rejected", log);
-      assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
-      assert(!existsSync(out));
-      candidate = path.join(dir, "preview");
-      forcePreview(files, candidate);
-    } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
-    }
-    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry], log);
-    assert.deepEqual(observe(files.sourceFile, "result"), { result: { value: "before" } }, log);
-    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), {
-      result: { value: reordered ? "after" : "before" },
-    });
-  }
-}
-
-// A wide, straight-line initializer consumes one level of fuel per property.
-const fields = Array.from({ length: 65 }, (_, i) => property(`field${i}`, literal(i)));
-assertWorkerResult(
-  "wide-record",
-  observedProgram(literal(0), { type: "ObjectExpression", properties: fields }),
-  Object.fromEntries(fields.map((field, i) => [field.key.name, i]))
-);
-
-// After retrying the wide record, report the actual TDZ on its final property.
-{
-  const value = { type: "ObjectExpression", properties: [...fields, property("tail", id("result"))] };
-  const { verdict, out } = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, /original threw during linked initialization/);
-  assert(!existsSync(out));
-}
-
 // An unbounded call chain still exhausts the ordinary search budget.
 {
   const { verdict, out } = workerSplit(
@@ -332,82 +149,6 @@ assertWorkerResult(
   );
   assert.equal(verdict.status, "rejected");
   assert.match(verdict.reason, /exhausted the fuel search budget \(64\)/);
-  assert(!existsSync(out));
-}
-
-// Vary substitution count and value type. The helper's parameter shadows the
-// outer binding, and the escaped newline must come from the cooked segment.
-for (const [value, expressions, expected] of [
-  [0, [], "head\n"],
-  [false, [id("input")], "head\nfalse/"],
-  ["middle", [id("prefix"), id("input"), literal(null)], "head\ncaptured/middle/null/"],
-]) {
-  const quasis = Array.from({ length: expressions.length + 1 }, (_, i) => ({
-    type: "TemplateElement",
-    value: i === 0 ? { raw: "head\\n", cooked: "head\n" } : { raw: "/", cooked: "/" },
-    tail: i === expressions.length,
-  }));
-  const worker = arrow([id("input")], { type: "TemplateLiteral", expressions, quasis });
-  const source = program([
-    variables("const", [
-      ["input", literal("outer")],
-      ["prefix", literal("captured")],
-      ["format", worker],
-    ]),
-    variable("const", "result", call(id("format"), [literal(value)])),
-    exportNamed([["result", "result"]]),
-  ]);
-  const dir = path.join(root, `generated-template-${value}`);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: {
-      entry: "entry.mjs",
-      modules: { "format.mjs": ["#0", "#1", "#2"], "entry.mjs": ["#3", "#4"] },
-      order: ["format.mjs"],
-    },
-  });
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, "result"), { result: expected });
-  }
-}
-
-// Both substitutions throw. Only the leftmost thrown value reaches the catch.
-for (const values of [
-  ["first", "second"],
-  ["second", "first"],
-]) {
-  const expressions = values.map((value) => call(arrow([], block([throws(literal(value))]))));
-  const template = {
-    type: "TemplateLiteral",
-    expressions,
-    quasis: ["", "/", ""].map((text, i) => ({
-      type: "TemplateElement",
-      value: { raw: text, cooked: text },
-      tail: i === expressions.length,
-    })),
-  };
-  const worker = arrow(
-    [],
-    block([tryStatement(block([returns(template)]), catchClause(id("error"), block([returns(id("error"))])))])
-  );
-  assertWorkerResult(`throwing-template-${values[0]}`, observedProgram(worker, call(id("worker"))), values[0]);
-}
-
-for (const [name, source, reason] of [
-  [
-    "template-object-coercion",
-    "const worker = value => `${value}`; export const result = worker({});",
-    /object is converted to a primitive/,
-  ],
-  ["tagged-template", "const worker = value => value; export const result = worker`raw`;", /TaggedTemplateExpression/],
-]) {
-  const { verdict, out } = workerSplit(name, source);
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, reason);
   assert(!existsSync(out));
 }
 
@@ -423,18 +164,7 @@ assertWorkerResult(
   'const window = null; export const result = "undefined" != typeof window;',
   true
 );
-assertWorkerResult(
-  "record-optional-member",
-  "const worker = { field: 1 }; export const result = { key: worker?.field };",
-  { key: 1 }
-);
 for (const [name, expr, reason] of [
-  ["record-computed", '({ ["key"]: 1 })', /static data property/],
-  ["computed-getter", '({ get ["key"]() { return 1; } })', /static data property/],
-  ["record-spread", "({ ...worker })", /static data property/],
-  ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
-  ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
-  ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
   ["mixed-equality", '"01" == 1', /linked == requires two string operands/],
   ["unguarded-equality", "worker == worker", /linked == requires two string operands/],
   ["host-equality-typeof", '"undefined" == typeof window', /unsupported global window/],
