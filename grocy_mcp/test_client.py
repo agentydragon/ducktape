@@ -117,6 +117,17 @@ async def test_qu_for_product_no_conversion(grocy_client: GrocyClient) -> None:
     assert "Milk" in str(exc_info.value)
 
 
+async def test_qu_conversion_suggestions_use_the_same_unit_listing(
+    grocy_client: GrocyClient, mock_router: respx.Router
+) -> None:
+    units_route = mock_router.get("/objects/quantity_units").respond(json=QUS)
+
+    with pytest.raises(ValueError, match=r"one of: \['Crate', 'Liter'\]"):
+        await grocy_client.resolve_qu_for_product("Piece", product_id=1)
+
+    assert units_route.calls.call_count == 1
+
+
 async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.Router) -> None:
     """When both global and product-specific conversions exist, product-specific wins."""
     conversions_with_global = [
