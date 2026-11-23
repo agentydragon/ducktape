@@ -242,7 +242,7 @@ A profile can also name opaque constructors in deferred code. If initialization 
 
 Use the public editor and its real providers to exercise the same certification path on a public input. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) adds three private names to the entry’s exports in the diagnostic output. Keep the pair as a rejection case.
 
-Both strict replays get past the deferred `Symbol.for` calls and the read of `Symbol.iterator` in statement 5. They now stop at a nested function declaration in the same factory. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`.
+Both strict replays get past the deferred `Symbol.for` calls, the read of `Symbol.iterator`, and the first nested function declaration in statement 5. They now stop at an ambient `Object` reference in the same factory. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`.
 
 An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as calls to
 `Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require
