@@ -14,7 +14,7 @@ import pytest_bazel
 from filelock import Timeout
 from google.protobuf import empty_pb2, json_format
 from google.protobuf.message import Message
-from python.runfiles import runfiles
+from python.runfiles import Runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
@@ -306,17 +306,20 @@ def test_unknown_future_outcome_field_is_not_treated_as_success() -> None:
         validation.import_result(result)
 
 
-def _protocol_examples() -> dict[str, list[dict[str, Any]]]:
-    files = runfiles.Create()
-    assert files is not None
-    path = files.Rlocation("ducktape/platform_sessions/testdata/protocol_validation_examples.json")
-    assert path is not None
-    return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
+type ProtocolExamples = dict[str, list[dict[str, Any]]]
 
 
-def _assert_protocol_examples(key: str, message_type: type[Message], validate: Callable[[Any], None]) -> None:
-    for example in _protocol_examples()[key]:
-        message = json_format.Parse(json.dumps(example["message"]), message_type())
+@pytest.fixture(scope="module")
+def protocol_examples(runfiles: Runfiles) -> ProtocolExamples:
+    path = runfiles.root() / "ducktape/platform_sessions/testdata/protocol_validation_examples.json"
+    return cast(ProtocolExamples, json.loads(path.read_text()))
+
+
+def _assert_protocol_examples(
+    examples: list[dict[str, Any]], message_type: type[Message], validate: Callable[[Any], None]
+) -> None:
+    for example in examples:
+        message = json_format.ParseDict(example["message"], message_type())
         try:
             validate(message)
         except validation.ProviderProtocolError:
@@ -326,16 +329,16 @@ def _assert_protocol_examples(key: str, message_type: type[Message], validate: C
         assert accepted is example["valid"], example["name"]
 
 
-def test_shared_snapshot_protocol_examples() -> None:
-    _assert_protocol_examples("snapshots", pb.SessionSnapshot, validation.snapshot)
+def test_shared_snapshot_protocol_examples(protocol_examples: ProtocolExamples) -> None:
+    _assert_protocol_examples(protocol_examples["snapshots"], pb.SessionSnapshot, validation.snapshot)
 
 
-def test_shared_probe_result_protocol_examples() -> None:
-    _assert_protocol_examples("probe_results", pb.ProbeResult, validation.probe_result)
+def test_shared_probe_result_protocol_examples(protocol_examples: ProtocolExamples) -> None:
+    _assert_protocol_examples(protocol_examples["probe_results"], pb.ProbeResult, validation.probe_result)
 
 
-def test_shared_import_result_protocol_examples() -> None:
-    _assert_protocol_examples("import_results", pb.ImportSessionResponse, validation.import_result)
+def test_shared_import_result_protocol_examples(protocol_examples: ProtocolExamples) -> None:
+    _assert_protocol_examples(protocol_examples["import_results"], pb.ImportSessionResponse, validation.import_result)
 
 
 async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> None:
