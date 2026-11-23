@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import datetime
-import logging
 import os
-from typing import Any, cast
+from collections.abc import Awaitable
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+from pydantic import TypeAdapter
 
 from x.habitify_mcp.types import Area, Habit, HabitStatus, Status
 from x.habitify_mcp.utils.date_utils import target_datetime
-
-logger = logging.getLogger("habitify.client")
 
 # Load environment variables
 load_dotenv()
@@ -55,20 +54,14 @@ class HabitifyClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.client.aclose()
 
-    def _process_response(self, response: httpx.Response, model_class: type | None = None) -> Any:
-        data = response.json()
-        result = data.get("data", data)
-
-        if model_class:
-            if isinstance(result, list):
-                return [model_class(**item) for item in result]
-            if result is None:
-                # For some endpoints that return null data but success - just return None
-                # since we don't have actual status data to construct a model
-                return None
-            return model_class(**result)
-
-        return result
+    async def _get[T](self, path: str, model: TypeAdapter[T], params: dict[str, str] | None = None) -> T:
+        request = self.client.get(path, params=params) if params is not None else self.client.get(path)
+        response = await _checked(request)
+        try:
+            body = response.json()
+            return model.validate_python(body.get("data", body) if isinstance(body, dict) else body)
+        except ValueError as error:
+            raise HabitifyError(f"Invalid Habitify response for {path}", response.status_code) from error
 
     def _validate_habit_id(self, habit_id: str) -> str:
         if not habit_id:
@@ -82,32 +75,17 @@ class HabitifyClient:
 
     async def get_habits(self) -> list[Habit]:
         """GET /habits: list habits."""
-        try:
-            response = await self.client.get("/habits")
-            response.raise_for_status()
-            return cast(list[Habit], self._process_response(response, Habit))
-        except Exception as e:
-            raise self._handle_error(e)
+        return await self._get("/habits", TypeAdapter(list[Habit]))
 
     async def get_habit(self, habit_id: str) -> Habit:
         """GET /habits/{habit_id}: fetch one habit."""
         habit_id = self._validate_habit_id(habit_id)
 
-        try:
-            response = await self.client.get(f"/habits/{habit_id}")
-            response.raise_for_status()
-            return cast(Habit, self._process_response(response, Habit))
-        except Exception as e:
-            raise self._handle_error(e)
+        return await self._get(f"/habits/{habit_id}", TypeAdapter(Habit))
 
     async def get_areas(self) -> list[Area]:
         """GET /areas: list habit areas/categories."""
-        try:
-            response = await self.client.get("/areas")
-            response.raise_for_status()
-            return cast(list[Area], self._process_response(response, Area))
-        except Exception as e:
-            raise self._handle_error(e)
+        return await self._get("/areas", TypeAdapter(list[Area]))
 
     async def get_journal(
         self,
@@ -139,12 +117,7 @@ class HabitifyClient:
         if area_id:
             params["area_id"] = area_id
 
-        try:
-            response = await self.client.get("/journal", params=params)
-            response.raise_for_status()
-            return cast(list[Habit], self._process_response(response, Habit))
-        except Exception as e:
-            raise self._handle_error(e)
+        return await self._get("/journal", TypeAdapter(list[Habit]), params=params)
 
     async def check_habit_status(
         self, habit_id: str, date: str | datetime.date | datetime.datetime | None = None
@@ -153,18 +126,12 @@ class HabitifyClient:
         habit_id = self._validate_habit_id(habit_id)
         check_date = target_datetime(date)
 
-        try:
-            response = await self.client.get(f"/status/{habit_id}", params={"target_date": check_date.isoformat()})
-            response.raise_for_status()
-            result = cast(HabitStatus, self._process_response(response, HabitStatus))
-
-            # If API didn't return a date, add the request date as timezone-aware datetime
-            if not result.date:
-                result.date = check_date
-
-            return result
-        except Exception as e:
-            raise self._handle_error(e)
+        result = await self._get(
+            f"/status/{habit_id}", TypeAdapter(HabitStatus), params={"target_date": check_date.isoformat()}
+        )
+        if result.date is None:
+            result.date = check_date
+        return result
 
     async def set_habit_status(
         self,
@@ -192,51 +159,38 @@ class HabitifyClient:
         if value is not None:
             request_body["value"] = value
 
-        try:
-            response = await self.client.put(f"/status/{habit_id}", json=request_body)
-            response.raise_for_status()
+        await _checked(self.client.put(f"/status/{habit_id}", json=request_body))
+        return HabitStatus(status=status, date=target_date, note=note, value=value)
 
-            return HabitStatus(status=status, date=target_date, note=note, value=value)
-        except Exception as e:
-            raise self._handle_error(e)
 
-    def _handle_error(self, error: Exception) -> HabitifyError:
-        if isinstance(error, httpx.HTTPStatusError):
-            response = error.response
-            status = response.status_code
+async def _checked(request: Awaitable[httpx.Response]) -> httpx.Response:
+    try:
+        response = await request
+        response.raise_for_status()
+        return response
+    except httpx.HTTPStatusError as error:
+        raise _status_error(error.response) from error
+    except httpx.RequestError as error:
+        raise HabitifyError(f"Connection error: {error}") from error
 
-            # Try to parse response JSON, log but continue if it fails
-            data = None
-            try:
-                data = response.json()
-            except Exception as json_error:
-                # Instead of silently setting data to None, log what happened
-                logger.warning(
-                    f"Failed to parse error response JSON: {json_error}. Response text: {response.text[:100]}..."
-                )
 
-            # Check for common errors with helpful messages
-            if status == 401:
-                return HabitifyError("Authentication failed. Please check your Habitify API key.", status)
-            if status == 404:
-                return HabitifyError("Resource not found. This endpoint may not be supported by the API.", status)
-            if status == 500 and data and "message" in data:
-                if "habit does not exist" in data["message"].lower():
-                    return HabitifyError(f"Habit ID not found: {data['message']}", status)
-                if "target_date" in data["message"].lower():
-                    return HabitifyError(
-                        "Invalid date format. The API requires ISO 8601 format (YYYY-MM-DDThh:mm:ss±hh:mm).", status
-                    )
-                return HabitifyError(f"API Error: {data['message']}", status)
-
-            # Create a readable error message with available details
-            error_prefix = f"HTTP {status}:"
-            if data and "message" in data:
-                return HabitifyError(f"{error_prefix} {data['message']}", status)
-            if data:
-                return HabitifyError(f"{error_prefix} {data}", status)
-
-            return HabitifyError(f"{error_prefix} Request failed", status)
-
-        # For network errors or other non-API errors
-        return HabitifyError(f"Connection error: {error!s}")
+def _status_error(response: httpx.Response) -> HabitifyError:
+    status = response.status_code
+    if status == 401:
+        return HabitifyError("Authentication failed. Please check your Habitify API key.", status)
+    if status == 404:
+        return HabitifyError("Resource not found. This endpoint may not be supported by the API.", status)
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+    message = data.get("message") if isinstance(data, dict) else None
+    if status == 500 and isinstance(message, str):
+        if "habit does not exist" in message.lower():
+            return HabitifyError(f"Habit ID not found: {message}", status)
+        if "target_date" in message.lower():
+            return HabitifyError(
+                "Invalid date format. The API requires ISO 8601 format (YYYY-MM-DDThh:mm:ss±hh:mm).", status
+            )
+        return HabitifyError(f"API Error: {message}", status)
+    return HabitifyError(f"HTTP {status}: {message or data or 'Request failed'}", status)
