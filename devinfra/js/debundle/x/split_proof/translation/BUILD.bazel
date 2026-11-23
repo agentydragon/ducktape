@@ -2,6 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js/debundle/x/split_proof:experiments/splits/sweep.bzl", "real_bundle_artifacts")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 # These Python diagnostics remain hand-run tools, as they were under experiments/.
 # gazelle:exclude fuzz_mutate.py
@@ -1099,5 +1100,20 @@ js_library(
     deps = [
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+    ],
+)
+
+py_test(
+    name = "test_stack_location",
+    size = "medium",
+    srcs = ["test_stack_location.py"],
+    data = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
+    env = {"LOWERSPLIT": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    deps = [
+        "//:conftest",
+        "//testing/browser:launcher",
+        "@pypi//playwright",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
