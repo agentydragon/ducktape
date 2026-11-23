@@ -97,6 +97,18 @@ theorem reachFrame_unknown (r R cells A) (P : α → Prop) (why : String) :
     ReachFrame r R cells A P (unknown why : M W α) :=
   .of_frames (frames_unknown r R why) (fun _ hs _ => hs)
 
+theorem reachFrame_lift {r R cells A} {P : α → Prop} (result : Except Abort α)
+    (safe : ∀ a, result = .ok a → P a) :
+    ReachFrame r R cells A P (lift result : M W α) := by
+  cases result with
+  | ok value => exact reachFrame_pure r R cells A value (safe value rfl)
+  | error why =>
+    cases why with
+    | unknown reason => exact reachFrame_unknown r R cells A P reason
+    | error kind message =>
+      exact ReachFrame.of_frames (frames_throwVal r R (.error kind message))
+        (fun _ hs _ => ⟨(fun _ h => by cases h), hs⟩)
+
 theorem list_index_mem {α : Type} : ∀ {xs : List α} {i : Nat} {a : α}, xs[i]? = some a → a ∈ xs
   | [], _, _, h => by simp at h
   | x :: xs, 0, a, h => by simp only [List.getElem?_cons_zero, Option.some.injEq] at h; subst a; simp
