@@ -8,6 +8,9 @@ load("//devinfra/python:defs.bzl", "py_test")
 # gazelle:exclude fuzz_mutate.py
 # gazelle:exclude obligations_report.py
 
+# The original and certified browser tests select different cases and runfiles.
+# gazelle:exclude debug/excalidraw_certificates/browser_smoke_test.py
+
 npm_link_all_packages(name = "node_modules")
 
 real_bundle_artifacts()
@@ -1245,6 +1248,69 @@ js_test(
     entry_point = "debug/excalidraw_certificates/scroll.mjs",
     env = _EXCALIDRAW_SCROLL_ENV,
     tags = ["manual"],
+)
+
+_EXCALIDRAW_BROWSER_PY = "debug/excalidraw_certificates/browser_smoke_test.py"
+
+_EXCALIDRAW_BROWSER_DATA = [
+    "//:node_modules/@excalidraw/excalidraw/dir",
+    "//devinfra/js/debundle/excalidraw:bundle",
+    "//devinfra/js/debundle/excalidraw:inputs",
+]
+
+_EXCALIDRAW_BROWSER_ENV = {
+    "EXCALIDRAW_INPUTS": "$(rlocationpaths //devinfra/js/debundle/excalidraw:inputs)",
+    "EXCALIDRAW_OUTPUTS": "$(rlocationpaths //devinfra/js/debundle/excalidraw:bundle)",
+    "EXCALIDRAW_PACKAGE": "$(rlocationpath //:node_modules/@excalidraw/excalidraw/dir)",
+}
+
+_EXCALIDRAW_BROWSER_DEPS = [
+    "//:conftest",
+    "//devinfra/testing:undeclared_outputs",
+    "//testing:asgi",
+    "//testing/frontend_visual:context",
+    "//testing/frontend_visual:fixtures",
+    "@pypi//playwright",
+    "@pypi//pytest",
+    "@pypi//pytest_bazel",
+    "@pypi//starlette",
+    "@rules_python//python/runfiles",
+]
+
+py_test(
+    name = "excalidraw_original_editor_browser_smoke",
+    srcs = [_EXCALIDRAW_BROWSER_PY],
+    args = [
+        "-k",
+        "test_original_editor",
+    ],
+    data = _EXCALIDRAW_BROWSER_DATA,
+    env = _EXCALIDRAW_BROWSER_ENV,
+    main = _EXCALIDRAW_BROWSER_PY,
+    tags = ["manual"],
+    deps = _EXCALIDRAW_BROWSER_DEPS,
+)
+
+py_test(
+    name = "excalidraw_certified_scroll_browser_smoke",
+    size = "medium",
+    srcs = [_EXCALIDRAW_BROWSER_PY],
+    args = [
+        "-k",
+        "test_certified_scroll",
+    ],
+    data = _EXCALIDRAW_BROWSER_DATA + [
+        ":" + _EXCALIDRAW_EDITOR_SPEC,
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    env = dict(
+        _EXCALIDRAW_BROWSER_ENV,
+        EDITOR_LEAN_SPEC = "$(rlocationpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    ),
+    main = _EXCALIDRAW_BROWSER_PY,
+    tags = ["manual"],
+    deps = _EXCALIDRAW_BROWSER_DEPS,
 )
 
 js_binary(
