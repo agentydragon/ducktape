@@ -69,7 +69,6 @@ pub fn coalesce_source_match_claims(module: &mut ModuleFile) {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleClaims {
-    pub bindings: BTreeSet<String>,
     /// Members retained for joint selector resolution. Binding pins also serve
     /// as anchors for relational selectors in other modules.
     pub member_selectors: Vec<(String, MemberSelectorSpec)>,
@@ -81,9 +80,18 @@ pub struct ModuleClaims {
 }
 
 impl ModuleClaims {
+    pub fn binding_pins(&self) -> impl Iterator<Item = &str> {
+        self.member_selectors.iter().filter_map(|(_, selector)| {
+            if let MemberSelectorSpec::Binding(binding) = selector {
+                Some(binding.name.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty()
-            && self.member_selectors.is_empty()
+        self.member_selectors.is_empty()
             && self.anonymous_selectors.is_empty()
             && self.source_matches.is_empty()
     }
@@ -170,9 +178,6 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
                 SelectorKind::from(&selector).origin(None)
             ),
         };
-        if let MemberSelectorSpec::Binding(binding) = &selector {
-            claims.bindings.insert(binding.name.clone());
-        }
         claims.member_selectors.push((name, selector));
     }
     claims.source_matches = module.source_matches;
@@ -263,7 +268,7 @@ anonymous_statements:
         .unwrap();
 
         let claims = read_module_claims(&path).unwrap();
-        assert_eq!(claims.bindings, BTreeSet::from(["Co".to_string()]));
+        assert_eq!(claims.binding_pins().collect::<Vec<_>>(), ["Co"]);
         assert_eq!(
             claims.anonymous_selectors,
             BTreeSet::from([
