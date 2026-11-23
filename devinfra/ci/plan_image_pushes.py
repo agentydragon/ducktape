@@ -1,26 +1,13 @@
-"""Decide which container images actually need publishing, before any job fans out.
+"""Select container images for publication from bazel-ci's build event stream.
 
-This planner reads `bazel-ci`'s build event stream instead of building digest
-targets to decide what changed. For each digest the stream reports, it finds the
-file by target label and fetches its contents. An image whose digest target is
-absent stays in the push matrix for its own job to build and check.
+Find each image's .json.sha256 output by Bazel target label and read the digest
+inside the file. External repository paths change under bzlmod, and many image
+targets share the same basename.
 
-An image is not identified the way a release is. A release's identity *is* its
-output's content digest, which the stream reports directly; an image's identity
-lives *inside* its `.json.sha256` file, so those bytes have to be fetched. They
-are tiny, and the fetch is the whole cost.
-
-Outputs are found by label, never by deriving a path from one. An external
-repository's directory name is mangled by bzlmod and cannot be reconstructed, and
-most image targets here are literally named `image`, so a path or basename guess
-resolves to the wrong file — quietly.
-
-A missing or unreadable CI digest leaves the comparison to the per-image job.
-If the planner has the digest, a registry lookup error stops planning. A missing
-repository or tag allows an initial push. See devinfra/ci/docs/publish_planning.md.
-
-Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
-library. `crane` comes from the workflow's setup-crane step.
+A missing or unreadable build digest defers the comparison to the per-image job.
+With a known digest, compare against the registry's latest tag. A missing tag or
+repository permits a first publication. A registry access error aborts the plan
+before GitHub Actions receives a matrix.
 """
 
 from __future__ import annotations
@@ -152,16 +139,6 @@ def decide(image: Image, digests: Mapping[str, str], crane: Crane) -> Decision:
     return Decision(image=image, local_digest=local_digest, published_digest=registry_digest(crane, image.repo))
 
 
-def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int) -> list[Decision]:
-    """Decide every image concurrently; registry round-trips dominate, not CPU.
-
-    An exception in any decision propagates: a registry that can't be read is not
-    evidence that its image is unchanged.
-    """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(decider, images))
-
-
 def matrix_include(decisions: list[Decision], tests: TestEvidence) -> list[dict[str, str]]:
     """Matrix rows for pushes; an image whose test gate push CI already failed never starts a job."""
     rows = []
@@ -202,7 +179,8 @@ def main(argv: list[str] | None = None) -> None:
     digests = local_digests(images, evidence.outputs, fetch_blob)
 
     crane = Crane(args.crane)
-    decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        decisions = list(pool.map(lambda image: decide(image, digests, crane), images))
     include = matrix_include(decisions, evidence.tests)
     pushing = {row["image_name"] for row in include}
 
