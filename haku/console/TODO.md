@@ -24,8 +24,3 @@ The browser login flow is fixed in #3516/#3519 except for:
 - **No sign-out affordance** (audit F6). `/auth/logout` exists and is exact-Origin gated, but
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
-
-## Retained `vector` extension
-
-The 0138 baseline no longer needs pgvector. After the new migration image is deployed,
-retire the old baseline’s CNPG extension provisioning in `cluster/cdk8s/haku/database.py`.
