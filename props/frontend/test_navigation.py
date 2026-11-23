@@ -89,11 +89,11 @@ async def test_runs_browser_sends_selected_filters(visual: VisualHarness) -> Non
         await view.page.route("**/api/runs?*", lambda route: route.fulfill(json={"runs": [], "total_count": 0}))
         await view.page.evaluate("() => { window.location.hash = '/runs'; window.mountApp(); }")
         await expect(view.page.get_by_text("No runs found")).to_be_visible()
-        await view.page.get_by_label("Status", exact=True).click()
+        await view.page.get_by_role("combobox", name="Status", exact=True).click()
         async with view.page.expect_request("**/api/runs?*"):
             await view.page.get_by_role("option", name="timed out", exact=True).click()
 
-        await view.page.get_by_label("Agent Type", exact=True).click()
+        await view.page.get_by_role("combobox", name="Agent Type", exact=True).click()
         async with view.page.expect_request("**/api/runs?*") as request:
             await view.page.get_by_role("option", name="grader", exact=True).click()
         params = parse_qs(urlsplit((await request.value).url).query)
