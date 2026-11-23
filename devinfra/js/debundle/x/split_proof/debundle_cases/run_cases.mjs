@@ -257,9 +257,13 @@ function translate(spec, chunk, statements) {
 
 // ---------------------------------------------------------------- running
 
+const subprocessTimeoutMs = 30_000;
+
 function run(cmd, cmdArgs, options = {}) {
-  const r = spawnSync(cmd, cmdArgs, { encoding: "utf8", timeout: 30_000, ...options });
+  const start = performance.now();
+  const r = spawnSync(cmd, cmdArgs, { encoding: "utf8", timeout: subprocessTimeoutMs, ...options });
   return {
+    elapsedMs: Math.round(performance.now() - start),
     code: r.status,
     stdout: r.stdout ?? "",
     stderr: r.stderr ?? "",
@@ -274,10 +278,28 @@ function run(cmd, cmdArgs, options = {}) {
   };
 }
 
-function nodeRun(file, cwd) {
+function describeProcessFailure(phase, cmd, cmdArgs, caseDir, result) {
+  return {
+    phase,
+    command: [path.basename(cmd), ...cmdArgs.map((arg) => (path.isAbsolute(arg) ? path.relative(caseDir, arg) : arg))],
+    elapsedMs: result.elapsedMs,
+    timeoutMs: subprocessTimeoutMs,
+    exitCode: result.code,
+    cause: result.failure,
+    stderrTail: result.stderr.trimEnd().slice(-2048),
+  };
+}
+
+function nodeRun(phase, file, cwd) {
   const r = run(process.execPath, [file], { cwd });
   const error = (r.stderr.match(/^\w*Error: .*/m) ?? [""])[0];
-  return { stdout: r.stdout, code: r.code, failure: r.failure, error };
+  return {
+    stdout: r.stdout,
+    code: r.code,
+    failure: r.failure,
+    error,
+    processFailure: r.failure ? describeProcessFailure(phase, process.execPath, [file], cwd, r) : undefined,
+  };
 }
 
 function discover() {
@@ -346,13 +368,14 @@ function runCase(dir, specName, expected) {
       path.join(stage, "lean_spec.json"),
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
-    const checked = run(lowersplit, [
+    const checkerArgs = [
       "--diagnostic",
       path.join(stage, "bundle.json"),
       path.join(stage, "lean_spec.json"),
       path.join(stage, "split"),
       "--force",
-    ]);
+    ];
+    const checked = run(lowersplit, checkerArgs);
     if (checked.code === 3)
       return unsupported("statement kind the model rejects", checked.stderr.trim().split("\n").pop());
     if (checked.code !== 0 && checked.code !== 1)
@@ -360,6 +383,10 @@ function runCase(dir, specName, expected) {
         ...record,
         outcome: "error:lowersplit",
         detail: checked.failure ?? checked.stderr.trim().split("\n").pop(),
+        processFailure: {
+          ...describeProcessFailure("lowersplit", lowersplit, checkerArgs, stage, checked),
+          stdoutTail: checked.stdout.trimEnd().slice(-2048),
+        },
       };
     const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(
       ([, what]) =>
@@ -395,14 +422,15 @@ function runCase(dir, specName, expected) {
       writeFileSync(path.join(stage, "checker_output.txt"), checked.stdout + checked.stderr);
       cpSync(stage, path.join(keepDir, id), { recursive: true });
     }
-    const original = nodeRun(chunkFile, stage);
-    const emitted = nodeRun(path.join(stage, "split", plan.entry), stage);
+    const original = nodeRun("original", chunkFile, stage);
+    const emitted = nodeRun("emitted", path.join(stage, "split", plan.entry), stage);
     const node = { original, emitted };
     const want = "accept" in expected ? wanted(expected) : null;
     const outcome = classify(expected, mine, node);
     return {
       ...record,
       outcome,
+      processFailure: original.processFailure ?? emitted.processFailure,
       mine,
       split,
       node: {
@@ -444,11 +472,8 @@ console.log(`${lines.length} cases -> ${outFile}`);
 if (args.includes("--regression")) {
   const failures = lines.filter(({ outcome }) => outcome.startsWith("error:") || outcome === "unsound-accept");
   console.log(`${lines.filter(({ outcome }) => outcome.startsWith("unsupported:")).length} unsupported`);
-  if (!lines.length || failures.length) {
-    console.error(
-      "No cases selected or unexpected outcomes:",
-      failures.map(({ id, outcome }) => ({ id, outcome }))
-    );
-    process.exitCode = 1;
-  }
+  if (!lines.length) console.error("No cases selected.");
+  for (const { id, outcome, processFailure } of failures)
+    console.error(JSON.stringify({ id, outcome, processFailure }));
+  if (!lines.length || failures.length) process.exitCode = 1;
 }
