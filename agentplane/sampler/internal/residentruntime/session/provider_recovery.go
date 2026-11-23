@@ -26,16 +26,12 @@ type deferredProviderError struct{ cause error }
 func (e *deferredProviderError) Error() string { return e.cause.Error() }
 func (e *deferredProviderError) Unwrap() error { return e.cause }
 
-func runtimeProviderAttemptPolicy(settings samplersettings.Settings, model samplersettings.ModelConfig) sessionstore.ProviderAttemptPolicy {
-	return sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease(model)}
-}
-
-func providerBackoff(number int, hint time.Duration) time.Duration {
-	delay := time.Second
-	for i := 1; i < number && delay < sessionstore.MaxProviderBackoff; i++ {
-		delay *= 2
+func runtimeProviderAttemptPolicy(settings samplersettings.Settings, model samplersettings.ModelConfig, frontier *sessionstore.ProviderAttempt) sessionstore.ProviderAttemptPolicy {
+	budget := settings.ProviderAttemptLimit()
+	if frontier != nil {
+		budget = frontier.Budget
 	}
-	return min(max(delay, hint), sessionstore.MaxProviderBackoff)
+	return sessionstore.ProviderAttemptPolicy{Budget: budget, Lease: settings.ProviderAttemptLease(model)}
 }
 
 func providerFailureReason(reason string) string {
@@ -63,9 +59,9 @@ func (r *Driver) providerFailure(ctx context.Context, owner sessionstore.Owner, 
 	var transient *protocol.ProviderTransientError
 	var phase *protocol.ProviderPhaseTimeoutError
 	if errors.As(cause, &transient) {
-		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, providerBackoff(attempt.Number, transient.RetryAfter)
+		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, r.settings.ProviderRetryBackoff(attempt.Number, transient.RetryAfter)
 	} else if errors.As(cause, &phase) {
-		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, providerBackoff(attempt.Number, 0)
+		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, r.settings.ProviderRetryBackoff(attempt.Number, 0)
 	}
 	if err := r.store.AbandonProviderAttempt(ctx, owner, intentID, failure); err != nil {
 		return &deferredProviderError{cause: err}
@@ -93,7 +89,7 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 	if current != nil {
 		if err := r.store.AbandonProviderAttempt(ctx, owner, current.IntentID, sessionstore.ProviderAttemptFailure{
 			Class: sessionstore.ProviderAttemptTransient, Reason: "provider attempt ended without a committed result",
-			RetryAfter: providerBackoff(current.Number, 0),
+			RetryAfter: r.settings.ProviderRetryBackoff(current.Number, 0),
 		}); err != nil {
 			return nil, &deferredProviderError{cause: err}
 		}

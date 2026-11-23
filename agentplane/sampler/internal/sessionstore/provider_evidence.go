@@ -41,14 +41,14 @@ func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.Provider
 			// Round up so the last meaningful chunk retains its entire progress lease.
 			query = `WITH live AS (
 				SELECT id,provider_attempt_lease_until,
-					to_timestamp(ceil(extract(epoch FROM (statement_timestamp()+make_interval(secs=>$5))) / 30) * 30) AS deadline
+					to_timestamp(ceil(extract(epoch FROM (statement_timestamp()+make_interval(secs=>$5))) / $6) * $6) AS deadline
 				FROM sampler_intent` + currentAttempt + `
 			), renewed AS (
 				UPDATE sampler_intent i SET provider_attempt_lease_until=live.deadline
 				FROM live WHERE i.id=live.id AND live.provider_attempt_lease_until<>live.deadline
 			)
 			SELECT 1 FROM live`
-			args = append(args, e.ProgressLease.Seconds())
+			args = append(args, e.ProgressLease.Seconds(), e.Store.providerProgressCoalescing.Seconds())
 		}
 		var current int
 		err = tx.QueryRowContext(ctx, query, args...).Scan(&current)

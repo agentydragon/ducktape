@@ -196,7 +196,10 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 		}
 	}))
 	t.Cleanup(server.Close)
-	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
+	settings := providerSamplingSettings(server.URL, 1)
+	const attemptBudget = 5
+	settings.ProviderAttemptBudget = new(attemptBudget)
+	runtime, stop := startProviderSamplingRuntime(t, store, settings)
 	runtime.Wake(session.ID)
 
 	firstBody := receiveProviderRequest(t, requests)
@@ -217,14 +220,15 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	}
 	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 
-	var attempts, abandoned, committed int
+	var attempts, abandoned, committed, configuredBudget int
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*),count(*) FILTER (WHERE result->>'status'='abandoned'),
-		count(*) FILTER (WHERE result IS NOT NULL AND NOT (result ? 'status')) FROM sampler_intent
-		WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, commandID).Scan(&attempts, &abandoned, &committed); err != nil {
+		count(*) FILTER (WHERE result IS NOT NULL AND NOT (result ? 'status')),
+		count(*) FILTER (WHERE provider_attempt_budget=$2) FROM sampler_intent
+		WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, commandID, attemptBudget).Scan(&attempts, &abandoned, &committed, &configuredBudget); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 3 || abandoned != 2 || committed != 1 || count.Load() != 3 {
-		t.Fatalf("provider attempts=%d abandoned=%d committed=%d requests=%d; want 3/2/1/3", attempts, abandoned, committed, count.Load())
+	if attempts != 3 || abandoned != 2 || committed != 1 || configuredBudget != 3 || count.Load() != 3 {
+		t.Fatalf("provider attempts=%d abandoned=%d committed=%d with budget %d=%d requests=%d, want 3/2/1/3/3", attempts, abandoned, committed, attemptBudget, configuredBudget, count.Load())
 	}
 	owner := runtimeOwner(t, runtime, session.ID)
 	conversation, err := store.Read(t.Context(), owner)
@@ -597,6 +601,8 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 		t.Fatal(err)
 	}
 
+	// A new deployment may configure a different budget. Recovery keeps the step's durable budget.
+	settings.ProviderAttemptBudget = new(5)
 	runtime := New(store, settings, manager)
 	cancel, done := startRuntimeForTest(t, runtime)
 	var stopOnce sync.Once

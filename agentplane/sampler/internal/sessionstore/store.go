@@ -16,6 +16,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -34,14 +35,24 @@ type rowScanner interface {
 
 // Store owns the central sampler's durable conversation, Session and evidence records.
 type Store struct {
-	db               *sql.DB
-	operationTimeout time.Duration
+	db                         *sql.DB
+	operationTimeout           time.Duration
+	providerProgressCoalescing time.Duration
+	providerRetryMaxBackoff    time.Duration
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
 
-func New(db *sql.DB, operationTimeout time.Duration) *Store {
-	return &Store{db: db, operationTimeout: operationTimeout, now: time.Now}
+// New uses the default provider timing when settings is nil.
+func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.Settings) *Store {
+	if settings == nil {
+		settings = &samplersettings.Settings{}
+	}
+	return &Store{
+		db: db, operationTimeout: operationTimeout, now: time.Now,
+		providerProgressCoalescing: settings.ProviderProgressLeaseCoalescing(),
+		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
+	}
 }
 
 func (s *Store) DB() *sql.DB { return s.db }
