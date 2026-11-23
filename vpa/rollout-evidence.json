@@ -615,5 +615,93 @@
       ],
       "required_application_check": "Match uniquely identified collector events to committed database rows through a controlled switchover."
     }
+  },
+  "initial_admission_check": {
+    "observed_utc": "2026-11-23T01:16:57+00:00",
+    "method": "Server-side dry-run Pod CREATE from each active ReplicaSet template, using its namespace, labels and a controller reference to the live ReplicaSet UID. Verified the returned vpaUpdates annotation named the expected VPA and each resource pair matched its target. All four original Pods remained Ready.",
+    "mode": "Initial",
+    "provider_warnings": "All three provider dry runs returned Pod Security restricted warnings for capabilities.drop ALL and seccompProfile. The API server accepted all three.",
+    "results": [
+      {
+        "label": "Hubble UI frontend",
+        "namespace": "kube-system",
+        "deployment": "hubble-ui",
+        "container": "frontend",
+        "vpa": "goldilocks-hubble-ui",
+        "dry_run_requests": {
+          "cpu": "11m",
+          "memory": "50Mi"
+        },
+        "recommendation": {
+          "cpu": "11m",
+          "memory": "50Mi"
+        },
+        "running_requests": {}
+      },
+      {
+        "label": "Hubble UI backend",
+        "namespace": "kube-system",
+        "deployment": "hubble-ui",
+        "container": "backend",
+        "vpa": "goldilocks-hubble-ui",
+        "dry_run_requests": {
+          "cpu": "11m",
+          "memory": "50Mi"
+        },
+        "recommendation": {
+          "cpu": "11m",
+          "memory": "50Mi"
+        },
+        "running_requests": {}
+      },
+      {
+        "label": "BuildBuddy provider",
+        "namespace": "crossplane-system",
+        "deployment": "provider-buildbuddy-c56c25bf863c",
+        "container": "package-runtime",
+        "vpa": "goldilocks-provider-buildbuddy-c56c25bf863c",
+        "dry_run_requests": {
+          "cpu": "15m",
+          "memory": "128Mi"
+        },
+        "recommendation": {
+          "cpu": "15m",
+          "memory": "128Mi"
+        },
+        "running_requests": {}
+      },
+      {
+        "label": "LiteLLM provider",
+        "namespace": "crossplane-system",
+        "deployment": "provider-litellm-52449368fcec",
+        "container": "package-runtime",
+        "vpa": "goldilocks-provider-litellm-52449368fcec",
+        "dry_run_requests": {
+          "cpu": "15m",
+          "memory": "410771395"
+        },
+        "recommendation": {
+          "cpu": "15m",
+          "memory": "410771395"
+        },
+        "running_requests": {}
+      },
+      {
+        "label": "OpenTofu provider",
+        "namespace": "crossplane-system",
+        "deployment": "provider-opentofu-b0adaac1fc19",
+        "container": "package-runtime",
+        "vpa": "goldilocks-provider-opentofu-b0adaac1fc19",
+        "dry_run_requests": {
+          "cpu": "163m",
+          "memory": "716711186"
+        },
+        "recommendation": {
+          "cpu": "163m",
+          "memory": "716711186"
+        },
+        "running_requests": {}
+      }
+    ]
   }
 }

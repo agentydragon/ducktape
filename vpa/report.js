@@ -312,7 +312,7 @@ function Report() {
 
   useEffect(() => {
     const read = async (path) => {
-      const response = await fetch(`${path}?v=202611230101`);
+      const response = await fetch(`${path}?v=202611230116`);
       if (!response.ok)
         throw new Error(`${path} returned HTTP ${response.status}`);
       return response.json();
@@ -468,10 +468,11 @@ function Report() {
             ${`Storage and database gaps include ${storageGaps.map(({ name, containers }) => `${name} (${containers})`).join(", ")}. Work with the operator or storage owner on sizing and recovery.`}
           <//>
           <${Text} component="p" mb=${0}>
-            Initial sizes new Pods at admission. Existing Pods keep their
-            admitted requests until replaced. Recreate lets the VPA evict
-            running Pods. Compare the policy, template and admitted Pod
-            resources in the inventory.
+            Five of these gaps belong to Hubble UI and Crossplane providers.
+            Their Initial VPAs supplied both requests in the ${" "}<${Anchor}
+              href="#initial-admission"
+              >admission dry runs<//
+            >. The five running containers still count toward the 45 gaps.
           <//>
         <//>
       <//>
@@ -641,18 +642,49 @@ function Report() {
             >CNPG rollout procedure<//
           >.
         <//>
-        <${Text}>
-          <strong
-            >In parallel, verify existing Initial policies on ordinary
-            admissions.</strong
+        <section id="initial-admission">
+          <${Title} order=${3} size="h4"
+            >Five containers passed Initial admission<//
           >
-          ${" "}Hubble UI’s two containers and the BuildBuddy, LiteLLM and
-          OpenTofu Crossplane provider containers have recommendations but still
-          have empty admitted requests. Check owner-backed Pod admission with a
-          server dry run, then inspect the next naturally created Pod. If either
-          request is still absent, fix the policy or owning template. This
-          checks five gaps without forcing a singleton restart.
-        <//>
+          <${Text} component="p">
+            At 01:16 UTC on 23 November, server-side dry runs used the four
+            active ReplicaSets as Pod owners. In every response the VPA set both
+            requests to its live recommendation. The four original Pods remained
+            Ready.
+          <//>
+          <${Table}
+            striped
+            withTableBorder
+            aria-label="Requests returned by VPA admission"
+          >
+            <${Table.Thead}
+              ><${Table.Tr}>
+                <${Table.Th} scope="col">Container or provider<//>
+                <${Table.Th} scope="col">CPU request<//
+                ><${Table.Th} scope="col">Memory request<//>
+              <//><//
+            >
+            <${Table.Tbody}>
+              ${review.initial_admission_check.results.map(
+                ({ label, dry_run_requests }) =>
+                  html`<${Table.Tr} key=${label}
+                    ><${Table.Th} scope="row">${label}<//>
+                    <${Table.Td}>${dry_run_requests.cpu}<//
+                    ><${Table.Td}>${quantityMiB(dry_run_requests.memory)}<//><//
+                  >`,
+              )}
+            <//>
+          <//>
+          <${Text} component="p" mt="sm"
+            >Keep the four Initial policies. On each workload’s next ordinary
+            replacement, compare the running Pod’s requests with the
+            recommendation at admission. Count the gap as closed once the new
+            Pod has both requests. Memory in the table is rounded to the nearest
+            MiB. ${" "}<${Anchor} href="./rollout-evidence.json"
+              >Exact quantities and admission evidence<//
+            >.
+          <//>
+        </section>
         <${Text}>
           <strong
             >Observe Notifications during its first confirmed updater
