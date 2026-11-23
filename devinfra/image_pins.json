@@ -53,7 +53,7 @@
     "platforms": ["linux/amd64"]
   },
   "electric_1_8_1": {
-    "image": "docker.io/electricsql/electric-temp",
+    "image": "mirror.gcr.io/electricsql/electric-temp",
     "digest": "sha256:910d5ebeca68c87c930ccd1b35426c7bc94d79c099ccacc8f27547b74fb4353a",
     "tag": "1.8.1",
     "platforms": ["linux/amd64"]

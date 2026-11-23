@@ -80,10 +80,6 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let request = residual_apply_request(&staged, "second", "a_earlier");
     assert_eq!(
@@ -107,18 +103,7 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     assert_ok(&result.result, "modules apply --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "claiming the later residual in an earlier module must change the actual emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = apply_with_import_order(
@@ -389,10 +374,6 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
             ),
         ],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.merge("z_later", "a_earlier", None, true);
@@ -412,15 +393,8 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_ok(&result.result, "modules merge --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(assessment["swapped_pairs"], 1, "{assessment:#}");
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "merging the earliest unit into the last module must change the emitted order"
-    );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.merge("z_later", "a_earlier", None, false);
@@ -439,10 +413,6 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
 fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let staged = two_function_ordering_tree();
     fs::create_dir_all(staged.modules.join("alternate")).unwrap();
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.delete("a_earlier", true, None, true);
@@ -465,18 +435,7 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "deleting the earliest module must move its binding to residual and invert emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.delete("a_earlier", true, None, false);
@@ -533,10 +492,6 @@ fn modules_apply_assessment_matches_staged_run_for_existing_unit_move() {
             "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
         )],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let batch = staged.root().join("assignments.json");
     fs::write(
@@ -565,18 +520,7 @@ fn modules_apply_assessment_matches_staged_run_for_existing_unit_move() {
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "moving the later source unit into an earlier module must invert the emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied =

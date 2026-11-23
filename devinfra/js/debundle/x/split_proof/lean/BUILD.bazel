@@ -487,6 +487,8 @@ lean_axiom_test(
         "CoreJS.ReachabilityExamples.hoisted_capture_check",
         "CoreJS.Access.put",
         "CoreJS.Access.assign",
+        "CoreJS.reachFrame_alloc",
+        "CoreJS.reachFrame_create",
         "CoreJS.frames_newObject",
         "CoreJS.access_newObject",
         "CoreJS.frames_newCallback",
@@ -634,6 +636,15 @@ sh_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     use_bash_launcher = True,
+)
+
+lean_test(
+    name = "corejs_uint8_test",
+    srcs = [
+        "EsmSplit/CoreJS/Number.lean",
+        "EsmSplit/CoreJS/Uint8Examples.lean",
+    ],
+    entry = "EsmSplit/CoreJS/Uint8Examples.lean",
 )
 
 lean_test(

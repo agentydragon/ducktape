@@ -50,6 +50,24 @@ private theorem access_alloc {cells A} {s t : State W} {o a} (hs : Access cells 
       · cases hn
   · cases run
 
+/-- Raw allocation preserves a fixed envelope containing every possible fresh object
+outside the protected region, provided the new record's outgoing edges already lie in it. -/
+theorem reachFrame_alloc {r R cells A} (o : Obj) (safe : ∀ node ∈ o.nodes, A node)
+    (outside : ∀ a : Addr, a.region ≠ r → A (.obj a)) :
+    ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr) := by
+  apply ReachFrame.of_frames (frames_alloc r R o)
+  intro s hs hr
+  cases run : alloc o s with
+  | ok a t =>
+    have ha := outside a (alloc_region run ▸ hr)
+    have same : withObject A a = A := by
+      funext node
+      exact propext ⟨fun h => h.elim id (fun eq => eq ▸ ha), Or.inl⟩
+    exact ⟨ha, same ▸ access_alloc hs safe run⟩
+  | throw | unknown | fuel =>
+    unfold alloc at run
+    split at run <;> cases run <;> exact hs
+
 private def parentOf (proto : Option WVal) : M W (Option Addr) :=
   match proto with
   | none => pure (some objectProto)
@@ -84,6 +102,29 @@ private theorem perform_newObject_eq (call : Call W) (construct : Val → List V
       pure (Told.value w)) := by
   have mapSome (m : M W Addr) : some <$> m = (m >>= fun a => pure (some a)) := rfl
   cases proto <;> simp only [perform, parentOf, mapSome, M.bind_assoc, M.pure_bind]
+
+/-- The actual Object.create primitive returns a safe fresh object when it succeeds.
+Its prototype can only be the supplied argument. -/
+theorem reachFrame_create {r R cells A} (call : Call W) (args : List Val)
+    (prototype : SafeVal A (args.getD 0 .undef)) (outside : ∀ a : Addr, a.region ≠ r → A (.obj a)) :
+    ReachFrame r R cells A (SafeVal A) (prim call .create args) := by
+  have fresh (parent : Option Addr) (hp : ∀ a ∈ parent, A (.obj a)) :
+      ReachFrame r R cells A (SafeVal A) (Val.obj <$> alloc { proto := parent, props := [] } : M W Val) := by
+    apply (reachFrame_alloc _ _ outside).bind (fun a ha => reachFrame_pure r R cells A (Val.obj a) (safeVal_obj.2 ha))
+    intro node hn
+    cases parent with
+    | none => simp [Obj.nodes] at hn
+    | some a =>
+      have eq : node = .obj a := by simpa [Obj.nodes] using hn
+      exact eq ▸ hp a rfl
+  have bad (why : String) : ReachFrame r R cells A (SafeVal A) (throwErr .type why : M W Val) :=
+    ReachFrame.of_frames (frames_throwVal r R _) fun s hs _ => ⟨by simp [SafeVal, Val.nodes], hs⟩
+  cases h : args.getD 0 .undef <;> simp only [prim, h, requireObj, M.pure_bind]
+  all_goals try first | exact fresh none (by simp) | exact bad _ | exact reachFrame_unknown r R cells A _ _
+  all_goals split <;> first
+    | exact fresh none (by simp)
+    | exact fresh _ (by simpa using (safeVal_obj.1 (h ▸ prototype)))
+    | exact reachFrame_unknown r R cells A _ _
 
 /-- All outcomes of a world object allocation frame a protected region and its read bindings. -/
 theorem frames_newObject (r R) (call : Call W) (construct : Val → List Val → M W Val)
@@ -166,7 +207,7 @@ theorem frames_newCallback (r R) (call : Call W) (construct : Val → List Val �
     (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
 
 private theorem opaqueCapturesAccessible {cells A} {s : State W} (hs : Access cells A s)
-    (code part node) (h : node ∈ (Code.opaque code part cells).nodes) : A node := by
+    (code part ctor node) (h : node ∈ (Code.opaque code part cells ctor).nodes) : A node := by
   obtain ⟨slot, hslot, eq⟩ := List.mem_filterMap.mp h
   cases slot with
   | none => simp at eq
@@ -186,7 +227,7 @@ theorem access_newCallback {r R cells A} (away : Away r R A) (call : Call W)
   apply access_alloc_publish away _ _ s hs hr
   intro node hn
   simp [Obj.nodes, Property.nodes, Val.nodes] at hn
-  exact hn.elim (fun h => h ▸ root) (opaqueCapturesAccessible hs code part node)
+  exact hn.elim (fun h => h ▸ root) (opaqueCapturesAccessible hs code part false node)
 
 /-- Constructible functions allocate their own prototype object and set both links
 before publishing the function handle. -/
@@ -235,7 +276,7 @@ theorem access_newConstructor {r R cells A} (away : Away r R A) (call : Call W)
       · exact Or.inr rfl
   · intro node hn
     simp [Obj.nodes, Property.nodes, Val.nodes] at hn
-    exact hn.elim (fun h => h ▸ functionRoot) (opaqueCapturesAccessible hs code part node)
+    exact hn.elim (fun h => h ▸ functionRoot) (opaqueCapturesAccessible hs code part true node)
 
 /-- The largest envelope excluding the protected region and the initializer's read cells.
 Its closure under heap edges is still an obligation on the initial state. -/

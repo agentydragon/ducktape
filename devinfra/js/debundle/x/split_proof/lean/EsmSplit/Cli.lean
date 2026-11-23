@@ -17,29 +17,32 @@ def timedCheck (label : String) (p : Unit → Bool) : IO Bool := do
   (← IO.getStdout).flush
   return r
 
-def reportLayout (B : Bundle) (S : Spec) (P : Plan) (verbose : Bool) : IO Bool := do
-  if verbose then
-    let t0 ← IO.monoMsNow
-    let order ← IO.lazyPure fun _ => P.evalOrder
-    let exec ← IO.lazyPure fun _ => P.execOrder
-    IO.println s!"  module order  {" → ".intercalate order}"
-    IO.println s!"  statement order  {if exec.length > 40 then s!"[{exec.length} statements]" else toString exec}  ({(← IO.monoMsNow) - t0} ms)"
+/-- Check the plan's layout. An authored spec also requires checking that the plan follows its selectors.
+The translation checker constructs its plan from validated statement pairs and supplies no spec. -/
+def checkLayout (B : Bundle) (P : Plan) (spec : Option Spec) (verbose : Bool) : IO Bool := do
   let check (name : String) (p : Unit → Bool) : IO Bool :=
     if verbose then timedCheck name p else IO.lazyPure p
-  let rs := [← check "UniqueDefs" fun _ => decide (UniqueDefs B),
-             ← check "ReadsClosed" fun _ => decide (ReadsClosed B),
-             ← check "Faithful" fun _ => decide (Faithful B S P),
-             ← check "Linkable" fun _ => decide (Linkable B P),
+  let unique ← check "UniqueDefs" fun _ => decide (UniqueDefs B)
+  let closed ← check "ReadsClosed" fun _ => decide (ReadsClosed B)
+  let faithful ← match spec with
+    | some S => check "Faithful" fun _ => decide (Faithful B S P)
+    | none => pure true
+  let rs := [← check "Linkable" fun _ => decide (Linkable B P),
              ← check "ExportsUnique" fun _ => decide (ExportsUnique B P),
              ← check "Hygienic" fun _ => decide (Hygienic B P),
              ← check "AssignsHome" fun _ => decide (AssignsHome B P),
              ← check "Permutes" fun _ => decide (Permutes B P)]
-  return rs.all id
+  return unique && closed && faithful && rs.all id
 
 def reportPlanChecks (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
-  let layout ← reportLayout B S P true
-  let order ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
-  return layout && order
+  let t0 ← IO.monoMsNow
+  let order ← IO.lazyPure fun _ => P.evalOrder
+  let exec ← IO.lazyPure fun _ => P.execOrder
+  IO.println s!"  module order  {" → ".intercalate order}"
+  IO.println s!"  statement order  {if exec.length > 40 then s!"[{exec.length} statements]" else toString exec}  ({(← IO.monoMsNow) - t0} ms)"
+  let layout ← checkLayout B P (some S) true
+  let orderOk ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
+  return layout && orderOk
 
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
 Module order follows the sorted keys of the parsed object; `order` is optional and keeps its order;

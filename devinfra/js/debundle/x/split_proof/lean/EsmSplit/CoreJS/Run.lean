@@ -284,7 +284,7 @@ def showCode : Code → String
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map (·.1)}"
   | .host name => s!"host {name}"
-  | .opaque code part cells => s!"opaque {code} {part} {cells.map (·.map showAddr)}"
+  | .opaque code part cells ctor => s!"opaque {code} {part} {cells.map (·.map showAddr)} {ctor}"
 
 def showObj (o : Obj) : String :=
   s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (k, showProperty p)} {o.code.map showCode} {o.array}"

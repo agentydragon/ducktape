@@ -5,12 +5,12 @@
 import json
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from playwright.async_api import ConsoleMessage, Error, Page, Playwright, Request, Response, expect
+from playwright.async_api import BrowserContext, ConsoleMessage, Error, Page, Playwright, Request, Response, expect
 from python.runfiles import Runfiles
 from starlette.applications import Starlette
 from starlette.requests import Request as StarletteRequest  # Playwright also names a Request.
@@ -73,18 +73,32 @@ async def origin(runfiles: Runfiles) -> AsyncIterator[str]:
         yield served
 
 
+def desktop_context(playwright_driver: Playwright) -> AbstractAsyncContextManager[BrowserContext]:
+    return deterministic_browser_context(playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None)
+
+
+async def open_harness(page: Page, origin: str) -> None:
+    await page.goto(origin)
+    await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+
+
+async def drag_rectangle(page: Page, *, end: tuple[int, int] = (600, 450), steps: int = 5) -> None:
+    canvas = page.locator("canvas.excalidraw__canvas.interactive")
+    await canvas.hover(position={"x": 400, "y": 300})
+    await page.mouse.down()
+    await page.mouse.move(*end, steps=steps)
+    await page.mouse.up()
+
+
 @asynccontextmanager
 async def harness_page(playwright_driver: Playwright, origin: str) -> AsyncIterator[Page]:
     """A page of a fresh desktop-size browser context, with the app loaded.
 
     A test that must configure the context or page before navigation opens its own context.
     """
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
+    async with desktop_context(playwright_driver) as context:
         page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await open_harness(page, origin)
         yield page
 
 
@@ -102,9 +116,7 @@ async def test_help_dialog_opens_and_closes(playwright_driver: Playwright, origi
 
 
 async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
+    async with desktop_context(playwright_driver) as context:
         page: Page = await context.new_page()
         console_errors: list[str] = []
         failed_requests: list[str] = []
@@ -128,8 +140,7 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         page.on("requestfailed", on_request_failed)
         page.on("response", on_response)
 
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await open_harness(page, origin)
         await expect(page.locator(".App-toolbar")).to_be_visible()
         undo = page.get_by_test_id("button-undo")
         redo = page.get_by_test_id("button-redo")
@@ -140,11 +151,7 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()
         await expect(rectangle).to_be_checked()
-        canvas = page.locator("canvas.excalidraw__canvas.interactive")
-        await canvas.hover(position={"x": 400, "y": 300})
-        await page.mouse.down()
-        await page.mouse.move(600, 450, steps=5)
-        await page.mouse.up()
+        await drag_rectangle(page)
         # Drawing records a history entry, which enables undo.
         await expect(undo).to_be_enabled()
         await expect(page.locator(".panelColumn")).to_be_visible()
@@ -207,11 +214,7 @@ async def test_stats_drag_input_updates_selected_rectangle(playwright_driver: Pl
     async with harness_page(playwright_driver, origin) as page:
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()
-        canvas = page.locator("canvas.excalidraw__canvas.interactive")
-        await canvas.hover(position={"x": 400, "y": 300})
-        await page.mouse.down()
-        await page.mouse.move(600, 450, steps=5)
-        await page.mouse.up()
+        await drag_rectangle(page)
 
         await page.keyboard.press("Alt+/")
         await expect(page.locator(".exc-stats")).to_be_visible()
@@ -228,11 +231,7 @@ async def test_hyperlink_popup_saves_selected_rectangle_link(playwright_driver: 
     async with harness_page(playwright_driver, origin) as page:
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()
-        canvas = page.locator("canvas.excalidraw__canvas.interactive")
-        await canvas.hover(position={"x": 400, "y": 300})
-        await page.mouse.down()
-        await page.mouse.move(600, 450, steps=5)
-        await page.mouse.up()
+        await drag_rectangle(page)
 
         await page.keyboard.press("Control+k")
         editor = page.locator(".excalidraw-hyperlinkContainer-input")
@@ -1149,13 +1148,10 @@ async def test_resize_handle_devices(playwright_driver: Playwright, origin: str)
 
 
 async def test_library_and_icon_picker(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
+    async with desktop_context(playwright_driver) as context:
         page = await context.new_page()
         page.set_default_timeout(5_000)
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await open_harness(page, origin)
         await expect(page.locator(".App-toolbar")).to_be_visible()
 
         # Opening the library exercises the extracted menu's empty-library branch.
@@ -1203,13 +1199,10 @@ async def test_paste_spreadsheet_shows_chart_dialog(playwright_driver: Playwrigh
 
 
 async def test_clipboard_parsing_and_system_round_trip(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
+    async with desktop_context(playwright_driver) as context:
         await context.grant_permissions(["clipboard-read", "clipboard-write"])
         page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await open_harness(page, origin)
         await page.bring_to_front()
         result = await page.evaluate(
             """async () => {
@@ -1477,9 +1470,7 @@ async def test_create_text_element(playwright_driver: Playwright, origin: str) -
 
 
 async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
+    async with desktop_context(playwright_driver) as context:
         page = await context.new_page()
         await page.add_init_script(
             """(() => {
@@ -1499,16 +1490,11 @@ async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -
                 });
             })()"""
         )
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await open_harness(page, origin)
         await expect(page.locator(".App-toolbar")).to_be_visible()
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()
-        canvas = page.locator("canvas.excalidraw__canvas.interactive")
-        await canvas.hover(position={"x": 400, "y": 300})
-        await page.mouse.down()
-        await page.mouse.move(550, 400, steps=4)
-        await page.mouse.up()
+        await drag_rectangle(page, end=(550, 400), steps=4)
         await page.get_by_test_id("main-menu-trigger").click()
         await page.get_by_test_id("image-export-button").click()
         dialog = page.locator(".ImageExportModal")
@@ -1531,8 +1517,7 @@ async def test_mobile_toolbar(playwright_driver: Playwright, origin: str) -> Non
         playwright_driver, viewport={"width": 390, "height": 844}, frozen_now_ms=None
     ) as context:
         page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await open_harness(page, origin)
         await expect(page.locator(".App-toolbar--mobile")).to_be_visible()
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()

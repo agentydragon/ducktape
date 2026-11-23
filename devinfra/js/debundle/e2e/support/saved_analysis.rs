@@ -499,6 +499,26 @@ pub fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         .collect()
 }
 
+/// Compare the preview against the original staged run, which also produced the graph.
+#[track_caller]
+pub fn assert_candidate_changes_emitted_order(assessment: &Value, staged: &TreeStaged) {
+    assert_ok(&staged.run.result, "baseline staged run");
+    let baseline = read_effect_report(&staged.run.out_root);
+    assert_eq!(baseline["swapped_pairs"], 0, "{baseline:#}");
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_ne!(
+        assessment["emitted_order"], baseline["emitted_order"],
+        "{assessment:#}"
+    );
+}
+
 pub fn assert_candidate_assessment_matches_run(
     assessment: &Value,
     run: &TreeStaged,

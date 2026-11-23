@@ -14,53 +14,6 @@ def _debundle_cli_contract_aspect_impl(target, ctx):
 
 _debundle_cli_contract_aspect = aspect(implementation = _debundle_cli_contract_aspect_impl)
 
-def _package_root_fixture_impl(ctx):
-    package_root = ctx.actions.declare_directory(ctx.label.name)
-    ctx.actions.run_shell(
-        outputs = [package_root],
-        arguments = [package_root.path],
-        command = "mkdir -p \"$1\" && printf '%s\\n' '{\"name\":\"fixture-package\"}' > \"$1/package.json\"",
-    )
-    return [DefaultInfo(files = depset([package_root]))]
-
-package_root_fixture = rule(implementation = _package_root_fixture_impl)
-
-def _source_tree_fixture_impl(ctx):
-    source_tree = ctx.actions.declare_directory(ctx.label.name)
-    arguments = [source_tree.path]
-    inputs = []
-    for relative_path, target in ctx.attr.srcs.items():
-        files = target[DefaultInfo].files.to_list()
-        if len(files) != 1:
-            fail("{} must provide exactly one source file".format(target.label))
-        inputs.append(files[0])
-        arguments.extend([files[0].path, relative_path])
-    ctx.actions.run_shell(
-        inputs = inputs,
-        outputs = [source_tree],
-        arguments = arguments,
-        command = """
-set -eu
-out="$1"
-shift
-mkdir -p "$out"
-while (($#)); do
-  source="$1"
-  relative_path="$2"
-  shift 2
-  destination="$out/$relative_path"
-  mkdir -p "$(dirname "$destination")"
-  cp "$source" "$destination"
-done
-""",
-    )
-    return [DefaultInfo(files = depset([source_tree]))]
-
-source_tree_fixture = rule(
-    implementation = _source_tree_fixture_impl,
-    attrs = {"srcs": attr.string_keyed_label_dict(allow_files = True, mandatory = True)},
-)
-
 # Label strings resolve against the package whose BUILD calls the fixture macros.
 _FIXTURE_INPUTS = {
     "input_data": [":source"],

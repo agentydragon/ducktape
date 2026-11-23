@@ -26,7 +26,7 @@ private def capturedObject : Obj :=
 private def capturedThisObject : Obj :=
   { proto := none, props := [],
     code := some (.closure (.mk "callback" .arrow false [] []) { vars := [], this := .obj protectedAddr } []) }
-private def opaqueObject : Obj := { proto := none, props := [], code := some (.opaque 0 1 [some protectedAddr]) }
+private def opaqueObject : Obj := { proto := none, props := [], code := some (.opaque 0 1 [some protectedAddr] false) }
 
 /-- Prototype edges count even if no property has yet been read. -/
 theorem prototype_reachable : Reachable (objectState prototypeObject) [] (.obj protectedAddr) :=
