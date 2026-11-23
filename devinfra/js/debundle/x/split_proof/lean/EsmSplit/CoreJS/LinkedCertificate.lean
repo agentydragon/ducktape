@@ -357,16 +357,20 @@ deriving instance Lean.ToExpr for CoreJS.Code
 deriving instance Lean.ToExpr for CoreJS.Obj
 deriving instance Lean.ToExpr for CoreJS.Binding
 
-private partial def probeTerm (e : Lean.Expr) : Except String String := do
-  match e with
-  | .app .. => do
-    let f ← probeTerm e.getAppFn
-    let args ← e.getAppArgs.toList.mapM probeTerm
-    return "(" ++ String.intercalate " " (f :: args) ++ ")"
-  | .const n _ => return "@" ++ n.toString
-  | .lit (.strVal s) => return s.quote
-  | .lit (.natVal n) => return toString n
-  | _ => throw "unsupported expression in quoted CoreJS data"
+/-- The constructor, application and literal nodes used to quote a probe observation. -/
+private inductive ProbeTerm where
+  | app (fn arg : ProbeTerm)
+  | const (name : Lean.Name)
+  | str (value : String)
+  | nat (value : Nat)
+  deriving DecidableEq
+
+private def probeTerm? : Lean.Expr → Option ProbeTerm
+  | .app f x => return .app (← probeTerm? f) (← probeTerm? x)
+  | .const n _ => some (.const n)
+  | .lit (.strVal s) => some (.str s)
+  | .lit (.natVal n) => some (.nat n)
+  | _ => none
 
 /-! `State World.probe` has a closed shape. Keep a canonical projection of every
 field in the run's final state; the probe's host state is `Unit`. Closures retain
@@ -389,15 +393,14 @@ private def observeProbeState (profile : HostPremises) (state : CoreJS.State (pr
     worldState := state.world.state
     handed := state.world.handed.toList }
 
-private def probeStateLiteral (profile : HostPremises) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : String :=
-  match probeTerm (Lean.toExpr (observeProbeState profile state)) with
-  | .ok literal => literal
-  | .error _ => ""
-
 /-- Compare the complete state of two completed executions in the concrete probe.
 This is a refusal check only; matching probes still go through the all-world proof. -/
 def probeStatesEqual (profile : HostPremises) (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
-  probeStateLiteral profile left == probeStateLiteral profile right
+  let leftTerm := Lean.toExpr (observeProbeState profile left)
+  let rightTerm := Lean.toExpr (observeProbeState profile right)
+  -- Equal quotations need no projection. On a difference compare only the constructor data,
+  -- retaining the same treatment of universe levels and unsupported nodes.
+  leftTerm.equal rightTerm || decide (probeTerm? leftTerm = probeTerm? rightTerm)
 
 private abbrev StringFields := List (String × String)
 
@@ -925,7 +928,7 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {sour
     ¬ Equivalent source candidate := by
   apply different_probe_states_refute_equivalence sourceRun candidateRun
   rintro rfl
-  simp [probeStatesEqual, probeStateLiteral, observeProbeState] at different
+  simp [probeStatesEqual] at different
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 
