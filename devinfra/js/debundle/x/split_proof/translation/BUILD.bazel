@@ -243,7 +243,6 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_dense_array_batch_test",
         "linked_flat_patterns_test",
         "linked_function_declaration_test",
-        "linked_host_profile_test",
         "linked_identifier_assignment_test",
         "linked_if_test",
         "linked_import_cells_test",
@@ -269,6 +268,15 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_wide_table_reversal_test",
     ]
 ]
+
+js_test(
+    name = "linked_host_profile_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_host_profile_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+    shard_count = 3,
+)
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
