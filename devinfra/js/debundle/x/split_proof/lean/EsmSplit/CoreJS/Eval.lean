@@ -412,7 +412,8 @@ def callFn : Nat → Val → Val → List Val → M W Val
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
         match f.opaqueBody with
-        | some (code, part, free) =>
+        | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
+        | some (code, part, free, none) =>
           converse n code (free.map (closed.vars.lookup ·))
             (.run code part (← toW callee) (← toW (if f.kind == .arrow then closed.this else this))
               (← args.mapM toW) false)
@@ -447,7 +448,8 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         evalFields n { closed with this := .obj this } this fields
         let result ← match f.opaqueBody with
-          | some (code, part, free) =>
+          | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
+          | some (code, part, free, none) =>
             converse n code (free.map (closed.vars.lookup ·))
               (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true)
           | none =>

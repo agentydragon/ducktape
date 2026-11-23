@@ -26,12 +26,28 @@ private partial def unitSyntax : Json → Json
   | .arr nodes => .arr (nodes.map unitSyntax)
   | j => j
 
+/-- Give each callable a stable part number within its original unit. The order
+comes from the unchanged syntax tree, independent of on-disk byte offsets. -/
+private partial def numberFunctions (unit : Nat) : Json → StateM Nat Json
+  | .obj fields => do
+    let site ← if (fields.get? "opaqueCaptures").isSome then do
+      let part ← get
+      modify (· + 1)
+      pure [(":opaque-unit", Lean.toJson unit), (":opaque-part", Lean.toJson part)]
+    else pure []
+    let children ← fields.toList.mapM fun (key, child) => do
+      pure (key, ← numberFunctions unit child)
+    return Json.mkObj (children ++ site)
+  | .arr children => return .arr (← children.mapM (numberFunctions unit))
+  | j => pure j
+
 private structure Parsed where
   imports : List Import
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
 
-private def parse (profile : HostProfile) (path : String) (nodes : Array Json) : Except String Parsed := do
+private def parse (profile : HostProfile) (path : String) (nodes : Array Json)
+    (base : Nat := 0) (origins : Option (Array Nat) := none) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
@@ -40,6 +56,13 @@ private def parse (profile : HostProfile) (path : String) (nodes : Array Json) :
   let mut units := #[]
   let mut exports := #[]
   for (j, i) in nodes.zipIdx do
+    let numbered (ast : Json) : Except String Json := do
+      let origin ← match origins with
+        | none => pure (base + i)
+        | some ids =>
+          let some id := ids[units.size]? | throw "emitted body length differs from the placement"
+          pure id
+      return ((numberFunctions origin ast).run 1).1
     match ← typ j with
     | "ImportDeclaration" => pure ()
     | "ExportNamedDeclaration" =>
@@ -52,11 +75,11 @@ private def parse (profile : HostProfile) (path : String) (nodes : Array Json) :
           exports := exports.push (← FromESTree.exportSpec sp)
       else
         unless specs.isEmpty do throw "expected an inline declaration export"
-        let (name, s) ← FromESTree.linkedDeclaration names declaration profile
+        let (name, s) ← FromESTree.linkedDeclaration names (← numbered declaration) profile
         units := units.push (i, s, declaration)
         exports := exports.push (name, name)
     | _ =>
-      let s ← (FromESTree.linkedUnit names j profile).mapError fun why => s!"statement {i}: {why}"
+      let s ← (FromESTree.linkedUnit names (← numbered j) profile).mapError fun why => s!"statement {i}: {why}"
       units := units.push (i, s, j)
   return { imports := imports.toList, units := units.toList, exports := exports.toList }
 
@@ -72,7 +95,7 @@ private def readProviders (profile : HostProfile) (providers : List (String × J
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse profile name nodes).mapError fun why => s!"{name}: {why}"
+    let p ← (parse profile name nodes offset).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
     modules := modules.push (p.numbered name offset)
@@ -82,7 +105,8 @@ private def readProviders (profile : HostProfile) (providers : List (String × J
 private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
     (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) : Except String Module := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
-  let p ← parse profile m.name nodes
+  let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (i, ·)
+  let p ← parse profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
     unless p.imports.take original.imports.length == original.imports && external == original.imports do
@@ -98,7 +122,6 @@ private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan)
     { source, names := names.map fun localName => (EsmSplit.exportNameFor exports localName, localName) }
   unless glue = expectedGlue do throw "module's glue imports differ from the plan"
   unless p.exports.Perm (exportsOf m) do throw "module's named exports differ from the plan"
-  let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (i, ·)
   unless p.units.length == placed.length do throw "emitted body length differs from the placement"
   let body ← (p.units.zip placed).mapM fun ((_, actual, ast), (id, expected)) => do
     unless unitSyntax ast == unitSyntax expected do throw s!"emitted syntax differs from original unit {id}"

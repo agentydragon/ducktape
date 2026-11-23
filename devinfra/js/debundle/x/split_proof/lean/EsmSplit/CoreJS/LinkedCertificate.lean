@@ -168,6 +168,17 @@ private partial def funcEq : MatchEq Func
     let ⟨a⟩ ← scalarEq arity arity'
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ a ▸ b ▸ rfl⟩
+  | .opaque name kind self arity code part free refusal,
+      .opaque name' kind' self' arity' code' part' free' refusal' => do
+    let ⟨n⟩ ← scalarEq name name'
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨s⟩ ← scalarEq self self'
+    let ⟨a⟩ ← scalarEq arity arity'
+    let ⟨c⟩ ← scalarEq code code'
+    let ⟨p⟩ ← scalarEq part part'
+    let ⟨f⟩ ← scalarEq free free'
+    let ⟨r⟩ ← scalarEq refusal refusal'
+    return ⟨n ▸ k ▸ s ▸ a ▸ c ▸ p ▸ f ▸ r ▸ rfl⟩
   | _, _ => none
 
 private partial def classMemberEq : MatchEq ClassMember
