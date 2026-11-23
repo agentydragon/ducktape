@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredential,
     EgressCredentialSpec,
+    EgressCredentialSpecSource,
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
@@ -98,8 +99,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
         namespace=namespace,
         credential=archive,
         description="Read source archives of agentydragon/gaffer-private with a repository-scoped GitHub App token.",
-        secret=archive,
-        key="token",
+        source=Source.secret_ref(name=archive, key="token"),
         target=_BEARER,
         rules=[
             _rule(
@@ -167,19 +167,20 @@ def _copy_secret(
     source: str,
     key: str,
     target: str | None = None,
-) -> None:
-    """ESO copy of `source_namespace`/`source` into the credentials namespace as `target` (default:
-    the same name), through a store that reads that one Secret."""
+) -> EgressCredentialSpecSource:
+    """Copy one key through a single-Secret store and return its destination for the egress credential."""
+    name = target or source
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
-        target=target or source,
+        target=name,
         source=source,
         key=key,
         store=single_secret_store(
             scope, f"agentplane-staging-{store}", reader=reader, source_namespace=source_namespace, source_secret=source
         ),
     )
+    return Source.secret_ref(name=name, key=key)
 
 
 def _rule(
@@ -205,17 +206,14 @@ def _credential(
     namespace: str,
     credential: str,
     description: str,
-    secret: str,
-    key: str,
+    source: EgressCredentialSpecSource,
     target: EgressCredentialSpecTargets,
 ) -> None:
     EgressCredential(
         scope,
         f"egresscredential-{id}",
         metadata=ApiObjectMetadata(name=credential, namespace=namespace),
-        spec=EgressCredentialSpec(
-            description=description, source=Source.secret_ref(name=secret, key=key), targets=[target]
-        ),
+        spec=EgressCredentialSpec(description=description, source=source, targets=[target]),
     )
 
 
@@ -226,22 +224,14 @@ def _present(
     namespace: str,
     credential: str,
     description: str,
-    secret: str,
-    key: str,
+    source: EgressCredentialSpecSource,
     target: EgressCredentialSpecTargets,
     rules: Sequence[PolicySetSpecRules],
 ) -> None:
-    """The EgressCredential `credential`, read from `secret`/`key`, and the egress PolicySet `policy`
+    """The EgressCredential `credential`, read from `source`, and the egress PolicySet `policy`
     that scopes where the proxy presents it."""
     _credential(
-        scope,
-        policy,
-        namespace=namespace,
-        credential=credential,
-        description=description,
-        secret=secret,
-        key=key,
-        target=target,
+        scope, policy, namespace=namespace, credential=credential, description=description, source=source, target=target
     )
     PolicySet(
         scope,
@@ -267,7 +257,7 @@ def _forgejo_rules(credential: str) -> list[PolicySetSpecRules]:
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "forgejo",
         reader=reader,
@@ -289,8 +279,7 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
             "account."
         ),
-        secret="haku-forgejo-git",
-        key="password",
+        source=source,
         # Git over HTTP and Forgejo's REST API both authenticate with `Basic
         # base64(haku:<password>)`, so the placeholder travels as the password half. A client
         # sends the username itself; only the secret half is substituted here.
@@ -305,7 +294,7 @@ def _forgejo_finance_agent(
     # Sources directly from the `forgejo` namespace, where tf/gitops/finance-agent creates the
     # Secret -- unlike `_forgejo_haku` above, nothing else needs a copy of it, so there is no
     # existing namespace to piggyback on.
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "forgejo-finance-agent",
         reader=reader,
@@ -326,8 +315,7 @@ def _forgejo_finance_agent(
             "full authority, but the account owns exactly one repo, so the blast radius is that "
             "repo alone."
         ),
-        secret="finance-agent-git-creds",
-        key="password",
+        source=source,
         # Same Basic-auth shape as forgejo-haku.
         target=_BASIC_PASSWORD,
         rules=_forgejo_rules("forgejo-finance-agent"),
@@ -353,8 +341,7 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
             "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
             "presents it."
         ),
-        secret="google-access-token",
-        key="access_token",
+        source=Source.secret_ref(name="google-access-token", key="access_token"),
         target=_BEARER,
         rules=[
             # One API per host, so read-only methods are the only restriction needed.
@@ -392,7 +379,7 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
 
 def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     credential = GROCY_SF_READONLY_CREDENTIAL
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "grocy-sf",
         reader=reader,
@@ -414,8 +401,7 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             "account as a user with no permissions, and the `grocy-sf-reads` PolicySet presents the "
             "password only on GETs to Grocy's read routes."
         ),
-        secret=credential,
-        key="password",
+        source=source,
         # The grocy-sf.allegedly.works outpost turns HTTP Basic into a client_credentials grant
         # against its own proxy provider, so the placeholder travels as the password half. A
         # client sends the username itself; only the password is substituted here.
@@ -457,7 +443,7 @@ def _home_assistant_readonly(
     scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
 ) -> None:
     credential = HOME_ASSISTANT_READONLY_CREDENTIAL
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "home-assistant",
         reader=reader,
@@ -479,8 +465,7 @@ def _home_assistant_readonly(
             "call, and the `home-assistant-reads` PolicySet presents the token only on GETs of "
             "entity states and their history."
         ),
-        secret=credential,
-        key="token",
+        source=source,
         target=_BEARER,
     )
 
@@ -505,7 +490,7 @@ def _activitywatch_read(
     scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
 ) -> None:
     # Exact source access: the activitywatch namespace also holds the write token.
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "activitywatch",
         reader=reader,
@@ -528,8 +513,7 @@ def _activitywatch_read(
             "without the trailing slash) only, so it cannot write; what it reads is every "
             "device's window titles, URLs and AFK history."
         ),
-        secret="activitywatch-read-token",
-        key="token",
+        source=source,
         target=_BEARER,
         rules=[
             # The API half of what the read route admits; its web UI stays unreachable.
@@ -560,12 +544,13 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             "subscription quotas and each provider's raw usage response -- and "
             "`aiquota-read`'s rule presents it only on GETs under /v1/."
         ),
-        secret=AGENTPLANE_STAGING_BEARER.secret_key.secret.name,
-        key=AGENTPLANE_STAGING_BEARER.secret_key.key,
+        source=Source.secret_ref(
+            name=AGENTPLANE_STAGING_BEARER.secret_key.secret.name, key=AGENTPLANE_STAGING_BEARER.secret_key.key
+        ),
         target=_BEARER,
     )
     history = clickhouse.AIQUOTA_HISTORY_CREDENTIALS
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "aiquota-history-clickhouse",
         reader=reader,
@@ -580,8 +565,7 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         namespace=namespace,
         credential=history,
         description="Typed AIQuota history ClickHouse reader; HTTP Basic password for aiquota_history_reader.",
-        secret=history,
-        key=clickhouse.PASSWORD_KEY,
+        source=source,
         target=_BASIC_PASSWORD,
     )
     PolicySet(
@@ -634,8 +618,7 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
             "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest-scheduler. "
             "The bearer is substituted only for the listed lookup paths."
         ),
-        secret="platform-sessions-quest-scheduler-bearer",
-        key="token",
+        source=Source.secret_ref(name="platform-sessions-quest-scheduler-bearer", key="token"),
         target=_BEARER,
     )
     PolicySet(
@@ -687,8 +670,7 @@ def _thrive_read(scope: Construct, *, namespace: str) -> None:
         namespace=namespace,
         credential=THRIVE_READ_POLICY,
         description="Read Thrive Market catalog, orders, account, cart, and autoship through Platform Sessions.",
-        secret="platform-sessions-thrive-read-bearer",
-        key="token",
+        source=Source.secret_ref(name="platform-sessions-thrive-read-bearer", key="token"),
         target=_BEARER,
     )
     PolicySet(
@@ -716,7 +698,7 @@ def _thrive_read(scope: Construct, *, namespace: str) -> None:
 
 
 def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "haku-mail",
         reader=reader,
@@ -738,8 +720,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             "into this namespace by ESO. It reads and changes the contents of that one mailbox "
             "over JMAP; it cannot send mail or administer the server (haku/docs/security.md)."
         ),
-        secret=_HAKU_MAIL_TOKEN,
-        key="jwt",
+        source=source,
         target=_BEARER,
         rules=[
             # JMAP only: the session document and the API, blob and event-source endpoints under
@@ -766,7 +747,7 @@ def _buildbuddy(scope: Construct, *, credentials_namespace: str) -> None:
 
 
 def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    _copy_secret(
+    source = _copy_secret(
         scope,
         "plaid-pgweb",
         reader=reader,
@@ -788,7 +769,6 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
             "transactions and holdings -- and Agentplane's egress rules present the password only on "
             "pgweb's query API."
         ),
-        secret=plaid_pgweb.AUTH.secret.name,
-        key=plaid_pgweb.AUTH.key,
+        source=source,
         target=_BASIC_PASSWORD,
     )
