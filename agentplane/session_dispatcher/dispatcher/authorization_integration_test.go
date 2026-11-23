@@ -37,7 +37,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -475,8 +474,8 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	}
 
 	// Reading failed or uncertain materialization never requeues it or changes its evidence.
-	for _, state := range []string{store.SessionFailedState, store.SessionInProgressState} {
-		if _, err := queueStore.DB.ExecContext(t.Context(), "UPDATE session SET state=$2,reason='retained outcome' WHERE session_id=$1", stored.SessionID, state); err != nil {
+	for _, state := range []dispatcherpb.SessionStatus_Materialization{store.SessionFailedState, store.SessionInProgressState} {
+		if _, err := queueStore.DB.ExecContext(t.Context(), "UPDATE session SET state_value=$2,reason='retained outcome' WHERE session_id=$1", stored.SessionID, state); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := client.CreateSession(authoritySVIDContext(t), request); err != nil {
@@ -546,7 +545,7 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		}
 	}
 	deliveryOwner := claimSessionOwner(t, queueStore, failedID)
-	if row, err := queueStore.SettleSession(t.Context(), failedID, deliveryOwner, []string{store.SessionWaitingState}, store.SessionFailedState, "runner_rejected"); err != nil || row == nil {
+	if row, err := queueStore.SettleSession(t.Context(), failedID, deliveryOwner, []dispatcherpb.SessionStatus_Materialization{store.SessionWaitingState}, store.SessionFailedState, "runner_rejected"); err != nil || row == nil {
 		t.Fatalf("reject opening: %+v %v", row, err)
 	}
 	inventory := &authorityInventory{sandboxErr: errors.New("sandbox inventory unavailable")}
@@ -683,7 +682,7 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	}
 	enqueue("test-later")
 	reason := strings.Repeat("test-reason-", 100)
-	if _, err := queueStore.Settle(ctx, "test-second", claimSessionOwner(t, queueStore, id), []string{store.QueueState}, store.FailedState, reason, nil); err != nil {
+	if _, err := queueStore.Settle(ctx, "test-second", claimSessionOwner(t, queueStore, id), []dispatcherpb.DeliveryState{store.QueueState}, store.FailedState, reason, nil); err != nil {
 		t.Fatal(err)
 	}
 	last := page(first.NextPageToken, 2)
@@ -755,10 +754,10 @@ func TestBatchGetDispatchesChoosesLiveThenLatestDeletionInSession(t *testing.T) 
 	deleted := func(source, reason string) int64 {
 		t.Helper()
 		var version int64
-		err := queue.DB.QueryRowContext(ctx, `INSERT INTO dispatch_tombstone(command_id,version,session_id,operation,state,reason,
+		err := queue.DB.QueryRowContext(ctx, `INSERT INTO dispatch_tombstone(command_id,version,session_id,operation_value,state_value,reason,
 			admission,delivery_blocker,wake_assessment,created_at,updated_at)
-			SELECT $1,nextval('dispatch_version_seq'),session_id,operation,'UNKNOWN',$2,admission,delivery_blocker,
-				wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$3 RETURNING version`, commandID, reason, source).Scan(&version)
+			SELECT $1,nextval('dispatch_version_seq'),session_id,operation_value,$4,$2,admission,delivery_blocker,
+				wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$3 RETURNING version`, commandID, reason, source, store.UnknownState).Scan(&version)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -780,7 +779,7 @@ func TestBatchGetDispatchesChoosesLiveThenLatestDeletionInSession(t *testing.T) 
 		t.Fatalf("live precedence: %v", live)
 	}
 	const reason = "runner effect unconfirmed"
-	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch SET state='UNKNOWN',reason=$1 WHERE command_id=$2", reason, commandID); err != nil {
+	if _, err := queue.DB.ExecContext(ctx, "UPDATE dispatch SET state_value=$3,reason=$1 WHERE command_id=$2", reason, commandID, store.UnknownState); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := queue.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {

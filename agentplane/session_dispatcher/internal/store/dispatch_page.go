@@ -6,15 +6,14 @@ import (
 	"errors"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/emptypb"
-
-	"github.com/lib/pq"
-
 	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/lib/pq"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -41,7 +40,7 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 		if err != nil {
 			return err
 		}
-		query := `SELECT position,command_id,operation,state,reason,created_at,updated_at,version
+		query := `SELECT position,command_id,COALESCE(operation_value,0),COALESCE(state_value,0),reason,created_at,updated_at,version
 			FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
 			AND ($4::bigint=0 OR position<$4)`
 		params := []any{sessionID, name, uid, cursor.Before, limit + 1}
@@ -65,16 +64,15 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 				break
 			}
 			summary := &dispatcherpb.Dispatch{SessionId: sessionID, Sandbox: name, SandboxUid: uid}
-			var operation, state string
+			var state dispatcherpb.DeliveryState
 			var created, updated time.Time
-			if err := rows.Scan(&last, &summary.CommandId, &operation, &state, &summary.Reason, &created, &updated, &summary.ReceiptVersion); err != nil {
+			if err := rows.Scan(&last, &summary.CommandId, &summary.Operation, &state, &summary.Reason, &created, &updated, &summary.ReceiptVersion); err != nil {
 				return err
 			}
-			summary.Operation, err = dispatchOperation(operation)
-			if err != nil {
+			if err := validateDispatchOperation(summary.Operation); err != nil {
 				return err
 			}
-			summary.State = dispatchState(state)
+			summary.State = dispatchstate.NormalizeDeliveryState(state)
 			summary.CreatedAt, summary.UpdatedAt = timestamppb.New(created), timestamppb.New(updated)
 			result.Dispatches = append(result.Dispatches, summary)
 		}
@@ -114,14 +112,14 @@ func (s *Store) BatchGetDispatches(ctx context.Context, sessionID string, caller
 			return status.Error(codes.FailedPrecondition, "retained Dispatch reads are unavailable")
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,
-            operation,state,reason,admission,delivery_blocker,wake_assessment,created_at,updated_at,command,false
+            operation_value,state_value,reason,admission,delivery_blocker,wake_assessment,created_at,updated_at,command,false
             FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3 AND command_id=ANY($4)
             UNION ALL
-            SELECT t.version,t.command_id,t.session_id,''::varchar,''::text,t.operation,t.state,t.reason,t.admission,
+            SELECT t.version,t.command_id,t.session_id,''::varchar,''::text,t.operation_value,t.state_value,t.reason,t.admission,
                 t.delivery_blocker,t.wake_assessment,t.created_at,t.updated_at,NULL::bytea,true
             FROM unnest($4::varchar[]) AS requested(command_id)
             CROSS JOIN LATERAL (
-                SELECT version,command_id,session_id,operation,state,reason,admission,delivery_blocker,
+                SELECT version,command_id,session_id,operation_value,state_value,reason,admission,delivery_blocker,
                     wake_assessment,created_at,updated_at
                 FROM dispatch_tombstone
                 WHERE command_id=requested.command_id AND session_id=$1

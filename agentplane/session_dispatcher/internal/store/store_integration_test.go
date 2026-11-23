@@ -298,12 +298,12 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, "admission-session")
-	claimed, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{QueueState}, DeliveringState, "", nil)
+	claimed, err := store.Settle(ctx, "admission-input", deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil)
 	if err != nil || claimed == nil || claimed.Admission != nil {
 		t.Fatalf("claimed row carries an admission: %+v %v", claimed, err)
 	}
 	admission := &eventlogpb.EventEntry{Cursor: 7, Origin: &eventlogpb.EventOrigin{SourceId: "runner", Sequence: 7}}
-	if _, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{DeliveringState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, "admission-input", deliveryOwner, []dispatcherpb.DeliveryState{DeliveringState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
 	if row, err := store.GetDispatch(ctx, "admission-input"); err != nil || !proto.Equal(row.Admission, admission) {
@@ -324,7 +324,7 @@ func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("test-deleted-cancelled", "test-cancelled-input"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
+	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state_value=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
 		t.Fatal(err)
 	}
 	interrupt := &commandpb.Command{
@@ -335,10 +335,10 @@ func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, "session-deleted")
-	if row, err := store.Settle(ctx, interrupt.GetCommandId(), deliveryOwner, []string{QueueState}, AdmittedState, "", &eventlogpb.EventEntry{Cursor: 17}); err != nil || row == nil {
+	if row, err := store.Settle(ctx, interrupt.GetCommandId(), deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, AdmittedState, "", &eventlogpb.EventEntry{Cursor: 17}); err != nil || row == nil {
 		t.Fatalf("admit interrupt: %+v %v", row, err)
 	}
-	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
+	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("settle: %+v %v", row, err)
 	}
 	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", deliveryOwner); err != nil || !marked {
@@ -375,7 +375,10 @@ func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 	if err != nil || !proto.Equal(row.Command, input("deleted-queued", "q")) {
 		t.Fatalf("retained queued input: %+v, %v", row, err)
 	}
-	for commandID, want := range map[string]struct{ state, reason string }{
+	for commandID, want := range map[string]struct {
+		state  dispatcherpb.DeliveryState
+		reason string
+	}{
 		"deleted-queued":         {FailedState, "sandbox_deleted"},
 		"deleted-delivering":     {UnknownState, "sandbox_deleted"},
 		"test-deleted-cancelled": {CancelledState, "test-prior-cancellation"},
@@ -448,7 +451,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 			staleDelivery := claimSessionOwner(t, store, sessionID)
 			expireSessionLease(t, store, staleDelivery)
 			deliveryOwner := claimSessionOwner(t, store, sessionID)
-			if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
+			if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []dispatcherpb.SessionStatus_Materialization{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
 				t.Fatalf("stale Session lease settled opening: %+v %v", row, err)
 			}
 			gate, err := store.DB.BeginTx(ctx, nil)
@@ -470,7 +473,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 			postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
 			rejected := make(chan error, 1)
 			go func() {
-				_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
+				_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []dispatcherpb.SessionStatus_Materialization{SessionWaitingState}, "proven rejection")
 				rejected <- err
 			}()
 			// Admission has the Session lock but has not inserted the command yet.
@@ -490,7 +493,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 			if err := store.EndSandbox(ctx, uid); err != nil {
 				t.Fatal(err)
 			}
-			if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
+			if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []dispatcherpb.SessionStatus_Materialization{SessionFailedState}, "late rejection"); err != nil || row != nil {
 				t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
 			}
 		})
@@ -508,7 +511,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 				t.Fatal(err)
 			}
 			deliveryOwner := claimSessionOwner(t, store, head.SessionID)
-			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil); err != nil {
 				t.Fatal(err)
 			}
 			marker, markerPID := connectStore(t, ctx, databaseURL)
@@ -557,8 +560,8 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if markFirst {
 				want = UnknownState
 			}
-			var state string
-			if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+			var state dispatcherpb.DeliveryState
+			if err := store.DB.QueryRowContext(ctx, "SELECT state_value FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
 				t.Fatal(err)
 			}
 			if state != want {
@@ -605,7 +608,7 @@ func TestDeletedAdmittedInputRetainsKnownAdmissionWithUnknownEffect(t *testing.T
 	}
 	deliveryOwner := claimSessionOwner(t, store, head.SessionID)
 	admission := &eventlogpb.EventEntry{Cursor: 17}
-	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.EndSandbox(ctx, sandboxUID); err != nil {

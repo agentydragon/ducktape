@@ -211,7 +211,7 @@ func enqueueWithSession(t *testing.T, queueStore *store.Store, ctx context.Conte
 		if _, err := createSession(queueStore, ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			return nil, err
 		}
-		if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET state=$2 WHERE session_id=$1", sessionID, store.SessionAcceptedState); err != nil {
+		if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET state_value=$2 WHERE session_id=$1", sessionID, store.SessionAcceptedState); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -234,7 +234,9 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 	ctx := t.Context()
 	queueStore := testStore(t, 3)
 	uid := uuid.NewString()
-	states := []struct{ before, after string }{
+	states := []struct {
+		before, after dispatcherpb.SessionStatus_Materialization
+	}{
 		{store.SessionWaitingState, store.SessionFailedState},
 		{store.SessionInProgressState, store.SessionUnknownState},
 		{store.SessionAcceptedState, store.SessionAcceptedState},
@@ -247,7 +249,7 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 		if _, err := createSession(queueStore, ctx, ids[i], "deleted-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET state=$2,reason='prior evidence' WHERE session_id=$1", ids[i], state.before); err != nil {
+		if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET state_value=$2,reason='prior evidence' WHERE session_id=$1", ids[i], state.before); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1253,7 +1255,7 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 	if err := worker.reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitState := func(state string) *store.Dispatch {
+	waitState := func(state dispatcherpb.DeliveryState) *store.Dispatch {
 		t.Helper()
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
@@ -1605,8 +1607,8 @@ func TestSessionOutcomesFenceQueuedWork(t *testing.T) {
 	cases := []struct {
 		name         string
 		code         codes.Code
-		openingState string
-		commandState string
+		openingState dispatcherpb.SessionStatus_Materialization
+		commandState dispatcherpb.DeliveryState
 	}{
 		{"invalid request", codes.InvalidArgument, store.SessionFailedState, store.FailedState},
 		{"conflicting request", codes.AlreadyExists, store.SessionFailedState, store.FailedState},
@@ -1669,7 +1671,7 @@ func TestSessionOutcomesFenceQueuedWork(t *testing.T) {
 				} else if test.openingState == store.SessionUnknownState && (!strings.HasPrefix(retry.Reason, "session_materialization_unconfirmed: ") || !strings.Contains(retry.Reason, "test owner response")) {
 					t.Fatalf("uncertain Session reason lost owner evidence: %q", retry.Reason)
 				}
-				if test.openingState == store.FailedState || test.openingState == store.UnknownState {
+				if test.openingState == store.SessionFailedState || test.openingState == store.SessionUnknownState {
 					if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, store.ErrSessionUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {
 						t.Fatalf("new command accepted after terminal opening: %v", err)
 					}
@@ -1699,7 +1701,7 @@ func TestSessionOutcomesFenceQueuedWork(t *testing.T) {
 				if test.commandState == store.FailedState && row.Reason != "session_rejected" {
 					t.Fatalf("unsent rejection reason: %s", row.Reason)
 				}
-				if test.openingState == store.UnknownState && row.Reason != "session_unconfirmed" {
+				if test.openingState == store.SessionUnknownState && row.Reason != "session_unconfirmed" {
 					t.Fatalf("uncertain opening blocker: %s", row.Reason)
 				}
 				if len(wake.targets) != 0 {
@@ -1742,7 +1744,7 @@ func TestUnprovenSessionFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 				t.Fatal(err)
 			}
 			deliveryOwner := claimSessionOwner(t, queueStore, sessionID)
-			if _, err := queueStore.SettleSession(ctx, sessionID, deliveryOwner, []string{store.SessionWaitingState}, store.SessionFailedState, "old unproven outcome"); err != nil {
+			if _, err := queueStore.SettleSession(ctx, sessionID, deliveryOwner, []dispatcherpb.SessionStatus_Materialization{store.SessionWaitingState}, store.SessionFailedState, "old unproven outcome"); err != nil {
 				t.Fatal(err)
 			}
 			if err := queueStore.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
@@ -2167,8 +2169,8 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+	var state dispatcherpb.DeliveryState
+	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state_value FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != store.UnknownState {
@@ -2184,13 +2186,13 @@ func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, queueStore, head.SessionID)
-	if _, err := queueStore.Settle(ctx, head.CommandID, deliveryOwner, []string{store.QueueState}, store.DeliveringState, "", nil); err != nil {
+	if _, err := queueStore.Settle(ctx, head.CommandID, deliveryOwner, []dispatcherpb.DeliveryState{store.QueueState}, store.DeliveringState, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if marked, err := queueStore.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || !marked {
 		t.Fatalf("marker: %t, %v", marked, err)
 	}
-	if _, err := queueStore.Settle(ctx, head.CommandID, deliveryOwner, []string{store.DeliveringState}, store.QueueState, "lost_reply", nil); err != nil {
+	if _, err := queueStore.Settle(ctx, head.CommandID, deliveryOwner, []dispatcherpb.DeliveryState{store.DeliveringState}, store.QueueState, "lost_reply", nil); err != nil {
 		t.Fatal(err)
 	}
 	head, err = queueStore.GetDispatch(ctx, head.CommandID)
@@ -2216,7 +2218,7 @@ func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 	for _, test := range []struct {
 		code codes.Code
-		want string
+		want dispatcherpb.DeliveryState
 	}{
 		{codes.Canceled, store.UnknownState},
 		{codes.Unknown, store.UnknownState},

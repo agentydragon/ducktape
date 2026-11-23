@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,7 +44,7 @@ func TestDispatchVersionsCaptureOldWriterUpdatesAndDeletions(t *testing.T) {
 		t.Fatal("store wake evidence:", err)
 	}
 	admission := &eventlogpb.EventEntry{Cursor: 37}
-	if _, err := store.Settle(ctx, commandID, owner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, commandID, owner, []dispatcherpb.DeliveryState{QueueState}, AdmittedState, "", admission); err != nil {
 		t.Fatal("settle admitted receipt:", err)
 	}
 	beforeLegacyUpdate := dispatchVersion(t, store.DB, commandID)
@@ -82,17 +84,19 @@ func TestDispatchVersionsCaptureOldWriterUpdatesAndDeletions(t *testing.T) {
 		t.Fatal("old-shaped delete:", err)
 	}
 	var tombstoneVersion int64
-	var tombstoneSessionID, operation, state string
+	var tombstoneSessionID string
+	var operation commandpb.Operation
+	var state dispatcherpb.DeliveryState
 	var tombstoneReason sql.NullString
 	var tombstoneAdmission, tombstoneBlocker, tombstoneWake []byte
-	if err := store.DB.QueryRowContext(ctx, `SELECT version,session_id,operation,state,reason,admission,delivery_blocker,wake_assessment
+	if err := store.DB.QueryRowContext(ctx, `SELECT version,session_id,operation_value,state_value,reason,admission,delivery_blocker,wake_assessment
 		FROM dispatch_tombstone WHERE command_id=$1`, commandID).Scan(
 		&tombstoneVersion, &tombstoneSessionID, &operation, &state, &tombstoneReason,
 		&tombstoneAdmission, &tombstoneBlocker, &tombstoneWake,
 	); err != nil {
 		t.Fatal("read tombstone:", err)
 	}
-	if tombstoneVersion <= beforeDelete || tombstoneSessionID != sessionID || operation != "submit_input" || state != AdmittedState || !tombstoneReason.Valid || tombstoneReason.String != "test-version-old-writer-update" {
+	if tombstoneVersion <= beforeDelete || tombstoneSessionID != sessionID || operation != commandpb.Operation_OPERATION_SUBMIT_INPUT || state != AdmittedState || !tombstoneReason.Valid || tombstoneReason.String != "test-version-old-writer-update" {
 		t.Fatalf("tombstone identity/state = version %d, session %q, operation %q, state %q, reason %q", tombstoneVersion, tombstoneSessionID, operation, state, tombstoneReason.String)
 	}
 	if !bytes.Equal(tombstoneAdmission, mustWire(t, admission)) || !bytes.Equal(tombstoneBlocker, mustWire(t, blocker)) || !bytes.Equal(tombstoneWake, mustWire(t, assessment)) {
@@ -276,10 +280,10 @@ func TestDispatchVersionCheckpointWaitsForEarlierSequenceWriter(t *testing.T) {
 	defer txSecond.Rollback()
 	var secondVersion int64
 	if err := txSecond.QueryRowContext(ctx, `INSERT INTO dispatch
-		(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at)
+		(command_id,session_id,sandbox_name,sandbox_uid,operation_value,command,state_value,created_at,updated_at)
 		VALUES ('test-version-order-second','test-version-order-session','test-version-order-sandbox',
-		'00000000-0000-4000-8000-000000000094','submit_input',decode('0801','hex'),'QUEUED_IN_DISPATCHER',now(),now())
-		RETURNING version`).Scan(&secondVersion); err != nil {
+		'00000000-0000-4000-8000-000000000094',$1,decode('0801','hex'),$2,now(),now())
+		RETURNING version`, commandpb.Operation_OPERATION_SUBMIT_INPUT, QueueState).Scan(&secondVersion); err != nil {
 		txSecond.Rollback()
 		t.Fatal("insert later sequence writer:", err)
 	}
@@ -370,10 +374,10 @@ func insertVersionTestDispatch(t *testing.T, ctx context.Context, tx *sql.Tx, co
 	t.Helper()
 	var version int64
 	err := tx.QueryRowContext(ctx, `INSERT INTO dispatch
-		(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at)
-		VALUES ($1,'test-version-order-session','test-version-order-sandbox',
-		'00000000-0000-4000-8000-000000000094','submit_input',decode('0801','hex'),'QUEUED_IN_DISPATCHER',now(),now())
-		RETURNING version`, commandID).Scan(&version)
+		(command_id,session_id,sandbox_name,sandbox_uid,operation_value,command,state_value,created_at,updated_at)
+		VALUES ($3,'test-version-order-session','test-version-order-sandbox',
+		'00000000-0000-4000-8000-000000000094',$1,decode('0801','hex'),$2,now(),now())
+		RETURNING version`, commandpb.Operation_OPERATION_SUBMIT_INPUT, QueueState, commandID).Scan(&version)
 	if err != nil {
 		t.Fatal("insert ordered test dispatch:", err)
 	}

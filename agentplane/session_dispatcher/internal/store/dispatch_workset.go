@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -27,32 +29,34 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 		return nil, 0, err
 	}
 	result := &dispatcherpb.DispatchWorkset{SessionId: sessionID}
-	owner, ownerArgs := OwnerScope(caller, "o.", 6)
-	const columns = "d.command_id,d.operation,d.state,LEFT(d.reason,256),COALESCE(length(d.reason)>256,false),d.admission IS NOT NULL,d.created_at,d.updated_at,d.version"
+	owner, ownerArgs := OwnerScope(caller, "o.", 8)
+	const columns = "d.command_id,d.operation_value,d.state_value,LEFT(d.reason,256),COALESCE(length(d.reason)>256,false),d.admission IS NOT NULL,d.created_at,d.updated_at,d.version"
 	// Merge only the top rows of each recent state. The latest same-Session receipt wins when old
 	// Dispatchers reused an ID. A newer live row can also supersede a tombstone.
+	activeStates := fmt.Sprintf("(%d,%d)", QueueState, DeliveringState)
+	recentStates := fmt.Sprintf("(%d,%d,%d,%d)", FailedState, UnknownState, AdmittedState, CancelledState)
 	query := `WITH visible AS (
 		SELECT o.session_id,o.sandbox_name,o.sandbox_uid FROM session o
 		WHERE o.session_id=$1 AND ` + owner + `
-	), active(command_id,operation,state,reason,reason_truncated,journal_admitted,created_at,updated_at,receipt_version,rank,legacy_deletion_receipt,bucket) AS (
+	), active(command_id,operation_value,state_value,reason,reason_truncated,journal_admitted,created_at,updated_at,receipt_version,rank,legacy_deletion_receipt,bucket) AS (
 		SELECT ` + columns + `,d.position AS rank,false AS legacy_deletion_receipt,0 AS bucket
 		FROM dispatch d JOIN visible o USING (session_id,sandbox_name,sandbox_uid)
-		WHERE d.state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER')
+		WHERE d.state_value IN ` + activeStates + `
 		ORDER BY d.position LIMIT $2
 	), recent AS (
 		SELECT candidate.*,states.bucket
-		FROM visible o CROSS JOIN (VALUES ($4::varchar,1),($5::varchar,1),
-			('RUNNER_ADMITTED',2),('CANCELLED_IN_DISPATCHER',2)) AS states(state,bucket)
+		FROM visible o CROSS JOIN (VALUES ($4::integer,1),($5::integer,1),
+			($6::integer,2),($7::integer,2)) AS states(state_value,bucket)
 		CROSS JOIN LATERAL (
 			(SELECT ` + columns + `,d.version AS rank,false AS legacy_deletion_receipt
 			FROM dispatch d
 			WHERE d.session_id=o.session_id AND d.sandbox_name=o.sandbox_name AND d.sandbox_uid=o.sandbox_uid
-				AND d.state IN ('FAILED','UNKNOWN','RUNNER_ADMITTED','CANCELLED_IN_DISPATCHER')
-				AND d.state=states.state ORDER BY d.version DESC LIMIT $3)
+				AND d.state_value IN ` + recentStates + `
+				AND d.state_value=states.state_value ORDER BY d.version DESC LIMIT $3)
 			UNION ALL
 			(SELECT ` + columns + `,d.version AS rank,true AS legacy_deletion_receipt
 			FROM dispatch_tombstone d
-			WHERE d.session_id=o.session_id AND d.state=states.state
+			WHERE d.session_id=o.session_id AND d.state_value=states.state_value
 				AND NOT EXISTS (
 					SELECT 1 FROM dispatch live
 					WHERE live.command_id=d.command_id AND live.session_id=o.session_id
@@ -63,7 +67,7 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 			ORDER BY d.version DESC LIMIT $3)
 		) candidate
 	)
-	SELECT command_id,operation,state,reason,reason_truncated,journal_admitted,created_at,updated_at,
+	SELECT command_id,COALESCE(operation_value,0),COALESCE(state_value,0),reason,reason_truncated,journal_admitted,created_at,updated_at,
 		receipt_version,legacy_deletion_receipt,bucket
 	FROM (SELECT * FROM active UNION ALL SELECT * FROM recent) workset
 	ORDER BY bucket,CASE WHEN bucket=0 THEN rank ELSE -rank END`
@@ -71,7 +75,7 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 		if err := validateDispatchCoverage(ctx, tx, after, resuming); err != nil {
 			return err
 		}
-		args := append([]any{sessionID, maxActiveWorkset + 1, maxRecentWorkset + 1, FailedState, UnknownState}, ownerArgs...)
+		args := append([]any{sessionID, maxActiveWorkset + 1, maxRecentWorkset + 1, FailedState, UnknownState, AdmittedState, CancelledState}, ownerArgs...)
 		rows, err := tx.QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
@@ -79,20 +83,19 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 		defer rows.Close()
 		for rows.Next() {
 			item := &dispatcherpb.DispatchWorksetItem{}
-			var operation, state string
+			var state dispatcherpb.DeliveryState
 			var reason sql.NullString
 			var created, updated time.Time
 			var version int64
 			var bucket int
-			if err := rows.Scan(&item.CommandId, &operation, &state, &reason, &item.ReasonTruncated, &item.JournalAdmitted,
+			if err := rows.Scan(&item.CommandId, &item.Operation, &state, &reason, &item.ReasonTruncated, &item.JournalAdmitted,
 				&created, &updated, &version, &item.LegacyDeletionReceipt, &bucket); err != nil {
 				return err
 			}
-			item.Operation, err = dispatchOperation(operation)
-			if err != nil {
+			if err := validateDispatchOperation(item.Operation); err != nil {
 				return err
 			}
-			item.State = dispatchState(state)
+			item.State = dispatchstate.NormalizeDeliveryState(state)
 			if reason.Valid {
 				item.Reason = &reason.String
 			}
