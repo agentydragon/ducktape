@@ -70,13 +70,32 @@ private def jsonFixture := Json.mkObj [
   ("z", .num ⟨-20, 1⟩), ("a", .arr #[.null, .bool false]),
   ("q", .str "\"\\\n/- -- #eval λ"), ("b", .bool true)]
 
-open Lean Elab in
-elab "quotedJsonFixture%" : term => do
-  let .ok stx := Parser.runParserCategory (← getEnv) `term (LinkedBehavior.jsonLiteral jsonFixture)
-    | throwError "could not parse the fixture AST literal"
-  Term.elabTerm stx (some (mkConst ``Json))
+private def wideJsonFixture : Json :=
+  Json.mkObj [("body", .arr #[.arr (Array.ofFn fun i : Fin 705 =>
+    let key := Json.mkObj [("type", .str "Literal"), ("raw", .str s!"field{i.val}"),
+      ("value", .str s!"field{i.val}"), ("lit", .str s!"s:field{i.val}")]
+    let value := Json.mkObj [("type", .str "Literal"), ("value", .num ⟨-Int.ofNat i.val, 2⟩)]
+    Json.mkObj [("type", .str "Property"), ("key", key),
+      ("computed", .bool false), ("method", .bool false), ("shorthand", .bool false),
+      ("value", value), ("kind", .str "init")])])]
 
-theorem jsonLiteralRoundTrip : quotedJsonFixture% = jsonFixture := rfl
+open Lean Elab Command in
+elab "#quoteJsonFixture" name:ident : command => do
+  let fixture := if name.getId == `quotedWideJsonFixture then wideJsonFixture else jsonFixture
+  for text in LinkedBehavior.jsonDefinitions name.getId.toString fixture do
+    let .ok stx := Parser.runParserCategory (← getEnv) `command text
+      | throwError "could not parse the quoted JSON definition"
+    elabCommand stx
+
+#quoteJsonFixture quotedJsonFixture
+
+theorem jsonLiteralRoundTrip : quotedJsonFixture = jsonFixture := rfl
+
+-- The recursion budget here applies only to elaborating the generated syntax.
+set_option maxRecDepth 512 in
+#quoteJsonFixture quotedWideJsonFixture
+
+#guard quotedWideJsonFixture == wideJsonFixture
 
 private def node (kind : String) (fields : List (String × Json)) : Json :=
   Json.mkObj (("type", .str kind) :: fields)
