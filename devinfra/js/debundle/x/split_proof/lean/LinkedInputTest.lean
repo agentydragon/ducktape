@@ -36,12 +36,23 @@ private def opaqueUnits (input : Json) : Except String Json := do
       toJson free, toJson body])
   return .arr units
 
-def main (args : List String) : IO UInt32 := do
+private def fixtures (input : Json) : Except String Json := do
+  let cases ← input.getArr?
+  return .arr (← cases.mapM fun fixture => do
+    let result ← match ← fixture.getObjValAs? String "kind" with
+      | "linked" => pure (check (← fixture.getObjVal? "input"))
+      | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
+      | kind => throw s!"unknown test case {kind}"
+    return match result with
+      | .ok output => Json.mkObj [("output", output)]
+      | .error reason => Json.mkObj [("error", toJson reason)])
+
+def main : IO UInt32 := do
   let line ← (← IO.getStdin).getLine
-  match Json.parse line >>= (if args == ["opaque-units"] then opaqueUnits else check) with
+  match Json.parse line >>= fixtures with
   | .error why =>
     IO.eprintln why
     return 1
-  | .ok orders =>
-    IO.println orders.compress
+  | .ok results =>
+    IO.println results.compress
     return 0
