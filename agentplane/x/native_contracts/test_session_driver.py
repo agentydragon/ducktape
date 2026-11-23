@@ -2,9 +2,7 @@
 
 import asyncio
 import re
-import signal
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
@@ -53,15 +51,6 @@ async def runtime_idle(remote: SandboxControlClient, sandbox: SandboxCluster, se
                 ):
                     return
             await asyncio.sleep(0.05)
-
-
-@contextmanager
-def paused(process: asyncio.subprocess.Process) -> Iterator[None]:
-    process.send_signal(signal.SIGSTOP)
-    try:
-        yield
-    finally:
-        process.send_signal(signal.SIGCONT)
 
 
 async def test_native_session_driver_reads_exact_turn_across_history_outage_and_prior_turn(
@@ -120,7 +109,7 @@ async def test_native_session_driver_reads_exact_turn_across_history_outage_and_
         with monkeypatch.context() as observer:
             observer.setattr(history_service.reader, "read_session_events", observe_history_read)
             async with asyncio.TaskGroup() as tasks:
-                with paused(history_service.process.process):
+                with history_service.process.paused():
                     second_dispatch = await session.submit_input(second_id, second_text)
                     await admitted(dispatcher, second_dispatch)
                     collecting = tasks.create_task(session.next_turn(awaiting_command_id=second_id))
