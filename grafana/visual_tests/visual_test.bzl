@@ -22,6 +22,7 @@ def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests
         main = src,
         data = [dashboard] + ([fixture_data] if fixture_data else []),
         env = env,
+        args = ["-p", "devinfra.testing.pytest_outputs"],
         requires_docker = True,
         tags = ["visual"],
         deps = ([fixture] if fixture else []) + [
