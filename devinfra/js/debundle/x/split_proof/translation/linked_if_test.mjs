@@ -121,10 +121,10 @@ for (const [seed, value] of ["value", 42].entries()) {
 
 const { out, verdict, log } = split(
   "unsupported-dead-branch",
-  "const run = () => { if (false) while (true) {} return 1; }; export const result = run();",
+  "const run = () => { if (false) do {} while (false); return 1; }; export const result = run();",
   { "run.mjs": ["#0"], [entry]: ["#1"] },
   ["run.mjs"]
 );
 assert.equal(verdict.status, "rejected", log);
-assert.match(verdict.reason, /unsupported statement WhileStatement/, log);
+assert.match(verdict.reason, /unsupported statement DoWhileStatement/, log);
 assert(!existsSync(out));

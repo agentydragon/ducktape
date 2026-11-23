@@ -457,6 +457,25 @@ private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j
       -- An unbraced branch can declare vars, which already belong to the enclosing function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
       return .block (← linkedLocalDeclarations imports 0 j).toList
+    | "WhileStatement" =>
+      let test ← linkedExpr imports true "" (← j.getObjVal? "test")
+      return .loop (.block []) test .undef (← linkedStatement imports true (← j.getObjVal? "body"))
+    | "ForStatement" =>
+      let lower := linkedExpr imports true ""
+      let init ← j.getObjVal? "init"
+      let initializer ← if init == .null then pure (.block []) else do
+        if (← field init "type") == "VariableDeclaration" then
+          -- Keep the declaration directly in the header so each iteration captures its own let cell.
+          pure (← declarationWith localBinding (linkedExpr imports true) init).2
+        else pure (.expr (← lower init))
+      let test ← j.getObjVal? "test"
+      let test ← if test == .null then pure (.bool true) else lower test
+      let update ← j.getObjVal? "update"
+      let update ← if update == .null then pure .undef else lower update
+      return .loop initializer test update (← linkedStatement imports true (← j.getObjVal? "body"))
+    | "BreakStatement" | "ContinueStatement" =>
+      unless (← j.getObjVal? "label") == .null do throw "unsupported labeled loop control"
+      return if (← field j "type") == "BreakStatement" then .brk else .cont
     | "TryStatement" =>
       let body ← linkedFunctionBlock imports (← j.getObjVal? "block")
       let handler ← j.getObjVal? "handler"
