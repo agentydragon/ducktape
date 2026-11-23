@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   arrow,
+  assertCertifiedResult,
+  assertRejected,
   block,
   call,
   exportNamed,
@@ -14,10 +15,9 @@ import {
   lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
   returns,
-  root,
+  sequentialSplit,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
@@ -26,29 +26,9 @@ const entry = "entry.mjs";
 const worker = "worker.mjs";
 const load = (file) => import(pathToFileURL(file).href);
 
-function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, order = [worker], provider = "") {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider, spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, out, dir, ...lower(files.sourceFile, files.specFile, out) };
-}
-
 function requireCertified({ verdict, log }) {
   assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
-}
-
-function requireRejected({ verdict, log, out }, reason) {
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
-  assert(!existsSync(out));
-}
-
-function assertResult(test, expected) {
-  requireCertified(test);
-  for (const file of [test.files.sourceFile, path.join(test.out, entry)]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, test.log);
-  }
 }
 
 // The setter is deferred until after entry initialization. Its write must still
@@ -59,7 +39,7 @@ function assertResult(test, expected) {
     function read() { return current; }
     const initial = read();
     export { current, write, read, initial };`;
-  const valid = split("cell-owner", source, { [worker]: ["#0", "#1", "#2"], [entry]: ["#3", "#4"] });
+  const valid = sequentialSplit("cell-owner", source, { [worker]: ["#0", "#1", "#2"], [entry]: ["#3", "#4"] });
   requireCertified(valid);
   for (const file of [valid.files.sourceFile, path.join(valid.out, entry)]) {
     const service = await load(file);
@@ -72,8 +52,8 @@ function assertResult(test, expected) {
 
   const writer = "writer.mjs";
   const modules = { [worker]: ["#0", "#2"], [writer]: ["#1"], [entry]: ["#3", "#4"] };
-  const invalid = split("moved-writer", source, modules, [worker, writer]);
-  requireRejected(invalid, /source placement or module linkage checks failed/);
+  const invalid = sequentialSplit("moved-writer", source, modules, [worker, writer]);
+  assertRejected(invalid, /source placement or module linkage checks failed/);
   const preview = path.join(invalid.dir, "preview");
   forcePreview(invalid.files, preview);
   assert.deepEqual(moduleEvaluationOrder(preview, entry), [worker, writer, entry]);
@@ -111,14 +91,14 @@ function assertResult(test, expected) {
     };
     const result = run();
     export { result, write, shared };`;
-  const test = split(
+  const test = sequentialSplit(
     "imported-write",
     source,
     { [entry]: ["#0", "#4", "#5", "#6"], [worker]: ["#1", "#2", "#3"] },
     [worker],
     'export let value = "original";'
   );
-  assertResult(test, ["original", 1, ["parameter", "block"]]);
+  assertCertifiedResult(test, ["original", 1, ["parameter", "block"]]);
   requireCertified(lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]));
   for (const file of [test.files.sourceFile, path.join(test.out, entry)]) {
     const service = await load(file);
@@ -129,8 +109,8 @@ function assertResult(test, expected) {
 
 // Check the model's abrupt handling as well as the Node results. The attempted
 // writes to an uninitialized binding and a constant run their RHS first.
-assertResult(
-  split(
+assertCertifiedResult(
+  sequentialSplit(
     "abrupt-and-once",
     `const run = (input) => {
     let current = "fallback";
@@ -197,7 +177,7 @@ for (const [name, rhs, expected] of [
     variable("const", "result", call(id("run"))),
     exportNamed([["result", "result"]]),
   ]);
-  assertResult(split(name, source), expected);
+  assertCertifiedResult(sequentialSplit(name, source), expected);
 }
 
 // A var binding already exists when the reader runs, so both orders complete.
@@ -206,9 +186,9 @@ for (const [name, rhs, expected] of [
   const source = `var current; current = "ready"; const result = typeof current; export { result };`;
   const reader = "reader.mjs";
   const modules = { [worker]: ["#0", "#1"], [reader]: ["#2"], [entry]: ["#3"] };
-  assertResult(split("ordered", source, modules, [worker, reader]), "string");
-  const test = split("early-reader", source, modules, [reader, worker]);
-  requireRejected(test, /probe executions completed normally with different final states/);
+  assertCertifiedResult(sequentialSplit("ordered", source, modules, [worker, reader]), "string");
+  const test = sequentialSplit("early-reader", source, modules, [reader, worker]);
+  assertRejected(test, /probe executions completed normally with different final states/);
   const preview = path.join(test.dir, "preview");
   forcePreview(test.files, preview);
   assert.deepEqual(moduleEvaluationOrder(preview, entry), [reader, worker, entry]);

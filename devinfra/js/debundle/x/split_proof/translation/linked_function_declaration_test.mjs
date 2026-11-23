@@ -3,31 +3,23 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  root,
-  id,
-  literal,
+  block,
   call,
   conditional,
-  returns,
-  block,
-  variable,
   exportNamed,
-  program,
-  observe,
-  lower,
-  prepare,
-  moduleEvaluationOrder,
   forcePreview,
+  id,
+  literal,
+  lower,
+  moduleEvaluationOrder,
+  observe,
+  program,
+  returns,
+  sequentialSplit,
+  variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
-
-function split(name, source, modules, order, provider = "") {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider, spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
 
 // A call before the function declaration evaluates against the hoisted module
 // cell. A default parameter can read that same public function object.
@@ -38,7 +30,7 @@ function split(name, source, modules, order, provider = "") {
     export { first, identify };
   `;
   const order = ["call.mjs", "declaration.mjs"];
-  const { files, out, verdict, log } = split(
+  const { files, out, verdict, log } = sequentialSplit(
     "hoisted-self",
     source,
     { "call.mjs": ["#0"], "declaration.mjs": ["#1"], [entry]: ["#2"] },
@@ -61,7 +53,13 @@ function split(name, source, modules, order, provider = "") {
 {
   const source = 'import { read as load } from "./provider.mjs"; export const result = load();';
   const provider = 'export function read() { return "provided"; }';
-  const { files, out, verdict, log } = split("inline-provider", source, { [entry]: ["#0", "#1"] }, [], provider);
+  const { files, out, verdict, log } = sequentialSplit(
+    "inline-provider",
+    source,
+    { [entry]: ["#0", "#1"] },
+    [],
+    provider
+  );
   assert.equal(verdict.status, "certified", log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     assert.deepEqual(observe(file, "result"), { result: "provided" });
@@ -99,7 +97,12 @@ for (const [seed, value] of ["initialized", 42].entries()) {
   for (const movedTooSoon of [false, true]) {
     const order = movedTooSoon ? ["call.mjs", "value.mjs"] : ["value.mjs", "call.mjs"];
     order.push("dispatch.mjs", "read.mjs");
-    const { dir, files, out, verdict, log } = split(`generated-${seed}-${movedTooSoon}`, source, modules, order);
+    const { dir, files, out, verdict, log } = sequentialSplit(
+      `generated-${seed}-${movedTooSoon}`,
+      source,
+      modules,
+      order
+    );
     assert.deepEqual(observe(files.sourceFile, "result"), { result: value });
     let candidate = out;
     if (movedTooSoon) {
@@ -122,9 +125,12 @@ for (const [seed, value] of ["initialized", 42].entries()) {
 
 {
   const source = "function read() { return 3; } read = () => 4; export { read };";
-  const { files, out, verdict, log } = split("rebind", source, { "read.mjs": ["#0", "#1"], [entry]: ["#2"] }, [
-    "read.mjs",
-  ]);
+  const { files, out, verdict, log } = sequentialSplit(
+    "rebind",
+    source,
+    { "read.mjs": ["#0", "#1"], [entry]: ["#2"] },
+    ["read.mjs"]
+  );
   assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
@@ -142,7 +148,12 @@ for (const [name, source, count, reason] of [
     /unsupported statement FunctionDeclaration/,
   ],
 ]) {
-  const { out, verdict, log } = split(name, source, { [entry]: Array.from({ length: count }, (_, i) => `#${i}`) }, []);
+  const { out, verdict, log } = sequentialSplit(
+    name,
+    source,
+    { [entry]: Array.from({ length: count }, (_, i) => `#${i}`) },
+    []
+  );
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, reason, log);
   assert(!existsSync(out));

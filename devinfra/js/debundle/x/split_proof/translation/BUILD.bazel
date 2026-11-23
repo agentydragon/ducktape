@@ -210,141 +210,51 @@ _LINKED_PROGRAMS_TEST_DATA = [
 
 _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
-js_test(
-    name = "linked_arithmetic_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_arithmetic_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_arithmetic_observer_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_arithmetic_observer_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_arrays_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_arrays_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_bitwise_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_bitwise_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_classes_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_classes_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_composition_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_composition_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_default_parameters_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_default_parameters_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_dense_array_batch_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_dense_array_batch_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_function_declaration_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_function_declaration_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_flat_patterns_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_flat_patterns_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_if_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_if_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_identifier_assignment_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_identifier_assignment_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_literal_records_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_literal_records_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_logical_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_logical_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_loops_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_loops_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_member_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_member_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_module_graph_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_module_graph_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
+[
+    js_test(
+        name = name,
+        size = "medium",
+        data = _LINKED_PROGRAMS_TEST_DATA,
+        entry_point = name + ".mjs",
+        env = _LINKED_PROGRAMS_TEST_ENV,
+    )
+    for name in [
+        "linked_arithmetic_observer_test",
+        "linked_arithmetic_test",
+        "linked_arrays_test",
+        "linked_bitwise_test",
+        "linked_classes_test",
+        "linked_composition_test",
+        "linked_default_parameters_test",
+        "linked_dense_array_batch_test",
+        "linked_flat_patterns_test",
+        "linked_function_declaration_test",
+        "linked_host_profile_test",
+        "linked_identifier_assignment_test",
+        "linked_if_test",
+        "linked_import_cells_test",
+        "linked_literal_records_test",
+        "linked_logical_test",
+        "linked_loops_test",
+        "linked_member_test",
+        "linked_module_graph_test",
+        "linked_object_elements_test",
+        "linked_optional_callee_test",
+        "linked_optional_chain_test",
+        "linked_programs_test",
+        "linked_provider_programs_test",
+        "linked_realm_constructors_test",
+        "linked_record_values_test",
+        "linked_relational_test",
+        "linked_reordering_test",
+        "linked_sequence_test",
+        "linked_small_records_test",
+        "linked_switch_test",
+        "linked_templates_test",
+        "linked_wide_records_test",
+        "linked_wide_table_reversal_test",
+    ]
+]
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
@@ -367,124 +277,12 @@ js_test(
 )
 
 js_test(
-    name = "linked_realm_constructors_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_realm_constructors_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_host_profile_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_host_profile_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_optional_callee_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_optional_callee_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_optional_chain_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_optional_chain_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_object_elements_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_object_elements_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_programs_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_programs_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
     name = "linked_property_assignment_test",
     size = "medium",
     data = _LINKED_PROGRAMS_TEST_DATA,
     entry_point = "linked_property_assignment_test.mjs",
     env = _LINKED_PROGRAMS_TEST_ENV,
     shard_count = 3,
-)
-
-js_test(
-    name = "linked_record_values_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_record_values_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_provider_programs_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_provider_programs_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_import_cells_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_import_cells_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_reordering_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_reordering_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_relational_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_relational_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_sequence_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_sequence_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_switch_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_switch_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_small_records_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_small_records_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
 )
 
 js_test(
@@ -495,30 +293,6 @@ js_test(
         ":node_modules/astring",
     ],
     entry_point = "linked_table_lookups_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_templates_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_templates_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_wide_records_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_wide_records_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_wide_table_reversal_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_wide_table_reversal_test.mjs",
     env = _LINKED_PROGRAMS_TEST_ENV,
 )
 

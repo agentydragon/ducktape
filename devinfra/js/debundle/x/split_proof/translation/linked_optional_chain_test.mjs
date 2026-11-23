@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  assertCertifiedResult,
+  assertRejected,
   block,
   call,
   exportNamed,
@@ -13,11 +14,10 @@ import {
   lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
+  ownerReaderSplit,
   program,
   property,
   returns,
-  root,
   variable,
 } from "./testing/linked_programs.mjs";
 
@@ -26,35 +26,10 @@ const owner = "owner.mjs";
 const reader = "reader.mjs";
 const state = "state.mjs";
 
-function split(
-  name,
-  source,
-  modules = { [owner]: ["#0"], [reader]: ["#1"], [entry]: ["#2"] },
-  order = [owner, reader]
-) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, dir, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, verdict, log, out }, result) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result });
-  assert.deepEqual(observe(path.join(out, entry), "result"), { result });
-}
-
-function assertRejected({ verdict, log, out }, reason) {
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
-  assert(!existsSync(out));
-}
-
 // A nullish base skips the key. A reached key can rebind the source cell
 // without changing the selected getter's receiver.
-assertCertified(
-  split(
+assertCertifiedResult(
+  ownerReaderSplit(
     "computed-key-effects",
     `const run = () => {
       let trace = "";
@@ -112,7 +87,7 @@ const generated = program([
   }),
   exportNamed([["result", "result"]]),
 ]);
-assertCertified(split("generated-optional-reads", generated), [
+assertCertifiedResult(ownerReaderSplit("generated-optional-reads", generated), [
   [null, null],
   [null, null],
   [null, null],
@@ -121,8 +96,8 @@ assertCertified(split("generated-optional-reads", generated), [
 
 // Rebinding the receiver during key evaluation leaves the reached getter's
 // original `this` intact. The absent receiver still runs its getter once.
-assertCertified(
-  split(
+assertCertifiedResult(
+  ownerReaderSplit(
     "optional-read-evaluated-receiver",
     `const run = () => {
       let trace = "";
@@ -164,14 +139,14 @@ const generatedReceiverReads = program([
   }),
   exportNamed([["result", "result"]]),
 ]);
-const generatedReads = split("generated-optional-evaluated-receiver", generatedReceiverReads);
-assertCertified(generatedReads, [null, 7]);
+const generatedReads = ownerReaderSplit("generated-optional-evaluated-receiver", generatedReceiverReads);
+assertCertifiedResult(generatedReads, [null, 7]);
 assert.deepEqual(
   lower(generatedReads.files.sourceFile, generatedReads.files.specFile, generatedReads.out, ["--check-output"]).verdict,
   generatedReads.verdict
 );
 
-const failedReceiver = split(
+const failedReceiver = ownerReaderSplit(
   "optional-read-receiver-error",
   `const holder = { get field() { return null.field; } };
     const result = holder.field?.id;
@@ -182,7 +157,7 @@ assert.deepEqual(observe(failedReceiver.files.sourceFile, "result"), { error: "T
 
 // An evaluated receiver runs once per call. Only the reached call looks up a
 // method and computes the argument, in that order.
-const evaluated = split(
+const evaluated = ownerReaderSplit(
   "optional-method-evaluated-receiver",
   `const run = () => {
     let trace = "";
@@ -203,7 +178,7 @@ const evaluated = split(
   const result = run();
   export { result };`
 );
-assertCertified(evaluated, [true, 42, "ppga"]);
+assertCertifiedResult(evaluated, [true, 42, "ppga"]);
 assert.deepEqual(
   lower(evaluated.files.sourceFile, evaluated.files.specFile, evaluated.out, ["--check-output"]).verdict,
   evaluated.verdict
@@ -211,8 +186,8 @@ assert.deepEqual(
 
 // Changing the lexical binding during argument evaluation leaves the original
 // receiver in the call. An undefined receiver skips that change altogether.
-assertCertified(
-  split(
+assertCertifiedResult(
+  ownerReaderSplit(
     "optional-method-lexical-receiver",
     `const run = () => {
       let target;
@@ -266,9 +241,9 @@ const generatedCalls = program([
   }),
   exportNamed([["result", "result"]]),
 ]);
-assertCertified(split("generated-optional-method-calls", generatedCalls), [null, false]);
+assertCertifiedResult(ownerReaderSplit("generated-optional-method-calls", generatedCalls), [null, false]);
 
-const missingMethod = split(
+const missingMethod = ownerReaderSplit(
   "optional-method-falsy-receiver",
   `const run = (target) => target?.method();
     const result = run(false);
@@ -277,7 +252,7 @@ const missingMethod = split(
 assertRejected(missingMethod, /original threw during linked initialization/);
 assert.deepEqual(observe(missingMethod.files.sourceFile, "result"), { error: "TypeError" });
 
-const uninitialized = split(
+const uninitialized = ownerReaderSplit(
   "optional-method-tdz",
   `const run = () => {
     const result = receiver?.method();
@@ -296,9 +271,9 @@ const reordered = `function read() { return current?.value ?? "missing"; }
   const result = read();
   export { result };`;
 const placements = { [owner]: ["#0"], [state]: ["#1", "#2"], [reader]: ["#3"], [entry]: ["#4"] };
-assertCertified(split("ready-before-read", reordered, placements, [owner, state, reader]), "ready");
+assertCertifiedResult(ownerReaderSplit("ready-before-read", reordered, placements, [owner, state, reader]), "ready");
 const earlyOrder = [owner, reader, state];
-const early = split("read-before-ready", reordered, placements, earlyOrder);
+const early = ownerReaderSplit("read-before-ready", reordered, placements, earlyOrder);
 assertRejected(early, /probe executions completed normally with different final states/);
 const preview = path.join(early.dir, "preview");
 forcePreview(early.files, preview);
@@ -313,7 +288,7 @@ for (const [name, body, reason, expected] of [
   ["continued-member", "target?.record.value", /unsupported optional chain/, 17],
   ["delete-chain", "delete target?.value", /delete/, true],
 ]) {
-  const test = split(
+  const test = ownerReaderSplit(
     name,
     `const run = (target) => ${body};
       const result = run({ value: 42, method() { return this.value; }, record: { value: 17 } });

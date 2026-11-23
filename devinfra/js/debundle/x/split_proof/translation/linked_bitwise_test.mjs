@@ -1,45 +1,26 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import path from "node:path";
 import {
   array,
   arrow,
+  assertWorkerResult,
   binary,
   block,
   call,
   exportNamed,
   id,
   literal,
-  lower,
   observe,
-  prepare,
   primitive,
   program,
   returns,
-  root,
   throws,
   unary,
   variable,
+  workerSplit,
 } from "./testing/linked_programs.mjs";
 
-const entry = "entry.mjs";
-
-function split(name, source) {
-  const dir = path.join(root, name);
-  const spec = { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"] };
-  const files = prepare(dir, { source, provider: "", spec });
-  const out = path.join(dir, "out");
-  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified(name, source, result) {
-  const { files, out, verdict, log } = split(name, source);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.scope, "linked-programs", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result });
-  assert.deepEqual(observe(path.join(out, entry), "result"), { result });
-}
+const entryUnits = ["#1", "#2"];
 
 // Run the comparisons during initialization. A wrong numeric result then
 // prevents certification even when both sides lower the operator the same way.
@@ -84,18 +65,19 @@ for (const [name, cases] of [
       alternate: null,
     },
   ]);
-  assertCertified(
+  assertWorkerResult(
     name,
     program([
       variable("const", "worker", arrow([], block([...body, returns(array(values))]))),
       variable("const", "result", call(id("worker"))),
       exportNamed([["result", "result"]]),
     ]),
-    cases.map(([, expected]) => expected)
+    cases.map(([, expected]) => expected),
+    entryUnits
   );
 }
 
-assertCertified(
+assertWorkerResult(
   "unary-zero-and-nan",
   `const worker = () => {
     const zero = +"-0";
@@ -104,10 +86,11 @@ assertCertified(
     return true;
   };
   const result = worker(); export { result };`,
-  true
+  true,
+  entryUnits
 );
 
-assertCertified(
+assertWorkerResult(
   "shift-operand-order",
   `const worker = () => {
     let phase = 0;
@@ -127,7 +110,8 @@ assertCertified(
     }
   };
   const result = worker(); export { result };`,
-  "right stopped"
+  "right stopped",
+  entryUnits
 );
 
 for (const [name, expression, reason, runtime] of [
@@ -136,10 +120,11 @@ for (const [name, expression, reason, runtime] of [
   ["bitwise-bigint", "1n & 1", /unsupported literal/, { error: "TypeError" }],
   ["exponentiation", "2 ** 3", /unsupported linked binary operator/, { result: 8 }],
 ]) {
-  const { files, out, verdict, log } = split(
+  const { files, out, verdict, log } = workerSplit(
     name,
     `const worker = () => ${expression};
-    const result = worker(); export { result };`
+    const result = worker(); export { result };`,
+    entryUnits
   );
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, reason, log);
