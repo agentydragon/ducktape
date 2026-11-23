@@ -1006,6 +1006,7 @@ _EXCALIDRAW_SCROLL_DATA = [
     ":" + _EXCALIDRAW_EDITOR_SPEC,
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
+    ":syntax_inventory",
     "//devinfra/js/debundle/excalidraw:bundle",
     "//devinfra/js/debundle/excalidraw:inputs",
     "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
