@@ -282,6 +282,23 @@ private def linkedMember (lower : Json → Except String Expr) (j : Json) (allow
   let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
   return (base, key)
 
+private def linkedTarget (imports : List Name) (inFunction allowFrozen : Bool)
+    (lower : Json → Except String Expr) (j : Json) : Except String Target := do
+  match ← field j "type" with
+  | "Identifier" =>
+    let .var name ← reference imports inFunction j
+      | throw "expected a binding in linked assignment"
+    -- Glue imports keep the original module reference annotation. Local references shadow imports.
+    let scope ← field j "k"
+    if scope != "L" && imports.contains name then
+      unless allowFrozen do throw s!"unsupported linked assignment to imported binding {name}"
+      return .frozen name
+    return .var name
+  | "MemberExpression" =>
+    let (base, key) ← linkedMember lower j
+    return .member base key
+  | kind => throw s!"unsupported linked assignment target {kind}"
+
 private def pairSequences : List Expr → List Expr
   | a :: b :: rest => .seq a b :: pairSequences rest
   | rest => rest
@@ -319,23 +336,31 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     return .cond absent .undef (.get base key)
   | "AssignmentExpression" =>
     let op ← field j "operator"
-    unless op == "=" do throw s!"unsupported linked assignment operator {op}"
-    let target ← j.getObjVal? "left"
+    let lower := linkedExpr imports inFunction ""
+    let target ← j.getObjVal? "left" >>= linkedTarget imports inFunction (op == "=") lower
     let rhs ← j.getObjVal? "right"
-    match ← field target "type" with
-    | "Identifier" =>
-      let .var name ← reference imports inFunction target
-        | throw "expected a binding in linked assignment"
-      -- Emission may introduce a glue import without changing the original module
-      -- reference annotation. Function-local references still shadow imports.
-      let scope ← field target "k"
-      let destination : Target := if scope != "L" && imports.contains name then .frozen name else .var name
-      return .assign destination (← linkedExpr imports inFunction name rhs)
-    | "MemberExpression" =>
-      let lower := linkedExpr imports inFunction ""
-      let (base, key) ← linkedMember lower target
-      return .assign (.member base key) (← lower rhs)
-    | kind => throw s!"unsupported linked assignment target {kind}"
+    let targetName := match target with
+      | .var name | .frozen name => name
+      | _ => ""
+    let named := linkedExpr imports inFunction targetName
+    match op with
+    | "=" => return .assign target (← named rhs)
+    | "+=" => return .assignOp target .add (← lower rhs)
+    | "-=" => return .assignOp target .sub (← lower rhs)
+    | "*=" => return .assignOp target .mul (← lower rhs)
+    | "/=" => return .assignOp target .div (← lower rhs)
+    | "%=" => return .assignOp target .mod (← lower rhs)
+    | "&&=" => return .assignLogical target .and (← named rhs)
+    | "||=" => return .assignLogical target .or (← named rhs)
+    | "??=" => return .assignLogical target .nullish (← named rhs)
+    | _ => throw s!"unsupported linked assignment operator {op}"
+  | "UpdateExpression" =>
+    let inc ← match ← field j "operator" with
+      | "++" => pure true
+      | "--" => pure false
+      | op => throw s!"unsupported linked update operator {op}"
+    let target ← j.getObjVal? "argument" >>= linkedTarget imports inFunction false (linkedExpr imports inFunction "")
+    return .update target inc (← j.getObjValAs? Bool "prefix")
   | "ObjectExpression" =>
     linkedObject (linkedExpr imports inFunction) (fun name => linkedFunction imports .method name false) j
   | "ArrayExpression" =>
@@ -352,7 +377,14 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "TemplateLiteral" => linkedTemplate (linkedExpr imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
-    let op : UnOp ← match ← field j "operator" with
+    let operator ← field j "operator"
+    let lower := linkedExpr imports inFunction ""
+    if operator == "delete" then
+      unless (← field argument "type") == "MemberExpression" do
+        throw "expected a member expression after delete"
+      let (base, key) ← linkedMember lower argument
+      return .delete base key
+    let op : UnOp ← match operator with
       | "+" => pure .pos
       | "-" => pure .neg
       | "!" => pure .not
@@ -360,7 +392,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
       | "typeof" => pure .typeof
       | "void" => pure .void
       | other => throw s!"unsupported unary operator {other}"
-    return .unary op (← linkedExpr imports inFunction "" argument)
+    return .unary op (← lower argument)
   | "BinaryExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr imports inFunction ""
