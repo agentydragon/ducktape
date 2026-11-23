@@ -7,6 +7,16 @@ Register `testing.postgres_fixtures` before `props.testing.fixtures.db` so Props
 `props.agents.testing.e2e_pytest_plugins`, which bundles these with `runs`, `scopes`, `e2e_infra`,
 `e2e_container` and `mcp_infra.testing.fixtures` (`async_docker_client`).
 
+Use `--keep-db` or `KEEP_TEST_DB=1` to inspect clones during the current pytest session. The
+fixture prints the connection URL at teardown, including after a failed test body. Each setup
+tries the deterministic test name first and uses the next available name if it is occupied.
+Previous clones remain available until the shared PostgreSQL container stops at session teardown.
+
+For Bazel runs, pass `--test_env=KEEP_TEST_DB=1 --test_arg=-s` for retention and live output.
+For `--keep-db`, pass the test file and `--confcutdir=.` so pytest discovers the Props conftest
+before option parsing. For example,
+`--test_arg=--confcutdir=. --test_arg=props/db/test_agent_queries.py --test_arg=--keep-db --test_arg=-s`.
+
 Git fixtures in `testing/fixtures/testdata/specimens/test-fixtures/` are the single source of
 truth for test data. Never construct `Snapshot`/`TruePositive`/`FalsePositive`/`Example` ORM
 rows in tests: depend on `synced_db` and query them. Missing coverage → extend the git fixtures.

@@ -13,7 +13,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--keep-db",
         action="store_true",
         default=False,
-        help="Preserve test database on failure for debugging (does not drop test database after test)",
+        help="Keep each test database for debugging until the PostgreSQL test container stops",
     )
 
 
