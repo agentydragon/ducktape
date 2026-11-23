@@ -140,6 +140,10 @@ all-world proof that fails to reduce yields a rejection. A successful comparison
 reports `"scope":"linked-programs"`.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
 
+### Read a linked refusal
+
+Linked refusals from AST lowering and the concrete probe include a `reason_code`. A `linked_input` refusal means the input failed linked lowering or linkage. `probe_fuel` means the search exhausted its budget. `probe_mismatch` means both probe executions finished with different states. Its optional `observation` reports a differing exported value or object alias when one is visible in exported cells or their own data properties. Paths list the export name and, for an own property, the property name.
+
 ### Measure certification
 
 Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.

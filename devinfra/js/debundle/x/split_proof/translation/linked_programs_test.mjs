@@ -149,6 +149,7 @@ assertWorkerResult(
   );
   assert.equal(verdict.status, "rejected");
   assert.match(verdict.reason, /exhausted the fuel search budget \(64\)/);
+  assert.equal(verdict.reason_code, "probe_fuel");
   assert(!existsSync(out));
 }
 

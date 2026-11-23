@@ -926,10 +926,81 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostProfile) {sourc
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 
+inductive RefusalCode where
+  | probeMismatch | probeThrow | probeUnknown | probeFuel | proofPreparation
+
+def RefusalCode.label : RefusalCode → String
+  | .probeMismatch => "probe_mismatch"
+  | .probeThrow => "probe_throw"
+  | .probeUnknown => "probe_unknown"
+  | .probeFuel => "probe_fuel"
+  | .proofPreparation => "proof_preparation"
+
+structure Refusal where
+  code : RefusalCode
+  reason : String
+  observation : Option Lean.Json := none
+
+private structure ValuePair where
+  path : List String
+  original : Val
+  candidate : Val
+
+private def displayValue : Val → String
+  | .undef => "undefined"
+  | .null => "null"
+  | .bool b => toString b
+  | .num n => if n.toBits == 0x8000000000000000 then "-0" else toString n
+  | .str s => (s.take 160).toString.quote
+  | .obj _ => "object"
+  | .host n => "host value " ++ n
+  | .error k msg => s!"{repr k}: {(msg.take 160).toString.quote}"
+
+/-- Inspect exported cells and their immediate own data properties without calling JS. -/
+private def observeExports (profile : HostProfile) (source candidate : Program)
+    (original split : State (profile.specialize World.probe)) : List ValuePair := Id.run do
+  let world := profile.specialize World.probe
+  let a := (exports world source).getD []
+  let b := (exports world candidate).getD []
+  let mut values := []
+  for (name, addr) in a do
+    let some left := (original.cellAt addr).bind (·.value) | continue
+    let some right := ((b.lookup name).bind split.cellAt).bind (·.value) | continue
+    values := ⟨[name], left, right⟩ :: values
+    if let (.obj l, .obj r) := (left, right) then
+      if let (some l, some r) := (original.objAt l, split.objAt r) then
+        let properties := Std.HashMap.ofList r.props
+        for (key, value) in l.props do
+          if let (.data a .., some (.data b ..)) := (value, properties[key]?) then
+            values := ⟨[name, key], a, b⟩ :: values
+  return values.reverse
+
+private def firstExportDifference (values : List ValuePair) : Option Lean.Json := Id.run do
+  let mut seenOriginal : Std.HashMap (Nat × Nat) ((Nat × Nat) × List String) := {}
+  let mut seenSplit : Std.HashMap (Nat × Nat) ((Nat × Nat) × List String) := {}
+  for ⟨path, original, split⟩ in values do
+    if let (.obj a, .obj b) := (original, split) then
+      let l := (a.region, a.index)
+      let r := (b.region, b.index)
+      let detail (earlier : List String) (aliased : Bool) := Lean.Json.mkObj [
+        ("kind", Lean.toJson "alias"), ("paths", Lean.toJson [earlier, path]),
+        ("original_alias", Lean.toJson aliased), ("split_alias", Lean.toJson (!aliased))]
+      if let some (previous, earlier) := seenOriginal[l]? then
+        if previous != r then return some (detail earlier true)
+      if let some (previous, earlier) := seenSplit[r]? then
+        if previous != l then return some (detail earlier false)
+      seenOriginal := seenOriginal.insert l (r, path)
+      seenSplit := seenSplit.insert r (l, path)
+    else if Lean.toExpr original != Lean.toExpr split then
+      return some (Lean.Json.mkObj [
+        ("kind", Lean.toJson "value"), ("path", Lean.toJson path),
+        ("original", Lean.toJson (displayValue original)), ("split", Lean.toJson (displayValue split))])
+  return none
+
 /-- Only fuel exhaustion can be resolved by a larger witness. A normal probe
 selects a witness for the kernel proof. If both runs finish but their complete
 states differ, the theorem above proves that no all-world certificate can hold. -/
-private def probeWitnessAt (profile : HostProfile) (source candidate : Program) (fuel : Nat) : Except String (Option Nat) := do
+private def probeWitnessAt (profile : HostProfile) (source candidate : Program) (fuel : Nat) : Except Refusal (Option Nat) := do
   match sourceRun : runProgram (profile.specialize World.probe) fuel source with
   | .ok () sourceState =>
     match candidateRun : runProgram (profile.specialize World.probe) fuel candidate with
@@ -939,13 +1010,14 @@ private def probeWitnessAt (profile : HostProfile) (source candidate : Program) 
       | false =>
         let _ : ¬ Equivalent source candidate :=
           probeObservationMismatchRefutesEquivalent profile sourceRun candidateRun statesAgree
-        throw "probe executions completed normally with different final states"
+        throw ⟨.probeMismatch, "probe executions completed normally with different final states",
+          firstExportDifference (observeExports profile source candidate sourceState candidateState)⟩
     | .fuel => return none
-    | .throw .. => throw "split threw during linked initialization"
-    | .unknown why _ => throw s!"split reached an unknown result during linked initialization: {why}"
+    | .throw .. => throw ⟨.probeThrow, "split threw during linked initialization", none⟩
+    | .unknown why _ => throw ⟨.probeUnknown, s!"split reached an unknown result during linked initialization: {why}", none⟩
   | .fuel => return none
-  | .throw .. => throw "original threw during linked initialization"
-  | .unknown why _ => throw s!"original reached an unknown result during linked initialization: {why}"
+  | .throw .. => throw ⟨.probeThrow, "original threw during linked initialization", none⟩
+  | .unknown why _ => throw ⟨.probeUnknown, s!"original reached an unknown result during linked initialization: {why}", none⟩
 
 /-- Evaluating a flat record uses one level of interpreter fuel per property.
 Reserve the usual depth for its expressions and surrounding declaration. -/
@@ -957,14 +1029,14 @@ private def recordFuelLimit (source : Program) : Nat := Id.run do
         width := max width props.length
   return min 2048 (64 + width)
 
-private def witnessFuel (profile : HostProfile) (source candidate : Program) : Except String Nat := do
+private def witnessFuel (profile : HostProfile) (source candidate : Program) : Except Refusal Nat := do
   let test := probeWitnessAt profile source candidate
   for fuel in [16, 32, 64] do
     if let some witness ← test fuel then return witness
   let limit := recordFuelLimit source
   if limit > 64 then
     if let some witness ← test limit then return witness
-  throw s!"linked initialization exhausted the fuel search budget ({limit})"
+  throw ⟨.probeFuel, s!"linked initialization exhausted the fuel search budget ({limit})", none⟩
 
 structure CheckpointText where
   input : String
@@ -1024,8 +1096,9 @@ private def checkpointText (preamble options declarations correspondence : Strin
 
 /-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
 def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) :
-    Except String Certificate := do
-  let records ← recordQuotes source candidate
+    Except Refusal Certificate := do
+  let preparation := fun reason => ({ code := .proofPreparation, reason } : Refusal)
+  let records ← (recordQuotes source candidate).mapError preparation
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
   -- Only observations present in the checked programs can need a world hypothesis.
@@ -1042,16 +1115,18 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
     if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]?
     else if e.isAppOfArity ``Expr.seq 2 then writes.replacements[e]?
     else none
-  let s ← termWith replace sourceTerm
-  let c ← termWith replace candidateTerm
+  let s ← (termWith replace sourceTerm).mapError preparation
+  let c ← (termWith replace candidateTerm).mapError preparation
   let recordTerms ← if records.fields.isEmpty then pure "" else do
     let keys := if records.fields.any (·.length ≥ wideRecordMinFields) then
       (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
     else #[]
-    let definitions ← records.fields.zipIdx.toList.mapM fun (fields, index) => recordDefinitions index fields keys
+    let definitions ← (records.fields.zipIdx.toList.mapM fun (fields, index) =>
+      recordDefinitions index fields keys).mapError preparation
     pure ("attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++ String.join definitions)
-  let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
-  let p ← term (Lean.toExpr plan)
+  let writeTerms ← (writes.batches.zipIdx.toList.mapM fun (batch, index) =>
+    writeBatchDefinitions index batch).mapError preparation
+  let p ← (term (Lean.toExpr plan)).mapError preparation
   let asts := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
   let writeImports := if writeTerms.isEmpty then "" else "import EsmSplit.Fast\n"
   let profileTerm := fun (p : HostProfile) => match p with
