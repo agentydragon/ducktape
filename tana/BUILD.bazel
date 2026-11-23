@@ -16,3 +16,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_materialize_searches",
+    srcs = ["test_materialize_searches.py"],
+    deps = [
+        "//:conftest",
+        "//tana/export:materialize_searches",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
