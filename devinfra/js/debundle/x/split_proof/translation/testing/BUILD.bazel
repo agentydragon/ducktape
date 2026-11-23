@@ -17,7 +17,10 @@ js_library(
 js_library(
     name = "ast_generator",
     srcs = ["ast_generator.mjs"],
-    deps = ["//devinfra/js/debundle/x/split_proof/translation:node_modules/astring"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+    ],
 )
 
 js_library(
@@ -32,4 +35,5 @@ js_library(
 js_library(
     name = "program_generator",
     srcs = glob(["gen/*.mjs"]),
+    deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )

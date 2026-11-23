@@ -20,6 +20,7 @@ js_library(
         "targeted.mjs",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )
 
 # Include first-party runfile helpers as lint sources.

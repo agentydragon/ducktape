@@ -14,19 +14,15 @@
 // `{ units: [{ tmpl, src, defs, uses }], exports, imports }`, where `src` marks module-scope names (`top`) and the unit's own
 // names (`local`) so that the splitter can rename and import them. `imports` are lines the splitter repeats in every module: the
 // names they bind are never marked, because a module imports them itself.
+import { mulberry32 } from "../../../seeded_random.mjs";
+
 export const top = (n) => `\u0001${n}\u0002`;
 export const local = (n) => `\u0003${n}\u0004`;
 // eslint-disable-next-line no-control-regex -- Match the reserved top-level name marker.
 const TOP = /\u0001([^\u0002]+)\u0002/g;
 
 export function rng(seed) {
-  let a = seed >>> 0;
-  const float = () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), a | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const float = mulberry32(seed);
   return { float, int: (n) => Math.floor(float() * n) };
 }
 

@@ -73,7 +73,10 @@ eslint_test(
     ],
 )
 
+_SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
+
 _SHIFT_FUZZ_DATA = [
+    _SEEDED_RANDOM,
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     ":node_modules/shift-codegen",
@@ -127,6 +130,7 @@ _CHECKER_RUNFILES = [
 
 # What `fuzz.mjs` imports besides the front end: the AST corpus and the generator of `testing/gen/`.
 _FUZZ_SOURCES = [
+    _SEEDED_RANDOM,
     "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
     ":node_modules/astring",
     "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
@@ -171,7 +175,10 @@ _LOWER_CALLBACK_FUZZ_DATA = [
 js_test(
     name = "ast_emitter_fuzz_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [
+        _SEEDED_RANDOM,
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+    ],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -180,7 +187,10 @@ js_test(
     name = "ast_emitter_fuzz_seed_2027_test",
     size = "medium",
     args = ["2027"],
-    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [
+        _SEEDED_RANDOM,
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+    ],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -188,7 +198,7 @@ js_test(
 js_test(
     name = "lower_callback_fuzz_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA,
+    data = _LOWER_CALLBACK_FUZZ_DATA + [_SEEDED_RANDOM],
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -197,7 +207,7 @@ js_test(
     name = "lower_callback_fuzz_extended_test",
     size = "medium",
     args = ["64"],
-    data = _LOWER_CALLBACK_FUZZ_DATA,
+    data = _LOWER_CALLBACK_FUZZ_DATA + [_SEEDED_RANDOM],
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
     tags = ["manual"],
@@ -339,7 +349,10 @@ js_test(
     name = "estree_printer_test",
     size = "small",
     args = ["2026"],
-    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [
+        _SEEDED_RANDOM,
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+    ],
     entry_point = "estree_printer_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -1230,6 +1243,7 @@ js_library(
         ":node_modules/shift-codegen",
         ":node_modules/shift-fuzzer",
         ":syntax_inventory",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
     ],
 )
 

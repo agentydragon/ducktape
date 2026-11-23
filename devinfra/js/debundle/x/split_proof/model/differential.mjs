@@ -70,6 +70,7 @@ import {
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
+import { mulberry32 } from "../seeded_random.mjs";
 
 const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);
@@ -567,18 +568,6 @@ for (const job of jobs) {
 
 // Splits by the real tool.
 
-/** A random number generator with a seed (mulberry32): `next()` is in [0, 1). */
-function random(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 /**
  * Three specs for a bundle's units: `cut` (consecutive pieces, run in order), `ordered` (a random module
  * for each statement, the modules run in the order of their first statements) and `free` (the same, with the order
@@ -827,7 +816,7 @@ for (const [index, job] of candidates
   const { dump, bundle, units } = splitInputFor(job);
   if (units.length < 2) continue;
   tally.programs++;
-  const next = random(firstSeed * 7919 + index);
+  const next = mulberry32(firstSeed * 7919 + index);
   for (const [kind, spec] of Object.entries(specsFor(units, next))) split(job, bundle, dump, kind, spec, null);
 }
 const bundleJobs = [...new Set(splitJobs.map((s) => s.of))];
