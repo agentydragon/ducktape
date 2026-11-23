@@ -17,7 +17,7 @@ The main tables are in [`README.md` § 5](README.md#5-how-far-does-the-check-sca
 
 ## Building and running
 
-These are historical measurements; the `check` executable and verbatim-output workflow have since been removed.
+These measurements predate the removal of the `check` executable and verbatim-output workflow. The current 12-statement example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
 
 | What                                                                                                          | Time                               |
 | ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
