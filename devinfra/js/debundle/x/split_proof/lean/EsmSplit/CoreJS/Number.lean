@@ -14,17 +14,24 @@ def inf : Float := 1.0 / 0.0
 
 /-- The nearest double to `n / d`, ties to even, with the given sign. -/
 def ofRatio (neg : Bool) (n d : Nat) : Float :=
-  let scaled (k : Int) : Nat × Nat := if k ≥ 0 then (n, d <<< k.toNat) else (n <<< (-k).toNat, d)
-  -- `⌊n / (d · 2^k)⌋` has 53 bits for `k = k0` or `k0 - 1`; a subnormal has fewer, at `k = -1074`
-  let k0 : Int := (n.log2 : Int) - (d.log2 : Int) - 52
-  let k1 := if (scaled k0).1 / (scaled k0).2 < 2 ^ 52 then k0 - 1 else k0
-  let k := max k1 (-1074)
-  let (a, b) := scaled k
-  let q := a / b
-  let r := a % b
-  let q := if 2 * r > b || (2 * r == b && q % 2 == 1) then q + 1 else q
-  let x := if n == 0 || d == 0 then 0.0 else Float.scaleB (Float.ofNat q) k
-  if neg then -x else x
+  let sign := if neg then (1 : Nat) <<< 63 else 0
+  if n == 0 || d == 0 then Float.ofBits (UInt64.ofNat sign)
+  else
+    let scaled (k : Int) : Nat × Nat := if k ≥ 0 then (n, d <<< k.toNat) else (n <<< (-k).toNat, d)
+    -- `⌊n / (d · 2^k)⌋` has 53 bits for `k = k0` or `k0 - 1`; a subnormal has fewer, at `k = -1074`.
+    let k0 : Int := (n.log2 : Int) - (d.log2 : Int) - 52
+    let k1 := if (scaled k0).1 / (scaled k0).2 < 2 ^ 52 then k0 - 1 else k0
+    let k := max k1 (-1074)
+    let (a, b) := scaled k
+    let q := a / b
+    let r := a % b
+    let q := if 2 * r > b || (2 * r == b && q % 2 == 1) then q + 1 else q
+    -- At k = -1074, q below 2^52 is the subnormal fraction. Otherwise the
+    -- leading 2^52 in q increments the biased exponent, leaving the fraction.
+    -- A rounding carry to 2^53 increments the exponent again. Saturate overflow
+    -- at the infinity encoding before adding the sign bit.
+    let magnitude := min ((2047 : Nat) <<< 52) (((k + 1074).toNat <<< 52) + q)
+    Float.ofBits (UInt64.ofNat (sign + magnitude))
 
 /-- A finite double as `(negative, m, e)`: its value is `±m · 2^e`. -/
 def decompose (x : Float) : Bool × Nat × Int :=
