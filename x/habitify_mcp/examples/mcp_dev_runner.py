@@ -1,111 +1,64 @@
-"""Test the Habitify MCP server using mcp dev.
-
-Usage: bazel run //x/habitify_mcp:mcp_dev_runner -- [--api-key KEY] [--debug]
-
-Creates a mock server file for the MCP dev command to test tools
-in a debug environment without full Claude Desktop installation.
-"""
+"""Launch MCP Inspector against the Bazel-built Habitify stdio server."""
 
 import argparse
-import logging
+import json
+import os
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
-from x.habitify_mcp.utils.cli_utils import get_api_key_from_param_or_env
+from python.runfiles import Runfiles
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("habitify-mcp-dev")
+from x.habitify_mcp.config import load_api_key
 
-
-# Parse command line arguments
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Run the Habitify MCP server in dev mode")
-    parser.add_argument("--api-key", help="Habitify API key (overrides HABITIFY_API_KEY environment variable)")
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument("--debug-tools", action="store_true", help="Enable MCP debugging for tools")
-    return parser.parse_args()
-
-
-# Template for the server file
-SERVER_TEMPLATE = """
-import os
-import logging
-from x.habitify_mcp.server import create_habitify
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("habitify-mcp-dev-server")
-
-# Set up the server
-server = create_habitify()
-
-# Print available tools for reference
-logger.info("Habitify MCP Server ready with these tools:")
-
-# Server is ready!
-logger.info("Use 'run_tool <tool_name> [args]' to test tools")
-"""
+INSPECTOR = "@modelcontextprotocol/inspector@2.16.0"
 
 
 def main() -> int:
-    """Main entry point for the script."""
-    # Parse command-line arguments
-    args = parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--api-key", help="Habitify API key (overrides HABITIFY_API_KEY)")
+    parser.add_argument("--debug", "--debug-tools", action="store_true", help="Enable Habitify server debug logging")
+    args = parser.parse_args()
 
-    # Configure logging level
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logger.setLevel(logging.DEBUG)
-
-    # Load API key from CLI param or environment
-    api_key = get_api_key_from_param_or_env(args.api_key)
+    api_key = args.api_key or load_api_key(exit_on_missing=False)
     if not api_key:
-        logger.error("HABITIFY_API_KEY is required. Set in environment or pass --api-key.")
+        print("HABITIFY_API_KEY is required. Set it in the environment or pass --api-key.", file=sys.stderr)
         return 1
 
-    # Create a temporary file with the server code
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as temp:
-        temp_filename = temp.name
-        temp.write(SERVER_TEMPLATE)
-
-    logger.info(f"Created temporary server file: {temp_filename}")
+    runfiles = Runfiles.CreateOrRaise()
+    command = runfiles.Rlocation("ducktape/x/habitify_mcp/habitify_cli")
+    if not command:
+        print("Habitify's Bazel launcher is missing from runfiles.", file=sys.stderr)
+        return 1
+    server_env = {**runfiles.EnvVars(), "HABITIFY_API_KEY": api_key}
+    if base_url := os.environ.get("HABITIFY_API_BASE_URL"):
+        server_env["HABITIFY_API_BASE_URL"] = base_url
+    config = {
+        "mcpServers": {
+            "Habitify": {"command": command, "args": ["mcp", *(["--debug"] if args.debug else [])], "env": server_env}
+        }
+    }
+    inspector_env = {**os.environ, "MCP_INSPECTOR_SECRET_STORE": "memory"}
+    inspector_env.pop("HABITIFY_API_KEY", None)
+    inspector_env.pop("HABITIFY_API_BASE_URL", None)
 
     try:
-        # Build the command
-        cmd = ["mcp", "dev", temp_filename, "--with-editable", "."]
-
-        if args.debug_tools:
-            cmd.append("--debug")
-
-        # Run the MCP dev command
-        logger.info("Starting MCP dev environment...")
-        logger.info("You can test tools using the 'run_tool' command in the dev environment")
-        logger.info("Example: run_tool get_habits")
-        logger.info("Press Ctrl+C to exit")
-
-        subprocess.run(cmd, check=True)
-        return 0
-    except subprocess.CalledProcessError:
-        logger.exception("Error running MCP dev")
-        return 1
-    except FileNotFoundError:
-        logger.exception("Error: 'mcp' command not found. Make sure the MCP SDK is installed.")
-        logger.exception('You can install it with: pip install "mcp[cli]"')
-        return 1
+        # Inspector receives the credential via a private config file instead of argv.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json") as config_file:
+            json.dump(config, config_file)
+            config_file.flush()
+            result = subprocess.run(
+                ["npx", "--yes", INSPECTOR, "--config", config_file.name], env=inspector_env, check=False
+            )
+        return result.returncode
     except KeyboardInterrupt:
-        logger.info("\nMCP dev environment stopped.")
         return 0
-    finally:
-        # Clean up the temporary file
-        try:
-            Path(temp_filename).unlink()
-            logger.info(f"Removed temporary server file: {temp_filename}")
-        except Exception as e:
-            logger.warning(f"Failed to remove temporary file: {e}")
+    except FileNotFoundError:
+        print("Could not launch MCP Inspector. Install Node.js with npx and try again.", file=sys.stderr)
+        return 1
+    except OSError:
+        print("Could not start MCP Inspector.", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
