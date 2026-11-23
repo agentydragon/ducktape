@@ -641,7 +641,7 @@ private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → Wr
       | some number => do
         let definitions ← get
         let fact := s!"{stem}Key{definitions.size}"
-        let value ← liftM (EsmSplit.CertificateData.quote fact (Lean.toExpr (.num number : Val)))
+        let value ← liftM (EsmSplit.CertificateData.quote (ε := ε) fact (Lean.toExpr (.num number : Val)))
         set (definitions.push (s!"private theorem {fact} : toStr {value} = .ok {name.quote} := by\n" ++
           "  first | rfl | cbv <;> rfl\n"))
         pure fact
