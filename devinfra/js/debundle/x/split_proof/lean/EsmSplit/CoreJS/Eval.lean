@@ -249,6 +249,11 @@ def evalExpr : Nat → Env → Expr → M W Val
       let base ← evalExpr n env o
       let key ← evalExpr n env k
       getProp (callFn n) base key
+    | .getOptional o k => do
+      let base ← evalExpr n env o
+      if !(← lift (shortCircuits .nullish base)) then pure .undef else do
+        let key ← evalExpr n env k
+        getProp (callFn n) base key
     | .hasProp k o => do
       let key ← evalExpr n env k
       let base ← evalExpr n env o
