@@ -393,6 +393,11 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let first :: second :: rest := expressions | throw "expected at least two sequence operands"
     let lower := linkedExpr imports inFunction ""
     return sequenceTree (← lower first) (← (second :: rest).mapM lower)
+  | "ClassExpression" => linkedClass imports inFunction nameHint j
+  | "NewExpression" =>
+    let lower := linkedExpr imports inFunction ""
+    let args ← j.getObjValAs? (List Json) "arguments"
+    return .new (← lower (← j.getObjVal? "callee")) (← args.mapM lower)
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr imports inFunction ""
@@ -440,6 +445,41 @@ private partial def linkedFunction (imports : List Name) (kind : FuncKind) (name
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
   return .mk name kind self params.toList (bindings.toList ++ stmts)
+
+/-- Public, static-name class elements. Default derived constructors forward to the base
+with the original new target. Explicit derived constructors require super-call semantics. -/
+private partial def linkedClass (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
+    Except String Expr := do
+  let id ← j.getObjVal? "id"
+  let name ← if id == .null then pure hint else identifier id
+  let parent ← j.getObjVal? "superClass"
+  let body ← j.getObjVal? "body"
+  unless (← field body "type") == "ClassBody" do throw "expected class body"
+  let mut ctor := Func.mk name .classCtor false [] []
+  let mut members := #[]
+  for member in ← body.getObjValAs? (Array Json) "body" do
+    let tag ← field member "type"
+    unless tag == "MethodDefinition" || tag == "PropertyDefinition" do throw s!"unsupported class element {tag}"
+    if ← member.getObjValAs? Bool "computed" then throw "unsupported computed class key"
+    let key ← moduleExportName (← member.getObjVal? "key")
+    let keyExpr ← stringExpr key
+    let static ← member.getObjValAs? Bool "static"
+    let value ← member.getObjVal? "value"
+    if tag == "PropertyDefinition" then
+      unless parent == .null do throw "unsupported derived class field"
+      let init ← if value == .null then pure .undef else linkedExpr imports inFunction key value
+      members := members.push (.field static keyExpr init)
+    else
+      match ← field member "kind" with
+      | "constructor" =>
+        unless parent == .null do throw "unsupported explicit derived constructor"
+        ctor ← linkedFunction imports .classCtor name false value
+      | "method" => members := members.push (.method static keyExpr (← linkedFunction imports .method key false value))
+      | "get" => members := members.push (.getter static keyExpr (← linkedFunction imports .method ("get " ++ key) false value))
+      | "set" => members := members.push (.setter static keyExpr (← linkedFunction imports .method ("set " ++ key) false value))
+      | other => throw s!"unsupported class method kind {other}"
+  if parent == .null then return .cls name (id != .null) ctor members.toList
+  return .derived name (id != .null) (← linkedExpr imports inFunction "" parent) members.toList
 
 private partial def linkedLocalDeclarations (imports : List Name) (offset : Nat) (j : Json) :
     Except String (Array Stmt) := do
@@ -494,6 +534,9 @@ private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j
   if inFunction then
     match ← field j "type" with
     | "BlockStatement" => return ← linkedFunctionBlock imports j
+    | "ClassDeclaration" =>
+      let name ← j.getObjVal? "id" >>= localBinding
+      return .decl .let_ name (← linkedClass imports true name j)
     | "EmptyStatement" => return .block []
     | "IfStatement" =>
       let test ← linkedExpr imports true "" (← j.getObjVal? "test")
@@ -549,11 +592,14 @@ def linkedDeclaration (imports : List Name) (j : Json) : Except String (Name × 
   if (← field j "type") == "FunctionDeclaration" then
     let name ← j.getObjVal? "id" >>= moduleBinding
     return (name, .funDecl (← linkedFunction imports .normal name false j))
+  if (← field j "type") == "ClassDeclaration" then
+    let name ← j.getObjVal? "id" >>= moduleBinding
+    return (name, .decl .let_ name (← linkedClass imports false name j))
   declarationWith moduleBinding (linkedExpr imports false) j
 
 /-- A top-level executable statement of the linked fragment. -/
 def linkedUnit (imports : List Name) (j : Json) : Except String Stmt := do
-  if (← field j "type") == "FunctionDeclaration" then
+  if ["FunctionDeclaration", "ClassDeclaration"].contains (← field j "type") then
     return (← linkedDeclaration imports j).2
   linkedStatement imports false j
 

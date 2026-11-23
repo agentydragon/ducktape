@@ -78,6 +78,22 @@ private partial def exprEq : MatchEq Expr
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨base ▸ key ▸ arguments ▸ rfl⟩
+  | .cls n self ctor ms, .cls n' self' ctor' ms' => do
+    let ⟨k⟩ ← scalarEq n n'
+    let ⟨s⟩ ← scalarEq self self'
+    let ⟨c⟩ ← funcEq ctor ctor'
+    let ⟨m⟩ ← listEq classMemberEq ms ms'
+    return ⟨k ▸ s ▸ c ▸ m ▸ rfl⟩
+  | .derived n self parent ms, .derived n' self' parent' ms' => do
+    let ⟨k⟩ ← scalarEq n n'
+    let ⟨s⟩ ← scalarEq self self'
+    let ⟨p⟩ ← exprEq parent parent'
+    let ⟨m⟩ ← listEq classMemberEq ms ms'
+    return ⟨k ▸ s ▸ p ▸ m ▸ rfl⟩
+  | .new f args, .new f' args' => do
+    let ⟨callee⟩ ← exprEq f f'
+    let ⟨arguments⟩ ← listEq exprEq args args'
+    return ⟨callee ▸ arguments ▸ rfl⟩
   | .call f args, .call f' args' => do
     let ⟨callee⟩ ← exprEq f f'
     let ⟨arguments⟩ ← listEq exprEq args args'
@@ -99,6 +115,29 @@ private partial def funcEq : MatchEq Func
     let ⟨p⟩ ← scalarEq params params'
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ b ▸ rfl⟩
+  | _, _ => none
+
+private partial def classMemberEq : MatchEq ClassMember
+  | .field s k v, .field s' k' v' => do
+    let ⟨st⟩ ← scalarEq s s'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨value⟩ ← exprEq v v'
+    return ⟨st ▸ key ▸ value ▸ rfl⟩
+  | .method s k v, .method s' k' v' => do
+    let ⟨st⟩ ← scalarEq s s'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨value⟩ ← funcEq v v'
+    return ⟨st ▸ key ▸ value ▸ rfl⟩
+  | .getter s k v, .getter s' k' v' => do
+    let ⟨st⟩ ← scalarEq s s'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨value⟩ ← funcEq v v'
+    return ⟨st ▸ key ▸ value ▸ rfl⟩
+  | .setter s k v, .setter s' k' v' => do
+    let ⟨st⟩ ← scalarEq s s'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨value⟩ ← funcEq v v'
+    return ⟨st ▸ key ▸ value ▸ rfl⟩
   | _, _ => none
 
 private partial def propEq : MatchEq PropDef
