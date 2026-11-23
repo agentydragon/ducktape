@@ -1,5 +1,6 @@
 # gazelle:exclude test_visual.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
@@ -644,39 +645,25 @@ ts_library(
     ],
 )
 
-js_binary(
-    name = "build_screenshot_harness",
-    data = [
-        "harness/esbuild.config.mjs",
-        ":screenshot_harness_lib",
-        "//:node_modules/esbuild",
-    ],
-    entry_point = "harness/esbuild.config.mjs",
-)
-
-js_run_binary(
+esbuild(
     name = "screenshot_harness_bundle",
-    srcs = [
-        "harness/esbuild.config.mjs",
-        ":screenshot_harness_lib",
-    ],
-    outs = ["harness/dist/harness.js"],
-    args = ["harness/dist"],
-    chdir = package_name(),
-    tool = ":build_screenshot_harness",
-)
-
-# Single-file target so $(rootpath) resolves to one path.
-filegroup(
-    name = "screenshot_harness_js",
-    srcs = ["harness/dist/harness.js"],
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "harness/harness.js",
+    format = "iife",
+    minify = False,
+    output = "harness/dist/harness.js",
+    platform = "browser",
+    sourcemap = False,
+    target = ["es2022"],
+    deps = [":screenshot_harness_lib"],
 )
 
 py_visual_test(
     name = "screenshots",
     # medium: each of the 4 shards measures 35s alone and up to 63s with nine runs at once; `small` is 60s.
     size = "medium",
-    harness = ":screenshot_harness_js",
+    harness = "harness/dist/harness.js",
     inline_page = True,
     # The shell reads `localStorage`, frames another origin and parses its own location, and the mock
     # fetch parses relative `/api/…` URLs it never sends: it needs the origin of a real page.
