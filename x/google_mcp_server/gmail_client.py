@@ -136,8 +136,7 @@ class GmailToolsClient:
     def _get_or_create(self, name: str, existing: dict[str, str]) -> GmailLabelRef:
         if label_id := existing.get(name):
             return GmailLabelRef(name=name, id=label_id)
-        body = {"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}
-        created = GmailLabel.model_validate(self.service.users().labels().create(userId="me", body=body).execute())
+        created = self.labels_create(CreateLabelRequest(name=name))
         return GmailLabelRef(name=created.name, id=created.id)
 
     def drafts_create(self, args: CreateGmailDraftArgs) -> Draft:
