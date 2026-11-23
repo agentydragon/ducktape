@@ -1,12 +1,16 @@
-"""Shared git-repo test fixtures for devinfra/gc's test suite."""
+"""Git and Bazel fixtures for the workspace garbage-collection tests."""
 
 from __future__ import annotations
 
 import hashlib
 import os
 import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pygit2
 import pytest
@@ -128,15 +132,20 @@ def make_base(root: Path, workspace: Path, *, name: str | None = None) -> Path:
     return base
 
 
-def make_cache_entry(contents: Path, hash_name: str, uuid_name: str, *, recorded_inputs: bool = True) -> Path:
+def cache_entry_path(contents: Path, hash_digit: str, uuid_digit: str) -> Path:
+    """Expand test IDs to Bazel's hash/UUID cache layout."""
+    return contents / (hash_digit * 64) / str(UUID(uuid_digit * 32))
+
+
+def make_cache_entry(contents: Path, hash_digit: str, uuid_digit: str, *, recorded_inputs: bool = True) -> Path:
     """A fetched repository as Bazel's repo contents cache holds it: the directory plus its
     recorded-inputs file."""
-    entry = contents / hash_name / uuid_name
+    entry = cache_entry_path(contents, hash_digit, uuid_digit)
     entry.mkdir(parents=True)
     (entry / "REPO.bazel").write_text("")
     (entry / "payload").write_bytes(b"x" * 4096)
     if recorded_inputs:
-        recorded_inputs_of(entry).write_text(f"{hash_name}\n")
+        recorded_inputs_of(entry).write_text(f"{entry.parent.name}\n")
     return entry
 
 
@@ -144,3 +153,32 @@ def link_external(base: Path, repo: str, target: Path) -> None:
     """`<base>/external/<repo> -> target`, the way an output base uses a repo-cache entry."""
     (base / "external").mkdir(exist_ok=True)
     (base / "external" / repo).symlink_to(target)
+
+
+@contextmanager
+def hold_posix_lock(path: Path, mode: int, *, length: int = 0) -> Iterator[None]:
+    """Hold a POSIX record lock in a separate process, as a Bazel command would."""
+    script = """
+import fcntl, sys
+
+with open(sys.argv[1], "r+b") as lock:
+    fcntl.lockf(lock, int(sys.argv[2]) | fcntl.LOCK_NB, int(sys.argv[3]))
+    print("locked", flush=True)
+    sys.stdin.read(1)
+"""
+    with subprocess.Popen(
+        [sys.executable, "-c", script, path, str(mode), str(length)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        assert holder.stdout is not None
+        assert holder.stdout.readline() == "locked\n"
+        try:
+            yield
+        finally:
+            try:
+                holder.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                holder.kill()
+                raise

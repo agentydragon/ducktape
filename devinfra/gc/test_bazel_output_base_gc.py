@@ -1,9 +1,8 @@
 import dataclasses
 import errno
+import fcntl
 import os
 import shutil
-import subprocess
-import sys
 from enum import StrEnum
 from pathlib import Path
 
@@ -11,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc as gc
-from devinfra.gc.conftest import make_base
+from devinfra.gc.conftest import hold_posix_lock, make_base
 from devinfra.gc.removal import Failed, Removed, Skipped
 
 
@@ -415,26 +414,12 @@ def test_rmtree_callback_does_not_retry_open_with_the_wrong_signature(tmp_path: 
 def test_bazel_lock_conflicts_with_another_process(tmp_path: Path) -> None:
     workspace = tmp_path / "gone"
     base = make_base(tmp_path / "output", workspace)
-    holder = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import fcntl, os, sys; fd = os.open(sys.argv[1], os.O_RDWR); "
-            "fcntl.lockf(fd, fcntl.LOCK_EX, 1, 0, os.SEEK_SET); print('locked', flush=True); sys.stdin.read(1)",
-            str(base / "lock"),
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert holder.stdout is not None
-        assert holder.stdout.readline() == "locked\n"
-        with pytest.raises(gc.MetadataError), gc._bazel_lock(base, uid=os.getuid()):
-            pass
-    finally:
-        assert holder.stdin is not None
-        holder.communicate("x", timeout=5)
+    with (
+        hold_posix_lock(base / "lock", fcntl.LOCK_EX, length=1),
+        pytest.raises(gc.MetadataError),
+        gc._bazel_lock(base, uid=os.getuid()),
+    ):
+        pass
 
 
 def test_scan_and_render_report_flag_a_prunable_base(

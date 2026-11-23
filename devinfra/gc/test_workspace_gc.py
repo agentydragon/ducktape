@@ -1,7 +1,6 @@
+import fcntl
 import pathlib
 import shutil
-import subprocess
-import sys
 import threading
 from io import StringIO
 
@@ -10,7 +9,7 @@ import pytest_bazel
 from rich.console import Console
 
 from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
-from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
+from devinfra.gc.conftest import GitRepo, hold_posix_lock, link_external, make_base, make_cache_entry
 from devinfra.gc.pull_request import PrInfo
 
 
@@ -67,9 +66,9 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     checkout = repo.clone("checkout")  # the scan needs the `origin/HEAD` a real clone has
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
-    kept_entry = make_cache_entry(contents, "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-    freed_entry = make_cache_entry(contents, "b" * 64, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-    unreferenced_entry = make_cache_entry(contents, "c" * 64, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+    kept_entry = make_cache_entry(contents, "a", "a")
+    freed_entry = make_cache_entry(contents, "b", "b")
+    unreferenced_entry = make_cache_entry(contents, "c", "c")
     kept_base = make_base(root, checkout.path.resolve())
     link_external(kept_base, "kept_repo", kept_entry)
     pruned_base = make_base(root, tmp_path / "gone")
@@ -172,40 +171,13 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
 ) -> None:
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
-    entries = [
-        make_cache_entry(contents, char * 64, f"{char * 8}-{char * 4}-{char * 4}-{char * 4}-{char * 12}")
-        for char in "ab"
-    ]
+    entries = [make_cache_entry(contents, char, char) for char in "ab"]
     (contents / "gc_lock").touch()
     monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
-    holder = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import fcntl,sys; f=open(sys.argv[1], 'r+'); fcntl.lockf(f, fcntl.LOCK_SH); print('locked', flush=True); sys.stdin.read(1)",
-            str(contents / "gc_lock"),
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert holder.stdout is not None
-        assert holder.stdout.readline() == "locked\n"
-        with pytest.raises(SystemExit) as exit_info:
-            workspace_gc.main(
-                [
-                    "repo-cache",
-                    "--output-user-root",
-                    str(root),
-                    "--delete",
-                    "--workers",
-                    "1",
-                    *(["-v"] if verbose else []),
-                ]
-            )
-    finally:
-        holder.communicate("x", timeout=5)
+    with hold_posix_lock(contents / "gc_lock", fcntl.LOCK_SH), pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(
+            ["repo-cache", "--output-user-root", str(root), "--delete", "--workers", "1", *(["-v"] if verbose else [])]
+        )
     captured = capsys.readouterr()
     assert exit_info.value.code == 0  # skipped entries are reported but do not fail the run
     assert "0 deleted, 2 skipped, 0 failed" in captured.out
