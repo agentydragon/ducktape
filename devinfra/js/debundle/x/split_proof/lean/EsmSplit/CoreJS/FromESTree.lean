@@ -337,12 +337,15 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "TemplateLiteral" => linkedTemplate (linkedExpr imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
-    let op ← field j "operator"
-    let lower := linkedExpr imports inFunction ""
-    match op with
-    | "typeof" => return .unary .typeof (← lower argument)
-    | "void" => return .unary .void (← lower argument)
-    | _ => unary op argument (fun _ => lower argument)
+    let op : UnOp ← match ← field j "operator" with
+      | "+" => pure .pos
+      | "-" => pure .neg
+      | "!" => pure .not
+      | "~" => pure .bitNot
+      | "typeof" => pure .typeof
+      | "void" => pure .void
+      | other => throw s!"unsupported unary operator {other}"
+    return .unary op (← linkedExpr imports inFunction "" argument)
   | "BinaryExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr imports inFunction ""
@@ -355,6 +358,12 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     | "*" => return .binary .mul left right
     | "/" => return .binary .div left right
     | "%" => return .binary .mod left right
+    | "&" => return .binary .bitAnd left right
+    | "|" => return .binary .bitOr left right
+    | "^" => return .binary .bitXor left right
+    | "<<" => return .binary .shl left right
+    | ">>" => return .binary .shr left right
+    | ">>>" => return .binary .ushr left right
     | "<" => return .binary .lt left right
     | "<=" => return .binary .le left right
     | ">" => return .binary .gt left right
