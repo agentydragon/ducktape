@@ -132,8 +132,6 @@ py_library(
     deps = [
         ":grocy_fixtures",
         "//testing:otel_tracing",
-        "@pypi//opentelemetry_api",
-        "@pypi//pytest",
     ],
 )
 
