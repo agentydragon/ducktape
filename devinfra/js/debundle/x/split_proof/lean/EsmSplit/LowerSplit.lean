@@ -563,7 +563,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
           let result ← IO.lazyPure fun _ =>
             CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
           match result with
-          | .error refusal => pure (.error refusal)
+          | .error refusal => pure (Except.error refusal)
           | .ok (cert, terms) =>
             try
               return .ok (cert, ← writeCertificateData work terms)
