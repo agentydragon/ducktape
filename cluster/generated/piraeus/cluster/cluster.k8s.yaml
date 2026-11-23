@@ -4143,6 +4143,14 @@ spec:
                     memory: 48Mi
       highAvailabilityController:
         enabled: true
+        podTemplate:
+          spec:
+            containers:
+              - name: ha-controller
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
       nfsServer:
         enabled: false
       nodeAffinity:
