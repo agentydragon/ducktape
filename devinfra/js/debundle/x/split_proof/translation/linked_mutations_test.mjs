@@ -7,6 +7,7 @@ import {
   binary,
   block,
   call,
+  caseShard,
   exportNamed,
   id,
   literal,
@@ -24,6 +25,7 @@ import {
 
 const entry = "entry.mjs";
 const worker = "worker.mjs";
+const includesCase = caseShard();
 
 function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, provider = "") {
   const dir = path.join(root, name);
@@ -79,6 +81,7 @@ for (const [operator, initial, rhs, expected, onMember] of [
   [">>=", -3, 1, -2, false],
   [">>>=", "-1", 0, 0xffffffff, true],
 ]) {
+  if (!includesCase(operator)) continue;
   const target = onMember ? member(id("box"), literal("value"), true) : id("value");
   const source = run([
     onMember ? variable("const", "box", record("value", initial)) : variable("let", "value", literal(initial)),
@@ -98,6 +101,8 @@ for (const [operator, initial, selectsRhs, onMember] of [
   ["??=", 0, false, false],
   ["??=", null, true, true],
 ]) {
+  const name = `${operator}-${selectsRhs}`;
+  if (!includesCase(name)) continue;
   const target = onMember ? member(id("box"), id("value")) : id("value");
   const rhs = selectsRhs ? arrow([], literal(42)) : call(arrow([], block([throws(literal("unexpected RHS"))])));
   const value = assign(operator, target, rhs);
@@ -112,7 +117,7 @@ for (const [operator, initial, selectsRhs, onMember] of [
     expect(selectsRhs ? call(target) : target, selectsRhs ? 42 : initial),
     returns(readResult),
   ]);
-  assertCertified(split(`${operator}-${selectsRhs}`, source), expected);
+  assertCertified(split(name, source), expected);
 }
 
 for (const [operator, prefix, onMember, updated] of [
@@ -121,6 +126,8 @@ for (const [operator, prefix, onMember, updated] of [
   ["--", true, false, 6],
   ["--", false, true, 6],
 ]) {
+  const name = `${operator}-${prefix}`;
+  if (!includesCase(name)) continue;
   const target = onMember ? member(id("box"), id("value")) : id("value");
   const expected = prefix ? updated : 7;
   const source = run([
@@ -130,13 +137,14 @@ for (const [operator, prefix, onMember, updated] of [
     expect(target, updated),
     returns(array([id("assigned"), target])),
   ]);
-  assertCertified(split(`${operator}-${prefix}`, source), [expected, updated]);
+  assertCertified(split(name, source), [expected, updated]);
 }
 
-assertCertified(
-  split(
-    "reference-order",
-    `const run = () => {
+if (includesCase("reference-order")) {
+  assertCertified(
+    split(
+      "reference-order",
+      `const run = () => {
       let phase = "start";
       const box = { value: 2 };
       const receiver = () => {
@@ -162,27 +170,31 @@ assertCertified(
       return phase;
     };
     const result = run(); export { result };`
-  ),
-  "key"
-);
+    ),
+    "key"
+  );
+}
 
-assertCertified(
-  split(
-    "abrupt-read",
-    `const run = () => {
+if (includesCase("abrupt-read")) {
+  assertCertified(
+    split(
+      "abrupt-read",
+      `const run = () => {
       try { target += (() => { throw "RHS ran"; })(); let target = 1; }
       catch (error) { if (typeof error === "object") return "TDZ"; throw error; }
       throw "missing abrupt completion";
     };
     const result = run(); export { result };`
-  ),
-  "TDZ"
-);
+    ),
+    "TDZ"
+  );
+}
 
-assertCertified(
-  split(
-    "delete-own-property",
-    `const run = () => {
+if (includesCase("delete-own-property")) {
+  assertCertified(
+    split(
+      "delete-own-property",
+      `const run = () => {
       const list = [5];
       const record = {};
       if (!delete list[0] || 0 in list || list.length !== 1) throw "wrong array deletion";
@@ -191,15 +203,17 @@ assertCertified(
       throw "deleted a nonconfigurable property";
     };
     const result = run(); export { result };`
-  ),
-  1
-);
+    ),
+    1
+  );
+}
 
 for (const [name, mutation] of [
   ["arithmetic-import", "shared += 1"],
   ["update-import", "shared++"],
   ["short-circuited-import", 'shared ||= "updated"'],
 ]) {
+  if (!includesCase(name)) continue;
   assertRejected(
     split(
       name,
@@ -224,6 +238,7 @@ for (const [name, mutation, reason, result] of [
   ],
   ["nonreference-delete", "return delete (1 + 2);", /expected a member expression after delete/, true],
 ]) {
+  if (!includesCase(name)) continue;
   const source = `const run = () => { ${mutation} }; const result = run(); export { result };`;
   assertRejected(split(name, source), reason, { result });
 }
