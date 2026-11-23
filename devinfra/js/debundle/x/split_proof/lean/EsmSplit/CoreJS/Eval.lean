@@ -215,6 +215,7 @@ def evalExpr : Nat → Env → Expr → M W Val
         proto := some arrayProto, array := true,
         props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
       pure (.obj a)
+    | .arrWithSpread _ => unknown "array spread requires iterator semantics"
     | .cls name self ctor members => do
       let env ← selfScope env self name
       let closed := env.capture (ctor.free ++ freeMembers members)

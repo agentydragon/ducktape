@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -72,6 +72,56 @@ function observedProgram(initializer, result) {
       Object.getOwnPropertyDescriptors([undefined, [1], null])
     );
   }
+}
+
+// Creating the closure captures the imported array. Node calls the exported
+// closure after initialization and observes the original elements and object identity.
+{
+  const { files, out, verdict, log } = workerSplit(
+    "deferred-array-spread",
+    'const worker = [50, { name: "item" }]; const value = () => [0, ...worker, worker[1], ...[4]]; export { value as result };'
+  );
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
+
+  const emitted = path.join(out, "entry.mjs");
+  for (const file of [files.sourceFile, emitted]) {
+    const { result } = await import(pathToFileURL(file).href);
+    const values = result();
+    assert.deepEqual(values, [0, 50, { name: "item" }, { name: "item" }, 4]);
+    assert.equal(values[2], values[3]);
+  }
+
+  const printed = readFileSync(emitted, "utf8");
+  for (const replacement of ["worker", "...worker[1]"]) {
+    const tampered = printed.replace("...worker", replacement);
+    assert.notEqual(tampered, printed);
+    writeFileSync(emitted, tampered);
+    const { verdict, log } = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
+    assert.equal(verdict.status, "rejected", log);
+    assert.match(verdict.reason, /entry\.mjs/, log);
+  }
+}
+
+// Even a catch around the spread cannot turn the model's unknown result into
+// a normal completion. Node accepts this iterable and runs the same source.
+{
+  const { files, out, verdict, log } = workerSplit(
+    "reached-array-spread",
+    `const worker = () => {
+      try {
+        return [...[1, 2]];
+      } catch {
+        return [];
+      }
+    };
+    const value = worker(); export { value as result };`
+  );
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(verdict.reason, /original reached an unknown result during linked initialization: array spread/);
+  assert(!existsSync(out));
+  assert.deepEqual(observe(files.sourceFile, "result"), { result: [1, 2] });
 }
 
 // Vary array lengths and compose literals, linked reads and calls in element positions.

@@ -57,6 +57,11 @@ inductive OpaqueRun where
   only functions makes them when the program is linked, so it has no declaration and does nothing when it runs. -/
   | closures (fns : List (String × Nat × Bool))
 
+inductive ArrayElementKind where
+  | element
+  | spread
+  deriving DecidableEq
+
 mutual
 
 inductive Expr where
@@ -73,6 +78,8 @@ inductive Expr where
   | func (f : Func)
   | obj (props : List PropDef)
   | arr (elems : List Expr)
+  /-- The exact elements of an array literal containing spread. The interpreter stops if it reaches this expression. -/
+  | arrWithSpread (elems : List (ArrayElementKind × Expr))
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
   /-- A derived class with its implicit forwarding constructor and no fields. -/
@@ -254,6 +261,7 @@ def Expr.free : Expr → List Name
   | .func f => f.free
   | .obj props => freeProps props
   | .arr elems => freeExprs elems
+  | .arrWithSpread elems => freeArrayElements elems
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .derived name self parent members => (parent.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .get o k => o.free ++ k.free
@@ -310,6 +318,10 @@ def Stmt.free : Stmt → List Name
 def freeExprs : List Expr → List Name
   | [] => []
   | e :: es => e.free ++ freeExprs es
+
+def freeArrayElements : List (ArrayElementKind × Expr) → List Name
+  | [] => []
+  | (_, e) :: es => e.free ++ freeArrayElements es
 
 def freeProps : List PropDef → List Name
   | [] => []
