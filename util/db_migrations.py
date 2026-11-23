@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.exc import OperationalError
 from tenacity import Retrying, before_sleep_log, retry_if_exception_type, stop_after_delay, wait_exponential
 
+from util.alembic_upgrade import upgrade
 from util.db_url import render_postgresql_url
 
 # SQLAlchemy loads psycopg from the URL scheme; Gazelle cannot infer the runtime dependency.
@@ -55,12 +54,6 @@ class MigrationRunner:
             )(engine.connect)
             with first_connection as connection, connection.begin():
                 connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": self.lock_key})
-                config = AlembicConfig()
-                config.set_main_option("script_location", str(self.migrations_dir))
-                config.attributes["connection"] = connection
-                config.attributes["target_metadata"] = self.metadata
-                # Startup advances the history this image owns, while migration tests assert its exact schema.
-                # Keeping model equality out of runtime permits a rollout to leave unused columns behind.
-                alembic_command.upgrade(config, "head")
+                upgrade(connection, self.migrations_dir, metadata=self.metadata)
         finally:
             engine.dispose()

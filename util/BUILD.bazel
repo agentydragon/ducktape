@@ -102,8 +102,8 @@ py_library(
     srcs = ["db_migrations.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":alembic_upgrade",
         ":db_url",
-        "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
@@ -268,4 +268,14 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
+)
+
+py_library(
+    name = "alembic_upgrade",
+    srcs = ["alembic_upgrade.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

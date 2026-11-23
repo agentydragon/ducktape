@@ -116,7 +116,7 @@ py_library(
     deps = [
         ":config",
         ":models",
-        "@pypi//alembic",
+        "//util:alembic_upgrade",
         "@pypi//opentelemetry_api",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
