@@ -26,3 +26,10 @@ tf_module(
     ],
     providers_versions = ":providers",
 )
+
+# Source files for the Crossplane Inline Workspace.
+filegroup(
+    name = "inline_source",
+    srcs = glob(["*.tf"]) + ["versions.tf.json"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)

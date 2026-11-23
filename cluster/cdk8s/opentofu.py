@@ -3,6 +3,7 @@
 Design, source-change path and Kubernetes identities: cluster/docs/crossplane-opentofu-artifact-triggers.md.
 """
 
+import json
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -53,7 +54,7 @@ _WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
 )
 
 
-def inline_module(directory: str) -> str:
+def inline_module(directory: str, *, generated_versions: bool = False) -> str:
     """Combine an ordinary HCL root; the consumer declares its *.tf files as data.
 
     This does not package local modules, auxiliary files, JSON, or override semantics.
@@ -61,7 +62,28 @@ def inline_module(directory: str) -> str:
     sources = sorted((Runfiles.CreateOrRaise().root() / f"ducktape/{directory}").glob("*.tf"))
     if not sources:
         raise ValueError(f"No Terraform source files in {directory}")
-    return "\n".join(source.read_text() for source in sources)
+    result = "\n".join(source.read_text() for source in sources)
+    if generated_versions:
+        # rules_tf generates JSON, while an Inline Workspace accepts one HCL file.
+        # Reject unexpected fields instead of silently losing provider requirements.
+        versions = json.loads((sources[0].parent / "versions.tf.json").read_text())
+        if set(versions) != {"terraform"} or set(versions["terraform"]) != {"required_version", "required_providers"}:
+            raise ValueError(f"Unexpected generated provider requirements in {directory}")
+        terraform = versions["terraform"]
+        lines = [
+            "terraform {",
+            f"  required_version = {json.dumps(terraform['required_version'])}",
+            "  required_providers {",
+        ]
+        for name, provider in sorted(terraform["required_providers"].items()):
+            if set(provider) != {"source", "version"} or not name.isidentifier():
+                raise ValueError(f"Unexpected provider requirement {name} in {directory}")
+            lines.append(
+                f"    {name} = {{ source = {json.dumps(provider['source'])}, version = {json.dumps(provider['version'])} }}"
+            )
+        lines.extend(["  }", "}"])
+        result += "\n" + "\n".join(lines) + "\n"
+    return result
 
 
 def secret_env(name: str, key: SecretKey) -> WorkspaceSpecForProviderEnv:
@@ -85,6 +107,7 @@ def gitops_workspace(
     kubernetes_identity: str | None = None,
     variables: BaseModel | None = None,
     env: Sequence[WorkspaceSpecForProviderEnv] = (),
+    generated_versions: bool = False,
 ) -> Workspace:
     """Use PostgreSQL state; callers choose the workspace, lifecycle and Kubernetes identity."""
     if schema is None:
@@ -113,7 +136,7 @@ def gitops_workspace(
             provider_config_ref=WorkspaceSpecProviderConfigRef(name=provider_config_name),
             for_provider=WorkspaceSpecForProvider(
                 source="Inline",
-                module=inline_module(f"tf/gitops/{name}"),
+                module=inline_module(f"tf/gitops/{name}", generated_versions=generated_versions),
                 plan_args=["-lock-timeout=5m"],
                 vars=[
                     WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()
