@@ -27,6 +27,7 @@ py_library(
         ":sustainability",
         "//util:oidc_login",
         "@pypi//fastapi",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -291,12 +292,7 @@ py_binary(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":app",
-        ":service",
-        ":settings",
-        "@pypi//pydantic",
-    ],
+    deps = [":app"],
 )
 
 py_binary(
