@@ -36,7 +36,7 @@ from cluster.cdk8s.forgejo_registry import image_automation as forgejo_images, p
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
-from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.volume_claim import volume_claim
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -78,6 +78,13 @@ _CPU_REQUEST = "50m"
 
 def _provider_name(instance: str) -> str:
     return f"platform-sessions-{instance}"
+
+
+def _provider_tokens(instance: str) -> dict[str, SecretKey]:
+    return {
+        role: SecretRef(namespace=NAMESPACE, name=f"{_provider_name(instance)}-{role}").key("token")
+        for role in ("control", "owner", "route")
+    }
 
 
 def _provider_dns(instance: str) -> str:
@@ -163,8 +170,10 @@ def canary_config(record_upstream_traffic: bool) -> ConfigMapArgs:
 CANARY_CONFIG = canary_config(config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC)
 
 
-def _secret_projection(name: str, path: str) -> k8s.VolumeProjection:
-    return k8s.VolumeProjection(secret=k8s.SecretProjection(name=name, items=[k8s.KeyToPath(key="token", path=path)]))
+def _secret_projection(token: SecretKey, path: str) -> k8s.VolumeProjection:
+    return k8s.VolumeProjection(
+        secret=k8s.SecretProjection(name=token.secret.name, items=[k8s.KeyToPath(key=token.key, path=path)])
+    )
 
 
 def _security() -> k8s.PodSecurityContext:
@@ -246,11 +255,11 @@ def _service(chart: Chart, name: str, ports: list[k8s.ServicePort], *, selector_
 
 def _add_provider(chart: Chart, instance: str) -> None:
     name = _provider_name(instance)
-    for role in ("control", "owner", "route"):
+    for token in _provider_tokens(instance).values():
         mint_bearer_secret(
             chart,
-            f"{name}-{role}",
-            target=SecretRef(namespace=NAMESPACE, name=f"{name}-{role}").key("token"),
+            token.secret.name,
+            target=token,
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             immutable=True,
@@ -336,7 +345,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
             default_mode=0o440,
-            sources=[_secret_projection(f"{name}-{role}", role) for role in ("control", "owner", "route")],
+            sources=[_secret_projection(token, role) for role, token in _provider_tokens(instance).items()],
         ),
     )
     config_volume = k8s.Volume(
@@ -548,9 +557,9 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         projected=k8s.ProjectedVolumeSource(
             default_mode=0o440,
             sources=[
-                _secret_projection(f"{_provider_name(instance)}-{role}", f"{instance}/{role}")
+                _secret_projection(token, f"{instance}/{role}")
                 for instance in PROVIDERS
-                for role in ("control", "owner", "route")
+                for role, token in _provider_tokens(instance).items()
             ],
         ),
     )
@@ -592,7 +601,12 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
                 name="bearers",
                 projected=k8s.ProjectedVolumeSource(
                     default_mode=0o440,
-                    sources=[_secret_projection(f"platform-sessions-{role}-bearer", role) for role in BEARER_FILES],
+                    sources=[
+                        _secret_projection(
+                            SecretRef(namespace=NAMESPACE, name=f"platform-sessions-{role}-bearer").key("token"), role
+                        )
+                        for role in BEARER_FILES
+                    ],
                 ),
             ),
             k8s.Volume(
