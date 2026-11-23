@@ -1,7 +1,6 @@
 import functools
-import inspect
 import logging
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from django import template
 from django.utils.html import escape
@@ -48,8 +47,38 @@ def apply(value, *fns):
     return value
 
 
+def fmt_quantity_at(value, symbol):
+    value = shorten(value)
+    if not value:
+        return None
+    quantity, condition = value.split("@")
+    return f"{symbol}={quantity}@{condition}"
+
+
+class ParameterDisplay(property):
+    def __init__(self, names, formatter):
+        self.names = names
+
+        @functools.wraps(formatter)
+        def display(processor):
+            out = formatter(processor, *(processor.get(name) for name in names))
+            return SafeString(out) if out is not None else None
+
+        super().__init__(display)
+
+    def __set_name__(self, owner, _name):
+        owner._displayers.append(self)
+
+
+def displayer(*names):
+    def decorator(formatter):
+        return ParameterDisplay(names, formatter)
+
+    return decorator
+
+
 class ParametersProcessor:
-    _displayers: ClassVar[list[tuple[tuple[str, ...], Any]]] = []
+    _displayers: ClassVar[list[ParameterDisplay]] = []
 
     def __init__(self, part, parameters):
         self.part = part
@@ -69,31 +98,14 @@ class ParametersProcessor:
     @property
     def remaining_items(self):
         remaining_keys = set(self.parameters) - self.used
-        for attrs, displayer in self._displayers:
-            if any(attr in remaining_keys for attr in attrs):
-                yield displayer(self)
+        for display in self._displayers:
+            if any(name in remaining_keys for name in display.names):
+                yield display.__get__(self)
 
         remaining_keys = set(self.parameters) - self.used
         for key in self.parameters:
             if key in remaining_keys and key not in ("Bought for", "Marking"):
                 yield SafeString(f"{key}: {self.get(key)}")
-
-    @staticmethod
-    def displayer(*attrs):
-        def decorator(fn):
-            @functools.wraps(fn)
-            def wrapped(self, *args, **kwargs):
-                out = fn(self, *(self.get(x) for x in attrs), *args, **kwargs)
-                return SafeString(out) if out is not None else None
-
-            current = inspect.currentframe()
-            assert current is not None
-            frame = current.f_back  # Get the caller frame (class body)
-            assert frame is not None
-            frame.f_locals["_displayers"].append((attrs, wrapped))  # Get class-local variables
-            return property(wrapped)
-
-        return decorator
 
     @displayer("Package")
     def package(self, val):
@@ -165,11 +177,7 @@ class ParametersProcessor:
 
     @displayer("Forward voltage @ current")
     def forward_voltage_at_current(self, val):
-        val = apply(val, shorten)
-        if not val:
-            return None
-        voltage, current = val.split("@")
-        return f"V<sub>F</sub>={shorten(voltage)}@{shorten(current)}"
+        return fmt_quantity_at(val, "V<sub>F</sub>")
 
     @displayer("Average rectified forward current (I_F)")
     def average_rectified_forward_current(self, val):
@@ -177,11 +185,7 @@ class ParametersProcessor:
 
     @displayer("Reverse leakage current @ voltage (I_R)")
     def reverse_leakage_current(self, val):
-        val = apply(val, shorten)
-        if not val:
-            return None
-        ir, v = val.split("@")
-        return f"I<sub>R</sub>={shorten(ir)}@{shorten(v)}"
+        return fmt_quantity_at(val, "I<sub>R</sub>")
 
     @displayer("Minimum supply voltage", "Maximum supply voltage")
     def supply_voltage_range(self, min, max):
