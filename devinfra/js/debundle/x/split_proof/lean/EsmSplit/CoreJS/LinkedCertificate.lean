@@ -636,7 +636,7 @@ macro "check_linked_layout" : tactic =>
 /-- Reduce a run against the link result whose equation the kernel has checked. -/
 macro "reduce_linked_run_from " fuel:num layout:ident world:ident : tactic =>
   `(tactic|
-    (rw [run_after_link $fuel (($layout $world).get (by rfl))] <;>
+    ((first | rw [run_after_link $fuel (($layout $world).get (by rfl))] | skip) <;>
       (conv =>
         lhs
         cbv) <;> rfl))
@@ -646,7 +646,7 @@ macro "verify_linked_exports_from " source:ident candidate:ident : tactic =>
     (apply sameExports_of_match
      intro w
      unfold exportsMatch exports
-     rw [(($source w).get (by rfl)).equation, (($candidate w).get (by rfl)).equation]
+     first | rw [(($source w).get (by rfl)).equation, (($candidate w).get (by rfl)).equation] | skip
      first | rfl | cbv <;> rfl))
 
 /-- Compare the two post-hoist states and captured schedules without evaluating their statements. -/
@@ -846,12 +846,15 @@ private def checkpointText (preamble options declarations correspondence : Strin
   let candidateLayout := if stageLink then layoutDeclaration "private " "candidate" else ""
   let reduceSource := if stageLink then s!"    reduce_linked_run_from {fuel} sourceLink w\n"
     else "    (conv =>\n      lhs\n      cbv) <;> rfl\n"
+  let replay := if stageLink then s!"reduce_linked_run_from {fuel} candidateLink w\n"
+    else "(conv =>\n    lhs\n    cbv) <;> rfl\n"
   let candidateProof := if ordered then
-      s!"  have same : runProgram w {fuel} source = runProgram w {fuel} candidate := by\n" ++
-      s!"    check_ordered_linked_runs {fuel} sourceLink candidateLink w\n" ++
-      "  exact same.symm.trans (sourceWitness w).property\n"
-    else if stageLink then s!"  reduce_linked_run_from {fuel} candidateLink w\n"
-    else "  (conv =>\n    lhs\n    cbv) <;> rfl\n"
+      "  first\n" ++
+      s!"  | have same : runProgram w {fuel} source = runProgram w {fuel} candidate := by\n" ++
+      s!"      check_ordered_linked_runs {fuel} sourceLink candidateLink w\n" ++
+      "    exact same.symm.trans (sourceWitness w).property\n" ++
+      "  | " ++ replay
+    else "  " ++ replay
   let checkExports := if stageLink then "  · verify_linked_exports_from sourceLink candidateLink\n"
     else "  · apply LinkedBehavior.sameExports_of_match\n    intro w\n    first | rfl | cbv <;> rfl\n"
   let input := preamble ++ "namespace LinkedReplay\n" ++ declarations ++ "end LinkedReplay\n"
@@ -943,11 +946,11 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
     | .empty => "CoreJS.HostProfile.empty"
     | .browserPage => "CoreJS.HostProfile.browserPage"
   let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
-  -- Larger module graphs can spend most of one reduction budget on linking.
   -- This only selects the proof attempt. The theorem checks the complete units,
   -- free-name cells, hoisted state and entry exports from the actual links.
   let order := fun (p : Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
   let ordered := order source == order candidate
+  -- Larger module graphs can spend most of one reduction budget on linking.
   let stageLink := ordered || (source.modules.map (·.body.length)).sum ≥ 32
   let (layouts, tactic) := if stageLink then
     (layoutDeclaration "private " "source" ++ layoutDeclaration "private " "candidate",
