@@ -21,6 +21,7 @@ go_test(
     srcs = [
         "enum_expansion_integration_test.go",
         "integration_testmain_test.go",
+        "numeric_overlap_integration_test.go",
         "upgrade_integration_test.go",
     ],
     embed = [":migrations"],
