@@ -166,3 +166,36 @@ export function forcePreview(files, directory) {
   );
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
 }
+
+// Move the first declaration to its own module and observe the result exported by the entry.
+export function workerSplit(name, source) {
+  const dir = path.join(root, name);
+  const files = prepare(dir, {
+    source,
+    provider: "",
+    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] }, order: ["worker.mjs"] },
+  });
+  const out = path.join(dir, "out");
+  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
+}
+
+export function assertWorkerResult(name, source, expected) {
+  const { files, out, verdict, log } = workerSplit(name, source);
+  assert.equal(verdict.status, "certified", `${name}: ${log}`);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    assert.deepEqual(observe(file, "result"), { result: expected }, name);
+  }
+}
+
+export function observedProgram(initializer, result) {
+  return program([
+    variable("const", "worker", initializer),
+    {
+      type: "ExportNamedDeclaration",
+      declaration: variable("const", "result", result),
+      specifiers: [],
+      source: null,
+    },
+  ]);
+}
