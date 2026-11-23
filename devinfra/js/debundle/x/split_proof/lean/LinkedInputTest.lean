@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.OpaqueInput
 
 open Lean (Json toJson)
 
@@ -19,9 +20,25 @@ private def check (input : Json) : Except String Json := do
   let ordinals (p : CoreJS.Program) := p.loaded.flatMap fun m => m.body.map Prod.fst
   return toJson [ordinals original, ordinals emitted]
 
-def main : IO UInt32 := do
+private def opaqueUnits (input : Json) : Except String Json := do
+  let mut units := #[]
+  for (j, i) in (← ESTreeUnits.nodes input).zipIdx do
+    if Lower.typ j == "ImportDeclaration" then continue
+    let .opaque code decls funs free run ← CoreJS.OpaqueInput.unit i j | throw "expected opaque unit"
+    let kind : CoreJS.DeclKind → String
+      | .const => "const" | .var => "var" | .let_ => "let"
+    let body ← match run with
+      | .world => pure "world"
+      | .closures [] => pure "skip"
+      | .closures _ => throw "unexpected closure initializer"
+    units := units.push (.arr #[toJson code, toJson (decls.map fun (n, k) => [n, kind k]),
+      .arr (funs.toArray.map fun (n, arity, ctor) => .arr #[toJson n, toJson arity, toJson ctor]),
+      toJson free, toJson body])
+  return .arr units
+
+def main (args : List String) : IO UInt32 := do
   let line ← (← IO.getStdin).getLine
-  match Json.parse line >>= check with
+  match Json.parse line >>= (if args == ["opaque-units"] then opaqueUnits else check) with
   | .error why =>
     IO.eprintln why
     return 1

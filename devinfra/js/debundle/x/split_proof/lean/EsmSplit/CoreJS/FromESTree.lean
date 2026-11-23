@@ -333,7 +333,7 @@ private partial def containsBreak (j : Json) : Bool :=
 
 /-- A retained body has no model for its source module or a method's home object.
 Direct eval could also refer to cells absent from the static capture list. -/
-private partial def needsOpaqueContext (j : Json) : Bool :=
+partial def needsOpaqueContext (j : Json) : Bool :=
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
