@@ -124,7 +124,8 @@ The test records them in `scroll-move-report.json` alongside
 `import-boundary.json` and `entry-exports.json`. The reduced case in
 [`linked_host_profile_test.mjs`](../../linked_host_profile_test.mjs) uses a
 small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
-lexical `Symbol` binding passes strict certification and the Node control.
+lexical `Symbol` binding passes strict certification and the Node control in
+the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
 ### Direct AST lowering for negated initializers
