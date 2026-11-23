@@ -45,18 +45,16 @@ js_library(
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
 )
 
-# Include first-party runfile helpers as lint sources.
+# Lowering entries and torture.mjs are inputs to the experiment.
 js_library(
     name = "lint_sources",
     testonly = True,
     srcs = glob(
         [
             "experiments/**/*.mjs",
+            "lowering/*.mjs",
         ],
-        exclude = [
-            "experiments/lowering/entries/**",
-            "experiments/lowering/torture.mjs",
-        ],
+        exclude = ["lowering/torture.mjs"],
     ),
 )
 
@@ -109,6 +107,7 @@ js_library(
 js_binary(
     name = "compare_footprints",
     data = [
+        "lowering/statement_shape.mjs",
         "//devinfra/js/debundle/x/split_proof/lean:lower",
         "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
