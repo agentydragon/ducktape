@@ -1,7 +1,8 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_apply")
 load("//devinfra/python:defs.bzl", "py_test")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "fixture_analysis", "fixture_apply", "ownership_subset_split_graphs_test", "package_root_fixture", "pipeline_report_flags_test", "selected_subset_cli_contract_test", "shared_analysis_test", "source_tree_fixture")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "fixture_analysis", "fixture_apply", "ownership_subset_split_graphs_test", "pipeline_report_flags_test", "selected_subset_cli_contract_test", "shared_analysis_test")
 
 package(default_testonly = True)
 
@@ -25,16 +26,17 @@ filegroup(
 
 exports_files(["ownership_subset.json"])
 
-package_root_fixture(
+copy_to_directory(
     name = "package_root",
+    srcs = ["fixture/package/package.json"],
+    root_paths = [package_name() + "/fixture/package"],
 )
 
-source_tree_fixture(
+copy_to_directory(
     name = "relocatable_source",
-    srcs = {
-        "devinfra/js/debundle/pipeline_rule_test/fixture/js-files.txt": "fixture/js-files.txt",
-        "devinfra/js/debundle/pipeline_rule_test/fixture/source/main.js": "fixture/source/main.js",
-    },
+    srcs = [":source"],
+    # Saved graph provenance resolves these files by their workspace-relative paths.
+    root_paths = [],
 )
 
 fixture_analysis(name = "analysis")
