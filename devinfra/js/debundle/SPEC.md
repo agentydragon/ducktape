@@ -813,12 +813,9 @@ reports that the effect assessment was unavailable.
 `bindings assign --analysis <artifact>` uses the same final-candidate placement
 decision before writing. Its ordinary graph-only path remains available.
 
-`coverage.owner_coverage_refusals` counts typed reasons why an original
-owner's whole-initialization certificate was not sealed. Bounded examples
-include an optional refusal and existing source location for each endpoint;
-JSONL carries the same refusal inside each endpoint's opacity record. Reasons
-identify only the refused proof boundary, never source bindings or expressions.
-They explain the report and do not change the certificate or coverage.
+Whole-initialization proof refusals explain uncovered owners. The
+[translation-validation report format](docs/wire_format.md#translation-validation)
+defines `coverage.owner_coverage_refusals` and its bounded and JSONL evidence.
 
 Canonical runtime transfers additionally compose static global-property
 may-accesses into these reports, retaining lexical source-operation sites,

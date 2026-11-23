@@ -1796,98 +1796,38 @@ reentry, and effect ordering still run through ordinary analysis. Factory timing
 requires its separate existing contract; privacy cannot defer an early invocation
 of a retained callback result.
 
-Nested audited factories retain the original callback through each returned
-graph. Invoking or publishing a result before the captured lexical cells are
-initialized reactivates the ordinary callback-read analysis. Namespace member
-contracts require an unmodified imported namespace target; reassigned or
-dynamic targets fall back to opaque calls. Their authors must audit the provider
-and every caller/runtime path supplying values used by admitted callbacks,
-establishing that listed factory members retain their identities and behavior
-through the analyzed chunk's synchronous initialization. That includes
-checking that provider or other namespace members and callback/ref/hook inputs
-cannot expose an alias that replaces a listed factory member. Direct static
-identifier-property namespace call results are treated as independent only
-under this explicit author assertion. The checker propagates explicit
-namespace provenance through assignments, local aliases, property values,
-returns, and call arguments. An unrelated call or constructor result with no
-such path is not treated as a namespace alias solely because its runtime value
-is unknown; the author audit asserts that values used by admitted callbacks
-cannot alias or replace listed members. Unsupported syntax and unsupported
-destructuring results remain possible namespace values, and that uncertainty
-follows a local binding to later publication or call-argument sinks. For a
-recognized local class, publication checks aggregate the retained static
-fields or instance fields for the class value or allocation. A member
-projection checks the whole receiver conservatively, so an unrelated sibling
-field can also make the receiver a possible namespace carrier. On the
-constructor surface, retained static fields are followed through a uniquely
-resolved local class superclass. Unknown, imported, reassigned, or non-class
-bases and superclass cycles remain conservative. Instance inheritance, static
-accessors, decorators, and unsupported class surfaces remain opaque. Method
-bodies keep their existing independent return and effect analysis. For
-call-argument checks, the checker follows namespace values in
-the supplied argument expressions and excludes the callee expression, which
-is not passed as an argument. A value from an unknown call or constructor
-used as a static or dynamic write receiver remains a possible namespace alias,
-including through local aliases and member projections, and disables the
-contract. The checker does not prove that arbitrary callback parameters or
-unrelated call results are disjoint from the namespace; that non-aliasing
-guarantee is part of the author audit. Computed, chained, and unknown member
-results remain conservative when used as write receivers.
+Nested audited factories retain the callback through each returned graph.
+Invoking or publishing the result before its captured lexical cells initialize
+reactivates ordinary callback-read analysis. S-chain ordering still treats
+calls as impure unless a separate purity contract applies.
 
-The receiver check exempts an adjacent run of assignments to declared own
-data fields after a fresh local base-class allocation. Retained class facts
-must prove that allocation runs no user code; each assignment must use that
-same binding, a known own field, and a value that runs no user code. The
-instance cannot escape or acquire an accessor during this run. Any intervening
-statement, unsupported class surface, or dynamic scope ends the proof and
-keeps the ordinary conservative write checks. Array iterator member values
-use A11's intrinsic integrity assumption.
+The [namespace-member contract](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry)
+defines the provider and runtime audit, admitted lookup and callback-result
+shapes, and the fallback for unknown write receivers. The distinction matters
+for calls: only the argument expressions pass values to the callee, but the
+result of an unknown call can still alias the namespace when used as a write
+receiver. Unsupported destructuring results carry that uncertainty through
+later uses of the binding.
 
-A fresh top-level object literal that visibly contains the namespace and has
-verified static own data properties has an identity distinct from namespace
-values stored in those properties. The
-retained value of a one-hop property read supplies namespace provenance; the
-container still publishes any namespace value it contains when passed to a
-sink. Adjacent writes to existing own data properties use the private
-fresh-value proof. Accessors, computed keys, spreads, `__proto__`, and
-unsupported projections keep the conservative receiver checks. Literals with
-no explicit namespace path also keep those checks, because a later accessor
-could return the namespace.
+Class publication aggregates retained static fields for a class value and
+instance fields for an allocation. A member projection checks the whole
+receiver, so even a sibling field can carry the namespace. Static fields on
+the constructor surface also follow a uniquely resolved local superclass.
+Method bodies retain independent return and effect analysis.
 
-Unary, update, and
-non-logical binary expressions have primitive results on successful
-evaluation; their operand expressions remain in value flow so nested calls
-and unavailable reads are still analyzed. Conditional expressions and
-`&&`, `||`, and `??` retain both possible result values because they can
-return an object or callback. Receivers with no syntactic path to the
-namespace rely on the author's audited non-aliasing assertion; this is a
-trusted contract, not a proof that arbitrary callback parameters are
-disjoint from the namespace.
-The fresh-result guarantee also permits adjacent static property writes after
-a direct audited factory call with one inline callback. The receiver must stay
-private and the assigned value must run no user code; prototype writes and
-intervening statements end the proof. Namespace admission is recomputed after
-each removal, so a result from a rejected namespace factory cannot justify
-another namespace's admission. Other result writes keep the receiver fallback.
-Inside a literal traversed within an admitted inline callback, a direct static
-namespace member used as a call callee is not treated as a captured namespace
-value. The call's arguments and effects still flow through normal analysis;
-computed and chained callees remain conservative.
+The private-write exceptions in the spec rely on object identity. A verified
+own data field of a fresh base-class instance cannot call a setter while the
+instance stays private. A fresh ordinary literal can hold the namespace
+without being identical to it, yet passing that literal can still publish the
+namespace. The same distinction applies to a factory's fresh result.
+Recompute admission after removing a factory contract so its result cannot
+justify another namespace's admission. Array iterator member values rely on
+A11's intrinsic integrity assumption.
 
-Authors must also audit one-hop static namespace member reads used as callback
-result object data properties. The checker treats that direct shape as a
-deferred member value but cannot prove the member's runtime identity or inspect
-accessor, proxy, or callback behavior reachable through it. The object-literal
-`__proto__` prototype setter is not an ordinary data property and stays
-conservative. Computed reads, chains, calls, spreads, arrays, and other forms
-remain conservative. Direct namespace values and aliases remain rejected.
-Calls remain impure for S-chain ordering unless a separate purity contract
-applies.
-Without an author assertion, source inference recognizes only
-immutable exported function declarations with one simple identifier parameter.
-Their body must only return a zero-argument function or arrow that only calls
-that parameter with no arguments. Reassigned bindings and dynamic scopes stay
-opaque.
+Unary, update and non-logical binary expressions produce primitive results on
+successful evaluation. Their operands still contribute nested calls and reads.
+Conditional expressions, `&&`, `||` and `??` keep both candidate results
+because either can carry an object or callback.
 
 **Residual limitations.** Dynamic global/property stashes and values
 arriving from other chunks are outside the identity-based local flow
