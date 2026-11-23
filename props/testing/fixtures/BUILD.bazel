@@ -71,8 +71,8 @@ py_library(
     deps = [
         "//devinfra/oci",
         "//props/db:models",
+        "//testing:ryuk",
         "//third_party/containers:registry_3",
-        "//third_party/containers:ryuk",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",

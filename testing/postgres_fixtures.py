@@ -26,7 +26,6 @@ from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry import trace
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncEngine
-from testcontainers.core import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 
 from devinfra.oci.oci import load_oci_image
@@ -39,8 +38,9 @@ from testing.postgres import (
     database_name_for_test,
     migrated_database_template,
 )
+from testing.ryuk import load_ryuk_image
 from testing.sqlalchemy_engines import postgres_async_engine
-from third_party.containers import postgres_18, ryuk
+from third_party.containers import postgres_18
 from util.db_migrations import MigrationRunner
 
 # SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
@@ -88,7 +88,7 @@ def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> Postg
     serialized per reference; the daemon's container start remains unbounded.
     """
     with _onto_disk():
-        load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+        load_ryuk_image()
         image_ref = load_oci_image(image)
         container = PostgresContainer(image=image_ref, username="postgres", password="postgres", dbname="postgres")
         started = time.monotonic()

@@ -24,13 +24,13 @@ from collections.abc import Generator
 import httpx
 import pytest
 from opentelemetry import trace
-from testcontainers.core import testcontainers_config
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from devinfra.oci.oci import BazelImage, load_oci_image
 from props.db.models import AgentType
-from third_party.containers import registry_3, ryuk
+from testing.ryuk import load_ryuk_image
+from third_party.containers import registry_3
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -45,7 +45,7 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
 
     Use e2e_registry instead, which adds per-test cleanup.
     """
-    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    load_ryuk_image()
     registry_image = load_oci_image(registry_3.LAYOUT_RLOCATION)
     with tracer.start_as_current_span("e2e_registry startup"):
         with tracer.start_as_current_span("configure container"):

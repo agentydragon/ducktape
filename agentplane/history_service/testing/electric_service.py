@@ -10,7 +10,6 @@ from pathlib import Path
 import httpx
 from sqlalchemy import create_engine, text
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
-from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
@@ -20,7 +19,8 @@ from agentplane.testing.electric_role import ensure_electric_role
 from devinfra.oci.oci import load_oci_image
 from testing.container_logs import LoggedContainer
 from testing.postgres import PostgresDatabaseTemplate
-from third_party.containers import electric_1_8_1, postgres_18, ryuk
+from testing.ryuk import load_ryuk_image
+from third_party.containers import electric_1_8_1, postgres_18
 from util.db_url import render_postgresql_url
 
 
@@ -192,7 +192,7 @@ async def _electric_process(
 
 
 def _load_postgres_images() -> str:
-    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    load_ryuk_image()
     return load_oci_image(postgres_18.LAYOUT_RLOCATION)
 
 

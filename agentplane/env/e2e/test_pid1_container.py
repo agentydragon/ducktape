@@ -15,7 +15,6 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
-from testcontainers.core import testcontainers_config
 
 from agentplane.env.config import (
     Codex,
@@ -36,11 +35,12 @@ from agentplane.proto import session_pb2
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.container_logs import LoggedContainer
-from third_party.containers import debian_slim, ryuk
+from testing.ryuk import load_ryuk_image
+from third_party.containers import debian_slim
 
 
 def _load_images() -> str:
-    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    load_ryuk_image()
     return load_oci_image(debian_slim.LAYOUT_RLOCATION)
 
 

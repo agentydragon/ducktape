@@ -41,3 +41,9 @@ with bind_http_server() as idp, bind_http_server() as api:
     async with idp.serve(idp_app), api.serve_in_loop(api_app):
         await exercise_login(api.origin)
 ```
+
+# Docker tests
+
+When a fixture preloads Testcontainers' cleanup sidecar, use `testing.ryuk.load_ryuk_image()`
+before starting a container. It loads the pinned OCI layout under the image tag configured
+in Testcontainers.

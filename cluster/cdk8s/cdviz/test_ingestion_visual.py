@@ -26,7 +26,6 @@ from docker.models.containers import Container
 from playwright.async_api import Route, async_playwright, expect
 from psycopg import sql
 from python.runfiles import Runfiles
-from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 from testcontainers.postgres import PostgresContainer
 
@@ -39,7 +38,8 @@ from grafana.visual_tests.visual_harness import TEST_PASSWORD, grafana_server
 from testing.container_logs import stream_container_logs
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
-from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk, timescaledb_pg18
+from testing.ryuk import load_ryuk_image
+from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, timescaledb_pg18
 
 _REPO = "agentydragon/ducktape"
 _TOKEN = "isolated-cdviz-webhook-signing-key"
@@ -400,7 +400,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             collector_future = pool.submit(load_oci_image, cdviz_collector.LAYOUT_RLOCATION)
             migration_future = pool.submit(load_oci_image, cdviz_db_migration.LAYOUT_RLOCATION)
             python_future = pool.submit(load_oci_image, python_3_14_slim.LAYOUT_RLOCATION)
-            ryuk_future = pool.submit(load_oci_image, ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+            ryuk_future = pool.submit(load_ryuk_image)
         ryuk_future.result()
         network.create()
         network_created = True
