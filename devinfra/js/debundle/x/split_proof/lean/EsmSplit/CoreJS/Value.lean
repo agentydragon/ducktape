@@ -808,12 +808,11 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     modifyState fun s => { s with out := s.out.push (" ".intercalate line) }
     pure .undef
   | .create =>
-    match arg 0 with
-    | .null => .obj <$> alloc { proto := none, props := [] }
-    | v => do
-      let parent ← requireObj "object prototype" v
-      if (arg 1) matches .undef then .obj <$> alloc { proto := some parent, props := [] }
-      else unknown "Object.create with properties"
+    let parent ← match arg 0 with
+      | .null => pure none
+      | v => some <$> requireObj "object prototype" v
+    if (arg 1) matches .undef then .obj <$> alloc { proto := parent, props := [] }
+    else unknown "Object.create with properties"
   | .getPrototypeOf =>
     match arg 0 with
     | .undef | .null => throwErr .type "cannot convert undefined or null to object"
