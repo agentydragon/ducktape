@@ -120,6 +120,18 @@ for (const [seed, value] of ["initialized", 42].entries()) {
   }
 }
 
+{
+  const source = "function read() { return 3; } read = () => 4; export { read };";
+  const { files, out, verdict, log } = split("rebind", source, { "read.mjs": ["#0", "#1"], [entry]: ["#2"] }, [
+    "read.mjs",
+  ]);
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.guarantee, "normal-completion", log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "read"), { read: 4 });
+  }
+}
+
 for (const [name, source, count, reason] of [
   ["async", "async function read() { return 3; } export { read };", 2, /unsupported async or generator function/],
   ["generator", "function* read() { return 3; } export { read };", 2, /unsupported async or generator function/],
@@ -134,12 +146,6 @@ for (const [name, source, count, reason] of [
     "function read() { function nested() { return 3; } return nested(); } export { read };",
     2,
     /unsupported statement FunctionDeclaration/,
-  ],
-  [
-    "rebind",
-    "function read() { return 3; } read = () => 4; export { read };",
-    3,
-    /unsupported linked assignment target Identifier/,
   ],
 ]) {
   const { out, verdict, log } = split(name, source, { [entry]: Array.from({ length: count }, (_, i) => `#${i}`) }, []);

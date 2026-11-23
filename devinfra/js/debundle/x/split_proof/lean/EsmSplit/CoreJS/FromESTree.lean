@@ -274,12 +274,20 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let op ← field j "operator"
     unless op == "=" do throw s!"unsupported linked assignment operator {op}"
     let target ← j.getObjVal? "left"
-    let targetKind ← field target "type"
-    unless targetKind == "MemberExpression" do throw s!"unsupported linked assignment target {targetKind}"
-    -- ECMAScript infers an anonymous RHS function's name only for an identifier target.
-    let lower := linkedExpr imports inFunction ""
-    let (base, key) ← linkedMember lower target
-    return .assign (.member base key) (← lower (← j.getObjVal? "right"))
+    let rhs ← j.getObjVal? "right"
+    match ← field target "type" with
+    | "Identifier" =>
+      -- Linked import reads share the exporter's cell, but writes through an import are read-only.
+      if (← field target "k") == "V" then
+        throw s!"unsupported linked assignment to imported binding {← identifier target}"
+      let .var name ← reference imports inFunction target
+        | throw "expected a local or module binding in linked assignment"
+      return .assign (.var name) (← linkedExpr imports inFunction name rhs)
+    | "MemberExpression" =>
+      let lower := linkedExpr imports inFunction ""
+      let (base, key) ← linkedMember lower target
+      return .assign (.member base key) (← lower rhs)
+    | kind => throw s!"unsupported linked assignment target {kind}"
   | "ObjectExpression" => linkedObject (linkedExpr imports inFunction) j
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
