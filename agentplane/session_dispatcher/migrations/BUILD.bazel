@@ -21,6 +21,7 @@ go_test(
     srcs = [
         "enum_expansion_integration_test.go",
         "integration_testmain_test.go",
+        "numeric_consumer_integration_test.go",
         "numeric_overlap_integration_test.go",
         "upgrade_integration_test.go",
     ],
@@ -29,6 +30,7 @@ go_test(
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/session_dispatcher/internal/store",
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
     ],
