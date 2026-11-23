@@ -2173,9 +2173,13 @@ releases, how cleanup recognizes other Sessions that still use a shared Identity
 an explicit unarchive would require if the original has since been deleted. The design should
 preserve History and cover Sessions already archived under the current behavior.
 
-When revisited, walk through an active turn, a permanently disconnected host, a queued notification
-and an explicit unarchive. Which operation should remain possible in each state? Who records and
-observes archive? What happens to queued work, automatic wake, unread entries and subscriptions?
+The proposed direction is for Session Dispatcher to know whether a Session is archived when it
+admits new work, dispatches queued work or wakes the Session. Decide which service owns archive
+state. Walk through archiving during an active turn, a permanently disconnected host, a queued
+notification and an explicit unarchive.
+
+Does the Notification Service also need to observe archive? Decide what should happen to
+notification delivery, unread entries and subscriptions while the Session is archived.
 [Notifications](../notification_service/api/notifications/notifications.proto) already offers inbox
 retirement and subscription cancellation. Whether archive invokes either is a design question.
 Consider Sessions sharing an Environment and Sessions with zero attachments alongside
