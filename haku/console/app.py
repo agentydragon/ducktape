@@ -45,9 +45,6 @@ from haku.console.settings import Settings
 # gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//itsdangerous
 
-APP_SHELL_CACHE_CONTROL = "no-store"
-IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
-NO_STORE_CACHE_CONTROL = "no-store"
 REFERRER_POLICY = "no-referrer"
 # The shell (top-level) may read geolocation for the `requestGeolocation` Agent UI bridge action, and
 # capture the screen for the `requestScreenshot` Agent UI bridge action; `(self)` scopes both to the
@@ -73,24 +70,14 @@ class _ConsoleStaticFiles(StaticFiles):
     ) -> Response:
         path = Path(full_path)
         if path.name == "index.html":
-            return Response(
-                content=path.read_bytes(),
-                headers={"Cache-Control": APP_SHELL_CACHE_CONTROL},
-                media_type="text/html",
-                status_code=status_code,
-            )
+            return Response(content=path.read_bytes(), media_type="text/html", status_code=status_code)
         return super().file_response(full_path, stat_result, scope, status_code=status_code)
 
 
 def _cache_control_for_path(path: str, status_code: int) -> str:
     if path.startswith("/_console/assets/") and status_code in {200, 206, 304}:
-        return IMMUTABLE_ASSET_CACHE_CONTROL
-    # The app is authoritative for the cache policy of every backend surface it serves — nginx no
-    # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
-    # prefixes must be listed here, not there. Keep in sync with the proxied `location`s.
-    if path.startswith(("/api/", "/auth/", "/metrics")) or path == "/healthz":
-        return NO_STORE_CACHE_CONTROL
-    return APP_SHELL_CACHE_CONTROL
+        return "public, max-age=31536000, immutable"
+    return "no-store"
 
 
 def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
