@@ -53,10 +53,11 @@ def _environment(
     return view
 
 
-def _snapshot(
-    *environments: environment_service_pb2.EnvironmentDescriptor,
-) -> list[environment_service_pb2.EnvironmentDescriptor]:
-    return list(environments)
+async def _inventory(
+    *snapshots: list[environment_service_pb2.EnvironmentDescriptor],
+) -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
+    for snapshot in snapshots:
+        yield snapshot
 
 
 def _bind_runner_kind(view: environment_service_pb2.EnvironmentDescriptor, kind: RunnerCredentialKind) -> None:
@@ -115,7 +116,7 @@ async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         nonlocal closed
         try:
-            yield _snapshot(view)
+            yield [view]
         finally:
             closed = True
 
@@ -136,13 +137,12 @@ async def test_readiness_waits_for_a_later_ready_snapshot() -> None:
         "readiness-test", uid, ready=True, operating_mode="OPERATING_MODE_SUSPENDED"
     )
 
-    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
-        yield _snapshot(_environment("readiness-test", uid, ready=True, namespace="other-test-namespace"))
-        yield _snapshot(suspended_ready_condition)
-        yield _snapshot(not_ready)
-        yield _snapshot(ready)
-
-    client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox_snapshots.return_value = _inventory(
+        [_environment("readiness-test", uid, ready=True, namespace="other-test-namespace")],
+        [suspended_ready_condition],
+        [not_ready],
+        [ready],
+    )
 
     assert await app_sandbox.wait_until_running(client, ready.target) is ready
 
@@ -165,10 +165,7 @@ async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
     replacement = _environment("readiness-test", str(uuid4()), ready=True)
     expected = identity_pb2.EnvironmentTarget(namespace="test", name="readiness-test", uid=expected_uid)
 
-    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
-        yield _snapshot(replacement)
-
-    client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox_snapshots.return_value = _inventory([replacement])
 
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
         await app_sandbox.wait_until_running(client, expected)
@@ -183,7 +180,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         nonlocal closed
         try:
-            yield _snapshot(view)
+            yield [view]
             await asyncio.Event().wait()
         finally:
             closed = True
@@ -198,19 +195,15 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
     assert closed
 
 
-async def test_readiness_propagates_inventory_stream_end() -> None:
+async def test_readiness_reports_last_view_when_inventory_ends_before_ready() -> None:
     client = create_autospec(Client, instance=True)
-    uid = str(uuid4())
+    view = _environment("readiness-test", str(uuid4()), ready=False)
+    client.sandbox_snapshots.return_value = _inventory([], [view])
 
-    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
-        yield _snapshot()
-        raise RuntimeError("the Sandbox inventory stream ended")
-        yield  # pragma: no cover
+    with pytest.raises(SandboxNotReadyError, match="inventory stream ended") as raised:
+        await app_sandbox.wait_until_running(client, view.target)
 
-    client.sandbox_snapshots.return_value = snapshots()
-
-    with pytest.raises(RuntimeError, match="inventory stream ended"):
-        await app_sandbox.wait_until_running(client, _target("readiness-test", uid))
+    assert raised.value.last_view is view
 
 
 async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluster: Cluster) -> None:
@@ -261,11 +254,9 @@ async def test_cleanup_fences_replacement_after_inventory_removal(cluster: Clust
     client = create_autospec(Client, instance=True)
     uid = str(uuid4())
 
-    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
-        yield [_environment("owned-test-sandbox", uid, ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
-        yield []
-
-    client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox_snapshots.return_value = _inventory(
+        [_environment("owned-test-sandbox", uid, ready=False, operating_mode="OPERATING_MODE_SUSPENDED")], []
+    )
     cast(AsyncMock, cluster.kubectl).side_effect = [json.dumps({"metadata": {"uid": str(uuid4())}})]
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
         await suspend_and_delete(cluster, client, "owned-test-sandbox", uid)
@@ -275,10 +266,9 @@ async def test_cleanup_fences_replacement_after_inventory_removal(cluster: Clust
 async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -> None:
     client = create_autospec(Client, instance=True)
 
-    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
-        yield [_environment("owned-test-sandbox", str(uuid4()), ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
-
-    client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox_snapshots.return_value = _inventory(
+        [_environment("owned-test-sandbox", str(uuid4()), ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
+    )
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
         await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
     client.delete_sandbox.assert_not_awaited()
