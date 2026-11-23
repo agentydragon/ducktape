@@ -8,8 +8,7 @@ tool_choice='required' ensures every guesser response is a tool call.
 import argparse
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -26,25 +25,15 @@ from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.eval_infra.eval_sandbox import SKILL_PATH
 from skills.eval_infra.skill_staging import StagedSkill, stage_skill
-from skills.info_gathering.evals.harness import run_output_paths, save_summary
+from skills.info_gathering.evals.harness import output_dir_from_args, run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import (
-    Correct,
-    LogEntry,
-    Player,
-    Result,
-    RunSummary,
-    Timeout,
-)
-from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
-    add_common_args,
-    output_dir_from_args,
-    resolve_args,
-)
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Player, Result, RunSummary
+from skills.info_gathering.evals.twenty_questions.x.shared.cli import add_common_args, resolve_args
+from skills.info_gathering.evals.twenty_questions.x.shared.game_record import GameRecord, write_transcript
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
@@ -82,22 +71,9 @@ sim_agent: Agent[None, SimAction] = Agent(
 )
 
 
-# -- Game state --
-
-
 @dataclass
-class GameState:
-    turn_limit: int
-    turn: int = 0
-    result: Result | None = None
-    invalid_input_count: int = 0
-    log_entries: list[LogEntry] = field(default_factory=list)
+class GameState(GameRecord):
     sim_history: list[ModelMessage] | None = None
-
-    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
-        self.log_entries.append(
-            LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
-        )
 
 
 def _make_model_id(api: str, model: str) -> str:
@@ -122,28 +98,25 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
     async def ask_yes_no_question(ctx: RunContext[None], /, question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         state.turn += 1
-        state.record(Player.GUESSER, question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
+        state.record(Player.GUESSER, question, "ask_yes_no_question", question=question)
         logger.info("Guesser (turn %d): %s", state.turn, question[:200])
 
         action = await _run_sim(f"Question: {question}")
 
         if isinstance(action, SimInvalidInput):
             state.invalid_input_count += 1
-            state.record(
-                Player.SIMULATOR, action.reason, [{"name": "invalid_input", "args": {"reason": action.reason}}]
-            )
+            state.record(Player.SIMULATOR, action.reason, "invalid_input", reason=action.reason)
             state.turn -= 1  # Refund the turn.
             return action.reason
 
         if isinstance(action, SimAnswer):
-            state.record(Player.SIMULATOR, action.response, [{"name": "answer", "args": {"response": action.response}}])
+            state.record(Player.SIMULATOR, action.response, "answer", response=action.response)
             logger.info("Simulator: %s", action.response)
-            if state.turn >= state.turn_limit and state.result is None:
-                state.result = Timeout(limit=state.turn_limit)
+            state.check_turn_limit()
             return action.response
 
         if isinstance(action, SimCorrectAnswer):
-            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", "correct_answer")
             state.result = Correct(turns=state.turn)
             logger.info("Correct answer on turn %d!", state.turn)
             return "Correct! You guessed it!"
@@ -154,29 +127,26 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
     async def guess_answer(ctx: RunContext[None], /, answer: str) -> str:
         """Guess the secret answer. Uses one turn."""
         state.turn += 1
-        state.record(Player.GUESSER, answer, [{"name": "guess_answer", "args": {"answer": answer}}])
+        state.record(Player.GUESSER, answer, "guess_answer", answer=answer)
         logger.info("Guesser (turn %d) guesses: %s", state.turn, answer[:200])
 
         action = await _run_sim(f"My answer is: {answer}")
 
         if isinstance(action, SimCorrectAnswer):
-            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", "correct_answer")
             state.result = Correct(turns=state.turn)
             logger.info("Correct answer on turn %d!", state.turn)
             return "Correct! You guessed it!"
 
         if isinstance(action, SimAnswer):
-            state.record(Player.SIMULATOR, action.response, [{"name": "answer", "args": {"response": action.response}}])
+            state.record(Player.SIMULATOR, action.response, "answer", response=action.response)
             logger.info("Simulator: %s", action.response)
-            if state.turn >= state.turn_limit and state.result is None:
-                state.result = Timeout(limit=state.turn_limit)
+            state.check_turn_limit()
             return action.response  # "no" for wrong guess
 
         if isinstance(action, SimInvalidInput):
             state.invalid_input_count += 1
-            state.record(
-                Player.SIMULATOR, action.reason, [{"name": "invalid_input", "args": {"reason": action.reason}}]
-            )
+            state.record(Player.SIMULATOR, action.reason, "invalid_input", reason=action.reason)
             state.turn -= 1
             return action.reason
 
@@ -223,10 +193,7 @@ async def run_game_loop(
         )
         guesser_history = guesser_run.all_messages()
 
-    if state.result is None:
-        state.result = Timeout(limit=turn_limit)
-
-    return state.result, state.turn, state.log_entries, state.invalid_input_count
+    return state.finish(), state.turn, state.log_entries, state.invalid_input_count
 
 
 async def run_twenty_questions(
@@ -260,9 +227,7 @@ async def run_twenty_questions(
         guesser_toolsets=guesser_toolsets,
     )
 
-    with calls_path.open("w") as f:
-        for entry in log_entries:
-            f.write(entry.model_dump_json() + "\n")
+    write_transcript(calls_path, log_entries)
 
     summary = RunSummary(
         eval_name=name,
