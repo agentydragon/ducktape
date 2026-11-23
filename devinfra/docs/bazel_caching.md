@@ -1,51 +1,19 @@
 # Bazel Caching in CI
 
-## Overview
+[BuildBuddy](../buildbuddy/README.md) caches action results across Bazel runs.
+For GitHub-hosted workflows that invoke Bazel directly, the
+[setup action](../../.github/actions/setup-bazel/action.yml) also caches the Bazelisk
+download and the content-addressed Bazel repository downloads. Its module-file hash
+and shared restore prefix allow reuse across workflows and dependency updates.
+The repository cache path assumes the GitHub-hosted `runner` username.
+BuildBuddy-hosted `bb remote` runs use a separate runner filesystem.
 
-Bazel CI uses two caching layers:
-
-1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across runs. Hosted builds use `.github/actions/bb-remote`; workflows that run Bazel directly configure the same remote cache after `.github/actions/setup-bazel`.
-2. **GHA repository cache** — caches Bazel's `repository_cache` (compressed downloads of external dependencies) for workflows that run Bazel directly on GitHub-hosted runners. It uses unified `actions/cache@v6` restore and save behavior.
-
-## Why repository_cache only?
-
-Bazel's local state under `~/.cache/bazel` breaks down as:
-
-| Directory                  | Size   | Purpose                           |
-| -------------------------- | ------ | --------------------------------- |
-| `output_base/external/`    | ~9.5GB | Extracted external repos          |
-| `_bazel_*/cache/repos/v1/` | ~2GB   | Compressed downloads (repo cache) |
-| `_bazel_*/install/`        | ~192MB | Extracted Bazel installation      |
-| `~/.cache/bazelisk`        | ~62MB  | Bazelisk binary                   |
-
-`output_base/external/` is dominated by the LLVM toolchain (~8.2GB extracted), which alone exceeds the 10GB GHA per-repo cache limit.
-
-The `repository_cache` stores compressed downloads (~2GB). It is content-addressable: each archive is stored by its content hash, so restoring it lets Bazel skip network fetches during analysis even when only some dependencies changed. BuildBuddy handles action-level caching (build outputs, test results), so the GHA cache only needs to cover the analysis-phase download cost.
-
-## Cache key strategy
-
-```text
-bazel-repo-cache-<hash of MODULE.bazel + **/*.MODULE.bazel + MODULE.bazel.lock>
-```
-
-- **Shared** — workflows using the action use the same key (the first 16 characters of the hash). Repository downloads are content-addressed, so a cache populated by one job can be reused by another.
-- **`restore-keys: bazel-repo-cache-`** — on dependency changes, the previous cache is partially restored (content-addressable, so unchanged downloads are reused).
-- **Cache size** — entries can be around 2GB. Dependency changes can create multiple keys, all counting toward the default 10GB per-repository cache quota.
-
-## Cache flow
-
-Workflows that run Bazel directly on a GitHub Actions runner call
-`.github/actions/setup-bazel`. Each job restores the exact cache key, falling
-back to the newest `bazel-repo-cache-` entry after dependency changes. Bazel
-and Bazelisk populate the restored directories as the job runs.
-
-The action uses unified `actions/cache@v6`, which saves the populated cache as
-a post step only when the exact key was absent during restore. A separate
-`actions/cache/save` step would create a duplicate entry for an existing key,
-and the GitHub cache service then answers every restore with HTTP 400. There is
-no dedicated prewarm or `compute-targets` job. BuildBuddy-hosted `bb remote` runs
-execute in separate runner VMs and use BuildBuddy's cache rather than this
-GitHub-runner filesystem cache.
+Caching the whole local Bazel state exceeded the GitHub cache quota. The expanded
+LLVM toolchain accounted for most of that state. The compressed archives fit under the quota in the
+original measurements ([repository cache change](https://github.com/agentydragon/ducktape/pull/363)).
+The unified cache action saves only on an exact-key miss. Unconditional saves once
+created duplicate entries that broke restores with HTTP 400
+([cache action change](https://github.com/agentydragon/ducktape/pull/747)).
 
 ## Undeclared test outputs under BwoB
 
@@ -84,21 +52,3 @@ The blunt form of the same fix, and it does work — but `toplevel` downloads
 every top-level target's important artifacts, which on `bazel test //...` means
 every OCI image tarball lands on the runner. The regex asks for the few hundred
 kilobytes of PNGs that BEP actually needs.
-
-## Cached paths
-
-- `~/.cache/bazelisk` — Bazelisk-downloaded Bazel binary
-- `~/.cache/bazel/_bazel_runner/cache/repos/v1` — Bazel repository cache
-
-The `_bazel_runner` segment assumes the GHA runner username is `runner` (standard on `ubuntu-latest`).
-
-## Alternatives considered
-
-| Approach                                   | Size   | Pros                 | Cons                         |
-| ------------------------------------------ | ------ | -------------------- | ---------------------------- |
-| Cache full `~/.cache/bazel`                | ~12GB  | Fastest cold start   | Exceeds 10GB GHA limit       |
-| Cache `output_base/external/` minus LLVM   | ~1.3GB | No extraction cost   | Fragile exclusion            |
-| Cache `repository_cache` only (current)    | ~2GB   | Simple, within limit | Extraction cost on miss      |
-| `bazel-contrib/setup-bazel` external-cache | Varies | Per-repo granularity | LLVM still 8.2GB             |
-| No GHA cache, BuildBuddy only              | 0      | Simplest             | ~5 min repo fetching per-job |
-| Dedicated prewarm job + save               | ~2GB   | Seeds cache once     | Adds to the critical path    |
