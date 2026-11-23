@@ -86,6 +86,7 @@ py_binary(
 py_library(
     name = "tana_issues_to_tanapaste",
     srcs = ["tana_issues_to_tanapaste.py"],
+    visibility = ["//tana:__subpackages__"],
     deps = [
         ":convert",
         "//tana/graph:loader",
