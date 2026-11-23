@@ -84,39 +84,46 @@ assert.deepEqual(
 
 assertCertified(
   split(
-    "optional-callee-nullish-and-abrupt",
+    "optional-callee-nullish-method",
     `const run = () => {
       let trace = "";
       const argument = () => { trace += "a"; };
-      const read = (receiver) => receiver.method?.(argument());
       const record = { get method() { trace += "g"; return null; } };
-      if (read(record) !== undefined || read({}) !== undefined || trace !== "g") throw "nullish method";
-      try {
-        read({ get method() { trace += "t"; throw "getter"; } });
-        throw "getter returned";
-      } catch (error) {
-        if (error !== "getter") throw error;
-      }
-      try {
-        read({ method: false });
-        throw "noncallable method returned";
-      } catch (error) {
-        if (typeof error !== "object") throw error;
-      }
-      try {
-        read(null);
-        throw "null receiver returned";
-      } catch (error) {
-        if (typeof error !== "object") throw error;
-      }
-      if (trace !== "gta") throw "argument order";
+      if (record.method?.(argument()) !== undefined || ({}).method?.(argument()) !== undefined) throw "nullish method";
+      if (trace !== "g") throw "argument order";
       return trace;
     };
     const result = run();
     export { result };`
   ),
-  "gta"
+  "g"
 );
+
+for (const [name, receiver, caught, expected] of [
+  ["throwing-getter", '{ get method() { trace += "g"; throw "getter"; } }', 'error === "getter"', "g"],
+  ["noncallable-method", "{ method: false }", 'typeof error === "object"', "a"],
+  ["null-receiver", "null", 'typeof error === "object"', ""],
+]) {
+  assertCertified(
+    split(
+      name,
+      `const run = () => {
+        let trace = "";
+        const argument = () => { trace += "a"; };
+        try {
+          (${receiver}).method?.(argument());
+        } catch (error) {
+          if (${caught} && trace === ${JSON.stringify(expected)}) return trace;
+          throw error;
+        }
+        throw "expected an abrupt call";
+      };
+      const result = run();
+      export { result };`
+    ),
+    expected
+  );
+}
 
 function member(object, name) {
   return { type: "MemberExpression", object, property: id(name), computed: false, optional: false };
