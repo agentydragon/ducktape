@@ -31,10 +31,10 @@ private def request (decl : Json) (file : String) : Except String Json := do
   if target == original then return decl
   setField decl "source" (literal target)
 
-private def glueImports (P : Plan) (m : Module) := m.imports.map fun (src, names) =>
-  let source := P.find src
+private def glueImports (B : Bundle) (P : Plan) (m : Module) := m.imports.map fun (src, names) =>
+  let exports := P.namedExports B src
   let specs := names.map fun localName =>
-    let publicName := (source.map (Module.publicName · localName)).getD localName
+    let publicName := exportNameFor exports localName
     node "ImportSpecifier" [("local", identifier localName), ("imported", moduleName publicName)]
   node "ImportDeclaration" [("source", literal (relativeUrlSpecifier m.name src)), ("specifiers", toJson specs),
     ("attributes", .arr #[])]
@@ -70,7 +70,7 @@ private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B 
     Lower.typ s == "ExpressionStatement" && (s.getObjValAs? String "directive").isOk
   let (requests, body) := rest.partition isRequest
   let requests ← requests.mapM (request · m.name)
-  let output := directives ++ requests ++ duplicated.toList ++ glueImports P m ++ body ++ glueExports m
+  let output := directives ++ requests ++ duplicated.toList ++ glueImports B P m ++ body ++ glueExports m
   return node "Program" ([("sourceType", .str "module"), ("body", toJson output)] ++
     (if m.name == P.entry then hashbang else []))
 

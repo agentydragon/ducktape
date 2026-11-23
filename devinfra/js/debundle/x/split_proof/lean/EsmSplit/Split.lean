@@ -45,9 +45,9 @@ def freshName (u : Name) (taken : NameSet) : Name :=
   if taken.contains u then freshFrom u taken (taken.size + 1) 1 else u
 
 /-- Glue exports of the bindings `needed` from a module whose own `export` statements publish `pub`.
-A binding they publish under its own name (`export { u }`, `export const u`) needs none. -/
+A binding they already publish, including under an alias, needs none. -/
 def glueExports (pub : List (Name × Option Name)) (needed : List Name) : List (Name × Name) :=
-  let own : NameSet := pub.foldl (fun acc e => if e.2 == some e.1 then acc.insert e.1 else acc) ∅
+  let own : NameSet := (localExports pub).foldl (fun acc e => acc.insert e.2) ∅
   ((needed.filter fun u => !own.contains u).foldl
     (fun (acc : List (Name × Name) × NameSet) u =>
       let p := freshName u acc.2

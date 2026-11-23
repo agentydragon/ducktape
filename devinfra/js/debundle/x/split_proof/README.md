@@ -69,6 +69,8 @@ Imports can follow a chain of these aliases to the declaration's live cell. A ch
 cycles without reaching a declaration fails to link. Lean checks that each entry export
 resolves to the same live cell in both graphs. Source-bearing re-exports such as
 `export { name } from "./provider.mjs"` are outside this fragment.
+When a generated import needs a binding already published under an alias,
+it imports that public name under the original local name. This adds no entry export.
 
 Ordinary top-level function declarations initialize when the modules link. A call can reach a declared function before its statement executes, while its closed-over lexical bindings still observe their own initialization order. The checker uses the same scope correspondence for recursive references and deferred function bodies. Nested declarations and async and generator functions remain outside this fragment.
 

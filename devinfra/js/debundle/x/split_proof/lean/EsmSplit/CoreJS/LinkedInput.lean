@@ -92,12 +92,12 @@ private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan)
       unless !req.names.isEmpty && original.imports.any (fun i =>
           i.source == req.source && req.names.all i.names.contains) do
         throw s!"unexpected provider import from {req.source}"
+  let exportsOf (md : EsmSplit.Module) := md.exports ++ (if md.name == P.entry then original.exports else [])
   let expectedGlue : List Import := m.imports.map fun (source, names) =>
-    { source, names := names.map fun localName =>
-      (((P.find source).map (·.publicName localName)).getD localName, localName) }
+    let exports := ((P.find source).map exportsOf).getD []
+    { source, names := names.map fun localName => (EsmSplit.exportNameFor exports localName, localName) }
   unless glue = expectedGlue do throw "module's glue imports differ from the plan"
-  let expectedExports := m.exports ++ (if m.name == P.entry then original.exports else [])
-  unless p.exports.Perm expectedExports do throw "module's named exports differ from the plan"
+  unless p.exports.Perm (exportsOf m) do throw "module's named exports differ from the plan"
   let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (i, ·)
   unless p.units.length == placed.length do throw "emitted body length differs from the placement"
   let body ← (p.units.zip placed).mapM fun ((_, actual, ast), (id, expected)) => do

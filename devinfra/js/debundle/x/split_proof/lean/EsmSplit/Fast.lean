@@ -87,8 +87,8 @@ structure ModTab where
 
 def Module.tab (arr : Array Stmt) (m : Module) : ModTab where
   declared := m.stmts.foldl (fun acc i => (arr.getD i default).defs.foldl (·.insert ·) acc) ∅
-  exported := (m.exports.map (·.2) ++ m.stmts.flatMap fun i =>
-    (arr.getD i default).exports.filterMap fun e => if e.2 == some e.1 then some e.1 else none).foldl (·.insert ·) ∅
+  exported := ((m.exports ++ localExports (m.stmts.flatMap fun i => (arr.getD i default).exports)).map (·.2))
+    |>.foldl (·.insert ·) ∅
   importedFrom := m.imports.foldr (fun e acc => e.2.foldr (fun u acc => acc.insert u e.1) acc) ∅
 
 private theorem mem_foldl_decl (arr : Array Stmt) : ∀ (l : List Nat) (acc : NameSet) (u : Name),
@@ -120,17 +120,7 @@ theorem Module.tab_exported (B : Bundle) (m : Module) (u : Name) :
     (m.tab B.toArray).exported.contains u = m.exportsLocal B u := by
   rw [Bool.eq_iff_iff, ← Std.TreeSet.mem_iff_contains]
   simp only [Module.tab, mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, Module.exportsLocal,
-    Module.published, Bool.or_eq_true, List.mem_append, List.any_eq_true, List.contains_iff_mem, List.mem_map,
-    List.mem_flatMap, List.mem_filterMap, Bundle.toArray_getD, beq_iff_eq]
-  refine or_congr Iff.rfl ⟨?_, ?_⟩
-  · rintro ⟨i, hi, ⟨p, l⟩, he, h⟩
-    by_cases hl : l = some p
-    · subst hl
-      simp only [↓reduceIte, Option.some.injEq] at h
-      subst h; exact ⟨i, hi, he⟩
-    · simp [hl] at h
-  · rintro ⟨i, hi, he⟩
-    exact ⟨i, hi, (u, some u), he, by simp⟩
+    Module.namedExports, Module.published, List.any_eq_true, List.mem_map, Bundle.toArray_getD, beq_iff_eq]
 
 private theorem foldr_insert_get (src : ModName) : ∀ (names : List Name) (acc : Std.TreeMap Name ModName) (u : Name),
     (names.foldr (fun u acc => acc.insert u src) acc)[u]? = if u ∈ names then some src else acc[u]?
