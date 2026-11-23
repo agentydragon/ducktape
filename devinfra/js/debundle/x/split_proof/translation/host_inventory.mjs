@@ -20,13 +20,12 @@
 //
 // What the count does not see: a global reached through a local alias (`var g = window; g.fetch`) or a computed key, a
 // member reached through a value (`el.appendChild`, beyond the bound by name), and code built at run time.
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
 import globals from "globals";
+import { GLOBAL_OBJECTS, parseSurveySource, sourceFiles, staticMemberKey } from "./survey_source.mjs";
 
 const GLOBALS_VERSION = createRequire(import.meta.url)("globals/package.json").version;
 
@@ -39,16 +38,11 @@ export const ENVIRONMENTS = {
   otherHosts: ["denoBuiltin", "webextensions", "wsh", "amd"],
 };
 
-/** Names that are the global object itself: `window.fetch` is the global `fetch`. */
-const GLOBAL_OBJECTS = new Set(["globalThis", "window", "self", "global"]);
-
 /** A member path longer than this is cut: `a.b.c.d` counts `a.b.c`. */
 const MAX_MEMBERS = 3;
 
 /** `process.env.X` names configuration of one program, not a feature of the host: the path stops at `process.env`. */
 const OPAQUE_PATHS = new Set(["process.env"]);
-
-const SOURCE_EXTENSIONS = new Set([".js", ".mjs", ".cjs"]);
 
 export function environmentsOf(name) {
   return Object.entries(ENVIRONMENTS)
@@ -124,33 +118,12 @@ export function standardMemberOwners() {
 
 // ---- one file
 
-function parse(source) {
-  // eslint-scope reads `range`
-  const options = { ecmaVersion: "latest", allowHashBang: true, ranges: true };
-  try {
-    return { ast: acorn.parse(source, { ...options, sourceType: "module" }), sourceType: "module" };
-  } catch {
-    // a classic script or a CommonJS module: sloppy mode, and `return` at the top level
-    const script = { ...options, sourceType: "script", allowReturnOutsideFunction: true };
-    return { ast: acorn.parse(source, script), sourceType: "script" };
-  }
-}
-
 const IDENTIFIER_NAME = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*$/u;
 
 /** The name a member expression reads, when the source spells it: `a.b`, or `a["b"]` with a string that could be written `a.b`. */
 function staticKey(member) {
-  if (!member.computed && member.property.type === "Identifier") return member.property.name;
-  const { property } = member;
-  if (
-    member.computed &&
-    property.type === "Literal" &&
-    typeof property.value === "string" &&
-    IDENTIFIER_NAME.test(property.value)
-  ) {
-    return property.value;
-  }
-  return undefined;
+  const key = staticMemberKey(member);
+  return key !== undefined && IDENTIFIER_NAME.test(key) ? key : undefined;
 }
 
 /** Sets `parent` on every node and returns the nodes of the types asked for. Run after eslint-scope, which must not see `parent`. */
@@ -317,10 +290,9 @@ class Inventory {
   }
 
   addFile(file, source) {
-    const { ast, sourceType } = parse(source);
-    this.files[sourceType] += 1;
+    const { ast, references } = parseSurveySource(source);
+    this.files[ast.sourceType] += 1;
     this.bytes += Buffer.byteLength(source);
-    const scopes = eslintScope.analyze(ast, { ecmaVersion: 2024, sourceType, ignoreEval: true });
     const nodes = linkParents(
       ast,
       new Set([
@@ -334,7 +306,7 @@ class Inventory {
       ])
     );
     const consumed = new Set();
-    for (const reference of scopes.globalScope.through) this.#reference(reference, file, consumed);
+    for (const reference of references) this.#reference(reference, file, consumed);
 
     for (const node of nodes) {
       switch (node.type) {
@@ -397,18 +369,6 @@ class Inventory {
       dynamicImports: this.dynamicImports,
     };
   }
-}
-
-function sourceFiles(root) {
-  if (root.startsWith("@"))
-    return readFileSync(root.slice(1), "utf8")
-      .split("\n")
-      .filter((line) => line !== "");
-  if (statSync(root).isFile()) return [root];
-  return readdirSync(root, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name)))
-    .map((entry) => path.join(entry.parentPath, entry.name))
-    .sort();
 }
 
 /** The inventory of the files at `paths`, as the JSON value `render` reads. Throws on a file that does not parse. */

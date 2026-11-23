@@ -2,7 +2,7 @@
 // reflection, hooks the language calls on its own, patched standard objects, and what observes how code is spelled.
 // A count by syntax, to decide what a debundler supports ([`SUPPORT.md`](../SUPPORT.md)).
 //
-//   node magic_census.mjs [--list=TEXT] @LIST > census.md   (LIST: one path of a source file per line; or the files)
+//   node magic_census.mjs [--list=TEXT] PATH... > census.md   (files, directories, or @LIST with one file per line)
 //
 // `--list=TEXT` also prints, to standard error, each top-level site of the features whose name contains TEXT, as
 // `file:line: source`.
@@ -11,12 +11,10 @@
 // is evaluated unless a condition skips it. A site inside a function may run then too (a function called at start-up),
 // so the second number is a lower bound on what start-up runs, not the answer.
 import { readFileSync } from "node:fs";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
 import globals from "globals";
+import { GLOBAL_OBJECTS, parseSurveySource, sourceFiles, staticMemberKey } from "./survey_source.mjs";
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
-const GLOBAL_OBJECTS = new Set(["globalThis", "window", "self", "global"]);
 const HOOK_SYMBOLS = new Set([
   "toPrimitive",
   "species",
@@ -73,14 +71,8 @@ const listed = process.argv.find((arg) => arg.startsWith("--list="))?.slice("--l
 const files = process.argv
   .slice(2)
   .filter((arg) => !arg.startsWith("--list="))
-  .flatMap((arg) => (arg.startsWith("@") ? readFileSync(arg.slice(1), "utf8").split("\n").filter(Boolean) : [arg]));
+  .flatMap(sourceFiles);
 
-const staticKey = (member) =>
-  !member.computed && member.property.type === "Identifier"
-    ? member.property.name
-    : member.computed && member.property.type === "Literal" && typeof member.property.value === "string"
-      ? member.property.value
-      : undefined;
 const keyName = (property) =>
   property.computed
     ? undefined
@@ -92,35 +84,21 @@ const keyName = (property) =>
 
 for (const file of files) {
   const source = readFileSync(file, "utf8");
-  let ast,
-    sourceType = "module";
-  try {
-    ast = acorn.parse(source, { ecmaVersion: "latest", sourceType, allowHashBang: true, ranges: true });
-  } catch {
-    sourceType = "script";
-    ast = acorn.parse(source, {
-      ecmaVersion: "latest",
-      sourceType,
-      allowHashBang: true,
-      allowReturnOutsideFunction: true,
-      ranges: true,
-    });
-  }
-  const scopes = eslintScope.analyze(ast, { ecmaVersion: 2024, sourceType, ignoreEval: true });
-  const free = new Set(scopes.globalScope.through.map((reference) => reference.identifier));
+  const { ast, references } = parseSurveySource(source);
+  const free = new Set(references.map((reference) => reference.identifier));
   const isGlobal = (node, name) =>
     node?.type === "Identifier" && free.has(node) && (name === undefined || node.name === name);
   /** `X`, `globalThis.X`: the global `X`, when `node` names it. */
   const globalName = (node) => {
     if (isGlobal(node)) return GLOBAL_OBJECTS.has(node.name) ? undefined : node.name;
     if (node?.type === "MemberExpression" && isGlobal(node.object) && GLOBAL_OBJECTS.has(node.object.name))
-      return staticKey(node);
+      return staticMemberKey(node);
     return undefined;
   };
   /** `X.a` -> ["X", "a"], for a global `X`. */
   const globalMember = (node) =>
-    node?.type === "MemberExpression" && globalName(node.object) && staticKey(node)
-      ? [globalName(node.object), staticKey(node)]
+    node?.type === "MemberExpression" && globalName(node.object) && staticMemberKey(node)
+      ? [globalName(node.object), staticMemberKey(node)]
       : undefined;
 
   // `guarded`: inside the block of a `try` that has a `catch`, with no function in between
@@ -177,7 +155,7 @@ for (const file of files) {
             hit("`WeakRef` or `FinalizationRegistry`");
           if (
             callee.type === "MemberExpression" &&
-            ["__defineGetter__", "__defineSetter__"].includes(staticKey(callee))
+            ["__defineGetter__", "__defineSetter__"].includes(staticMemberKey(callee))
           )
             hit("`__defineGetter__` or `__defineSetter__`");
         }
@@ -203,7 +181,7 @@ for (const file of files) {
           hit("`Atomics` or `SharedArrayBuffer`");
         break;
       case "MemberExpression": {
-        const key = staticKey(node);
+        const key = staticMemberKey(node);
         const member = globalMember(node);
         if (member?.[0] === "Symbol" && HOOK_SYMBOLS.has(member[1])) {
           hit(
