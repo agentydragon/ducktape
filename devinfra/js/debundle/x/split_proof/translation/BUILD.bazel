@@ -348,6 +348,7 @@ js_test(
     data = _LINKED_PROGRAMS_TEST_DATA,
     entry_point = "linked_mutations_test.mjs",
     env = _LINKED_PROGRAMS_TEST_ENV,
+    shard_count = 3,
 )
 
 js_test(
@@ -404,6 +405,7 @@ js_test(
     data = _LINKED_PROGRAMS_TEST_DATA,
     entry_point = "linked_property_assignment_test.mjs",
     env = _LINKED_PROGRAMS_TEST_ENV,
+    shard_count = 3,
 )
 
 js_test(

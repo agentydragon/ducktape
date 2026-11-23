@@ -8,6 +8,7 @@ import {
   binary,
   block,
   call,
+  caseShard,
   conditional,
   exportNamed,
   forcePreview,
@@ -28,6 +29,7 @@ import {
 
 const entry = "entry.mjs";
 const worker = "worker.mjs";
+const includesCase = caseShard();
 
 function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, order = [worker]) {
   const dir = path.join(root, name);
@@ -69,6 +71,8 @@ for (const [scenario, values, initialFields] of [
   ["fresh", Array.from({ length: 89 }, (_, i) => (i * 7) % 89), {}],
   ["existing", Array.from({ length: 32 }, (_, i) => i), { Member3: "old", keep: "original" }],
 ]) {
+  const name = `numeric-enum-${scenario}`;
+  if (!includesCase(name)) continue;
   const object = id("table");
   const expected = { ...initialFields };
   const writes = values.map((value, i) => {
@@ -82,7 +86,7 @@ for (const [scenario, values, initialFields] of [
   const initial = { type: "LogicalExpression", operator: "||", left: id("codes"), right: old };
   const initializer = call(arrow([object], sequence(...writes, object)), [initial]);
   const source = program([variable("var", "codes", initializer), exportNamed([["codes", "Codes"]])]);
-  const { files, out, verdict, log } = split(`numeric-enum-${scenario}`, source, {
+  const { files, out, verdict, log } = split(name, source, {
     [worker]: ["#0"],
     [entry]: ["#1"],
   });
@@ -108,7 +112,7 @@ for (const [scenario, values, initialFields] of [
 }
 
 // The receiver's non-writable length stops the first assignment before any later writes.
-{
+if (includesCase("readonly-batch")) {
   const target = id("table");
   const keys = ["length", ...Array.from({ length: 63 }, (_, i) => `field${i}`)];
   const writes = keys.map((key, i) => assignment(member(target, literal(key), true), literal(i)));
@@ -127,6 +131,7 @@ for (const [name, key, computed, value] of [
   ["computed-string", "value", true, false],
   ["computed-number", 0, true, 42],
 ]) {
+  if (!includesCase(name)) continue;
   const keySlot = member(id("keys"), id("slot"));
   const computedKey = sequence(mark("base", "key"), assignment(keySlot, literal(key)));
   const field = computed ? literal(key) : id(key);
@@ -156,10 +161,11 @@ for (const [name, key, computed, value] of [
 
 // Abrupt base and key evaluation skips the remaining operands. A throwing RHS
 // leaves the property unchanged. The nullish write fails after the RHS runs.
-assertCertified(
-  split(
-    "abrupt-assignment",
-    `const run = (phase, expectedStep) => {
+if (includesCase("abrupt-assignment")) {
+  assertCertified(
+    split(
+      "abrupt-assignment",
+      `const run = (phase, expectedStep) => {
       const target = { value: "before" };
       const trace = { step: "start" };
       const step = (previous, next, value) => {
@@ -179,9 +185,10 @@ assertCertified(
     };
     const answer = [run("base", "base"), run("key", "key"), run("rhs", "rhs"), run("null", "rhs")];
     export { answer as result };`
-  ),
-  ["base", "key", "rhs", "rhs"]
-);
+    ),
+    ["base", "key", "rhs", "rhs"]
+  );
+}
 
 {
   const source = `const state = { value: "before" };
@@ -195,13 +202,16 @@ assertCertified(
   const second = "second.mjs";
   const modules = { [state]: ["#0"], [first]: ["#1"], [read]: ["#2"], [second]: ["#3"], [entry]: ["#4"] };
   const original = { seen: "first", final: "second" };
-  assertCertified(split("ordered-writes", source, modules, [state, first, read, second]), original);
+  if (includesCase("ordered-writes")) {
+    assertCertified(split("ordered-writes", source, modules, [state, first, read, second]), original);
+  }
 
   // The final write and the intermediate read each constrain the schedule.
   for (const [name, order, expected] of [
     ["reordered-writes", [state, second, read, first], { seen: "second", final: "first" }],
     ["early-read", [state, read, first, second], { seen: "before", final: "second" }],
   ]) {
+    if (!includesCase(name)) continue;
     const { dir, files, out, verdict, log } = split(name, source, modules, order);
     assert.equal(verdict.status, "rejected", log);
     assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
