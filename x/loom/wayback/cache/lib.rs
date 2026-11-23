@@ -17,6 +17,7 @@ pub use ia_client::{IaClient, ReqwestIaClient, UpstreamResponse, UpstreamTimeout
 pub use limiter::{
     AcquisitionOutcome, AdaptiveLimiter, LimiterConfig, LimiterPermit, LimiterSnapshot,
 };
+pub use metrics::metrics_response;
 pub use path::{parse_metadata_request, parse_replay_path};
 pub use response::ArchiveResponse;
 pub use service::ArchiveService;

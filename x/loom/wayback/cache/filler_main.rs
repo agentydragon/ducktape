@@ -2,9 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Response, StatusCode, header};
+use axum::http::Response;
 use axum::{Router, routing::get};
 use log::info;
 use wayback_cache::{
@@ -63,20 +62,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn metrics(State(service): State<Arc<ArchiveService>>) -> Response<Body> {
-    match service.metrics().await {
-        Ok(metrics) => Response::builder()
-            .status(StatusCode::OK)
-            .header(
-                header::CONTENT_TYPE,
-                "text/plain; version=0.0.4; charset=utf-8",
-            )
-            .body(Body::from(metrics))
-            .expect("response construction should not fail"),
-        Err(error) => Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-            .body(Body::from(format!("metrics encoding failed: {error}\n")))
-            .expect("response construction should not fail"),
-    }
+async fn metrics(State(service): State<Arc<ArchiveService>>) -> Response<String> {
+    wayback_cache::metrics_response(service.metrics().await)
 }
