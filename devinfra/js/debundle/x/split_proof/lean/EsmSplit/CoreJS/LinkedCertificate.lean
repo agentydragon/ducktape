@@ -827,6 +827,22 @@ macro "check_linked_layout" : tactic =>
         all_goals rfl
     | exact none)
 
+/-- Reduce a run against the link result whose equation the kernel has checked. -/
+macro "reduce_linked_run_from " fuel:num layout:ident world:ident : tactic =>
+  `(tactic|
+    (rw [run_after_link $fuel (($layout $world).get (by rfl))] <;>
+      (conv =>
+        lhs
+        cbv) <;> rfl))
+
+macro "verify_linked_exports_from " source:ident candidate:ident : tactic =>
+  `(tactic|
+    (apply sameExports_of_match
+     intro w
+     unfold exportsMatch exports
+     rw [(($source w).get (by rfl)).equation, (($candidate w).get (by rfl)).equation]
+     first | rfl | cbv <;> rfl))
+
 /-- Reuse each checked link between execution and export matching. -/
 macro "verify_linked_programs_from " fuel:num source:ident candidate:ident : tactic => do
   let reduce ← `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩)
@@ -843,11 +859,7 @@ macro "verify_linked_programs_from " fuel:num source:ident candidate:ident : tac
              run_after_link $fuel (($candidate (HostProfile.browserPage.specialize w)).get (by rfl))]
          -- Lean 4.35 can panic when cbv simplifies the conjunction in the specialized world.
          constructor <;> (first | cbv <;> rfl | rfl)
-     · apply sameExports_of_match
-       intro w
-       unfold exportsMatch exports
-       rw [(($source w).get (by rfl)).equation, (($candidate w).get (by rfl)).equation]
-       first | rfl | cbv <;> rfl))
+     · verify_linked_exports_from $source $candidate))
 
 -- Check the actual theorem, whose reduction lemmas depend on the input program.
 open Lean Elab Command in
@@ -914,15 +926,65 @@ private def witnessFuel (profile : HostProfile) (source candidate : Program) : E
     if let some witness ← test limit then return witness
   throw s!"linked initialization exhausted the fuel search budget ({limit})"
 
-/-- Both compilation layouts use these same declarations and the same final axiom audit. -/
+structure CheckpointText where
+  input : String
+  source : String
+  execution : String
+  gate : String
+
 structure Certificate where
   preamble : String
   execution : String
   correspondence : String
+  checkpoint : Option CheckpointText
   premises : HostProfile
 
-/-- Generate the all-world execution theorem and bind it to the concrete ASTs and plan. -/
-def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String Certificate := do
+private def layoutDeclaration (visibility program : String) : String :=
+  s!"{visibility}noncomputable def {program}Link (w : World) : Option (LinkedBehavior.CheckedLink {program} w) := by\n" ++
+  "  check_linked_layout\n"
+
+/-- Three separately compiled modules check the shared result state before the
+ordinary AST gate imports their execution theorem. -/
+private def checkpointText (preamble options declarations correspondence : String) (fuel : Nat) (stageLink : Bool) : CheckpointText :=
+  let sourceLayout := if stageLink then layoutDeclaration "" "source" else ""
+  let candidateLayout := if stageLink then layoutDeclaration "private " "candidate" else ""
+  let reduceSource := if stageLink then s!"    reduce_linked_run_from {fuel} sourceLink w\n"
+    else "    (conv =>\n      lhs\n      cbv) <;> rfl\n"
+  let reduceCandidate := if stageLink then s!"  reduce_linked_run_from {fuel} candidateLink w\n"
+    else "  (conv =>\n    lhs\n    cbv) <;> rfl\n"
+  let checkExports := if stageLink then "  · verify_linked_exports_from sourceLink candidateLink\n"
+    else "  · apply LinkedBehavior.sameExports_of_match\n    intro w\n    first | rfl | cbv <;> rfl\n"
+  let input := preamble ++ "namespace LinkedReplay\n" ++ declarations ++ "end LinkedReplay\n"
+  let source := "import LinkedReplayInput\nimport Lean.Elab.Tactic.Conv\n" ++ options ++
+    "namespace LinkedReplay\n" ++
+    sourceLayout ++
+    "noncomputable def sourceWitness (w : World) :\n" ++
+    "    { t : State w // " ++ s!"runProgram w {fuel} source = .ok () t" ++ " } := by\n" ++
+    "  refine ⟨?state, ?run⟩\n" ++
+    "  case run =>\n" ++
+    reduceSource ++
+    "end LinkedReplay\n"
+  let execution := "import LinkedReplaySource\n" ++ options ++
+    "namespace LinkedReplay\n" ++
+    candidateLayout ++
+    "private theorem candidateRun (w : World) :\n" ++
+    s!"    runProgram w {fuel} candidate = .ok () (sourceWitness w).val := by\n" ++
+    reduceCandidate ++
+    "theorem executions : LinkedBehavior.EquivalentFor .empty source candidate ∧\n" ++
+    "    LinkedBehavior.SameExports source candidate := by\n" ++
+    "  constructor\n" ++
+    s!"  · apply LinkedBehavior.of_runs {fuel}\n" ++
+    "    intro w\n" ++
+    "    exact ⟨_, (sourceWitness w).property, candidateRun w⟩\n" ++
+    checkExports ++
+    "#audit_linked_programs executions\n" ++
+    "end LinkedReplay\n"
+  let gate := "import LinkedReplayProof\n" ++ options ++ "open LinkedReplay\n" ++ correspondence
+  { input, source, execution, gate }
+
+/-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
+def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) :
+    Except String Certificate := do
   let records ← recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
@@ -960,30 +1022,33 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   -- Larger module graphs can spend most of one reduction budget on linking.
   let stageLink := (source.modules.map (·.body.length)).sum ≥ 32
   let (layouts, tactic) := if stageLink then
-    ("private noncomputable def sourceLink (w : World) : Option (LinkedBehavior.CheckedLink source w) := by\n" ++
-     "  check_linked_layout\n" ++
-     "private noncomputable def candidateLink (w : World) : Option (LinkedBehavior.CheckedLink candidate w) := by\n" ++
-     "  check_linked_layout\n",
+    (layoutDeclaration "private " "source" ++ layoutDeclaration "private " "candidate",
      s!"  first\n  | verify_linked_programs_from {fuel} sourceLink candidateLink\n  | {ordinaryTactic}\n")
     else ("", s!"  {ordinaryTactic}\n")
-  let preamble := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
-    "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n"
-  let execution := "namespace LinkedExecutionProof\n" ++ recordTerms ++ String.join writeTerms ++
-    "def source : Program := " ++ s ++ "\n" ++
-    "def candidate : Program := " ++ c ++ "\n" ++
-    "def profile := " ++ profileTerm profile ++ "\n" ++
-    "def premises := " ++ profileTerm premises ++ "\n" ++
-    layouts ++
+  let options := "\nopen CoreJS\n" ++
+    "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
+    "\n"
+  let preamble := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ options
+  let data := recordTerms ++ String.join writeTerms
+  let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n"
+  let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
+  let profiles := fun (visibility : String) =>
+    s!"{visibility}def profile := {profileTerm profile}\n{visibility}def premises := {profileTerm premises}\n"
+  let execution := "namespace LinkedExecutionProof\n" ++ data ++ programs ++ profiles "" ++ layouts ++
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
-    tactic ++
-    "end LinkedExecutionProof\n"
-  let correspondence := "open LinkedExecutionProof\n" ++ String.join asts.toList ++
-    "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
+    tactic ++ "end LinkedExecutionProof\n"
+  let gate :=
     "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan)) :=\n" ++
     "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions\n" ++
     "#audit_linked_programs verified\n" ++
     "#eval IO.ofExcept (verified.map fun _ => ())\n"
 
-  return ⟨preamble, execution, correspondence, premises⟩
+  let correspondence := "open LinkedExecutionProof\n" ++ raw ++ gate
+  -- The measured 384-field and 705-field cases benefit from separate processes.
+  -- Smaller proofs avoid their startup cost. Write batches use file-local CBV rules.
+  let checkpoint := if premises = .empty ∧ writes.batches.isEmpty ∧ s.utf8ByteSize + c.utf8ByteSize ≥ 40 * 1024 then
+      some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel stageLink)
+    else none
+  return { preamble, execution, correspondence, checkpoint, premises }
 
 end CoreJS.LinkedBehavior

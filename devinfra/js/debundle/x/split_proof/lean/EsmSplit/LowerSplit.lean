@@ -398,7 +398,7 @@ def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec
   | .error why => [if why.startsWith "the plan to keep the order" then s!"  model diagnostic: none. {kept} needs {why}"
       else s!"  model diagnostic: none. {kept} and {moves} need {why}"]
 
-/-- Use the same Lean toolchain and compiled model as the running splitter. -/
+/-- Check the generated proof with the same toolchain and model as the splitter. -/
 private def checkLean (work : System.FilePath) (args : Array String) : IO Unit := do
   let exe ← IO.appPath
   let args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
@@ -414,27 +414,49 @@ private def checkLean (work : System.FilePath) (args : Array String) : IO Unit :
     let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
     throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
 
-/-- Compile large execution proofs before elaborating the quoted ASTs. The second
-process imports the specific module checked in this invocation's temporary directory. -/
-private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
-    (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
-  let cert ← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
-  let file := work / "LinkedExecution.lean"
+private def checkProofModule (work : System.FilePath) (setup : Lean.ModuleSetup)
+    (code : String) (args : Array String) : IO Unit := do
+  let stem := setup.name.toString
+  let file := work / (stem ++ ".lean")
+  let config := work / (stem ++ ".setup.json")
+  IO.FS.writeFile file code
+  IO.FS.writeFile config (toJson setup).compress
+  checkLean work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
+
+private def checkCheckpoint (work : System.FilePath) (text : CoreJS.LinkedBehavior.CheckpointText) : IO Unit := do
+  let stages := #[(`LinkedReplayInput, text.input), (`LinkedReplaySource, text.source), (`LinkedReplayProof, text.execution)]
+  let mut importArts := ({} : Lean.NameMap _)
+  for (name, code) in stages do
+    let compiled := work / (name.toString ++ ".olean")
+    checkProofModule work { name, importArts } code #["-o", compiled.toString]
+    importArts := importArts.insert name (.ofArrays #[#[compiled]])
+  checkProofModule work { name := `LinkedReplayGate, importArts } text.gate #[]
+
+/-- The ordinary execution proof can also be imported into a separate AST gate. -/
+private def checkOrdinaryExecution (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate) : IO Unit := do
   if cert.correspondence.utf8ByteSize < 512 * 1024 then
+    let file := work / "LinkedExecution.lean"
     IO.FS.writeFile file (cert.preamble ++ cert.execution ++ cert.correspondence)
     checkLean work #[file.toString]
   else
-    let proof := work / "LinkedExecutionProof.lean"
+    let name := `LinkedExecutionProof
     let compiled := work / "LinkedExecutionProof.olean"
-    IO.FS.writeFile proof (cert.preamble ++ cert.execution)
-    checkLean work #["-o", compiled.toString, proof.toString]
-    let setup : Lean.ModuleSetup := {
-      name := `LinkedExecution
-      importArts := ({} : Lean.NameMap _).insert `LinkedExecutionProof (.ofArrays #[#[compiled]]) }
-    let setupFile := work / "LinkedExecution.setup.json"
-    IO.FS.writeFile setupFile (toJson setup).compress
-    IO.FS.writeFile file ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence)
-    checkLean work #[s!"--setup={setupFile}", file.toString]
+    checkProofModule work { name } (cert.preamble ++ cert.execution) #["-o", compiled.toString]
+    let importArts := ({} : Lean.NameMap _).insert name (.ofArrays #[#[compiled]])
+    checkProofModule work { name := `LinkedExecution, importArts }
+      ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence) #[]
+
+/-- Publication waits for the kernel-checked executions and the exact AST gate. -/
+private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
+    (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
+  let cert ← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
+  let accepted ← match cert.checkpoint with
+    | none => pure false
+    | some checkpoint => try
+        checkCheckpoint work checkpoint
+        pure true
+      catch _ => pure false
+  unless accepted do checkOrdinaryExecution work cert
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
