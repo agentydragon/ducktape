@@ -95,10 +95,10 @@ repos:
         types: [toml]
 
       - id: check-xml
-        name: check GNOME D-Bus XML syntax
+        name: check XML syntax
         entry: check-xml
         language: system
-        files: ^(aiquota/gnome|finance/plaid/spend/gnome)/dbus/[^/]+\.xml$
+        files: \.xml$
 
       # TODO: enable check-json
       # - id: check-json
