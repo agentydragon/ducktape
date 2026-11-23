@@ -168,5 +168,11 @@ def test_variant_matches_zod(zod_schema: dict[str, Any], pydantic_schema: dict[s
         pytest.fail(f"Schema mismatch for {event_name}:\n{diff}")
 
 
+def test_missing_local_definition_reports_its_reference() -> None:
+    schema = {"properties": {"value": {"$ref": "#/$defs/Missing"}}}
+    with pytest.raises(ValueError, match=r"#/\$defs/Missing"):
+        inline_refs(schema)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
