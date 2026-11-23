@@ -59,7 +59,6 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         management_policies=["Observe"],
         kubernetes_identity=KUBERNETES_IDENTITY,
         variables=variables,
-        generated_versions=True,
     )
     workspace.add_json_patch(JsonPatch.add("/metadata/annotations/crossplane.io~1paused", "true"))
     return chart

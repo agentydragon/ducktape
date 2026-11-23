@@ -3,6 +3,7 @@
 Design, source-change path and Kubernetes identities: cluster/docs/crossplane-opentofu-artifact-triggers.md.
 """
 
+import json
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
