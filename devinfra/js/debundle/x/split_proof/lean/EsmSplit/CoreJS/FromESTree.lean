@@ -453,7 +453,6 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let values : List (ArrayElementKind × Expr) ← elements.mapM fun element => do
       if element == .null then throw "unsupported array hole"
       if (← field element "type") == "SpreadElement" then
-        unless inFunction do throw "unsupported array spread"
         return (.spread, ← lower (← element.getObjVal? "argument"))
       return (.element, ← lower element)
     if values.any (fun (kind, _) => kind == .spread) then return .arrWithSpread values

@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 import {
   array,
   arrow,
+  assertCertifiedResult,
+  assertRejected,
   assertWorkerResult,
   block,
   call,
@@ -197,20 +199,24 @@ for (const dependent of [false, true]) {
   assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), { result: dependent ? "object" : "string" });
 }
 
-for (const [kind, syntax] of [
-  ["hole", "[worker, , 2]"],
-  ["spread", "[0, ...[worker]]"],
-]) {
-  const { verdict, out } = workerSplit(
-    `array-${kind}`,
-    `const worker = 1; const value = ${syntax}; export { value as result };`,
+for (const enabled of [true, false]) {
+  const replay = workerSplit(
+    `top-level-spread-${enabled}`,
+    `const worker = [1]; const value = ${enabled} ? [0, ...worker] : [42]; export { value as result };`,
     entryUnits
   );
-  assert.equal(verdict.status, "rejected");
-  assert.equal(verdict.reason, `statement 1: unsupported array ${kind}`);
-  assert.equal(verdict.reason_code, "linked_input");
-  assert(!existsSync(out));
+  if (enabled) {
+    assertRejected(replay, /original reached an unknown result during linked initialization: array spread/);
+    assert.deepEqual(observe(replay.files.sourceFile, "result"), { result: [0, 1] });
+  } else {
+    assertCertifiedResult(replay, [42]);
+  }
 }
+
+assertRejected(
+  workerSplit("array-hole", "const worker = 1; const value = [worker, , 2]; export { value as result };", entryUnits),
+  /statement 1: unsupported array hole/
+);
 
 // Both modules allocate arrays with identical contents. Independent bindings
 // remain certified across the crossing; only the order-sensitive alias changes
