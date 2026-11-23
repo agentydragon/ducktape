@@ -60,7 +60,10 @@ Lean certifies the original annotated ESTree against the exact map of output mod
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the normal three-positional command with the original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
-Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world. For large ASTs, a separate Lean process checks the execution theorem first. The AST check imports that freshly compiled theorem by file path and audits the final certificate before the splitter accepts.
+Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world.
+
+For large certificates, the checker can elaborate AST correspondence in a separate Lean process. That check imports the execution theorem compiled for the current certificate and audits the result. For large linked programs that need neither host premises nor file-local write-batch rules, the checker also proves the source run first and records its complete final state. The candidate must reach that same state. If a checkpoint stage fails, the checker retries with the ordinary execution proof.
+
 A named export list such as `export { local as publicName }` can publish an imported binding.
 Imports can follow a chain of these aliases to the declaration's live cell. A chain that
 cycles without reaching a declaration fails to link. Lean checks that each entry export
