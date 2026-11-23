@@ -60,6 +60,22 @@ assertCertifiedResult(
   ["original", "kg"]
 );
 
+assertCertifiedResult(
+  ownerReaderSplit(
+    "consecutive-optional-reads",
+    `const run = () => {
+      let trace = "";
+      const key = () => { trace += "k"; return "value"; };
+      const record = { value: 7, get child() { trace += "g"; return this; } };
+      const read = (base) => base?.child?.[key()];
+      return [read(null), read({ child: null }), read(record), trace];
+    };
+    const result = run();
+    export { result };`
+  ),
+  [null, null, 7, "gk"]
+);
+
 function optionalMember(object, property, computed) {
   return {
     type: "ChainExpression",
