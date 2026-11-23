@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -214,12 +215,13 @@ func (s *Store) Checkpoint(ctx context.Context, id, target string) (*uint64, err
 }
 
 func (s *Store) CommitCheckpoint(ctx context.Context, id, target string, cursor uint64) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, _, err := lockSession(ctx, tx, id); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,$2,$3)
-			ON CONFLICT(session_id,destination) DO UPDATE SET cursor=GREATEST(sampler_export_checkpoint.cursor,EXCLUDED.cursor)`, id, target, cursor)
-		return err
-	})
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,$2,$3)
+		ON CONFLICT(session_id,destination) DO UPDATE SET cursor=GREATEST(sampler_export_checkpoint.cursor,EXCLUDED.cursor)`, id, target, cursor)
+	var violation *pq.Error
+	if errors.As(err, &violation) && violation.Constraint == "sampler_export_checkpoint_session_id_fkey" && violation.Code == "23503" {
+		return protocol.ErrMissing
+	}
+	return err
 }
