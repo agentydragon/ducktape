@@ -65,6 +65,10 @@ export function literalKey(node) {
   if (node.regex) return `r:${node.regex.pattern}/${node.regex.flags}`;
   if (node.bigint !== undefined) return `bi:${node.bigint}`;
   if (node.value === null) return "null";
+  // Lean's JSON decoder replaces isolated surrogates with U+FFFD. Keep a
+  // distinct, lossless key so its string lowering can refuse these literals.
+  if (typeof node.value === "string" && !node.value.isWellFormed())
+    return `s16:${Array.from(node.value, (c) => c.codePointAt(0).toString(16)).join(",")}`;
   return `${{ string: "s", number: "n", boolean: "b" }[typeof node.value]}:${node.value}`;
 }
 
@@ -108,6 +112,8 @@ function annotate(node, meaning, unitRanges, binders, legacy) {
   for (const [key, value] of Object.entries(node)) {
     if (!POSITION_FIELDS.has(key)) out[key] = annotate(value, meaning, unitRanges, binders, legacy);
   }
+  if (node.type === "TemplateElement" && typeof node.value.cooked === "string" && !node.value.cooked.isWellFormed())
+    out.cookedWellFormed = false;
   if (node.type === "Identifier") {
     const m = meaning.get(node);
     if (m) {

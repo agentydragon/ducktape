@@ -35,12 +35,21 @@ private def stringExpr (s : String) : Except String Expr := do
   unless s.toList.all (·.toNat ≤ 0xffff) do throw "string outside the Basic Multilingual Plane"
   return .str s
 
+/-- A string literal consumed directly by a relational comparison has no use that can
+observe its length or index its code units. The comparison itself uses UTF-16 order. -/
+private def relationalOperand (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
+  if (← field j "type") == "Literal" then
+    if (← field j "lit").startsWith "s:" then
+      return .str (← stringLiteral j)
+  lower j
+
 private def literal (key : String) : Except String Expr := do
   match key with
   | "null" => return .null
   | "b:true" => return .bool true
   | "b:false" => return .bool false
   | _ =>
+    if key.startsWith "s16:" then throw "string literal contains an isolated UTF-16 surrogate"
     if key.startsWith "s:" then
       return ← stringExpr (key.drop 2).toString
     if key.startsWith "n:" then
@@ -228,6 +237,8 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
   unless rest.length == expressions.length do throw "template element count does not match substitutions"
   let cooked := fun q => do
     unless (← field q "type") == "TemplateElement" do throw "expected a template element"
+    if let .ok false := q.getObjValAs? Bool "cookedWellFormed" then
+      throw "template text contains an isolated UTF-16 surrogate"
     stringExpr (← field (← q.getObjVal? "value") "cooked")
   let mut result ← cooked first
   for (expression, quasi) in expressions.zip rest do
@@ -312,6 +323,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "BinaryExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr imports inFunction ""
+    let lower := if ["<", "<=", ">", ">="].contains op then relationalOperand lower else lower
     let left ← lower (← j.getObjVal? "left")
     let right ← lower (← j.getObjVal? "right")
     match op with
@@ -320,6 +332,10 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     | "*" => return .binary .mul left right
     | "/" => return .binary .div left right
     | "%" => return .binary .mod left right
+    | "<" => return .binary .lt left right
+    | "<=" => return .binary .le left right
+    | ">" => return .binary .gt left right
+    | ">=" => return .binary .ge left right
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
     | "in" => return .hasProp left right
