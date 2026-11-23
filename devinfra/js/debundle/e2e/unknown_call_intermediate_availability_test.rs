@@ -783,13 +783,17 @@ fn expect_independent_value_conflict(source: &'static str) {
     );
 }
 
-fn registered_provider_fixture(source: &'static str, with_hint: bool) -> Fixture {
-    let registry_chunks = [("static/registry", REGISTRY)];
-    run_fixture(
-        FixtureOpts::new(source, registered_provider_modules(with_hint))
-            .with_chunk_id("static/provider")
-            .with_extra_chunks(&registry_chunks),
-    )
+fn registered_provider_opts(with_hint: bool) -> FixtureOpts<'static> {
+    let source = r#"import { registry as importedRegistry } from "./registry.js";
+const registry = importedRegistry;
+const provider = { read() { return later; } };
+registry.registerProvider(provider);
+const later = 42;
+console.log("ready");
+"#;
+    FixtureOpts::new(source, registered_provider_modules(with_hint))
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&[("static/registry", REGISTRY)])
 }
 
 fn expect_independent_later_colocated_runtime(source: &'static str, expected: &str) {
@@ -972,10 +976,7 @@ console.log(globalThis.earlyRead, globalThis.earlyValue, later);
     );
 }
 
-#[test]
-fn split_rejects_const_tdz_observed_during_unknown_call_with_fresh_iife_writes() {
-    expect_independent_later_conflict(
-        r#"import { ready } from "./peer.js";
+const FRESH_IIFE_BEFORE_INITIALIZATION: &str = r#"import { ready } from "./peer.js";
 export function readLater() { return later; }
 const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = ((object) => {
@@ -984,50 +985,32 @@ const dynamic = ((object) => {
 })({});
 const later = 42;
 console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
-        PEER,
-    );
+"#;
+
+#[test]
+fn split_rejects_const_tdz_observed_during_unknown_call_with_fresh_iife_writes() {
+    expect_independent_later_conflict(FRESH_IIFE_BEFORE_INITIALIZATION, PEER);
 }
 
 #[test]
 fn colocated_unknown_call_preserves_const_tdz_before_later_read() {
     expect_independent_later_colocated_runtime(
-        r#"import { ready } from "./peer.js";
-export function readLater() { return later; }
-const prefix = ready && globalThis.runBeforeInitialization();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "ready";
-  return object;
-})({});
-const later = 42;
-console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
+        FRESH_IIFE_BEFORE_INITIALIZATION,
         "threw undefined 42\n",
     );
 }
 
 #[test]
 fn split_rejects_var_read_before_its_assignment() {
-    expect_independent_later_conflict(
-        r#"import { ready } from "./peer.js";
+    let source = r#"import { ready } from "./peer.js";
 export function readLater() { return later; }
 const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = {};
 var later = 42;
 console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
-        PEER,
-    );
-    expect_independent_later_colocated_runtime(
-        r#"import { ready } from "./peer.js";
-export function readLater() { return later; }
-const prefix = ready && globalThis.runBeforeInitialization();
-const dynamic = {};
-var later = 42;
-console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
-        "returned undefined 42\n",
-    );
+"#;
+    expect_independent_later_conflict(source, PEER);
+    expect_independent_later_colocated_runtime(source, "returned undefined 42\n");
 }
 
 #[test]
@@ -1096,41 +1079,23 @@ console.log(globalThis.earlyRead, globalThis.earlyValue, value);
 
 #[test]
 fn split_rejects_previously_captured_callback_reading_const_tdz() {
-    expect_independent_later_alias_conflict(
-        r#"import { ready } from "./peer.js";
+    let source = r#"import { ready } from "./peer.js";
 export function readLater() { return later; }
 const capturedReader = readLater;
 const prefix = ready && globalThis.runBeforeInitialization(capturedReader);
 const dynamic = {};
 const later = 42;
 console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
-    );
-    expect_alias_colocated_runtime(
-        r#"import { ready } from "./peer.js";
-export function readLater() { return later; }
-const capturedReader = readLater;
-const prefix = ready && globalThis.runBeforeInitialization(capturedReader);
-const dynamic = {};
-const later = 42;
-console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
-        "threw undefined 42\n",
-    );
+"#;
+    expect_independent_later_alias_conflict(source);
+    expect_alias_colocated_runtime(source, "threw undefined 42\n");
 }
 
 #[test]
 fn no_sync_callback_member_hint_keeps_stored_provider_deferred() {
     // The initialized, unique-writer registry alias retains its import origin
     // for lookup reach; the call hint only exempts its stored argument graph.
-    let source = r#"import { registry as importedRegistry } from "./registry.js";
-const registry = importedRegistry;
-const provider = { read() { return later; } };
-registry.registerProvider(provider);
-const later = 42;
-console.log("ready");
-"#;
-    let fixture = registered_provider_fixture(source, true);
+    let fixture = run_fixture(registered_provider_opts(true));
 
     assert_preserved_entry_output(&fixture, "ready\n");
     assert_generated_module_after_entry_script(
@@ -1144,18 +1109,7 @@ console.log("ready");
 #[test]
 fn unhinted_unknown_registration_still_preserves_callback_tdz() {
     expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"import { registry as importedRegistry } from "./registry.js";
-const registry = importedRegistry;
-const provider = { read() { return later; } };
-registry.registerProvider(provider);
-const later = 42;
-console.log("ready");
-"#,
-            registered_provider_modules(false),
-        )
-        .with_chunk_id("static/provider")
-        .with_extra_chunks(&[("static/registry", REGISTRY)]),
+        registered_provider_opts(false),
         &["values/later"],
         &["sequenced"],
     );
