@@ -60,8 +60,9 @@ the normal three-positional command with the original source path. The splitter 
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
 Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world.
 A named export list such as `export { local as publicName }` can publish an imported binding.
-Lean checks that the public name resolves to the same live cell in both graphs. Imports must
-resolve to declarations in their immediate providers. Source-bearing re-exports such as
+Imports can follow a chain of these aliases to the declaration's live cell. A chain that
+cycles without reaching a declaration fails to link. Lean checks that each entry export
+resolves to the same live cell in both graphs. Source-bearing re-exports such as
 `export { name } from "./provider.mjs"` are outside this fragment.
 
 Ordinary top-level function declarations with identifier parameters are initialized when the modules link. A call can reach a declared function before its statement executes, while its closed-over lexical bindings still observe their own initialization order. The checker uses the same scope correspondence for recursive references and deferred function bodies. Nested declarations, async and generator functions, and default parameters remain outside this fragment.
