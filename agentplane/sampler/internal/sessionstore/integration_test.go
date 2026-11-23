@@ -104,7 +104,7 @@ func TestStoreOperationsExpireBeforeTheirCallerWhenBlockedOnDatabaseLocks(t *tes
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			err = scenario.call(ctx, New(store.DB(), 100*time.Millisecond), session)
+			err = scenario.call(ctx, New(store.DB(), 100*time.Millisecond, nil), session)
 			var cancelled *pq.Error
 			if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &cancelled) && cancelled.Code == "57014") {
 				t.Fatalf("database operation error=%v, want deadline cancellation", err)
