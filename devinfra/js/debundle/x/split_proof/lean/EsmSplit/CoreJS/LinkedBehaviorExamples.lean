@@ -112,7 +112,9 @@ elab "#quoteJsonFixture" name:ident : command => do
     | `quotedSourceJsonFixture => [("quotedSourceJsonFixture", sourceJsonFixture),
         ("quotedOutputJsonFixture", outputJsonFixture)]
     | _ => [(name.getId.toString, jsonFixture)]
-  for text in LinkedBehavior.jsonDefinitions roots do
+  let (definitions, entries) := LinkedBehavior.jsonDefinitions roots
+  modifyEnv (EsmSplit.CertificateData.addEntries · entries)
+  for text in definitions do
     let .ok stx := Parser.runParserCategory (← getEnv) `command text
       | throwError "could not parse the quoted JSON definition"
     elabCommand stx

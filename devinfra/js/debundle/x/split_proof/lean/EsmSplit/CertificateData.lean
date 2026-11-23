@@ -16,13 +16,16 @@ private initialize data : SimplePersistentEnvExtension (Name × Expr) (NameMap E
     addEntryFn := fun entries (name, expr) => entries.insert name expr
   }
 
+def addEntries (env : Environment) (entries : Entries) : Environment :=
+  entries.foldl data.addEntry env
+
 def moduleName : Name := `LinkedCertificateData
 
 /-- Let Lean persist the expressions in an environment with no declarations.
 The generated proof module elaborates and kernel-checks their uses. -/
 def write (path : System.FilePath) (entries : Entries) : IO Unit := do
   let env := (← mkEmptyEnvironment).setMainModule moduleName
-  writeModule ((Lean.ShareCommon.shareCommon entries).foldl data.addEntry env) path
+  writeModule (addEntries env (Lean.ShareCommon.shareCommon entries)) path
 
 /-- A placeholder for a reference to a private definition in the proof module. -/
 def ref (name : Name) : Expr := .fvar ⟨name⟩
