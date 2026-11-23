@@ -145,7 +145,7 @@ theorem readValue (tree : Tree) (keys : List String) (key : String) :
     lookupLiteralValue (fields tree keys) key =
       (read tree key).bind fun value => if keys.contains key then some value else none := by
   by_cases h : key ∈ keys <;> cases hv : read tree key <;>
-    simp [lookupLiteralValue, lookup, hv, h, List.contains_iff_mem]
+    simp [lookupLiteralValue, lookup, hv, h]
 
 theorem hit {tree : Tree} {keys : List String} {key value : String} {i : Nat}
     (atIndex : keys[i]? = some key) (atKey : read tree key = some value) :
