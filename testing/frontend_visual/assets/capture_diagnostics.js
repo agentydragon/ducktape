@@ -1,4 +1,6 @@
-(target) => {
+(targets = null) => {
+  if (targets !== null && targets.length !== 1) return { targetCount: targets.length };
+  const target = targets?.[0] ?? null;
   const describe = (element) => {
     const { x, y, width, height } = element.getBoundingClientRect();
     const style = getComputedStyle(element);
@@ -43,7 +45,7 @@
   const focused = document.activeElement;
   const selection = window.getSelection();
   const selectedRect = selection && selection.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
-  return {
+  const diagnostics = {
     viewport: {
       width: window.innerWidth,
       height: window.innerHeight,
@@ -86,4 +88,14 @@
     targetScrollAncestors,
     scrollables,
   };
+  const rect = diagnostics.target?.rect;
+  if (!rect) return { diagnostics, clip: null };
+
+  // The screenshot clip uses document coordinates. Round both edges independently.
+  const left = rect.x + diagnostics.viewport.scrollX;
+  const top = rect.y + diagnostics.viewport.scrollY;
+  const x = Math.round(left);
+  const y = Math.round(top);
+  const clip = { x, y, width: Math.round(rect.width + left - x), height: Math.round(rect.height + top - y) };
+  return { diagnostics, clip };
 };

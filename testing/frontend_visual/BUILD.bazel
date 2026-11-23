@@ -118,6 +118,7 @@ py_test(
         "//devinfra/testing:output_writer",
         "//testing/frontend_visual:fixtures",
         "//util:playwright",
+        "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

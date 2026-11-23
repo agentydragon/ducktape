@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 import pytest_bazel
+from PIL import Image
 from playwright.async_api import BrowserContext, Page, Playwright, expect
 from python.runfiles import Runfiles
 
@@ -337,11 +338,40 @@ async def test_unnamed_capture_uses_case_identity(harness: VisualHarness) -> Non
     assert image == _payload(harness.output_dir, role="screenshot", checkpoint=None)
 
 
-async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -> None:
-    async with harness.open() as view:
-        with pytest.raises(ValueError, match="exactly one"):
-            await view.capture("ambiguous", target=view.page.locator("div"))
-    assert not harness.output_dir.exists()
+@pytest.mark.parametrize(
+    ("selector", "error"),
+    [
+        ("#absent", "screenshot target must match exactly one element, got 0"),
+        ("div", "screenshot target must match exactly one element, got 2"),
+        ("#empty", "screenshot target has no visible extent"),
+    ],
+)
+async def test_invalid_crop_fails_before_publication(page: Page, tmp_path: Path, selector: str, error: str) -> None:
+    outputs = BoundTestOutputs(tmp_path / "out", "example::test")
+    with VisualPage(page, outputs=outputs, title="Example") as view:
+        await page.set_content("<div>present</div><div id='empty'></div>")
+        with pytest.raises(ValueError, match=f"example::test::crop: {error}"):
+            await view.capture("crop", target=page.locator(selector))
+    assert not outputs.output_dir.exists()
+
+
+@pytest.mark.parametrize(("css_height", "rows"), [("40.4px", 40), ("40.5px", 41), ("2000px", 2000)])
+async def test_crop_rounds_to_the_nearest_pixel_and_takes_the_whole_element(
+    page: Page, tmp_path: Path, css_height: str, rows: int
+) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example::test")
+    with VisualPage(page, outputs=outputs, title="Example") as view:
+        await page.set_viewport_size({"width": 300, "height": 200})
+        await page.set_content(
+            f"<body style='margin: 0; padding: 80px 0 240px'>"
+            f"<div id='crop' style='width: 100px; height: {css_height}; background: blue'></div>"
+        )
+        await page.evaluate("window.scrollTo(0, 70)")
+        path = await view.capture(target=page.locator("#crop"), scale="css")
+        assert await page.evaluate("window.scrollY") == 70
+    with Image.open(path) as image:
+        assert image.size == (100, rows)
+        assert image.convert("RGB").getpixel((0, 0)) == (0, 0, 255)
 
 
 async def test_no_capture_can_hide_a_page_error(harness: VisualHarness) -> None:
