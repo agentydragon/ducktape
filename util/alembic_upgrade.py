@@ -9,7 +9,8 @@ from sqlalchemy import Connection, MetaData
 
 def upgrade(connection: Connection, scripts: Path, revision: str = "head", *, metadata: MetaData | None = None) -> None:
     config = Config()
-    config.set_main_option("script_location", str(scripts))
+    # Alembic interpolates percent signs in configuration values.
+    config.set_main_option("script_location", str(scripts).replace("%", "%%"))
     config.attributes["connection"] = connection
     if metadata is not None:
         config.attributes["target_metadata"] = metadata
