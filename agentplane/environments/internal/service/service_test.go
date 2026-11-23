@@ -1162,23 +1162,25 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 }
 
 func TestCollectionSnapshotSurvivesDeletionDuringEligibilityRead(t *testing.T) {
-	reader := &missingDuringEligibility{WithWatch: baseReader(t)}
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-current"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
+	}}
+	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
+	reader := &changeAfterPodRead{WithWatch: base, change: func(ctx context.Context) error {
+		return base.Delete(ctx, sandbox)
+	}}
 	rpc := serveDiscoveryWithComponentReader(t, reader, runtimeconfig.Catalog{}, nil)
 	stream, err := rpc.WatchEnvironments(serviceContext(t, peertls.ActionsURI), &emptypb.Empty{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
-		frame, err := stream.Recv()
-		if err != nil {
-			t.Fatalf("collection snapshot during deletion = %v, %v", frame, err)
-		}
-		if frame.GetSnapshotComplete() != nil {
-			break
-		}
+	if rows := receiveCollection(t, stream); len(rows) != 0 {
+		t.Fatalf("collection snapshot included the deleted Sandbox: %v", rows)
 	}
-	if reader.sandboxGets != 4 {
-		t.Fatalf("Sandbox reads = %d, want the eligibility race to be exercised", reader.sandboxGets)
+	if !reader.changed {
+		t.Fatal("test did not delete the Sandbox during projection")
 	}
 }
 
@@ -1214,7 +1216,14 @@ func TestGetRechecksExecutionAccountProjectionAfterPodProjection(t *testing.T) {
 		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
 	}}
 	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
-	reader := &removeOwnerAfterPodRead{WithWatch: base}
+	reader := &changeAfterPodRead{WithWatch: base, change: func(ctx context.Context) error {
+		var account corev1.ServiceAccount
+		if err := base.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &account); err != nil {
+			return err
+		}
+		account.OwnerReferences = nil
+		return base.Update(ctx, &account)
+	}}
 	rpc := serveDiscoveryWithComponentReader(t, reader, runtimeconfig.Catalog{}, nil)
 	got, err := rpc.GetEnvironment(serviceContext(t, peertls.ActionsURI), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -1222,7 +1231,7 @@ func TestGetRechecksExecutionAccountProjectionAfterPodProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEnvironment after owner changed during Pod projection = %v", err)
 	}
-	if !reader.removed {
+	if !reader.changed {
 		t.Fatal("test did not remove the execution account owner during projection")
 	}
 	if got.GetExecutionAccount() != nil {
@@ -1238,10 +1247,14 @@ func TestGetUsesRevalidatedIdentityAfterPodProjection(t *testing.T) {
 		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
 	}}
 	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
-	reader := &changeIdentityAfterPodRead{
-		WithWatch: base,
-		identity:  &sandboxapi.IdentityRef{Name: "after-pod-read"},
-	}
+	reader := &changeAfterPodRead{WithWatch: base, change: func(ctx context.Context) error {
+		var current sandboxapi.Sandbox
+		if err := base.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &current); err != nil {
+			return err
+		}
+		current.Spec.Identity = &sandboxapi.IdentityRef{Name: "after-pod-read"}
+		return base.Update(ctx, &current)
+	}}
 	rpc := serveDiscoveryWithDelegation(t, reader, runtimeconfig.Catalog{}, []string{
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 	})
@@ -1261,23 +1274,6 @@ type replaceSandboxOnAuthorizationRead struct {
 	replacement *sandboxapi.Sandbox
 	sandboxGets int
 	replaced    bool
-}
-
-// Simulate a deletion between the collection's initial read and the lifecycle manager's
-// independent eligibility read. The watch must deliver a complete snapshot instead of failing.
-type missingDuringEligibility struct {
-	client.WithWatch
-	sandboxGets int
-}
-
-func (r *missingDuringEligibility) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
-	if _, ok := object.(*sandboxapi.Sandbox); ok {
-		r.sandboxGets++
-		if r.sandboxGets == 4 {
-			return apierrors.NewNotFound(sandboxapi.GroupVersion.WithResource("sandboxes").GroupResource(), key.Name)
-		}
-	}
-	return r.WithWatch.Get(ctx, key, object, options...)
 }
 
 func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
@@ -1302,55 +1298,20 @@ func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.N
 	return r.WithWatch.Get(ctx, key, object, options...)
 }
 
-type removeOwnerAfterPodRead struct {
+// changeAfterPodRead injects a concurrent change between reading the Pod and finishing its descriptor.
+type changeAfterPodRead struct {
 	client.WithWatch
-	removed bool
+	change  func(context.Context) error
+	changed bool
 }
 
-type changeIdentityAfterPodRead struct {
-	client.WithWatch
-	identity *sandboxapi.IdentityRef
-	changed  bool
-}
-
-func (r *changeIdentityAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
-	if _, ok := object.(*corev1.Pod); ok {
-		if err := r.WithWatch.Get(ctx, key, object, options...); err != nil {
-			return err
-		}
-		if !r.changed {
-			r.changed = true
-			var sandbox sandboxapi.Sandbox
-			if err := r.WithWatch.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &sandbox); err != nil {
-				return err
-			}
-			sandbox.Spec.Identity = r.identity
-			if err := r.WithWatch.Update(ctx, &sandbox); err != nil {
-				return err
-			}
-		}
-		return nil
+func (r *changeAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if err := r.WithWatch.Get(ctx, key, object, options...); err != nil {
+		return err
 	}
-	return r.WithWatch.Get(ctx, key, object, options...)
-}
-
-func (r *removeOwnerAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
-	if _, ok := object.(*corev1.Pod); ok {
-		if err := r.WithWatch.Get(ctx, key, object, options...); err != nil {
-			return err
-		}
-		if !r.removed {
-			r.removed = true
-			var account corev1.ServiceAccount
-			if err := r.WithWatch.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &account); err != nil {
-				return err
-			}
-			account.OwnerReferences = nil
-			if err := r.WithWatch.Update(ctx, &account); err != nil {
-				return err
-			}
-		}
-		return nil
+	if _, ok := object.(*corev1.Pod); ok && !r.changed {
+		r.changed = true
+		return r.change(ctx)
 	}
-	return r.WithWatch.Get(ctx, key, object, options...)
+	return nil
 }
