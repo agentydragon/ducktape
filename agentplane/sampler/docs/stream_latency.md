@@ -112,8 +112,9 @@ to the caller anywhere in that transaction. Two callers appeared at the root of 
   calls [PendingInterrupts](../internal/sessionstore/processes.go), which loads the conversation
   under the owner lock and discards it before reading the interrupt IDs.
 - **History export.** There were 16 distinct root transactions identified by the export checkpoint
-  upsert. [CommitCheckpoint](../internal/sessionstore/admission.go) locks the Session and
-  loads its conversation before advancing the cursor.
+  upsert. The sampled revision locked the Session and loaded its conversation before advancing
+  the cursor. [CommitCheckpoint](../internal/sessionstore/admission.go) now upserts the checkpoint
+  directly. The foreign key enforces Session existence and `GREATEST` retains the furthest cursor.
 
 Most root transactions had no caller-specific statement in the sample. These chains establish
 contention on individual conversations. The snapshots have no join from a blocked backend
@@ -145,7 +146,7 @@ wakes or the listener reconnects. A tool entering the foreground also wakes the 
 previously queued steering input can yield the observation. The effect on staging latency
 still needs measurement.
 
-Test a narrower export checkpoint transaction that preserves monotonic cursors. To measure
+Repeat the lock sample after the checkpoint change rolls out. To measure
 cross-session interference, run the same Responses replay with export and interrupt handling
 active, once alongside a Qwen reasoning stream and once alone.
 

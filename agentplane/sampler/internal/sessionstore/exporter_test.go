@@ -186,6 +186,45 @@ func TestExportSnapshotDescribesTheSameCursorItReturns(t *testing.T) {
 	}
 }
 
+func TestCommitCheckpointWhileConversationLocked(t *testing.T) {
+	store := newTestStore(t)
+	session := exportFixtureSession(t, store)
+	ownerTx, err := store.DB().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ownerTx.Rollback()
+	var lockedID string
+	if err := ownerTx.QueryRowContext(t.Context(), `SELECT id FROM sampler_conversation WHERE id=$1 FOR UPDATE`,
+		session.ConversationID).Scan(&lockedID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hold the row through the first insert, an advance and a late acknowledgement.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	const target = "history"
+	for _, cursor := range []uint64{1, 3, 2} {
+		if err := store.CommitCheckpoint(ctx, session.ID, target, cursor); err != nil {
+			t.Fatalf("commit checkpoint %d with conversation locked: %v", cursor, err)
+		}
+	}
+	checkpoint, err := store.Checkpoint(ctx, session.ID, target)
+	if err != nil || checkpoint == nil {
+		t.Fatalf("read checkpoint: cursor=%v err=%v", checkpoint, err)
+	}
+	if *checkpoint != 3 {
+		t.Fatalf("checkpoint after late acknowledgement=%d, want 3", *checkpoint)
+	}
+}
+
+func TestCommitCheckpointMissingSession(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.CommitCheckpoint(t.Context(), uuid.NewString(), "history", 1); !errors.Is(err, protocol.ErrMissing) {
+		t.Fatalf("commit checkpoint for missing session: got %v, want ErrMissing", err)
+	}
+}
+
 func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testing.T) {
 	store := newTestStore(t)
 	session := exportFixtureSession(t, store)
