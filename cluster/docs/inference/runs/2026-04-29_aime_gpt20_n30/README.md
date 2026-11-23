@@ -3,7 +3,7 @@
 Full-N (all 30 AIME-2024 problems) sweep across `reasoning_effort`
 ∈ {low, medium, high} on cluster Ollama's `gpt-oss:20b`. Same setup as
 the N=10 pass at <../2026-04-28_aime_gpt20/README.md>; the only knob
-changed is `--limit 30`. The shared `run_aime.py` and `regrade.py` use the
+changed is `--limit 30`. The shared `run_inspect_sweep.py` and `regrade.py` use the
 same endpoint and uv-hashbang plumbing.
 
 Scope of this run: confirm or refute the small-N noise band in
@@ -12,11 +12,11 @@ Scope of this run: confirm or refute the small-N noise band in
 
 ## What ran
 
-- **Driver**: <../aime/run_aime.py> (run with `--limit 30`)
+- **Driver**: <../run_inspect_sweep.py> (run with `--limit 30`)
 - **Re-grader**: <../aime/regrade.py>
 - **Inspect logs**: <eval_logs/{low,medium,high}/\*.eval>
 - **Stdout transcript**: <raw_output.txt>
-- **Summary JSON**: <summary.json> (run_aime.py exit codes)
+- **Summary JSON**: <summary.json> (run_inspect_sweep.py exit codes)
 - **Regrade JSON**: <regrade.json> (per-sample regraded results)
 - **Endpoint**: `https://ollama.allegedly.works/v1` with bearer token from cluster Secret
 
@@ -168,9 +168,9 @@ wrong number." That is the over-thinking pattern.
 
 ```bash
 cd cluster/docs/inference/runs/2026-04-29_aime_gpt20_n30
-../aime/run_aime.py --run-dir . --limit 30                   # full sweep, ~3h wall
+../run_inspect_sweep.py aime2024 --limit 30                   # full sweep, ~3h wall
 ../aime/regrade.py --run-dir .                              # re-grade existing eval_logs/
-../aime/run_aime.py --run-dir . --limit 5 --efforts medium  # quick partial repro
+../run_inspect_sweep.py aime2024 --limit 5 --efforts medium  # quick partial repro
 ```
 
 Requires: `kubectl` (for fetching `ollama-direct-token` Secret) and

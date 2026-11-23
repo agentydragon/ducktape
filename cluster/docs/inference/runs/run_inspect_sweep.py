@@ -11,19 +11,13 @@
 # devshell PYTHONPATH leaks into the uv-managed venv, and Python imports
 # `pydantic` from the Nix store (incompatible with the venv's `pydantic_core`),
 # producing `ModuleNotFoundError: pydantic_core._pydantic_core`.
-"""Run AIME-2024 against gpt-oss:20b on the cluster Ollama endpoint via
-Inspect AI, sweeping `reasoning_effort` ∈ {low, medium, high}.
+"""Sweep reasoning effort for Inspect AI's AIME-2024 or HumanEval task.
 
-Driven from out-of-cluster (uses the public `ollama.allegedly.works`
-endpoint with the bearer token from the in-cluster Secret) so we don't
-have to fight the mitmproxy auto-injection in `claude-sandbox`.
-
-Usage:
-    ../aime/run_aime.py --run-dir RUN_DIR --limit N [--efforts low,medium,high] [--model gpt-oss:20b]
-
-Output:
-    <run-dir>/<out>/<effort>/...  Inspect AI per-run logs
-    <run-dir>/summary.json          Headline numbers extracted from the logs
+Run from the record directory (or pass --run-dir). Each effort writes an
+Inspect log under --out; summary.json records the configuration and exit codes.
+Examples:
+    ../run_inspect_sweep.py aime2024 --limit 30
+    ../run_inspect_sweep.py humaneval --limit 5 --efforts medium
 """
 
 from __future__ import annotations
@@ -61,32 +55,19 @@ def inspect_path() -> str:
     return p
 
 
-def run_one(*, effort: str, model: str, limit: int, log_dir: Path, env: dict[str, str]) -> int:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        inspect_path(),
-        "eval",
-        "inspect_evals/aime2024",
-        "--model",
-        f"openai/{model}",
-        "--limit",
-        str(limit),
-        "--reasoning-effort",
-        effort,
-        "--log-dir",
-        str(log_dir),
-    ]
-    print(f"\n=== effort={effort} ===\n$ " + " ".join(cmd), flush=True)
-    return subprocess.run(cmd, env=env, check=False).returncode
-
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--model", default=DEFAULT_MODEL)
-    p.add_argument("--run-dir", type=Path, required=True, help="Run record directory for logs and summary.json.")
-    p.add_argument("--limit", type=int, required=True)
-    p.add_argument("--efforts", default=DEFAULT_EFFORTS, help="Comma-separated reasoning_effort values to sweep.")
-    p.add_argument("--out", type=Path, default=Path("eval_logs"), help="Log directory relative to --run-dir.")
+    tasks = p.add_subparsers(dest="task", required=True)
+    aime = tasks.add_parser("aime2024")
+    aime.add_argument("--limit", type=int, required=True)
+    humaneval = tasks.add_parser("humaneval")
+    humaneval.add_argument("--limit", type=int, default=164)
+    humaneval.add_argument("--sandbox", default="docker", help="Inspect sandbox for executing generated Python.")
+    for task in (aime, humaneval):
+        task.add_argument("--model", default=DEFAULT_MODEL)
+        task.add_argument("--run-dir", type=Path, default=Path(), help="Existing run record directory.")
+        task.add_argument("--efforts", default=DEFAULT_EFFORTS, help="Comma-separated reasoning efforts.")
+        task.add_argument("--out", type=Path, default=Path("eval_logs"), help="Log directory relative to --run-dir.")
     return p.parse_args()
 
 
@@ -107,10 +88,31 @@ def main() -> int:
         "exit_codes": {},
     }
 
+    sandbox_args = []
+    if args.task == "humaneval":
+        sandbox_args = ["--sandbox", args.sandbox]
+        summary["config"]["sandbox"] = args.sandbox
+
     efforts = [e.strip() for e in args.efforts.split(",") if e.strip()]
     for effort in efforts:
-        rc = run_one(effort=effort, model=args.model, limit=args.limit, log_dir=out_root / effort, env=env)
-        summary["exit_codes"][effort] = rc
+        log_dir = out_root / effort
+        log_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            inspect_path(),
+            "eval",
+            f"inspect_evals/{args.task}",
+            "--model",
+            f"openai/{args.model}",
+            "--limit",
+            str(args.limit),
+            "--reasoning-effort",
+            effort,
+            *sandbox_args,
+            "--log-dir",
+            str(log_dir),
+        ]
+        print(f"\n=== effort={effort} ===\n$ " + " ".join(cmd), flush=True)
+        summary["exit_codes"][effort] = subprocess.run(cmd, env=env, check=False).returncode
 
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print("\n=== ALL DONE ===")
