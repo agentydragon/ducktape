@@ -71,7 +71,7 @@ func TestDispatchVersionUpgradePreservesRows(t *testing.T) {
 
 func TestPreviousImageStartupAndSQLWritesRemainCompatible(t *testing.T) {
 	db := openMigrationDatabase(t)
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal(err)
 	}
 	legacySchema := schema
@@ -81,7 +81,7 @@ func TestPreviousImageStartupAndSQLWritesRemainCompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := legacyProvider.Up(t.Context()); err != nil {
-		t.Fatalf("previous image migrations could not start against version 24 schema: %v", err)
+		t.Fatalf("previous image migrations could not start against the version 33 schema: %v", err)
 	}
 	insertRetainedEvidence(t, db)
 	var beforeUpdate int64
@@ -206,13 +206,13 @@ func TestSessionWatchUpgradeBackfillsAndVersionsOldWriters(t *testing.T) {
 	}
 }
 
-func TestBaselineCreatesFinalSchema(t *testing.T) {
+func TestBaselineCreatesSchemaThroughWriterOverlap(t *testing.T) {
 	db := openMigrationDatabase(t)
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal(err)
 	}
 	insertRetainedEvidence(t, db)
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal("repeat baseline:", err)
 	}
 	assertRetainedEvidence(t, db)
