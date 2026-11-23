@@ -60,12 +60,31 @@ of identified renewals showed the content fetch or recursive context query as th
 or last statement. These observations include client waits. They do not time either query
 or link individual transactions to Qwen deltas.
 
-The first change folds renewal into the evidence transaction. The owner, pending intent,
-generation and live lease are checked there already. This removes a full conversation load
-and a separate commit per semantic event. Replay the same buffered reasoning
-chunks at the same concurrency and context length. Compare renewal duration, same-read
-inter-chunk spacing and wire-to-projection p50/p95. If spacing remains high, measure the
-evidence transaction's individual round trips before changing the write boundary.
+### Buffered Qwen reasoning replay, 2026-11-23
+
+Three concurrent Chat Completions sessions ran against the sampler and PostgreSQL on
+BuildBuddy. Each request retained 96 messages (at least 497,664 bytes of prompt text).
+The fixture sent 24 distinct Qwen-style reasoning deltas and a terminal response together.
+The journal confirmed one 2,394-byte wire read per stream and linked each projected delta
+to its parsed chunk by source sequence. Three trials per revision yielded 216 deltas and
+207 adjacent pairs. Each cell gives the pooled median / p95.
+
+| Revision                                                                                                       | Previous projection to next parsed chunk, same read | Wire read to projection | Parsed chunk to projection |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------: | ----------------------: | -------------------------: |
+| [Separate renewal transaction](https://app.buildbuddy.io/invocation/4f4a8840-0f29-4f41-adf0-c1fc0935ec8f)      |                                        313 / 424 ms |         3.925 / 7.991 s |              8.6 / 50.8 ms |
+| [Renew in the evidence transaction](https://app.buildbuddy.io/invocation/efd6d153-1c9a-41ad-bc15-6d6d72bbee99) |                                          23 / 94 ms |         0.410 / 1.867 s |             13.1 / 50.8 ms |
+| [Also coalesce deadlines to 30 s](https://app.buildbuddy.io/invocation/d6e518ce-28ed-4054-8ae8-3b38f71fca86)   |                                       8.6 / 18.6 ms |         0.184 / 0.480 s |              4.8 / 11.2 ms |
+
+The separate renewal loaded the conversation and fetched the intent for every semantic
+chunk. Folding it into the existing evidence transaction removed that work and reduced
+the median gap between buffered chunks by 93%. The per-trial medians were 290–340 ms before
+and 8–45 ms after. Coalescing the deadline also skips same-bucket writes to the attempt row.
+Its per-trial medians were 7–13 ms. The overlap and variation in parsed-to-projected time
+make the incremental latency gain from coalescing harder to quantify.
+
+The replay excludes model generation, History delivery and browser rendering.
+A staging rerun on a long Qwen call can show how much of the earlier 8.55 s median remains.
+If buffered chunks still lag there, measure the evidence transaction's individual round trips.
 
 ### Tabby decode speed and terminal lag
 
