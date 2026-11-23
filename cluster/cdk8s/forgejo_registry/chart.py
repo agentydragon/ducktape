@@ -33,6 +33,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote as platform_sessions_remote
 from cluster.cdk8s.providers.flux.notification import ReceiverResource
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "forgejo-images"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
@@ -102,7 +103,7 @@ def chart(app: App) -> Chart:
         chart, "flux-system-creds", namespace=forgejo_image_automation.NAMESPACE
     )
     # Minted once: a new token would change the webhook's path.
-    mint_bearer_secret(chart, "webhook-token", name=WEBHOOK_TOKEN_SECRET, namespace=NAME, key="token")
+    mint_bearer_secret(chart, "webhook-token", target=SecretRef(namespace=NAME, name=WEBHOOK_TOKEN_SECRET).key("token"))
     Receiver(
         chart,
         "receiver",

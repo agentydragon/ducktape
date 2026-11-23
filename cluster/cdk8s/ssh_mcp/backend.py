@@ -120,12 +120,7 @@ class SshMcp(Construct):
         # (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH
         # private key, which no store may reach.
         mint_bearer_secret(
-            self,
-            "bearer-external-secret",
-            name=BEARER.secret.name,
-            namespace=BEARER.secret.namespace,
-            key=BEARER.key,
-            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            self, "bearer-external-secret", target=BEARER, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
         )
 
     def _add_deployment(self, config_map: ConfigMap, *, config: SshMcpConfig, mesh: Mesh) -> Deployment:

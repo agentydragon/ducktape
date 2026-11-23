@@ -34,8 +34,8 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 
 from cluster.cdk8s import namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -151,10 +151,8 @@ def _readonly_credentials(scope: Construct) -> None:
         scope,
         "readonly-credentials",
         name=_READONLY.name,
-        namespace=_NAMESPACE,
+        cluster=POSTGRES,
         role=_READONLY_ROLE,
-        host=POSTGRES.rw.host,
-        port=POSTGRES.rw.port.number,
         database=_DATABASE,
         target_annotations={
             "description": (

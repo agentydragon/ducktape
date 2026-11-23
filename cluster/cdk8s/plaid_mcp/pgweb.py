@@ -40,8 +40,7 @@ SERVICE = ServiceRef(
 # What pgweb asks its callers for, as HTTP Basic. The user is not secret; the password is minted
 # below and read by the egress proxy, which is the only holder besides pgweb.
 AUTH_USER = "plaid"
-AUTH = SecretRef(namespace=NAMESPACE, name=f"{_NAME}-auth")
-AUTH_KEY = "password"
+AUTH = SecretRef(namespace=NAMESPACE, name=f"{_NAME}-auth").key("password")
 # 0.17.0's multi-arch index digest.
 _IMAGE = "ghcr.io/sosedoff/pgweb:0.17.0@sha256:a5256d416e2e8b92d69a4459058e3eca33a9f075d8325491644411d0bc3bd70b"
 _QUERY_TIMEOUT_SECONDS = 60
@@ -90,7 +89,7 @@ def _deployment(chart: Chart) -> None:
                                 # A caller cannot point pgweb at another database.
                                 k8s.EnvVar(name="PGWEB_LOCK_SESSION", value="true"),
                                 k8s.EnvVar(name="PGWEB_AUTH_USER", value=AUTH_USER),
-                                AUTH.key(AUTH_KEY).env_var("PGWEB_AUTH_PASS"),
+                                AUTH.env_var("PGWEB_AUTH_PASS"),
                             ],
                             ports=[SERVICE.k8s_container_port()],
                             resources=container_resources(cpu=_CPU_REQUEST, memory="64Mi", memory_limit=_MEMORY_LIMIT),
@@ -114,14 +113,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    mint_bearer_secret(
-        chart,
-        "auth-secret",
-        name=AUTH.name,
-        namespace=AUTH.namespace,
-        key=AUTH_KEY,
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-    )
+    mint_bearer_secret(chart, "auth-secret", target=AUTH, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER)
     _deployment(chart)
     k8s.KubeService(
         chart,

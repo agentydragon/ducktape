@@ -19,6 +19,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote
 from cluster.cdk8s.reflector import mirror_annotations
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
 
@@ -57,9 +58,7 @@ def chart(app: App) -> Chart:
         mint_bearer_secret(
             chart,
             f"{name}-bearer",
-            name=f"platform-sessions-{name}-bearer",
-            namespace=NAMESPACE,
-            key="token",
+            target=SecretRef(namespace=NAMESPACE, name=f"platform-sessions-{name}-bearer").key("token"),
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             immutable=True,

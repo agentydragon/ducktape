@@ -64,7 +64,7 @@ _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
-_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
+_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password").key("password")
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
 _NO_PROXY = f"127.0.0.1,localhost,{litellm.SERVICE.host},{litellm.SERVICE.fqdn}"
@@ -183,7 +183,7 @@ def _openclaw_container() -> k8s.Container:
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
             # trusted-proxy local-password fallback instead of proxy identity headers.
-            _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
+            _GATEWAY_PASSWORD.env_var("OPENCLAW_GATEWAY_PASSWORD"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: Agentplane egress replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
@@ -516,9 +516,8 @@ def _credentials(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD.name,
-        namespace=_GATEWAY_PASSWORD.namespace,
-        generator_name=f"{_GATEWAY_PASSWORD.name}-generator",
+        target=_GATEWAY_PASSWORD,
+        generator_name=f"{_GATEWAY_PASSWORD.secret.name}-generator",
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",

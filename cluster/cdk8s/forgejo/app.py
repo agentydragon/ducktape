@@ -99,9 +99,7 @@ def _metrics_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "metrics-token",
-        name=_METRICS_TOKEN.secret.name,
-        namespace=_METRICS_TOKEN.secret.namespace,
-        key=_METRICS_TOKEN.key,
+        target=_METRICS_TOKEN,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )

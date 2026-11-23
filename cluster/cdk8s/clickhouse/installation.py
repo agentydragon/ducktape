@@ -61,6 +61,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
@@ -324,8 +325,7 @@ def clickhouse_chart(app: App) -> Chart:
     mint_bearer_secret(
         chart,
         "aiquota-history-password",
-        name=client.AIQUOTA_HISTORY_CREDENTIALS,
-        namespace=client.NAMESPACE,
+        target=SecretRef(namespace=client.NAMESPACE, name=client.AIQUOTA_HISTORY_CREDENTIALS).key(client.PASSWORD_KEY),
         description="Read-only access to typed AIQuota history; never mounted by a sandbox.",
     )
     pod_template = "clickhouse"

@@ -133,7 +133,7 @@ py_library(
         ":environment",
         ":service_database",
         "//cluster/cdk8s/cnpg:cluster",
-        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/cnpg:role_credentials",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/cnpg:cluster",

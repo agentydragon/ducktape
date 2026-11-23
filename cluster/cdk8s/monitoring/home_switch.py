@@ -69,13 +69,7 @@ class HomeSwitchVars(BaseModel):
 
 def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
     mint_bearer_secret(
-        chart,
-        id,
-        name=key.secret.name,
-        namespace=key.secret.namespace,
-        key=key.key,
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        description=description,
+        chart, id, target=key, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER, description=description
     )
 
 

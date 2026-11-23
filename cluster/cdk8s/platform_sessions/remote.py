@@ -36,6 +36,7 @@ from cluster.cdk8s.forgejo_registry import image_automation as forgejo_images, p
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.volume_claim import volume_claim
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -249,9 +250,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         mint_bearer_secret(
             chart,
             f"{name}-{role}",
-            name=f"{name}-{role}",
-            namespace=NAMESPACE,
-            key="token",
+            target=SecretRef(namespace=NAMESPACE, name=f"{name}-{role}").key("token"),
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             immutable=True,
