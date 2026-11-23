@@ -5,6 +5,7 @@ import { parse } from "acorn";
 import path from "node:path";
 import {
   arrow,
+  assertCertifiedResult,
   binary,
   block,
   call,
@@ -18,11 +19,10 @@ import {
   member,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
   property,
   returns,
-  root,
+  sequentialSplit,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
@@ -30,21 +30,6 @@ import {
 const entry = "entry.mjs";
 const worker = "worker.mjs";
 const includesCase = caseShard();
-
-function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, order = [worker]) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, out, verdict, log }, expected) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, entry)]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, log);
-  }
-}
 
 const assignment = (left, right) => ({ type: "AssignmentExpression", operator: "=", left, right });
 const sequence = (...expressions) => ({ type: "SequenceExpression", expressions });
@@ -86,7 +71,7 @@ for (const [scenario, values, initialFields] of [
   const initial = { type: "LogicalExpression", operator: "||", left: id("codes"), right: old };
   const initializer = call(arrow([object], sequence(...writes, object)), [initial]);
   const source = program([variable("var", "codes", initializer), exportNamed([["codes", "Codes"]])]);
-  const { files, out, verdict, log } = split(name, source, {
+  const { files, out, verdict, log } = sequentialSplit(name, source, {
     [worker]: ["#0"],
     [entry]: ["#1"],
   });
@@ -118,7 +103,7 @@ if (includesCase("readonly-batch")) {
   const writes = keys.map((key, i) => assignment(member(target, literal(key), true), literal(i)));
   const init = call(arrow([target], sequence(...writes, target)), [arrow([], literal(0))]);
   const source = program([declare("codes", init), exportNamed([["codes", "Codes"]])]);
-  const { files, out, verdict, log } = split("readonly-batch", source, { [worker]: ["#0"], [entry]: ["#1"] });
+  const { files, out, verdict, log } = sequentialSplit("readonly-batch", source, { [worker]: ["#0"], [entry]: ["#1"] });
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, /original threw during linked initialization/, log);
   assert(!existsSync(out));
@@ -156,14 +141,14 @@ for (const [name, key, computed, value] of [
     declare("answer", call(id("run"))),
     exportNamed([["answer", "result"]]),
   ]);
-  assertCertified(split(name, source), value);
+  assertCertifiedResult(sequentialSplit(name, source), value);
 }
 
 // Abrupt base and key evaluation skips the remaining operands. A throwing RHS
 // leaves the property unchanged. The nullish write fails after the RHS runs.
 if (includesCase("abrupt-assignment")) {
-  assertCertified(
-    split(
+  assertCertifiedResult(
+    sequentialSplit(
       "abrupt-assignment",
       `const run = (phase, expectedStep) => {
       const target = { value: "before" };
@@ -203,7 +188,7 @@ if (includesCase("abrupt-assignment")) {
   const modules = { [state]: ["#0"], [first]: ["#1"], [read]: ["#2"], [second]: ["#3"], [entry]: ["#4"] };
   const original = { seen: "first", final: "second" };
   if (includesCase("ordered-writes")) {
-    assertCertified(split("ordered-writes", source, modules, [state, first, read, second]), original);
+    assertCertifiedResult(sequentialSplit("ordered-writes", source, modules, [state, first, read, second]), original);
   }
 
   // The final write and the intermediate read each constrain the schedule.
@@ -212,7 +197,7 @@ if (includesCase("abrupt-assignment")) {
     ["early-read", [state, read, first, second], { seen: "before", final: "second" }],
   ]) {
     if (!includesCase(name)) continue;
-    const { dir, files, out, verdict, log } = split(name, source, modules, order);
+    const { dir, files, out, verdict, log } = sequentialSplit(name, source, modules, order);
     assert.equal(verdict.status, "rejected", log);
     assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
     assert(!existsSync(out));

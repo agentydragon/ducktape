@@ -1,23 +1,22 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   array,
   arrow,
+  assertCertifiedResult,
+  assertRejected,
   binary,
   block,
   exportNamed,
   forcePreview,
   id,
   literal,
-  lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   primitive,
   program,
   returns,
-  root,
+  sequentialSplit,
   throws,
   unary,
   variable,
@@ -26,29 +25,8 @@ import {
 const entry = "entry.mjs";
 const worker = "worker.mjs";
 
-function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, order = [worker]) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, dir, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, verdict, log, out }, expected) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, entry)]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, log);
-  }
-}
-
-function assertRejected({ verdict, log, out }, reason) {
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
-  assert(!existsSync(out));
-}
-
-assertCertified(
-  split(
+assertCertifiedResult(
+  sequentialSplit(
     "length-offset",
     `const last = (index, values) => index === values.length - 1;
      const result = () => [last(2, [0, 0, 0]), last("2", [0, 0, 0]), last(2, { length: "3" })];
@@ -57,10 +35,13 @@ assertCertified(
   [true, false, true]
 );
 
-assertCertified(split("eager-subtraction", "const length = 5; const result = length - 1; export { result };"), 4);
+assertCertifiedResult(
+  sequentialSplit("eager-subtraction", "const length = 5; const result = length - 1; export { result };"),
+  4
+);
 
-assertCertified(
-  split(
+assertCertifiedResult(
+  sequentialSplit(
     "arithmetic-operand-order",
     `const run = (fail) => {
       let phase = "start";
@@ -138,11 +119,11 @@ const generated = program([
   variable("const", "result", id("run")),
   exportNamed([["result", "result"]]),
 ]);
-assertCertified(split("generated-arithmetic", generated), expected);
+assertCertifiedResult(sequentialSplit("generated-arithmetic", generated), expected);
 
 // CoreJS cannot run valueOf. It refuses the initialization even with a catch
 // that handles the actual JavaScript exception.
-const conversion = split(
+const conversion = sequentialSplit(
   "throws-in-object-coercion",
   `const run = () => {
     const object = { valueOf: () => { throw "conversion"; } };
@@ -154,7 +135,7 @@ const conversion = split(
 assert.deepEqual(observe(conversion.files.sourceFile, "result"), { result: "conversion" });
 assertRejected(conversion, /an object is converted to a primitive/);
 
-const bigint = split("mixed-bigint", "const run = () => 1n + 1; const result = run(); export { result };");
+const bigint = sequentialSplit("mixed-bigint", "const run = () => 1n + 1; const result = run(); export { result };");
 assert.deepEqual(observe(bigint.files.sourceFile, "result"), { error: "TypeError" });
 assertRejected(bigint, /unsupported literal/);
 
@@ -167,8 +148,8 @@ assertRejected(bigint, /unsupported literal/);
     export { result };`;
   const reader = "reader.mjs";
   const modules = { [worker]: ["#0", "#1"], [reader]: ["#2"], [entry]: ["#3"] };
-  assertCertified(split("ordered-arithmetic", source, modules, [worker, reader]), true);
-  const early = split("early-arithmetic", source, modules, [reader, worker]);
+  assertCertifiedResult(sequentialSplit("ordered-arithmetic", source, modules, [worker, reader]), true);
+  const early = sequentialSplit("early-arithmetic", source, modules, [reader, worker]);
   assertRejected(early, /probe executions completed normally with different final states/);
   const preview = path.join(early.dir, "preview");
   forcePreview(early.files, preview);

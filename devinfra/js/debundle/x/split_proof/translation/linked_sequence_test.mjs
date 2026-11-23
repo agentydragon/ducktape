@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  assertCertifiedResult,
   block,
   call,
   conditional,
@@ -10,33 +11,18 @@ import {
   forcePreview,
   id,
   literal,
-  lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
-  root,
+  sequentialSplit,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
 
-function split(name, source, modules) {
-  const dir = path.join(root, name);
-  const spec = { entry, modules, order: ["worker.mjs"], sequential: true };
-  const files = prepare(dir, { source, spec, provider: "" });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
 function assertWorkerResult(name, source, expected) {
-  const { files, out, verdict, log } = split(name, source, { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] });
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, entry)]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, name);
-  }
+  assertCertifiedResult(sequentialSplit(name, source), expected);
 }
 
 // Generate different operand counts and both direct and deferred sequences.
@@ -116,7 +102,7 @@ for (const dependent of [false, true]) {
     const value = read();
     const late = 2;
     export { value as result };`;
-  const { dir, files, out, verdict, log } = split(`reordered-sequence-${dependent}`, source, {
+  const { dir, files, out, verdict, log } = sequentialSplit(`reordered-sequence-${dependent}`, source, {
     "worker.mjs": ["#3"],
     [entry]: ["#0", "#1", "#2", "#4"],
   });

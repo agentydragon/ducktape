@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { exportNamed, importNamed, lower, observe, prepare, program, root } from "./testing/linked_programs.mjs";
+import { exportNamed, importNamed, observe, program, runSplit } from "./testing/linked_programs.mjs";
 
 const source = `
 import { publicValue } from "./provider.mjs";
@@ -17,17 +17,14 @@ const spec = {
 };
 
 function split(name, provider, extras) {
-  const dir = path.join(root, name);
-  const { sourceFile, specFile } = prepare(dir, { source, provider, extras, spec });
-  const out = path.join(dir, "out");
-  return { sourceFile, out, ...lower(sourceFile, specFile, out) };
+  return runSplit(name, { source, provider, extras, spec });
 }
 
 function assertAccepted(test, expected) {
-  const { sourceFile, out, verdict, log } = test;
+  const { files, out, verdict, log } = test;
   assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [sourceFile, path.join(out, "entry.mjs")]) {
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
     assert.deepEqual(observe(file, Object.keys(expected)), expected, file);
   }
 }
@@ -57,7 +54,7 @@ for (const name of ["leaf", "publicValue", "missing"]) {
   if (name === "leaf") {
     assertAccepted(fixture, { result: "ok", live: 31 });
   } else {
-    assert.deepEqual(observe(fixture.sourceFile, "result"), { error: "SyntaxError" });
+    assert.deepEqual(observe(fixture.files.sourceFile, "result"), { error: "SyntaxError" });
     assert.equal(fixture.verdict.status, "rejected", fixture.log);
     assert.match(fixture.verdict.reason, name === "missing" ? /does not export missing/ : /cyclic re-export/);
     assert(!existsSync(fixture.out));
