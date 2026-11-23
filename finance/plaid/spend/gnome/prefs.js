@@ -18,34 +18,37 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window) {
     window.set_default_size(640, 760);
     const settings = this.getSettings();
+    const handlers = [];
+    function dayChoice(key, properties) {
+      const [, choices] = settings.settings_schema.get_key(key).get_range().recursiveUnpack();
+      const row = new Adw.ComboRow({
+        ...properties,
+        model: Gtk.StringList.new(choices.map((value) => `${parseInt(value, 10)} days`)),
+      });
+      const read = () => {
+        row.selected = choices.indexOf(settings.get_string(key));
+      };
+      handlers.push(settings.connect(`changed::${key}`, read));
+      read();
+      row.connect("notify::selected", () => {
+        if (choices[row.selected] !== undefined) settings.set_string(key, choices[row.selected]);
+      });
+      return row;
+    }
     const page = new Adw.PreferencesPage({ title: "Panel", icon_name: "view-more-symbolic" });
     const group = new Adw.PreferencesGroup({
       title: "Panel items",
       description: "Choose and arrange the compact items shown in the top bar.",
     });
     const windowGroup = new Adw.PreferencesGroup({ title: "Pace window" });
-    const windowRow = new Adw.ComboRow({
-      title: "Rolling average",
-      model: Gtk.StringList.new(["7 days", "30 days"]),
-      selected: settings.get_string("pace-window") === "30d" ? 1 : 0,
-    });
-    windowRow.connect("notify::selected", () =>
-      settings.set_string("pace-window", windowRow.selected === 1 ? "30d" : "7d")
-    );
-    windowGroup.add(windowRow);
+    windowGroup.add(dayChoice("pace-window", { title: "Rolling average" }));
     const sparklineGroup = new Adw.PreferencesGroup({ title: "Sparkline" });
-    const days = [7, 14, 30];
-    const historyRow = new Adw.ComboRow({
-      title: "Time shown",
-      subtitle: "Separate from the rolling average period",
-      model: Gtk.StringList.new(days.map((value) => `${value} days`)),
-      selected: days.indexOf(Number(settings.get_string("sparkline-history-days"))),
-    });
-    historyRow.connect("notify::selected", () => {
-      if (days[historyRow.selected] !== undefined)
-        settings.set_string("sparkline-history-days", String(days[historyRow.selected]));
-    });
-    sparklineGroup.add(historyRow);
+    sparklineGroup.add(
+      dayChoice("sparkline-history-days", {
+        title: "Time shown",
+        subtitle: "Separate from the rolling average period",
+      })
+    );
     const anchorRow = new Adw.SwitchRow({
       title: "Start vertical scale at zero",
       subtitle: "Turn off to fit the displayed history",
@@ -125,21 +128,13 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
         rows.push(row);
       }
     };
-    const handlers = [
+    handlers.push(
       settings.connect("changed::panel-order", rebuild),
       settings.connect("changed::panel-visible", rebuild),
-      settings.connect("changed::pace-window", () => {
-        windowRow.selected = settings.get_string("pace-window") === "30d" ? 1 : 0;
-      }),
-      settings.connect("changed::sparkline-history-days", () => {
-        historyRow.selected = days.indexOf(Number(settings.get_string("sparkline-history-days")));
-      }),
-      settings.connect("changed::sparkline-leash-color", updateColor),
-    ];
+      settings.connect("changed::sparkline-leash-color", updateColor)
+    );
     // GSettings reports changes only for keys read after connecting a handler.
     rebuild();
-    windowRow.selected = settings.get_string("pace-window") === "30d" ? 1 : 0;
-    historyRow.selected = days.indexOf(Number(settings.get_string("sparkline-history-days")));
     updateColor();
     window.connect("close-request", () => {
       for (const handler of handlers) settings.disconnect(handler);
