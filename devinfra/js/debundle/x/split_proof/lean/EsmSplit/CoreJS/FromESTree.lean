@@ -454,7 +454,14 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "NewExpression" =>
     let lower := linkedExpr profile imports inFunction ""
     let args ← j.getObjValAs? (List Json) "arguments"
-    return .new (← lower (← j.getObjVal? "callee")) (← args.mapM lower)
+    let callee ← j.getObjVal? "callee"
+    if (field callee "k").toOption == some "G" && (← field callee "type") == "Identifier" then
+      let name ← identifier callee
+      if profile.opaqueConstructor name then
+        -- Evaluation stops at the callee, before an argument can throw or mutate state.
+        -- Retain argument syntax and binding references in the deferred function.
+        return .new (.prim (.opaqueConstructorRef name) []) (← args.mapM lower)
+    return .new (← lower callee) (← args.mapM lower)
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr profile imports inFunction ""

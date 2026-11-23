@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   arrow,
   call,
+  conditional,
   exportNamed,
   id,
   literal,
@@ -74,4 +75,48 @@ for (const [name, body, reason] of [
   const test = fixture(name, `const read = () => { ${body} }; const result = read(); export { result };`);
   assert.match(test.run("--host-contract", profile).reason, reason);
   assert(!existsSync(test.out));
+}
+
+for (const args of [[], [literal("absent")]]) {
+  for (const reached of [false, true]) {
+    const construction = { type: "NewExpression", callee: id("Error"), arguments: args };
+    const source = program([
+      variable("const", "read", arrow([id("fail")], conditional(id("fail"), construction, literal(42)))),
+      variable("const", "result", call(id("read"), [literal(reached)])),
+      exportNamed([["result", "result"]]),
+    ]);
+    const test = fixture(`opaque-error-${args.length}-${reached}`, source);
+    assert.match(test.run().reason, /unsupported global Error/);
+    const verdict = test.run("--host-contract", profile);
+    if (reached) {
+      assert.match(verdict.reason, /unknown.*ambient constructor Error is reached/);
+      assert(!existsSync(test.out));
+    } else {
+      assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+      assert.deepEqual(verdict.assumptions, []);
+      assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
+      for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+        assert.equal((await import(pathToFileURL(file).href)).result, 42);
+      }
+    }
+  }
+}
+
+// A catch cannot turn unknown host construction into a proved normal return.
+const caught = fixture(
+  "caught-opaque-error",
+  'const read = () => { try { throw new Error((() => { throw "argument"; })()); } catch { return 7; } }; const result = read(); export { result };'
+);
+assert.match(caught.run("--host-contract", profile).reason, /unknown.*ambient constructor Error is reached/);
+assert(!existsSync(caught.out));
+
+const lexical = fixture(
+  "shadowed-error-constructor",
+  'const read = () => { class Error { value = "local"; } return (new Error()).value; }; const result = read(); export { result };'
+);
+const localVerdict = lexical.run("--host-contract", profile);
+assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
+assert.deepEqual(localVerdict.assumptions, []);
+for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
+  assert.equal((await import(pathToFileURL(file).href)).result, "local");
 }

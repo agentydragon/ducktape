@@ -401,9 +401,10 @@ def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec
 /-- Elaborate the concrete execution proof with the same toolchain and compiled model
 as the splitter. Publication waits for the kernel to accept it. -/
 private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
-    (original candidate : CoreJS.Program) : IO Unit := do
+    (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
   let file := work / "LinkedExecution.lean"
-  IO.FS.writeFile file (← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate))
+  let (code, premises) ← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
+  IO.FS.writeFile file code
   let exe ← IO.appPath
   let args := #["-DwarningAsError=true", s!"--root={work}", file.toString]
   let proc ← if exe.fileName == some "lean" then
@@ -417,6 +418,7 @@ private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePa
     let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
     let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
     throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
+  return premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
   let fields := match outcome with
@@ -541,18 +543,10 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       let providers ← loadProviders program bundlePath work
       let used ← IO.mkRef CoreJS.HostProfile.empty
       certifyOutput providers B P out work input checkOnly outputAsts source fun files => do
-        let decode := fun active => CoreJS.LinkedInput.decodePair program providers files P active
-        let (active, original, candidate) ← IO.ofExcept <| do
-          match decode .empty with
-          | .ok (a, b) => return (.empty, a, b)
-          | .error why =>
-            if profile == .empty then throw why
-            let (a, b) ← decode profile
-            return (profile, a, b)
-        used.set active
+        let (original, candidate) ← IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P profile)
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
-        verifyExecution active work program providers files P original candidate
+        used.set (← verifyExecution profile work program providers files P original candidate)
       let active ← used.get
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
