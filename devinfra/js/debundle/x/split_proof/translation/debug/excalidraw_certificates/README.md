@@ -91,15 +91,17 @@ directories, reparses their entries and compares their public names against the 
 Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
 Lean's structural checker; it is diagnostic evidence only.
 
-| Units moved                         | Entry names added                | Entry names lost | Inverted conflicts | Failed check |
-| ----------------------------------- | -------------------------------- | ---------------: | -----------------: | ------------ |
-| Authored scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `ct`, `qb$1`, `vn` |                0 |                518 | `OrderOk`    |
-| 1337 only                           | none                             |                0 |                259 | `OrderOk`    |
+| Units moved                         | Entry names added    | Entry names lost | Inverted conflicts | Failed check |
+| ----------------------------------- | -------------------- | ---------------: | -----------------: | ------------ |
+| Authored scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `qb$1` |                0 |                518 | `OrderOk`    |
+| 1337 only                           | none                 |                0 |                259 | `OrderOk`    |
 
 Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
-reads `Jb` and five bindings resident in the entry. Extracting both requires the renderer to
-expose all five to the new module. Comparing export names here detects additions and removals.
-Artifact certification also needs to establish which live binding each name denotes.
+reads `Jb` and five bindings resident in the entry. The renderer imports `ct` and `vn`
+through their existing public names and adds exports for the other three. Comparing export
+names here detects additions and removals. Artifact certification also needs to establish
+which live binding each name denotes.
+[Alias replay](https://app.buildbuddy.io/invocation/50a13338-069e-4061-a8b3-d049f7740076)
 
 The first five conflicts for the single-arrow placement are with units 5–9. Unit 5 is the
 first statement after five named-import declarations and initializes `po` with `Ve(callback)`.

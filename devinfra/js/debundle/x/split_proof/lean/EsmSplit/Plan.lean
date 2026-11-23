@@ -89,20 +89,36 @@ def Module.declares (B : Bundle) (m : Module) (u : Name) : Bool :=
   m.stmts.any fun i => (B.stmt i).defs.contains u
 
 /-- What the `export` statements among a module's statements publish. -/
+def Module.publishedFrom (arr : Array Stmt) (m : Module) : List (Name × Option Name) :=
+  m.stmts.flatMap fun i => (arr.getD i default).exports
+
 def Module.published (B : Bundle) (m : Module) : List (Name × Option Name) :=
-  m.stmts.flatMap fun i => (B.stmt i).exports
+  m.publishedFrom B.toArray
 
 /-- Every name the module exports: by its own `export` statements, then by its glue. -/
 def Module.publicNames (B : Bundle) (m : Module) : List Name :=
   (m.published B).map (·.1) ++ m.exports.map (·.1)
 
-/-- The module exports its binding `u`: by glue, or by an `export` statement of its own that publishes `u` as `u`. -/
-def Module.exportsLocal (B : Bundle) (m : Module) (u : Name) : Bool :=
-  m.exports.any (·.2 == u) || (m.published B).contains (u, some u)
+/-- The public name and local binding for each export backed by a binding. -/
+def localExports (published : List (Name × Option Name)) : List (Name × Name) :=
+  published.filterMap fun (pub, loc) => loc.map (pub, ·)
 
-/-- The name importers ask for to get the binding `u` that the module exports: the glue's, or else `u`. -/
-def Module.publicName (m : Module) (u : Name) : Name :=
-  ((m.exports.find? (·.2 == u)).map (·.1)).getD u
+def Module.namedExportsFrom (arr : Array Stmt) (m : Module) : List (Name × Name) :=
+  m.exports ++ localExports (m.publishedFrom arr)
+
+def Module.namedExports (B : Bundle) (m : Module) : List (Name × Name) :=
+  m.namedExportsFrom B.toArray
+
+/-- The module publishes its binding `u`, possibly under another name. -/
+def Module.exportsLocal (B : Bundle) (m : Module) (u : Name) : Bool :=
+  (m.namedExports B).any (·.2 == u)
+
+/-- The public name an importer asks for. Multiple exports of one binding use the first. -/
+def exportNameFor (exports : List (Name × Name)) (u : Name) : Name :=
+  ((exports.find? (·.2 == u)).map (·.1)).getD u
+
+def Plan.namedExports (B : Bundle) (P : Plan) (src : ModName) : List (Name × Name) :=
+  ((P.find src).map (·.namedExports B)).getD []
 
 def Plan.exportsName (B : Bundle) (P : Plan) (src : ModName) (u : Name) : Bool :=
   (P.find src).any (·.exportsLocal B u)
