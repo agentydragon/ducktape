@@ -25,7 +25,7 @@ pkg_zip(
     name = "plaid_spend_extension",
     srcs = [
         ":extension_files",
-        "//gnome:dbus_loader",
+        "//gnome:dbus",
     ],
     out = "plaid-spend-desktop.zip",
     visibility = ["//visibility:public"],

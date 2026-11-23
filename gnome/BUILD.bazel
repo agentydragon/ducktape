@@ -6,7 +6,7 @@ exports_files(
 )
 
 pkg_files(
-    name = "dbus_loader",
+    name = "dbus",
     srcs = ["dbus.js"],
     strip_prefix = strip_prefix.files_only(),
     visibility = ["//visibility:public"],
