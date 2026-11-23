@@ -2159,8 +2159,19 @@ Sandbox recovery can ship independently.
 
 **Deferred by the operator, Nov 22.** App currently stores the Thread archive flag after checking
 Dispatcher activity. The operator chose App ownership as a conservative starting point. Eventual
-ownership and behavior are open. The operator finds it counterintuitive for an archived Session
-to continue and wants a separate design discussion before deciding what that means.
+ownership and behavior are open.
+
+On Nov 23 the operator reported that Identity cleanup on
+[staging Sandbox `public-coder-ducktape-3`](https://agentplane-staging.allegedly.works/#/sandboxes/public-coder-ducktape-3)
+listed three Sessions as blockers even though all three were already archived:
+`4a52cdbf-2436-4878-8a51-b162574da0a5`, `7d17ea9a-43f1-4b77-a6a9-84429aea2283` and
+`d76abba7-10d1-4f77-9d40-3a828c2f75c7`.
+
+The operator's proposed behavior is to prevent a Session from continuing while archived and
+release its bindings, including its claim on the Identity. Decide which bindings archive
+releases, how cleanup recognizes other Sessions that still use a shared Identity, and what Identity
+an explicit unarchive would require if the original has since been deleted. The design should
+preserve History and cover Sessions already archived under the current behavior.
 
 When revisited, walk through an active turn, a permanently disconnected host, a queued notification
 and an explicit unarchive. Which operation should remain possible in each state? Who records and
