@@ -332,14 +332,16 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let body ← j.getObjVal? "expression"
     let lower := linkedExpr profile imports inFunction ""
     if (← field body "type") == "CallExpression" then
-      if ← body.getObjValAs? Bool "optional" then throw "unsupported optional call"
+      let optionalCallee ← body.getObjValAs? Bool "optional"
       let member ← body.getObjVal? "callee"
-      unless (← field member "type") == "MemberExpression" && (← member.getObjValAs? Bool "optional") do
-        throw "unsupported optional chain"
+      let reason := if optionalCallee then "unsupported optional call" else "unsupported optional chain"
+      unless (← field member "type") == "MemberExpression" do throw reason
+      let optionalReceiver ← member.getObjValAs? Bool "optional"
+      if optionalCallee == optionalReceiver then throw reason
       if ← member.getObjValAs? Bool "computed" then throw "unsupported computed optional method call"
-      let (base, key) ← linkedMember lower member (allowOptional := true)
-      let args ← body.getObjValAs? (List Json) "arguments"
-      return .callOptionalReceiver base key (← args.mapM lower)
+      let (base, key) ← linkedMember lower member (allowOptional := optionalReceiver)
+      let args ← (← body.getObjValAs? (List Json) "arguments").mapM lower
+      return if optionalCallee then .callOptionalCallee base key args else .callOptionalReceiver base key args
     let member := body
     unless (← field member "type") == "MemberExpression" do throw "unsupported optional chain"
     unless ← member.getObjValAs? Bool "optional" do throw "unsupported optional chain"

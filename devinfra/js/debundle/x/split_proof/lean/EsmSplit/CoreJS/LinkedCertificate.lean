@@ -103,6 +103,11 @@ private partial def exprEq : MatchEq Expr
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨base ▸ key ▸ arguments ▸ rfl⟩
+  | .callOptionalCallee o k args, .callOptionalCallee o' k' args' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨arguments⟩ ← listEq exprEq args args'
+    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
   | .cls n self ctor ms, .cls n' self' ctor' ms' => do
     let ⟨k⟩ ← scalarEq n n'
     let ⟨s⟩ ← scalarEq self self'

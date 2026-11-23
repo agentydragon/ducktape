@@ -247,7 +247,6 @@ assert.deepEqual(observe(path.join(preview, entry), "result"), { result: "missin
 
 for (const [name, body, reason, expected] of [
   ["parenthesized-method", "(target?.method)()", /unsupported optional chain as a call target/, 42],
-  ["optional-callee", "target.method?.()", /unsupported optional call/, 42],
   ["optional-receiver-and-callee", "target?.method?.()", /unsupported optional call/, 42],
   ["computed-optional-method", 'target?.["method"]()', /unsupported computed optional method call/, 42],
   ["continued-member", "target?.record.value", /unsupported optional chain/, 17],
