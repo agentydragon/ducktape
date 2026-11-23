@@ -135,10 +135,31 @@ for (const explicit of [false, true]) {
   }
 }
 
+for (const [name, expression, args, length, expected] of [
+  ["default-destructuring", "({ x } = { x: offset }) => x", [], 0, 7],
+  ["mixed-destructuring", "(x = offset, { y }) => x + y", [undefined, { y: 3 }], 0, 10],
+  ["nested-object", "({ x: { y = offset } }) => y", [{ x: {} }], 1, 7],
+  ["array-pattern", "([x, y], z = offset) => x + y + z", [[1, 2]], 1, 10],
+  ["rest", "(x, ...rest) => x + rest.length", [7, 4, 3], 1, 9],
+]) {
+  const source = `const offset = 7; const pick = ${expression}; export { pick };`;
+  const replay = sequentialSplit(`deferred-parameter-${name}`, source);
+  assert.equal(replay.verdict.status, "certified", replay.log);
+  for (const file of [replay.files.sourceFile, path.join(replay.out, entry)]) {
+    const { pick } = await import(pathToFileURL(file).href);
+    assert.equal(pick.length, length);
+    assert.equal(pick(...args), expected);
+  }
+  assertRejected(
+    sequentialSplit(
+      `reached-parameter-${name}`,
+      `const offset = 7; const pick = ${expression}; export const result = pick();`
+    ),
+    /deferred function pick:/
+  );
+}
+
 for (const [name, expression, reason] of [
-  ["default-destructuring", "({ value } = { value: 1 }) => value", /expected an identifier in a default parameter/],
-  ["mixed-destructuring", "(x = 1, { value }) => value", /unsupported object pattern alongside default parameters/],
-  ["rest", "(value = 1, ...rest) => value", /unsupported function parameter RestElement/],
   [
     "redeclared-parameter",
     "function (value = 1) { var value; return value; }",
