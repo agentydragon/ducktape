@@ -766,12 +766,7 @@ js_test(
 # The host inventory: which standard and host features a set of JavaScript files uses.
 js_test(
     name = "host_inventory_test",
-    data = [
-        ":host_inventory",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        ":node_modules/globals",
-    ],
+    data = [":host_inventory"],
     entry_point = "host_inventory_test.mjs",
 )
 
@@ -1235,12 +1230,20 @@ js_library(
 )
 
 js_library(
-    name = "host_inventory",
-    srcs = ["host_inventory.mjs"],
+    name = "survey_source",
+    srcs = ["survey_source.mjs"],
     deps = [
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+    ],
+)
+
+js_library(
+    name = "host_inventory",
+    srcs = ["host_inventory.mjs"],
+    deps = [
         ":node_modules/globals",
+        ":survey_source",
     ],
 )
 
