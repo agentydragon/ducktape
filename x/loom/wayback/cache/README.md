@@ -33,3 +33,21 @@ limiter waits, acquisition failures, upstream status, and cache hits/misses.
 queue budget even when Availability and replay records were already present.
 Investigate queue waits and upstream timeouts separately before raising filler
 concurrency. Internet Archive API details are in <../../docs/archive_org_apis.md>.
+
+## Publish the image for revival
+
+From the reviewed `devel` revision, authenticate to the
+[Forgejo image registry](../../../../cluster/docs/container-images.md#forgejo-hosted-images)
+with package write access, then build, load, and publish the cache image.
+
+```bash
+bb run //x/loom/wayback/cache:load
+cache_tag="devel-$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short=7 HEAD)"
+cache_image="git.allegedly.works/ducktape-ci/wayback-archive:$cache_tag"
+docker tag wayback-cache:latest "$cache_image"
+docker push "$cache_image"
+```
+
+Pin that reference in [the input Deployment](../deploy/deployment.yaml) and
+[the filler Deployment](../deploy/filler-deployment.yaml) before restoring the
+cache's Flux owner. Restore the cache's storage package as part of its revival.

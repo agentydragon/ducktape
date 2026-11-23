@@ -15,13 +15,26 @@ The `docker-ci-client` mTLS Secret is issued straight into `claude-sandbox` by
 cert-manager (`cluster/parked/docker-ci/certificates.yaml`) and mounted by the
 Job — no manual create-secret step. The client private key never leaves the cluster.
 
-**`docker-ci` is currently parked** (`cluster/parked/docker-ci/`, `spec.suspend:
-true`) — revive its Flux Kustomization before running an eval.
+**The cluster eval is parked.** To run it again, restore `docker-ci` on OVH and
+[restore the Wayback cache](../../wayback/cache/README.md#publish-the-image-for-revival). The Job requires the
+cert-manager `docker-ci-client` Secret and the reflected `litellm-master-key`
+and `claude-forgejo-credentials` Secrets in `claude-sandbox`.
 
-Prereqs: `docker-ci` Running on OVH; the `ghcr.io/agentydragon/{loom-gym-eval,wayback-proxy,loom-gym-sandbox}`
-images published (on merge to `devel`); the `docker-ci-client` Secret present
-(cert-manager); and the reflected `litellm-master-key` + `claude-forgejo-credentials`
-secrets present in `claude-sandbox`.
+## Publish images for a cluster eval
+
+The Job pulls three GHCR `:latest` tags. On revival, use a reviewed revision and
+authenticate to GHCR with package write access before building and publishing the
+images. The proxy load and sandbox build also supply the bare local eval tags.
+
+```bash
+bb run //x/loom/gym:eval_load
+bb run //x/loom/wayback/proxy:load
+docker build --platform linux/amd64 -t loom-gym-sandbox:latest x/loom/gym/sandbox
+for image in loom-gym-eval wayback-proxy loom-gym-sandbox; do
+  docker tag "$image:latest" "ghcr.io/agentydragon/$image:latest"
+  docker push "ghcr.io/agentydragon/$image:latest"
+done
+```
 
 ## Run and fetch results
 
