@@ -120,16 +120,15 @@ def test_controller_and_runtime_policies_admit_the_runtime_listener(staging_mani
     )
 
     runtime_listener = find_resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
-    assert any(
-        endpoint["matchLabels"].get("app.kubernetes.io/name") == name
-        and any(
-            port["port"] == str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)
-            for target in rule.get("toPorts", [])
-            for port in target["ports"]
-        )
-        for rule in runtime_listener["ingress"]
-        for endpoint in rule.get("fromEndpoints", [])
-    )
+    environments = environment_service.environments_service(staging.ENV.namespace).pods
+    assert runtime_listener["ingress"] == [
+        {
+            "fromEndpoints": [{"matchLabels": environments.cilium}],
+            "toPorts": [
+                {"ports": [{"port": str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT), "protocol": "TCP"}]}
+            ],
+        }
+    ]
 
 
 def test_controller_rbac_keeps_only_leader_election_lease_access(staging_manifests: list[dict[str, Any]]) -> None:
