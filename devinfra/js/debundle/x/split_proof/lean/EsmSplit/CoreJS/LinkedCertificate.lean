@@ -34,8 +34,8 @@ private partial def exprEq : MatchEq Expr
   | .arr a, .arr b => (listEq exprEq a b).map fun h => ⟨congrArg Expr.arr h.down⟩
   | .arrWithSpread a, .arrWithSpread b =>
     (listEq arrayElementEq a b).map fun h => ⟨congrArg Expr.arrWithSpread h.down⟩
-  | .prim (.globalTypeof a) [], .prim (.globalTypeof b) [] =>
-    (scalarEq a b).map fun h => ⟨congrArg (fun name => Expr.prim (.globalTypeof name) []) h.down⟩
+  | .prim a [], .prim b [] =>
+    (scalarEq a b).map fun h => ⟨congrArg (fun op => Expr.prim op []) h.down⟩
   | .unary op a, .unary op' b => do
     let ⟨o⟩ ← scalarEq op op'
     let ⟨v⟩ ← exprEq a b
@@ -261,14 +261,14 @@ theorem of_browser_evaluation {source candidate : Program} (fuel : Nat)
 
 /-- The two programs are exactly the lowering of these three AST inputs under this placement.
 Their public bindings and their complete normally terminating executions agree in every world. -/
-def ASTEquivalent (profile : HostProfile) (source providers files : Lean.Json) (plan : EsmSplit.Plan) : Prop :=
+def ASTEquivalent (profile premises : HostProfile) (source providers files : Lean.Json) (plan : EsmSplit.Plan) : Prop :=
   ∃ original candidate, LinkedInput.decodePair source providers files plan profile = .ok (original, candidate) ∧
-    EquivalentFor profile original candidate ∧ SameExports original candidate
+    EquivalentFor premises original candidate ∧ SameExports original candidate
 
 /-- Decode the actual ASTs and transport the execution and export proofs to those programs. -/
-def certifyASTs (profile : HostProfile) (source providers files : Lean.Json) (plan : EsmSplit.Plan) (original candidate : Program)
-    (semantics : EquivalentFor profile original candidate ∧ SameExports original candidate) :
-    Except String (PLift (ASTEquivalent profile source providers files plan)) := do
+def certifyASTs (profile premises : HostProfile) (source providers files : Lean.Json) (plan : EsmSplit.Plan) (original candidate : Program)
+    (semantics : EquivalentFor premises original candidate ∧ SameExports original candidate) :
+    Except String (PLift (ASTEquivalent profile premises source providers files plan)) := do
   match decoded : LinkedInput.decodePair source providers files plan profile with
   | .error why => throw why
   | .ok (a, b) =>
@@ -278,11 +278,11 @@ def certifyASTs (profile : HostProfile) (source providers files : Lean.Json) (pl
 
 /-- Successful execution of the production checker establishes a claim about the input
 and output ASTs for every host world. Its callers can discard the proof at runtime. -/
-theorem checkASTs_sound {profile source providers files plan original candidate}
-    (semantics : EquivalentFor profile original candidate ∧ SameExports original candidate)
-    (accepted : (certifyASTs profile source providers files plan original candidate semantics).isOk = true) :
-    ASTEquivalent profile source providers files plan := by
-  cases h : certifyASTs profile source providers files plan original candidate semantics with
+theorem checkASTs_sound {profile premises source providers files plan original candidate}
+    (semantics : EquivalentFor premises original candidate ∧ SameExports original candidate)
+    (accepted : (certifyASTs profile premises source providers files plan original candidate semantics).isOk = true) :
+    ASTEquivalent profile premises source providers files plan := by
+  cases h : certifyASTs profile premises source providers files plan original candidate semantics with
   | error why => rw [h] at accepted; contradiction
   | ok proof => exact proof.down
 
@@ -785,11 +785,15 @@ private def witnessFuel (profile : HostProfile) (source candidate : Program) : E
 
 /-- The generated module proves an all-world, fuel-independent claim for these two programs.
 The caller accepts only successful elaboration and kernel checking of the complete file. -/
-def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String String := do
-  let fuel ← witnessFuel profile source candidate
+def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String (String × HostProfile) := do
   let records ← recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
+  -- Only observations present in the checked programs can need a world hypothesis.
+  -- The generated execution theorem independently checks the chosen strength.
+  let observes := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Prim.globalTypeof).isSome
+  let premises := if observes sourceTerm || observes candidateTerm then profile else .empty
+  let fuel ← witnessFuel premises source candidate
   let writes := collectWriteBatches (collectWriteBatches {} sourceTerm) candidateTerm
   let replace := fun e =>
     if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]?
@@ -806,22 +810,25 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
     jsonDefinitions "files" files
   let writeImports := if writeTerms.isEmpty then "" else "import EsmSplit.Fast\n"
-  let profileTerm := match profile with
+  let profileTerm := fun (p : HostProfile) => match p with
     | .empty => "CoreJS.HostProfile.empty"
     | .browserPage => "CoreJS.HostProfile.browserPage"
-  return "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
+  let code := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
     recordTerms ++ String.join writeTerms ++
     String.join asts.toList ++
     "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
     "private def source : Program := " ++ s ++ "\n" ++
     "private def candidate : Program := " ++ c ++ "\n" ++
-    "private def profile := " ++ profileTerm ++ "\n" ++
-    "private theorem executions : LinkedBehavior.EquivalentFor profile source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
+    "private def profile := " ++ profileTerm profile ++ "\n" ++
+    "private def premises := " ++ profileTerm premises ++ "\n" ++
+    "private theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     s!"  verify_linked_programs {fuel}\n" ++
-    "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile sourceAST providers files plan)) :=\n" ++
-    "  LinkedBehavior.certifyASTs profile sourceAST providers files plan source candidate executions\n" ++
+    "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan)) :=\n" ++
+    "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions\n" ++
     "#audit_linked_programs verified\n" ++
     "#eval IO.ofExcept (verified.map fun _ => ())\n"
+
+  return (code, premises)
 
 end CoreJS.LinkedBehavior

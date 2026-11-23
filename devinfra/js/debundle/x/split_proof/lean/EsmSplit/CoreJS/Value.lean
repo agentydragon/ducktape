@@ -779,6 +779,7 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
   | .globalTypeof name => observeGlobalTypeof name
+  | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .log =>
     match args with
     | .str format :: _ :: _ => if format.contains '%' then unknown "console.log with a format string" else pure ()

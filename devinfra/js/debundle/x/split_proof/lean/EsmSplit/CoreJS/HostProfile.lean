@@ -18,6 +18,12 @@ def stableTypeof : HostProfile → String → Option String
   | .browserPage, "window" => some "object"
   | _, _ => none
 
+/-- An allowed opaque constructor can be retained in deferred code. A reached lookup ends
+the modeled execution before argument evaluation, even inside a catch clause. -/
+def opaqueConstructor : HostProfile → String → Bool
+  | .browserPage, "Error" => true
+  | _, _ => false
+
 /-- The observation has the specified value at every host state, with no effect on that state. -/
 def Satisfied (p : HostProfile) (w : World) : Prop :=
   ∀ name value, p.stableTypeof name = some value → ∀ s,
