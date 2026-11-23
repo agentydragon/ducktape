@@ -24,6 +24,7 @@ class _ImportVisitorContext:
 
     root: Path
     path: Path
+    source: str
     graph: dict[str, set[str]]
     detections: list[Detection] = field(default_factory=list)
 
@@ -85,6 +86,7 @@ class _ImportVisitor(ast.NodeVisitor):
                     DET_NAME,
                     PROP,
                     self._ctx.path,
+                    self._ctx.source,
                     n.lineno,
                     n.end_lineno,
                     f"Import inside function/class without cycle justification; move to module top or document a valid exception. [{ev}]",
@@ -98,6 +100,7 @@ class _ImportVisitor(ast.NodeVisitor):
                     DET_NAME,
                     PROP,
                     self._ctx.path,
+                    self._ctx.source,
                     n.lineno,
                     n.end_lineno,
                     f"Import inside function/class; target unresolved — please verify cycle/hotload justification. [{ev}]",
@@ -106,8 +109,8 @@ class _ImportVisitor(ast.NodeVisitor):
             )
 
 
-def _find_in_file(path: Path, tree: ast.AST, root: Path, graph: dict[str, set[str]]) -> list[Detection]:
-    ctx = _ImportVisitorContext(root=root, path=path, graph=graph)
+def _find_in_file(path: Path, tree: ast.AST, source: str, root: Path, graph: dict[str, set[str]]) -> list[Detection]:
+    ctx = _ImportVisitorContext(root=root, path=path, source=source, graph=graph)
     _ImportVisitor(ctx).visit(tree)
     return ctx.detections
 
@@ -119,6 +122,6 @@ def find_all(root: Path) -> list[Detection]:
     out: list[Detection] = []
     for p in iter_py_files(root):
         if parsed := parse_python_file(p):
-            tree, _text = parsed
-            out.extend(_find_in_file(p, tree, root, graph))
+            tree, source = parsed
+            out.extend(_find_in_file(p, tree, source, root, graph))
     return out
