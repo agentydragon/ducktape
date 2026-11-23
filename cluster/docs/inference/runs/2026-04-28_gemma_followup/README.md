@@ -17,7 +17,7 @@ didn't fully succeed.
 ## What ran
 
 - Job: <job.yaml> (`MODELS=gemma4:31b-it-q8_0`, `REASONING_EFFORT=off`)
-- Bench: <bench.py> (with the two patches above); shared prompt and metrics helpers: <../ollama_bench_helpers.py>
+- Bench: <bench.py> (with the two patches above); shared streaming benchmark: <../ollama_bench.py>
 - Driver: <run.sh> (creates the ConfigMap from the bench and shared helper)
 - Endpoint: `http://ollama.ollama:11434/v1/chat/completions`
 
