@@ -1,4 +1,6 @@
-import Lean
+import Lean.Elab.Deriving.ToExpr
+import Lean.Elab.Tactic.Cbv
+import Lean.Util.CollectAxioms
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
 
