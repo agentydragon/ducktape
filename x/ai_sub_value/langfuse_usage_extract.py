@@ -611,6 +611,17 @@ def write_json_gzip(path: Path, value: Any) -> None:
         compressed.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def write_usage_reports(
+    output_dir: Path, five_minute: dict[str, Any], hourly_rows: list[dict[str, Any]], weekly_rows: list[dict[str, Any]]
+) -> None:
+    common = {key: value for key, value in five_minute.items() if key != "rows"}
+    write_json_gzip(output_dir / "langfuse-usage-five-minute.json.gz", five_minute)
+    write_json_gzip(
+        output_dir / "langfuse-usage-hourly.json.gz", {**common, "bucket_width": "1 hour", "rows": hourly_rows}
+    )
+    write_json(output_dir / "langfuse-usage-weekly.json", {**common, "bucket_width": "1 week", "rows": weekly_rows})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -693,7 +704,7 @@ def main() -> None:
             "within_window_dedup_applied": True,
             "cross_window_collision_status": "unverified_global_audit_memory_limit"
             if args.skip_identifier_audit
-            else "audited",
+            else "pending",
         },
         "definitions": {
             "uncached_input_tokens": "Per-call input is reduced by cache-read and cache-write tokens only when per-call totals prove input includes cache; input is retained only when totals prove it excludes cache or no positive cache is reported and cache categories are reported. Unknown, mixed, or unreported cache/inclusivity groups are null and flagged. Provider labels do not determine inclusivity.",
@@ -713,14 +724,7 @@ def main() -> None:
     }
     hourly_rows = aggregate_records(normalized_rows, hourly_bucket)
     weekly_rows = aggregate_records(normalized_rows, weekly_bucket)
-    common = {key: value for key, value in five_minute.items() if key != "rows"}
-    write_json_gzip(args.output_dir / "langfuse-usage-five-minute.json.gz", five_minute)
-    write_json_gzip(
-        args.output_dir / "langfuse-usage-hourly.json.gz", {**common, "bucket_width": "1 hour", "rows": hourly_rows}
-    )
-    write_json(
-        args.output_dir / "langfuse-usage-weekly.json", {**common, "bucket_width": "1 week", "rows": weekly_rows}
-    )
+    write_usage_reports(args.output_dir, five_minute, hourly_rows, weekly_rows)
     print(
         f"wrote {len(normalized_rows)} five-minute, {len(hourly_rows)} hourly, {len(weekly_rows)} weekly aggregate rows",
         file=sys.stderr,
@@ -732,6 +736,7 @@ def main() -> None:
     else:
         audit_query = WindowedQuery(ID_AUDIT_SQL.read_text(), max_execution_seconds=120)
         audit_rows, audit_seconds, audit_windows = audit_query.run(args.start, args.end)
+        five_minute["request_dedup_scope"]["cross_window_collision_status"] = "audited"
     id_audit = {
         "schema_version": 1,
         "source": "langfuse_clickhouse",
@@ -797,14 +802,7 @@ def main() -> None:
     }
     five_minute["request_dedup_audit"] = dedup_audit
     id_audit["request_dedup_audit"] = dedup_audit
-    common = {key: value for key, value in five_minute.items() if key != "rows"}
-    write_json_gzip(args.output_dir / "langfuse-usage-five-minute.json.gz", five_minute)
-    write_json_gzip(
-        args.output_dir / "langfuse-usage-hourly.json.gz", {**common, "bucket_width": "1 hour", "rows": hourly_rows}
-    )
-    write_json(
-        args.output_dir / "langfuse-usage-weekly.json", {**common, "bucket_width": "1 week", "rows": weekly_rows}
-    )
+    write_usage_reports(args.output_dir, five_minute, hourly_rows, weekly_rows)
     write_json(args.output_dir / "langfuse-usage-identifier-audit.json", id_audit)
     shutil.rmtree(checkpoint_dir)
     print(f"wrote aggregate identifier audit using {audit_windows} query window(s)", file=sys.stderr)
