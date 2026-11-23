@@ -607,7 +607,7 @@ theorem moduleOf_exports (md : EsmSplit.Module) {x : Name} (hexp : md.exportsLoc
       | none => exact .cons key ih
       | some name => exact .cons_cons key ih
   have hkeys : ((md.namedExports B).map Prod.fst).Nodup := by
-    simp only [EsmSplit.Module.namedExports, List.map_append]
+    simp only [EsmSplit.Module.namedExports, EsmSplit.Module.namedExportsFrom, List.map_append]
     refine List.nodup_append.2 ⟨hglue, hsub.nodup hpub, ?_⟩
     rintro k hk _ hw rfl
     exact hdis k (hsub.subset hw) k hk rfl

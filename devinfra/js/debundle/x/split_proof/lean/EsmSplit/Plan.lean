@@ -89,9 +89,11 @@ def Module.declares (B : Bundle) (m : Module) (u : Name) : Bool :=
   m.stmts.any fun i => (B.stmt i).defs.contains u
 
 /-- What the `export` statements among a module's statements publish. -/
-def Module.published (B : Bundle) (m : Module) : List (Name × Option Name) :=
-  let arr := B.toArray
+def Module.publishedFrom (arr : Array Stmt) (m : Module) : List (Name × Option Name) :=
   m.stmts.flatMap fun i => (arr.getD i default).exports
+
+def Module.published (B : Bundle) (m : Module) : List (Name × Option Name) :=
+  m.publishedFrom B.toArray
 
 /-- Every name the module exports: by its own `export` statements, then by its glue. -/
 def Module.publicNames (B : Bundle) (m : Module) : List Name :=
@@ -101,8 +103,11 @@ def Module.publicNames (B : Bundle) (m : Module) : List Name :=
 def localExports (published : List (Name × Option Name)) : List (Name × Name) :=
   published.filterMap fun (pub, loc) => loc.map (pub, ·)
 
+def Module.namedExportsFrom (arr : Array Stmt) (m : Module) : List (Name × Name) :=
+  m.exports ++ localExports (m.publishedFrom arr)
+
 def Module.namedExports (B : Bundle) (m : Module) : List (Name × Name) :=
-  m.exports ++ localExports (m.published B)
+  m.namedExportsFrom B.toArray
 
 /-- The module publishes its binding `u`, possibly under another name. -/
 def Module.exportsLocal (B : Bundle) (m : Module) (u : Name) : Bool :=

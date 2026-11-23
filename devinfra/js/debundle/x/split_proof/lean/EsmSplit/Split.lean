@@ -134,7 +134,7 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
   let imported : Std.TreeMap ModName (List Name) := base.foldl (fun acc o =>
     o.imports.foldl (fun acc e => acc.insert e.1 (e.2.reverse ++ acc.getD e.1 [])) acc) ∅
   let withExports := base.map fun md =>
-    { md with exports := glueExports (md.stmts.flatMap fun i => (arr.getD i default).exports)
+    { md with exports := glueExports (md.publishedFrom arr)
                            (dedup (imported.getD md.name []).reverse) }
   let p1 : Plan := { entry := S.entry, mods := withExports }
   -- a module nobody imports still has to run: the entry imports it for its effects

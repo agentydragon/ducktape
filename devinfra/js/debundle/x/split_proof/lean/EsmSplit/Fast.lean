@@ -87,8 +87,7 @@ structure ModTab where
 
 def Module.tab (arr : Array Stmt) (m : Module) : ModTab where
   declared := m.stmts.foldl (fun acc i => (arr.getD i default).defs.foldl (·.insert ·) acc) ∅
-  exported := ((m.exports ++ localExports (m.stmts.flatMap fun i => (arr.getD i default).exports)).map (·.2))
-    |>.foldl (·.insert ·) ∅
+  exported := ((m.namedExportsFrom arr).map (·.2)).foldl (·.insert ·) ∅
   importedFrom := m.imports.foldr (fun e acc => e.2.foldr (fun u acc => acc.insert u e.1) acc) ∅
 
 private theorem mem_foldl_decl (arr : Array Stmt) : ∀ (l : List Nat) (acc : NameSet) (u : Name),
@@ -120,7 +119,7 @@ theorem Module.tab_exported (B : Bundle) (m : Module) (u : Name) :
     (m.tab B.toArray).exported.contains u = m.exportsLocal B u := by
   rw [Bool.eq_iff_iff, ← Std.TreeSet.mem_iff_contains]
   simp only [Module.tab, mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, Module.exportsLocal,
-    Module.namedExports, Module.published, List.any_eq_true, List.mem_map, Bundle.toArray_getD, beq_iff_eq]
+    Module.namedExports, List.any_eq_true, List.mem_map, beq_iff_eq]
 
 private theorem foldr_insert_get (src : ModName) : ∀ (names : List Name) (acc : Std.TreeMap Name ModName) (u : Name),
     (names.foldr (fun u acc => acc.insert u src) acc)[u]? = if u ∈ names then some src else acc[u]?
@@ -354,11 +353,11 @@ theorem faithfulB_iff (B : Bundle) (S : Spec) (P : Plan) :
 
 def Plan.exportsUniqueB (arr : Array Stmt) (P : Plan) : Bool :=
   P.mods.all fun m =>
-    nodupB ((m.stmts.flatMap fun i => (arr.getD i default).exports).map (·.1) ++ m.exports.map (·.1))
+    nodupB ((m.publishedFrom arr).map (·.1) ++ m.exports.map (·.1))
 
 theorem Plan.exportsUniqueB_iff (B : Bundle) (P : Plan) : P.exportsUniqueB B.toArray = true ↔ ExportsUnique B P := by
   simp only [Plan.exportsUniqueB, ExportsUnique, List.all_eq_true, nodupB_iff, Module.publicNames,
-    Module.published, Bundle.toArray_getD]
+    Module.published]
 
 
 /-! ## OrderOk, with tables built once -/
