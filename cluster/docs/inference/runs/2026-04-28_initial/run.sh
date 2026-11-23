@@ -12,7 +12,7 @@ kubectl -n "$NS" delete job "$NAME" --ignore-not-found
 
 kubectl -n "$NS" create configmap "$NAME" \
   --from-file=bench.py=bench.py \
-  --from-file=ollama_bench_helpers.py=../ollama_bench_helpers.py
+  --from-file=ollama_bench.py=../ollama_bench.py
 kubectl apply -f job.yaml
 
 kubectl -n "$NS" wait --for=condition=complete --timeout=60m "job/$NAME" &
