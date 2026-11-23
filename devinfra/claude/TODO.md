@@ -20,6 +20,10 @@
 
 ## Rust hook profile
 
+- Consider defining the startup jobs shared by the two [web profiles](claude_hook/profiles/web/)
+  once. Both YAML paths are selected in the web UI. Preserve each mode’s shell setup,
+  including the full Home Manager session environment.
+
 - Decide whether connectivity diagnostics remain part of the hook contract;
   README currently says the Rust daemon does not implement them.
 - `context_template` is present in the profiles and parsed by Rust, but Rust
