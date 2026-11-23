@@ -22,6 +22,59 @@ import {
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
+
+{
+  const source = `
+    var calls = 0, order = "";
+    function make() {
+      calls += 1;
+      return {
+        get left() { order += "L"; return 37; },
+        get right() { order += "R"; return first; },
+      };
+    }
+    var before = first, { left: first, "right": second } = make(), after = second;
+    export { first as left, second as right, calls, order, before, after };
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-var", source, {
+    "worker.mjs": ["#0", "#1", "#2", "#3", "#4", "#5"],
+    [entry]: ["#6"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  const expected = { left: 37, right: 37, calls: 1, order: "LR", before: undefined, after: 37 };
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const mod = await import(pathToFileURL(file).href);
+    assert.deepEqual({ ...mod }, expected);
+  }
+}
+
+{
+  const source = `
+    const input = { x: 5, y: 7 };
+    export var { x: right, "y": left } = input;
+  `;
+  const { files, out, verdict, log } = sequentialSplit("inline-module-var", source, {
+    "worker.mjs": ["#0"],
+    [entry]: ["#1"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const mod = await import(pathToFileURL(file).href);
+    assert.deepEqual({ ...mod }, { left: 7, right: 5 });
+  }
+}
+
+for (const [name, declaration, reason] of [
+  ["module-var-computed", "var {[key]: value} = {};", "expected a static object pattern property"],
+  ["module-lexical", "let {x: value} = {x: 1};", "unsupported module lexical object pattern"],
+]) {
+  const source = `const key = "x"; ${declaration} export { value };`;
+  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1", "#2"] }, []);
+  assert.equal(result.verdict.status, "rejected", result.log);
+  assert.match(result.verdict.reason, new RegExp(reason));
+  assert(!existsSync(result.out));
+}
+
 // Calling make() twice would bind two different objects. A null argument to the
 // exported function must also throw before any body statements execute.
 {
