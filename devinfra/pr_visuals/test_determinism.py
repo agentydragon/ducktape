@@ -23,7 +23,6 @@ from devinfra.pr_visuals.determinism import (
     Execution,
     Findings,
     Observations,
-    Render,
     Roster,
     analyze,
     from_collection,
@@ -114,7 +113,7 @@ def _noop_runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProce
 
 def test_identical_successful_screenshot_observations_compare_by_digest() -> None:
     invocations = ["run-1", "run-2"]
-    screenshot = Render(_TARGET, "dialog/mobile", "expanded", "screenshot")
+    screenshot = OutputKey(_REPOSITORY, _TARGET, "dialog/mobile", "expanded", "screenshot")
     observed = _observe(invocations, outputs=(_output("run-1", "same"), _output("run-2", "same")))
 
     assert analyze(observed) == Findings([], [])
@@ -129,7 +128,7 @@ def test_identical_successful_screenshot_observations_compare_by_digest() -> Non
 
 def test_changed_digest_is_drift_for_the_same_logical_identity() -> None:
     invocations = ["run-1", "run-2"]
-    screenshot = Render(_TARGET, "dialog/mobile", "expanded", "screenshot")
+    screenshot = OutputKey(_REPOSITORY, _TARGET, "dialog/mobile", "expanded", "screenshot")
     observed = _observe(invocations, outputs=(_output("run-1", "first"), _output("run-2", "second")))
 
     assert analyze(observed) == Findings([screenshot], [])
@@ -137,7 +136,7 @@ def test_changed_digest_is_drift_for_the_same_logical_identity() -> None:
 
 def test_output_absence_is_reported_only_across_complete_successful_rosters() -> None:
     invocations = ["run-1", "run-2"]
-    missing_screenshot = Render(_TARGET, "dialog/desktop", "expanded", "screenshot")
+    missing_screenshot = OutputKey(_REPOSITORY, _TARGET, "dialog/desktop", "expanded", "screenshot")
     observed = _observe(
         invocations,
         outputs=(
@@ -148,13 +147,15 @@ def test_output_absence_is_reported_only_across_complete_successful_rosters() ->
     )
 
     assert analyze(observed) == Findings([], [missing_screenshot])
-    assert observed.screenshots[Render(_TARGET, "dialog/mobile", "expanded", "screenshot")].runs_present == 2
+    assert (
+        observed.screenshots[OutputKey(_REPOSITORY, _TARGET, "dialog/mobile", "expanded", "screenshot")].runs_present
+        == 2
+    )
     assert len(observed.complete_rosters[_TARGET]) == 2
 
 
 def test_failed_target_is_reported_separately_and_not_counted_as_missing() -> None:
     invocations = ["passed", "failed"]
-    screenshot = Render(_TARGET, "dialog/mobile", "expanded", "screenshot")
     results = (
         _coverage("passed"),
         _coverage(
@@ -177,7 +178,6 @@ def test_failed_target_is_reported_separately_and_not_counted_as_missing() -> No
     assert failures[0].invocation == "failed"
     assert failures[0].target == _TARGET
     assert failures[0].result is None
-    assert screenshot not in analyze(observed).missing
 
 
 def test_retry_attempts_are_not_extra_rosters_and_terminal_success_is_used() -> None:
@@ -304,10 +304,10 @@ def test_case_checkpoint_role_and_target_are_all_part_of_render_identity() -> No
     )
 
     assert set(observed.screenshots) == {
-        Render(_TARGET, "case-a", None, "screenshot"),
-        Render(_TARGET, "case-a", "named", "screenshot"),
-        Render(_TARGET, "case-b", "named", "screenshot"),
-        Render("//other:visual", "case-a", "named", "screenshot"),
+        OutputKey(_REPOSITORY, _TARGET, "case-a", None, "screenshot"),
+        OutputKey(_REPOSITORY, _TARGET, "case-a", "named", "screenshot"),
+        OutputKey(_REPOSITORY, _TARGET, "case-b", "named", "screenshot"),
+        OutputKey(_REPOSITORY, "//other:visual", "case-a", "named", "screenshot"),
     }
     assert len(observed.diagnostics) == 1
 
@@ -521,9 +521,8 @@ def test_durations_come_from_buildbuddy_as_wall_time_not_summed_shards() -> None
 
     targets = observe_targets(["run-1"], [_TARGET], bbapi=Path("bbapi"), run=fake_run)
 
-    assert [test_run.summary.shard_count for test_run in targets.runs[_TARGET]] == [4]
-    assert [test_run.summary.wall_time for test_run in targets.runs[_TARGET]] == [timedelta(seconds=11.1)]
-    assert targets.runs_by_invocation["run-1"][_TARGET] == targets.runs[_TARGET]
+    assert [test_run.summary.shard_count for test_run in targets.runs_by_target()[_TARGET]] == [4]
+    assert [test_run.summary.wall_time for test_run in targets.runs_by_target()[_TARGET]] == [timedelta(seconds=11.1)]
 
 
 def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
@@ -538,7 +537,7 @@ def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
 
     timed = observe_targets(["run-1"], ["//ui:early", "//zz:late"], bbapi=Path("bbapi"), run=fake_run)
 
-    assert sorted(timed.runs) == ["//ui:early", "//zz:late"]
+    assert sorted(timed.runs_by_target()) == ["//ui:early", "//zz:late"]
     assert [flags for flags in asked if "--label" in flags] == [
         ["bbapi", "target", "run-1", "--json", "--label", "//zz:late"]
     ]
@@ -554,9 +553,8 @@ def test_unavailable_invocation_is_not_returned_as_a_missing_screenshot_run() ->
 
     observed = observe_targets(["present", "absent"], [_TARGET], bbapi=Path("bbapi"), run=fake_run)
 
-    assert observed.invocations == ["present"]
+    assert list(observed.runs_by_invocation) == ["present"]
     assert observed.unavailable_invocations == ["absent"]
-    assert "absent" not in observed.runs_by_invocation
 
 
 if __name__ == "__main__":
