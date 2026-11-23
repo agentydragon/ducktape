@@ -56,6 +56,17 @@ def toStmt (src : String) (ast : Json) (f : Lower.Footprint) : Stmt :=
   { src, defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy,
     exports := published ast, hoisted := f.hoisted, effect := f.effect }
 
+/-- The linked execution theorem checks the schedules themselves. Its planner needs only the
+bindings each unit declares, mentions, assigns and exports. Promoting lazy reads to eager in
+the effect analysis leaves their first-occurrence order in `eager ++ lazy` unchanged. -/
+private def linkedLayoutBundle (asts units : Array Json) : Bundle :=
+  let tops := units.map Lower.analyzeTop
+  let declared := Effects.declaredNames tops
+  (asts.zip tops).toList.map fun (ast, t) =>
+    { src := "", defs := t.defs, eager := (Effects.dedupeArr t.rawEager).toList,
+      lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
+      exports := published ast, hoisted := t.hoisted }
+
 /-- Timing only: `K` copies of the bundle, each declaring its own renamed copy of every declared name.
 The statement text is not renamed, so the modules written from this are meaningless. -/
 def replicateBundle (K : Nat) (B : Bundle) : Bundle :=
@@ -251,9 +262,8 @@ def Guarantee.label : Guarantee → String
 
 /-- Premises for the closed-declaration artifact theorems. The caller checks Valid
 and certifies the output ASTs against these same extracted statements. -/
-private def declarationProof? (program : Json) (B : Bundle) (P : Plan) :
+private def declarationProof? (groups : List CoreJS.DeclarationGroup) (B : Bundle) (P : Plan) :
     Option (Guarantee × List CoreJS.Stmt) := do
-  let groups ← (CoreJS.DeclarationInput.decode program).toOption
   let ss := CoreJS.DeclarationProgram.statements groups
   guard (footprintsOk ss B)
   if decide (CoreJS.OrderKept ss P) then return (.allOutcomes, ss)
@@ -477,17 +487,19 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
     if let some what := Lower.outsideModel false s then
       return ← unsupported s!"unsupported: {what}"
   let units := Effects.footprintUnits asts
-  let exported := units.toList.flatMap Lower.exportedBindings
-  let fps ← match fpPath? with
+  let declarations := required.bind fun _ => (CoreJS.DeclarationInput.decode program).toOption
+  let fps? ← if required.isSome && declarations.isNone then pure none else
+    match fpPath? with
     | some p => do
       IO.println s!"  footprints read from {p}: the premises printed by `lower` when it wrote them apply"
-      loadFootprints p units
+      some <$> loadFootprints p units
     | none => do
+      let exported := units.toList.flatMap Lower.exportedBindings
       let (fps, analysis) ← timePhase timings "footprints" fun _ => do
         IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
       if required.isNone then
         for line in Effects.premiseLines prem analysis do IO.println line
-      pure fps
+      pure (some fps)
   let t2 ← lap "footprints (Lean analysis)" t1
   -- The legacy standalone Lean instance embeds printable source for each unit.
   let texts ← if leanOut?.isSome then do
@@ -497,8 +509,9 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       javascript #["--print-units"] #[unitsFile, input, reply]
       IO.ofExcept (fromJson? (α := Array String) (← readJson reply))
     else pure #[]
-  let B0 : Bundle := (asts.zip fps).toList.zipIdx.map fun ((ast, f), i) =>
-    toStmt (texts.getD i "") ast f
+  let B0 : Bundle ← match fps? with
+    | some fps => pure ((asts.zip fps).toList.zipIdx.map fun ((ast, f), i) => toStmt (texts.getD i "") ast f)
+    | none => timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
   let copies := replicate?.bind String.toNat?
   let B := match copies with
     | some K => replicateBundle K B0
@@ -514,7 +527,9 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
         throw (IO.userError s!"certified output requires a safe relative .mjs path (.js is supported for browser-page modules), got {name}")
   let t3 ← lap "load spec" t2
-  if required.isNone then IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
+  if required.isNone then
+    if let some fps := fps? then
+      IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
   -- A rule Lean does not check. It talks about the original statements, so `--replicate` skips it.
   let mut bad := false
   if replicate?.isNone then
@@ -533,7 +548,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
   if let some request := required then
     let layoutOk ← timePhase timings "plan_checks" fun _ => reportLayout B S P false
     -- Only the closed-declaration theorem needs the footprint-based order check.
-    let declaration := if layoutOk && !bad then declarationProof? program B P else none
+    let declaration := if layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
     if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
       try
         if request == .allOutcomes && level != .allOutcomes then
