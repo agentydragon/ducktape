@@ -4,13 +4,13 @@
 
 Current tree measured at `origin/devel` commit `7efcea7d9f8b162d783195aa49ab2ddf13868cc6`. Raw file sizes are path-weighted, so copied files count more than once; they are not clone transfer sizes.
 
-| Current tree path | Raw size | Files |
-| --- | ---: | ---: |
-| `props/specimens` | 105.57 MiB | 15,539 |
-| `devinfra/js` | 19.85 MiB | 2,125 |
-| `devinfra/claude` | 15.72 MiB | 431 |
-| `agentplane/system_tests` | 13.78 MiB | 469 |
-| `website/static` | 11.65 MiB | 32 |
+| Current tree path         |   Raw size |  Files |
+| ------------------------- | ---------: | -----: |
+| `props/specimens`         | 105.57 MiB | 15,539 |
+| `devinfra/js`             |  19.85 MiB |  2,125 |
+| `devinfra/claude`         |  15.72 MiB |    431 |
+| `agentplane/system_tests` |  13.78 MiB |    469 |
+| `website/static`          |  11.65 MiB |     32 |
 
 Measured using `git ls-tree -rl HEAD` in a fresh shallow checkout, summing blob sizes by path. `props/specimens` remains the largest checkout cost; its size alone does not establish potential history or transfer savings.
 
@@ -32,18 +32,18 @@ findings.
 
 Git's reachable-object estimate:
 
-| Scope | Reachable object disk usage |
-| --- | ---: |
-| `origin/*` plus tags | 392.75 MiB |
-| all refs in this checkout | 393.62 MiB |
+| Scope                     | Reachable object disk usage |
+| ------------------------- | --------------------------: |
+| `origin/*` plus tags      |                  392.75 MiB |
+| all refs in this checkout |                  393.62 MiB |
 
 Local object-store check:
 
-| Check | Value |
-| --- | ---: |
-| `.git/objects` on disk | 479 MiB |
+| Check                               |      Value |
+| ----------------------------------- | ---------: |
+| `.git/objects` on disk              |    479 MiB |
 | `git count-objects -vH` packed size | 455.22 MiB |
-| `git count-objects -vH` loose size | 21.80 MiB |
+| `git count-objects -vH` loose size  |  21.80 MiB |
 
 The difference between reachable-object usage and `.git/objects` size is normal:
 this checkout has multiple packs, pack overhead, and some loose/prune-packable
@@ -93,63 +93,63 @@ the current-state baseline.
 
 All refs, historical blobs by top-level path:
 
-| Component | Packed blob size | Raw blob size | Blob count |
-| --- | ---: | ---: | ---: |
-| `augur` | 127.43 MiB | 248.75 MiB | 5,237 |
-| `devinfra` | 65.23 MiB | 204.39 MiB | 7,774 |
-| `claude_web_env` | 51.80 MiB | 56.54 MiB | 382 |
-| `adgn` | 41.85 MiB | 122.50 MiB | 10,419 |
-| `props` | 36.42 MiB | 143.03 MiB | 12,326 |
-| `cluster` | 11.03 MiB | 56.30 MiB | 10,200 |
-| `finance` | 8.59 MiB | 14.24 MiB | 829 |
-| `website` | 6.63 MiB | 49.23 MiB | 204 |
-| root files | 5.80 MiB | 233.81 MiB | 2,732 |
-| `x` | 3.45 MiB | 12.06 MiB | 1,196 |
+| Component        | Packed blob size | Raw blob size | Blob count |
+| ---------------- | ---------------: | ------------: | ---------: |
+| `augur`          |       127.43 MiB |    248.75 MiB |      5,237 |
+| `devinfra`       |        65.23 MiB |    204.39 MiB |      7,774 |
+| `claude_web_env` |        51.80 MiB |     56.54 MiB |        382 |
+| `adgn`           |        41.85 MiB |    122.50 MiB |     10,419 |
+| `props`          |        36.42 MiB |    143.03 MiB |     12,326 |
+| `cluster`        |        11.03 MiB |     56.30 MiB |     10,200 |
+| `finance`        |         8.59 MiB |     14.24 MiB |        829 |
+| `website`        |         6.63 MiB |     49.23 MiB |        204 |
+| root files       |         5.80 MiB |    233.81 MiB |      2,732 |
+| `x`              |         3.45 MiB |     12.06 MiB |      1,196 |
 
 Largest second-level paths:
 
-| Path | Packed blob size | Raw blob size | Blob count |
-| --- | ---: | ---: | ---: |
-| `augur/frontend` | 93.52 MiB | 113.75 MiB | 640 |
-| `devinfra/claude` | 56.46 MiB | 73.92 MiB | 2,620 |
-| `claude_web_env/reference` | 51.57 MiB | 53.41 MiB | 14 |
-| `adgn/src` | 39.58 MiB | 90.72 MiB | 7,452 |
-| `augur/app` | 29.60 MiB | 36.81 MiB | 275 |
-| `props/specimens` | 24.45 MiB | 86.61 MiB | 7,436 |
-| `devinfra/js` | 8.25 MiB | 125.28 MiB | 4,213 |
-| `finance/augur` | 7.65 MiB | 11.88 MiB | 494 |
-| `cluster/docs` | 7.27 MiB | 20.14 MiB | 846 |
-| `props/docs` | 6.64 MiB | 8.55 MiB | 176 |
+| Path                       | Packed blob size | Raw blob size | Blob count |
+| -------------------------- | ---------------: | ------------: | ---------: |
+| `augur/frontend`           |        93.52 MiB |    113.75 MiB |        640 |
+| `devinfra/claude`          |        56.46 MiB |     73.92 MiB |      2,620 |
+| `claude_web_env/reference` |        51.57 MiB |     53.41 MiB |         14 |
+| `adgn/src`                 |        39.58 MiB |     90.72 MiB |      7,452 |
+| `augur/app`                |        29.60 MiB |     36.81 MiB |        275 |
+| `props/specimens`          |        24.45 MiB |     86.61 MiB |      7,436 |
+| `devinfra/js`              |         8.25 MiB |    125.28 MiB |      4,213 |
+| `finance/augur`            |         7.65 MiB |     11.88 MiB |        494 |
+| `cluster/docs`             |         7.27 MiB |     20.14 MiB |        846 |
+| `props/docs`               |         6.64 MiB |      8.55 MiB |        176 |
 
 Largest file extensions:
 
 | Extension | Packed blob size | Raw blob size | Blob count |
-| --- | ---: | ---: | ---: |
-| `.png` | 150.46 MiB | 165.67 MiB | 661 |
-| `.gz` | 106.54 MiB | 108.47 MiB | 17 |
-| `.bundle` | 35.33 MiB | 39.24 MiB | 6 |
-| `.py` | 15.90 MiB | 284.60 MiB | 27,054 |
-| `.md` | 11.39 MiB | 102.36 MiB | 8,091 |
-| `.rs` | 6.21 MiB | 92.68 MiB | 2,877 |
-| `.eval` | 6.21 MiB | 6.27 MiB | 13 |
-| `.dump` | 5.84 MiB | 5.99 MiB | 1 |
-| `.ipynb` | 5.21 MiB | 69.11 MiB | 10 |
-| `.lock` | 5.13 MiB | 190.83 MiB | 369 |
+| --------- | ---------------: | ------------: | ---------: |
+| `.png`    |       150.46 MiB |    165.67 MiB |        661 |
+| `.gz`     |       106.54 MiB |    108.47 MiB |         17 |
+| `.bundle` |        35.33 MiB |     39.24 MiB |          6 |
+| `.py`     |        15.90 MiB |    284.60 MiB |     27,054 |
+| `.md`     |        11.39 MiB |    102.36 MiB |      8,091 |
+| `.rs`     |         6.21 MiB |     92.68 MiB |      2,877 |
+| `.eval`   |         6.21 MiB |      6.27 MiB |         13 |
+| `.dump`   |         5.84 MiB |      5.99 MiB |          1 |
+| `.ipynb`  |         5.21 MiB |     69.11 MiB |         10 |
+| `.lock`   |         5.13 MiB |    190.83 MiB |        369 |
 
 ## Largest Individual Blobs
 
-| Packed size | Raw size | Blob | Path |
-| ---: | ---: | --- | --- |
-| 31.54 MiB | 31.86 MiB | `704644f957fc2e9020d2b2e4c4a5615a6335678c` | `adgn/src/adgn/props/specimens/ducktape/specimens.bundle` |
-| 19.24 MiB | 19.28 MiB | `7fb5602fec530e68ca66d8ff3c3a0f9a5b694203` | `devinfra/claude/web_env/reference/environment-manager.gz` |
-| 18.48 MiB | 18.53 MiB | `4a47868c1463a3f797d27d1bc143093b24550ee5` | `devinfra/claude/web_env/reference/environment-manager.gz` |
-| 12.77 MiB | 12.79 MiB | `0c9fd0593014906c563c097e6d067aecbf8d267a` | `devinfra/claude/web_env/reference/environment-manager.gz` |
-| 12.47 MiB | 12.49 MiB | `6f1aa1e83ec5f12596a510ae3f52d8dbf026ee9b` | `claude_web_env/reference/environment-manager.gz` |
-| 12.44 MiB | 12.46 MiB | `afddbfa83702c76c587d60e75b5dab64c5a89977` | `claude_web_env/reference/environment-manager.gz` |
-| 12.29 MiB | 12.31 MiB | `a054acca063aabdef883c122b8bf3d32560824bb` | `claude_web_env/reference/environment-manager.gz` |
-| 11.77 MiB | 11.79 MiB | `ebee84dbf670fd3a21f0d5a200e47edaefe942f9` | `claude_web_env/reference/environment-manager.gz` |
-| 5.84 MiB | 5.99 MiB | `bc4155fe4c1e03c861bb8c7f60c42e56c8acfdc4` | `props/docs/openai_evaluation/results.dump` |
-| 5.19 MiB | 23.04 MiB | `df889146a07da34c3ac75c2115f05c5ccf57ccdf` | `website/notebooks/2020-12-31-cartpole-q-learning.ipynb` |
+| Packed size |  Raw size | Blob                                       | Path                                                       |
+| ----------: | --------: | ------------------------------------------ | ---------------------------------------------------------- |
+|   31.54 MiB | 31.86 MiB | `704644f957fc2e9020d2b2e4c4a5615a6335678c` | `adgn/src/adgn/props/specimens/ducktape/specimens.bundle`  |
+|   19.24 MiB | 19.28 MiB | `7fb5602fec530e68ca66d8ff3c3a0f9a5b694203` | `devinfra/claude/web_env/reference/environment-manager.gz` |
+|   18.48 MiB | 18.53 MiB | `4a47868c1463a3f797d27d1bc143093b24550ee5` | `devinfra/claude/web_env/reference/environment-manager.gz` |
+|   12.77 MiB | 12.79 MiB | `0c9fd0593014906c563c097e6d067aecbf8d267a` | `devinfra/claude/web_env/reference/environment-manager.gz` |
+|   12.47 MiB | 12.49 MiB | `6f1aa1e83ec5f12596a510ae3f52d8dbf026ee9b` | `claude_web_env/reference/environment-manager.gz`          |
+|   12.44 MiB | 12.46 MiB | `afddbfa83702c76c587d60e75b5dab64c5a89977` | `claude_web_env/reference/environment-manager.gz`          |
+|   12.29 MiB | 12.31 MiB | `a054acca063aabdef883c122b8bf3d32560824bb` | `claude_web_env/reference/environment-manager.gz`          |
+|   11.77 MiB | 11.79 MiB | `ebee84dbf670fd3a21f0d5a200e47edaefe942f9` | `claude_web_env/reference/environment-manager.gz`          |
+|    5.84 MiB |  5.99 MiB | `bc4155fe4c1e03c861bb8c7f60c42e56c8acfdc4` | `props/docs/openai_evaluation/results.dump`                |
+|    5.19 MiB | 23.04 MiB | `df889146a07da34c3ac75c2115f05c5ccf57ccdf` | `website/notebooks/2020-12-31-cartpole-q-learning.ipynb`   |
 
 ## Current `origin/devel` Tree Size
 
@@ -158,24 +158,24 @@ accumulation.
 
 Largest current top-level raw file sizes:
 
-| Component | Raw tree size | File count |
-| --- | ---: | ---: |
-| `props` | 163.96 MiB | 20,226 |
-| `website` | 35.37 MiB | 110 |
-| `devinfra` | 27.76 MiB | 769 |
-| `cluster` | 17.18 MiB | 1,642 |
-| `x` | 9.31 MiB | 820 |
-| `finance` | 8.25 MiB | 448 |
+| Component  | Raw tree size | File count |
+| ---------- | ------------: | ---------: |
+| `props`    |    163.96 MiB |     20,226 |
+| `website`  |     35.37 MiB |        110 |
+| `devinfra` |     27.76 MiB |        769 |
+| `cluster`  |     17.18 MiB |      1,642 |
+| `x`        |      9.31 MiB |        820 |
+| `finance`  |      8.25 MiB |        448 |
 
 Selected current paths:
 
-| Path | Raw tree size | File count |
-| --- | ---: | ---: |
-| `props/specimens` | 160.71 MiB | 19,779 |
-| `devinfra/claude/web_env/reference` | 20.83 MiB | 10 |
-| `website/notebooks` | 22.97 MiB | 2 |
-| `cluster/docs/inference/runs` | 6.61 MiB | 47 |
-| `finance/augur/frontend/__screenshots__` | 3.18 MiB | 8 |
+| Path                                     | Raw tree size | File count |
+| ---------------------------------------- | ------------: | ---------: |
+| `props/specimens`                        |    160.71 MiB |     19,779 |
+| `devinfra/claude/web_env/reference`      |     20.83 MiB |         10 |
+| `website/notebooks`                      |     22.97 MiB |          2 |
+| `cluster/docs/inference/runs`            |      6.61 MiB |         47 |
+| `finance/augur/frontend/__screenshots__` |      3.18 MiB |          8 |
 
 The `props/specimens` finding is important: deleting that path would barely
 shrink full clone transfer if its copied blobs also remain elsewhere in history,
@@ -186,20 +186,20 @@ but it would dramatically shrink the checked-out tree.
 Estimated packed blob savings if history is rewritten and then aggressively
 garbage-collected/repacked:
 
-| Candidate | Estimated saved packed size | Estimated saved raw size | Notes |
-| --- | ---: | ---: | --- |
-| Drop `props/docs/openai_evaluation/results.dump` | 5.84 MiB | 5.99 MiB | Missing on `origin/devel`; good low-risk target. |
-| Drop all historical `.bundle` paths | 35.33 MiB | 39.24 MiB | Missing on `origin/devel`; dominated by old props bundles. |
-| Drop `results.dump` plus all `.bundle` paths | 41.17 MiB | 45.24 MiB | Best first rewrite tranche. |
-| Above, plus prune stale web-env reference blobs while preserving `origin/devel` files | 126.96 MiB | 133.01 MiB | Keeps current binaries, removes old versions. |
-| Above, plus delete all web-env reference blobs | 147.70 MiB | 153.84 MiB | Requires replacing current Dockerfile input path or re-adding files. |
-| Above, plus prune stale Augur screenshots while preserving `origin/devel` goldens | 136.84 MiB | 152.27 MiB | Keeps current visual tests intact. |
-| Above, plus delete all Augur screenshots | 139.87 MiB | 155.45 MiB | Breaks current visual-golden tests unless tests/artifacts change. |
-| Above, plus prune both stale web-env refs and stale Augur screenshots while preserving current files | about 222.63 MiB | about 240.04 MiB | Best conservative Phase 1 plus Phase 2 estimate. |
-| Aggressive: drop bundles, dump, all web-env refs, Augur screenshots, website notebooks, and cluster eval logs | 257.89 MiB | 316.91 MiB | High disruption unless replacements land first. |
-| Drop only `props/specimens` | 931.30 KiB | 6.92 MiB | Small clone-size win due dedupe, but large checkout-size win. |
-| Drop `website/notebooks` | 5.19 MiB | 46.07 MiB | Current notebook is large raw; better to strip outputs or externalize. |
-| Drop `cluster/docs/inference/runs` | 6.30 MiB | 6.78 MiB | Reasonable if raw eval logs move outside Git. |
+| Candidate                                                                                                     | Estimated saved packed size | Estimated saved raw size | Notes                                                                  |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------: | -----------------------: | ---------------------------------------------------------------------- |
+| Drop `props/docs/openai_evaluation/results.dump`                                                              |                    5.84 MiB |                 5.99 MiB | Missing on `origin/devel`; good low-risk target.                       |
+| Drop all historical `.bundle` paths                                                                           |                   35.33 MiB |                39.24 MiB | Missing on `origin/devel`; dominated by old props bundles.             |
+| Drop `results.dump` plus all `.bundle` paths                                                                  |                   41.17 MiB |                45.24 MiB | Best first rewrite tranche.                                            |
+| Above, plus prune stale web-env reference blobs while preserving `origin/devel` files                         |                  126.96 MiB |               133.01 MiB | Keeps current binaries, removes old versions.                          |
+| Above, plus delete all web-env reference blobs                                                                |                  147.70 MiB |               153.84 MiB | Requires replacing current Dockerfile input path or re-adding files.   |
+| Above, plus prune stale Augur screenshots while preserving `origin/devel` goldens                             |                  136.84 MiB |               152.27 MiB | Keeps current visual tests intact.                                     |
+| Above, plus delete all Augur screenshots                                                                      |                  139.87 MiB |               155.45 MiB | Breaks current visual-golden tests unless tests/artifacts change.      |
+| Above, plus prune both stale web-env refs and stale Augur screenshots while preserving current files          |            about 222.63 MiB |         about 240.04 MiB | Best conservative Phase 1 plus Phase 2 estimate.                       |
+| Aggressive: drop bundles, dump, all web-env refs, Augur screenshots, website notebooks, and cluster eval logs |                  257.89 MiB |               316.91 MiB | High disruption unless replacements land first.                        |
+| Drop only `props/specimens`                                                                                   |                  931.30 KiB |                 6.92 MiB | Small clone-size win due dedupe, but large checkout-size win.          |
+| Drop `website/notebooks`                                                                                      |                    5.19 MiB |                46.07 MiB | Current notebook is large raw; better to strip outputs or externalize. |
+| Drop `cluster/docs/inference/runs`                                                                            |                    6.30 MiB |                 6.78 MiB | Reasonable if raw eval logs move outside Git.                          |
 
 ### Low-Risk First Tranche
 
@@ -352,15 +352,15 @@ This is not a full `oxipng`/`zopflipng` search, but it gives a useful lower
 bound for cheap lossless optimization. Ancillary metadata is negligible for the
 browser screenshots.
 
-| Scope | Current size | Estimated lossless zlib-9 savings | Notes |
-| --- | ---: | ---: | --- |
-| All real current PNGs, unique blobs | 18.11 MiB | 1.70 MiB (9.4%) | 146 unique blobs. |
-| All real current PNGs, path-weighted | 28.63 MiB | 2.98 MiB (10.4%) | Includes duplicated paths such as `props/specimens`. |
-| Visual baseline-ish PNG paths | 18.85 MiB | 2.03 MiB (10.8%) | Includes screenshots/baselines and copied specimen paths. |
-| `finance/augur/frontend/__screenshots__` | 3.18 MiB | about 154-162 KiB (about 5%) | Already fairly tight. |
-| `x/study_casino/frontend/__screenshots__` | 4.57 MiB | about 709-720 KiB (about 15%) | More slack than Augur. |
-| `airlock/frontend/baselines` | 809 KiB | about 41 KiB (about 5%) | Already fairly tight. |
-| `props/frontend/src/components/baselines` | 678 KiB unique | about 32 KiB (about 5%) | Already fairly tight. |
+| Scope                                     |   Current size | Estimated lossless zlib-9 savings | Notes                                                     |
+| ----------------------------------------- | -------------: | --------------------------------: | --------------------------------------------------------- |
+| All real current PNGs, unique blobs       |      18.11 MiB |                   1.70 MiB (9.4%) | 146 unique blobs.                                         |
+| All real current PNGs, path-weighted      |      28.63 MiB |                  2.98 MiB (10.4%) | Includes duplicated paths such as `props/specimens`.      |
+| Visual baseline-ish PNG paths             |      18.85 MiB |                  2.03 MiB (10.8%) | Includes screenshots/baselines and copied specimen paths. |
+| `finance/augur/frontend/__screenshots__`  |       3.18 MiB |      about 154-162 KiB (about 5%) | Already fairly tight.                                     |
+| `x/study_casino/frontend/__screenshots__` |       4.57 MiB |     about 709-720 KiB (about 15%) | More slack than Augur.                                    |
+| `airlock/frontend/baselines`              |        809 KiB |           about 41 KiB (about 5%) | Already fairly tight.                                     |
+| `props/frontend/src/components/baselines` | 678 KiB unique |           about 32 KiB (about 5%) | Already fairly tight.                                     |
 
 Most screenshot PNGs are 8-bit RGB with no interlace. The Augur files are large
 because they are full-page 1280px-wide screenshots with heights up to roughly
@@ -425,26 +425,26 @@ Findings:
 
 Follow-up scan details:
 
-| Category | Commit-like occurrences |
-| --- | ---: |
-| `props/specimens` copied snapshots | 165 |
-| debug notes / captured outputs | 64 |
-| docs / plans / markdown | 53 |
-| live cluster manifests | 39 |
-| code / tests / build files | 19 |
-| config data | 2 |
+| Category                           | Commit-like occurrences |
+| ---------------------------------- | ----------------------: |
+| `props/specimens` copied snapshots |                     165 |
+| debug notes / captured outputs     |                      64 |
+| docs / plans / markdown            |                      53 |
+| live cluster manifests             |                      39 |
+| code / tests / build files         |                      19 |
+| config data                        |                       2 |
 
 Important references to handle during a history rewrite:
 
-| Reference | Current file(s) | Rewrite impact |
-| --- | --- | --- |
-| `4ad33013af27e159863bed92ffcfdb55b388e46c` | `MODULE.bazel` and copied specimens | This is a live `http_archive` of this repo. It must be updated after rewriting history, or replaced with another specimen source. |
-| `3b9e37c50911c40c11a51903de961c2db0f50f59` | `airlock/frontend/tests/harness/harness.ts` | Fixture metadata and GitHub commit URL become stale. |
-| `b86700d` | `finance/augur/api/server_test.py` | Test fixture uses deployment metadata with abbreviated source commits. |
-| `680d78946bf72e5e3601cdb69299546b495cab1b` | `devinfra/claude/docs/web-setup-debug.md` | Pinned raw GitHub setup URL becomes invalid unless old GitHub history remains reachable. |
-| various abbreviated SHAs | `cluster/k8s/**`, `cluster/debug/**` | Image tags embed commit suffixes; old container tags may remain valid even if Git SHAs change, but they no longer resolve as source links. |
-| various debug/runbook SHAs | `debug/**`, `cluster/docs/lessons_learned/**`, `plans/**` | These become historical prose references. Update only if they need to stay navigable. |
-| `995a1fce6410ec4a882d2e861b41423c8c839148` | `props/specimens/ducktape/2026-05-20-00/**` | Specimen provenance becomes stale; this is another reason to reduce copied repo snapshots. |
+| Reference                                  | Current file(s)                                           | Rewrite impact                                                                                                                             |
+| ------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `4ad33013af27e159863bed92ffcfdb55b388e46c` | `MODULE.bazel` and copied specimens                       | This is a live `http_archive` of this repo. It must be updated after rewriting history, or replaced with another specimen source.          |
+| `3b9e37c50911c40c11a51903de961c2db0f50f59` | `airlock/frontend/tests/harness/harness.ts`               | Fixture metadata and GitHub commit URL become stale.                                                                                       |
+| `b86700d`                                  | `finance/augur/api/server_test.py`                        | Test fixture uses deployment metadata with abbreviated source commits.                                                                     |
+| `680d78946bf72e5e3601cdb69299546b495cab1b` | `devinfra/claude/docs/web-setup-debug.md`                 | Pinned raw GitHub setup URL becomes invalid unless old GitHub history remains reachable.                                                   |
+| various abbreviated SHAs                   | `cluster/k8s/**`, `cluster/debug/**`                      | Image tags embed commit suffixes; old container tags may remain valid even if Git SHAs change, but they no longer resolve as source links. |
+| various debug/runbook SHAs                 | `debug/**`, `cluster/docs/lessons_learned/**`, `plans/**` | These become historical prose references. Update only if they need to stay navigable.                                                      |
+| `995a1fce6410ec4a882d2e861b41423c8c839148` | `props/specimens/ducktape/2026-05-20-00/**`               | Specimen provenance becomes stale; this is another reason to reduce copied repo snapshots.                                                 |
 
 Required fixups after a rewrite:
 
