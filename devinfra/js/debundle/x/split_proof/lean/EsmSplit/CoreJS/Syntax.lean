@@ -61,6 +61,7 @@ inductive OpaqueRun where
   `funs.length + 1 + k` of the code, with the name, `length` and constructibility in `fns`. A statement that declares
   only functions makes them when the program is linked, so it has no declaration and does nothing when it runs. -/
   | closures (fns : List (String × Nat × Bool))
+  deriving DecidableEq
 
 inductive ArrayElementKind where
   | element
