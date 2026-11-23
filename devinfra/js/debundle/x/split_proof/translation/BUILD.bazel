@@ -233,6 +233,7 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_arithmetic_test",
         "linked_arrays_test",
         "linked_bitwise_test",
+        "linked_browser_globals_test",
         "linked_classes_test",
         "linked_composition_test",
         "linked_default_parameters_test",
