@@ -62,6 +62,20 @@ pub struct Degrees {
     pub mean: f64,
 }
 
+impl Degrees {
+    fn from_counts(mut degree: Vec<usize>) -> Self {
+        let n = degree.len();
+        degree.sort_unstable();
+        Self {
+            min: degree.first().copied().unwrap_or(0),
+            median: degree.get(n / 2).copied().unwrap_or(0),
+            p90: degree.get(n * 9 / 10).copied().unwrap_or(0),
+            max: degree.last().copied().unwrap_or(0),
+            mean: degree.iter().sum::<usize>() as f64 / n.max(1) as f64,
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct PairExample {
     pub classes: String,
@@ -410,34 +424,22 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
         .transpose()?;
     let mut unproven = String::new();
     let order_cost = positions.as_deref().map(|positions| {
-        cost(
-            positions,
-            modules.as_ref(),
-            |low, high| {
-                Some(check.flags(low, high, 0))
-                    .filter(|flags| *flags != 0)
-                    .map(flag_names)
-            },
-            |low, high| {
-                if pairs_out.is_some() {
-                    let class = flag_names(check.flags(low, high, 0));
-                    unproven.push_str(&format!("{low}\t{high}\t{class}\n"));
-                }
-            },
-        )
+        cost(positions, modules.as_ref(), |low, high| {
+            let flags = check.flags(low, high, 0);
+            if flags == 0 {
+                return None;
+            }
+            let class = flag_names(flags);
+            if pairs_out.is_some() {
+                unproven.push_str(&format!("{low}\t{high}\t{class}\n"));
+            }
+            Some(class)
+        })
     });
     if let Some(path) = &pairs_out {
         std::fs::write(path, &unproven).with_context(|| format!("writing {}", path.display()))?;
     }
-    let mut sorted_degree = degree.clone();
-    sorted_degree.sort_unstable();
-    let conflict_degree = Degrees {
-        min: sorted_degree.first().copied().unwrap_or(0),
-        median: sorted_degree.get(n / 2).copied().unwrap_or(0),
-        p90: sorted_degree.get(n * 9 / 10).copied().unwrap_or(0),
-        max: sorted_degree.last().copied().unwrap_or(0),
-        mean: degree.iter().sum::<usize>() as f64 / n.max(1) as f64,
-    };
+    let conflict_degree = Degrees::from_counts(degree);
 
     let reasons = REASONS
         .into_iter()
@@ -856,22 +858,18 @@ pub fn tier0_report_indexed(
         .map(|modules| Modules::parse(modules, n))
         .transpose()?;
     let mut examples = Vec::new();
-    let mut example_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut example_counts = BTreeMap::<tier0::Conflict, usize>::new();
     let mut unproven = String::new();
     let order_cost = positions.as_deref().map(|positions| {
-        cost(
-            positions,
-            modules.as_ref(),
-            |low, high| analysis.conflict(low, high).map(|class| class.to_string()),
-            |low, high| {
-                let Some(class) = analysis.conflict(low, high) else {
-                    return;
-                };
-                if pairs_out.is_some() {
-                    unproven.push_str(&format!("{low}\t{high}\t{class}\n"));
-                }
-                let seen = example_counts.entry(class.to_string()).or_default();
-                if with_examples && *seen < EXAMPLE_LIMIT {
+        cost(positions, modules.as_ref(), |low, high| {
+            let class = analysis.conflict(low, high)?;
+            let name = class.to_string();
+            if pairs_out.is_some() {
+                unproven.push_str(&format!("{low}\t{high}\t{name}\n"));
+            }
+            if with_examples {
+                let seen = example_counts.entry(class).or_default();
+                if *seen < EXAMPLE_LIMIT {
                     *seen += 1;
                     examples.push(Tier0Pair {
                         class,
@@ -881,8 +879,9 @@ pub fn tier0_report_indexed(
                         later_source: snippet(&source, spans[high], 100),
                     });
                 }
-            },
-        )
+            }
+            Some(name)
+        })
     });
     let pair_check_ms = elapsed_ms(start);
     if let Some(path) = &pairs_out {
@@ -957,8 +956,6 @@ pub fn tier0_report_indexed(
             fallback: "assumed for the globals in intrinsic_families_used",
         },
     ];
-    let mut sorted_degree = degree.clone();
-    sorted_degree.sort_unstable();
     Ok(Tier0Report {
         chunk: file_name(chunk),
         exports_reachable: analysis.exports_reachable,
@@ -1121,13 +1118,7 @@ pub fn tier0_report_indexed(
         all_pairs: (n * n.saturating_sub(1) / 2) as u64,
         all_pairs_conflicting,
         all_pairs_by_class,
-        conflict_degree: Degrees {
-            min: sorted_degree.first().copied().unwrap_or(0),
-            median: sorted_degree.get(n / 2).copied().unwrap_or(0),
-            p90: sorted_degree.get(n * 9 / 10).copied().unwrap_or(0),
-            max: sorted_degree.last().copied().unwrap_or(0),
-            mean: degree.iter().sum::<usize>() as f64 / n.max(1) as f64,
-        },
+        conflict_degree: Degrees::from_counts(degree),
         order_cost,
         current,
         examples,

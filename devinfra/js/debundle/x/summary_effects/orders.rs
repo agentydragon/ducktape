@@ -113,14 +113,12 @@ fn find(parent: &mut [usize], mut node: usize) -> usize {
     node
 }
 
-/// Costs `positions` (source unit to emitted position) under `conflict`,
-/// which names the class of a conflicting pair. `visit` sees every unproven
-/// swapped pair as `(source-earlier, source-later)`.
+/// Costs an emitted order. `conflict` sees each swapped pair in source order
+/// and returns its conflict class, if any.
 pub fn cost(
     positions: &[usize],
     modules: Option<&Modules>,
-    conflict: impl Fn(usize, usize) -> Option<String>,
-    mut visit: impl FnMut(usize, usize),
+    mut conflict: impl FnMut(usize, usize) -> Option<String>,
 ) -> OrderCost {
     let n = positions.len();
     let mut out = OrderCost::default();
@@ -140,7 +138,6 @@ pub fn cost(
             *out.by_class.entry(class).or_default() += 1;
             involved[low] = true;
             involved[high] = true;
-            visit(low, high);
             if let Some(modules) = modules {
                 let (a, b) = (modules.of_unit[low], modules.of_unit[high]);
                 with_entry.join(a, b);
