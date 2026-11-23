@@ -19,8 +19,8 @@ account and links its current Authentik UID before login; automatic account crea
 The human account receives the existing Forgejo SSH public keys for `atlas`, `iguana`,
 `rugged`, and `wyrm2`.
 
-Provider constraints in `tf/gitops/gitlab-spike/versions.tf.json` are generated from its
-`BUILD.bazel`: run `bb run //tf/gitops/gitlab-spike:gen-tf-versions` after changing them.
+Provider constraints are declared in both `tf/gitops/gitlab-spike/BUILD.bazel`
+(for Bazel) and `terraform.tf` (for the in-cluster OpenTofu root); update both together.
 
 Praefect manages three separate Gitaly PVCs with one local HDD copy each on distinct OVH
 workers. GitLab and Praefect use separate databases and login roles in one two-instance
