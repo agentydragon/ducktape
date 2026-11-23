@@ -40,7 +40,7 @@ theorem classParents_ownPrototype {s : State W} {a p : Addr} {o : Obj} {f : Func
   have hConstructor : isConstructor (.obj a) s = .ok true s := by
     simp only [isConstructor, M.bind_apply, getObj, hObj, hCode, hKind] <;> rfl
   have hGet := getProp_ownData call hObj hProto
-  simp [classParents, M.bind_apply, hConstructor, hGet]
+  simp [classParents, classParentsNonNull, M.bind_apply, hConstructor, hGet]
   rfl
 
 theorem classParents_extends {s t : State W} {a p : Addr} {o : Obj} {f : Func} {closed : Env}
