@@ -56,6 +56,21 @@ def load_gmail_filters(client: GmailClient) -> tuple[list[NormalizedFilter], Lab
     return normalized, label_maps
 
 
+def _prepare_diff(
+    filters_file: Path, token_file: Path | None, console: Console
+) -> tuple[FilterDiff, GmailClient, LabelMaps]:
+    console.print("Loading filters...")
+    yaml_filters = load_yaml_filters(filters_file, console)
+    console.print(f"  YAML: {len(yaml_filters)} filters")
+
+    client = get_client(token_file)
+    gmail_filters, label_maps = load_gmail_filters(client)
+    console.print(f"  Gmail: {len(gmail_filters)} filters")
+    console.print()
+
+    return diff_filters(yaml_filters, gmail_filters), client, label_maps
+
+
 def display_diff(diff: FilterDiff, console: Console) -> None:
     """Display filter diff in a nice table."""
     if not diff.to_create and not diff.to_delete:
@@ -173,17 +188,8 @@ def _gmail_filter_to_rule(gmail_filter: GmailFilter, labels_by_id: dict[str, str
 def diff(filters_file: FiltersFileArg, token_file: TokenFileOption = None):
     """Show diff between YAML and Gmail filters (read-only)."""
     console = Console()
-    console.print("Loading filters...")
-
-    yaml_filters = load_yaml_filters(filters_file, console)
-    console.print(f"  YAML: {len(yaml_filters)} filters")
-
-    client = get_client(token_file)
-    gmail_filters, _ = load_gmail_filters(client)
-    console.print(f"  Gmail: {len(gmail_filters)} filters")
-    console.print()
-
-    display_diff(diff_filters(yaml_filters, gmail_filters), console)
+    filter_diff, _, _ = _prepare_diff(filters_file, token_file, console)
+    display_diff(filter_diff, console)
 
 
 def _create_filter(client: GmailClient, rule: NormalizedFilter, label_maps: LabelMaps) -> None:
@@ -197,17 +203,7 @@ def _create_filter(client: GmailClient, rule: NormalizedFilter, label_maps: Labe
 def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     """Upload filters from YAML to Gmail (creates only, skips existing)."""
     console = Console()
-    console.print("Loading filters...")
-
-    yaml_filters = load_yaml_filters(filters_file, console)
-    console.print(f"  YAML: {len(yaml_filters)} filters")
-
-    client = get_client(token_file)
-    gmail_filters, label_maps = load_gmail_filters(client)
-    console.print(f"  Gmail: {len(gmail_filters)} filters")
-    console.print()
-
-    filter_diff = diff_filters(yaml_filters, gmail_filters)
+    filter_diff, client, label_maps = _prepare_diff(filters_file, token_file, console)
 
     if not filter_diff.to_create:
         console.print("[green]✓[/green] All filters already exist. Nothing to upload.")
@@ -239,17 +235,7 @@ def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_fil
 def sync(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     """Sync Gmail filters with YAML (create missing, delete extras)."""
     console = Console()
-    console.print("Loading filters...")
-
-    yaml_filters = load_yaml_filters(filters_file, console)
-    console.print(f"  YAML: {len(yaml_filters)} filters")
-
-    client = get_client(token_file)
-    gmail_filters, label_maps = load_gmail_filters(client)
-    console.print(f"  Gmail: {len(gmail_filters)} filters")
-    console.print()
-
-    filter_diff = diff_filters(yaml_filters, gmail_filters)
+    filter_diff, client, label_maps = _prepare_diff(filters_file, token_file, console)
     display_diff(filter_diff, console)
 
     if not filter_diff.to_create and not filter_diff.to_delete:

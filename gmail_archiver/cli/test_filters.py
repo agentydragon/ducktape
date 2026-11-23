@@ -12,9 +12,18 @@ from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, F
 from gmail_archiver.gmail_client import GmailClient
 
 
-@pytest.mark.parametrize("command", ["upload", "sync"])
-@pytest.mark.parametrize(("mode", "stdin"), [("--dry-run", None), (None, "n\n"), ("--no-dry-run", None), (None, "y\n")])
-def test_filter_creation_preserves_command_modes_and_continues_after_failure(
+@pytest.mark.parametrize(
+    ("command", "mode", "stdin"),
+    [
+        ("diff", None, None),
+        *(
+            (command, mode, stdin)
+            for command in ("upload", "sync")
+            for mode, stdin in (("--dry-run", None), (None, "n\n"), ("--no-dry-run", None), (None, "y\n"))
+        ),
+    ],
+)
+def test_filter_commands_preview_or_apply_expected_changes(
     command: str, mode: str | None, stdin: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = tmp_path / "filters.yaml"
@@ -31,14 +40,20 @@ def test_filter_creation_preserves_command_modes_and_continues_after_failure(
     result = CliRunner().invoke(filters.filters_app, [command, str(source), *([mode] if mode else [])], input=stdin)
 
     assert result.exit_code == 0, result.output
-    assert client.mock_calls[:2] == [call.list_labels_full(), call.list_filters()]
+    mutations = [request for request in client.mock_calls if request[0] not in {"list_labels_full", "list_filters"}]
+    if command == "diff":
+        assert "Works" in result.output
+        assert "Obsolete" in result.output
+        assert not mutations
+        return
+
     if mode == "--dry-run" or stdin == "n\n":
-        assert client.mock_calls[2:] == []
+        assert not mutations
         assert ("DRY RUN" if mode else "Cancelled") in result.output
         return
 
     assert "Synthetic failure" in result.output
-    assert client.mock_calls[2:] == [
+    assert mutations == [
         *([call.delete_filter("F_old")] if command == "sync" else []),
         call.get_or_create_label("Test receipts"),
         call.create_filter(
