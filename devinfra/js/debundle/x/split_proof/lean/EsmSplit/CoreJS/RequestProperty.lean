@@ -252,7 +252,7 @@ private theorem reachFrame_toKey (r R cells A) (v : Val) :
     ReachFrame r R cells A (fun _ => True) (toKey v : M W String) :=
   reachFrame_lift (toStr v) (fun _ _ => trivial)
 
-private theorem reachFrame_hasProp {r R cells A} (away : Away r R A) (key base : Val) (hb : SafeVal A base) :
+theorem reachFrame_hasProp {r R cells A} (away : Away r R A) (key base : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (hasProp key base : M W Val) := by
   cases base <;> simp only [hasProp] <;>
     try first
@@ -378,7 +378,7 @@ private theorem deleteProps_keeps_edges (o : Obj) (key : String) :
     exact Or.inl (Or.inr (List.mem_flatMap.mpr ⟨p, (List.mem_filter.mp hp).1, hnode⟩))
   · exact Or.inr h
 
-private theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val) (hb : SafeVal A base) :
+theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (deleteProp base key : M W Val) := by
   cases base <;> simp only [deleteProp] <;>
     try first
