@@ -15,11 +15,11 @@ from typing import Any
 import numpy
 from scipy.optimize import nnls
 
-from x.ai_sub_value.analyze import Poll, discontinuity, read_rows, require_single_quota_account
+from x.ai_sub_value.analyze import Poll, discontinuity, parse_time, read_rows, require_single_quota_account
 from x.ai_sub_value.bootstrap import BlockMethod, compare_blocks, resample_coefficients, resampling_units
 from x.ai_sub_value.plan_history import (
     CodexPlanPeriod,
-    codex_plan_at,
+    quota_plan_period,
     read_codex_plan_history,
     validate_reported_codex_plan_types,
 )
@@ -69,7 +69,7 @@ def read_money(rows: list[dict[str, Any]]) -> dict[str, list[MoneyPoll]]:
             continue
         raw = json.loads(row[field])
         value = raw["amount_minor"] / 10 ** raw["exponent"] if row["source"] == "claude" else float(raw["balance"])
-        result[row["source"]].append(MoneyPoll(parse_utc(row["observed_at"]), value))
+        result[row["source"]].append(MoneyPoll(parse_time(row["observed_at"]), value))
     return {provider: sorted(polls, key=lambda poll: poll.at) for provider, polls in result.items()}
 
 
@@ -82,11 +82,6 @@ class MonotonicRun:
 class TimeRange:
     start: datetime
     end: datetime
-
-
-def parse_utc(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value)
-    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
 def join_poll_pairs(pairs: Iterable[tuple[Poll, Poll]]) -> list[MonotonicRun]:
@@ -477,7 +472,7 @@ def load_bins(paths: list[Path]) -> tuple[list[UsageBin], dict[str, Any]]:
                 continue
             result.append(
                 UsageBin(
-                    at=parse_utc(row["bucket_start_utc"]),
+                    at=parse_time(row["bucket_start_utc"]),
                     provider=row["provider"],
                     model=model,
                     tokens=float(tokens),
@@ -581,19 +576,10 @@ def build_estimates(
         seen.add(identity)
         if row["window_seconds"] not in (18000, 604800):
             continue
-        at = parse_utc(row["observed_at"])
-        plan_period = None
-        if row["provider"] == "codex" and not row["window_name"]:
-            if not codex_plan_periods:
-                raise ValueError("Codex quota estimates require a timestamped --codex-plan-history input")
-            plan_period = codex_plan_at(at, codex_plan_periods)
-            if plan_period is None:
-                raise ValueError(
-                    f"Codex quota poll at {at.isoformat()} is outside the supplied plan history; "
-                    "extend the history so every Codex poll has an exact plan label"
-                )
+        poll = Poll.from_row(row)
+        plan_period = quota_plan_period(row["provider"], row["window_name"], poll.at, codex_plan_periods)
         group = (row["provider"], row["window_seconds"], row["window_name"], plan_period)
-        groups[group].append(Poll(at, row["used_percent"], parse_utc(row["reset_at"]) if row["reset_at"] else None))
+        groups[group].append(poll)
         reported = row.get("reported_plan_type")
         if reported:
             reported_plan_types[group].add(str(reported))
@@ -619,13 +605,7 @@ def build_estimates(
             scoped_audit["duplicate_polls"] += 1
             continue
         seen.add(identity)
-        groups[("claude", 604800, "Fable", None)].append(
-            Poll(
-                parse_utc(row["observed_at"]),
-                row["used_percent"],
-                parse_utc(row["reset_at"]) if row["reset_at"] else None,
-            )
-        )
+        groups[("claude", 604800, "Fable", None)].append(Poll.from_row(row))
         scoped_audit["included_polls"] += 1
     results = []
     for (provider, seconds, name, plan_period), polls in sorted(
