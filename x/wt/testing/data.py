@@ -79,28 +79,3 @@ class ConfigPresets:
         "cache_expiration": 3600,
         "cache_refresh_age": 300,
     }
-
-
-class MockBehaviors:
-    """Standard mock behaviors for test fixtures."""
-
-    class GitHub:
-        """GitHub API mock behaviors."""
-
-        @staticmethod
-        def empty_pr_list():
-            """No pull requests found."""
-            return []
-
-    class Git:
-        """Git operation mock behaviors."""
-
-        @staticmethod
-        def clean_status():
-            """Clean working directory status."""
-            return [], []  # no dirty files, no untracked files
-
-        @staticmethod
-        def standard_branches():
-            """Standard branch list for tests."""
-            return [TestData.Branches.MAIN, "feature-1", "feature-2"]
