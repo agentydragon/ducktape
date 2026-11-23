@@ -20,12 +20,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Label format constants
-_CANONICAL_SIGIL = "@@"
-_REPO_SIGIL = "@"
-_PKG_SEP = "//"
-_TARGET_SEP = ":"
-
 
 def get_build_workspace_directory() -> Path:
     """Bazel workspace root (repo root). Falls back to cwd outside ``bazel run``."""
@@ -43,25 +37,7 @@ def get_build_working_directory() -> Path:
 
 @dataclasses.dataclass(frozen=True)
 class BazelLabel:
-    """A structured Bazel label with explicit repo, package and name fields.
-
-    Not a ``str`` subtype — a plain string cannot flow in where a
-    ``BazelLabel`` is expected, and a ``BazelLabel`` cannot be used as a
-    ``str`` without an explicit conversion.
-
-    Construct from a raw query-output string with :meth:`parse` (raises on
-    bad format) or :meth:`try_parse` (returns ``None`` on bad format).
-
-    Attributes:
-        repo:    Canonical repo name (without leading ``@``); empty string
-                 for the main repository.
-        package: Package directory path (e.g. ``Path("foo/bar")``);
-                 ``Path("")`` for the root package.
-        name:    Bazel target name within the package — an opaque identifier
-                 that for source files happens to be a relative path
-                 (e.g. ``"sub/qux.go"``), but for rule targets is just a
-                 plain name (e.g. ``"my_library"``).
-    """
+    """A query label. The main repo has an empty name and the root package is `Path()`."""
 
     repo: str
     package: Path
@@ -69,40 +45,17 @@ class BazelLabel:
 
     @classmethod
     def parse(cls, s: str) -> BazelLabel:
-        """Parse a label string as produced by ``bazel query``.
+        """Parse main, apparent (`@repo`) and canonical (`@@repo`) labels, including short forms."""
+        prefix, separator, rest = s.partition("//")
+        if not separator or (prefix and not prefix.startswith("@")):
+            raise ValueError(f"Invalid Bazel label: {s!r}")
+        repo = prefix.removeprefix("@@") if prefix.startswith("@@") else prefix.removeprefix("@")
 
-        Handles ``//pkg:target``, ``@repo//pkg:target`` and the Bzlmod
-        canonical ``@@repo//pkg:target`` forms.
-
-        Also accepts short package forms such as ``//pkg``, where the target
-        name defaults to the final package component. Raises :class:`ValueError`
-        for unrecognised formats or empty short-form packages. Use
-        :meth:`try_parse` if ``None`` is preferred over an exception.
-        """
-        if s.startswith(_CANONICAL_SIGIL):
-            rest_after_sigil = s.removeprefix(_CANONICAL_SIGIL)
-            if _PKG_SEP not in rest_after_sigil:
-                raise ValueError(f"Invalid Bazel label (no {_PKG_SEP!r} after {_CANONICAL_SIGIL!r}): {s!r}")
-            repo, rest = rest_after_sigil.split(_PKG_SEP, 1)
-        elif s.startswith(_REPO_SIGIL):
-            rest_after_sigil = s.removeprefix(_REPO_SIGIL)
-            if _PKG_SEP not in rest_after_sigil:
-                raise ValueError(f"Invalid Bazel label (no {_PKG_SEP!r} after {_REPO_SIGIL!r}): {s!r}")
-            repo, rest = rest_after_sigil.split(_PKG_SEP, 1)
-        elif s.startswith(_PKG_SEP):
-            repo, rest = "", s.removeprefix(_PKG_SEP)
-        else:
-            raise ValueError(f"Invalid Bazel label (must start with {_PKG_SEP!r} or {_REPO_SIGIL!r}): {s!r}")
-
-        if _TARGET_SEP not in rest:
-            # Short form: //pkg means //pkg:pkg (name = last component)
-            package = rest
+        package, colon, name = rest.partition(":")
+        if not colon:
             if not package:
-                raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}")
+                raise ValueError(f"Invalid Bazel label (empty short form): {s!r}")
             name = Path(package).name
-            return cls(repo=repo, package=Path(package), name=name)
-
-        package, name = rest.split(_TARGET_SEP, 1)
         return cls(repo=repo, package=Path(package), name=name)
 
     @classmethod
@@ -131,11 +84,8 @@ class BazelLabel:
     def path(self) -> Path | None:
         """Workspace-relative path for local source file labels.
 
-        Returns ``package / name`` for local labels, ``None`` for external.
-
-        TODO: Ideally we'd verify that this label actually refers to a source
-        file (``kind('source file', ...)``) before treating ``name`` as a path,
-        since rule-target names are opaque identifiers, not file paths.
+        Callers must select source files (e.g. ``kind('source file', ...)``).
+        A rule target's name need not denote a file.
         """
         if self.is_external:
             return None
