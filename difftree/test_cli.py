@@ -60,6 +60,28 @@ def test_cli_sort_actually_changes_order(runner, temp_git_repo, run_git, monkeyp
         assert 0 <= result.output.find(first) < result.output.find(second)
 
 
+@pytest.mark.parametrize("reverse", [False, True], ids=["file-to-directory", "directory-to-file"])
+def test_cli_reports_both_sides_of_a_file_directory_replacement(runner, temp_git_repo, run_git, monkeypatch, reverse):
+    create_file(temp_git_repo, "topic", "old file\n")
+    git_add_commit(run_git)
+    (temp_git_repo / "topic").unlink()
+    create_file(temp_git_repo, "topic/entry", "first line\nsecond line\n")
+    git_add_commit(run_git)
+    monkeypatch.chdir(temp_git_repo)
+
+    revisions = ["HEAD", "HEAD~1"] if reverse else ["HEAD~1", "HEAD"]
+    result = runner.invoke(main, ["--columns", "tree,counts", *revisions])
+
+    assert result.exit_code == 0, result.output
+    root, *rows = result.output.splitlines()
+    file_count, entry_count = ("+1", "-2") if reverse else ("-1", "+2")
+    assert file_count in root
+    assert entry_count in root
+    assert len(rows) == 2
+    assert any("topic " in row and file_count in row for row in rows)
+    assert any("topic/entry" in row and entry_count in row for row in rows)
+
+
 def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):
     """Test --columns flag with invalid column name."""
     result = runner.invoke(main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False)
