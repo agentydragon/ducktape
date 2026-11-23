@@ -498,6 +498,7 @@ py_library(
     deps = [
         ":egress",
         ":environment",
+        ":environment_service",
         ":environment_vm",
         ":history_service",
         ":llm_ingress",
