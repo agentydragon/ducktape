@@ -213,8 +213,8 @@ func TestProviderSemanticProgressResetsIdleBudgetForSamplingAndCompaction(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			if response == nil || progress.Load() < 7 {
-				t.Fatalf("response=%v, durable semantic progress=%d", response, progress.Load())
+			if response == nil || recorder.SemanticProgress != 8 || progress.Load() != 8 {
+				t.Fatalf("response=%v, semantic progress writes=%d, idle callbacks=%d", response, recorder.SemanticProgress, progress.Load())
 			}
 			if !recorder.HeadRecorded {
 				t.Fatal("response head was not persisted before streaming")
@@ -245,8 +245,8 @@ func TestRepeatedOutputItemTransitionsAndMissingIdentityDoNotRenewIdleBudget(t *
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("duplicate item transitions error=%v, want semantic-idle timeout", err)
 	}
-	if progress.Load() != 1 {
-		t.Fatalf("missing or duplicate item identity renewed progress %d times, want one valid transition", progress.Load())
+	if recorder.SemanticProgress != 1 || progress.Load() != 1 {
+		t.Fatalf("item transitions reported %d progress writes and %d idle callbacks, want one valid transition", recorder.SemanticProgress, progress.Load())
 	}
 	if !strings.Contains(string(recorder.Wire), `"id":"item_fixture"`) {
 		t.Fatalf("timeout lost retained item evidence: %q", recorder.Wire)
@@ -279,8 +279,8 @@ func TestKeepalivesAndEmptyProviderDeltasDoNotResetIdleBudget(t *testing.T) {
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("keepalive-only stream error=%v, want semantic-idle timeout", err)
 	}
-	if progress.Load() != 0 {
-		t.Fatalf("keepalive-only stream reported %d semantic progress events", progress.Load())
+	if recorder.SemanticProgress != 0 || progress.Load() != 0 {
+		t.Fatalf("keepalive-only stream reported %d progress writes and %d idle callbacks", recorder.SemanticProgress, progress.Load())
 	}
 	if !recorder.HeadRecorded || !strings.Contains(string(recorder.Wire), "keepalive") {
 		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.HeadRecorded, recorder.Wire)
@@ -302,8 +302,8 @@ func TestEvidenceFailureStopsStreamWithoutReportingProgress(t *testing.T) {
 	}}
 	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
 	var persistenceErr *protocol.ProviderEvidencePersistenceError
-	if !errors.As(err, &persistenceErr) || !errors.Is(err, want) || progress.Load() != 0 {
-		t.Fatalf("evidence failure=%v, progress callbacks=%d", err, progress.Load())
+	if !errors.As(err, &persistenceErr) || !errors.Is(err, want) || recorder.SemanticProgress != 0 || progress.Load() != 0 {
+		t.Fatalf("evidence failure=%v, semantic progress writes=%d, idle callbacks=%d", err, recorder.SemanticProgress, progress.Load())
 	}
 }
 
@@ -852,7 +852,7 @@ func TestToolInputStreamingUsesCallIdentity(t *testing.T) {
 
 type streamObservations struct{ events []*eventpb.Event }
 
-func (s *streamObservations) Record(_ context.Context, _ protocol.ProviderEvidence, events ...*eventpb.Event) error {
+func (s *streamObservations) Record(_ context.Context, _ protocol.ProviderEvidence, _ bool, events ...*eventpb.Event) error {
 	s.events = append(s.events, events...)
 	return nil
 }

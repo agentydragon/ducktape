@@ -514,8 +514,8 @@ func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response == nil || progress.Load() < 5 {
-		t.Fatalf("response=%v, durable semantic progress=%d", response, progress.Load())
+	if response == nil || recorder.SemanticProgress != 10 || progress.Load() != 10 {
+		t.Fatalf("response=%v, semantic progress writes=%d, idle callbacks=%d", response, recorder.SemanticProgress, progress.Load())
 	}
 	if !recorder.HeadRecorded {
 		t.Fatal("response head was not persisted before streaming")
@@ -547,8 +547,8 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("ping-only stream error=%v, want semantic-idle timeout", err)
 	}
-	if progress.Load() != 2 {
-		t.Fatalf("ping/empty-delta stream reported %d semantic progress events, want only message and block start", progress.Load())
+	if recorder.SemanticProgress != 2 || progress.Load() != 2 {
+		t.Fatalf("ping/empty-delta stream reported %d progress writes and %d idle callbacks, want only message and block start", recorder.SemanticProgress, progress.Load())
 	}
 	if !recorder.HeadRecorded || !strings.Contains(string(recorder.Wire), `"type":"ping"`) {
 		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.HeadRecorded, recorder.Wire)
@@ -564,15 +564,15 @@ func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
 		stream.Data(`{"type":"message_stop"}`)
 	})
 
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond, nil)
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond)
 	defer stop()
 	recorder := &providerfixture.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response == nil || !recorder.HeadRecorded {
-		t.Fatalf("compaction response=%v, durable response head=%t", response, recorder.HeadRecorded)
+	if response == nil || !recorder.HeadRecorded || recorder.SemanticProgress != 5 {
+		t.Fatalf("compaction response=%v, durable response head=%t, semantic progress writes=%d", response, recorder.HeadRecorded, recorder.SemanticProgress)
 	}
 }
 

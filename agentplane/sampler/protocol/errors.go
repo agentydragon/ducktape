@@ -71,16 +71,6 @@ func (e *ProviderPhaseTimeoutError) Error() string {
 
 func (e *ProviderPhaseTimeoutError) Unwrap() error { return e.Cause }
 
-// ProviderProgressError marks a failure renewing durable provider progress. It must not be
-// classified as an upstream transport failure.
-type ProviderProgressError struct{ Cause error }
-
-func (e *ProviderProgressError) Error() string {
-	return fmt.Sprintf("record provider progress: %v", e.Cause)
-}
-
-func (e *ProviderProgressError) Unwrap() error { return e.Cause }
-
 // ProviderEvidencePersistenceError identifies failure to durably record provider evidence.
 type ProviderEvidencePersistenceError struct{ Cause error }
 

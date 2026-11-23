@@ -46,17 +46,10 @@ func providerFailureReason(reason string) string {
 	return reason
 }
 
-func (r *Driver) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
-	return func(ctx context.Context) error {
-		return r.store.RenewProviderAttempt(ctx, owner, intentID, r.settings.ProviderProgressLease())
-	}
-}
-
 func (r *Driver) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
 	var persistence *protocol.ProviderEvidencePersistenceError
-	var progress *protocol.ProviderProgressError
 	var lost *sessionstore.LostOwnershipError
-	if ctx.Err() != nil || errors.As(cause, &persistence) || errors.As(cause, &progress) || errors.As(cause, &lost) || r.isDraining() {
+	if ctx.Err() != nil || errors.As(cause, &persistence) || errors.As(cause, &lost) || r.isDraining() {
 		return &deferredProviderError{cause: cause}
 	}
 	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, session.ID)
@@ -240,9 +233,10 @@ func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, s
 	if compact || connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
-	providerCtx, hooks, stop := providerio.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), r.providerProgress(owner, intentID))
+	providerCtx, hooks, stop := providerio.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout())
 	defer stop()
-	result, err := adapter.Sample(providerCtx, client, connection, wire, &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID},
+	evidence := &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID, ProgressLease: r.settings.ProviderProgressLease()}
+	result, err := adapter.Sample(providerCtx, client, connection, wire, evidence,
 		providerAttribution{SessionID: metadata.SessionID, Identity: identity}, compact, hooks)
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)

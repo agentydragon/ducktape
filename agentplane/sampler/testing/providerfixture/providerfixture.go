@@ -56,27 +56,36 @@ func SSEServer(t testing.TB, handle func(stream SSEStream, r *http.Request)) *ht
 func IdleBudget(t testing.TB, idle time.Duration) (context.Context, protocol.ProviderHooks, *atomic.Int32) {
 	t.Helper()
 	progress := new(atomic.Int32)
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), idle, func(context.Context) error {
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), idle)
+	resetIdleDeadline := hooks.Progress
+	hooks.Progress = func() error {
+		if err := resetIdleDeadline(); err != nil {
+			return err
+		}
 		progress.Add(1)
 		return nil
-	})
+	}
 	t.Cleanup(stop)
 	return ctx, hooks, progress
 }
 
 // EvidenceRecorder keeps the evidence one provider call records.
 type EvidenceRecorder struct {
-	HeadRecorded bool
-	Wire         []byte
+	HeadRecorded     bool
+	Wire             []byte
+	SemanticProgress int
 	// Fail, when set, rejects evidence before it is kept, as a durable store that cannot write would.
 	Fail func(protocol.ProviderEvidence) error
 }
 
-func (r *EvidenceRecorder) Record(_ context.Context, evidence protocol.ProviderEvidence, _ ...*eventpb.Event) error {
+func (r *EvidenceRecorder) Record(_ context.Context, evidence protocol.ProviderEvidence, semanticProgress bool, _ ...*eventpb.Event) error {
 	if r.Fail != nil {
 		if err := r.Fail(evidence); err != nil {
 			return err
 		}
+	}
+	if semanticProgress {
+		r.SemanticProgress++
 	}
 	switch value := evidence.(type) {
 	case protocol.HTTPResponseHead:
