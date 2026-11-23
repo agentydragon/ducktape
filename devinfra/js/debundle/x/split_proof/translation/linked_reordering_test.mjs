@@ -131,11 +131,7 @@ for (const [observed, leftArg, rightArg] of [
     let candidate = out;
     if (capturesCall && reversed) {
       assert.equal(verdict.status, "rejected", log);
-      assert.match(
-        verdict.reason,
-        /could not prove equivalent linked executions \(Lean exited with status [1-9]\d*\)/,
-        log
-      );
+      assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
       assert(!existsSync(out));
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
@@ -147,4 +143,46 @@ for (const [observed, leftArg, rightArg] of [
     const expected = capturesCall && reversed ? dependentReversed : bundled;
     assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), { result: expected }, log);
   }
+}
+
+// These distinct world calls both return undefined in World.probe, so the concrete
+// final states match. Other worlds can return or throw differently; the all-world
+// kernel proof must still reject this reversed schedule.
+{
+  const localeCompare = (left, right) =>
+    call(
+      {
+        type: "MemberExpression",
+        object: literal(left),
+        property: id("localeCompare"),
+        computed: false,
+        optional: false,
+      },
+      [literal(right)]
+    );
+  const source = program([
+    variable("const", "first", localeCompare("x", "y")),
+    variable("const", "second", localeCompare("z", "w")),
+    exportNamed([
+      ["first", "first"],
+      ["second", "second"],
+    ]),
+  ]);
+  const spec = {
+    entry: "entry.mjs",
+    modules: { "left.mjs": ["#0"], "right.mjs": ["#1"], "entry.mjs": ["#2"] },
+    order: ["right.mjs", "left.mjs"],
+    sequential: true,
+  };
+  const dir = path.join(root, "reordered-probe-equivalent-host-calls");
+  const files = prepare(dir, { source, provider: "", spec });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(
+    verdict.reason,
+    /could not prove equivalent linked executions \(Lean exited with status [1-9]\d*\)/,
+    log
+  );
+  assert(!existsSync(out));
 }

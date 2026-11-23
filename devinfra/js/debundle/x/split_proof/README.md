@@ -83,9 +83,21 @@ Untagged template literals use their cooked text and evaluate substitutions from
 Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. For `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
 
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
-The state includes the heap and captured bindings of exported closures. The proof uses
-an interpreter fuel witness selected by running both programs in a concrete world. The checker starts at 16 and retries at 32 and 64 on fuel exhaustion. For a top-level record initializer it can make one more attempt with 64 plus the largest property count, capped at 1024. The kernel checks the selected witness for every modeled world. Exhausting the budget, unsupported syntax or a proof that fails
-to reduce yields a rejection. A successful comparison reports `"scope":"linked-programs"`.
+The state includes the heap and captured bindings of exported closures. The checker
+runs both programs in a concrete `World.probe` to select an interpreter fuel witness.
+When both finish normally, it compares the complete final state: heap objects and
+closure code/environments, binding cells, allocation region, logged output, handed
+object handles, and the probe's unit world state. Floating-point values are compared
+by their IEEE bit patterns. If these probe states differ, `Ends.unique` proves that
+the programs cannot finish with one shared state in every world, so the checker
+refuses before generating the all-world proof. Matching probe states are only a
+necessary check; Lean still proves the guarantee for every modeled world.
+
+The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
+top-level record initializer it can make one more attempt with 64 plus the largest
+property count, capped at 1024. Exhausting the budget, unsupported syntax or an
+all-world proof that fails to reduce yields a rejection. A successful comparison
+reports `"scope":"linked-programs"`.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
 
 ### Inspect an uncertified preview

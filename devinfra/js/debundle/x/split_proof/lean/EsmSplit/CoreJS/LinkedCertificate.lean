@@ -175,6 +175,15 @@ deriving instance Lean.ToExpr for Import
 deriving instance Lean.ToExpr for Module
 deriving instance Lean.ToExpr for Program
 
+deriving instance Lean.ToExpr for CoreJS.Addr
+deriving instance Lean.ToExpr for CoreJS.ErrorKind
+deriving instance Lean.ToExpr for CoreJS.Val
+deriving instance Lean.ToExpr for CoreJS.Property
+deriving instance Lean.ToExpr for CoreJS.Env
+deriving instance Lean.ToExpr for CoreJS.Code
+deriving instance Lean.ToExpr for CoreJS.Obj
+deriving instance Lean.ToExpr for CoreJS.Binding
+
 /-- Render only the constructor applications, closed constants and literals produced by
 `ToExpr`. Program strings are data, including line breaks, quotes and Lean comment delimiters. -/
 private partial def termWith (replace : Lean.Expr → Option String) (e : Lean.Expr) : Except String String := do
@@ -190,6 +199,37 @@ private partial def termWith (replace : Lean.Expr → Option String) (e : Lean.E
   | _ => throw "unsupported expression in quoted CoreJS data"
 
 private def term := termWith (fun _ => none)
+
+/-! `State World.probe` has a closed shape. Keep a canonical projection of every
+field in the run's final state; the probe's host state is `Unit`. Closures retain
+their full code and environment through `Obj.code`. Floats use the `ToExpr`
+instance above, which quotes their IEEE bit patterns. -/
+private structure ProbeStateObservation where
+  heap : List (List CoreJS.Obj)
+  cells : List (List CoreJS.Binding)
+  region : Nat
+  out : List String
+  worldState : Unit
+  handed : List CoreJS.Addr
+  deriving Lean.ToExpr
+
+private def observeProbeState (state : CoreJS.State CoreJS.World.probe) : ProbeStateObservation :=
+  { heap := state.heap.toList.map Array.toList
+    cells := state.cells.toList.map Array.toList
+    region := state.region
+    out := state.out.toList
+    worldState := state.world.state
+    handed := state.world.handed.toList }
+
+private def probeStateLiteral (state : CoreJS.State CoreJS.World.probe) : String :=
+  match term (Lean.toExpr (observeProbeState state)) with
+  | .ok literal => literal
+  | .error _ => ""
+
+/-- Compare the complete state of two completed executions in the concrete probe.
+This is a refusal check only; matching probes still go through the all-world proof. -/
+def probeStatesEqual (left right : CoreJS.State CoreJS.World.probe) : Bool :=
+  probeStateLiteral left == probeStateLiteral right
 
 /-- A closed Lean constructor term for the complete decoded program. -/
 def programLiteral (p : Program) : Except String String := term (Lean.toExpr p)
@@ -376,14 +416,42 @@ elab "#audit_linked_programs " thm:ident : command => do
   for ax in axioms do
     unless allowed.contains ax do throwError "linked program certificate depends on {ax}"
 
+/-- If both concrete runs finish and their complete state projections differ,
+the runs' final results cannot be the shared result required by `Equivalent`.
+The projection need not be injective: equality of states implies equality of
+their quoted projections, which is enough to make a mismatch decisive. -/
+theorem probeObservationMismatchRefutesEquivalent {source candidate : Program} {fuel : Nat}
+    {sourceState candidateState : CoreJS.State CoreJS.World.probe}
+    (sourceRun : CoreJS.runProgram CoreJS.World.probe fuel source = .ok () sourceState)
+    (candidateRun : CoreJS.runProgram CoreJS.World.probe fuel candidate = .ok () candidateState)
+    (different : probeStatesEqual sourceState candidateState = false) :
+    ¬ Equivalent source candidate := by
+  apply different_probe_states_refute_equivalence sourceRun candidateRun
+  rintro rfl
+  simp [probeStatesEqual, probeStateLiteral, observeProbeState] at different
+
+#audit_linked_programs probeObservationMismatchRefutesEquivalent
+
 /-- Only fuel exhaustion can be resolved by a larger witness. A normal probe
-selects a witness for the kernel proof; it does not check state equality. -/
-private def completesAt (label : String) (p : Program) (fuel : Nat) : Except String Bool :=
-  match runProgram World.probe fuel p with
-  | .ok .. => .ok true
-  | .fuel => .ok false
-  | .throw .. => .error s!"{label} threw during linked initialization"
-  | .unknown why _ => .error s!"{label} reached an unknown result during linked initialization: {why}"
+selects a witness for the kernel proof. If both runs finish but their complete
+states differ, the theorem above proves that no all-world certificate can hold. -/
+private def probeWitnessAt (source candidate : Program) (fuel : Nat) : Except String (Option Nat) := do
+  match sourceRun : runProgram World.probe fuel source with
+  | .ok () sourceState =>
+    match candidateRun : runProgram World.probe fuel candidate with
+    | .ok () candidateState =>
+      match statesAgree : probeStatesEqual sourceState candidateState with
+      | true => return some fuel
+      | false =>
+        let _ : ¬ Equivalent source candidate :=
+          probeObservationMismatchRefutesEquivalent sourceRun candidateRun statesAgree
+        throw "probe executions completed normally with different final states"
+    | .fuel => return none
+    | .throw .. => throw "split threw during linked initialization"
+    | .unknown why _ => throw s!"split reached an unknown result during linked initialization: {why}"
+  | .fuel => return none
+  | .throw .. => throw "original threw during linked initialization"
+  | .unknown why _ => throw s!"original reached an unknown result during linked initialization: {why}"
 
 /-- Evaluating a flat record uses one level of interpreter fuel per property.
 Reserve the usual depth for its expressions and surrounding declaration. -/
@@ -396,15 +464,12 @@ private def recordFuelLimit (source : Program) : Nat := Id.run do
   return min 1024 (64 + width)
 
 private def witnessFuel (source candidate : Program) : Except String Nat := do
-  let test (fuel : Nat) : Except String Bool := do
-    let before ← completesAt "original" source fuel
-    let after ← completesAt "split" candidate fuel
-    return before && after
+  let test := probeWitnessAt source candidate
   for fuel in [16, 32, 64] do
-    if ← test fuel then return fuel
+    if let some witness ← test fuel then return witness
   let limit := recordFuelLimit source
   if limit > 64 then
-    if ← test limit then return limit
+    if let some witness ← test limit then return witness
   throw s!"linked initialization exhausted the fuel search budget ({limit})"
 
 /-- The generated module proves an all-world, fuel-independent claim for these two programs.
