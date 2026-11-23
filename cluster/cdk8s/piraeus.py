@@ -81,12 +81,7 @@ metadata:
 """
 _HDD_PROPERTIES = [{"name": "ExtCmd/WaitTimeout", "value": "180000"}]
 _SATELLITE_PATCHES = [
-    {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH},
-    # Stage the new Pod templates together. Replace satellites individually while checking DRBD health.
-    {
-        "target": {"group": "apps", "version": "v1", "kind": "DaemonSet", "name": "linstor-satellite"},
-        "patch": "- op: add\n  path: /spec/updateStrategy\n  value: {type: OnDelete}\n",
-    },
+    {"target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}, "patch": _REACTOR_CONFIG_PATCH}
 ]
 _TALOS_SATELLITE_POD_TEMPLATE = {
     "spec": {
