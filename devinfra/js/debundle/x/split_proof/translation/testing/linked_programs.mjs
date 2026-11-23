@@ -107,6 +107,7 @@ export function lower(source, spec, out, extra = []) {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error) throw result.error;
+  if (process.env.SPLIT_PROOF_TIMINGS === "1") process.stderr.write(result.stderr);
   const log = result.stdout + result.stderr;
   assert([0, 1].includes(result.status), log);
   const verdictLines = result.stdout.split(/\r?\n/).filter((line) => {

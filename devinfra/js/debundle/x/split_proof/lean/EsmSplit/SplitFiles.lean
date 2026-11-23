@@ -5,6 +5,16 @@ namespace EsmSplit.SplitFiles
 
 open Lean
 
+/-- Optional stderr timing keeps stdout available for the certification verdict. -/
+def timePhase (enabled : Bool) (phase : String) (action : Unit → IO α) : IO α := do
+  unless enabled do return ← action ()
+  let start ← IO.monoMsNow
+  try
+    action ()
+  finally
+    let elapsed := (← IO.monoMsNow) - start
+    IO.eprintln (Json.mkObj [("phase", toJson phase), ("elapsed_ms", toJson elapsed)]).compress
+
 /-- Run the shared Acorn frontend and ESTree printer. Bazel supplies the runfile and
 the native Lake binary locates the same entry point beside the project. -/
 def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit := do
@@ -80,19 +90,21 @@ partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : 
 
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
 def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
-    (out work input : System.FilePath) (checkOnly : Bool) (asts : Array Json) (source : String)
+    (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
     (check : Json → IO Unit) : IO Unit := do
   let dependencies := (← IO.ofExcept providers.getObj?).toList
   for (name, _) in dependencies do
     if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
-  let programs ← IO.ofExcept (ESTreeEmit.programs asts B P source)
+  let programs ← timePhase timings "output_ast" fun _ => do
+    IO.ofExcept (ESTreeEmit.programs asts B P source)
   check programs
   let manifest ← writeProgramManifest programs work
   if checkOnly then
     let providerManifest := work / "provider-programs.json"
     IO.FS.writeFile providerManifest providers.compress
-    javascript #["--check-output"] #[manifest, input, providerManifest, out]
-  else
+    timePhase timings "output_comparison" fun _ => do
+      javascript #["--check-output"] #[manifest, input, providerManifest, out]
+  else timePhase timings "output_publication" fun _ => do
     let parent := out.parent.getD "."
     IO.FS.createDirAll parent
     -- A sibling directory makes publication a single same-filesystem rename.
