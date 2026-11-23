@@ -36,7 +36,8 @@ class DiffTree:
         total_deletions = self.root.deletions
         total_changes = total_additions + total_deletions if (total_additions + total_deletions) > 0 else 1
 
-        tree = self._build_tree_structure(self.root, depth=0)
+        nodes_in_order: list[TreeNode] = []
+        tree = self._build_tree_structure(self.root, nodes_in_order, depth=0)
 
         # Render tree to capture its visual structure
         # Use a temporary console that doesn't output to avoid double printing
@@ -53,8 +54,6 @@ class DiffTree:
         # Parse the rendered output into lines
         tree_output = temp_output.getvalue()
         tree_lines = [Text.from_ansi(line) for line in tree_output.rstrip("\n").split("\n")]
-
-        nodes_in_order = self._flatten_tree(self.root, depth=0)
 
         table = Table.grid(padding=0)  # No padding to avoid space between bars
 
@@ -150,7 +149,7 @@ class DiffTree:
         collapsed_path = "/".join(path_parts)
         return collapsed_path, current, current_depth
 
-    def _build_tree_structure(self, node: TreeNode, depth: int = 0) -> Tree:
+    def _build_tree_structure(self, node: TreeNode, nodes_in_order: list[TreeNode], depth: int) -> Tree:
         """Build Rich Tree with filenames only (no stats), collapsing single-child paths."""
         # Collect collapsed path for single-child directory chains
         collapsed_path, final_node, final_depth = self._get_collapsed_path_and_node(node, depth)
@@ -159,26 +158,14 @@ class DiffTree:
         name_color = "bold blue" if not final_node.is_file else ""
         label = Text(collapsed_path, style=name_color, overflow="ellipsis")
         tree = Tree(label, guide_style="dim")
+        nodes_in_order.append(final_node)
 
         if self._should_recurse_into_children(final_node, final_depth):
             for child in final_node.children.values():
-                child_tree = self._build_tree_structure(child, final_depth + 1)
+                child_tree = self._build_tree_structure(child, nodes_in_order, final_depth + 1)
                 tree.add(child_tree)
 
         return tree
-
-    def _flatten_tree(self, node: TreeNode, depth: int = 0) -> list[TreeNode]:
-        """Flatten tree into list of nodes in render order, matching collapsed paths."""
-        # Use the same collapsing logic as _build_tree_structure
-        _, final_node, final_depth = self._get_collapsed_path_and_node(node, depth)
-
-        result = [final_node]
-
-        if self._should_recurse_into_children(final_node, final_depth):
-            for child in final_node.children.values():
-                result.extend(self._flatten_tree(child, final_depth + 1))
-
-        return result
 
     def _make_count_cells(self, node: TreeNode) -> tuple[Text, Text]:
         """Create count cells with additions (right-aligned) and deletions (left-aligned)."""
