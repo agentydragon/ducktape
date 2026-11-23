@@ -209,6 +209,49 @@ export function AdminUserPicker({ label, value, onChange, onReload }) {
   );
 }
 
+export function WagerInput({ credits, value, onChange, disabled, style }) {
+  return (
+    <input
+      type="number"
+      value={value}
+      onChange={(e) => onChange(Math.max(1, Math.min(credits, parseInt(e.target.value) || 0)))}
+      disabled={disabled}
+      min="1"
+      max={credits}
+      style={style}
+    />
+  );
+}
+
+export function WagerPresets({ credits, onChange, disabled, amounts = [5, 10, 25, 50, 100], style, children }) {
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", ...style }}>
+      {amounts.map((amount) => {
+        const unavailable = disabled || credits < amount;
+        return (
+          <button
+            key={amount}
+            onClick={() => onChange(Math.min(amount, credits))}
+            disabled={unavailable}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              background: "transparent",
+              color: COLORS.creamDim,
+              border: "1px solid rgba(212,165,72,0.3)",
+              cursor: unavailable ? "not-allowed" : "pointer",
+              opacity: unavailable ? 0.4 : 1,
+            }}
+          >
+            {amount}
+          </button>
+        );
+      })}
+      {children}
+    </div>
+  );
+}
+
 export function SectionTitle({ children, small }) {
   return (
     <div

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import gameRules from "../game_rules.json";
-import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
+import { COLORS, SectionTitle, WagerInput, WagerPresets, WinBurst } from "./shared.jsx";
 
 const { slot_symbols: symbols, slot_pair_multiplier: pairMultiplier } = gameRules;
 
@@ -148,35 +148,20 @@ export function Slots({ offline, credits, spinSlots }) {
       <div>
         <div className="panel" style={{ padding: 20, marginBottom: 16 }}>
           <SectionTitle small>Your Bet</SectionTitle>
-          <input
-            type="number"
+          <WagerInput
+            credits={credits}
             value={bet}
-            onChange={(e) => setBet(Math.max(1, Math.min(credits, parseInt(e.target.value) || 0)))}
+            onChange={setBet}
             disabled={spinning}
-            min="1"
-            max={credits}
             style={{ width: "100%", marginBottom: 10 }}
           />
-          <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
-            {[1, 5, 10, 25, 50].map((v) => (
-              <button
-                key={v}
-                onClick={() => setBet(Math.min(v, credits))}
-                disabled={spinning || credits < v}
-                style={{
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  background: "transparent",
-                  color: COLORS.creamDim,
-                  border: `1px solid rgba(212,165,72,0.3)`,
-                  cursor: spinning || credits < v ? "not-allowed" : "pointer",
-                  opacity: spinning || credits < v ? 0.4 : 1,
-                }}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+          <WagerPresets
+            credits={credits}
+            onChange={setBet}
+            disabled={spinning}
+            amounts={[1, 5, 10, 25, 50]}
+            style={{ marginBottom: 16 }}
+          />
 
           <button
             className="btn btn-primary"

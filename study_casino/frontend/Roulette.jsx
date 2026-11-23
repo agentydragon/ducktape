@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import gameRules from "../game_rules.json";
-import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
+import { COLORS, SectionTitle, WagerInput, WagerPresets, WinBurst } from "./shared.jsx";
 
 const RED = new Set(gameRules.red);
 const POCKET_ANGLE = 360 / gameRules.wheel.length;
@@ -268,35 +268,15 @@ export function Roulette({ offline, credits, spinRoulette }) {
             Amount
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <input
-              type="number"
+            <WagerInput
+              credits={credits}
               value={betAmount}
-              onChange={(e) => setBetAmount(Math.max(1, Math.min(credits, parseInt(e.target.value) || 0)))}
+              onChange={setBetAmount}
               disabled={spinning}
-              min="1"
-              max={credits}
               style={{ flex: 1 }}
             />
           </div>
-          <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-            {[5, 10, 25, 50, 100].map((v) => (
-              <button
-                key={v}
-                onClick={() => setBetAmount(Math.min(v, credits))}
-                disabled={spinning || credits < v}
-                style={{
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  background: "transparent",
-                  color: COLORS.creamDim,
-                  border: `1px solid rgba(212,165,72,0.3)`,
-                  cursor: spinning || credits < v ? "not-allowed" : "pointer",
-                  opacity: spinning || credits < v ? 0.4 : 1,
-                }}
-              >
-                {v}
-              </button>
-            ))}
+          <WagerPresets credits={credits} onChange={setBetAmount} disabled={spinning} style={{ marginTop: 6 }}>
             <button
               onClick={() => setBetAmount(credits)}
               disabled={spinning || credits === 0}
@@ -312,7 +292,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
             >
               ALL
             </button>
-          </div>
+          </WagerPresets>
         </div>
 
         <div style={{ marginBottom: 16 }}>
