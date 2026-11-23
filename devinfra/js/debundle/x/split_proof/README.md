@@ -135,7 +135,7 @@ necessary check; Lean still proves the guarantee for every modeled world.
 
 The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
 top-level record initializer it can make one more attempt with 64 plus the largest
-property count, capped at 1024. Exhausting the budget, unsupported syntax or an
+property count, capped at 2048. Exhausting the budget, unsupported syntax or an
 all-world proof that fails to reduce yields a rejection. A successful comparison
 reports `"scope":"linked-programs"`.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
