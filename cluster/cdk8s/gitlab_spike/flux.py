@@ -97,7 +97,6 @@ def gitops(
     chart: Chart,
     directory: RenderedDirectory,
     bootstrap: Kustomization,
-    tofu_controller: Kustomization,
     forgejo: Kustomization,
     crossplane_opentofu: Kustomization,
 ) -> Kustomization:
@@ -107,5 +106,5 @@ def gitops(
         directory,
         timeout="15m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(bootstrap, tofu_controller, forgejo, crossplane_opentofu),
+        depends_on=flux_kustomization_depends_on_many(bootstrap, forgejo, crossplane_opentofu),
     )

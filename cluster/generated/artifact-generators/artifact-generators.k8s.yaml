@@ -907,11 +907,6 @@ spec:
           to: "@artifact/tf/gitops/home-switch/"
       name: tf-gitops-home-switch
       originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/gitlab-spike/**"
-          to: "@artifact/tf/gitops/gitlab-spike/"
-      name: tf-gitops-gitlab-spike
-      originRevision: "@repo"
   sources:
     - alias: repo
       kind: GitRepository

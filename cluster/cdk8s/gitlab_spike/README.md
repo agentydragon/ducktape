@@ -77,5 +77,5 @@ After activation, verify the Workspace is Synced and Ready, inspect its plan
 and reconciliation logs, and check the GitLab project, Flux source, runner,
 webhook and benchmark credentials without exposing their values. Keep the
 Terraform CR's resource-destruction setting disabled and preserve state. For
-rollback, pause the Workspace and confirm it is idle before restoring and
-resuming the old Terraform CR. Do not remove state or credentials to force reconciliation.
+rollback, pause the Workspace and confirm it is idle before restoring the old
+Terraform CR and its source artifact, then resuming the CR. Do not remove state or credentials to force reconciliation.
