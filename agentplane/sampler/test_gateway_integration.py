@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import os
-import signal
 import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -281,8 +280,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     outage_reader = history.reader.new_client()
                     outage_reader.request_timeout_s = 0.5
                     async with outage_reader:
-                        history.process.process.send_signal(signal.SIGSTOP)
-                        try:
+                        with history.process.paused():
                             with pytest.raises(TimeoutError):
                                 await outage_reader.read_session_events(session_id)
                             async with outage_request as exchange:
@@ -308,8 +306,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             assert [entry.cursor for entry in [*prefix, *outage_suffix]] == list(
                                 range(prefix[0].cursor, prefix[0].cursor + len(prefix) + len(outage_suffix))
                             )
-                        finally:
-                            history.process.process.send_signal(signal.SIGCONT)
 
                     await history.reader.redial()
                     await history.folded(UUID(session_id), outage_cursor)
