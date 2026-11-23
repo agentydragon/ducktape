@@ -13,9 +13,9 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 The operator listed these directions without ranking them. There is also a current staging failure.
 
 - [Recover wedged Sessions and Sandboxes](#wedged_session_and_sandbox_recovery--archive-a-session-and-delete-a-sandbox-when-the-runtime-cannot-recover).
-  A stuck VM cannot finish deletion and the operator reports its Sessions refuse archive. This is
-  actionable with the current placement model. The later [archive lifecycle decision](#session_archive_contract--what-archiving-a-session-stops)
-  covers continued execution, notification subscriptions and service ownership.
+  Reproduce the Sandbox deletion wedge and capture the separate Session archive refusal. The
+  deletion fix can proceed now. [Archive semantics](#session_archive_contract--what-archiving-a-session-means)
+  are a later design decision.
 
 - [Sessions and Environments cutover leftovers](#sessions-and-environments-cutover-leftovers).
   The service cutover reached staging. Four independent cleanup PRs are in review. Removing
@@ -1795,7 +1795,7 @@ flowchart TD
     CENTRAL_EXECUTOR_LIFECYCLE_DESIGN[Decision: central Session execution and Sandbox lifecycle]
     SANDBOX_QUIESCENCE_DESIGN[Decision: Sandbox stop, Session settlement and unused-Sandbox deletion]
     WEDGED_SESSION_AND_SANDBOX_RECOVERY[Open bug: recover a wedged Session and Sandbox]
-    SESSION_ARCHIVE_CONTRACT[Later decision: what archiving a Session stops]
+    SESSION_ARCHIVE_CONTRACT[Deferred decision: what archiving a Session means]
     WEDGED_SESSION_AND_SANDBOX_RECOVERY -. archive behavior .-> SESSION_ARCHIVE_CONTRACT
     CENTRAL_EXECUTOR_LIFECYCLE_DESIGN -. related execution lifetime .-> SANDBOX_QUIESCENCE_DESIGN
     VM_RAM_SUSPEND -. related suspend semantics .-> SANDBOX_QUIESCENCE_DESIGN
@@ -2134,34 +2134,33 @@ unknown activity, including a disconnected Environment. [Sandbox deletion](../en
 normally waits for a seal before releasing state. The existing narrow VM suspension fix
 [#18530](https://github.com/agentydragon/ducktape/pull/18530) predates this deletion request.
 
-**Exit.** From the supported operator interface, archive an affected Session despite permanently
-unavailable activity and delete the exact Sandbox despite a Runtime that will never seal. Each
-operation must work independently. Show what stopped, which history is durable, what remains
-unknown and how to recover retained state. Fence new work, preserve authored data and command
-receipts, and never replay an ambiguous effect. Exercise retries and late reconnect against a
-disposable reproduction. Accept each operation only when its stated outcome is durable. The
-operator should not need to patch Kubernetes finalizers or wait for the guest to boot. Related
-designs cover [quiescence](#sandbox_quiescence_design--redesign-sandbox-stopping-and-session-settlement)
-and [attachments](#sandbox-free-central-sessions). Neither blocks diagnosis or a bounded repair.
+**Sandbox recovery.** Reproduce deletion on a disposable Sandbox whose Runtime cannot reconnect.
+From the supported operator interface, complete deletion of that exact Sandbox without manually
+patching a finalizer or relying on the guest booting. Fence new work and distinguish confirmed
+History from any unexported journal tail. Preserve authored data and receipts, make retained
+state recoverable, and never replay an ambiguous effect. Verify retries and late reconnect. The
+[quiescence design](#sandbox_quiescence_design--redesign-sandbox-stopping-and-session-settlement)
+and [attachment model](#sandbox-free-central-sessions) provide context.
 
-### `SESSION_ARCHIVE_CONTRACT` — what archiving a Session stops
+**Archive symptom.** Capture the affected Session’s archive refusal and the activity Dispatcher
+reported at the time. The operator wants a wedged Session to be manageable. The product response
+belongs to the [deferred archive design](#session_archive_contract--what-archiving-a-session-means).
+Sandbox recovery can ship independently.
 
-**Later decision, operator request Nov 22.** An archived Session must not continue. Today archive
-sets App Thread metadata after consulting Dispatcher activity. An idle harness may still be live.
-[Notifications](../notification_service/api/notifications/notifications.proto) separately supports
-retiring an inbox, cancelling its subscriptions and stopping future delivery. A notice already
-submitted to the runner cannot be withdrawn.
+### `SESSION_ARCHIVE_CONTRACT` — what archiving a Session means
 
-Define when archive takes effect and which service owns that durable state. Work through a turn in
-progress, queued input, a notification racing archive, disconnect and late reconnect, and model or
-tool work in flight. An archived Session must accept no new work or automatic wake and must not
-resume execution on reconnect. Specify how unfinished work is fenced or reported when the host
-is unreachable, including what the UI shows while archiving. Keep History and unread entries
-readable. Decide whether subscriptions are cancelled, paused or retained without delivery, which
-services observe the transition, and what an explicit unarchive can reactivate. Review with
-[Session and inbox lifetime](#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes), including
-Sessions with zero or shared Environments. Changing one Session's archive state must not stop
-another Session on the same Environment.
+**Deferred by the operator, Nov 22.** App currently stores the Thread archive flag after checking
+Dispatcher activity. The operator chose App ownership as a conservative starting point. Eventual
+ownership and behavior are open. The operator finds it counterintuitive for an archived Session
+to continue and wants a separate design discussion before deciding what that means.
+
+When revisited, walk through an active turn, a permanently disconnected host, a queued notification
+and an explicit unarchive. Which operation should remain possible in each state? Who records and
+observes archive? What happens to queued work, automatic wake, unread entries and subscriptions?
+[Notifications](../notification_service/api/notifications/notifications.proto) already offers inbox
+retirement and subscription cancellation. Whether archive invokes either is a design question.
+Consider Sessions sharing an Environment and Sessions with zero attachments alongside
+[Session and inbox lifetime](#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes).
 
 ### `SANDBOX_QUIESCENCE_DESIGN` — redesign Sandbox stopping and Session settlement
 
