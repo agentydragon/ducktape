@@ -7,7 +7,7 @@ from pathlib import Path
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
 from tana.graph.loader import load_workspace
-from tana.query.search.materializer import compare_search_results
+from tana.query.search.materializer import materialize_search
 from tana.query.search.parser import parse_search_expression
 
 PRETTY_PRINT_LIMIT = 10
@@ -40,23 +40,21 @@ def print_search_info(store: TanaGraph, search_id: NodeId) -> None:
     print(f"\nSearch: {search_node.name or search_id}")
     print(f"ID: {search_id}")
 
-    # Parse and print expression
     expression = parse_search_expression(store, search_node)
-    if expression:
-        print(f"Expression: {expression}")
-    else:
-        print("Expression: <none>")
+    print(f"Expression: {expression or '<none>'}")
 
-    # Compare results
-    comparison = compare_search_results(store, search_node)
+    stored = search_node.children
+    materialized = materialize_search(store, search_node, expression)
+    print(f"\nStored results: {len(stored)}")
+    print(f"Materialized results: {len(materialized)}")
 
-    print(f"\nStored results: {len(comparison['stored'])}")
-    print(f"Materialized results: {len(comparison['materialized'])}")
+    stored_ids, materialized_ids = set(stored), set(materialized)
+    missing = list(stored_ids - materialized_ids)
+    extra = list(materialized_ids - stored_ids)
+    _print_node_list(store, "Missing from materialized", missing)
+    _print_node_list(store, "Extra in materialized", extra)
 
-    _print_node_list(store, "Missing from materialized", comparison["missing"])
-    _print_node_list(store, "Extra in materialized", comparison["extra"])
-
-    if not comparison["missing"] and not comparison["extra"]:
+    if not missing and not extra:
         print("\n✅ Stored and materialized results match!")
 
 
