@@ -18,8 +18,8 @@ The operator listed these directions without ranking them. There is also a curre
   covers continued execution, notification subscriptions and service ownership.
 
 - [Sessions and Environments cutover leftovers](#sessions-and-environments-cutover-leftovers).
-  The service cutover reached staging. The remaining changes concern settings, selectors and
-  internal packaging. They can be reviewed independently.
+  The service cutover reached staging. Four independent cleanup PRs are in review. Removing
+  the transitional Sessions Pod label follows verification of the Service selector in staging.
 - [Firecracker on the cluster](#firecracker_integration_design--choose-firecracker-integration-and-privilege-boundary).
   Evaluate an existing Firecracker integration before choosing how to provision privileged
   infrastructure. Keeping the Agentplane launcher in a dedicated namespace remains an option.
@@ -3630,32 +3630,26 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
 #### Sessions and Environments cutover leftovers
 
 [#17630](https://github.com/agentydragon/ducktape/pull/17630) retired the old Services, workloads,
-bootstrap aliases, CONNECT authorities and image automation. On Nov 22 staging had two Ready
-endpoints on each canonical Service. The following changes have separate acceptance criteria.
+bootstrap aliases, CONNECT authorities and image automation. The operator dispatched the four
+remaining code changes independently on Nov 22. Each canonical Service had two ready endpoints.
 
-- **App timeouts.** Remove the two unused `runner_gateway_*_timeout_s` fields and their
-  zero-value assertions in [App settings](../app/internal/settings/config.go). After
-  [#18188](https://github.com/agentydragon/ducktape/pull/18188), the only `app-config` mounted by
-  either staging App replica omitted both keys (resourceVersion `516483157`). Check strict
-  settings loading with the rendered config. The Environments health probe still uses
-  `runner_gateway_target` and `runner_gateway_tls`.
-- **Runtime network policy.** Remove the `sandbox-controller` Pod label from the
-  [environment-tools listener](../../cluster/cdk8s/agentplane/environment_sandbox.py). Staging
-  still admitted that label on port 9090, with zero matching Pods. Keep the `environments`
-  selector and verify Runtime connectivity after Flux applies the policy.
-- **Sessions Service selector.** The [Service](../../cluster/cdk8s/agentplane/runner_gateway_workload.py)
-  still uses the component label added in [#17196](https://github.com/agentydragon/ducktape/pull/17196)
-  to select old and new Pods at once. Both current endpoints carry the Deployment's
-  `app.kubernetes.io/name=sessions` label. Switch the root-owned Service to that selector,
-  verify its ready endpoints, then remove the extra label from the delivery-owned Pod template.
-  Keep the Service and Deployment in their respective Flux owners.
-- **Internal binary name.** The Sessions [Bazel executable](../session_dispatcher/cmd/BUILD.bazel)
-  and its [OCI entrypoint](../session_dispatcher/BUILD.bazel) still say `runner-gateway`.
-  Rename them together with runfiles, test fixtures and docs. Verify the serving and
-  `--migrate-only` paths with the existing image name and database. The
-  [architecture decision](../docs/adr_two_binaries.md) deliberately retains the
-  `session_dispatcher/` directory. Database names, SPIFFE identities, the controller Lease and
-  telemetry have independent consumers.
+- [App settings #19314](https://github.com/agentydragon/ducktape/pull/19314) removes the two
+  unused Runner Gateway timeout fields. Staging omits both keys, and the production Go loader
+  accepted the [rendered staging config](https://app.buildbuddy.io/invocation/12157b1e-a07b-4371-a93b-e3abcbd23b17).
+- [Runtime listener policy #19320](https://github.com/agentydragon/ducktape/pull/19320) removes
+  the retired `sandbox-controller` peer from
+  `environment-tools-listener`. After `agentplane-staging` reconciles, verify the Environments
+  Runtime connections still report connected on the running Sandboxes.
+- [Sessions Service selector #19319](https://github.com/agentydragon/ducktape/pull/19319)
+  selects `app.kubernetes.io/name=sessions`. Before dispatch, both the new and old selector
+  matched the exact two Ready EndpointSlice Pod UIDs. Once Flux applies the new Service
+  selector, verify its ready endpoints against the current Sessions Pods, then remove
+  `app.kubernetes.io/component=sessions` from the separately owned
+  `agentplane-staging-delivery` Pod template.
+- [Sessions executable #19313](https://github.com/agentydragon/ducktape/pull/19313) updates
+  the Bazel target, image entrypoint and runfiles together. The serving and `--migrate-only`
+  paths use the same image and database contracts. After the new image rolls, verify Sessions
+  readiness and a Dispatcher RPC.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
