@@ -92,11 +92,16 @@ private theorem lookup_fields (fields : Fields) (props : List (String × Propert
       simp only [Option.orElse, Option.or, Option.map, addField, lookup_setOwn, matchKey, Bool.false_eq_true,
         ↓reduceIte]
 
+/-- The fallback after the concrete property equations. Keeping the underlying
+value lookup separate lets indexed records also reduce an arbitrary computed key. -/
+def lookupLiteralValue (fields : List (String × String)) (key : String) : Option String :=
+  fields.reverse.lookup key
+
 /-- A lookup sees the last definition of a field, or `none` for an absent key.
 The certificate can register concrete field equations on this function. `cbv`
 tries those equations before unfolding the fallback scan. -/
 def lookupLiteralProperty (fields : List (String × String)) (key : String) : Option Property :=
-  (fields.reverse.lookup key).map literalDataProperty
+  (lookupLiteralValue fields key).map literalDataProperty
 
 namespace LiteralFieldIndex
 
@@ -136,28 +141,27 @@ private theorem lookup (tree : Tree) (keys : List String) (key : String) :
 
 /-- A computed key need only search the index and check that a matching key
 occurs in the source. It need not reconstruct every property's value. -/
-theorem readProperty (tree : Tree) (keys : List String) (key : String) :
-    lookupLiteralProperty (fields tree keys) key =
-      (read tree key).bind fun value =>
-        if keys.contains key then some (literalDataProperty value) else none := by
+theorem readValue (tree : Tree) (keys : List String) (key : String) :
+    lookupLiteralValue (fields tree keys) key =
+      (read tree key).bind fun value => if keys.contains key then some value else none := by
   by_cases h : key ∈ keys <;> cases hv : read tree key <;>
-    simp [lookupLiteralProperty, lookup, hv, h, List.contains_iff_mem]
+    simp [lookupLiteralValue, lookup, hv, h, List.contains_iff_mem]
 
 theorem hit {tree : Tree} {keys : List String} {key value : String} {i : Nat}
     (atIndex : keys[i]? = some key) (atKey : read tree key = some value) :
     lookupLiteralProperty (fields tree keys) key = some (literalDataProperty value) := by
   have mem := List.mem_of_getElem? atIndex
-  simp [lookupLiteralProperty, lookup, mem, atKey]
+  simp [lookupLiteralProperty, lookupLiteralValue, lookup, mem, atKey]
 
 theorem miss {tree : Tree} {keys : List String} {key : String} (atKey : read tree key = none) :
     lookupLiteralProperty (fields tree keys) key = none := by
-  simp [lookupLiteralProperty, lookup, atKey]
+  simp [lookupLiteralProperty, lookupLiteralValue, lookup, atKey]
 
 end LiteralFieldIndex
 
 theorem lookup_literalProperties (fields : List (String × String)) (key : String) :
     (literalProperties fields).lookup key = lookupLiteralProperty fields key := by
-  simp [literalProperties, lookup_fields, lookupLiteralProperty]
+  simp [literalProperties, lookup_fields, lookupLiteralProperty, lookupLiteralValue]
 
 private theorem modify_allocated (s : State W) (objs : Array Obj)
     (o : Obj) (f : Obj → Obj) :
