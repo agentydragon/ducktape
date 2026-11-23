@@ -350,11 +350,12 @@ export const opaqueCases = [
   },
   {
     name: "an opaque arrow with a public prototype still cannot construct or serve as a superclass",
+    end: "throw",
     source: `
       const [pick] = [() => 3];
       pick.prototype = {};
-      try { new pick(); } catch (e) { console.log("new", e.name); }
-      try { const Derived = class extends pick {}; } catch (e) { console.log("extends", e.name); }
+      try { new pick(); } catch (e) { console.log("new rejected"); }
+      class Derived extends pick {}
     `,
     scripts: {
       "0/0": [
