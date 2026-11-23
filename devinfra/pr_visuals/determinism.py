@@ -43,16 +43,6 @@ _TEST_QUERY_LINE = re.compile(
 
 
 @dataclass(frozen=True)
-class Render:
-    """A screenshot's protocol identity within the target collection scope."""
-
-    target: str
-    case_id: str
-    checkpoint: str | None
-    role: str
-
-
-@dataclass(frozen=True)
 class Roster:
     """One selected test run, assembled from its complete set of successful shards."""
 
@@ -67,17 +57,15 @@ class Observation:
     """Which successful complete run roster produced each screenshot digest."""
 
     by_digest: dict[str, list[Roster]] = field(default_factory=dict)
-    rosters: set[Roster] = field(default_factory=set)
-    labels: set[str] = field(default_factory=set)
 
     @property
     def runs_present(self) -> int:
-        return len(self.rosters)
+        return sum(len(rosters) for rosters in self.by_digest.values())
 
 
 @dataclass(frozen=True)
 class Observations:
-    screenshots: dict[Render, Observation]
+    screenshots: dict[OutputKey, Observation]
     diagnostics: tuple[OutputObservation, ...]
     complete_rosters: dict[str, tuple[Roster, ...]]
     incomplete_rosters: tuple[CollectionIssue, ...]
@@ -181,10 +169,6 @@ def observe_targets(invocations: list[str], targets: list[str], *, bbapi: Path, 
     )
 
 
-def _render(output: OutputObservation) -> Render:
-    return Render(output.key.target, output.key.case_id, output.key.checkpoint, output.key.role)
-
-
 def from_collection(
     collected: CollectedOutputs,
     invocations: list[str],
@@ -242,15 +226,15 @@ def from_collection(
                     )
                 )
 
-    claims_by_roster: dict[Roster, dict[Render, list[OutputObservation]]] = defaultdict(lambda: defaultdict(list))
+    claims_by_roster: dict[Roster, dict[OutputKey, list[OutputObservation]]] = defaultdict(lambda: defaultdict(list))
     for output in collected.selected:
         key = output.result
         if output.key.role == "screenshot" and key.configuration is not None and key.run is not None:
             roster = Roster(key.target, key.invocation, key.configuration, key.run)
-            claims_by_roster[roster][_render(output)].append(output)
+            claims_by_roster[roster][output.key].append(output)
 
     successful_rosters: dict[str, list[Roster]] = defaultdict(list)
-    screenshots: dict[Render, Observation] = {}
+    screenshots: dict[OutputKey, Observation] = {}
     for roster, shard_results in roster_shards.items():
         if roster.target in ambiguous_targets:
             continue
@@ -288,8 +272,6 @@ def from_collection(
         for render, outputs in claims.items():
             output = outputs[0]
             observation = screenshots.setdefault(render, Observation())
-            observation.rosters.add(roster)
-            observation.labels.add(output.label or "")
             assert output.digest is not None
             observation.by_digest.setdefault(output.digest, []).append(roster)
 
@@ -326,11 +308,11 @@ def observe(
 class Findings:
     """Screenshots whose bytes differ or whose output is absent from a complete roster."""
 
-    drifted: list[Render]
-    missing: list[Render]
+    drifted: list[OutputKey]
+    missing: list[OutputKey]
 
 
-def _render_sort_key(render: Render) -> tuple[str, str, bool, str, str]:
+def _render_sort_key(render: OutputKey) -> tuple[str, str, bool, str, str]:
     return render.target, render.case_id, render.checkpoint is not None, render.checkpoint or "", render.role
 
 
@@ -343,14 +325,14 @@ def analyze(observations: Observations) -> Findings:
         (
             render
             for render, seen in observations.screenshots.items()
-            if any(roster not in seen.rosters for roster in observations.complete_rosters.get(render.target, ()))
+            if seen.runs_present < len(observations.complete_rosters[render.target])
         ),
         key=_render_sort_key,
     )
     return Findings(drifted=drifted, missing=missing)
 
 
-def _identity(render: Render) -> str:
+def _identity(render: OutputKey) -> str:
     checkpoint = "<default>" if render.checkpoint is None else render.checkpoint
     return f"`{render.target}` — case `{render.case_id}`, checkpoint `{checkpoint}`, role `{render.role}`"
 
@@ -481,7 +463,7 @@ def _image_report(
     findings = analyze(observations)
     lines: list[str] = []
     if not findings.drifted and not findings.missing:
-        stable = sum(len(value.by_digest) == 1 for value in observations.screenshots.values())
+        stable = len(observations.screenshots)
         lines.append(f"All {stable} observed screenshot identity(ies) have one CAS digest across complete rosters.")
     if findings.drifted:
         lines += [f"### {len(findings.drifted)} screenshot(s) have different CAS digests", ""]
