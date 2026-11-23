@@ -1,4 +1,4 @@
-"""Macros: vitest_config, vitest_test, check_vitest_specs — vitest specs as ordinary test targets.
+"""Define Vitest configs and tests from compiled TypeScript specs.
 
 `vitest_test(name = "sidebar_test", srcs = ["sidebar.test.tsx"], deps = [...])` is the test, as a
 `py_test` or `cc_test` is: `bbr test //pkg:sidebar_test` compiles the spec and runs it alone.
@@ -7,6 +7,7 @@ Specs reach vitest already compiled: the macro compiles `srcs` with a `testonly`
 (<ts_library.bzl>, named `<name>_lib`), whose tsc action type-checks them and emits the `.js`
 that vitest runs. Nothing is transformed at run time, so no package carries a `vitest.config.*`:
 a package's one `vitest_config` generates it, and each `vitest_test` names that config.
+Frontends can bind their shared config and tsconfig once with `vitest_test_for`.
 
 A spec file that no `vitest_test` compiles never runs, and nothing downstream notices.
 `check_vitest_specs()`, called at the end of a BUILD file, fails the load for a `*.test.ts[x]`
@@ -134,6 +135,20 @@ def vitest_test(name, srcs, config, tsconfig, deps = [], data = [], isolated_typ
         data = [config, ":" + name + "_lib"] + data,
         **kwargs
     )
+
+def vitest_test_for(config, tsconfig):
+    """Return a vitest_test macro bound to a frontend's config and tsconfig labels."""
+
+    def configured_test(name, srcs, **kwargs):
+        vitest_test(
+            name = name,
+            srcs = srcs,
+            config = config,
+            tsconfig = tsconfig,
+            **kwargs
+        )
+
+    return configured_test
 
 def check_vitest_specs():
     """Fails the package's load for a spec file that no `vitest_test` in it compiles."""
