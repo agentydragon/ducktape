@@ -16,7 +16,7 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output]
+    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json]
     lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
@@ -400,10 +400,10 @@ def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec
 
 /-- Elaborate the concrete execution proof with the same toolchain and compiled model
 as the splitter. Publication waits for the kernel to accept it. -/
-private def verifyExecution (work : System.FilePath) (program providers files : Json) (P : Plan)
+private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
     (original candidate : CoreJS.Program) : IO Unit := do
   let file := work / "LinkedExecution.lean"
-  IO.FS.writeFile file (← IO.ofExcept (CoreJS.LinkedBehavior.certificate program providers files P original candidate))
+  IO.FS.writeFile file (← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate))
   let exe ← IO.appPath
   let args := #["-DwarningAsError=true", s!"--root={work}", file.toString]
   let proc ← if exe.fileName == some "lean" then
@@ -418,14 +418,20 @@ private def verifyExecution (work : System.FilePath) (program providers files : 
     let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
     throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
 
-private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) : IO UInt32 := do
+private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
   let fields := match outcome with
     | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
     | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
-  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields)).compress
+  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
-private def runInDir (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
+private def profileVerdict (selected used : CoreJS.HostProfile) : List (String × Json) :=
+  match selected with
+  | .empty => []
+  | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson (if used == .browserPage then
+      ["typeof window is object without observable effects throughout initialization"] else []))]
+
+private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
@@ -528,17 +534,27 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
           throw (IO.userError "the checked reorder proves only normal-completion")
         certifyOutput (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
           IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
-        return ← emitVerdict request.label (.ok level) "closed-declarations"
+        return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile .empty)
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
     try
       unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
       let providers ← loadProviders program bundlePath work
+      let used ← IO.mkRef CoreJS.HostProfile.empty
       certifyOutput providers B P out work input checkOnly outputAsts source fun files => do
-        let (original, candidate) ← IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P)
+        let decode := fun active => CoreJS.LinkedInput.decodePair program providers files P active
+        let (active, original, candidate) ← IO.ofExcept <| do
+          match decode .empty with
+          | .ok (a, b) => return (.empty, a, b)
+          | .error why =>
+            if profile == .empty then throw why
+            let (a, b) ← decode profile
+            return (profile, a, b)
+        used.set active
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
-        verifyExecution work program providers files P original candidate
-      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
+        verifyExecution active work program providers files P original candidate
+      let active ← used.get
+      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
   let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then
@@ -573,8 +589,8 @@ private def runInDir (work : System.FilePath) (required : Option Guarantee) (che
   if ok && !bad then return 0
   IO.eprintln (if force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
 
-private def runSplitter (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
-  IO.FS.withTempDir fun work => runInDir work required checkOnly args
+private def runSplitter (profile : CoreJS.HostProfile) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
+  IO.FS.withTempDir fun work => runInDir profile work required checkOnly args
 
 def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
   if let "--diagnostic" :: rest := args then
@@ -582,7 +598,7 @@ def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
       IO.eprintln "certification options cannot be combined with --diagnostic"
       return 1
     IO.println "Diagnostic run. Any emitted files are an uncertified preview."
-    return ← runSplitter none false rest
+    return ← runSplitter .empty none false rest
   let (level?, args) := Effects.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
@@ -590,9 +606,15 @@ def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
       | "all-outcomes" => pure Guarantee.allOutcomes
       | "normal-completion" => pure Guarantee.normalCompletion
       | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
+    let (contract?, args) := Effects.takeFlag "--host-contract" args
+    let profile ← match contract? with
+      | none => pure CoreJS.HostProfile.empty
+      | some path => do
+        let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
+        IO.ofExcept (CoreJS.HostProfile.read j)
     let checkOnly := args.contains "--check-output"
     let args := args.filter (· != "--check-output")
     unless args.length == 3 && !args.any (·.startsWith "--") do
-      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output]; use --diagnostic for plan and preview options")
-    runSplitter (some level) checkOnly args
+      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json]; use --diagnostic for plan and preview options")
+    runSplitter profile (some level) checkOnly args
   catch e => emitVerdict label (.error e.toString)
