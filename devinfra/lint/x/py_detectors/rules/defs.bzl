@@ -2,25 +2,22 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-def py_detector(name, srcs, deps = [], **kwargs):
+def py_detector(name, deps = []):
     """Define a detector rule library and its fixture-based test.
 
     Args:
         name: Rule name (e.g., "broad_except_order"). Must match a subdirectory
-              under rules/ containing the srcs and ok/bad fixture dirs.
-        srcs: Source files relative to the rule subdirectory.
+              under rules/ containing rule.py and the ok/bad fixture dirs.
         deps: Additional deps beyond models and registry.
-        **kwargs: Passed to py_library.
     """
     py_library(
         name = name,
-        srcs = [name + "/" + s for s in srcs],
+        srcs = [name + "/rule.py"],
         visibility = ["//:__subpackages__"],
         deps = deps + [
             "//devinfra/lint/x/py_detectors:models",
             "//devinfra/lint/x/py_detectors:registry",
         ],
-        **kwargs
     )
 
     py_test(
