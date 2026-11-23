@@ -130,15 +130,6 @@ ts_library(
 )
 
 ts_library(
-    name = "status",
-    srcs = ["status.ts"],
-    tsconfig = "//props/frontend:tsconfig",
-    deps = [
-        ":schema",
-    ],
-)
-
-ts_library(
     name = "runModalContext",
     srcs = ["runModalContext.tsx"],
     tsconfig = "//props/frontend:tsconfig",

@@ -14,7 +14,7 @@ import type {
 import { fetchRuns, type RunsFilters } from "../lib/api/client";
 import { formatAge } from "../lib/formatters";
 import runFilters from "../lib/run_filter_values.json";
-import { formatStatus } from "../lib/status";
+import RunStatusBadge, { formatStatus } from "./RunStatusBadge";
 import { toast } from "../lib/toast";
 import type { RunTrigger } from "../lib/types";
 import BackButton from "./BackButton";
@@ -32,21 +32,6 @@ interface Props {
 }
 
 const LIMIT = 50;
-
-function statusColor(status: AgentRunStatus): string {
-  switch (status) {
-    case "in_progress":
-      return "blue";
-    case "exited":
-      return "green";
-    case "timed_out":
-      return "yellow";
-    case "startup_failed":
-      return "red";
-    default:
-      return "gray";
-  }
-}
 
 export default function RunsBrowser({
   initialDefinitionId,
@@ -267,12 +252,7 @@ export default function RunsBrowser({
                       {run.model}
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={statusColor(run.status)} variant="light" tt="capitalize">
-                        {formatStatus(run.status)}
-                        {run.status === "exited" && run.container_exit_code != null
-                          ? ` (${run.container_exit_code})`
-                          : ""}
-                      </Badge>
+                      <RunStatusBadge run={run} />
                     </Table.Td>
                     <Table.Td ta="right" c="dimmed" className="text-xs">
                       {run.reported_issues_count ?? "—"}

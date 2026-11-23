@@ -5,18 +5,23 @@
  */
 import { critiqueIssues, gradingEdges } from "./files";
 
+const criticRun = {
+  agent_run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+  type_config: {
+    agent_type: "critic" as const,
+    example: { kind: "whole_snapshot" as const, snapshot_slug: "vuln-app-v1", files_hash: null },
+  },
+  model: "gpt-5.1-codex-mini",
+  status: "exited" as const,
+  container_exit_code: 0,
+  created_at: "2025-01-20T10:00:00Z",
+  updated_at: "2025-01-20T10:05:00Z",
+};
+
 export const runs = [
   {
-    agent_run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
-    type_config: {
-      agent_type: "critic" as const,
-      example: { kind: "whole_snapshot" as const, snapshot_slug: "vuln-app-v1", files_hash: null },
-    },
-    model: "gpt-5.1-codex-mini",
-    status: "exited" as const,
-    created_at: "2025-01-20T10:00:00Z",
-    updated_at: "2025-01-20T10:05:00Z",
+    ...criticRun,
     split: "valid" as const,
     reported_issues_count: 3,
     grading: { tp_count: 2, fp_count: 1, total_credit: 1.5 },
@@ -78,21 +83,12 @@ export const runs = [
 ];
 
 export const criticRunDetail = {
-  agent_run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
-  model: "gpt-5.1-codex-mini",
-  status: "exited" as const,
-  created_at: "2025-01-20T10:00:00Z",
-  updated_at: "2025-01-20T10:05:00Z",
+  ...criticRun,
   llm_call_count: 5,
   budget_usd: 0.5,
   parent_agent_run_id: null,
   llm_costs: {
     totals: { requests: 5, input_tokens: 2000, cached_tokens: 500, output_tokens: 800, cost_usd: 0.0342 },
-  },
-  type_config: {
-    agent_type: "critic" as const,
-    example: { kind: "whole_snapshot" as const, snapshot_slug: "vuln-app-v1", files_hash: null },
   },
   details: {
     agent_type: "critic" as const,

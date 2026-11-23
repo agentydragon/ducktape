@@ -274,11 +274,24 @@ ts_library(
 )
 
 ts_library(
+    name = "RunStatusBadge",
+    srcs = ["RunStatusBadge.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        "//props/frontend:node_modules/@mantine/core",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:schema",
+    ],
+)
+
+ts_library(
     name = "RunsBrowser",
     srcs = ["RunsBrowser.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":BackButton",
+        ":RunStatusBadge",
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
@@ -289,7 +302,6 @@ ts_library(
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:run_filters",
         "//props/frontend/src/lib:schema",
-        "//props/frontend/src/lib:status",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
     ],
@@ -305,6 +317,7 @@ ts_library(
         ":FileViewer",
         ":GradingEdges",
         ":LLMRequestViewer",
+        ":RunStatusBadge",
         "//:node_modules/@tanstack/react-query",
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
@@ -315,7 +328,6 @@ ts_library(
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:queryKeys",
         "//props/frontend/src/lib:schema",
-        "//props/frontend/src/lib:status",
         "//props/frontend/src/lib:toast",
     ],
 )
