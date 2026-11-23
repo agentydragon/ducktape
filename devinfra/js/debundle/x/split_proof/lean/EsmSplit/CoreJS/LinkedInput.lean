@@ -1,5 +1,7 @@
+import EsmSplit.CoreJS.LinkedDeployment
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.ModuleInput
+import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.Plan
 import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
@@ -46,7 +48,25 @@ private structure Parsed where
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
 
-private def parse (profile : HostProfile) (path : String) (nodes : Array Json)
+/-- Structural proofs lower one source unit concretely and interpret the remaining whole units
+through their lexical capability lists. The ordinary linked checker lowers every unit concretely. -/
+private inductive BodyFormat where
+  | linked
+  | structural (pivot : Nat) (location : LinkedDeployment.Access)
+
+private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
+    (origin : Nat) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
+  if let .structural pivot location := format then
+    if origin != pivot then
+      let s ← OpaqueInput.unit origin j location.unitNames[origin]?
+      return (s, if exported then (Lower.topDefs j).eraseDups else [])
+  let ast := ((numberFunctions origin j).run 1).1
+  if exported then
+    let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
+    return (s, bindings)
+  return (← FromESTree.linkedUnit imports ast profile, [])
+
+private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
     (base : Nat := 0) (origins : Option (Array Nat) := none) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
@@ -56,13 +76,13 @@ private def parse (profile : HostProfile) (path : String) (nodes : Array Json)
   let mut units := #[]
   let mut exports := #[]
   for (j, i) in nodes.zipIdx do
-    let numbered (ast : Json) : Except String Json := do
+    let decode (ast : Json) (exported : Bool) : Except String (Stmt × List Name) := do
       let origin ← match origins with
         | none => pure (base + i)
         | some ids =>
           let some id := ids[units.size]? | throw "emitted body length differs from the placement"
           pure id
-      return ((numberFunctions origin ast).run 1).1
+      format.lower profile names origin ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
     | "ExportNamedDeclaration" =>
@@ -75,12 +95,11 @@ private def parse (profile : HostProfile) (path : String) (nodes : Array Json)
           exports := exports.push (← FromESTree.exportSpec sp)
       else
         unless specs.isEmpty do throw "expected an inline declaration export"
-        let (bindings, s) ← FromESTree.linkedDeclaration names (← numbered declaration) profile
+        let (s, names) ← decode declaration true
         units := units.push (i, s, declaration)
-        for binding in bindings do
-          exports := exports.push (binding, binding)
+        for name in names do exports := exports.push (name, name)
     | _ =>
-      let s ← (FromESTree.linkedUnit names (← numbered j) profile).mapError fun why => s!"statement {i}: {why}"
+      let (s, _) ← (decode j false).mapError fun why => s!"statement {i}: {why}"
       units := units.push (i, s, j)
   return { imports := imports.toList, units := units.toList, exports := exports.toList }
 
@@ -90,24 +109,24 @@ private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module w
   body := p.units.map fun (i, s, _) => (base + i, s)
   exports := p.exports
 
-private def readProviders (profile : HostProfile) (providers : List (String × Json)) (base : Nat) : Except String (List Module) := do
+private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json)) (base : Nat) : Except String (List Module) := do
   let names := providers.map Prod.fst
   let mut modules := #[]
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse profile name nodes offset).mapError fun why => s!"{name}: {why}"
+    let p ← (parse format profile name nodes offset).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
     modules := modules.push (p.numbered name offset)
     offset := offset + nodes.size
   return modules.toList
 
-private def readSplit (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
+private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
     (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) : Except String Module := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
   let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (i, ·)
-  let p ← parse profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
+  let p ← parse format profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
     unless p.imports.take original.imports.length == original.imports && external == original.imports do
@@ -169,11 +188,8 @@ private def checkScopes (before after : Program) : Except String Unit := do
       let some cell := env.vars.lookup x | throw s!"original unit {id} has an unbound reference to {x}"
       unless env'.vars.lookup x == some cell do throw s!"unit {id}: reference to {x} resolves to a different linked cell"
 
-/-- The original entry is at the virtual root. Provider and emitted file keys are canonical
-relative filenames in that same root, with no overlap. Plan ordinals refer to the full
-source unit array, including imports and export lists. The two programs share the
-providers, whose stable identities start after that array. -/
-def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) : Except String (Program × Program) := do
+private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
+    (profile : HostProfile) : Except String (Program × Program) := do
   let fs := (← files.getObj?).toList.map Prod.fst
   let ps := (← providers.getObj?).toList
   let providerNames := ps.map Prod.fst
@@ -187,16 +203,41 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
   for (j, i) in nodes.zipIdx do
     if ["ImportDeclaration", "ExportNamedDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
-  let original ← parse profile "bundle.mjs" nodes
+  let original ← parse format profile "bundle.mjs" nodes
+  if let .structural pivot _ := format then
+    unless original.units.any (fun u => u.1 == pivot) do throw s!"pivot {pivot} is not an executable source unit"
   for req in original.imports do
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
-  let shared ← readProviders profile ps nodes.size
+  let shared ← readProviders format profile ps nodes.size
   let before : Program := { entry := P.entry, modules := original.numbered P.entry 0 :: shared }
   let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
-    (readSplit profile files P providerNames original originalSyntax m).mapError fun why => s!"{m.name}: {why}"
+    (readSplit format profile files P providerNames original originalSyntax m).mapError fun why => s!"{m.name}: {why}"
   let after : Program := { entry := P.entry, modules := split ++ shared }
+  let (before, after) ← match format with
+    | .linked => pure (before, after)
+    | .structural _ location => do
+      return (← location.attach before, ← location.attach after)
   checkScopes before after
   return (before, after)
+
+/-- The original entry is at the virtual root. Provider and emitted file keys are canonical
+relative filenames in that same root, with no overlap. Plan ordinals refer to the full
+source unit array, including imports and export lists. The two programs share the
+providers, whose stable identities start after that array. -/
+def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
+    Except String (Program × Program) := decode .linked source providers files P profile
+
+/-- Experimental input for a single-pivot proof. The body of each returned module retains the
+original source ordinals, including when an emitted module has different positions. Providers use
+disjoint ordinals. The pivot has its actual CoreJS statement on both sides. The other statements
+are decoded from their own syntax and carry the same source code ID across the move.
+This verifies placement, unchanged unit syntax, import/export links and resolved captures. A proof
+of the order change and correspondence with the emitted source files are separate obligations. -/
+def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivot : Nat)
+    (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
+    Except String (Program × Program) := do
+  let location ← deployment.mapM (LinkedDeployment.check · source providers P)
+  decode (.structural pivot (location.getD {})) source providers files P profile
 
 end CoreJS.LinkedInput

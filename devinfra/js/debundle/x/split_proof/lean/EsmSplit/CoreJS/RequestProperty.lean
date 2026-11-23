@@ -248,11 +248,11 @@ private theorem reachFrame_throwErr {α : Type} (r R cells A) (P : α → Prop) 
   ⟨fun _ _ _ _ _ => rfl, fun s _ _ => Preserves.refl r R s,
     fun _ hs _ => ⟨by simp [SafeVal, Val.nodes], hs⟩⟩
 
-private theorem reachFrame_toKey (r R cells A) (v : Val) :
+theorem reachFrame_toKey (r R cells A) (v : Val) :
     ReachFrame r R cells A (fun _ => True) (toKey v : M W String) :=
   reachFrame_lift (toStr v) (fun _ _ => trivial)
 
-private theorem reachFrame_hasProp {r R cells A} (away : Away r R A) (key base : Val) (hb : SafeVal A base) :
+theorem reachFrame_hasProp {r R cells A} (away : Away r R A) (key base : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (hasProp key base : M W Val) := by
   cases base <;> simp only [hasProp] <;>
     try first
@@ -273,7 +273,7 @@ theorem perform_has {r R cells A} (away : Away r R A) (call : Call W)
         (reachFrame_toW r R cells A result safe).bind fun w _ => reachFrame_pure r R cells A (Told.value w) trivial
 
 /-- A property read either returns a reachable data value or invokes a reachable getter. -/
-private theorem reachFrame_getFrom {r R cells A} (away : Away r R A) (call : Call W)
+theorem reachFrame_getFrom {r R cells A} (away : Away r R A) (call : Call W)
     (framed : ∀ f base, SafeVal A f → SafeVal A base →
       ReachFrame r R cells A (SafeVal A) (call f base []))
     {a} (ha : A (.obj a)) (base : Val) (hb : SafeVal A base) (key : String) :
@@ -378,7 +378,7 @@ private theorem deleteProps_keeps_edges (o : Obj) (key : String) :
     exact Or.inl (Or.inr (List.mem_flatMap.mpr ⟨p, (List.mem_filter.mp hp).1, hnode⟩))
   · exact Or.inr h
 
-private theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val) (hb : SafeVal A base) :
+theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (deleteProp base key : M W Val) := by
   cases base <;> simp only [deleteProp] <;>
     try first
@@ -410,7 +410,7 @@ theorem perform_delete {r R cells A} (away : Away r R A) (call : Call W)
       (reachFrame_deleteProp away o k ho).bind fun result safe =>
         (reachFrame_toW r R cells A result safe).bind fun w _ => reachFrame_pure r R cells A (Told.value w) trivial
 
-private def SafeDesc (A : HeapNode → Prop) (d : Desc) : Prop :=
+def SafeDesc (A : HeapNode → Prop) (d : Desc) : Prop :=
   (∀ v, v ∈ d.value → SafeVal A v) ∧ (∀ v, v ∈ d.get → SafeVal A v) ∧
     (∀ v, v ∈ d.set → SafeVal A v)
 
@@ -490,7 +490,7 @@ private theorem reachFrame_applyDesc {r R cells A} (old : Option Property) (d : 
   cases hp
   exact applyDesc_nodes d safe oldSafe h
 
-private theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
+theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
     (key : String) (d : Desc) (safe : SafeDesc A d) :
     ReachFrame r R cells A (fun _ => True) (defineOwn a key d : M W Unit) := by
   unfold defineOwn

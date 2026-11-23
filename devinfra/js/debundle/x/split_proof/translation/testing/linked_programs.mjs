@@ -137,7 +137,7 @@ export function observe(file, exportNames) {
   return Object.fromEntries(names.map((name) => [name, observed.values[name]]));
 }
 
-export function lower(source, spec, out, extra = []) {
+export function lower(source, spec, out, extra = [], scope = "linked-programs") {
   const result = spawnSync(process.env.LOWERSPLIT, [source, spec, out, ...extra], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
@@ -157,7 +157,7 @@ export function lower(source, spec, out, extra = []) {
   assert.equal(verdictLines.length, 1, log);
   const verdict = JSON.parse(verdictLines[0]);
   assert.equal(verdict.requested, "normal-completion", log);
-  assert.equal(verdict.scope, "linked-programs", log);
+  assert.equal(verdict.scope, scope, log);
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
   return { verdict, log };
 }

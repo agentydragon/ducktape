@@ -53,6 +53,15 @@ inductive FuncKind where
   | normal | arrow | method | classCtor
   deriving DecidableEq, Repr
 
+/-- The object created for a hoisted function declaration. The world interprets an async
+invocation as a whole, including promise creation, rejection and continuation scheduling. -/
+inductive OpaqueHoistKind where
+  | ordinary (constructor : Bool)
+  | asyncFn
+  deriving DecidableEq, Repr
+
+abbrev OpaqueHoist := Name × Nat × OpaqueHoistKind
+
 /-- What an opaque statement does when it runs. -/
 inductive OpaqueRun where
   /-- The world runs part 0 of its code. -/
@@ -61,6 +70,7 @@ inductive OpaqueRun where
   `funs.length + 1 + k` of the code, with the name, `length` and constructibility in `fns`. A statement that declares
   only functions makes them when the program is linked, so it has no declaration and does nothing when it runs. -/
   | closures (fns : List (String × Nat × Bool))
+  deriving DecidableEq
 
 inductive ArrayElementKind where
   | element
@@ -171,14 +181,14 @@ inductive Stmt where
   its `length` and whether it can be constructed: the `k`-th is part `k` of the code, and is made when the program is
   linked. `free` are the other names of the scope around it that it can mean. The front end writes it only at the top
   level of a module, where linking makes its bindings; elsewhere only its `var` names would be bound. -/
-  | opaque (code : Nat) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name)
+  | opaque (code : Nat) (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name)
     (run : OpaqueRun)
 
 end
 
 /-- The names an opaque statement can mean in the scope around it: the ones it declares, then the others. The world
 is handed their bindings in this order. -/
-def opaqueNames (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) : List Name :=
+def opaqueNames (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name) : List Name :=
   decls.map (·.1) ++ (funs.map (·.1) ++ free)
 
 def Func.name : Func → String | .mk n .. | .withDefaults n .. | .opaque n .. => n

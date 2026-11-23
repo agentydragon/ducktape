@@ -534,7 +534,7 @@ theorem local_initClosures {env : Env} (code : Nat) (cells : List (Option Addr))
 /-- **An opaque statement that only makes functions is local**: run in region `r`, it sees only region `r` and
 changes region `r`, when the bindings it declares are in region `r`. -/
 theorem closures_local {r : Nat} {R : Addr → Prop} (n : Nat) (env : Env) (code : Nat)
-    (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) (fns : List (String × Nat × Bool))
+    (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name) (fns : List (String × Nat × Bool))
     (hx : ∀ x ∈ decls.map (·.1), ∀ c, env.vars.lookup x = some c → c.region = r) :
     Local r R (execStmt n env (.opaque code decls funs free (.closures fns)) : M W Flow) := by
   cases n with

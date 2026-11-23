@@ -10,6 +10,8 @@ import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedCertificate
+import EsmSplit.CoreJS.StructuralCertificate
+import EsmSplit.ReadDeployment
 import EsmSplit.CoreJS.HeritageCertificate
 import Std.Data.HashMap
 import Std.Data.HashSet
@@ -17,7 +19,7 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json]
+    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural-pivot ORDINAL [--deployment-origin ORIGIN]]
     lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
@@ -441,7 +443,7 @@ private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPr
   | .empty => []
   | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson used.assumptions)]
 
-private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
+private def runInDir (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploymentOrigin : Option String) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
@@ -548,7 +550,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
   if let some request := required then
     let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
     -- Only the closed-declaration theorem needs the footprint-based order check.
-    let declaration := if layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
+    let declaration := if pivot.isNone && layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
     if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
       try
         if request == .allOutcomes && level != .allOutcomes then
@@ -558,6 +560,30 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
             IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
         return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
+    if let some ordinal := pivot then
+      let scope := "linked-structural-pivot"
+      try
+        unless request == .normalCompletion do
+          throw (IO.userError "the structural pivot certificate proves only normal-completion")
+        unless layoutOk && !bad do
+          throw (IO.userError "source placement or module linkage checks failed")
+        let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
+        let deployment ← deploymentOrigin.mapM fun origin =>
+          timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
+        certifyOutput providers B P out work input checkOnly timings outputAsts source fun files =>
+          timePhase timings "structural_pivot" fun _ => do
+            let result ← IO.lazyPure fun _ =>
+              CoreJS.LinkedBehavior.certifyStructuralASTs profile program providers files P ordinal deployment
+            IO.ofExcept (result.map fun _ => ())
+        let assumptions :=
+          ["Retained source units use the same capability-closed opaque world in both layouts."] ++
+          (deploymentOrigin.toList.flatMap fun origin => [
+            s!"The static deployment at {origin} overlays only the planned module paths.",
+            "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
+          ])
+        let host := if profile == .browserPage then [("hostProfile", toJson "browser-page")] else []
+        return ← emitVerdict request.label (.ok .normalCompletion) scope (host ++ [("assumptions", toJson assumptions)])
+      catch e => return ← emitVerdict request.label (.error e.toString) scope
     let errorFields ← IO.mkRef ([] : List (String × Json))
     try
       unless layoutOk && !bad do throw (IO.userError "source placement or module linkage checks failed")
@@ -629,16 +655,16 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
   if ok && !bad then return 0
   IO.eprintln (if force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
 
-private def runSplitter (profile : CoreJS.HostProfile) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
-  IO.FS.withTempDir fun work => runInDir profile work required checkOnly args
+private def runSplitter (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploymentOrigin : Option String) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
+  IO.FS.withTempDir fun work => runInDir profile pivot deploymentOrigin work required checkOnly args
 
 def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
   if let "--diagnostic" :: rest := args then
-    if rest.contains "--require" || rest.contains "--check-output" then
+    if rest.contains "--require" || rest.contains "--check-output" || rest.contains "--structural-pivot" || rest.contains "--deployment-origin" then
       IO.eprintln "certification options cannot be combined with --diagnostic"
       return 1
     IO.println "Diagnostic run. Any emitted files are an uncertified preview."
-    return ← runSplitter .empty none false rest
+    return ← runSplitter .empty none none none false rest
   let (level?, args) := Effects.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
@@ -652,9 +678,17 @@ def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
       | some path => do
         let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
         IO.ofExcept (CoreJS.HostProfile.read j)
+    let (pivot?, args) := Effects.takeFlag "--structural-pivot" args
+    let pivot ← pivot?.mapM fun raw =>
+      match raw.toNat? with
+      | some ordinal => pure ordinal
+      | none => throw (IO.userError "--structural-pivot expects an original unit ordinal")
+    let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
+    if deploymentOrigin.isSome && pivot.isNone then
+      throw (IO.userError "--deployment-origin requires --structural-pivot")
     let checkOnly := args.contains "--check-output"
     let args := args.filter (· != "--check-output")
     unless args.length == 3 && !args.any (·.startsWith "--") do
-      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json]; use --diagnostic for plan and preview options")
-    runSplitter profile (some level) checkOnly args
+      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural-pivot ORDINAL [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options")
+    runSplitter profile pivot deploymentOrigin (some level) checkOnly args
   catch e => emitVerdict label (.error e.toString)

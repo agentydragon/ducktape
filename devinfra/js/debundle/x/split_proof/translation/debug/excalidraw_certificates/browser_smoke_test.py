@@ -2,11 +2,13 @@
 
 # gazelle:include_dep //testing/frontend_visual:fixtures
 
+import asyncio
 import json
 import os
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
+import httpx
 import pytest
 import pytest_bazel
 from playwright.async_api import ConsoleMessage, Error, Playwright, Request as BrowserRequest, Response, expect
@@ -18,7 +20,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from testing.asgi import serve_app
+from testing.asgi import serve_app_in_loop
 from testing.frontend_visual.context import deterministic_browser_context
 
 pytest_plugins = ("testing.frontend_visual.fixtures",)
@@ -46,7 +48,7 @@ def editor_source(runfiles: Runfiles) -> Path:
     return bundle / name
 
 
-def certify_scroll(runfiles: Runfiles, source: Path) -> Path:
+def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str | None = None) -> Path:
     authored = json.loads(resolve(runfiles, os.environ["EDITOR_LEAN_SPEC"]).read_text())
     assert authored["modules"][SCROLL] == ["#1337", "#1338"]
     selectors = [unit for units in authored["modules"].values() for unit in units]
@@ -54,6 +56,8 @@ def certify_scroll(runfiles: Runfiles, source: Path) -> Path:
     assert len(selectors) == len(source_order)
     assert set(selectors) == set(source_order)
     artifacts = undeclared_outputs_dir()
+    if deployment_origin is not None:
+        (artifacts / "browser-origin.txt").write_text(f"{deployment_origin}\n")
     spec = artifacts / "scroll.json"
     # Keep the public URL of the editor so main.js can use its original imports.
     spec.write_text(
@@ -78,7 +82,11 @@ def certify_scroll(runfiles: Runfiles, source: Path) -> Path:
         "normal-completion",
         "--host-contract",
         profile,
+        "--structural-pivot",
+        "1337",
     ]
+    if deployment_origin is not None:
+        command.extend(["--deployment-origin", deployment_origin])
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
         run = subprocess.run([*command, *args], capture_output=True, text=True, check=False)
@@ -88,7 +96,7 @@ def certify_scroll(runfiles: Runfiles, source: Path) -> Path:
         assert verdict["status"] == "certified", verdict
         assert verdict["requested"] == "normal-completion", verdict
         assert verdict["guarantee"] in ("normal-completion", "all-outcomes"), verdict
-        assert verdict["scope"] == "linked-programs", verdict
+        assert verdict["scope"] == "linked-structural-pivot", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         assert isinstance(verdict["assumptions"], list), verdict
         verdicts.append(verdict)
@@ -105,33 +113,51 @@ def serve_file(url: str, file: Path) -> Route:
     return Route(f"/{url}", get)
 
 
-def replacement_routes(source: Path, certified: Path) -> list[Route]:
+def install_editor_overlay(app: Starlette, source: Path, certified: Path) -> None:
     if (source.parent / SCROLL).exists(follow_symlinks=False):
         raise ValueError(f"the emitted scroll route shadows an original public asset ({SCROLL})")
-    return [serve_file(name, certified / name) for name in (source.name, SCROLL)]
+    app.router.routes[:0] = [serve_file(name, certified / name) for name in (source.name, SCROLL)]
+
+
+def replay_app(bundle: Path, index: Path, fonts: Path) -> Starlette:
+    return Starlette(
+        routes=[
+            serve_file("", index),
+            Mount("/fonts", app=StaticFiles(directory=fonts)),
+            Mount("/", app=StaticFiles(directory=bundle, follow_symlink=True)),
+        ]
+    )
+
+
+@pytest.fixture
+def editor_app(runfiles: Runfiles, editor_source: Path) -> Starlette:
+    return replay_app(
+        editor_source.parent,
+        bundled_file(runfiles, "EXCALIDRAW_INPUTS", "chunks") / "index.html",
+        resolve(runfiles, os.environ["EXCALIDRAW_PACKAGE"]) / "dist/prod/fonts",
+    )
+
+
+@pytest.fixture(scope="session")
+def editor_providers(runfiles: Runfiles, editor_source: Path) -> list[str]:
+    metafile = bundled_file(runfiles, "EXCALIDRAW_OUTPUTS", "bundle_metadata.json")
+    outputs = json.loads(metafile.read_text())["outputs"]
+    (output,) = (path for path in outputs if PurePosixPath(path).name == editor_source.name)
+    bundle = PurePosixPath(output).parent
+    return [
+        PurePosixPath(dependency["path"]).relative_to(bundle).as_posix()
+        for dependency in outputs[output]["imports"]
+        if dependency["kind"] == "import-statement" and not dependency.get("external")
+    ]
 
 
 async def smoke(
-    playwright_driver: Playwright, runfiles: Runfiles, source: Path, certified: Path | None = None
+    playwright_driver: Playwright, origin: str, source: Path, providers: list[str], certified: Path | None = None
 ) -> list[str]:
     editor = source.name
-    app = Starlette(
-        routes=[
-            serve_file("", bundled_file(runfiles, "EXCALIDRAW_INPUTS", "chunks") / "index.html"),
-            *(replacement_routes(source, certified) if certified is not None else []),
-            Mount(
-                "/fonts",
-                app=StaticFiles(directory=resolve(runfiles, os.environ["EXCALIDRAW_PACKAGE"]) / "dist/prod/fonts"),
-            ),
-            Mount("/", app=StaticFiles(directory=source.parent, follow_symlink=True)),
-        ]
-    )
-    async with (
-        serve_app(app) as origin,
-        deterministic_browser_context(
-            playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-        ) as context,
-    ):
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
         page = await context.new_page()
         errors: list[str] = []
         responses: dict[str, Response] = {}
@@ -154,6 +180,7 @@ async def smoke(
         page.on("response", on_response)
         page.on("requestfailed", on_request_failed)
         await page.goto(origin)
+        assert await page.evaluate("location.origin") == origin
         await expect(page.locator(".App-toolbar")).to_be_visible()
 
         # Exercise the editor through its normal entry, then call the moved export.
@@ -184,38 +211,71 @@ async def smoke(
         await page.wait_for_load_state("networkidle")
         assert errors == []
         assert [url for url, response in responses.items() if response.status >= 400] == []
+        expected_files = {name: source.parent / name for name in ["main.js", editor, *providers]}
         if certified is not None:
-            for name in (editor, SCROLL):
-                # The replacement and scroll module must be loaded from the exact checked files.
-                assert await responses[f"{origin}/{name}"].body() == (certified / name).read_bytes()
+            expected_files.update({name: certified / name for name in (editor, SCROLL)})
+        for name, file in expected_files.items():
+            assert await responses[f"{origin}/{name}"].body() == file.read_bytes(), name
         return list(namespace["names"])
 
 
 async def test_original_editor_replacement_routes(tmp_path: Path) -> None:
     source = tmp_path / "original" / "chunk-HASH.js"
     source.parent.mkdir()
-    source.write_text("export {};")
+    source.write_text("export const original = true;")
+    (source.parent / "provider.js").write_text("export const provider = true;")
+    index = tmp_path / "index.html"
+    index.write_text("<!doctype html>")
+    fonts = tmp_path / "fonts"
+    fonts.mkdir()
     certified = tmp_path / "certified"
     (certified / SCROLL).parent.mkdir(parents=True)
-    (certified / SCROLL).write_text("export {};")
-    (certified / source.name).write_text("export {};")
-    assert [route.path for route in replacement_routes(source, certified)] == [f"/{source.name}", f"/{SCROLL}"]
+    (certified / SCROLL).write_text("export const scroll = true;")
+    (certified / source.name).write_text("export const replacement = true;")
+    (certified / "provider.js").write_text("export const provider = false;")
+
+    app = replay_app(source.parent, index, fonts)
+    async with serve_app_in_loop(app) as origin, httpx.AsyncClient(base_url=origin, trust_env=False) as client:
+        assert (await client.get(f"/{source.name}")).content == source.read_bytes()
+        assert (await client.get(f"/{SCROLL}")).status_code == 404
+        install_editor_overlay(app, source, certified)
+        for name, file in {
+            source.name: certified / source.name,
+            SCROLL: certified / SCROLL,
+            "provider.js": source.parent / "provider.js",
+        }.items():
+            response = await client.get(f"/{name}")
+            assert str(response.url) == f"{origin}/{name}"
+            assert response.status_code == 200
+            assert response.content == file.read_bytes()
 
     existing = source.parent / SCROLL
     existing.parent.mkdir(parents=True)
     existing.write_text("export const original = true;")
     with pytest.raises(ValueError, match="shadows an original public asset"):
-        replacement_routes(source, certified)
+        install_editor_overlay(app, source, certified)
 
 
-async def test_original_editor(playwright_driver: Playwright, runfiles: Runfiles, editor_source: Path) -> None:
-    await smoke(playwright_driver, runfiles, editor_source)
+async def test_original_editor(
+    playwright_driver: Playwright, editor_app: Starlette, editor_source: Path, editor_providers: list[str]
+) -> None:
+    async with serve_app_in_loop(editor_app) as origin:
+        await smoke(playwright_driver, origin, editor_source, editor_providers)
 
 
-async def test_certified_scroll(playwright_driver: Playwright, runfiles: Runfiles, editor_source: Path) -> None:
-    certified = certify_scroll(runfiles, editor_source)
-    original = await smoke(playwright_driver, runfiles, editor_source)
-    assert await smoke(playwright_driver, runfiles, editor_source, certified) == original
+async def test_certified_scroll(
+    playwright_driver: Playwright,
+    runfiles: Runfiles,
+    editor_app: Starlette,
+    editor_source: Path,
+    editor_providers: list[str],
+) -> None:
+    async with serve_app_in_loop(editor_app) as origin:
+        certified = await asyncio.to_thread(certify_scroll, runfiles, editor_source, deployment_origin=origin)
+        original = await smoke(playwright_driver, origin, editor_source, editor_providers)
+        # The first browser context has closed. Switch only the two routes on the running server.
+        install_editor_overlay(editor_app, editor_source, certified)
+        assert await smoke(playwright_driver, origin, editor_source, editor_providers, certified) == original
 
 
 if __name__ == "__main__":

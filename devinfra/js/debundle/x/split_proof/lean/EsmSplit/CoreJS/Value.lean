@@ -41,10 +41,12 @@ inductive Val where
   | obj (a : Addr)
   | error (kind : ErrorKind) (msg : String)
   | host (name : String)
+  deriving DecidableEq
 
 inductive Property where
   | data (value : Val) (writable enumerable configurable : Bool)
   | accessor (get set : Val) (enumerable configurable : Bool)
+  deriving DecidableEq
 
 def Property.enumerable : Property → Bool
   | .data _ _ e _ | .accessor _ _ e _ => e
@@ -56,6 +58,7 @@ def Property.configurable : Property → Bool
 structure Env where
   vars : List (Name × Addr)
   this : Val
+  deriving DecidableEq
 
 /-- The bindings of `names` in `env`, and its `this`: what a closure keeps of the scope it was made in. A function
 keeps the bindings its code can mean (`Func.closes`) and no others, so two scopes that give those names the same
@@ -85,6 +88,7 @@ structure Obj where
 structure Binding where
   value : Option Val
   mutable : Bool
+  deriving DecidableEq
 
 /-- A primitive value: what the program and the host hand each other. -/
 inductive Primitive where
@@ -310,6 +314,7 @@ def initVar (env : Env) (x : Name) (v : Val) : M W Unit :=
 def objectProto : Addr := ⟨0, 0⟩
 def functionProto : Addr := ⟨0, 1⟩
 def arrayProto : Addr := ⟨0, 2⟩
+def asyncFunctionProto : Addr := ⟨0, 3⟩
 
 /-- The string-keyed members of `Object.prototype`. A program reads one from any object that has no property of that name. -/
 def objectProtoNames : List String :=
@@ -330,7 +335,7 @@ private def hostMembers (owner : String) (names : List String) : List (String ×
 private def hostAccessor (owner k : String) : String × Property :=
   (k, .accessor (.host s!"get {owner}.{k}") (.host s!"set {owner}.{k}") false true)
 
-/-- The three prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
+/-- String-keyed intrinsic properties. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
   { proto := some objectProto, code := some (.host "Function.prototype"),
@@ -338,7 +343,9 @@ def builtins : Array Obj := #[
       hostAccessor "Function.prototype" "arguments", hostAccessor "Function.prototype" "caller"] ++
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
-    props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames }]
+    props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames },
+  { proto := some functionProto,
+    props := [("constructor", .data (.host "AsyncFunction.prototype.constructor") false false true)] }]
 
 /-! ## The host functions the world answers for -/
 

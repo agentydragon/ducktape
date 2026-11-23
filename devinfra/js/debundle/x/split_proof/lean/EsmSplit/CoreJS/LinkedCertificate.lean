@@ -9,273 +9,11 @@ import EsmSplit.CoreJS.DenseArray
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.LiteralRecord
+import EsmSplit.CoreJS.SyntaxMatch
 
 namespace CoreJS.LinkedBehavior
 
 attribute [cbv_eval] DenseArray.reduce
--- Lean cannot derive DecidableEq for nested mutual inductives. Compare the constructors
--- produced by LinkedInput; every successful branch returns equality, including deferred code.
-private abbrev MatchEq (α : Type) := (a b : α) → Option (PLift (a = b))
-
-private def scalarEq [DecidableEq α] : MatchEq α := fun a b =>
-  if h : a = b then some ⟨h⟩ else none
-
-private def listEq (item : MatchEq α) : MatchEq (List α)
-  | [], [] => some ⟨rfl⟩
-  | x :: xs, y :: ys => do
-    let ⟨head⟩ ← item x y
-    let ⟨tail⟩ ← listEq item xs ys
-    return ⟨head ▸ tail ▸ rfl⟩
-  | _, _ => none
-
-mutual
-private partial def exprEq : MatchEq Expr
-  | .undef, .undef | .null, .null | .this, .this => some ⟨rfl⟩
-  | .str a, .str b => (scalarEq a b).map fun h => ⟨congrArg Expr.str h.down⟩
-  | .num a, .num b => (scalarEq a b).map fun h => ⟨congrArg Expr.num h.down⟩
-  | .bool a, .bool b => (scalarEq a b).map fun h => ⟨congrArg Expr.bool h.down⟩
-  | .var a, .var b => (scalarEq a b).map fun h => ⟨congrArg Expr.var h.down⟩
-  | .obj a, .obj b => (listEq propEq a b).map fun h => ⟨congrArg Expr.obj h.down⟩
-  | .arr a, .arr b => (listEq exprEq a b).map fun h => ⟨congrArg Expr.arr h.down⟩
-  | .arrWithSpread a, .arrWithSpread b =>
-    (listEq arrayElementEq a b).map fun h => ⟨congrArg Expr.arrWithSpread h.down⟩
-  | .prim a [], .prim b [] =>
-    (scalarEq a b).map fun h => ⟨congrArg (fun op => Expr.prim op []) h.down⟩
-  | .unary op a, .unary op' b => do
-    let ⟨o⟩ ← scalarEq op op'
-    let ⟨v⟩ ← exprEq a b
-    return ⟨o ▸ v ▸ rfl⟩
-  | .binary op a b, .binary op' a' b' => do
-    let ⟨o⟩ ← scalarEq op op'
-    let ⟨left⟩ ← exprEq a a'
-    let ⟨right⟩ ← exprEq b b'
-    return ⟨o ▸ left ▸ right ▸ rfl⟩
-  | .logical op a b, .logical op' a' b' => do
-    let ⟨o⟩ ← scalarEq op op'
-    let ⟨left⟩ ← exprEq a a'
-    let ⟨right⟩ ← exprEq b b'
-    return ⟨o ▸ left ▸ right ▸ rfl⟩
-  | .cond c t e, .cond c' t' e' => do
-    let ⟨test⟩ ← exprEq c c'
-    let ⟨yes⟩ ← exprEq t t'
-    let ⟨no⟩ ← exprEq e e'
-    return ⟨test ▸ yes ▸ no ▸ rfl⟩
-  | .seq a b, .seq a' b' => do
-    let ⟨left⟩ ← exprEq a a'
-    let ⟨right⟩ ← exprEq b b'
-    return ⟨left ▸ right ▸ rfl⟩
-  | .hasProp k o, .hasProp k' o' => do
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨base⟩ ← exprEq o o'
-    return ⟨key ▸ base ▸ rfl⟩
-  | .get o k, .get o' k' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    return ⟨base ▸ key ▸ rfl⟩
-  | .getOptional o k, .getOptional o' k' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    return ⟨base ▸ key ▸ rfl⟩
-  | .delete o k, .delete o' k' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    return ⟨base ▸ key ▸ rfl⟩
-  | .assign t rhs, .assign t' rhs' => do
-    let ⟨target⟩ ← targetEq t t'
-    let ⟨value⟩ ← exprEq rhs rhs'
-    return ⟨target ▸ value ▸ rfl⟩
-  | .assignOp t op rhs, .assignOp t' op' rhs' => do
-    let ⟨target⟩ ← targetEq t t'
-    let ⟨operator⟩ ← scalarEq op op'
-    let ⟨value⟩ ← exprEq rhs rhs'
-    return ⟨target ▸ operator ▸ value ▸ rfl⟩
-  | .assignLogical t op rhs, .assignLogical t' op' rhs' => do
-    let ⟨target⟩ ← targetEq t t'
-    let ⟨operator⟩ ← scalarEq op op'
-    let ⟨value⟩ ← exprEq rhs rhs'
-    return ⟨target ▸ operator ▸ value ▸ rfl⟩
-  | .update t inc pre, .update t' inc' pre' => do
-    let ⟨target⟩ ← targetEq t t'
-    let ⟨increment⟩ ← scalarEq inc inc'
-    let ⟨isPrefix⟩ ← scalarEq pre pre'
-    return ⟨target ▸ increment ▸ isPrefix ▸ rfl⟩
-  | .callMethod o k args, .callMethod o' k' args' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
-  | .callOptionalReceiver o k args, .callOptionalReceiver o' k' args' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
-  | .callOptionalCallee o k args, .callOptionalCallee o' k' args' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
-  | .cls n self ctor ms, .cls n' self' ctor' ms' => do
-    let ⟨k⟩ ← scalarEq n n'
-    let ⟨s⟩ ← scalarEq self self'
-    let ⟨c⟩ ← funcEq ctor ctor'
-    let ⟨m⟩ ← listEq classMemberEq ms ms'
-    return ⟨k ▸ s ▸ c ▸ m ▸ rfl⟩
-  | .derived n self parent ms, .derived n' self' parent' ms' => do
-    let ⟨k⟩ ← scalarEq n n'
-    let ⟨s⟩ ← scalarEq self self'
-    let ⟨p⟩ ← exprEq parent parent'
-    let ⟨m⟩ ← listEq classMemberEq ms ms'
-    return ⟨k ▸ s ▸ p ▸ m ▸ rfl⟩
-  | .new f args, .new f' args' => do
-    let ⟨callee⟩ ← exprEq f f'
-    let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨callee ▸ arguments ▸ rfl⟩
-  | .call f args, .call f' args' => do
-    let ⟨callee⟩ ← exprEq f f'
-    let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨callee ▸ arguments ▸ rfl⟩
-  | .func a, .func b => (funcEq a b).map fun h => ⟨congrArg Expr.func h.down⟩
-  | _, _ => none
-
-private partial def targetEq : MatchEq Target
-  | .var x, .var x' => (scalarEq x x').map fun h => ⟨congrArg Target.var h.down⟩
-  | .frozen x, .frozen x' => (scalarEq x x').map fun h => ⟨congrArg Target.frozen h.down⟩
-  | .member o k, .member o' k' => do
-    let ⟨base⟩ ← exprEq o o'
-    let ⟨key⟩ ← exprEq k k'
-    return ⟨base ▸ key ▸ rfl⟩
-  | _, _ => none
-
-private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
-  | (kind, e), (kind', e') => do
-    let ⟨tag⟩ ← scalarEq kind kind'
-    let ⟨value⟩ ← exprEq e e'
-    return ⟨tag ▸ value ▸ rfl⟩
-
-private partial def funcEq : MatchEq Func
-  | .mk name kind self params body, .mk name' kind' self' params' body' => do
-    let ⟨n⟩ ← scalarEq name name'
-    let ⟨k⟩ ← scalarEq kind kind'
-    let ⟨s⟩ ← scalarEq self self'
-    let ⟨p⟩ ← scalarEq params params'
-    let ⟨b⟩ ← listEq stmtEq body body'
-    return ⟨n ▸ k ▸ s ▸ p ▸ b ▸ rfl⟩
-  | .withDefaults name kind self params arity body, .withDefaults name' kind' self' params' arity' body' => do
-    let ⟨n⟩ ← scalarEq name name'
-    let ⟨k⟩ ← scalarEq kind kind'
-    let ⟨s⟩ ← scalarEq self self'
-    let ⟨p⟩ ← scalarEq params params'
-    let ⟨a⟩ ← scalarEq arity arity'
-    let ⟨b⟩ ← listEq stmtEq body body'
-    return ⟨n ▸ k ▸ s ▸ p ▸ a ▸ b ▸ rfl⟩
-  | .opaque name kind self arity code part free refusal,
-      .opaque name' kind' self' arity' code' part' free' refusal' => do
-    let ⟨n⟩ ← scalarEq name name'
-    let ⟨k⟩ ← scalarEq kind kind'
-    let ⟨s⟩ ← scalarEq self self'
-    let ⟨a⟩ ← scalarEq arity arity'
-    let ⟨c⟩ ← scalarEq code code'
-    let ⟨p⟩ ← scalarEq part part'
-    let ⟨f⟩ ← scalarEq free free'
-    let ⟨r⟩ ← scalarEq refusal refusal'
-    return ⟨n ▸ k ▸ s ▸ a ▸ c ▸ p ▸ f ▸ r ▸ rfl⟩
-  | _, _ => none
-
-private partial def classMemberEq : MatchEq ClassMember
-  | .field s k v, .field s' k' v' => do
-    let ⟨st⟩ ← scalarEq s s'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨value⟩ ← exprEq v v'
-    return ⟨st ▸ key ▸ value ▸ rfl⟩
-  | .method s k v, .method s' k' v' => do
-    let ⟨st⟩ ← scalarEq s s'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨value⟩ ← funcEq v v'
-    return ⟨st ▸ key ▸ value ▸ rfl⟩
-  | .getter s k v, .getter s' k' v' => do
-    let ⟨st⟩ ← scalarEq s s'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨value⟩ ← funcEq v v'
-    return ⟨st ▸ key ▸ value ▸ rfl⟩
-  | .setter s k v, .setter s' k' v' => do
-    let ⟨st⟩ ← scalarEq s s'
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨value⟩ ← funcEq v v'
-    return ⟨st ▸ key ▸ value ▸ rfl⟩
-  | _, _ => none
-
-private partial def propEq : MatchEq PropDef
-  | .init k v, .init k' v' => do
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨value⟩ ← exprEq v v'
-    return ⟨key ▸ value ▸ rfl⟩
-  | .getter k f, .getter k' f' => do
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨fn⟩ ← funcEq f f'
-    return ⟨key ▸ fn ▸ rfl⟩
-  | .setter k f, .setter k' f' => do
-    let ⟨key⟩ ← exprEq k k'
-    let ⟨fn⟩ ← funcEq f f'
-    return ⟨key ▸ fn ▸ rfl⟩
-  | .spread a, .spread b => (exprEq a b).map fun h => ⟨congrArg PropDef.spread h.down⟩
-  | .proto v, .proto v' => (exprEq v v').map fun h => ⟨congrArg PropDef.proto h.down⟩
-  | _, _ => none
-
-private partial def stmtEq : MatchEq Stmt
-  | .funDecl a, .funDecl b => (funcEq a b).map fun h => ⟨congrArg Stmt.funDecl h.down⟩
-  | .varDecl a, .varDecl b => (scalarEq a b).map fun h => ⟨congrArg Stmt.varDecl h.down⟩
-  | .expr a, .expr b => (exprEq a b).map fun h => ⟨congrArg Stmt.expr h.down⟩
-  | .ret a, .ret b => (exprEq a b).map fun h => ⟨congrArg Stmt.ret h.down⟩
-  | .throw a, .throw b => (exprEq a b).map fun h => ⟨congrArg Stmt.throw h.down⟩
-  | .ite c t e, .ite c' t' e' => do
-    let ⟨test⟩ ← exprEq c c'
-    let ⟨yes⟩ ← stmtEq t t'
-    let ⟨no⟩ ← stmtEq e e'
-    return ⟨by rw [test, yes, no]⟩
-  | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
-  | .brk, .brk | .cont, .cont => some ⟨rfl⟩
-  | .loop init test update body, .loop init' test' update' body' => do
-    let ⟨i⟩ ← stmtEq init init'
-    let ⟨t⟩ ← exprEq test test'
-    let ⟨u⟩ ← exprEq update update'
-    let ⟨b⟩ ← stmtEq body body'
-    return ⟨i ▸ t ▸ u ▸ b ▸ rfl⟩
-  | .tryCatch body param handler, .tryCatch body' param' handler' => do
-    let ⟨b⟩ ← stmtEq body body'
-    let ⟨p⟩ ← scalarEq param param'
-    let ⟨h⟩ ← stmtEq handler handler'
-    return ⟨b ▸ p ▸ h ▸ rfl⟩
-  | .tryFinally body finalizer, .tryFinally body' finalizer' => do
-    let ⟨b⟩ ← stmtEq body body'
-    let ⟨f⟩ ← stmtEq finalizer finalizer'
-    return ⟨b ▸ f ▸ rfl⟩
-  | .decl kind name init, .decl kind' name' init' => do
-    let ⟨k⟩ ← scalarEq kind kind'
-    let ⟨n⟩ ← scalarEq name name'
-    let ⟨v⟩ ← exprEq init init'
-    return ⟨k ▸ n ▸ v ▸ rfl⟩
-  | _, _ => none
-end
-
-private def unitEq : MatchEq (Nat × Stmt)
-  | (i, s), (j, t) => do
-    let ⟨id⟩ ← scalarEq i j
-    let ⟨stmt⟩ ← stmtEq s t
-    return ⟨id ▸ stmt ▸ rfl⟩
-
-private def moduleEq : MatchEq Module
-  | ⟨n, i, b, e⟩, ⟨n', i', b', e'⟩ => do
-    let ⟨name⟩ ← scalarEq n n'
-    let ⟨imports⟩ ← scalarEq i i'
-    let ⟨body⟩ ← listEq unitEq b b'
-    let ⟨exports⟩ ← scalarEq e e'
-    return ⟨name ▸ imports ▸ body ▸ exports ▸ rfl⟩
-
-private def programEq : MatchEq Program
-  | ⟨e, m⟩, ⟨e', m'⟩ => do
-    let ⟨entry⟩ ← scalarEq e e'
-    let ⟨modules⟩ ← listEq moduleEq m m'
-    return ⟨entry ▸ modules ▸ rfl⟩
 
 /-- Quantify over worlds satisfying the host observations used by the certificate. -/
 def EquivalentFor (premises : HostPremises) (source candidate : Program) : Prop :=
@@ -315,8 +53,8 @@ def certifyASTs (profile : HostProfile) (premises : HostPremises)
   match decoded : LinkedInput.decodePair source providers files plan profile with
   | .error why => throw why
   | .ok (a, b) =>
-    let some ⟨before⟩ := programEq a original | throw "source AST does not match the certified program"
-    let some ⟨after⟩ := programEq b candidate | throw "output ASTs do not match the certified program"
+    let some ⟨before⟩ := SyntaxMatch.programEq a original | throw "source AST does not match the certified program"
+    let some ⟨after⟩ := SyntaxMatch.programEq b candidate | throw "output ASTs do not match the certified program"
     return ⟨⟨a, b, decoded, before ▸ after ▸ semantics⟩⟩
 
 /-- Successful execution of the production checker establishes a claim about the input
@@ -342,6 +80,7 @@ deriving instance Lean.ToExpr for BinOp
 deriving instance Lean.ToExpr for LogOp
 deriving instance Lean.ToExpr for Prim
 deriving instance Lean.ToExpr for FuncKind
+deriving instance Lean.ToExpr for OpaqueHoistKind
 deriving instance Lean.ToExpr for OpaqueRun
 deriving instance Lean.ToExpr for Expr, Target, PropDef, ClassMember, Func, Stmt
 deriving instance Lean.ToExpr for Import
@@ -357,16 +96,20 @@ deriving instance Lean.ToExpr for CoreJS.Code
 deriving instance Lean.ToExpr for CoreJS.Obj
 deriving instance Lean.ToExpr for CoreJS.Binding
 
-private partial def probeTerm (e : Lean.Expr) : Except String String := do
-  match e with
-  | .app .. => do
-    let f ← probeTerm e.getAppFn
-    let args ← e.getAppArgs.toList.mapM probeTerm
-    return "(" ++ String.intercalate " " (f :: args) ++ ")"
-  | .const n _ => return "@" ++ n.toString
-  | .lit (.strVal s) => return s.quote
-  | .lit (.natVal n) => return toString n
-  | _ => throw "unsupported expression in quoted CoreJS data"
+/-- The constructor, application and literal nodes used to quote a probe observation. -/
+private inductive ProbeTerm where
+  | app (fn arg : ProbeTerm)
+  | const (name : Lean.Name)
+  | str (value : String)
+  | nat (value : Nat)
+  deriving DecidableEq
+
+private def probeTerm? : Lean.Expr → Option ProbeTerm
+  | .app f x => return .app (← probeTerm? f) (← probeTerm? x)
+  | .const n _ => some (.const n)
+  | .lit (.strVal s) => some (.str s)
+  | .lit (.natVal n) => some (.nat n)
+  | _ => none
 
 /-! `State World.probe` has a closed shape. Keep a canonical projection of every
 field in the run's final state; the probe's host state is `Unit`. Closures retain
@@ -389,15 +132,14 @@ private def observeProbeState (profile : HostPremises) (state : CoreJS.State (pr
     worldState := state.world.state
     handed := state.world.handed.toList }
 
-private def probeStateLiteral (profile : HostPremises) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : String :=
-  match probeTerm (Lean.toExpr (observeProbeState profile state)) with
-  | .ok literal => literal
-  | .error _ => ""
-
 /-- Compare the complete state of two completed executions in the concrete probe.
 This is a refusal check only; matching probes still go through the all-world proof. -/
 def probeStatesEqual (profile : HostPremises) (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
-  probeStateLiteral profile left == probeStateLiteral profile right
+  let leftTerm := Lean.toExpr (observeProbeState profile left)
+  let rightTerm := Lean.toExpr (observeProbeState profile right)
+  -- Equal quotations need no projection. On a difference compare only the constructor data,
+  -- retaining the same treatment of universe levels and unsupported nodes.
+  leftTerm.equal rightTerm || decide (probeTerm? leftTerm = probeTerm? rightTerm)
 
 private abbrev StringFields := List (String × String)
 
@@ -933,7 +675,7 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {sour
     ¬ Equivalent source candidate := by
   apply different_probe_states_refute_equivalence sourceRun candidateRun
   rintro rfl
-  simp [probeStatesEqual, probeStateLiteral, observeProbeState] at different
+  simp [probeStatesEqual] at different
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 

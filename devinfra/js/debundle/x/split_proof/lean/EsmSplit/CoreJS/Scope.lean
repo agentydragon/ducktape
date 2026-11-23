@@ -285,7 +285,7 @@ theorem initClosures_agree (code : Nat) (cells : List (Option Addr)) {env env' :
     · exact initVar_agree (h x List.mem_cons_self) v
 
 /-- An opaque statement is handed the same bindings in two scopes that agree on its names. -/
-theorem opaqueCells_agree {decls : List (Name × DeclKind)} {funs : List (Name × Nat × Bool)} {free : List Name}
+theorem opaqueCells_agree {decls : List (Name × DeclKind)} {funs : List OpaqueHoist} {free : List Name}
     {env env' : Env} (h : Agree (opaqueNames decls funs free) env env') :
     opaqueCells env decls funs free = opaqueCells env' decls funs free := by
   unfold opaqueCells

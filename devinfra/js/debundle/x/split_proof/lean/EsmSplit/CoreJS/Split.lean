@@ -48,13 +48,13 @@ theorem runUnits_same (n : Nat) {us us' : List (Nat × Stmt × Env)} (h : SameUn
     rw [runUnit_agree hagree, ih]
 
 theorem initOpaque_agree (code : Nat) (cells : List (Option Addr)) {env env' : Env} :
-    ∀ (funs : List (Name × Nat × Bool)) (part : Nat), (∀ x ∈ funs.map (·.1), env.vars.lookup x = env'.vars.lookup x) →
+    ∀ (funs : List OpaqueHoist) (part : Nat), (∀ x ∈ funs.map (·.1), env.vars.lookup x = env'.vars.lookup x) →
       (initOpaque code cells env funs part : M W Unit) = initOpaque code cells env' funs part
   | [], _, _ => rfl
   | (x, length, constructor) :: rest, part, h => by
-    unfold initOpaque
-    exact M.bind_congr rfl fun v => M.bind_congr (initVar_agree (h x (by simp)) v) fun _ =>
-      initOpaque_agree code cells rest (part + 1) fun y hy => h y (by simp [hy])
+    cases constructor <;> unfold initOpaque <;>
+      exact M.bind_congr rfl fun v => M.bind_congr (initVar_agree (h x (by simp)) v) fun _ =>
+        initOpaque_agree code cells rest (part + 1) fun y hy => h y (by simp [hy])
 
 theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits us us') :
     (initFunctions us : M W Unit) = initFunctions us' := by
