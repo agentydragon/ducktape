@@ -1,280 +1,87 @@
 # Runner delivery boundaries and harness identity
 
-> **Address decision updated, 2026-11-03:** callers will address a Session by its globally unique
-> Session ID, resolved by Dispatcher, superseding this note's earlier compound public destination.
-> The Sandbox UID remains an internal placement and execution fence. Current APIs still carry both.
-> See the [Session/environment model](../plans/session_environment_model.md#session-address-inventory)
-> and its linked work for the selected direction and remaining authority decisions.
-
-Status: **approved direction, implementation planning; harness lifecycle deployed and accepted.** This note records current code paths, approved direction, alternatives
-and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
-and an ergonomic CLI, adopted incrementally by service and interface. The selected HTTP/JSON
-facade is gRPC-Gateway. Harness lifecycle ownership is approved below (operator, 2026-10-17); its
-implementation and rollout acceptance are complete. The separate lifecycle rollout was
-authorized by the operator; this note does not otherwise authorize runtime/API cutover or
-otherwise authorize changes to behavior, schemas, database ownership, identity mappings or caller
-permissions. Keep the existing security
-checks and durable queue until a replacement contract is reviewed.
-
-The earlier public `(Sandbox UID, Session ID)` destination in this note is superseded by the
-selected [Session UUID address](../plans/session_environment_model.md#address). Its code-path
-inventory remains useful; the implemented send and execution-fence rules are the
-[Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md).
-
-The current runner contracts remain in [Session layering](thread_layering.md), the
-[Dispatcher README](../session_dispatcher/dispatcher/README.md), the
-[Runner Gateway README](../session_dispatcher/README.md), and the
-[scripted harness capability index](../native/README.md#behavioral-coverage).
+The operator selected Session UUIDs as the public command address on 2026-11-03.
+The Dispatcher resolves placement and records the exact Environment UID for native execution.
+The [Session address inventory](../plans/session_environment_model.md#session-address-inventory)
+tracks remaining caller migrations. The [Runtime lifecycle](#runtime-lifecycle) and
+[API transport](#api-transports-and-agent-workflows) decisions are approved. The harness store
+and native-identity alternatives below remain proposals.
 
 ## Current delivery and inventory facts
 
-The app and Notification service create Sessions and submit commands through the Session Dispatcher. It
-records openings and commands in its own PostgreSQL database, groups delivery by Sandbox UID, and
-uses a per-Sandbox delivery Lease plus database generations to fence delivery scheduling. It watches
-Sandbox readiness and incarnation changes, then calls the Runner service through the stable
-`runner-gateway` Service and its proxy. It has no History Service client: routing and queue recovery
-use the requested Sandbox, Kubernetes state, and runner control RPCs. See
-[`delivery.go`](../session_dispatcher/dispatcher/delivery.go),
-[`runner_client.go`](../session_dispatcher/dispatcher/runtime_client.go), and
-[`store.go`](../session_dispatcher/internal/store/store.go).
+- **Dispatcher** serves Sessions at `sessions:8080`. It owns logical Session reservation, the
+  PostgreSQL command queue, guarded wake, and [per-Session delivery leases](../session_dispatcher/dispatcher/SPEC.md#session-delivery-lease).
+  A durable queue receipt proves Dispatcher acceptance. Hosted commands reach HarnessHost through
+  Environments; central commands reach the sampler. See the [Dispatcher README](../session_dispatcher/README.md).
+- **Environments** serves the Runtime proxy at `environments:8082`. An exact Sessions service SVID
+  authorizes hosted Session mutations. Every proxy replica observes Runtime independently and
+  forwards with the exact Sandbox UID, workload Pod UID and Runtime boot ID. The Runtime fences
+  admission and journals commands. The [proxy specification](../environments/runtimeproxy/SPEC.md)
+  owns connection, identity and deletion behavior.
+- **History** receives journals from the Runtime and the sampler. Runtime quiescence waits for
+  History's acknowledgement of each sealed cursor. Dispatcher delivery and routing have no direct
+  History dependency. Notification uses the committed journal to reconcile notice admission and
+  message confirmation. See [History](../history_service/README.md) and
+  [Notifications](../notification_service/README.md).
 
-Each Gateway replica independently opens a zero-epoch `WatchState` to the current Runtime, dialing it
-directly at its Pod IP, and can serve calls after observing the Controller-bound Sandbox UID and
-workload Pod UID. Runtime calls carry
-those identities and the boot ID observed by that replica; the Runtime checks them against its bound
-identity. The unified Go process also owns the Dispatcher queue through its separate delivery role. It
-does not read the retired `sandbox_commands` Session table. The separate Gateway database resource is absent
-from current manifests. The runner journals
-admitted commands on its state volume. The History Service
-receives runner journals and serves retained events and folded Thread views, but these are separate
-service boundaries rather than a Dispatcher dependency:
-
-- **Dispatcher has no direct History dependency to remove.** Its current routing, queue recovery,
-  admission and delivery result paths use the requested Sandbox, Kubernetes state, delivery leases and Runner
-  RPCs. No Dispatcher History client or call exists in the audited implementation.
-- **The app uses History for retained Thread data.** The browser reads archived events,
-  observations and summaries through the History facade under `/upstream/history/v1/`, which the app
-  forwards to History over gRPC. Opening a Thread does not wait for History to observe the Session
-  because the runner pushes its journal asynchronously. Sending input uses Dispatcher; the runner
-  owns native readiness. `EnvironmentService.GetRuntimeDiagnostics` supplies live Sandbox
-  diagnostics without waking a Sandbox; the archive guard reads Dispatcher Session activity.
-- **Notifications uses History to reconcile command outcomes.** It reads the Session journal's
-  committed watermark and entries to checkpoint receipts and confirm whether a command reached the
-  runner journal. This is an outcome dependency of Notification, not Dispatcher routing. A
-  Dispatcher admission or queued receipt does not prove that the runner admitted a command or that a
-  harness consumed it. Notice delivery
-  without reading conversation history is a separate decision.
-- **Runner ingress acknowledgements connect Runner to History.** Runner pushes each Session journal
-  to the History ingress and persists the acknowledged cursor and seal state on its own state volume.
-  During Quiesce, the Runner first drains admissions and seals the journals; its reported stage remains
-  `FLUSHING` until ingress acknowledges the exact sealed cursor, then becomes `QUIESCED`. This
-  Runner-to-ingress contract is not mediated by Dispatcher and does not make Dispatcher depend on
-  History.
-
-There are two different Session inventories:
-
-- Runner `ListSessions` asks the current runner's `retained.Store` for persisted records and reports
-  them with the current harness, setup, launch and activity state. Outside tests only the Runtime
-  proxy calls it, forwarding the read
-  ([`harness_host_proxy.go`](../environments/runtimeproxy/harness_host_proxy.go)); the app and
-  Notification do not. Dispatcher does not call the list RPC: an identical logical `CreateSession`
-  retry returns its existing Session record without rediscovering a live runner attachment; a
-  conflicting placement, spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read
-  for lifecycle assertions.
-- History `FindSessions` and summaries describe Sessions whose Events were retained and folded. They
-  can include deleted Sandboxes, do not carry Sandbox UID, and can lag the runner. They are useful
-  for retained history and display, but cannot answer whether a harness is running now or whether a
-  Session is present in the current runner incarnation. See the
-  [History README](../history_service/README.md).
-
-| Consumer                                                | Fact it needs                                                                                            | Present authority and disposition to review                                                                                                                                                                                                                                         |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion | App `thread` rows (`app/internal/threads`) hold titles and archive state; Dispatcher Session records give membership and Environment grouping; History summaries give folded display state. Keep History as retained inventory.                                                     |
-| App archive safety                                      | Whether this Session has unfinished work in the current ready runner                                     | `ArchiveThread` reads Dispatcher `GetSession` activity and refuses an active turn, a pending command, running setup or a starting harness. An idle process does not block archive; activity that cannot be observed does, unless the environment is confirmed suspended or deleted. |
-| Notification subscription                               | The Session's recorded execution Identity at subscription time                                           | `subscribe` reads Dispatcher `GetSession` and requires the recorded Identity to be the caller's. It reads no runner, so a suspended Sandbox does not block it. This read alone is not send permission.                                                                              |
-| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                            | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                                                                                     |
-
-The app's History reads are appropriate for retained views. No History inventory read can stand in for
-current live decisions.
+Dispatcher Session records own membership and placement, including after Environment deletion.
+App metadata owns title and archive state. History summaries supply retained display state and
+can lag the live owner. Dispatcher publishes activity from the Runtime and sampler watches, with
+unknown states when observations go stale. App archive checks that activity; the Environment
+diagnostics describe the current Runtime. See [Session activity](../session_dispatcher/dispatcher/SPEC.md#harnesshost-activity-observation)
+and the [App contract](../app/README.md).
 
 ## Destination checks and authority
 
-Notification subscription creation currently checks distinct things. It authenticates the caller,
-reads the Session from Dispatcher `GetSession` and requires its recorded execution Identity to be
-the caller's. Separately, it checks source access through the Action Service or GitHub client before
-storing the subscription. These are subscription/source checks; they do not by themselves define a
-separate per-message send grant. See
-[`notification_service/internal/rpc/subscribe.go`](../notification_service/internal/rpc/subscribe.go).
+[Dispatcher admission](../session_dispatcher/dispatcher/SPEC.md#method-scope) checks direct and
+delegated callers against the authoritative Session. Runtime mutation uses the Sessions actor and
+the stored placement fence under the [proxy contract](../environments/runtimeproxy/SPEC.md#environment-runtime-proxy-authorization).
+[Wake policy](../environments/lifecycle/SPEC.md#authority) separately governs automatic wake and
+explicit resume. Notification subscription checks the recorded Session Identity and authorization
+for the subscribed source. Incoming inbox messages and Session commands have their own permissions.
 
-When a notification is delivered, the service submits a command to Dispatcher. Dispatcher checks
-its caller account, resolves the Sandbox and stores its UID with the opening or command; its worker
-checks that the watched Sandbox still has that UID and that it owns the Sandbox's delivery Lease
-before continuing. The Go `HarnessHostClient` sends the Sandbox name and UID to the proxy with
-expected-identity metadata. The proxy authenticates its caller and requires exact Sandbox UID and
-owner metadata, then resolves and checks the live Sandbox and ready Pod.
-The stable `runner-gateway` Service may route to any replica. Each replica can serve only with its
-own fresh Runtime observation; the proxy call carries Sandbox UID, current workload Pod UID and the
-observed Runtime boot ID, which Runtime checks against the Controller-bound identity. These checks
-span separate requests, so the reviewed contract should say where identity is bound and where it is
-revalidated, including replacement between the Dispatcher check and proxy resolution. See
-[`proxy.go`](../environments/runtimeproxy/proxy.go),
-[`sandboxes.go`](../environments/runtimeproxy/sandboxes.go) with the UID fence in
-[`reader.go`](../sandboxes/sandboxreader/reader.go), and
-[`runner_client.go`](../session_dispatcher/dispatcher/runtime_client.go).
+On 2026-10-15 the operator approved a public `(Sandbox UID, Session ID)` address and limited
+service delegation to the App and Notification paths, with separate wake authorization. The
+Session UUID decision superseded the public destination tuple. The retained exact placement still
+fences wake and execution. The current grants and delegated identity checks are in the
+[Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#caller-proof).
 
-The current path has different authority at each step:
+The early design compared three allocations of authorization checks:
 
-| Boundary                             | Current check                                                                                                                                                                                                                                                                                                           | Gap the decision must close                                                                                                                                                                                                                            |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Notification subscription and worker | Caller/source access; the Session's recorded Identity must be the caller's at creation. The worker rechecks the recorded Identity and that the Session is placed before sending, then submits by Session ID.                                                                                                            | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Dispatcher authenticates the Notification service account, not the originating user.                                                                   |
-| App command and diagnostics          | The app resolves a retained Thread from History; live diagnostic reads carry expected UID and owner.                                                                                                                                                                                                                    | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                                |
-| Dispatcher admission and wake        | Dispatcher retains row attribution and the expected Sandbox UID with queued work. Before automatic resume, the shared lifecycle manager rechecks the live target UID and retained caller policy, or the exact service-SVID broker selected by Action proof. `wakeOnSend` gates both paths; requested stops stay sticky. | Dispatcher admission and retained attribution do not grant wake authority. `wake_service_callers` permits automatic wake only; explicit operator resume uses the separate `service_operators` grant. A requested wake does not assert readiness.       |
-| Gateway proxy and runner             | Runtime Session creation and command proxy calls require a Pod-bound Gateway/Dispatcher ServiceAccount token; general proxy callers have diagnostics only. UID and owner headers fence the exact Sandbox and ready Pod. Runtime rejects an unknown Session.                                                             | Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. The shared workload credential authenticates delivery, not a per-destination sender grant; execution-time authority remains this decision's separate boundary. |
+1. Sender preflight followed by full policy checks at execution boundaries. This gives early
+   errors and preserves source-specific knowledge. It duplicates reads and needs the same exact
+   target across admission and execution to close races.
+2. One admission authority for placement, Session membership and send policy, leaving
+   subscription and source authorization with the source service. This needs trustworthy caller
+   proof and a consistent decision when an Environment is unavailable.
+3. Advisory preflight for user feedback and authoritative checks at admission and execution.
+   A successful preflight does not authorize a later command.
 
-The app's live Runner inventory still uses the identity-fenced per-Sandbox proxy. Explicit Sandbox
-resume now calls the Runner Gateway's `EnvironmentService`, which checks the operator's
-Pod-bound authority and exact target before changing desired state. The Gateway Session wrappers,
-registry and separate database are retired.
-
-**Previously approved public destination (operator, 2026-10-15; superseded above):** every submission names the exact
-`(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
-the caller does not choose a store. Queue and retry that full address, locate the exact Sandbox,
-and let queued delivery wake only that target. Once the runner is reachable, it is authoritative
-for whether that Session exists; an unknown target is a terminal delivery failure, not a reason to
-search other Sandboxes, create a Session, or substitute a same-name replacement. This lets offline
-delivery rely on the caller's destination tuple rather
-than a central Session-to-Sandbox placement registry. The Kubernetes UID-to-live-connection or
-workload routing function remains separate from any session placement registry.
-
-Wake-on-send has a durable acceptance requirement: before reporting a request as queued or initiating
-wake, persist the Session ID, resolved exact placement fence, command ID and payload. That record must survive caller
-disconnect, Dispatcher process restart and the full Sandbox image-pull/boot delay. Dispatcher queue
-acceptance is a different outcome from Runner admission; name each stage explicitly, and do not
-present the queued receipt as proof that the runner admitted or the harness consumed the command.
-
-The Session API will resolve the UUID through the Dispatcher directory; the internal UID locator
-and authority boundaries remain to be specified. Do not claim live Session membership can
-be verified while the runner is unavailable. Authenticate
-and authorize the sender before waking; preserve the UID identity fence, command idempotency and
-outcome semantics. Direct admission, if selected, remains online-only and never wakes; only the
-queued mode owns wake-to-deliver.
-
-These historical alternatives still inform the authority review; references to callers carrying a
-Sandbox UID are superseded by the selected Session-ID address:
-
-1. Keep caller-side preflight checks at subscription time and make every execution boundary enforce
-   its own complete destination and send policy. This gives early errors and preserves source-specific
-   knowledge, but duplicates reads and can leave a time-of-check/time-of-use gap unless the immutable
-   Sandbox identity is carried through admission.
-2. Make one Dispatcher or Gateway admission boundary authoritative for destination namespace, UID,
-   owner and Session membership, while the source service retains subscription/source authorization.
-   This can give each send path one consistent fence, but the boundary must receive a trustworthy
-   caller and, for generalized senders, a destination grant rather than only the Notification
-   service's broad identity. It also
-   needs an explicit answer for session membership when the Sandbox is suspended and the runner is
-   unavailable.
-3. Keep an early sender preflight for user-facing feedback and repeat only the security-critical
-   checks at one authoritative command boundary. If this is selected, name which checks are advisory
-   and which deny execution; do not silently treat duplicate checks as equivalent authority.
-
-**Reviewable candidate:** use sender preflight for source access, readable errors and early
-membership where the runner is reachable; make Dispatcher bind the authenticated sender and exact
-Sandbox UID before accepting queued work; make the Gateway proxy enforce the same UID and owner
-against Kubernetes immediately before forwarding; let the runner decide current Session
-membership. The execution fence must receive the persisted expected UID, not a new name-only lookup.
-The admission and execution checks are separate: early feedback cannot replace the identity fence.
-
-**V0 sender decision (operator, 2026-10-15):** Dispatcher may trust only the App and Notification
-service identities to act for their users. App owns its user-facing access checks; Notification owns
-subscription and source checks. Dispatcher authenticates those named services and keeps wake authority
-separately allowlisted. This is service delegation, not a general per-user or agent send grant and not
-permission to infer a destination from its name. Even a trusted sender must supply the expected
-Sandbox UID, which is persisted and fenced at wake and execution. This trust rule does not define
-the effect of later user-grant revocation on already queued work; Dispatcher has no v0 per-user grant
-to recheck. Notification separately rechecks its source and destination during
-work. Do not admit direct agent callers under this exception.
-
-**TODO — generalized send authority:** design destination- and operation-scoped grants (for example,
-RBAC-backed permissions), delegation proof, revocation behavior for queued work, and revalidation
-before delayed wake or execution. This is open design.
-
-The candidate has distinct outcomes. A missing or changed UID or wrong owner denies before any wake
-and again before forwarding if changed later. A temporarily unavailable runner
-may leave an otherwise authorized queued command waiting; it cannot prove Session membership until
-the runner returns. An available runner's unknown Session is terminal for that command. A lost
-reply from direct runner admission is unknown: resolve or retry the same command ID against retained
-runner storage. Loss of that storage ends runner-owned state; History is not a reconstruction source.
-
-Two choices remain open. A namespace/name plus mandatory UID request can use the existing
-namespace-local Kubernetes read as a locator; a UID-only request needs an
-authoritative UID-to-object resolver that works during suspension and rejects ambiguous or stale
-matches. Either representation must persist enough information to re-resolve the _same_ object and
-must never promote name-only discovery to an execution address. If the runner alone selects a store,
-its durable Session-to-store mapping must survive restart and a retry must not pick a different
-store. The public address does not choose one versus several harnesses or stores per runner.
-
-The decision must separately state: source/subscription authorization; destination namespace, name, UID
-and owner validation; current Session membership; permission to send; and the execution-time fence.
-Cover replacement under the same name, owner or grant revocation, a vanished runner, suspended
-Sandboxes and delayed commands. A source-read subscription is not implicitly permission to wake a
-Sandbox or send to any Session. Do not remove existing checks before an approved replacement is
-implemented and its negative cases are covered.
+The [Session command authority plan](../plans/session_send_authority.md) tracks sender grants,
+revocation of queued work, authority after placement changes, and inbox permissions when the
+original Environment disappears. Any new placement locator or generation must preserve the
+exact execution fence across suspension and same-name replacement. A placement fence does not
+grant permission. Resume or retry of an uncertain command uses its original ID and payload under
+the [receipt contract](../session_dispatcher/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes).
 
 ## Delivery service and persistence alternatives
 
-The Go Runner Gateway combines Dispatcher admission and delivery with runner connections and the
-control proxy in one process and Deployment. Dispatcher owns durable admission, ordering, retries,
-delivery status and guarded wake; the connection role owns runner state observation and the proxy. The stable
-`agentplane-session-dispatcher` and `agentplane-runner-gateway` Services retain their token audiences.
-One public gRPC listener serves separately authorized Dispatcher, EnvironmentService, Runtime proxy
-and Executor APIs. Runtime Session creation and commands admit only Pod-bound tokens of the combined
-Gateway/Dispatcher ServiceAccount; startup verifies that account from its mounted token and current
-Pod. General proxy callers receive diagnostics only, `Quiesce` is controller-only, and Executor keeps
-its independent caller grant. Gateway observes Runtime through its private mTLS `WatchState` API.
-Dispatcher admission, explicit resume and automatic wake retain their distinct grants.
+The operator selected mandatory queue-backed admission and Dispatcher PostgreSQL on 2026-11-02.
+The database-free and queue-off alternatives are closed. The open question is whether the
+queue-backed API should offer an explicit
+[immediate-or-fail send](../plans/task_dag.md#dispatcher_persistence_model_design--decide-on-an-immediate-or-fail-send).
 
-The Dispatcher PostgreSQL queue, per-Sandbox delivery Lease and database-generation fence remain
-the delivery ownership mechanism. Gateway routing no longer publishes or uses a connection Lease or
-EndpointSlice; old route objects may remain inert while rollout holds are open. A worker calls the
-stable `runner-gateway` Service, and any replica with a fresh observation can call the current
-Runtime directly at its Pod IP using the Sandbox UID, workload Pod UID and boot ID. The service has
-no History client or separate Gateway registry/database.
-Runner journal ingress and Quiesce seal acknowledgements belong to History; app and Notification
-also read History independently. See the [Runner Gateway README](../session_dispatcher/README.md) for
-current runtime and deployment ownership, including migration ordering and Flux image automation.
+The earlier direct-admission proposal was online-only and did not wake a suspended Sandbox. It
+would have put retry ownership on the caller until the Runtime journal admitted the command.
+The selected queue persists the Session, exact placement, command ID and payload before queued
+acceptance or automatic wake, and survives sender and Dispatcher restart. For an immediate-or-fail
+contract, decide the return point, ordering and cancellation, and how a lost response preserves
+unknown admission and same-ID reconciliation. Keep Runtime journal acceptance distinct from
+harness execution. Loss of Runtime storage ends that Runtime's native state. Retained History
+has a separate lifetime.
 
-For persistence, compare the current durable queue with direct runner admission:
-
-| Concern                                 | Dispatcher queue                                                                                                                                        | Direct admission RPC                                                                                                                                              |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runner unavailable or Sandbox suspended | Persist the full destination tuple, command ID and payload before queued acceptance or wake; retain through caller/Dispatcher restart and Sandbox boot. | Requires an available runner. Reject if it is unavailable or suspended; do not wake it or wait for VM/image startup.                                              |
-| Lost response                           | Query/retry the same durable command ID and read Dispatcher state; runner admission can still be uncertain until reconciled.                            | A lost reply is unknown, not rejection. Retry the same command ID against the runner journal while that storage is retained.                                      |
-| Replica failure                         | Shared PostgreSQL rows, leases and generations recover queued/in-flight work.                                                                           | Caller retry or a new durable owner must survive the sender process and its failover. Runner-local journal only protects work after it is durably admitted there. |
-| Runner storage loss                     | Runner-owned state is terminally lost; the queue or History is not a promise to reconstruct it.                                                         | Runner-owned state is terminally lost; no queue/History reconstruction guarantee is implied. Retained History remains a separate store and may still exist.       |
-| Ordering and cancellation               | Queue defines per-Session order, stop behavior and delivery state.                                                                                      | The API must define ordering and cancellation without silently reintroducing a durable queue.                                                                     |
-| Offline acceptance                      | A durable queued receipt can be returned independently of a live harness; it is not Runner admission.                                                   | Reject unavailable targets; this mode provides no offline or wake-on-send acceptance.                                                                             |
-
-A direct RPC can reduce one durable service database only if its caller/retry contract handles lost
-responses, idempotency, duplicate opens, suspended/offline runners, concurrency and failover. Do not
-turn a timeout into a false rejection or an admission receipt into proof of harness execution. The
-runner's journal and History evidence have different retention and availability semantics. While a
-runner journal is retained, a retry with the same command ID must distinguish an unknown reply from
-a new command. Loss of the runner's own storage ends that runner state; neither Dispatcher nor History
-is required to recreate the runner journal, and this does not claim that separately retained History
-was also lost. Any direct-admission mode is online-only and never wakes a suspended Sandbox; queued
-delivery remains the mode that may retain work and wake-to-deliver. If assessing a useful deployment
-without CNPG, explicitly inventory which other stateful services can be omitted or given another
-persistence owner; runner-local persistence cannot accept work while the runner is absent. Removing
-Dispatcher PostgreSQL alone does not remove CNPG. Current manifests declare the shared-CNPG databases
-`app`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`; the retired
-`sandbox_commands` database is not part of the current manifests. The Indexing service also has a
-separate PostgreSQL dependency. See the
-[service database inventory](system_overview.md#database-inventory).
-
-The decision should recommend one of: retain the separate queue; change its boundary/placement while
-preserving its contract; or replace it with a specifically defined direct-admission contract. State
-who owns idempotency, durable acceptance, unknown outcomes, retry responsibility and wake behavior
-before authorizing any queue or database removal.
+The [service database inventory](system_overview.md#database-inventory) and
+[K3s test-tier proposal](#cnpg-free-k3s-integration-tier) cover independent database dependencies.
 
 ## API transports and agent workflows
 
@@ -343,8 +150,8 @@ created before it fails to resume its thread.
 process-local diagnostic data, but may be reused and does not identify a spawn over time. The stored
 `native_session_id` survives process restart; it is a Claude session ID or Codex thread ID, not the
 Agentplane public Session ID. The public ID also keys the Runner directory, Dispatcher Session record and
-History record. These are already separate identity roles even though the current address usually
-looks like Sandbox plus public Session ID.
+History record. The Environment UID is internal placement evidence. Callers address the Session
+by its public ID.
 
 Keep three axes explicit in the design:
 
@@ -405,17 +212,17 @@ policy remains a candidate; future store-management needs can be considered sepa
 putting a store ID in the current Session destination. Central sampler V1 has a separate placement
 with one required executor environment; it does not share the native harness store contract.
 
-The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
-syntax and UID resolver are open. A runner-owned store ID names one durable lineage and is never
+The Runtime proxy checks namespace, name and the exact Sandbox UID before it forwards a native
+call. A proposed runner-owned store ID names one durable lineage and is never
 recycled, even after retirement; it is not a path or process. A public Session ID names a logical
 Session, durably mapped to its selected private store and native Claude/Codex ID. Native IDs may
 collide across stores. Define authorization binding, unavailable/suspended lookup and store movement
 without promoting a same-name Sandbox replacement.
 
 **Recommended creation contract for review, not an approved ID-allocation decision:** keep
-client-chosen, globally unique public IDs for client-created root Sessions. The exact `(Sandbox UID,
-Session ID)` and creation spec are the idempotency key. A retry with the same address and spec
-returns the same opening; reuse of the public ID with another Sandbox or spec conflicts. The runner
+client-chosen, globally unique public IDs for client-created root Sessions. Dispatcher already uses
+Session ID for idempotency and checks that placement, spec and setup agree on a retry. The proposed
+private binding adds the following steps. The runner
 first durably reserves the public ID
 and its chosen private store binding, then asks the adapter to create a native Session,
 then durably records the harness-chosen native ID before reporting a completed opening. A queued
@@ -518,8 +325,8 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 
 Keep the guarded turn interrupt control and distinct Sandbox suspend/resume controls. Sending to a
 dormant Session uses runner-managed readiness; existing Sandbox wake authorization still applies.
-The app's manual resume changes Sandbox lifecycle state through Kubernetes; retained native state
-recovery belongs to the Runtime.
+The app calls the [Environment resume API](../environments/internal/service/SPEC.md#resume-and-ownership).
+The Runtime owns recovery of retained native state.
 
 ### Provisional introspection model and Sandbox page
 
@@ -612,8 +419,6 @@ that removing one Dispatcher database removes every database dependency.
 This is separate from the no-History delivery test above: a flow that still uses the PostgreSQL-backed
 Dispatcher queue is not part of a tier that omits PostgreSQL.
 
-Cover both Pod and VM runner paths, with test ingress where a tested flow needs it. VM coverage must
-boot a real supported VM fixture: the existing k3s suite does not install KubeVirt and therefore
-exercises only Pod Sandboxes, not VM execution. Keep the test-tier design and
-implementation are separate work, gated on the reviewed execution-persistence contract and
-the real VM fixture prerequisite.
+Cover Pod and VM runner paths with test ingress where needed. The K3s VM rendering uses KubeVirt
+under emulation and a Bazel-built guest. Select independently usable flows and record their
+remaining state owners under the [test-tier gate](../plans/task_dag.md#cnpg_free_k3s_integration_tier--add-a-narrow-database-independent-integration-tier).
