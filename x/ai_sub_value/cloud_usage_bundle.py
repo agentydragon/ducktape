@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-GRANULARITIES = ("5m", "hour", "week")
 OUTPUT_NAMES = {"5m": "cloud-usage-5m.json.gz", "hour": "cloud-usage-hourly.json.gz", "week": "cloud-usage-weekly.json"}
 NORMALIZED_FIELDS = (
     "uncached_input_tokens",
@@ -75,7 +74,7 @@ def main() -> None:
         missing = REQUIRED_USAGE_FIELDS - row.keys()
         if missing:
             raise ValueError(f"usage row missing required keys: {sorted(missing)}")
-        if row["granularity"] not in GRANULARITIES:
+        if row["granularity"] not in OUTPUT_NAMES:
             raise ValueError(f"unexpected granularity: {row['granularity']!r}")
 
     quality_rows = json_lines(args.quality_jsonl)
@@ -98,7 +97,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = {}
-    for granularity in GRANULARITIES:
+    for granularity, filename in OUTPUT_NAMES.items():
         rows = [dict(row) for row in usage_rows if row["granularity"] == granularity]
         rows.sort(
             key=lambda row: (
@@ -138,7 +137,7 @@ def main() -> None:
             "explicit_provider_models": metadata.get("explicit_provider_models"),
             "rows": rows,
         }
-        write_json(args.output_dir / OUTPUT_NAMES[granularity], document)
+        write_json(args.output_dir / filename, document)
         counts[granularity] = len(rows)
 
     write_json(
