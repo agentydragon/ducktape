@@ -6,5 +6,9 @@ go_library(
     srcs = ["grpcserver.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/grpcserver",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["@org_golang_google_grpc//:grpc"],
+    deps = [
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
 )

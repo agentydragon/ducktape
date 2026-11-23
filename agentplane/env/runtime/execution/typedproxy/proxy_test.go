@@ -3,7 +3,6 @@ package typedproxy
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,27 +13,18 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedbackend"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 func connect(t *testing.T, s pb.ExecutorServer) pb.ExecutorClient {
 	t.Helper()
-	l := bufconn.Listen(1 << 20)
-	g := grpc.NewServer()
-	pb.RegisterExecutorServer(g, s)
-	go func() { _ = g.Serve(l) }()
-	t.Cleanup(func() { g.Stop(); _ = l.Close() })
-	conn, err := grpc.NewClient("passthrough:///test", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewExecutorClient(conn)
+	server := grpc.NewServer()
+	pb.RegisterExecutorServer(server, s)
+	return pb.NewExecutorClient(grpcserver.ConnectInMemory(t, server))
 }
 
 // active reports whether an execution session is open or opening.
