@@ -43,28 +43,6 @@ let
     pkgs.gofumpt
     pkgs.markdownlint-cli2
     ducktapePkgs.prettier
-    (pkgs.writeShellScriptBin "format-gnome-dbus-xml" ''
-      set -euo pipefail
-      export XMLLINT_INDENT="  "
-      for file; do
-        if [[ ! -w "$file" ]]; then
-          printf 'Cannot write %s\n' "$file" >&2
-          exit 1
-        fi
-        formatted=$(mktemp -- "$file.XXXXXXXX")
-        trap 'rm -f -- "$formatted"' EXIT
-        # xmllint can emit formatted output even when DTD validation fails.
-        # Use cat to propagate write failures that xmllint can otherwise miss.
-        ${pkgs.libxml2.bin}/bin/xmllint --nonet --strict-namespace --format \
-          --dtdvalid ${pkgs.dbus}/share/xml/dbus-1/introspect.dtd "$file" | cat > "$formatted"
-        if ! cmp -s -- "$file" "$formatted"; then
-          chmod --reference="$file" -- "$formatted"
-          mv -fT -- "$formatted" "$file"
-        fi
-        rm -f -- "$formatted"
-        trap - EXIT
-      done
-    '')
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
