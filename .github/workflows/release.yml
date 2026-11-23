@@ -1,23 +1,5 @@
-# Release artifacts to GitHub, fanning out only over the ones whose content moved.
-#
-# Two phases:
-#
-#   matrix  — builds nothing. For release targets reported by bazel-ci, this reads
-#             the build event stream, derives each release's content hash from its
-#             output digests, and compares those against published tags. Missing or
-#             custom-configuration targets stay in the matrix for their own job.
-#             See devinfra/ci/plan_releases.py.
-#
-#   release — per changed release: reuse exact verified push-CI test verdicts when
-#             available, otherwise run its tests, rebuild stamped, and publish.
-#
-# When no artifact changed, the empty matrix avoids starting a per-artifact job.
-#
-# The rows still come from devinfra/ci/artifact_targets.json — the same SSOT
-# .github/workflows/nix-wheel-check.yml reads. See the schema note at the top
-# of that file for field semantics (pins ↔ releases, etc.).
-# Per-skill rows are appended from skills/skills_registry.json (one release per
-# skill, `skill-<name>`); see skills/README.md.
+# Release roster: devinfra/ci/artifact_targets.json and skills/skills_registry.json.
+# Content and test-verdict reuse: devinfra/ci/docs/publish_planning.md.
 name: Release
 
 on:
@@ -50,11 +32,8 @@ on:
         default: ""
   workflow_dispatch:
 
-# Coalesce, never cancel — same reasoning as the block in push-images.yml. A queued run
-# replaces the pending one so a merge burst collapses into one publish; a run already
-# creating releases is never killed (#2759). Safe to skip superseded commits because a
-# release's identity is a content hash, so the next run publishes whatever is still
-# unreleased.
+# Let in-flight publication finish during merge bursts (#2759). The next run
+# compares content-addressed tags again and picks up any unpublished artifacts.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
