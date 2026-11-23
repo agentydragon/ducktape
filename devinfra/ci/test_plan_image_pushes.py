@@ -8,7 +8,8 @@ from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, merg
 from devinfra.ci.image_registry import Registry
 from devinfra.ci.plan_image_pushes import Image, decide, digest_uri, load_images, local_digests, main, matrix_include
 from devinfra.ci.publication_test_verdicts import TestEvidence
-from devinfra.oci.crane import Crane, CraneError
+from devinfra.ci.testing.fake_crane import FakeCrane
+from devinfra.oci.crane import CraneError
 
 NO_CI = TestEvidence(problem="no CI invocation")
 
@@ -25,22 +26,6 @@ def digest_output(label: str, path: str, uri: str = "bytestream://h/blobs/x/72")
 
 def invocation(*outputs: Output) -> Invocation:
     return Invocation(outputs=list(outputs))
-
-
-class FakeCrane(Crane):
-    """Registry stub: repo -> {tag: digest}. A repo with no `latest` was never pushed.
-
-    A real `Crane` with the subprocess replaced, as `devinfra/oci/test_crane.py` does — the
-    binary is never resolved because nothing reaches `_run`.
-    """
-
-    def __init__(self, repos: dict[str, dict[str, str]]) -> None:
-        super().__init__(Path("/nonexistent/crane"))
-        self.repos = repos
-
-    def digest_or_none(self, image_ref: str) -> str | None:
-        repo, _, tag = image_ref.rpartition(":")
-        return self.repos.get(repo, {}).get(tag)
 
 
 def test_outputs_are_found_by_label_not_by_guessing_a_path() -> None:
@@ -121,6 +106,8 @@ def test_unchanged_digest_is_not_pushed() -> None:
     decision = decide(subject, {"airlock": "sha256:same"}, crane)
     assert not decision.needs_push
     assert matrix_include([decision], NO_CI) == []
+    assert not crane.pushed
+    assert not crane.tagged
 
 
 def test_changed_digest_is_pushed() -> None:
@@ -131,6 +118,8 @@ def test_changed_digest_is_pushed() -> None:
     assert matrix_include([decision], NO_CI) == [
         {"image_name": "airlock", "image": "//airlock:image", "test_target": "//airlock/...", "registry": "ghcr"}
     ]
+    assert not crane.pushed
+    assert not crane.tagged
 
 
 def test_an_image_whose_gate_push_ci_already_failed_gets_no_job() -> None:

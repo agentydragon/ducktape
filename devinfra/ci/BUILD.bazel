@@ -321,6 +321,7 @@ py_test(
         ":plan_image_pushes",
         ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
+        "//devinfra/ci/testing:fake_crane",
         "//devinfra/oci:crane",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -374,6 +375,7 @@ py_test(
     deps = [
         ":image_registry",
         ":push_image",
+        "//devinfra/ci/testing:fake_crane",
         "//devinfra/oci:crane",
         "@pypi//pytest_bazel",
     ],
