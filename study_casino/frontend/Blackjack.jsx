@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
+import { COLORS, SectionTitle, WagerInput, WagerPresets, WinBurst } from "./shared.jsx";
 
 function PlayingCard({ card }) {
   const isRed = card.suit === "♥" || card.suit === "♦";
@@ -173,34 +173,13 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
 
           {phase === "betting" ? (
             <>
-              <input
-                type="number"
+              <WagerInput
+                credits={credits}
                 value={betInput}
-                onChange={(e) => setBetInput(Math.max(1, Math.min(credits, parseInt(e.target.value) || 0)))}
-                min="1"
-                max={credits}
+                onChange={setBetInput}
                 style={{ width: "100%", marginBottom: 8 }}
               />
-              <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-                {[5, 10, 25, 50, 100].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setBetInput(Math.min(v, credits))}
-                    disabled={credits < v}
-                    style={{
-                      padding: "4px 10px",
-                      fontSize: 11,
-                      background: "transparent",
-                      color: COLORS.creamDim,
-                      border: `1px solid rgba(212,165,72,0.3)`,
-                      cursor: credits < v ? "not-allowed" : "pointer",
-                      opacity: credits < v ? 0.4 : 1,
-                    }}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
+              <WagerPresets credits={credits} onChange={setBetInput} style={{ marginBottom: 12 }} />
               <button
                 className="btn btn-primary"
                 style={{ width: "100%", padding: 12 }}

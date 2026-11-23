@@ -57,7 +57,7 @@ def _ack_changelog(base_url: str) -> None:
     )
 
 
-def _seed_credits(base_url: str, credits: int) -> None:
+def _seed_credits(base_url: str, credits: float) -> None:
     post_json(
         base_url,
         "/actions/import",
@@ -87,12 +87,22 @@ async def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_serv
 
 async def test_roulette_spin_sets_finite_wheel_transform(page: Page, casino_server: str) -> None:
     """Roulette consumes the nested action result and animates toward a real pocket."""
-    await asyncio.to_thread(_seed_credits, casino_server, 100)
+    await asyncio.to_thread(_seed_credits, casino_server, 100.5)
     logs = _attach_logs(page)
 
     await page.goto(casino_server)
     await page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
     await page.get_by_role("button", name="casino").click()
+    amount = page.get_by_role("spinbutton")
+    await amount.fill("0")
+    await expect(amount).to_have_value("1")
+    await amount.fill("200")
+    await expect(amount).to_have_value("100.5")
+    await page.get_by_role("button", name="5", exact=True).click()
+    await expect(amount).to_have_value("5")
+    await page.get_by_role("button", name="ALL", exact=True).click()
+    await expect(amount).to_have_value("100.5")
+    await page.get_by_role("button", name="10", exact=True).click()
     await page.get_by_role("button", name=re.compile(r"^Spin . 10 cr$")).click()
 
     await page.wait_for_function(
@@ -127,6 +137,7 @@ async def test_blackjack_hides_hole_card_until_settlement(
     await page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
     await page.get_by_role("button", name="casino").click()
     await page.get_by_role("button", name="blackjack").click()
+    await expect(page.get_by_role("button", name="25", exact=True)).to_be_disabled()
     deal = page.get_by_role("button", name="Deal · 10 cr")
     dealer = page.get_by_role("group", name="Dealer hand")
     player = page.get_by_role("group", name="Player hand")
@@ -272,6 +283,8 @@ async def test_slots_spin_does_not_throw_on_server_action_response(page: Page, c
     # The button reads `Spinning...` from the server result until the reels settle; a mapping error leaves it stuck.
     spinning = page.get_by_role("button", name="Spinning...")
     await spinning.wait_for(state="visible", timeout=10_000)
+    await expect(page.get_by_role("spinbutton")).to_be_disabled()
+    await expect(page.get_by_role("button", name="5", exact=True)).to_be_disabled()
     await spinning.wait_for(state="hidden", timeout=10_000)
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during slots spin\n{logs}"
