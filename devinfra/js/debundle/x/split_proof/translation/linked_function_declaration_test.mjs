@@ -139,7 +139,7 @@ for (const [name, source, count, reason] of [
     "rebind",
     "function read() { return 3; } read = () => 4; export { read };",
     3,
-    /unsupported linked expression AssignmentExpression/,
+    /unsupported linked assignment target Identifier/,
   ],
 ]) {
   const { out, verdict, log } = split(name, source, { [entry]: Array.from({ length: count }, (_, i) => `#${i}`) }, []);
