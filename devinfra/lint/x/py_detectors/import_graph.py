@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from devinfra.lint.x.py_detectors.utils import iter_py_files, parse_python_file
+
 
 def module_name_for_path(root: Path, file_path: Path) -> str:
     rel = file_path.resolve().relative_to(root.resolve())
@@ -40,15 +42,11 @@ def build_import_graph(root: Path) -> dict[str, set[str]]:
     Edge m -> n means module m has a top-level import of module n (or its submodule).
     """
     graph: dict[str, set[str]] = {}
-    for file_path in root.rglob("*.py"):
-        if any(part in {".git", "__pycache__", ".venv", "venv"} for part in file_path.parts):
+    for file_path in iter_py_files(root):
+        parsed = parse_python_file(file_path)
+        if parsed is None:
             continue
-        try:
-            text = file_path.read_text(encoding="utf-8")
-            node = ast.parse(text)
-        except SyntaxError, UnicodeDecodeError:
-            # Skip files with invalid Python syntax or encoding issues
-            continue
+        node, _ = parsed
         mod = module_name_for_path(root, file_path)
         if not mod:
             continue

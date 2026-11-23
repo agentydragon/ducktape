@@ -60,6 +60,7 @@ py_library(
 py_library(
     name = "import_graph",
     srcs = ["import_graph.py"],
+    deps = [":utils"],
 )
 
 py_library(
