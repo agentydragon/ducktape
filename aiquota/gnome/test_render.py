@@ -204,6 +204,35 @@ def test_banked_reset_visibility(
             session.close_menu()
 
 
+def test_quota_bars_toggle_provider_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "binding_summary")
+    session.open_menu()
+    try:
+        assert len(_ProviderPopup(session, "codex").windows) == 2
+        for index in (0, 1):
+            assert session.call("GetDetailsOpen", "codex") == b"(false,)\n"
+            assert session.call("ActivateMeter", "codex", str(index)) == b"(true,)\n"
+            assert session.call("GetDetailsOpen", "codex") == b"(true,)\n"
+            if index == 0:
+                capture_menu.capture(session.open_menu(), label="Expanded quota bars", checkpoint="bar-details")
+            assert session.call("ActivateMeter", "codex", str(index)) == b"(true,)\n"
+    finally:
+        session.close_menu()
+
+
+def test_balance_only_provider_keeps_details_toggle(session: GnomeSession) -> None:
+    _reload_fixture(session, "openai_platform_credits")
+    session.open_menu()
+    try:
+        popup = _ProviderPopup(session, "openai_platform")
+        assert not popup.windows
+        assert popup.details
+        session.call("SetDetailsOpen", "openai_platform", "true")
+        assert session.call("GetDetailsOpen", "openai_platform") == b"(true,)\n"
+    finally:
+        session.close_menu()
+
+
 def test_zero_resets_move_into_details_when_a_different_window_passes_reset(session: GnomeSession) -> None:
     _reload_fixture(session, "banked_resets_exhausted")
     popup = _ProviderPopup(session, "codex")

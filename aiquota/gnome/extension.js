@@ -333,6 +333,8 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelProviders"><arg type="s" direction="out" name="providers"/></method>' +
           '<method name="SetDetailsOpen"><arg type="s" direction="in" name="provider"/><arg type="b" direction="in" name="open"/></method>' +
+          '<method name="ActivateMeter"><arg type="s" direction="in" name="provider"/><arg type="u" direction="in" name="index"/><arg type="b" direction="out" name="hit"/></method>' +
+          '<method name="GetDetailsOpen"><arg type="s" direction="in" name="provider"/><arg type="b" direction="out" name="open"/></method>' +
           '<method name="GetDetailsText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetConnectionDetails"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetEmptyLabelText"><arg type="s" direction="out" name="text"/></method>' +
@@ -395,6 +397,19 @@ const QuotaIndicator = GObject.registerClass(
             if (open) menu.open(false);
             else menu.close(false);
           },
+          ActivateMeter: (provider, index) => {
+            const p = this._providers.find(({ id }) => id === provider);
+            const track = p?.windowRows[index]?._quotaBar.track;
+            if (!track?.visible) return false;
+            const [x, y] = track.get_transformed_position();
+            const [width, height] = track.get_transformed_size();
+            const hit = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x + width / 2, y + height / 2);
+            if (hit !== p.detailsItem) return false;
+            p.detailsItem.activate(null);
+            return true;
+          },
+          GetDetailsOpen: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.detailsItem.menu.isOpen ?? false,
           GetDetailsText: (provider) =>
             this._providers
               .find(({ id }) => id === provider)
@@ -729,6 +744,12 @@ const QuotaIndicator = GObject.registerClass(
           this._makeQuotaRow("quota")
         );
         p.detailsItem = this._makeDetailsSubmenu("Details");
+        p.detailsItem._windows = new St.BoxLayout({
+          orientation: Clutter.Orientation.VERTICAL,
+          x_expand: true,
+        });
+        for (const row of p.windowRows) p.detailsItem._windows.add_child(row);
+        p.detailsItem.insert_child_at_index(p.detailsItem._windows, 2);
         p.header.add_style_class_name("quota-popup-provider-header");
         this.menu.addMenuItem(p.header);
         this.menu.addMenuItem(p.statusRow);
@@ -744,7 +765,6 @@ const QuotaIndicator = GObject.registerClass(
         this.menu.addMenuItem(p.resetRow);
         this.menu.addMenuItem(p.burnRow);
         this.menu.addMenuItem(p.spendRow);
-        for (const row of p.windowRows) this.menu.addMenuItem(row);
         this.menu.addMenuItem(p.detailsItem);
         p.header.label.add_style_class_name("quota-popup-header");
         p.header.label.clutter_text.line_wrap = true;
@@ -790,12 +810,8 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _makeQuotaRow(label) {
-      const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-      item.add_style_class_name("quota-popup-read-only");
-      item.add_style_class_name("quota-popup-bar-item");
-
-      const content = new St.BoxLayout({
-        style_class: "quota-popup-bar-content",
+      const item = new St.BoxLayout({
+        style_class: "quota-popup-bar-content quota-popup-bar-item",
         orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
       });
@@ -816,9 +832,8 @@ const QuotaIndicator = GObject.registerClass(
       item._quotaBar = this._makeQuotaBar();
 
       item._bars.add_child(item._quotaBar.track);
-      content.add_child(item._summaryLabel);
-      content.add_child(item._bars);
-      item.add_child(content);
+      item.add_child(item._summaryLabel);
+      item.add_child(item._bars);
       return item;
     }
 
@@ -1086,6 +1101,15 @@ const QuotaIndicator = GObject.registerClass(
         const { windows, staleAge } = effectiveState(p.state);
         windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
         p.windowRows.forEach((row, index) => (row.visible = index < windows.length));
+        p.detailsItem._windows.visible = windows.length > 0;
+        p.detailsItem.label.visible = windows.length === 0;
+        p.detailsItem.label_actor = windows.length ? null : p.detailsItem.label;
+        p.detailsItem.accessible_name = windows.length
+          ? `Quota details: ${p.windowRows
+              .filter((row) => row.visible)
+              .map((row) => row._summaryLabel.get_text())
+              .join("; ")}`
+          : "Details";
         this._renderProviderDetails(p.detailsItem, p.state);
       }
     }
