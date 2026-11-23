@@ -5,25 +5,13 @@ These definitions are based on the actual Habitify API response structures
 as documented in the reference YAML files.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, PlainSerializer
 
-
-def _parse_datetime(v: str | datetime) -> datetime:
-    """Parse ISO datetime string or pass through datetime object."""
-    if isinstance(v, datetime):
-        if v.tzinfo is None:
-            return v.replace(tzinfo=UTC)
-        return v
-    if isinstance(v, str):
-        dt = datetime.fromisoformat(v)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt
-    raise ValueError(f"Expected datetime or ISO string, got {type(v)}")
+from x.habitify_mcp.utils.date_utils import aware_datetime
 
 
 def _serialize_datetime(v: datetime) -> str:
@@ -33,7 +21,7 @@ def _serialize_datetime(v: datetime) -> str:
 
 # Annotated datetime type with proper serde for Habitify API
 HabitifyDatetime = Annotated[
-    datetime, BeforeValidator(_parse_datetime), PlainSerializer(_serialize_datetime, return_type=str)
+    datetime, BeforeValidator(aware_datetime), PlainSerializer(_serialize_datetime, return_type=str)
 ]
 
 
