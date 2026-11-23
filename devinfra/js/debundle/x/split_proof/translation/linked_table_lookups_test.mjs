@@ -17,7 +17,7 @@ import {
   property,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
 const dataOwner = "data.mjs";
