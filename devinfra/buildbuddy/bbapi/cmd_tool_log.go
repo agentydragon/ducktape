@@ -179,17 +179,10 @@ func resolveToolLog(logs []toolLog, pattern string) (toolLog, error) {
 }
 
 func filterToolLogs(logs []toolLog, pattern string) []toolLog {
+	matchesName := nameMatcher(pattern)
 	var matches []toolLog
-	if strings.Contains(pattern, "*") {
-		for _, l := range logs {
-			if matchGlob(pattern, l.matchKey()) || matchGlob(pattern, l.GetFile().GetName()) {
-				matches = append(matches, l)
-			}
-		}
-		return matches
-	}
 	for _, l := range logs {
-		if strings.Contains(l.matchKey(), pattern) || strings.Contains(l.GetFile().GetName(), pattern) {
+		if matchesName(l.matchKey()) || matchesName(l.GetFile().GetName()) {
 			matches = append(matches, l)
 		}
 	}

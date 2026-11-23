@@ -542,7 +542,7 @@ def report(
             f"{_invocation_reference(invocation, invocation_numbers, available_invocations)}"
             for invocation in invocations
         ]
-        lines += ["", "```bash", "bbapi artifact download <invocation> 'test.outputs/test-outputs/**' --all", "```", ""]
+        lines += ["", "```bash", "bbapi artifact download <invocation> 'test.outputs/test-outputs/' --all", "```", ""]
     lines += ["## Screenshot determinism", "", "Only role `screenshot` is diffed, by the payload CAS digest.", ""]
     lines += _image_report(observations, invocation_numbers, available_invocations)
 
