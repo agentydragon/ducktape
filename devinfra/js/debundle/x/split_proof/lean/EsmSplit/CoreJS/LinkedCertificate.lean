@@ -96,6 +96,11 @@ private partial def stmtEq : MatchEq Stmt
   | .expr a, .expr b => (exprEq a b).map fun h => ⟨congrArg Stmt.expr h.down⟩
   | .ret a, .ret b => (exprEq a b).map fun h => ⟨congrArg Stmt.ret h.down⟩
   | .throw a, .throw b => (exprEq a b).map fun h => ⟨congrArg Stmt.throw h.down⟩
+  | .ite c t e, .ite c' t' e' => do
+    let ⟨test⟩ ← exprEq c c'
+    let ⟨yes⟩ ← stmtEq t t'
+    let ⟨no⟩ ← stmtEq e e'
+    return ⟨by rw [test, yes, no]⟩
   | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
   | .tryCatch body param handler, .tryCatch body' param' handler' => do
     let ⟨b⟩ ← stmtEq body body'
