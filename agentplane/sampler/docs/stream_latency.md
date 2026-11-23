@@ -1,10 +1,99 @@
 # Sampler journal falls behind provider streams
 
-On 2026-11-23 the staging sampler was still processing Responses API events tens of seconds
+On 2026-11-23 the staging sampler was processing Responses API events tens of seconds
 after the provider reported completion. The delay was visible in the sampler journal before
 History export or browser rendering. No change to the provider or UI is needed to reproduce it.
 
-## How far behind?
+## After the two sampler changes
+
+Both staging replicas were Ready on `3ce34c7` at 20:03 UTC on November 23. The image
+includes [interrupt wakeups](https://github.com/agentydragon/ducktape/pull/19409) and
+[checkpoint writes without the conversation lock](https://github.com/agentydragon/ducktape/pull/19412).
+On the same Qwen thread, the median delay from recording bytes to projecting a delta fell
+from **69.21 s to 8.55 s** in two 49-second windows. Most of the remaining delay accumulated
+while the sampler processed earlier chunks from the same read.
+
+| Staging observation                                   | Before, 18:29:32–18:30:21 UTC | After, 20:08:59.9–20:09:49.4 UTC |
+| ----------------------------------------------------- | ----------------------------: | -------------------------------: |
+| Sessions with counted journal entries                 |                             4 |                                3 |
+| Counted entries, Qwen / all sessions                  |                     102 / 577 |                      602 / 1,582 |
+| Parsed Qwen reasoning chunks / all parsed Qwen chunks |                       34 / 34 |                        198 / 198 |
+| Qwen wire to projection, median / p95                 |             69.21 s / 87.08 s |                 8.55 s / 17.06 s |
+| Matched Qwen deltas                                   |                            26 |                              156 |
+| Other matched streams, median / p95                   |              5.88 s / 28.71 s |                  2.04 s / 4.36 s |
+| Matched deltas from other streams                     |                            72 |                              203 |
+| Snapshots with tuple or transaction-ID waiters        |                     496 / 496 |                          6 / 497 |
+| Simultaneous waiters, median (range)                  |                     11 (7–14) |                          0 (0–1) |
+
+Both windows use the replica journal matching rule below and 100 ms primary activity samples.
+The repeat retained empty snapshots. The three active sessions were Qwen, Sol and Astra.
+The workload and concurrency changed, so the comparison cannot assign the improvement to
+either PR individually. Across the longer Qwen tails, the median / p95 went from
+43.35 / 101.86 s (2,311 deltas in 84 minutes) to 6.24 / 14.36 s (1,474 deltas with both
+endpoints between 20:03 and 20:10:27).
+
+### Where the remaining time goes
+
+In the repeat window, the 156 matched Qwen deltas came from **four wire reads**.
+For each delta, measure the fraction of its wire-to-projection delay that elapsed after the
+first matched projection from its read. The median fraction was **93%**. The reader was
+already working through buffered chunks for most of that time.
+
+| Qwen interval within the sampler                                           | Pairs | Median |     p95 |
+| -------------------------------------------------------------------------- | ----: | -----: | ------: |
+| Wire read to parsed chunk                                                  |   156 | 8.53 s | 16.98 s |
+| Parsed chunk to its projected delta                                        |   156 |  18 ms |   77 ms |
+| Projected delta to next parsed chunk, consecutive entries in the same read |   127 | 206 ms |  359 ms |
+
+The third row measures time spent before the reader records another chunk whose bytes it
+already has. The [Chat Completions reader](../providers/chatcompletions/stream.go) waits for
+the [evidence write](../internal/sessionstore/provider_evidence.go) and the
+[progress hook](../internal/providerio/timeouts.go) before consuming the next chunk.
+The hook [renews the attempt](../internal/residentruntime/session/provider_recovery.go)
+on each reasoning delta. Renewal locks and loads the conversation and fetches the intent
+before extending its lease.
+
+At 20:11:30–20:12:05 UTC, the repeated 10 ms primary sample found a median **208 ms before
+COMMIT for lease renewal** (15 transactions, p90 265 ms), and **48 ms for evidence** (21,
+p90 88 ms). The corresponding baseline medians were 414 and 515 ms. Median server COMMIT
+time remained below 0.5 ms for both. In the 49-second lock sample, 25 of 39 observations
+of identified renewals showed the content fetch or recursive context query as the current
+or last statement. These observations include client waits. They do not time either query
+or link individual transactions to Qwen deltas.
+
+**First experiment:** make lease renewal check the owner, pending intent, generation and
+live lease without loading conversation items or the full intent payload. Keep the per-delta
+evidence write and renewal cadence for this comparison. Replay the same buffered reasoning
+chunks at the same concurrency and context length. Compare renewal duration, same-read
+inter-chunk spacing and wire-to-projection p50/p95. If spacing remains high, measure the
+evidence transaction's individual round trips before changing the write boundary.
+
+### Tabby decode speed and terminal lag
+
+For three complete post-rollout calls on this thread, match each sampler attempt to a Tabby
+request by completion-token count and provider finish time within the sampler head-to-DONE
+interval. Tabby's decode rate excludes prompt processing. The sampler rate divides the same
+completion-token count by time from its recorded HTTP response head to its parsed `[DONE]`.
+
+| Completion tokens | Tabby decode | Sampler head to DONE | Sampler effective rate |
+| ----------------: | -----------: | -------------------: | ---------------------: |
+|               220 |    177.4 t/s |                9.7 s |              22.57 t/s |
+|             2,452 |    116.1 t/s |              186.6 s |              13.14 t/s |
+|             4,384 |    108.5 t/s |              380.6 s |              11.52 t/s |
+
+The six baseline sampler calls ranged from 1.27 to 2.92 t/s. On the 1,632-token baseline
+call, Tabby logged 109.5 t/s and the sampler recorded 1.27 t/s. One 2,566-token call
+entirely between rollouts recorded 3.06 t/s. On the 4,384-token post-rollout call, Tabby
+logged completion at 20:07:27 and the sampler recorded DONE at 20:13:07, **340 s later**.
+Wire-to-projection starts only when the sampler records a read. Bytes waiting upstream of
+that read can add substantial delay. Browser paint and History delivery remain unmeasured.
+
+Repeating the 3,000-entry Responses terminal scan for calls started after 20:03 yielded
+one Astra completion (61 s from provider completion to journal) and five Sol completions
+(median 36 s, range 20–78 s). The baseline medians were 47 s for Astra and 82 s for Sol.
+These small post-rollout samples still show terminal lag in the tens of seconds.
+
+## How far behind was the sampler before the changes?
 
 From a read replica, take the most recent 3,000 journal entries per Session with a provider
 attempt lease ending in the last 48 hours or later. Within the 48-hour window, select complete,
@@ -90,7 +179,7 @@ The effect on other conversations remains open.
 Across six calls with a recorded HTTP response head, completion-token usage and `[DONE]`,
 effective throughput was **1.27–2.92 completion tokens/s** from head to done. One call
 reported 1,632 completion tokens in 1,285.5 s. Tabby's `created` value stayed constant
-within each call. GPU generation rate and browser paint time remain unmeasured.
+within each call. The initial journal scan measured neither GPU decode rate nor browser paint time.
 
 ## Which transactions held up stream writers?
 
@@ -143,11 +232,9 @@ before reading pending interrupts. [Database triggers](../migrations/schema/0020
 notify that key when an interrupt or command commits, including writes from older replicas.
 The [turn](../internal/residentruntime/session/turn.go) re-reads durable state when the key
 wakes or the listener reconnects. A tool entering the foreground also wakes the turn so that
-previously queued steering input can yield the observation. The effect on staging latency
-still needs measurement.
+previously queued steering input can yield the observation.
 
-Repeat the lock sample after the checkpoint change rolls out. To measure
-cross-session interference, run the same Responses replay with export and interrupt handling
+To measure cross-session interference, run the same Responses replay with export and interrupt handling
 active, once alongside a Qwen reasoning stream and once alone.
 
 Compare candidates with an identical burst of already-buffered SSE events at multiple context
