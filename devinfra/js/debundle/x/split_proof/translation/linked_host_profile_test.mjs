@@ -203,3 +203,36 @@ for (const pageSkipsError of [true, false]) {
   assert.deepEqual(observe(files.sourceFile, "result"), { result: "ready" });
   assert.deepEqual(observe(path.join(out, entry), "result"), { error: "Error" });
 }
+
+for (const active of [false, true]) {
+  const useURL = {
+    type: "NewExpression",
+    callee: id("URL"),
+    arguments: [literal("https://example.org/")],
+  };
+  const test = fixture(
+    `page-url-${active}`,
+    program([
+      variable("const", "make", arrow([id("parse")], conditional(id("parse"), useURL, literal("help")))),
+      variable("const", "result", call(id("make"), [literal(active)])),
+      exportNamed([
+        ["make", "make"],
+        ["result", "result"],
+      ]),
+    ])
+  );
+  const { status, reason, assumptions } = test.run("--host-contract", profile);
+  if (active) {
+    assert.equal(status, "rejected");
+    assert.match(reason, /ambient constructor URL is reached/);
+    assert(!existsSync(test.out));
+  } else {
+    assert.equal(status, "certified", reason);
+    assert.deepEqual(assumptions, []);
+    for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+      const mod = await import(pathToFileURL(file).href);
+      assert.equal(mod.result, "help");
+      assert.equal(mod.make(true).hostname, "example.org");
+    }
+  }
+}
