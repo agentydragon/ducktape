@@ -596,6 +596,9 @@ in
           "pace"
           "sparkline"
         ];
+        # CLEANUP(added 2026-11-22): Remove after the Plaid Spend extension artifact
+        # pin includes the removal of its panel-pace-window migration.
+        panel-pace-window-migrated = true;
         pace-window = "7d";
         sparkline-anchor-zero = true;
         sparkline-show-leash = true;
