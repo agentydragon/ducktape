@@ -2859,7 +2859,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app.kubernetes.io/component: sessions
+    app.kubernetes.io/name: sessions
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
