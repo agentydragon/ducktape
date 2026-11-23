@@ -31,16 +31,30 @@ js_test(
 
 _CORPUS_CHUNK = "//devinfra/js/debundle/e2e:cases/emission/catchall_export_consumer/app.js"
 
+_PROBE = "//devinfra/js/debundle/e2e:cases/emission/catchall_export_consumer/read.probe.mjs"
+
 js_test(
     name = "corpus_certificate_test",
     data = [
         _CORPUS_CHUNK,
+        _PROBE,
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
     entry_point = "certificate_test.mjs",
     env = {
+        "PROBE": "$(rootpath " + _PROBE + ")",
         "CHUNK": "$(rootpath " + _CORPUS_CHUNK + ")",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
-    no_copy_to_bin = [_CORPUS_CHUNK],
+    no_copy_to_bin = [
+        _CORPUS_CHUNK,
+        _PROBE,
+    ],
+)
+
+js_test(
+    name = "provider_runtime_test",
+    data = [":debundle_cases"],
+    entry_point = "provider_runtime_test.mjs",
+    env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
 )

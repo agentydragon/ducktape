@@ -31,7 +31,7 @@ Use `--filter <substring>` for a smaller run.
 3. Unclaimed statements follow `unassigned_mode`. With `inline_in_entry` they stay in the entry. With `catchall_file` the catchall module takes the unclaimed declarations, the unclaimed anonymous statements before its last statement, and everything when it is the only module.
    Later anonymous statements stay in the entry (debundle's rule: [`docs/design.md`](../../../docs/design.md)). An `export { … }` without a declaration always stays in the entry.
 4. `lowersplit --diagnostic … --force` derives its own source units from the annotated Program, checks the split, and writes an uncertified preview even when a check rejects it. This corpus compares diagnostic checker results with debundle's expected results; it does not certify the emitted files.
-5. Node runs the original chunk and the emitted entry. The adapter compares verdict and stdout with the entry's expectation.
+5. The adapter copies declared runtime files for the current chunk beside the emitted entry, without replacing emitted files. Node runs the original chunk and the emitted entry. The adapter compares verdict and stdout with the entry's expectation.
 6. What the adapter cannot translate is `unsupported:<cause>` and is not forced.
 
 ## Outcomes
