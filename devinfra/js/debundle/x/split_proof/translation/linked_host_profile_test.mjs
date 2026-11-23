@@ -18,6 +18,7 @@ import {
   program,
   returns,
   root,
+  threeUnitFixture as fixture,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
@@ -25,16 +26,6 @@ import {
 const profile = path.join(root, "page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const entry = "entry.mjs";
-function fixture(name, source) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"], sequential: true },
-  });
-  const out = path.join(dir, "out");
-  return { ...files, out, run: (...opts) => lower(files.sourceFile, files.specFile, out, opts).verdict };
-}
 
 for (const [binding, defaulted] of [
   ["ambient", false],
@@ -78,117 +69,6 @@ for (const [binding, defaulted] of [
   } finally {
     delete globalThis.window;
   }
-}
-
-{
-  const test = fixture(
-    "page-reference",
-    "const read = () => { const pass = (window) => window; return [pass(window), window, pass(17)]; }; const result = read(); export { result };"
-  );
-  assert.match(test.run().reason, /unsupported global window/);
-  assert(!existsSync(test.out));
-  const verdict = test.run("--host-contract", profile);
-  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
-    "window returns the same page object without observable effects throughout initialization",
-  ]);
-  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
-
-  const page = {};
-  globalThis.window = page;
-  try {
-    for (const file of [test.sourceFile, path.join(test.out, entry)]) {
-      const [passed, direct, lexical] = (await import(pathToFileURL(file).href)).result;
-      assert.equal(passed, page);
-      assert.equal(direct, page);
-      assert.equal(lexical, 17);
-    }
-  } finally {
-    delete globalThis.window;
-  }
-}
-
-{
-  const test = fixture(
-    "page-aliases",
-    "const read = () => [typeof self, typeof globalThis, self, globalThis, ((self) => self)(17)]; const result = read(); export { result };"
-  );
-  assert.match(test.run().reason, /unsupported global self/);
-  const verdict = test.run("--host-contract", profile);
-  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
-    "typeof globalThis is object without observable effects throughout initialization",
-    "typeof self is object without observable effects throughout initialization",
-    "globalThis returns the same page object without observable effects throughout initialization",
-    "self returns the same page object without observable effects throughout initialization",
-  ]);
-  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
-  globalThis.self = globalThis;
-  try {
-    for (const file of [test.sourceFile, path.join(test.out, entry)]) {
-      const [selfType, pageType, worker, page, lexical] = (await import(pathToFileURL(file).href)).result;
-      assert.deepEqual([selfType, pageType, lexical], ["object", "object", 17]);
-      assert.equal(worker, globalThis);
-      assert.equal(page, globalThis);
-    }
-  } finally {
-    delete globalThis.self;
-  }
-}
-
-{
-  const test = fixture(
-    "guarded-global",
-    'const read = () => typeof global !== "undefined" ? global : 17; const result = read(); export { result };'
-  );
-  assert.match(test.run().reason, /unsupported global global/);
-  const verdict = test.run("--host-contract", profile);
-  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
-    "typeof global is undefined without observable effects throughout initialization",
-  ]);
-  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
-  // Node supplies a global shim and demonstrates why the browser premise is explicit.
-  for (const file of [test.sourceFile, path.join(test.out, entry)]) {
-    assert.equal((await import(pathToFileURL(file).href)).result, globalThis);
-  }
-}
-
-for (const deferred of [false, true]) {
-  const test = fixture(
-    deferred ? "deferred-page-error" : "read-page-error",
-    `const read = (page) => page.Error; const result = ${deferred ? "() => read(globalThis)" : "read(globalThis)"}; export { result };`
-  );
-  const verdict = test.run("--host-contract", profile);
-  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  const assumptions = ["globalThis returns the same page object without observable effects throughout initialization"];
-  if (!deferred)
-    assumptions.push(
-      "reading Error from the page object returns the same opaque host object without observable effects throughout initialization"
-    );
-  assert.deepEqual(verdict.assumptions, assumptions);
-  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
-  for (const file of [test.sourceFile, path.join(test.out, entry)]) {
-    const { result } = await import(pathToFileURL(file).href);
-    assert.equal(deferred ? result() : result, Error);
-  }
-}
-
-for (const [name, body, reason] of [
-  [
-    "construct-page-error",
-    "try { return new self.Error(); } catch { return 17; }",
-    /host value window.Error is constructed/,
-  ],
-  ["reached-global", "try { return global; } catch { return 17; }", /ambient binding global is reached/],
-  ["alias-property", "return self.document;", /a property of host value window/],
-  ["property", "return typeof window.document;", /a property of host value window/],
-  ["other-global", "return typeof document;", /unsupported global document/],
-  ["tdz", "return typeof window; let window;", /threw during linked initialization/],
-]) {
-  const test = fixture(name, `const read = () => { ${body} }; const result = read(); export { result };`);
-  assert.match(test.run("--host-contract", profile).reason, reason);
-  assert(!existsSync(test.out));
 }
 
 // Preserve the ambient symbol operations and the captured initializer across the split.

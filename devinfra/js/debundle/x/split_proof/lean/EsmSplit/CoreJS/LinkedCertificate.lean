@@ -1122,27 +1122,20 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let records := recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
-  -- Only observations present in the checked programs can need a world hypothesis.
-  -- The generated execution theorem independently checks the chosen strength.
-  let uses := fun (prim : Prim) =>
-    let needle := Lean.toExpr prim
-    [sourceTerm, candidateTerm].any fun e => (e.find? (· == needle)).isSome
-  let premises : HostPremises :=
-    { typeofBindings := profile.typeofBindings.filter fun (name, _) => uses (.globalTypeof name)
-      pageBindings := profile.pageBindings.filter fun name => uses (.globalRef name) }
-  -- Try without any page property premise first: merely carrying a deferred
-  -- property access does not require it. The emitted Lean proof checks the result.
-  let (premises, fuel) ← liftM (m := Except Refusal) do
-    match witnessFuel premises source candidate with
-    | .ok fuel => return (premises, fuel)
-    | .error refusal =>
-      match refusal.code with
-      | .probeUnknown =>
-        if !premises.pageBindings.isEmpty then
-          let withError := { premises with pageError := true }
-          return (withError, ← witnessFuel withError source candidate)
-      | _ => pure ()
-      throw refusal
+  -- Collect host observations from both concrete executions. These runs only select
+  -- hypotheses. The resulting theorem still checks the executions in the kernel.
+  let premises := if profile == .empty then {} else Id.run do
+    let world := HostPremises.observations profile
+    let limit := max (recordFuelLimit source) (recordFuelLimit candidate)
+    let observed := fun (program : Program) =>
+      match runProgram world limit program with
+      | .ok _ s | .throw _ s | .unknown _ s => s.world.state
+      | .fuel => ({} : HostPremises)
+    let left := observed source
+    let right := observed candidate
+    return { typeofBindings := (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
+             refs := (left.refs ++ right.refs).eraseDups.reverse }
+  let fuel ← liftM (witnessFuel premises source candidate)
   -- An initial reflexivity attempt can expand the parameter prelude before the
   -- reflection tactic uses the evaluator's equations.
   let hasDefaults := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Func.withDefaults).isSome
@@ -1186,7 +1179,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
   let profiles := fun (visibility : String) =>
     s!"{visibility}def profile := {profileTerm profile}\n" ++
-    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.pageBindings}, {premises.pageError}⟩\n"
+    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.refs}⟩\n"
   let execution := "namespace LinkedExecutionProof\n" ++ data ++ programs ++ profiles "" ++ layouts ++
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++ "end LinkedExecutionProof\n"

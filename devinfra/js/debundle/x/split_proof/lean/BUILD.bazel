@@ -285,6 +285,7 @@ lean_binary(
 lean_library(
     name = "corejs_runtime",
     srcs = [
+        "EsmSplit/CoreJS/BrowserGlobals.lean",
         "EsmSplit/CoreJS/Decode.lean",
         "EsmSplit/CoreJS/Eval.lean",
         "EsmSplit/CoreJS/Fragment.lean",
