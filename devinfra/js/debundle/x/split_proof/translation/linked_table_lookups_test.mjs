@@ -5,12 +5,14 @@ import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { generate } from "astring";
 import {
+  array,
   exportNamed,
   expression,
   forcePreview,
   id,
   literal,
   lower,
+  member,
   moduleEvaluationOrder,
   prepare,
   program,
@@ -25,14 +27,7 @@ const firstOwner = "first.mjs";
 const secondOwner = "second.mjs";
 const order = [dataOwner, secondOwner, firstOwner];
 const exportNames = ["aliases", "first", "second", "summary"];
-const dense = (elements) => ({ type: "ArrayExpression", elements });
-const lookup = (key, computed = false) => ({
-  type: "MemberExpression",
-  object: id("table"),
-  property: id(key),
-  computed,
-  optional: false,
-});
+const lookup = (key, computed = false) => member(id("table"), id(key), computed);
 const set = (left, value) => expression({ type: "AssignmentExpression", operator: "=", left, right: literal(value) });
 
 function fixture(name, width, rows, mutation) {
@@ -42,14 +37,14 @@ function fixture(name, width, rows, mutation) {
   const alternate = keys.at(-2);
   const rowKeys = (side, index) => [keys.at(-3 - side - (index % 4)), keys[(index + side) % 4]];
   const makeRows = (side) =>
-    dense(
+    array(
       Array.from({ length: rows }, (_, index) => {
         const [tail, head] = rowKeys(side, index);
-        return dense([
+        return array([
           literal(side),
           literal(index),
           mutation === "key" ? lookup("key", true) : lookup(last),
-          dense([lookup(tail), dense([lookup(head), id("undefined")]), dense([])]),
+          array([lookup(tail), array([lookup(head), id("undefined")]), array([])]),
         ]);
       })
     );
@@ -62,7 +57,7 @@ function fixture(name, width, rows, mutation) {
         properties: keys.map((key) => property(key, literal(value(key)))),
       }),
     ],
-    [dataOwner, variable("const", "aliases", dense([lookup(keys[0]), lookup(last)]))],
+    [dataOwner, variable("const", "aliases", array([lookup(keys[0]), lookup(last)]))],
   ];
   if (mutation === "key") units.push([dataOwner, variable("let", "key", literal(last))]);
   // The split evaluates summary and second before first. Both arrays depend on

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  array,
   arrow,
   block,
   call,
@@ -20,10 +21,9 @@ import {
   root,
   throws,
   tryStatement,
+  unary,
   variable,
 } from "./testing/linked_programs.mjs";
-
-const array = (elements) => ({ type: "ArrayExpression", elements });
 
 function workerSplit(name, source) {
   const dir = path.join(root, name);
@@ -161,7 +161,7 @@ assertWorkerResult(
 for (const dependent of [false, true]) {
   const first = dependent ? id("captured") : literal(19);
   const second = call(arrow([], block([throws(literal("later"))])));
-  const kind = { type: "UnaryExpression", operator: "typeof", argument: id("error"), prefix: true };
+  const kind = unary("typeof", id("error"));
   const worker = arrow(
     [],
     block([tryStatement(block([returns(array([first, second]))]), catchClause(id("error"), block([returns(kind)])))])

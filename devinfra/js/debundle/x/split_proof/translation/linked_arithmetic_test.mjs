@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  array,
   arrow,
+  binary,
   block,
   exportNamed,
   forcePreview,
@@ -12,10 +14,12 @@ import {
   moduleEvaluationOrder,
   observe,
   prepare,
+  primitive,
   program,
   returns,
   root,
   throws,
+  unary,
   variable,
 } from "./testing/linked_programs.mjs";
 
@@ -85,16 +89,6 @@ assertCertified(
   ),
   [21, "left"]
 );
-
-const binary = (operator, left, right) => ({ type: "BinaryExpression", operator, left, right });
-const unary = (operator, argument) => ({ type: "UnaryExpression", operator, argument, prefix: true });
-const array = (elements) => ({ type: "ArrayExpression", elements });
-
-function primitive(value) {
-  if (value === Infinity) return id("Infinity");
-  if (typeof value === "number" && (value < 0 || Object.is(value, -0))) return unary("-", literal(-value));
-  return literal(value);
-}
 
 function requireEqual(actual, expected) {
   return {

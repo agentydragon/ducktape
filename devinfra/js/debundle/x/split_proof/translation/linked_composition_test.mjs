@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  array,
   block,
   exportNamed,
   id,
   literal,
   lower,
+  member,
   moduleEvaluationOrder,
   prepare,
   program,
@@ -17,15 +19,8 @@ import {
 } from "./testing/linked_programs.mjs";
 
 const record = (properties) => ({ type: "ObjectExpression", properties });
-const array = (elements) => ({ type: "ArrayExpression", elements });
 const spread = (name) => ({ type: "SpreadElement", argument: id(name) });
-const read = (object, field) => ({
-  type: "MemberExpression",
-  object: id(object),
-  property: id(field),
-  computed: false,
-  optional: false,
-});
+const read = (object, field) => member(id(object), id(field));
 
 const entry = "entry.mjs";
 const order = ["table.mjs", "right.mjs", "left.mjs", "meta.mjs"];

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  binary,
   block,
   call,
   exportNamed,
@@ -13,6 +14,7 @@ import {
   moduleEvaluationOrder,
   observe,
   prepare,
+  primitive,
   program,
   returns,
   root,
@@ -86,18 +88,12 @@ assertCertified(
   false
 );
 
-const binary = (operator, left, right) => ({ type: "BinaryExpression", operator, left, right });
 const operators = [
   ["<", (a, b) => a < b],
   ["<=", (a, b) => a <= b],
   [">", (a, b) => a > b],
   [">=", (a, b) => a >= b],
 ];
-function operand(value) {
-  if (value === undefined || Number.isNaN(value) || value === Infinity) return id(String(value));
-  if (Object.is(value, -0)) return { type: "UnaryExpression", operator: "-", prefix: true, argument: literal(0) };
-  return literal(value);
-}
 
 // The checked eager call has to reach every assertion to complete normally.
 // U+10000 sorts before U+E000 in UTF-16 and after it in code-point order.
@@ -119,7 +115,7 @@ for (const [left, right] of [
   for (const [operator, compare] of operators) {
     assertions.push({
       type: "IfStatement",
-      test: binary("!==", binary(operator, operand(left), operand(right)), literal(compare(left, right))),
+      test: binary("!==", binary(operator, primitive(left), primitive(right)), literal(compare(left, right))),
       consequent: throws(literal("wrong comparison result")),
       alternate: null,
     });

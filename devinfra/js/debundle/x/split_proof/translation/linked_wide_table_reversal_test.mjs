@@ -2,17 +2,20 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  array,
   arrow,
   exportNamed,
   forcePreview,
   id,
   literal,
   lower,
+  member,
   moduleEvaluationOrder,
   prepare,
   program,
   property,
   root,
+  unary,
   variable,
 } from "./testing/linked_programs.mjs";
 
@@ -22,18 +25,11 @@ assert(Number.isSafeInteger(fieldCount) && fieldCount >= 17);
 assert(Number.isSafeInteger(rowCount) && rowCount >= 1);
 const fields = Array.from({ length: fieldCount }, (_, index) => [`field${index}`, `value${index}`]);
 const indexOf = (index) => (fieldCount - 17 + index) % fieldCount;
-const member = (name, key) => ({
-  type: "MemberExpression",
-  object: id(name),
-  property: id(key),
-  computed: false,
-  optional: false,
-});
-const read = (index) => member("table", fields[indexOf(index)][0]);
+const readField = (name, key) => member(id(name), id(key));
+const read = (index) => readField("table", fields[indexOf(index)][0]);
 const value = (index) => fields[indexOf(index)][1];
 const offsets = [1, 2, 3, 4];
-const array = (elements) => ({ type: "ArrayExpression", elements });
-const voidZero = { type: "UnaryExpression", operator: "void", prefix: true, argument: literal(0) };
+const voidZero = unary("void", literal(0));
 const rows = Array.from({ length: rowCount }, (_, index) =>
   array([
     literal(`item-${index}`),
@@ -55,8 +51,8 @@ const optionUnits = options.map(({ name, fields }) =>
   })
 );
 optionUnits.push(
-  variable("const", "left", array([member("option0", "part0")])),
-  variable("const", "right", array([member("option1", "part0"), member("option1", "part1")]))
+  variable("const", "left", array([readField("option0", "part0")])),
+  variable("const", "right", array([readField("option1", "part0"), readField("option1", "part1")]))
 );
 const exportNames = [
   "table",

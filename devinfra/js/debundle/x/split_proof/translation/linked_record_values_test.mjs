@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import {
   arrow,
+  binary,
   block,
   call,
   conditional,
@@ -9,6 +10,7 @@ import {
   id,
   literal,
   lower,
+  member,
   observe,
   prepare,
   program,
@@ -16,11 +18,11 @@ import {
   returns,
   root,
   throws,
+  unary,
   variable,
 } from "./testing/linked_programs.mjs";
 
-const member = (object, key) => ({ type: "MemberExpression", object, property: literal(key), computed: true });
-const equal = (left, right) => ({ type: "BinaryExpression", operator: "===", left, right });
+const readProperty = (object, key) => member(object, literal(key), true);
 const field = (key, value) => ({ ...property(key, value), key: literal(key) });
 
 for (const [seed, operand] of [0, 1, "ready", null].entries()) {
@@ -36,8 +38,8 @@ for (const [seed, operand] of [0, 1, "ready", null].entries()) {
     })),
   };
   const specs = [
-    ["flag", { type: "UnaryExpression", operator: "!", argument: literal(operand), prefix: true }, !operand],
-    ["matches", equal(literal(operand), literal(seed)), operand === seed],
+    ["flag", unary("!", literal(operand)), !operand],
+    ["matches", binary("===", literal(operand), literal(seed)), operand === seed],
     ["choice", conditional(literal(operand), literal(1), literal(2)), operand ? 1 : 2],
     ["label", template, `v${seed}`],
     ["receiver", { type: "ThisExpression" }, undefined],
@@ -52,10 +54,10 @@ for (const [seed, operand] of [0, 1, "ready", null].entries()) {
       field("indirect", { type: "SequenceExpression", expressions: [literal(0), thunk] }),
     ],
   };
-  const read = (name) => member(id("settings"), name);
+  const read = (name) => readProperty(id("settings"), name);
   const check = (actual, expected) => ({
     type: "IfStatement",
-    test: { type: "BinaryExpression", operator: "!==", left: actual, right: expected },
+    test: binary("!==", actual, expected),
     consequent: throws(literal("wrong property value")),
     alternate: null,
   });
@@ -69,7 +71,7 @@ for (const [seed, operand] of [0, 1, "ready", null].entries()) {
     ["explicit", "named"],
     ["indirect", ""],
   ])
-    checks.push(check(member(read(name), "name"), literal(expected)));
+    checks.push(check(readProperty(read(name), "name"), literal(expected)));
 
   const source = program([
     variable("const", "settings", record),
