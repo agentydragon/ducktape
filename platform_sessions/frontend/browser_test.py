@@ -8,6 +8,7 @@ import re
 import struct
 from asyncio import Event, wait_for
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -22,7 +23,7 @@ from python.runfiles import Runfiles
 
 from devinfra.testing.output_writer import BoundTestOutputs
 from testing.asgi import serve_app
-from testing.frontend_visual.capture import open_visual_page
+from testing.frontend_visual.capture import VisualPage, open_visual_page
 from testing.frontend_visual.context import deterministic_browser_context
 
 pytest_plugins = ("util.playwright",)
@@ -806,6 +807,20 @@ async def test_disconnect_does_not_replay_import_on_reload(
     await context.close()
 
 
+@asynccontextmanager
+async def open_dashboard_view(
+    playwright: Playwright, outputs: BoundTestOutputs, origin: str, *, width: int, scheme: Literal["light", "dark"]
+) -> AsyncIterator[VisualPage]:
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": width, "height": 900}, frozen_now_ms=None, color_scheme=scheme
+        ) as context,
+        open_visual_page(context, outputs, title="Platform Sessions") as view,
+    ):
+        await view.page.goto(origin, wait_until="domcontentloaded")
+        yield view
+
+
 @pytest.mark.parametrize(("scheme", "width"), [("light", 1200), ("dark", 390)])
 async def test_dashboard_visual(
     playwright: Playwright,
@@ -817,13 +832,7 @@ async def test_dashboard_visual(
     origin, state = dashboard
     command = "bb run --config=rbe //platform_sessions:export -- alpha-example chrome"
     state["instructions"] = [{"text": "Copy the exported session.", "command": command}]
-    async with (
-        deterministic_browser_context(
-            playwright, viewport={"width": width, "height": 900}, frozen_now_ms=None, color_scheme=scheme
-        ) as context,
-        open_visual_page(context, test_outputs, title="Platform sessions") as view,
-    ):
-        await view.page.goto(origin, wait_until="domcontentloaded")
+    async with open_dashboard_view(playwright, test_outputs, origin, width=width, scheme=scheme) as view:
         await expect(view.page.get_by_text("Connected").first).to_be_visible()
         await (
             view.page.get_by_role("region", name="one integration")
@@ -846,13 +855,7 @@ async def test_unknown_manual_probe_visual(
 ) -> None:
     origin, state = dashboard
     state["probe_outcome"] = {"outcomeUnknown": {"credentialRotationMayHaveOccurred": True}}
-    async with (
-        deterministic_browser_context(
-            playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"
-        ) as context,
-        open_visual_page(context, test_outputs, title="Unknown manual check") as view,
-    ):
-        await view.page.goto(origin, wait_until="domcontentloaded")
+    async with open_dashboard_view(playwright, test_outputs, origin, width=390, scheme="dark") as view:
         card = view.page.get_by_role("region", name="one integration")
         await expect(card.get_by_text("Connected")).to_be_visible()
         await card.get_by_role("button", name="Check again").click()
@@ -863,15 +866,8 @@ async def test_unknown_manual_probe_visual(
 async def test_unknown_import_visual(
     playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
-    origin, state = dashboard
-    del state
-    async with (
-        deterministic_browser_context(
-            playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"
-        ) as context,
-        open_visual_page(context, test_outputs, title="Unknown import outcome") as view,
-    ):
-        await view.page.goto(origin, wait_until="domcontentloaded")
+    origin, _ = dashboard
+    async with open_dashboard_view(playwright, test_outputs, origin, width=390, scheme="dark") as view:
         await expect(view.page.get_by_text("Connected").first).to_be_visible()
         await view.page.get_by_label("Session export").fill(
             json.dumps({"provider": "beta", "session": {"response_case": "unknown"}})
@@ -887,13 +883,7 @@ async def test_interactive_sign_in_visual(
     origin, state = dashboard
     state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
     state["compressed_frame"] = True
-    async with (
-        deterministic_browser_context(
-            playwright, viewport={"width": 1200, "height": 900}, frozen_now_ms=None, color_scheme="light"
-        ) as context,
-        open_visual_page(context, test_outputs, title="Interactive sign-in browser") as view,
-    ):
-        await view.page.goto(origin, wait_until="domcontentloaded")
+    async with open_dashboard_view(playwright, test_outputs, origin, width=1200, scheme="light") as view:
         card = view.page.get_by_role("region", name="one integration")
         await card.get_by_role("button", name="Open sign-in browser").click()
         modal = view.page.get_by_role("dialog", name="Sign in to one")
