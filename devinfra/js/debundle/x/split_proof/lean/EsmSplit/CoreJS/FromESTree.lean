@@ -181,7 +181,7 @@ private def stringOperand : Expr → Bool
   | _ => false
 
 /-- Static own data properties, evaluated in source order on a fresh ordinary object. -/
-private def linkedObject (imports : List Name) (inFunction : Bool) (j : Json) : Except String Expr := do
+private def linkedObject (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
   let mut seen : Std.HashSet String := {}
   let mut props := #[]
   for p in ← j.getObjValAs? (Array Json) "properties" do
@@ -195,10 +195,10 @@ private def linkedObject (imports : List Name) (inFunction : Bool) (j : Json) : 
     if seen.contains key then throw "duplicate object property"
     seen := seen.insert key
     let v ← p.getObjVal? "value"
+    -- A direct anonymous function initializer would take its name from the property key.
     let value ← match ← field v "type" with
-      | "Literal" => literal (← field v "lit")
-      | "Identifier" => reference imports inFunction v
-      | _ => throw "expected a literal or binding as an object property value"
+      | "Literal" | "Identifier" | "ObjectExpression" | "ArrayExpression" | "MemberExpression" => lower v
+      | kind => throw s!"unsupported object property value {kind}"
     props := props.push (.init (.str key) value)
   return .obj props.toList
 
@@ -243,7 +243,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "MemberExpression" =>
     let (base, key) ← linkedMember (linkedExpr imports inFunction "") j
     return .get base key
-  | "ObjectExpression" => linkedObject imports inFunction j
+  | "ObjectExpression" => linkedObject (linkedExpr imports inFunction "") j
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
     let values ← elements.mapM fun element => do

@@ -126,6 +126,51 @@ for (const seed of [0, 1, 2, 3, 14]) {
   );
 }
 
+assertWorkerResult(
+  "record-nested-values",
+  `const worker = { source: ["first", { value: 42 }] };
+  export const result = {
+    nested: { field: worker.source[1].value },
+    list: [worker.source[0], { key: worker.source.length }],
+  };`,
+  { nested: { field: 42 }, list: ["first", { key: 2 }] }
+);
+
+for (const [seed, key] of [id("value"), literal("quoted-key")].entries()) {
+  const value = seed + 10;
+  const provider = { type: "ObjectExpression", properties: [{ ...property("value", literal(value)), key }] };
+  const read = {
+    type: "MemberExpression",
+    object: id("worker"),
+    property: key,
+    computed: key.type === "Literal",
+    optional: false,
+  };
+  const list = { type: "ArrayExpression", elements: [read, { type: "ObjectExpression", properties: [] }] };
+  const result = { type: "ObjectExpression", properties: [property("read", read), property("list", list)] };
+  assertWorkerResult(`generated-record-values-${seed}`, observedProgram(provider, result), {
+    read: value,
+    list: [value, {}],
+  });
+}
+
+// The first read throws a number. Reading the second value out of order
+// throws a ReferenceError, which must not reach the catch instead.
+assertWorkerResult(
+  "record-value-order",
+  `const worker = () => {
+    const key = () => { throw 7; };
+    try {
+      return { first: ({})[key()], second: later.field };
+      let later;
+    } catch (error) {
+      return typeof error;
+    }
+  };
+  export const result = worker() === "number" ? "number" : (() => { throw 0; })();`,
+  "number"
+);
+
 // Even the largest witness is insufficient for 62 properties. A throw after
 // the first witness exhausts must instead report an abrupt initialization.
 for (const [width, useLater, reason] of [
@@ -236,7 +281,10 @@ for (const [name, expr, reason] of [
   ["record-getter", "({ get key() { return 1; } })", /static data property/],
   ["record-spread", "({ ...worker })", /static data property/],
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
-  ["record-effectful-value", "({ key: worker() })", /literal or binding/],
+  ["record-direct-call", "({ key: worker() })", /unsupported object property value CallExpression/],
+  ["record-anonymous-function", "({ key: () => 1 })", /unsupported object property value ArrowFunctionExpression/],
+  ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
+  ["record-optional-member", "({ key: worker?.field })", /unsupported object property value ChainExpression/],
   ["mixed-inequality", '"01" != 1', /requires two string operands/],
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {
