@@ -244,11 +244,10 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Load a Bazel OCI layout using the shared image cache guard.")
-    parser.add_argument("rloc_file", help="Bazel runfiles path to the image's .rloc file")
+    parser.add_argument("layout_rlocation", help="Bazel runfiles path to the OCI layout directory")
     parser.add_argument("tag", help="Docker image tag to load")
     args = parser.parse_args()
-    layout_rlocation = (Runfiles.CreateOrRaise().root() / args.rloc_file).read_text().strip()
-    load_oci_image(layout_rlocation, image_ref=args.tag)
+    load_oci_image(args.layout_rlocation, image_ref=args.tag)
 
 
 if __name__ == "__main__":
