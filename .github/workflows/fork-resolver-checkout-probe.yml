@@ -1,0 +1,57 @@
+name: Fork resolver checkout probe
+
+on:
+  push:
+    branches: [codex/fork-resolver-checkout-probe]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        checkout: [full, sparse]
+        repeat: [1, 2]
+    steps:
+      - name: Full checkout
+        if: matrix.checkout == 'full'
+        uses: actions/checkout@v7
+        with:
+          ref: a3cef2fd7d8798bf9475c9a4ab643ef0d5a3db1b
+          fetch-depth: 1
+      - name: Sparse checkout
+        if: matrix.checkout == 'sparse'
+        uses: actions/checkout@v7
+        with:
+          ref: a3cef2fd7d8798bf9475c9a4ab643ef0d5a3db1b
+          fetch-depth: 1
+          sparse-checkout: /devinfra/ci/pr_mergeability.py
+          sparse-checkout-cone-mode: false
+      - name: Inspect checkout
+        env:
+          CHECKOUT_MODE: ${{ matrix.checkout }}
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          du -sh .git/objects
+          present=$(git ls-files -t | awk '$1 == "H" { print $2 }')
+          printf '%s\n' "$present" | wc -l
+          if [ "$CHECKOUT_MODE" = sparse ]; then
+            test "$present" = devinfra/ci/pr_mergeability.py
+          fi
+      - name: Resolve the merge commit GitHub built for an open fork PR
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: "19357"
+          PR_HEAD_SHA: df589173b92fefa26d7d86875cd16fdbccce45a1
+        run: python3 devinfra/ci/pr_mergeability.py resolve
+      - name: Require the resolved merge commit
+        env:
+          SOURCE_SHA: ${{ steps.resolve.outputs.sha }}
+        run: test -n "$SOURCE_SHA"
