@@ -10,7 +10,6 @@ import pytest_bazel
 from testing.frontend_visual.capture import VisualHarness, VisualPage
 from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

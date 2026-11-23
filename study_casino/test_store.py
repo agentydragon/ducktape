@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -16,6 +14,7 @@ from study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportR
 from study_casino.models import Game, GameEventRow, GameEventSource, LedgerEventRow, StateSnapshotRow
 from study_casino.state import BalanceRead
 from study_casino.store import ActionMutation, ActionRejectedError, SqlStore, locked_balance
+from util.alembic_upgrade import upgrade
 
 
 @pytest.fixture
@@ -118,14 +117,12 @@ def _ledger_rows(store: SqlStore, username: str = _U) -> list[LedgerEventRow]:
         )
 
 
-def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> None:
-    engine = create_engine(empty_db_url)
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+def test_economy_rebalance_migration_preserves_progress(empty_postgres_url: str) -> None:
+    engine = create_engine(empty_postgres_url)
+    scripts = Path(__file__).parent / "migrations"
 
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "0004")
+        upgrade(conn, scripts, "0004")
         conn.execute(text("INSERT INTO balance (user_id, credits, tokens) VALUES ('auragon', 60000, 23114)"))
         conn.execute(
             text(
@@ -136,8 +133,7 @@ def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> No
         )
 
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "head")
+        upgrade(conn, scripts, "head")
         assert conn.execute(text("SELECT tokens FROM balance WHERE user_id = 'auragon'")).scalar_one() == 13868
         assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'chair'")).scalar_one() == 21600
         assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'small'")).scalar_one() == 1
@@ -425,7 +421,13 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     assert win.theoretical_rtp is None
 
 
-def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStore) -> None:
+@pytest.mark.parametrize(
+    ("red_won", "number_won", "tail"),
+    [(False, False, (19 / 37) * (36 / 37)), (True, False, 1 - (18 / 37) * (1 / 37)), (True, True, 1.0)],
+)
+def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(
+    store: SqlStore, red_won: bool, number_won: bool, tail: float
+) -> None:
     """The roulette total row has no fake uniform strategy assumption.
 
     It reports the expected hit rate and returned tokens for the actual
@@ -435,13 +437,15 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     _seed_game_events(
         store,
         [
-            _game_event("roulette-mix-1", "roulette", _roulette_outcome("red", False), wager=10, payout=0),
+            _game_event(
+                "roulette-mix-1", "roulette", _roulette_outcome("red", red_won), wager=10, payout=20 if red_won else 0
+            ),
             _game_event(
                 "roulette-mix-2",
                 "roulette",
-                _roulette_outcome("number", False, bet_number=7, multiplier=36),
+                _roulette_outcome("number", number_won, bet_number=7, multiplier=36),
                 wager=5,
-                payout=0,
+                payout=180 if number_won else 0,
             ),
         ],
     )
@@ -454,11 +458,11 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     assert roulette.total.theoretical_rtp == pytest.approx(36 / 37)
     assert roulette.total.theoretical_ev_per_credit == pytest.approx(-1 / 37)
     assert roulette.total.expected_net == pytest.approx(-15 / 37)
-    assert roulette.total.fair_win_lower_tail_probability == pytest.approx((19 / 37) * (36 / 37))
+    assert roulette.total.fair_win_lower_tail_probability == pytest.approx(tail)
     red = next(b for b in roulette.buckets if b.key == "red")
     number = next(b for b in roulette.buckets if b.key == "number")
-    assert red.fair_win_lower_tail_probability == pytest.approx(19 / 37)
-    assert number.fair_win_lower_tail_probability == pytest.approx(36 / 37)
+    assert red.fair_win_lower_tail_probability == pytest.approx(1.0 if red_won else 19 / 37)
+    assert number.fair_win_lower_tail_probability == pytest.approx(1.0 if number_won else 36 / 37)
 
 
 def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:

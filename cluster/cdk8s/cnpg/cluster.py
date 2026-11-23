@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, Size
+from cdk8s_plus_34 import Cpu
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
     ClusterSpec,
@@ -18,10 +19,12 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
     ClusterSpecPostgresql,
+    ClusterSpecPrimaryUpdateMethod,
     ClusterSpecProbes,
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
+    ClusterSpecResourcesRequests,
     ClusterSpecStorage,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
@@ -111,6 +114,16 @@ def same_owner_initdb(
     )
 
 
+def resource_requests(*, cpu_millis: int, memory_mib: int) -> ClusterSpecResources:
+    """Scheduling requests for the postgres and bootstrap-controller containers."""
+    return ClusterSpecResources(
+        requests={
+            "cpu": ClusterSpecResourcesRequests.from_string(Cpu.millis(cpu_millis).amount),
+            "memory": ClusterSpecResourcesRequests.from_string(Size.mebibytes(memory_mib).as_string()),
+        }
+    )
+
+
 def cluster(
     scope: Construct,
     id: str,
@@ -127,6 +140,7 @@ def cluster(
     managed: ClusterSpecManaged | None = None,
     postgresql: ClusterSpecPostgresql | None = None,
     resources: ClusterSpecResources | None = None,
+    primary_update_method: ClusterSpecPrimaryUpdateMethod | None = None,
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
@@ -164,6 +178,7 @@ def cluster(
                 else None
             ),
             resources=resources,
+            primary_update_method=primary_update_method,
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
                     isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)

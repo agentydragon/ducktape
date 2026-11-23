@@ -1,18 +1,10 @@
-import createClient from "openapi-fetch";
+import createClient, { defaultPathSerializer } from "openapi-fetch";
 import type {
   AgentRunDetail,
-  AgentRunStatus,
   AgentType,
-  ClustersListResponse,
   CriticRunSpecifics,
   ExampleKind,
-  FileContentResponse,
-  FileContentsResponse,
-  FileTreeResponse,
   GraderRunSpecifics,
-  RunSortDirection,
-  RunSortKey,
-  SnapshotDetailResponse,
   Split,
   ValidationRunRequest,
   paths,
@@ -42,28 +34,6 @@ api.use({
   },
 });
 
-// Authenticated fetch for endpoints with slash-containing path params (snapshot slugs).
-// openapi-fetch encodes '/' in path params, breaking FastAPI's {slug:path} routes.
-async function authedFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const headers = new Headers(init?.headers);
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  const resp = await fetch(url, {
-    ...init,
-    credentials: "include",
-    headers,
-  });
-  if (resp.status === 401) onAuthFailed();
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => ({}));
-    const msg = body?.detail ?? `HTTP ${resp.status}`;
-    throw new Error(msg);
-  }
-  return resp.json();
-}
-
 // Type guards for AgentRunDetail discriminated union
 export function isCriticRun(run: AgentRunDetail): run is AgentRunDetail & { details: CriticRunSpecifics } {
   return "agent_type" in run.details && run.details.agent_type === "critic";
@@ -73,33 +43,16 @@ export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { deta
   return "agent_type" in run.details && run.details.agent_type === "grader";
 }
 
-// Enum value arrays for UI dropdowns (must match schema definitions)
-export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
-  "in_progress",
-  "exited",
-  "timed_out",
-  "cancelled",
-  "startup_failed",
-];
-
-export const AGENT_TYPE_VALUES: AgentType[] = [
-  "critic",
-  "grader",
-  "critic_dev_optimize",
-  "critic_dev_improve",
-  "freeform",
-];
-
 // Extract error message from API error response
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === "object") {
     // FastAPI HTTPException format: { detail: string }
-    if ("detail" in error && typeof (error as { detail: unknown }).detail === "string") {
-      return (error as { detail: string }).detail;
+    if ("detail" in error && typeof error.detail === "string") {
+      return error.detail;
     }
     // Generic message field
-    if ("message" in error && typeof (error as { message: unknown }).message === "string") {
-      return (error as { message: string }).message;
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
     }
   }
   return fallback;
@@ -107,11 +60,12 @@ function extractErrorMessage(error: unknown, fallback: string): string {
 
 type ApiSuccessData<Result> = Extract<Result, { data: unknown }> extends { data: infer Data } ? Data : never;
 
-function unwrapApiResult<Result extends { data?: unknown; error?: unknown }>(
+function unwrapApiResult<Result extends { data?: unknown; error?: unknown; response: Response }>(
   result: Result,
-  fallback: string
+  fallback?: string
 ): ApiSuccessData<Result> {
-  if ("error" in result) throw new Error(extractErrorMessage(result.error, fallback));
+  if ("error" in result)
+    throw new Error(extractErrorMessage(result.error, fallback ?? `HTTP ${result.response.status}`));
   return result.data as ApiSuccessData<Result>;
 }
 
@@ -146,18 +100,7 @@ export async function fetchRun(runId: string, signal?: AbortSignal) {
   return unwrapApiResult(result, "Failed to fetch run");
 }
 
-// Fetch all runs with filters and pagination
-export interface RunsFilters {
-  status?: AgentRunStatus;
-  image_digest?: string;
-  agent_type?: AgentType;
-  split?: Split;
-  example_kind?: ExampleKind;
-  offset?: number;
-  limit?: number;
-  sort_by?: RunSortKey;
-  sort_dir?: RunSortDirection;
-}
+export type RunsFilters = NonNullable<paths["/api/runs"]["get"]["parameters"]["query"]>;
 
 export async function fetchRuns(filters?: RunsFilters) {
   const result = await api.GET("/api/runs", {
@@ -193,45 +136,53 @@ export async function fetchSnapshots() {
   return unwrapApiResult(result, "Failed to fetch snapshots");
 }
 
+function snapshotPath(slug: string) {
+  const [org, snapshot_date, extra] = slug.split("/");
+  if (!org || !snapshot_date || extra !== undefined) throw new Error(`Invalid snapshot slug: ${slug}`);
+  return { org, snapshot_date };
+}
+
 export async function fetchSnapshotDetail(
   snapshotSlug: string,
   exampleKind?: string,
   filesHash?: string,
   signal?: AbortSignal
-): Promise<SnapshotDetailResponse> {
-  const params = new URLSearchParams();
-  if (exampleKind) params.set("example_kind", exampleKind);
-  if (filesHash) params.set("files_hash", filesHash);
-  const qs = params.toString();
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}${qs ? "?" + qs : ""}`, { signal });
-}
-
-// Fetch snapshot file tree
-export async function fetchSnapshotTree(snapshotSlug: string, signal?: AbortSignal): Promise<FileTreeResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/tree`, { signal });
-}
-
-// Fetch file content from snapshot
-export async function fetchSnapshotFile(
-  snapshotSlug: string,
-  filePath: string,
-  signal?: AbortSignal
-): Promise<FileContentResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files/${filePath}`, { signal });
-}
-
-// Fetch multiple file contents from a snapshot with one backend tar read.
-export async function fetchSnapshotFiles(
-  snapshotSlug: string,
-  paths: string[],
-  signal?: AbortSignal
-): Promise<FileContentsResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paths }),
+) {
+  const result = await api.GET("/api/gt/snapshots/{org}/{snapshot_date}", {
+    params: {
+      path: snapshotPath(snapshotSlug),
+      query: { example_kind: exampleKind || undefined, files_hash: filesHash || undefined },
+    },
     signal,
   });
+  return unwrapApiResult(result);
+}
+
+export async function fetchSnapshotTree(snapshotSlug: string, signal?: AbortSignal) {
+  const result = await api.GET("/api/gt/snapshots/{org}/{snapshot_date}/tree", {
+    params: { path: snapshotPath(snapshotSlug) },
+    signal,
+  });
+  return unwrapApiResult(result);
+}
+
+export async function fetchSnapshotFile(snapshotSlug: string, filePath: string, signal?: AbortSignal) {
+  const result = await api.GET("/api/gt/snapshots/{org}/{snapshot_date}/files/{file_path}", {
+    params: { path: { ...snapshotPath(snapshotSlug), file_path: filePath } },
+    // FastAPI's file_path:path spans segments. Preserve its separators after escaping the values.
+    pathSerializer: (template, params) => defaultPathSerializer(template, params).replaceAll("%2F", "/"),
+    signal,
+  });
+  return unwrapApiResult(result);
+}
+
+export async function fetchSnapshotFiles(snapshotSlug: string, paths: string[], signal?: AbortSignal) {
+  const result = await api.POST("/api/gt/snapshots/{org}/{snapshot_date}/files", {
+    params: { path: snapshotPath(snapshotSlug) },
+    body: { paths },
+    signal,
+  });
+  return unwrapApiResult(result);
 }
 
 // Fetch LLM requests for an agent run
@@ -252,8 +203,12 @@ export async function fetchRunLogs(runId: string, signal?: AbortSignal) {
   return unwrapApiResult(result, "Failed to fetch logs");
 }
 
-export async function fetchSnapshotClusters(snapshotSlug: string, signal?: AbortSignal): Promise<ClustersListResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`, { signal });
+export async function fetchSnapshotClusters(snapshotSlug: string, signal?: AbortSignal) {
+  const result = await api.GET("/api/gt/snapshots/{org}/{snapshot_date}/clusters", {
+    params: { path: snapshotPath(snapshotSlug) },
+    signal,
+  });
+  return unwrapApiResult(result);
 }
 
 export async function fetchModelMetadata() {

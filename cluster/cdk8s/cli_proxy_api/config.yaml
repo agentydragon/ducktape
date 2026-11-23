@@ -4,6 +4,8 @@ auth-dir: "/data/auth"
 api-keys:
   - "{{ .client_key }}"
 debug: false
+routing:
+  session-affinity: true
 # Recheck restored provider quota instead of honoring stale local cooldown windows.
 disable-cooling: true
 streaming:

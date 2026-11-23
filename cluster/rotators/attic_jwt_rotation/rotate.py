@@ -227,36 +227,45 @@ def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:
     return None
 
 
-def mint_attic_token(token: Token, config: Config) -> tuple[str, datetime]:
-    """Mint a JWT via `kubectl exec deploy/attic-next -- atticadm make-token …`.
+def _mint_jwt(
+    namespace: str, deployment: str, server_config: str, *, subject: str, validity: str, grants: list[str]
+) -> str:
+    """Run atticadm inside the Attic Pod so the signing key stays there."""
+    output = _run_kubectl(
+        f"atticadm make-token for {subject}",
+        [
+            "-n",
+            namespace,
+            "exec",
+            deployment,
+            "--",
+            "atticadm",
+            "-f",
+            server_config,
+            "make-token",
+            "--sub",
+            subject,
+            "--validity",
+            validity,
+            *grants,
+        ],
+    )
+    if not (jwt := output.strip()):
+        raise RuntimeError(f"{subject}: atticadm make-token returned empty output")
+    return jwt
 
-    The HS256 signing secret stays in the attic pod; the rotator only needs
-    `pods/exec` on the attic deployment.
-    """
-    args = [
-        "kubectl",
-        "-n",
+
+def mint_attic_token(token: Token, config: Config) -> tuple[str, datetime]:
+    grants = [arg for cache in token.pull for arg in ("--pull", cache)]
+    grants.extend(arg for cache in token.push for arg in ("--push", cache))
+    jwt = _mint_jwt(
         config.attic_namespace,
-        "exec",
         config.attic_deployment,
-        "--",
-        "atticadm",
-        "-f",
         config.server_config,
-        "make-token",
-        "--sub",
-        token.sub,
-        "--validity",
-        token.validity,
-    ]
-    args += [arg for cache in token.pull for arg in ("--pull", cache)]
-    args += [arg for cache in token.push for arg in ("--push", cache)]
-    result = subprocess.run(args, capture_output=True, text=True, check=False)
-    if result.returncode:
-        raise RuntimeError(f"{token.name}: atticadm make-token failed (exit status {result.returncode})")
-    jwt = result.stdout.strip()
-    if not jwt:
-        raise RuntimeError(f"{token.name}: atticadm make-token returned empty output")
+        subject=token.sub,
+        validity=token.validity,
+        grants=grants,
+    )
     return jwt, _token_expiry(jwt, token)
 
 
@@ -415,42 +424,14 @@ def _create_body(is_public: bool, keypair: str | None = None) -> dict[str, Any]:
 
 
 def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
-    """Mint a short-lived admin JWT via `kubectl exec deploy/attic-next -- atticadm make-token`.
-
-    The HS256 signing secret never leaves the attic pod; this process only needs
-    `pods/exec` on the attic deployment.
-    """
-    result = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            namespace,
-            "exec",
-            deployment,
-            "--",
-            "atticadm",
-            "-f",
-            server_config,
-            "make-token",
-            "--sub",
-            "bootstrap-admin",
-            "--validity",
-            "5 minutes",
-            "--pull",
-            "*",
-            "--push",
-            "*",
-            "--create-cache",
-            "*",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+    return _mint_jwt(
+        namespace,
+        deployment,
+        server_config,
+        subject="bootstrap-admin",
+        validity="5 minutes",
+        grants=["--pull", "*", "--push", "*", "--create-cache", "*"],
     )
-    jwt = result.stdout.strip()
-    if not jwt:
-        raise RuntimeError(f"atticadm make-token returned empty output\n{result.stderr}")
-    return jwt
 
 
 def ensure_cache(client: httpx.Client, cache: str, is_public: bool = False, keypair: str | None = None) -> str:

@@ -10,10 +10,12 @@ bbr test //devinfra/js/debundle/x/split_proof/translation:corejs_differential_te
   //devinfra/js/debundle/x/split_proof/translation:corejs_inheritance_differential_test
 ```
 
-The broad and binding suites use seeds 1–12. The broad suite partitions those
-seeds across two Bazel shards, each with the handwritten cases and configured
-random-plan budget. Appended `--test_arg=--count --test_arg=N`,
-`--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override its arguments.
+The broad CI suite runs the handwritten cases and required generated comparisons
+once with seeds 1 and 2. The binding suite uses seeds 1–12. Run
+`translation:corejs_differential_sweep_test` explicitly for 40 seeds and
+random split plans. Appended `--test_arg=--count --test_arg=N`,
+`--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override
+the target's arguments.
 
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -69,7 +71,7 @@ the interpreter families, linked graphs, opaque cases, and original named splits
 All three targets run in CI; splitting their workloads keeps their coverage assertions
 and execution independent as the certificate families grow.
 
-The broad [`translation/gen`](../translation/gen/) sample remains separate: the harness
+The broad [`translation/gen`](../translation/testing/gen/) sample remains separate: the harness
 reports units accepted alone and units surviving dependency/unknown-code filtering.
 Those counts do not measure which syntax executed. Random plans remain manual-first
 and bounded by `--splits`; the dedicated generator's required moves bypass that budget.

@@ -19,12 +19,7 @@ from aiquota.models import (
 )
 from aiquota.providers.anthropic_platform import AnthropicPlatformProvider
 from aiquota.providers.base import Provider
-from aiquota.providers.claude import (
-    _OAUTH_HEADERS,
-    PROFILE_URL as CLAUDE_PROFILE_URL,
-    ClaudeProvider,
-    _ClaudeProfileResponse,
-)
+from aiquota.providers.claude import ClaudeProvider
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory, provider_client
 from aiquota.providers.codex import CodexProvider
@@ -169,24 +164,14 @@ async def _instantiate_accounts(
                 claims = entry.get("id_token")
                 account_id = claims.get("chatgpt_account_id") if isinstance(claims, dict) else None
                 plan = claims.get("plan_type") if isinstance(claims, dict) else None
+                if not isinstance(account_id, str) or not account_id:
+                    raise ValueError("provider account identity is unavailable")
+                result: Provider = CodexProvider(config.codex, client_factory, replace(bound, account_id=account_id))
+                result.account_id = account_id
             else:
-                body = await bound.fetch_usage(
-                    "claude", CLAUDE_PROFILE_URL, _OAUTH_HEADERS, "claude_profile", capture_response=False
-                )
-                profile = _ClaudeProfileResponse.model_validate_json(body)
-                if profile.account is None:
-                    raise ValueError("Claude account identity is unavailable")
-                account_id = f"{profile.account.uuid}:{profile.organization.uuid}"
+                result = await ClaudeProvider.for_managed_account(config.claude, bound)
                 plan = None
-            if not isinstance(account_id, str) or not account_id:
-                raise ValueError("provider account identity is unavailable")
-            bound = replace(bound, account_id=account_id)
-            if provider.name == "codex":
-                result: Provider = CodexProvider(config.codex, client_factory, bound)
-            else:
-                result = ClaudeProvider(config.claude, client_factory, bound)
-            result.account_id = account_id
-            metadata = config.accounts.get(f"{provider.name}:{account_id}")
+            metadata = config.accounts.get(f"{provider.name}:{result.account_id}")
             email = entry.get("email")
             result.account_label = (
                 metadata.label if metadata and metadata.label else email if isinstance(email, str) else None

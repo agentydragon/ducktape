@@ -12,12 +12,9 @@ Getting these wrong is destructive or silently corrupting.
   "including persistent auth" or "from scratch".
 - **Commit and push before reconciling Flux** — it reads the git remote; reconciling
   uncommitted work applies the old state and looks like a failed change.
-- **Wiping a backing DB orphans tofu state.** `tf/gitops/sso-providers/` (Authentik OAuth2
-  providers) and `props/deploy/forgejo/tofu/` (Forgejo registry user) record IDs of objects
-  in other stateful systems; wiping that DB without clearing tofu state (CNPG
-  `tofu-state-db-ovh`, one schema per root) yields
-  `Unable to read … not found with id N`. Recovery: <docs/troubleshooting.md>
-  § "Resource ID Desync After Wiping a Backing Datastore".
+- **A backing database restore can invalidate IDs in OpenTofu state.** Preserve the
+  state and identify the reconciler before repairing affected bindings. Authentik and
+  Forgejo examples are in [Resource ID Desync After Wiping a Backing Datastore](docs/troubleshooting.md#resource-id-desync-after-wiping-a-backing-datastore).
 - **DNS and website must survive OVH-only** (README § "OVH-Only Resilience Invariants").
 
 ## Bootstrap
@@ -81,9 +78,9 @@ Guide: <docs/container-images.md>.
   carrying an `$imagepolicy` marker** — `ImageUpdateAutomation` re-serializes the document
   differently from prettier and pushes to `devel` as `chore: update images [skip ci]`
   without CI, turning `devel` red on every image update. Use block style.
-- One `ImageRepository` + one `ImagePolicy` not reused elsewhere: one `<name>-image.yaml`,
-  repository first. `ImageUpdateAutomation` gets its own file. A Receiver reference alone
-  doesn't force a split.
+- For hand-written manifests, keep an `ImageRepository` and its single-use `ImagePolicy`
+  in one `<name>-image.yaml`, repository first. Give `ImageUpdateAutomation` its own file.
+  A Receiver reference alone does not require splitting the pair.
 
 ## Storage Selection
 

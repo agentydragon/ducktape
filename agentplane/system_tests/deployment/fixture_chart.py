@@ -344,7 +344,6 @@ def central_sampler_props(models: Sequence[Route]) -> CentralSamplerProps:
                 ca_file=workload_tls.TRUST_BUNDLE_FILE,
             ),
         ),
-        replicas=_ONE_REPLICA,
         models={
             model.id: ModelConfig(
                 connection="llm-ingress",
@@ -406,9 +405,7 @@ def actions_props(
 
 
 def mcp_edge_props(*, operator_oidc: OperatorOidcSettings, oauth_secret_name: str | None) -> McpEdgeProps:
-    return McpEdgeProps(
-        replicas=_ONE_REPLICA, operator_oidc=operator_oidc, oauth_secret_name=oauth_secret_name, hostname=None
-    )
+    return McpEdgeProps(operator_oidc=operator_oidc, oauth_secret_name=oauth_secret_name, hostname=None)
 
 
 def environment(

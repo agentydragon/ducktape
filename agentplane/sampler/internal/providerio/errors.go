@@ -60,8 +60,7 @@ func ProviderContextError(ctx context.Context, err error) error {
 		return nil
 	}
 	var evidenceErr *protocol.ProviderEvidencePersistenceError
-	var progressErr *protocol.ProviderProgressError
-	if errors.As(err, &evidenceErr) || errors.As(err, &progressErr) {
+	if errors.As(err, &evidenceErr) {
 		return err
 	}
 	var timeout *protocol.ProviderPhaseTimeoutError
@@ -71,7 +70,7 @@ func ProviderContextError(ctx context.Context, err error) error {
 	return err
 }
 
-// ProviderTransportError wraps only upstream read/transport errors. Durable evidence and progress
+// ProviderTransportError wraps only upstream read/transport errors. Evidence persistence
 // failures, typed phase timeouts, and caller cancellation retain their distinct meanings.
 func ProviderTransportError(ctx context.Context, err error) error {
 	err = ProviderContextError(ctx, err)
@@ -79,9 +78,8 @@ func ProviderTransportError(ctx context.Context, err error) error {
 		return nil
 	}
 	var evidenceErr *protocol.ProviderEvidencePersistenceError
-	var progressErr *protocol.ProviderProgressError
 	var phaseErr *protocol.ProviderPhaseTimeoutError
-	if errors.As(err, &evidenceErr) || errors.As(err, &progressErr) || errors.As(err, &phaseErr) || ctx.Err() != nil {
+	if errors.As(err, &evidenceErr) || errors.As(err, &phaseErr) || ctx.Err() != nil {
 		return err
 	}
 	return &protocol.ProviderTransientError{Cause: err}

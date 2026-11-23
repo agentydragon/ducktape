@@ -7,7 +7,6 @@ from collections.abc import Iterator, Mapping
 from pathlib import PurePosixPath
 from typing import Any
 
-import cdk8s
 import pytest_bazel
 import yaml
 from cdk8s import App
@@ -370,7 +369,7 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
 
 
 def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_alone(scratch_app: App) -> None:
-    documents = cdk8s.Testing.synth(cluster_ca.chart(scratch_app))
+    documents = cluster_ca.chart(scratch_app).to_json()
     issuer = find_resource(documents, "ClusterIssuer", cluster_ca.WORKLOAD_ISSUER.name)
     ca_secret = issuer["spec"]["ca"]["secretName"]
     ca = one(doc for doc in documents if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == ca_secret)

@@ -24,7 +24,7 @@ func NewStore(t testing.TB, database *postgres.Database) *sessionstore.Store {
 	t.Helper()
 	dsn := database.Clone(t)
 	db := postgres.Open(t, dsn)
-	return sessionstore.New(db, 30*time.Second)
+	return sessionstore.New(db, 30*time.Second, nil)
 }
 
 func OpenStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
@@ -61,10 +61,7 @@ func ClaimedSession(t *testing.T, database *postgres.Database) (*sessionstore.St
 
 func AssertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()
-	var count int
-	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
+	count := postgres.Count(t, store.DB(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID)
 	if count != 0 {
 		t.Fatalf("unresolved nested intents=%d", count)
 	}

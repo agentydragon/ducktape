@@ -330,24 +330,19 @@ an additional writer alongside Claude Code itself. Use this mode only when that
 shared-file ownership and its concurrency risk are acceptable; it is not
 appropriate where another process is the declared sole refresh owner.
 
-### Initial API deployment
-
-The API has one Claude credential path: CLIProxyAPI's authenticated management
-integration. AIQuota does not receive the Claude setup token or mount the
-CLIProxyAPI PVC.
-
 ### CLIProxyAPI integration
 
-The Claude and Codex adapters discover credentials through CLIProxyAPI's
-management endpoint and request each account's usage separately. `$TOKEN$`
-substitution and OAuth refresh stay inside CLIProxyAPI; aiquota does not mount
-its PVC. The SOPS-managed `cli-proxy-api-management` Secret is injected into
-both deployments.
+The deployed API discovers Claude and Codex credentials through CLIProxyAPI's
+management endpoint and requests each account's usage separately. Both deployments
+receive the management key from the SOPS-managed `cli-proxy-api-management`
+Secret. CLIProxyAPI owns the setup token, credential PVC, `$TOKEN$` substitution,
+and OAuth refresh.
 
 `auth_index` selects a credential for a single request. AIQuota identifies
 Codex accounts by the provider account ID in CLIProxyAPI's parsed ID-token
 claims, and Claude accounts by account and organization UUIDs from the profile
-endpoint. It exposes an account ID and, when available, email and reported
+endpoint. The same organization UUID scopes the prepaid balance lookup.
+The API exposes an account ID and, when available, email and reported
 plan category in the authenticated quota response. An account's last success
 and errors are tracked separately. Legacy history has an unknown account; it is
 not attributed retroactively. Percentages from separate accounts are not added.

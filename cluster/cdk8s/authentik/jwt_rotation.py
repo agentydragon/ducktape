@@ -81,13 +81,24 @@ def _cronjob(chart: Chart) -> None:
         service_account_name=NAME,
         automount_service_account_token=True,
         image_pull_secrets=None,
-        credential_mounts=tuple(
-            secret_mount(c.volume, c.secret, str(c.directory)) for c in jwt_roster.client_credentials()
-        ),
+        credential_mounts=[
+            secret_mount(f"{directory.name}-creds", secret, str(directory))
+            for directory, secret in jwt_roster.client_credentials().items()
+        ],
     )
 
 
 def _published_secrets_reader(chart: Chart) -> None:
+    names = [
+        rotation.k8s_secret.name
+        for rotation in jwt_roster.ROTATIONS.rotations
+        if rotation.probe
+        and rotation.k8s_secret
+        and rotation.k8s_secret.namespace == jwt_roster.PUBLISHED_SECRET_NAMESPACE
+    ]
+    if not names:
+        # An empty Kubernetes resourceNames list grants access to every Secret in the namespace.
+        return
     k8s.KubeRole(
         chart,
         "published-secrets-reader-role",
@@ -103,18 +114,7 @@ def _published_secrets_reader(chart: Chart) -> None:
                 )
             },
         ),
-        rules=[
-            k8s.PolicyRule(
-                api_groups=[""],
-                resources=["secrets"],
-                verbs=["get"],
-                resource_names=[
-                    rotation.k8s_secret.name
-                    for rotation in jwt_roster.ROTATIONS.rotations
-                    if rotation.k8s_secret and rotation.k8s_secret.namespace == jwt_roster.PUBLISHED_SECRET_NAMESPACE
-                ],
-            )
-        ],
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get"], resource_names=names)],
     )
     k8s.KubeRoleBinding(
         chart,

@@ -173,6 +173,16 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
     _resource(fixture.objects, "RoleBinding", "mcp-edge")
 
 
+def test_native_vm_fixture_runs_both_guest_templates_without_app(runfiles: Runfiles) -> None:
+    fixture = _read_fixture(runfiles, "K3S_VM_NATIVE_FIXTURE_RLOCATION")
+    assert fixture.runtime is rendered_fixture.SandboxRuntime.KUBEVIRT
+    deployments = {doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Deployment"}
+    assert "app" not in deployments
+    assert fixture_chart.NATIVE_TEST_CLIENT in deployments
+    for template in ("environment-vm", SUPERVISION_TEMPLATE):
+        assert "vm" in _resource(fixture.objects, "SandboxTemplate", template)["spec"]
+
+
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
 def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfiles, location: str) -> None:
     fixture = _read_fixture(runfiles, location)

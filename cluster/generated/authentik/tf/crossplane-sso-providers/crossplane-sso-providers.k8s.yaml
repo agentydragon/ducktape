@@ -912,7 +912,7 @@ spec:
               name               = "openid_connect"
               scope              = ["openid", "profile", "email"]
               response_type      = "code"
-              issuer             = "https://auth.allegedly.works/application/o/gitlab-spike/"
+              issuer             = "https://auth.allegedly.works/application/o/${authentik_application.gitlab_spike.slug}/"
               discovery          = true
               client_auth_method = "query"
               uid_field          = "sub"
@@ -979,7 +979,7 @@ spec:
         data = {
           OIDC_CLIENT_ID     = authentik_provider_oauth2.providers["headlamp"].client_id
           OIDC_CLIENT_SECRET = authentik_provider_oauth2.providers["headlamp"].client_secret
-          OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/headlamp/"
+          OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/${authentik_application.headlamp.slug}/"
           OIDC_SCOPES        = "profile,email,offline_access"
         }
       }
@@ -1200,7 +1200,7 @@ spec:
           namespace = "platform-sessions"
         }
         data = {
-          PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/platform-sessions/"
+          PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.platform_sessions.slug}/"
           PLATFORM_SESSIONS_CLIENT_ID       = authentik_provider_oauth2.platform_sessions.client_id
           PLATFORM_SESSIONS_CLIENT_SECRET   = authentik_provider_oauth2.platform_sessions.client_secret
           PLATFORM_SESSIONS_SESSION_SECRET  = random_password.platform_sessions_session_secret.result
@@ -1297,7 +1297,7 @@ spec:
           namespace = "quest-diagnostics"
         }
         data = {
-          QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/quest-diagnostics/"
+          QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.quest_diagnostics.slug}/"
           QUEST_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["quest_diagnostics"].client_id
           QUEST_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["quest_diagnostics"].client_secret
           QUEST_OIDC_SESSION_SECRET  = random_password.quest_diagnostics_session_secret.result
@@ -1719,7 +1719,7 @@ spec:
           # The application pins the numeric subject too, preserving owner-only authorization if the
           # Authentik policy changes. These keys are consumed by the AI session archive deployment.
           ai_session_archive = {
-            AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/ai-session-archive/"
+            AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.ai_session_archive.slug}/"
             AI_SESSION_ARCHIVE_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["ai_session_archive"].client_id
             AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["ai_session_archive"].client_secret
             AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET  = random_password.ai_session_archive_session_secret.result
@@ -1727,14 +1727,14 @@ spec:
           }
           # The session sync Deployment reads these keys as the web app's `WebSettings` env vars.
           claude_session_sync = {
-            SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/claude-session-sync/"
+            SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.claude_session_sync.slug}/"
             SESSION_SYNC_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["claude_session_sync"].client_id
             SESSION_SYNC_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["claude_session_sync"].client_secret
             SESSION_SYNC_OIDC_SESSION_SECRET  = random_password.claude_session_sync_session_secret.result
             SESSION_SYNC_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
           }
           cli_proxy_api_admin = {
-            MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/cli-proxy-api-admin/"
+            MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/${authentik_application.cli_proxy_api_admin.slug}/"
             MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.providers["cli_proxy_api_admin"].client_id
             MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.providers["cli_proxy_api_admin"].client_secret
             MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
@@ -1761,7 +1761,7 @@ spec:
                 oidc_providers:
                   - idp_id: authentik
                     idp_name: "Authentik SSO"
-                    issuer: "https://auth.allegedly.works/application/o/matrix/"
+                    issuer: "https://auth.allegedly.works/application/o/${authentik_application.matrix.slug}/"
                     client_id: "${authentik_provider_oauth2.confidential["matrix"].client_id}"
                     client_secret: "${authentik_provider_oauth2.confidential["matrix"].client_secret}"
                     discover: true

@@ -26,7 +26,7 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
-from finance.augur.api.server import ApiServerConfig, create_app, static_price_clients
+from finance.augur.api.server import create_app, static_price_clients
 from finance.augur.api.wire import ActorRole
 from finance.augur.model.series import LocationId
 from finance.augur.model.testing import ConstantFrameModel
@@ -210,13 +210,7 @@ def make_client(augur_config: Config) -> Iterator[MakeClient]:
 
         def _make(models: dict[str, Any]) -> TestClient:
             return stack.enter_context(
-                TestClient(
-                    create_app(
-                        ApiServerConfig(
-                            augur_config=augur_config, models=models, price_clients=static_price_clients({})
-                        )
-                    )
-                )
+                TestClient(create_app(augur_config, models=models, price_clients=static_price_clients({})))
             )
 
         yield _make

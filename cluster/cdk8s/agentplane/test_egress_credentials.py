@@ -2,7 +2,7 @@
 environment's own module decides which credentials it gets."""
 
 import pytest_bazel
-from cdk8s import Chart, Testing as Cdk8sTesting
+from cdk8s import Chart
 
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
@@ -13,7 +13,7 @@ _PROXY_NAMESPACE = "test-proxy"
 
 def test_only_the_proxy_reads_and_nothing_is_copied(scratch_chart: Chart) -> None:
     EgressCredentials(scratch_chart, "credentials", namespace=_CREDENTIALS_NAMESPACE, proxy_namespace=_PROXY_NAMESPACE)
-    objects = Cdk8sTesting.synth(scratch_chart)
+    objects = scratch_chart.to_json()
     assert not any(obj["kind"] in {"ExternalSecret", "ClusterSecretStore", "ServiceAccount"} for obj in objects)
     rbac = Rbac(objects)
     (binding,) = rbac.bindings

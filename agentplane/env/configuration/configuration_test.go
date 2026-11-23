@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"go.uber.org/zap/zapcore"
 )
@@ -79,15 +79,15 @@ func TestConfigurationAcceptsModelConfigTarget(t *testing.T) {
 
 func configurationPodExecutor() map[string]any {
 	return map[string]any{
-		"url": "ws://127.0.0.1:4501", "placement": codexexecserver.PlacementDirect,
-		"owner": map[string]any{"kind": codexexecserver.OwnerCompanion, "socket": "/run/test/executor.sock"},
+		"url": "ws://127.0.0.1:4501", "placement": backend.PlacementDirect,
+		"owner": map[string]any{"kind": backend.OwnerCompanion, "socket": "/run/test/executor.sock"},
 	}
 }
 
 func configurationVMExecutor(environment map[string]any) {
 	environment["executor"] = map[string]any{
-		"url": "ws://127.0.0.1:4501", "placement": codexexecserver.PlacementDirect,
-		"owner": map[string]any{"kind": codexexecserver.OwnerSystemd},
+		"url": "ws://127.0.0.1:4501", "placement": backend.PlacementDirect,
+		"owner": map[string]any{"kind": backend.OwnerSystemd},
 	}
 	resources := environment["resources"].(map[string]any)
 	resources["executor"] = map[string]any{"cpu_quota_micros": 100000, "memory_max_bytes": 67108864, "pids_max": 128, "read_bps": 52428800, "write_bps": 20971520, "read_iops": 1000, "write_iops": 500}
@@ -95,7 +95,7 @@ func configurationVMExecutor(environment map[string]any) {
 
 func configurationVMSystemdExecutor(environment map[string]any) {
 	configurationVMExecutor(environment)
-	environment["executor"].(map[string]any)["placement"] = codexexecserver.PlacementSystemd
+	environment["executor"].(map[string]any)["placement"] = backend.PlacementSystemd
 	resources := environment["resources"].(map[string]any)
 	server := resources["executor"].(map[string]any)
 	server["memory_max_bytes"] = 33554432
@@ -113,8 +113,8 @@ func TestConfigurationVMSystemdExecutorPlacement(t *testing.T) {
 	}{
 		{name: "separate shared workload budget"},
 		{"missing workload budget", func(_, resources map[string]any) { delete(resources, "executor_workload") }, "budget must be supplied together"},
-		{"direct with workload budget", func(executor, _ map[string]any) { executor["placement"] = codexexecserver.PlacementDirect }, "budget must be supplied together"},
-		{"Codex with systemd", func(executor, _ map[string]any) { executor["implementation"] = codexexecserver.ImplementationCodex }, "requires a native executor with a systemd owner"},
+		{"direct with workload budget", func(executor, _ map[string]any) { executor["placement"] = backend.PlacementDirect }, "budget must be supplied together"},
+		{"Codex with systemd", func(executor, _ map[string]any) { executor["implementation"] = backend.ImplementationCodex }, "requires a native executor with a systemd owner"},
 		{"workload exceeds memory headroom", func(_, resources map[string]any) {
 			resources["executor_workload"].(map[string]any)["memory_max_bytes"] = 33554433
 		}, "remaining service memory high"},
@@ -152,8 +152,8 @@ func TestConfigurationVMSystemdExecutorPlacement(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			executor := config.CodexExecServer
-			if executor.Owner != codexexecserver.OwnerSystemd || executor.Placement != codexexecserver.PlacementSystemd || executor.Launcher.AggregateLimits != *budgets.Executor {
+			executor := config.ExecutionBackend
+			if executor.Owner != backend.OwnerSystemd || executor.Placement != backend.PlacementSystemd || executor.Launcher.AggregateLimits != *budgets.Executor {
 				t.Fatalf("resolved executor = %+v", executor)
 			}
 			if workload := executor.WorkloadLauncher; workload == nil || workload.Slice != supervision.CommandSlice || workload.AggregateLimits != *budgets.ExecutorWorkload {
@@ -172,11 +172,11 @@ func TestConfigurationExecutorPlacementWireContract(t *testing.T) {
 			valid bool
 		}{
 			{name: "missing"},
-			{name: "direct", field: map[string]any{"placement": codexexecserver.PlacementDirect}, valid: true},
+			{name: "direct", field: map[string]any{"placement": backend.PlacementDirect}, valid: true},
 			{name: "null", field: map[string]any{"placement": nil}},
 			{name: "empty", field: map[string]any{"placement": ""}},
 			{name: "unknown", field: map[string]any{"placement": "unknown"}},
-			{name: "systemd without VM workload budget", field: map[string]any{"placement": codexexecserver.PlacementSystemd}},
+			{name: "systemd without VM workload budget", field: map[string]any{"placement": backend.PlacementSystemd}},
 		} {
 			t.Run(kind+"/"+test.name, func(t *testing.T) {
 				value, path, launch := configurationFixture(t)
@@ -196,8 +196,8 @@ func TestConfigurationExecutorPlacementWireContract(t *testing.T) {
 				if (err == nil) != test.valid {
 					t.Fatalf("load returned %v, expected valid = %t", err, test.valid)
 				}
-				if test.valid && (config.CodexExecServer.Placement != codexexecserver.PlacementDirect || config.CodexExecServer.WorkloadLauncher != nil) {
-					t.Fatalf("resolved direct executor = %+v", config.CodexExecServer)
+				if test.valid && (config.ExecutionBackend.Placement != backend.PlacementDirect || config.ExecutionBackend.WorkloadLauncher != nil) {
+					t.Fatalf("resolved direct executor = %+v", config.ExecutionBackend)
 				}
 			})
 		}
@@ -206,8 +206,8 @@ func TestConfigurationExecutorPlacementWireContract(t *testing.T) {
 
 func TestConfigurationExecutorOwnerWireContract(t *testing.T) {
 	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
-	companion := map[string]any{"kind": codexexecserver.OwnerCompanion, "socket": "/run/test/executor.sock"}
-	systemd := map[string]any{"kind": codexexecserver.OwnerSystemd}
+	companion := map[string]any{"kind": backend.OwnerCompanion, "socket": "/run/test/executor.sock"}
+	systemd := map[string]any{"kind": backend.OwnerSystemd}
 	for _, test := range []struct {
 		name      string
 		kind      string
@@ -218,11 +218,11 @@ func TestConfigurationExecutorOwnerWireContract(t *testing.T) {
 		{name: "missing owner for Pod", kind: "pod", want: "owner must explicitly select"},
 		{name: "missing owner for VM", kind: "vm", want: "owner must explicitly select"},
 		{name: "unknown owner", kind: "pod", owner: map[string]any{"kind": "automatic"}, want: "owner must explicitly select"},
-		{name: "missing companion socket", kind: "pod", owner: map[string]any{"kind": codexexecserver.OwnerCompanion}, want: "absolute ownership socket"},
-		{name: "systemd with socket", kind: "vm", owner: map[string]any{"kind": codexexecserver.OwnerSystemd, "socket": nil}, want: "cannot specify a companion socket"},
+		{name: "missing companion socket", kind: "pod", owner: map[string]any{"kind": backend.OwnerCompanion}, want: "absolute ownership socket"},
+		{name: "systemd with socket", kind: "vm", owner: map[string]any{"kind": backend.OwnerSystemd, "socket": nil}, want: "cannot specify a companion socket"},
 		{name: "systemd cannot own Pod executor", kind: "pod", owner: systemd, want: "requires a companion executor owner"},
 		{name: "companion cannot own VM executor", kind: "vm", owner: companion, want: "requires a systemd executor owner"},
-		{name: "systemd placement under companion", kind: "pod", owner: companion, placement: codexexecserver.PlacementSystemd, want: "requires a native executor with a systemd owner"},
+		{name: "systemd placement under companion", kind: "pod", owner: companion, placement: backend.PlacementSystemd, want: "requires a native executor with a systemd owner"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			value, path, launch := configurationFixture(t)
@@ -281,7 +281,7 @@ func TestConfigurationComposesBothIsolationModesWithoutSessionState(t *testing.T
 				if config.SystemdLauncher.AggregateLimits != resources.Aggregate || config.SystemdLauncher.ProcessLimits != resources.Process {
 					t.Fatal("harness limits differ from VM resource policy")
 				}
-				if resources.Executor != nil && (config.CodexExecServer.Launcher.AggregateLimits != *resources.Executor || config.CodexExecServer.Launcher.ProcessLimits != *resources.Executor) {
+				if resources.Executor != nil && (config.ExecutionBackend.Launcher.AggregateLimits != *resources.Executor || config.ExecutionBackend.Launcher.ProcessLimits != *resources.Executor) {
 					t.Fatal("executor limits differ from VM resource policy")
 				}
 			}
@@ -311,7 +311,7 @@ func TestConfigurationComposesBothIsolationModesWithoutSessionState(t *testing.T
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
 			}
-			if (config.CodexExecServer == nil) != (kind == "pod-local" || kind == "vm-local") || (config.SystemdLauncher != nil) != (kind == "vm-local" || kind == "vm-executor") {
+			if (config.ExecutionBackend == nil) != (kind == "pod-local" || kind == "vm-local") || (config.SystemdLauncher != nil) != (kind == "vm-local" || kind == "vm-executor") {
 				t.Fatalf("incorrect isolation for %s", kind)
 			}
 		})
@@ -454,12 +454,12 @@ func TestConfigurationResolvesIndependentCodexReadinessWindows(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		readiness map[string]any
-		wantExec  codexexecserver.Readiness
+		wantExec  backend.Readiness
 		wantApp   codexappserver.Readiness
 	}{
 		{
 			name: "defaults",
-			wantExec: codexexecserver.Readiness{
+			wantExec: backend.Readiness{
 				Timeout: 20 * time.Second, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond,
 			},
 			wantApp: codexappserver.Readiness{
@@ -471,7 +471,7 @@ func TestConfigurationResolvesIndependentCodexReadinessWindows(t *testing.T) {
 		{
 			name:      "partial independent overrides",
 			readiness: map[string]any{"exec_server_ready_timeout_ms": 725, "app_server_initialize_timeout_ms": 1337},
-			wantExec: codexexecserver.Readiness{
+			wantExec: backend.Readiness{
 				Timeout: 725 * time.Millisecond, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond,
 			},
 			wantApp: codexappserver.Readiness{
@@ -495,8 +495,8 @@ func TestConfigurationResolvesIndependentCodexReadinessWindows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if resolved.CodexExecServer == nil || resolved.CodexExecServer.Readiness != test.wantExec {
-				t.Fatalf("exec-server readiness = %+v, want %+v", resolved.CodexExecServer, test.wantExec)
+			if resolved.ExecutionBackend == nil || resolved.ExecutionBackend.Readiness != test.wantExec {
+				t.Fatalf("exec-server readiness = %+v, want %+v", resolved.ExecutionBackend, test.wantExec)
 			}
 			if resolved.CodexAppServerReadiness != test.wantApp {
 				t.Fatalf("app-server readiness = %+v, want %+v", resolved.CodexAppServerReadiness, test.wantApp)
@@ -601,8 +601,8 @@ func TestVMExecutionLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(config.CodexExecServer.LimitsJSON, `"max_sessions":3`) {
-		t.Fatalf("limits = %q", config.CodexExecServer.LimitsJSON)
+	if !strings.Contains(config.ExecutionBackend.LimitsJSON, `"max_sessions":3`) {
+		t.Fatalf("limits = %q", config.ExecutionBackend.LimitsJSON)
 	}
 	executor["implementation"] = "codex"
 	writeJSONFixture(t, path, value)

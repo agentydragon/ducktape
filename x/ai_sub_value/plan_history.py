@@ -55,6 +55,22 @@ def codex_plan_at(at: datetime, periods: list[CodexPlanPeriod]) -> CodexPlanPeri
     return matches[0] if matches else None
 
 
+def quota_plan_period(
+    provider: str, window_name: str | None, at: datetime, periods: list[CodexPlanPeriod] | None
+) -> CodexPlanPeriod | None:
+    """Only the unscoped Codex gauge must be attributed to a dated subscription."""
+    if provider != "codex" or window_name:
+        return None
+    if not periods:
+        raise ValueError("Codex quota polls require a timestamped --codex-plan-history input")
+    period = codex_plan_at(at, periods)
+    if period is None:
+        raise ValueError(
+            f"Codex quota poll at {at.isoformat()} is outside the supplied plan history; extend the history so every Codex poll has an exact plan label"
+        )
+    return period
+
+
 def validate_reported_codex_plan_types(period: CodexPlanPeriod, reported: set[str]) -> None:
     """Reject a manual period that spans a provider-reported plan-category change."""
     if len(reported) > 1:

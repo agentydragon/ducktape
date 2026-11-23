@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Testing as Cdk8sTesting  # pytest would collect `Testing` as a test class
+from cdk8s import App
 
 from cluster.cdk8s.kyverno import policies
 from cluster.cdk8s.kyverno.apply import apply_policy
@@ -20,7 +20,7 @@ from cluster.cdk8s.kyverno.apply import apply_policy
 @pytest.fixture(scope="module")
 def store_policy(scratch_app_factory: Callable[[], App]) -> dict[str, Any]:
     document: dict[str, Any]
-    [document] = Cdk8sTesting.synth(policies.require_secret_store_conditions_chart(scratch_app_factory()))
+    [document] = policies.require_secret_store_conditions_chart(scratch_app_factory()).to_json()
     return document
 
 

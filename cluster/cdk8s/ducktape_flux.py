@@ -23,7 +23,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_access_profiles as access, namespaces
-from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization
+from cluster.cdk8s.flux import DUCKTAPE_SOURCE, NAMESPACE, Kustomization, flux_kustomization
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
@@ -31,7 +31,6 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.plaid_mcp import spend
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
-SOURCE_NAME = "ducktape"
 # This repository and the branch Flux deploys, for every GitRepository that checks it out.
 REPOSITORY_URL = "https://github.com/agentydragon/ducktape.git"
 BRANCH = "devel"
@@ -51,20 +50,9 @@ BRANCH = "devel"
 # which bound an apply.
 CLONE_TIMEOUT = "5m"
 TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
-_READER = "ducktape-flux-reader"
 _FINANCE_READER_SECRET = "finance-agent-flux-read-credentials"
 _FINANCE_SOURCE = "finance-agent"
 _SPEND_POLICY_APPLIER = "plaid-spend-config-applier"
-
-
-def _reader_binding(chart: Chart, name: str, *, description: str, subjects: list[k8s.Subject]) -> None:
-    k8s.KubeRoleBinding(
-        chart,
-        name,
-        metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE, annotations={"description": description}),
-        role_ref=access.role_ref("ducktape-flux-read"),
-        subjects=subjects,
-    )
 
 
 def chart(app: App) -> Chart:
@@ -145,7 +133,7 @@ def chart(app: App) -> Chart:
     GitRepository(
         chart,
         "source",
-        metadata=ApiObjectMetadata(name=SOURCE_NAME, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=DUCKTAPE_SOURCE.name, namespace=DUCKTAPE_SOURCE.namespace),
         # The `github` Receiver (cluster/generated/flux-webhook) reconciles this source within seconds of
         # every push, so polling is only the net for a lost delivery. flux-system's source carries the
         # same interval (cluster/k8s/flux/flux-system/gotk-sync.yaml); keep the two in step.
@@ -171,11 +159,12 @@ def chart(app: App) -> Chart:
     )
     # Only the two public control-plane CRDs in this namespace. In particular no access to
     # the controller-only SOPS key Secret, ConfigMaps, Pods, logs, exec, or writes.
+    diagnostics_role = access.role_ref("ducktape-flux-read")
     k8s.KubeRole(
         chart,
         "reader",
         metadata=k8s.ObjectMeta(
-            name=_READER,
+            name=diagnostics_role.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only public Ducktape Flux diagnostics."},
         ),
@@ -188,10 +177,15 @@ def chart(app: App) -> Chart:
             ),
         ],
     )
-    _reader_binding(
+    k8s.KubeRoleBinding(
         chart,
         "haku-ducktape-flux-reader",
-        description="Binds the Haku OIDC group to public Ducktape Flux diagnostics.",
+        metadata=k8s.ObjectMeta(
+            name="haku-ducktape-flux-reader",
+            namespace=NAMESPACE,
+            annotations={"description": "Binds the Haku OIDC group to public Ducktape Flux diagnostics."},
+        ),
+        role_ref=diagnostics_role,
         subjects=[subject.k8s() for subject in access.HAKU_IDENTITIES],
     )
     return chart

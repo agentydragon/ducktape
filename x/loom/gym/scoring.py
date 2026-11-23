@@ -141,14 +141,17 @@ def _score_categorical(task: Task, answer: CategoricalAnswer, realized_category:
     return TaskScore(task_id=task.task_id, metrics=metrics)
 
 
+def binary_losses(p_yes: float, resolved_yes: bool) -> dict[str, float]:
+    p_realized = p_yes if resolved_yes else 1.0 - p_yes
+    return {"log_loss": -math.log(max(p_realized, _LOG_LOSS_EPSILON)), "brier": (p_yes - float(resolved_yes)) ** 2}
+
+
 def score(task: Task, answer: BinaryAnswer | QuantileAnswer | CategoricalAnswer) -> TaskScore:
     match answer, task.outcome:
         case CategoricalAnswer() as categorical_answer, CategoricalOutcome(category=realized_category):
             return _score_categorical(task, categorical_answer, realized_category)
         case BinaryAnswer(p=p), BinaryOutcome(value=value):
-            p_realized = p if value else 1.0 - p
-            log_loss = -math.log(max(p_realized, _LOG_LOSS_EPSILON))
-            return TaskScore(task_id=task.task_id, metrics={"log_loss": log_loss, "brier": (p - float(value)) ** 2})
+            return TaskScore(task_id=task.task_id, metrics=binary_losses(p, value))
         case QuantileAnswer(quantiles=quantiles), ScalarOutcome(value=realized):
             metrics = {
                 "mean_pinball": sum(pinball_loss(level, stated, realized) for level, stated in quantiles.items())

@@ -45,7 +45,7 @@ central Flux chart keeps its name, `flux/kustomizations.k8s.yaml`.
    kustomization as a whole (fluxcd/pkg `kustomize.scanManifests`). A directory another
    kustomization references as a resource keeps its file; kustomize requires one there.
 2. **Generated `kustomization.yaml`** (every one `.gitattributes` marks
-   `linguist-generated=true`): `flux.kustomize_kustomization`, a Pydantic model (the plain
+   `linguist-generated=true`): `flux.write_kustomization` serializes a Pydantic model (the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest), listing the generated file and the hand-written siblings
    below. `generation.write_directory` writes it for every

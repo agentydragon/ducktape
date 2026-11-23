@@ -1,18 +1,18 @@
 # Keep sibling tools, experiments and fuzz fixtures out of the parent package and Gazelle.
-# gazelle:exclude debundle_cases
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
 # gazelle:exclude lowering
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_binary")
-load(":experiments/splits/sweep.bzl", "real_split_sweeps")
 
 exports_files(
     [
         "example/input/bundle.mjs",
+        "proof_fixture/bad.json",
         "proof_fixture/bundle.mjs",
+        "proof_fixture/spec.json",
         "example/spec.json",
         "example/variants/cycle.json",
         "example/controls/claimed_twice.json",
@@ -31,74 +31,11 @@ js_library(
     srcs = [
         "lowering/dump_core.mjs",
     ],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
     deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
-)
-
-js_binary(
-    name = "extract",
-    data = ["//:node_modules/acorn"],
-    entry_point = "extract/extract.mjs",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
-)
-
-js_run_binary(
-    name = "generated_instance",
-    srcs = [
-        "example/controls/claimed_twice.json",
-        "example/controls/cycle_tdz.json",
-        "example/controls/effect_order.json",
-        "example/input/bundle.mjs",
-        "example/spec.json",
-        "example/variants/cycle.json",
-    ],
-    args = [
-        "example/input/bundle.mjs",
-        "example/spec.json",
-        "--variant",
-        "example/variants/cycle.json",
-        "--control",
-        "example/controls/claimed_twice.json",
-        "--control",
-        "example/controls/cycle_tdz.json",
-        "--control",
-        "example/controls/effect_order.json",
-    ],
-    chdir = package_name(),
-    stdout = "generated/Instance.lean",
-    tool = ":extract",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
-)
-
-js_test(
-    name = "extract_callback_test",
-    data = [
-        "extract/extract.mjs",
-        "//:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof/translation:fixtures/callback/bundle.js",
-    ],
-    entry_point = "extract/callback_test.mjs",
-    env = {"BUNDLE": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:fixtures/callback/bundle.js)"},
-    no_copy_to_bin = ["//devinfra/js/debundle/x/split_proof/translation:fixtures/callback/bundle.js"],
-)
-
-js_run_binary(
-    name = "proof_fixture_instance",
-    srcs = [
-        "proof_fixture/bad.json",
-        "proof_fixture/bundle.mjs",
-        "proof_fixture/spec.json",
-    ],
-    args = [
-        "proof_fixture/bundle.mjs",
-        "proof_fixture/spec.json",
-        "--control",
-        "proof_fixture/bad.json",
-    ],
-    chdir = package_name(),
-    stdout = "generated/ProofFixture.lean",
-    tool = ":extract",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
 )
 
 # Include first-party runfile helpers as lint sources.
@@ -107,7 +44,6 @@ js_library(
     testonly = True,
     srcs = glob(
         [
-            "extract/*.mjs",
             "experiments/**/*.mjs",
         ],
         exclude = [
@@ -144,28 +80,6 @@ py_binary(
     deps = ["@rules_python//python/runfiles"],
 )
 
-js_binary(
-    name = "debundle_cases",
-    testonly = True,
-    data = [
-        ":lowering_dump_core",
-        "//:node_modules/acorn",
-        "//:node_modules/yaml",
-        "//devinfra/js/debundle/e2e:corpus_files",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
-    ],
-    entry_point = "debundle_cases/run_cases.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-    tags = ["manual"],
-)
-
-js_binary(
-    name = "summarize_debundle_cases",
-    entry_point = "debundle_cases/summarize.mjs",
-    tags = ["manual"],
-)
-
 js_run_binary(
     name = "example_ast",
     srcs = ["example/input/bundle.mjs"],
@@ -185,8 +99,6 @@ js_library(
 js_binary(
     name = "compare_footprints",
     data = [
-        "extract/extract.mjs",
-        "//:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/lean:lower",
         "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
@@ -195,28 +107,3 @@ js_binary(
     env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
     tags = ["manual"],
 )
-
-js_binary(
-    name = "real_split",
-    data = [
-        "experiments/splits/gen_spec.mjs",
-        "experiments/splits/smoke.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-    ],
-    entry_point = "experiments/splits/run_splits.mjs",
-    env = {
-        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    },
-    tags = ["manual"],
-)
-
-js_binary(
-    name = "summarize_real_splits",
-    entry_point = "experiments/splits/summarize.mjs",
-    tags = ["manual"],
-)
-
-real_split_sweeps()

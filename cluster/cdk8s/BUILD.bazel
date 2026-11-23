@@ -1,4 +1,6 @@
 # gazelle:ignore
+# Subpackages inherit these generated import mappings. Add a local directive only
+# for a mapping the subpackage does not already inherit.
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 # gazelle:resolve py external_secret_store_crds //cluster/cdk8s/providers/external_secrets:clustersecretstore
@@ -192,21 +194,19 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":namespaces",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/cnpg:health",
+        "//cluster/cdk8s/cnpg:role_credentials",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
-        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:database",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -397,7 +397,10 @@ py_test(
         ":conftest",
         ":flux",
         ":generation",
+        ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -457,11 +460,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
         ":fleet_rules",
-        ":namespaces",
-        ":vpa_policy",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -1171,9 +1170,9 @@ py_library(
         ":ducktape_flux",
         ":flux",
         ":secret_ref",
+        ":tofu_state",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
-        "//cluster/cdk8s/tofu_state:db",
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//pydantic",
@@ -1403,11 +1402,11 @@ py_library(
     deps = [
         ":flux",
         ":secret_ref",
+        ":tofu_state",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//cluster/cdk8s/tofu_state:db",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -1597,7 +1596,6 @@ py_library(
     name = "talos_cloud_controller_manager",
     srcs = ["talos_cloud_controller_manager.py"],
     deps = [
-        ":generation",
         ":helm",
         ":manifest_roots",
         ":node_scheduling",
@@ -1698,6 +1696,7 @@ py_library(
         ":tana_mcp",
         ":terraform",
         ":tofu_controller_release",
+        ":tofu_state",
         ":user_agentydragon",
         ":valkey",
         ":volsync",
@@ -1851,8 +1850,6 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",
         "//cluster/cdk8s/study_casino:app",
-        "//cluster/cdk8s/tofu_state:db",
-        "//cluster/cdk8s/tofu_state:namespace",
         "//cluster/scripts:nebula_mesh",
         "//devinfra/bazel:workspace",
         "@pypi//cdk8s",
@@ -1952,6 +1949,7 @@ py_library(
     visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":config_format",
+        ":flux",
         ":gateway",
         ":manifest_roots",
         ":ntfy",
@@ -2037,6 +2035,23 @@ py_test(
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "tofu_state",
+    srcs = ["tofu_state.py"],
+    deps = [
+        ":flux",
+        ":manifest_roots",
+        ":namespaces",
+        ":secret_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/cnpg:health",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -2128,7 +2143,7 @@ py_test(
         "//:MODULE.bazel",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
-        "//cluster:parked_generated_manifests",
+        "//cluster:haku_openclaw_spike_backup_sources",
         "//cluster:parked_yaml_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/agentplane-staging:manifests",
@@ -2300,7 +2315,6 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":namespace_access",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

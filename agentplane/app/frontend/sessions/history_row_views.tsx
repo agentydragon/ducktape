@@ -3,7 +3,11 @@ import { type JSX, type ReactNode, useCallback, useEffect, useState } from "reac
 
 import { Markdown } from "../../../../util/frontend/markdown";
 import { useThreadSync } from "./thread_sync";
-import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/api/history/history_service_pb";
+import {
+  ThreadCommandOutcome,
+  type ThreadEntity,
+  type ThreadPayloadReference,
+} from "../../../history_service/api/history/history_service_pb";
 import { threadEntityKind } from "./thread_entity";
 import {
   summarizeLifecycleGroup,
@@ -253,6 +257,7 @@ export interface HistoryRowViewProps {
   live: (entity: ThreadEntity) => boolean;
   inputEchoes?: ReadonlyMap<string, string>;
   onInputEchoLoaded?: (commandId: string) => void;
+  deliveryProgress?: JSX.Element | null;
 }
 
 export function HistoryRowView({
@@ -261,6 +266,7 @@ export function HistoryRowView({
   live,
   inputEchoes,
   onInputEchoLoaded,
+  deliveryProgress,
 }: HistoryRowViewProps): JSX.Element {
   const [first] = row.entities;
   if (row.kind === "setup") return <SetupView threadId={threadId} entities={row.entities} live={live} />;
@@ -272,14 +278,19 @@ export function HistoryRowView({
         ? first.entity.value.originCommandIds.find((id) => inputEchoes?.has(id))
         : undefined;
     const fallbackText = echoCommandId === undefined ? undefined : inputEchoes?.get(echoCommandId);
+    const progress =
+      first.entity.case === "command" && first.entity.value.outcome === ThreadCommandOutcome.PENDING
+        ? deliveryProgress
+        : undefined;
     return first.entity.case === "command" && !pendingSentMessage(first) ? (
-      <ProjectedControlCommand threadId={threadId} row={first} />
+      <ProjectedControlCommand threadId={threadId} row={first} deliveryProgress={progress} />
     ) : (
       <EntityCard
         threadId={threadId}
         entity={first}
         live={live(first)}
         fallbackText={fallbackText}
+        deliveryProgress={progress}
         onFallbackLoaded={
           fallbackText === undefined || echoCommandId === undefined || !onInputEchoLoaded
             ? undefined

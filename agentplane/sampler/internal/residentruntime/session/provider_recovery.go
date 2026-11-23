@@ -26,16 +26,12 @@ type deferredProviderError struct{ cause error }
 func (e *deferredProviderError) Error() string { return e.cause.Error() }
 func (e *deferredProviderError) Unwrap() error { return e.cause }
 
-func runtimeProviderAttemptPolicy(settings samplersettings.Settings, model samplersettings.ModelConfig) sessionstore.ProviderAttemptPolicy {
-	return sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease(model)}
-}
-
-func providerBackoff(number int, hint time.Duration) time.Duration {
-	delay := time.Second
-	for i := 1; i < number && delay < sessionstore.MaxProviderBackoff; i++ {
-		delay *= 2
+func runtimeProviderAttemptPolicy(settings samplersettings.Settings, model samplersettings.ModelConfig, frontier *sessionstore.ProviderAttempt) sessionstore.ProviderAttemptPolicy {
+	budget := settings.ProviderAttemptLimit()
+	if frontier != nil {
+		budget = frontier.Budget
 	}
-	return min(max(delay, hint), sessionstore.MaxProviderBackoff)
+	return sessionstore.ProviderAttemptPolicy{Budget: budget, Lease: settings.ProviderAttemptLease(model)}
 }
 
 func providerFailureReason(reason string) string {
@@ -46,17 +42,10 @@ func providerFailureReason(reason string) string {
 	return reason
 }
 
-func (r *Driver) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
-	return func(ctx context.Context) error {
-		return r.store.RenewProviderAttempt(ctx, owner, intentID, r.settings.ProviderProgressLease())
-	}
-}
-
 func (r *Driver) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
 	var persistence *protocol.ProviderEvidencePersistenceError
-	var progress *protocol.ProviderProgressError
 	var lost *sessionstore.LostOwnershipError
-	if ctx.Err() != nil || errors.As(cause, &persistence) || errors.As(cause, &progress) || errors.As(cause, &lost) || r.isDraining() {
+	if ctx.Err() != nil || errors.As(cause, &persistence) || errors.As(cause, &lost) || r.isDraining() {
 		return &deferredProviderError{cause: cause}
 	}
 	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, session.ID)
@@ -70,9 +59,9 @@ func (r *Driver) providerFailure(ctx context.Context, owner sessionstore.Owner, 
 	var transient *protocol.ProviderTransientError
 	var phase *protocol.ProviderPhaseTimeoutError
 	if errors.As(cause, &transient) {
-		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, providerBackoff(attempt.Number, transient.RetryAfter)
+		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, r.settings.ProviderRetryBackoff(attempt.Number, transient.RetryAfter)
 	} else if errors.As(cause, &phase) {
-		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, providerBackoff(attempt.Number, 0)
+		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, r.settings.ProviderRetryBackoff(attempt.Number, 0)
 	}
 	if err := r.store.AbandonProviderAttempt(ctx, owner, intentID, failure); err != nil {
 		return &deferredProviderError{cause: err}
@@ -100,7 +89,7 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 	if current != nil {
 		if err := r.store.AbandonProviderAttempt(ctx, owner, current.IntentID, sessionstore.ProviderAttemptFailure{
 			Class: sessionstore.ProviderAttemptTransient, Reason: "provider attempt ended without a committed result",
-			RetryAfter: providerBackoff(current.Number, 0),
+			RetryAfter: r.settings.ProviderRetryBackoff(current.Number, 0),
 		}); err != nil {
 			return nil, &deferredProviderError{cause: err}
 		}
@@ -150,8 +139,8 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 
 func (r *Driver) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
 	err := persist(ctx)
-	if err == nil {
-		return nil
+	if err == nil || errors.As(err, new(*sessionstore.InvalidSamplingContinuationError)) {
+		return err
 	}
 	// Re-read the exact intent even if the caller's context expired while COMMIT was in flight.
 	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -167,8 +156,8 @@ func (r *Driver) finishProvider(ctx context.Context, owner sessionstore.Owner, i
 		return &deferredProviderError{cause: err}
 	}
 	// The complete response is still in memory. Retry persistence, never the provider request.
-	if retryErr := persist(readCtx); retryErr == nil {
-		return nil
+	if retryErr := persist(readCtx); retryErr == nil || errors.As(retryErr, new(*sessionstore.InvalidSamplingContinuationError)) {
+		return retryErr
 	} else {
 		err = errors.Join(err, retryErr)
 	}
@@ -240,9 +229,10 @@ func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, s
 	if compact || connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
-	providerCtx, hooks, stop := providerio.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), r.providerProgress(owner, intentID))
+	providerCtx, hooks, stop := providerio.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout())
 	defer stop()
-	result, err := adapter.Sample(providerCtx, client, connection, wire, &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID},
+	evidence := &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID, ProgressLease: r.settings.ProviderProgressLease()}
+	result, err := adapter.Sample(providerCtx, client, connection, wire, evidence,
 		providerAttribution{SessionID: metadata.SessionID, Identity: identity}, compact, hooks)
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)

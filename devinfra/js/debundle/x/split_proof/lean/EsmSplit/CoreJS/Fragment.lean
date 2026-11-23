@@ -56,20 +56,20 @@ end
 
 /-- Opaque method bodies stay deferred during plain class creation. -/
 theorem allocOnly_plainClass_opaqueMethod :
-    (Expr.cls "Plain" true (.opaque "Plain" .classCtor false 0 0 0 [])
-      [.method false (.str "method") (.opaque "method" .method false 0 0 1 ["later"])]).allocOnly = true := rfl
+    (Expr.cls "Plain" true (.opaque "Plain" .classCtor false 0 0 0 [] none)
+      [.method false (.str "method") (.opaque "method" .method false 0 0 1 ["later"] none)]).allocOnly = true := rfl
 
 theorem allocOnly_class_staticField_rejected :
-    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
       [.field true (.str "field") .undef]).allocOnly = false := rfl
 
 theorem allocOnly_class_instanceField_rejected :
-    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
       [.field false (.str "field") .undef]).allocOnly = false := rfl
 
 theorem allocOnly_class_nonliteralKey_rejected :
-    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
-      [.method false (.var "key") (.opaque "method" .method false 0 0 1 [])]).allocOnly = false := rfl
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+      [.method false (.var "key") (.opaque "method" .method false 0 0 1 [] none)]).allocOnly = false := rfl
 
 theorem allocOnly_derivedClass_rejected :
     (Expr.derived "Derived" false (.var "Base") []).allocOnly = false := rfl

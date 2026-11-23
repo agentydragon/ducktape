@@ -4,8 +4,6 @@
 # authoritative YAML source under //agentplane/crds -- see that package's BUILD.bazel header --
 # and this package only depends on those targets.
 
-# gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
-# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(

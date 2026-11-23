@@ -193,7 +193,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 	if evidence != nil {
 		if err := protocol.RecordProviderEvidence(ctx, evidence, protocol.HTTPResponseHead{
 			HTTPStatus: response.StatusCode, ProviderRequestID: providerRequestID, ContentType: response.Header.Get("content-type"),
-		}); err != nil {
+		}, false); err != nil {
 			return nil, err
 		}
 		if hooks.ResponseHeadRecorded != nil {
@@ -233,24 +233,23 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			return err
 		}
 		var observations []*eventpb.Event
+		var payload streamEvent
 		if evidence != nil {
 			observations, err = projector.observations(event)
 			if err != nil {
 				return err
 			}
-			payload, err := eventPayload(event)
+			payload, err = eventPayload(event)
 			if err != nil {
 				return err
 			}
-			if err := protocol.RecordProviderEvidence(ctx, evidence, payload, observations...); err != nil {
-				return err
-			}
 		}
+		result.Events = append(result.Events, event)
 		semanticProgress := false
+		var eventErr error
 		switch event.Type {
-		case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-			semanticProgress = event.ItemID != "" && event.Delta != nil && *event.Delta != ""
-		case EventFunctionCallArgumentsDelta, EventCustomToolCallInputDelta:
+		case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta",
+			EventFunctionCallArgumentsDelta, EventCustomToolCallInputDelta:
 			semanticProgress = event.ItemID != "" && event.Delta != nil && *event.Delta != ""
 		case EventOutputItemAdded, EventOutputItemDone:
 			if event.Item != nil && len(observations) > 0 {
@@ -262,41 +261,41 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 					}
 				}
 			}
-		}
-		result.Events = append(result.Events, event)
-		if event.Type == EventOutputItemDone {
-			if event.Item == nil {
-				return errors.New("provider output item event has no item object")
+			if event.Type == EventOutputItemDone {
+				if event.Item == nil {
+					eventErr = errors.New("provider output item event has no item object")
+					break
+				}
+				result.Output = append(result.Output, *event.Item)
 			}
-			result.Output = append(result.Output, *event.Item)
-		}
-		if event.Type == EventCompleted {
+		case EventCompleted:
 			if event.Response == nil {
-				return &protocol.KnownFailureError{Evidence: map[string]any{"reason": "completion event has no response object", "events": result.Events}}
+				eventErr = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "completion event has no response object", "events": result.Events}}
+				break
 			}
 			if status, present := event.Response.StatusValue(); present && status != "completed" {
-				return &protocol.KnownFailureError{Evidence: map[string]any{"reason": "unexpected terminal status", "response": event.Response, "events": result.Events}}
+				eventErr = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "unexpected terminal status", "response": event.Response, "events": result.Events}}
+				break
 			}
 			// Like Codex, consume output_item.done items. Antigravity through LiteLLM can
 			// rewrite reasoning and add items only in terminal output.
 			result.Terminal = event.Response
 			semanticProgress = true
-			if evidence != nil && semanticProgress && hooks.Progress != nil {
-				if err := hooks.Progress(ctx); err != nil {
+			eventErr = errProviderComplete
+		case EventFailed, EventIncomplete, EventError:
+			eventErr = &protocol.KnownFailureError{Evidence: map[string]any{"terminal": event, "events": result.Events}}
+		}
+		if evidence != nil {
+			if err := protocol.RecordProviderEvidence(ctx, evidence, payload, semanticProgress, observations...); err != nil {
+				return err
+			}
+			if semanticProgress && hooks.Progress != nil {
+				if err := hooks.Progress(); err != nil {
 					return err
 				}
 			}
-			return errProviderComplete
 		}
-		if event.Type == EventFailed || event.Type == EventIncomplete || event.Type == EventError {
-			return &protocol.KnownFailureError{Evidence: map[string]any{"terminal": event, "events": result.Events}}
-		}
-		if evidence != nil && semanticProgress && hooks.Progress != nil {
-			if err := hooks.Progress(ctx); err != nil {
-				return err
-			}
-		}
-		return nil
+		return eventErr
 	}
 	for {
 		line, err := lineReader.ReadString('\n')

@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import networkx as nx
-
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, manifest_files
 from cluster.validation.flux import (
     EXTERNAL_ARTIFACT_KIND,
@@ -39,18 +37,6 @@ class ParsedCluster:
     flux_sources: set[tuple[str, str, str]] = field(default_factory=set)
     # Each Flux owner can render a shared directory differently (e.g. targetNamespace).
     rendered_resources: dict[str, list[K8sResource]] = field(default_factory=dict)
-
-    # Directed graph of Flux kustomization dependencies.
-    # Edge A->B means kustomization A depends on B (A must start after B is ready).
-    graph: nx.DiGraph = field(init=False)
-
-    def __post_init__(self) -> None:
-        g: nx.DiGraph = nx.DiGraph()
-        g.add_nodes_from(self.flux_kustomizations)
-        for name, spec in self.flux_kustomizations.items():
-            for dep in spec.depends_on:
-                g.add_edge(name, dep.name)
-        self.graph = g
 
     @property
     def active_flux_kustomizations(self) -> dict[str, FluxKustomizationSpec]:

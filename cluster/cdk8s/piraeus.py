@@ -139,6 +139,8 @@ def _satellite_configuration(
     pod_template: dict[str, Any],
     storage_pools: list[dict[str, Any]],
     *,
+    satellite_cpu: str,
+    satellite_memory: str,
     properties: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     configuration: dict[str, Any] = {"name": name, "nodeSelector": node_selector}
@@ -147,7 +149,19 @@ def _satellite_configuration(
     configuration.update(
         {
             "patches": _SATELLITE_PATCHES,
-            "podTemplate": pod_template,
+            "podTemplate": {
+                **pod_template,
+                "spec": {
+                    **pod_template["spec"],
+                    "containers": [
+                        {
+                            "name": "linstor-satellite",
+                            "resources": {"requests": {"cpu": satellite_cpu, "memory": satellite_memory}},
+                        },
+                        {"name": "drbd-reactor", "resources": {"requests": {"cpu": "30m", "memory": "64Mi"}}},
+                    ],
+                },
+            },
             "deletionPolicy": "Retain",
             "storagePools": storage_pools,
         }
@@ -210,6 +224,7 @@ def operator_chart(app: App) -> Chart:
         install=RETRY_FAILED_INSTALL,
         values={
             "installCRDs": True,
+            "operator": {"resources": {"requests": {"cpu": "200m", "memory": "192Mi"}}},
             # The controller is cluster-wide, but keep it on the existing OVH region.
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             # A single operator replica can be restarted during node maintenance.
@@ -411,17 +426,65 @@ def cluster_chart(app: App) -> Chart:
                 "controller": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}}},
                 "csiController": {
                     "enabled": True,
-                    "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
+                    "podTemplate": {
+                        "spec": {
+                            "nodeSelector": _CONTROLLER_NODE_SELECTOR,
+                            "containers": [
+                                {"name": name, "resources": {"requests": {"cpu": "15m", "memory": memory}}}
+                                for name, memory in (
+                                    ("linstor-csi", "48Mi"),
+                                    ("csi-attacher", "32Mi"),
+                                    ("csi-livenessprobe", "32Mi"),
+                                    ("csi-provisioner", "64Mi"),
+                                    ("csi-snapshotter", "48Mi"),
+                                    ("csi-resizer", "48Mi"),
+                                )
+                            ],
+                        }
+                    },
                 },
-                "csiNode": {"enabled": True},
+                "csiNode": {
+                    "enabled": True,
+                    "podTemplate": {
+                        "spec": {
+                            "containers": [
+                                {"name": name, "resources": {"requests": {"cpu": cpu, "memory": memory}}}
+                                for name, cpu, memory in (
+                                    ("linstor-csi", "75m", "96Mi"),
+                                    ("csi-node-driver-registrar", "15m", "48Mi"),
+                                    ("csi-livenessprobe", "15m", "48Mi"),
+                                )
+                            ]
+                        }
+                    },
+                },
                 # Keep local PV affinity updates; omit the unrelated NFS server.
                 "affinityController": {
                     "enabled": True,
-                    "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}},
+                    "podTemplate": {
+                        "spec": {
+                            "nodeSelector": _CONTROLLER_NODE_SELECTOR,
+                            "containers": [
+                                {
+                                    "name": "linstor-affinity-controller",
+                                    "resources": {"requests": {"cpu": "15m", "memory": "64Mi"}},
+                                }
+                            ],
+                        }
+                    },
                 },
                 # Force-deletes Pods and VolumeAttachments stuck on a node whose DRBD primary lost
                 # quorum, so replicated volumes fail over without manual force-deletes.
-                "highAvailabilityController": {"enabled": True},
+                "highAvailabilityController": {
+                    "enabled": True,
+                    "podTemplate": {
+                        "spec": {
+                            "containers": [
+                                {"name": "ha-controller", "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}}}
+                            ]
+                        }
+                    },
+                },
                 "nfsServer": {"enabled": False},
             },
             "linstorSatelliteConfigurations": [
@@ -433,6 +496,8 @@ def cluster_chart(app: App) -> Chart:
                     _FIRST_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("ssd", _FIRST_NODE_DATA_DEVICE)],
+                    satellite_cpu="400m",
+                    satellite_memory="576Mi",
                 ),
                 # Keep both the hostname and readiness label in the native selector.
                 # The source device is initialized only after a later cutover adds the label.
@@ -441,6 +506,8 @@ def cluster_chart(app: App) -> Chart:
                     _NEXT_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("ssd", _NEXT_NODE_DATA_DEVICE)],
+                    satellite_cpu="150m",
+                    satellite_memory="576Mi",
                 ),
                 # Keep both the hostname and readiness label in the native selector.
                 # The source device is initialized only after a later cutover adds the label.
@@ -449,6 +516,8 @@ def cluster_chart(app: App) -> Chart:
                     _THIRD_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("ssd", _THIRD_NODE_DATA_DEVICE)],
+                    satellite_cpu="100m",
+                    satellite_memory="576Mi",
                 ),
                 _satellite_configuration(
                     "ssd-optiplex",
@@ -457,6 +526,8 @@ def cluster_chart(app: App) -> Chart:
                     _OPTIPLEX_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("ssd", _OPTIPLEX_DATA_DEVICE)],
+                    satellite_cpu="75m",
+                    satellite_memory="512Mi",
                 ),
                 # Keep the longer external-command wait scoped to this HDD satellite.
                 _satellite_configuration(
@@ -466,6 +537,8 @@ def cluster_chart(app: App) -> Chart:
                     _HDD_FIRST_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("hdd", _HDD_FIRST_NODE_DATA_DEVICE)],
+                    satellite_cpu="125m",
+                    satellite_memory="640Mi",
                     properties=_HDD_PROPERTIES,
                 ),
                 _satellite_configuration(
@@ -475,6 +548,8 @@ def cluster_chart(app: App) -> Chart:
                     _HDD_NEXT_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("hdd", _HDD_NEXT_NODE_DATA_DEVICE)],
+                    satellite_cpu="100m",
+                    satellite_memory="512Mi",
                     properties=_HDD_PROPERTIES,
                 ),
                 _satellite_configuration(
@@ -484,6 +559,8 @@ def cluster_chart(app: App) -> Chart:
                     _HDD_LAST_NODE_SELECTOR,
                     _TALOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("hdd", _HDD_LAST_NODE_DATA_DEVICE)],
+                    satellite_cpu="100m",
+                    satellite_memory="576Mi",
                     properties=_HDD_PROPERTIES,
                 ),
                 # Both pools sit on thin Atlas zvols whose free space LINSTOR cannot see.
@@ -493,6 +570,8 @@ def cluster_chart(app: App) -> Chart:
                     _WYRM2_SELECTOR,
                     _NIXOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("ssd", _WYRM2_SSD_DATA_DEVICE), _storage_pool("hdd", _WYRM2_HDD_DATA_DEVICE)],
+                    satellite_cpu="75m",
+                    satellite_memory="640Mi",
                     properties=_HDD_PROPERTIES,
                 ),
                 # A roaming laptop: only strict-local `piraeus-ssd-local` claims land here (the
@@ -502,6 +581,8 @@ def cluster_chart(app: App) -> Chart:
                     _RUGGED_SELECTOR,
                     _NIXOS_SATELLITE_POD_TEMPLATE,
                     [_storage_pool("ssd", _RUGGED_DATA_DEVICE)],
+                    satellite_cpu="125m",
+                    satellite_memory="384Mi",
                 ),
             ],
             "storageClasses": [

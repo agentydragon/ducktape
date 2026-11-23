@@ -106,7 +106,7 @@ describe("ssh exec result", () => {
   });
 
   it("clips a stream taller than its cap behind a button that shows all of it", async () => {
-    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(10_000);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(10_000);
     const container = await drawn(renderResultPreview(execResultPreview, VALUE));
     const showAll = [...container.querySelectorAll("button")].find((button) => button.textContent === "Show all");
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
@@ -123,7 +123,7 @@ describe("ssh exec result", () => {
   });
 
   it("says how many lines a clipped stream has", async () => {
-    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(10_000);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(10_000);
     const lines = Array.from({ length: 45 }, (_, index) => `test-line-${index + 1}`);
     const container = await drawn(
       renderResultPreview(execResultPreview, { ...VALUE, stdout: `${lines.join("\n")}\n` })

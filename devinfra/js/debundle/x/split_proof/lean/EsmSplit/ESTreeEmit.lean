@@ -31,13 +31,14 @@ private def request (decl : Json) (file : String) : Except String Json := do
   if target == original then return decl
   setField decl "source" (literal target)
 
-private def glueImports (P : Plan) (m : Module) := m.imports.map fun (src, names) =>
-  let source := P.find src
-  let specs := names.map fun localName =>
-    let publicName := (source.map (Module.publicName · localName)).getD localName
-    node "ImportSpecifier" [("local", identifier localName), ("imported", moduleName publicName)]
-  node "ImportDeclaration" [("source", literal (relativeUrlSpecifier m.name src)), ("specifiers", toJson specs),
-    ("attributes", .arr #[])]
+private def glueImports (exportsByModule : Std.HashMap ModName (List (Name × Name))) (m : Module) :=
+  m.imports.map fun (src, names) =>
+    let exports := exportsByModule.getD src []
+    let specs := names.map fun localName =>
+      let publicName := exportNameFor exports localName
+      node "ImportSpecifier" [("local", identifier localName), ("imported", moduleName publicName)]
+    node "ImportDeclaration" [("source", literal (relativeUrlSpecifier m.name src)), ("specifiers", toJson specs),
+      ("attributes", .arr #[])]
 
 private def glueExports (m : Module) : List Json :=
   if m.exports.isEmpty then [] else
@@ -51,6 +52,7 @@ private def isRequest (s : Json) : Bool :=
     (Lower.typ s == "ExportNamedDeclaration" && !Lower.isNull (Lower.fld s "source"))
 
 private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan)
+    (exportsByModule : Std.HashMap ModName (List (Name × Name)))
     (m : Module) (hashbang : List (String × Json)) : Except String Json := do
   let held := Std.HashSet.ofList m.stmts
   let elsewhere := imports.filter fun (i, _) => !held.contains i
@@ -70,7 +72,7 @@ private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B 
     Lower.typ s == "ExpressionStatement" && (s.getObjValAs? String "directive").isOk
   let (requests, body) := rest.partition isRequest
   let requests ← requests.mapM (request · m.name)
-  let output := directives ++ requests ++ duplicated.toList ++ glueImports P m ++ body ++ glueExports m
+  let output := directives ++ requests ++ duplicated.toList ++ glueImports exportsByModule m ++ body ++ glueExports m
   return node "Program" ([("sourceType", .str "module"), ("body", toJson output)] ++
     (if m.name == P.entry then hashbang else []))
 
@@ -81,7 +83,10 @@ def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String) : Exc
     [("hashbang", Json.str (source.takeWhile fun c => !['\n', '\r', '\u2028', '\u2029'].contains c).toString)]
     else []
   validateModulePaths (P.mods.map (·.name))
+  let arr := B.toArray
+  let exportsByModule : Std.HashMap ModName (List (Name × Name)) :=
+    P.mods.foldr (fun m exports => exports.insert m.name (m.namedExportsFrom arr)) ∅
   return Json.mkObj (← P.mods.mapM fun m => do
-    return (m.name, ← moduleProgram asts imports B P m hashbang))
+    return (m.name, ← moduleProgram asts imports B P exportsByModule m hashbang))
 
 end EsmSplit.ESTreeEmit

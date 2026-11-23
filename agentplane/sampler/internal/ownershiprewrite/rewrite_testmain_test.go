@@ -14,7 +14,7 @@ var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
 	applyMigrations := func(ctx context.Context, db *sql.DB) error { return migrations.Up(ctx, db) }
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, applyMigrations, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, applyMigrations, &integrationDatabase))
 }
 
 func newTestDB(t *testing.T) *sql.DB {

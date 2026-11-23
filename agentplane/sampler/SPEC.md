@@ -604,13 +604,13 @@ state and other live cells/processes. JavaScript syntax errors and exceptions li
 normal `Script failed` output. Internal store, host-protocol and transport failures are not
 classified as model input errors.
 
-Provider sampling and compaction use at most three attempts per prepared step. HTTP 408, 429 and
+Provider sampling and compaction use at most `provider_attempt_budget` attempts per prepared step (default 3, range 1–16). HTTP 408, 429 and
 5xx, upstream transport/truncated-stream failures, response-head/semantic-idle timeouts, and a
 Chat Completions stream that reports `tool_calls` without emitting any calls are transient.
 The sampler logs a warning for the empty tool-call response. After the joined call ends, the
 owner abandons its exact intent, retains raw evidence,
-and records retry due time using PostgreSQL. Backoff starts at one second and doubles, honoring
-`Retry-After` up to 30 seconds. A retry has a fresh intent ID, the same accepted command and step,
+and records retry due time using PostgreSQL. Backoff starts at `provider_retry_initial_backoff_seconds` (default 1) and doubles, honoring
+`Retry-After` up to `provider_retry_max_backoff_seconds` (default 30). A retry has a fresh intent ID, the same accepted command and step,
 and the frozen prepared body; steering input and notifications wait until that step settles.
 Changed routing or parser profiles fail the command rather than silently rerouting its request.
 Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
@@ -930,6 +930,12 @@ these concrete native fields and Go's standard JSON encoder, rather than rerunni
 policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
 commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
 
+For a fresh sampling call, the owner prepares execution and environment notices together with
+the request in the intent transaction. It keeps the decoded transcript and active context until
+the call settles. Preparation and Finish can reuse those items after checking the context heads
+and control values under the owner lock. If either changed, the sampler loads the current items.
+The journal cursor, interrupts and lease checks still come from PostgreSQL at the time of use.
+
 Each sampling and compaction intent also records its provider step, 1-based attempt number, finite
 budget, predecessor, original accepted command, owner generation and PostgreSQL-clock attempt lease;
 an eligible transient abandonment stores its retry due time in that same journal row. Existing
@@ -943,8 +949,12 @@ frontier carries a named suppression reason and cannot reuse that frozen request
 after the model-visible reset uses a fresh prepared request in the runtime recovery path. Partial
 sampling evidence remains retained, while observed response items are reconciled `ABSENT`; no
 partial tool call is committed or dispatched before Finish. Semantic progress renews the attempt
-lease only after its event evidence is durable. Initial leases cover response-head and semantic-idle
-budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
+lease in the transaction that records the event and its projected observations. The local idle
+timer resets after that transaction commits. Initial leases cover response-head and semantic-idle
+budgets plus three bounded database operations. On semantic progress, the sampler adds the idle
+budget and two operation budgets to the PostgreSQL time and rounds the expiry up to the next
+`provider_progress_lease_coalescing_seconds` boundary (default 30). It writes the attempt row only when that deadline changes. Every evidence
+append still checks the live lease and owner generation.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
 attempt count and budget. There is no elapsed turn deadline.

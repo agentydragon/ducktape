@@ -22,6 +22,7 @@ const table = [
     "Strategy",
     "Splits",
     "Accepted",
+    "Accepted, reordered",
     "Accepted, Node differs",
     "Rejected, Node breaks",
     "Rejected, Node fine",
@@ -37,6 +38,9 @@ for (const [key, rs] of group((r) => `${r.bundle}\t${r.strategy}`)) {
     ...key.split("\t"),
     String(rs.length),
     String(count(rs, (r) => r.verdict === "accept")),
+    rs.every((r) => typeof r.reordered === "boolean")
+      ? String(count(rs, (r) => r.verdict === "accept" && r.reordered))
+      : "unmeasured",
     String(count(rs, (r) => r.verdict === "accept" && r.node !== "same")),
     String(count(rejected, (r) => r.node !== "same")),
     String(count(rejected, (r) => r.node === "same")),

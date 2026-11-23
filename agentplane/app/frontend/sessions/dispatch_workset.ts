@@ -18,11 +18,13 @@ const RECEIPT_LOOKUP_TIMEOUT_MS = 15_000;
 
 export interface WorksetView {
   snapshot: DispatchWorkset | null;
+  /** Lifetime of the connection that supplied this snapshot, including clean lease renewal. */
+  connection: AbortSignal | null;
   stale: boolean;
   coverageLost: boolean;
 }
 
-export const EMPTY_WORKSET: WorksetView = { snapshot: null, stale: false, coverageLost: false };
+export const EMPTY_WORKSET: WorksetView = { snapshot: null, connection: null, stale: false, coverageLost: false };
 
 export function worksetItemFromReceipt(row: Dispatch): DispatchWorksetItem {
   return create(DispatchWorksetItemSchema, {
@@ -102,6 +104,7 @@ function checkWorkset(snapshot: DispatchWorkset, sessionId: string): void {
 export function watchDispatchWorkset(sessionId: string, publish: (view: WorksetView) => void): () => void {
   let token = "";
   let view = EMPTY_WORKSET;
+  let connectionScope: AbortController | undefined;
   let renewal: number | undefined;
   const update = (next: WorksetView) => {
     view = next;
@@ -118,10 +121,13 @@ export function watchDispatchWorkset(sessionId: string, publish: (view: WorksetV
         checkWorkset(frame.frame.value, sessionId);
         token = frame.resumeToken;
         window.clearTimeout(renewal);
-        update({ ...view, snapshot: frame.frame.value, stale: false });
+        connectionScope ??= new AbortController();
+        update({ ...view, snapshot: frame.frame.value, connection: connectionScope.signal, stale: false });
       },
       onConnection: (connection) => {
         if (connection.phase !== "reconnecting") return;
+        connectionScope?.abort();
+        connectionScope = undefined;
         window.clearTimeout(renewal);
         if (connection.lastError !== null) {
           update({ ...view, stale: true });
@@ -131,12 +137,15 @@ export function watchDispatchWorkset(sessionId: string, publish: (view: WorksetV
       },
       onError: (reason) => {
         if (!(reason instanceof WatchStreamError || reason instanceof HttpError) || reason.code !== 11) return;
+        connectionScope?.abort();
+        connectionScope = undefined;
         token = "";
         update({ ...view, stale: true, coverageLost: true });
       },
     }
   );
   return () => {
+    connectionScope?.abort();
     stop();
     window.clearTimeout(renewal);
   };

@@ -11,7 +11,7 @@ import pytest_bazel
 
 from tana.domain.nodes import BaseNode
 from tana.export.convert import RenderContext
-from tana.export.export_node_subset import TrackingGraph, export_node_with_tracking
+from tana.export.export_node_subset import TrackingGraph, create_subset_json, export_node_with_tracking
 from tana.graph.graph import TanaGraph
 from tana.graph.loader import load_workspace
 
@@ -83,6 +83,20 @@ def test_subset_export(node_id):
     expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()
     # The exporter ends the paste with a blank line.
     check_content_match(tanapaste.rstrip() + "\n", expected, f"{node_id} subset export")
+
+
+@pytest.mark.parametrize(
+    ("folder", "node_id"), [("code_blocks", "YbPcBamWZFGV"), ("supertag_with_attributes", "hiHpuPTowhDs")]
+)
+def test_subset_reproduces_tanapaste(folder, node_id):
+    original = json.loads((TESTDATA_PATH / folder / f"{node_id}.json").read_text(encoding="utf-8"))
+    full_graph = TrackingGraph.from_documents(original["docs"])
+    tanapaste, touched = export_node_with_tracking(full_graph, node_id)
+
+    subset = create_subset_json(original, touched)
+    graph = TanaGraph.from_documents(subset["docs"])
+    actual = _render_node_as_tanapaste(graph, graph[node_id])
+    check_content_match(actual, tanapaste.rstrip() + "\n", f"{node_id} from subset")
 
 
 if __name__ == "__main__":

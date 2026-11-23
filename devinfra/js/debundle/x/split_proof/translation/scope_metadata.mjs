@@ -65,6 +65,10 @@ export function literalKey(node) {
   if (node.regex) return `r:${node.regex.pattern}/${node.regex.flags}`;
   if (node.bigint !== undefined) return `bi:${node.bigint}`;
   if (node.value === null) return "null";
+  // Lean's JSON decoder replaces isolated surrogates with U+FFFD. Keep a
+  // distinct, lossless key so its string lowering can refuse these literals.
+  if (typeof node.value === "string" && !node.value.isWellFormed())
+    return `s16:${Array.from(node.value, (c) => c.codePointAt(0).toString(16)).join(",")}`;
   return `${{ string: "s", number: "n", boolean: "b" }[typeof node.value]}:${node.value}`;
 }
 
@@ -89,8 +93,8 @@ function literalValue(node) {
   return node.value;
 }
 
-function annotate(node, meaning, unitRanges, binders, legacy) {
-  if (Array.isArray(node)) return node.map((child) => annotate(child, meaning, unitRanges, binders, legacy));
+function annotate(node, meaning, unitRanges, binders, legacy, scopes) {
+  if (Array.isArray(node)) return node.map((child) => annotate(child, meaning, unitRanges, binders, legacy, scopes));
   if (node === null || typeof node !== "object") return node;
   const keepRange = unitRanges.has(node) || (!legacy && needsPrintRange(node));
   const out = keepRange ? { start: node.start, end: node.end } : {};
@@ -106,8 +110,10 @@ function annotate(node, meaning, unitRanges, binders, legacy) {
     return out;
   }
   for (const [key, value] of Object.entries(node)) {
-    if (!POSITION_FIELDS.has(key)) out[key] = annotate(value, meaning, unitRanges, binders, legacy);
+    if (!POSITION_FIELDS.has(key)) out[key] = annotate(value, meaning, unitRanges, binders, legacy, scopes);
   }
+  if (node.type === "TemplateElement" && typeof node.value.cooked === "string" && !node.value.cooked.isWellFormed())
+    out.cookedWellFormed = false;
   if (node.type === "Identifier") {
     const m = meaning.get(node);
     if (m) {
@@ -119,12 +125,27 @@ function annotate(node, meaning, unitRanges, binders, legacy) {
       if (m.declares) out.d = 1;
     }
   }
+  if (scopes && ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) {
+    const scope = scopes.acquire(node, true);
+    if (scope) {
+      // Scope-through references include children that capture the same outer
+      // cells. Ambient references stay in the callable body.
+      const captures = scope.through.filter((ref) => ref.resolved && ref.resolved.scope.type !== "global");
+      out.opaqueCaptures = [
+        ...new Set(captures.sort((a, b) => a.identifier.start - b.identifier.start).map((ref) => ref.identifier.name)),
+      ];
+    }
+  }
   return out;
 }
 
 /** Preserve the Program's syntax with scope annotations and JSON-safe literals. Retain Acorn's
  * UTF-16 offsets for the units and for functions, methods and classes whose source is observable. */
-export function annotateProgram({ code, ast }, meaning, { legacy = false } = {}) {
+export function annotateProgram(
+  { code, ast, scopes },
+  meaning,
+  { legacy = false, includeOpaqueCaptures = false } = {}
+) {
   const unitRanges = new Set(ast.body);
   for (const statement of ast.body) {
     const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
@@ -132,7 +153,10 @@ export function annotateProgram({ code, ast }, meaning, { legacy = false } = {})
       for (const declarator of declaration.declarations) unitRanges.add(declarator);
     }
   }
-  const program = { ...annotate(ast, meaning, unitRanges, new Map(), legacy), sourceText: code };
+  const program = {
+    ...annotate(ast, meaning, unitRanges, new Map(), legacy, includeOpaqueCaptures ? scopes : null),
+    sourceText: code,
+  };
   if (!legacy) program.annotationVersion = 2;
   return program;
 }

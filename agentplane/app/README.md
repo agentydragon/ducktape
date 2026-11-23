@@ -91,8 +91,9 @@ bbr test //agentplane/app/...
 Session membership and App metadata stay available. History summaries, Thread views, and retained-event
 reads report the History Service error.
 The generated Dispatcher command facade remains available: it validates the Session and current Sandbox
-UID independently of History. The browser retains submitted commands until History can reconcile
-their admission. Running marks and the archive guard read Dispatcher activity independently of History. Sandbox lifecycle and Action review
+UID independently of History. A selected Thread with a live Dispatcher workset can verify retained
+originals and release their browser copies while History is unavailable. Running marks and the
+archive guard read Dispatcher activity independently of History. Sandbox lifecycle and Action review
 keep working. Browser History watches reconnect and refresh summaries when the service recovers.
 
 ## Implementation and testing
@@ -156,9 +157,14 @@ Only the first `CaughtUp` of a fresh snapshot reconciles missing commands; incre
 unchanged commands alone. Deletion receipts may have no Sandbox address. If retention coverage expired
 (`OUT_OF_RANGE`), the browser clears its cursor and takes a fresh snapshot, retaining a visible warning
 that some delivery updates may be missing. A fresh snapshot cannot recover pruned deletion receipts.
-Queued and delivering are distinct from runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
-History remains the authority for command outcomes. The browser retains the command locally until History
-projects its admission or command row; the app adds no command queue.
+A runner admission proves the command reached the runner journal. History supplies evidence of its effect.
+
+While the selected Thread has a live Session workset, the browser checks attempted commands with
+`BatchGetDispatches`. A current receipt can release the persisted browser copy when the Session,
+command ID, operation and payload match and the receipt agrees with any saved Sandbox name and UID.
+A missing or legacy deletion receipt, an unreadable response, or a workset disconnect during the
+lookup leaves the copy in place. This check only reads receipts. After reload, the conversation
+shows a bounded set of outstanding commands. Delivery history pages through older retained originals.
 
 The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
 operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.

@@ -47,10 +47,11 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(
     gateway_integrations = json.loads(remote.CANARY_CONFIG.data["gateway-integrations.json"])["integrations"]
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert "myquest-canary" not in json.loads(remote.CONFIG.data["connections.json"])
+    shared_image = find_resource(direct_workloads, "ImageRepository", remote.SHARED_PROVIDERS_IMAGE)["spec"]["image"]
     assert {
         find_resource(direct_workloads, "Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
-    } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
+    } == {f"{shared_image}:unset"}
     assert (
         sum(
             item["kind"] == "ImagePolicy" and item["metadata"]["name"] == remote.SHARED_PROVIDERS_IMAGE
@@ -143,13 +144,13 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
         recorder = init[-1]
         assert recorder["restartPolicy"] == "Always"
-        assert "startupProbe" in recorder
         env = {item["name"]: item["value"] for item in containers["provider"]["env"]}
         assert env["HTTPS_PROXY"] == "http://127.0.0.1:18080"
         assert env["SSL_CERT_FILE"] == "/var/run/session-recorder-trust/ca-certificates.crt"
         assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
         assert env["PLATFORM_SESSIONS_PROXY_CA_FILE"] == "/var/run/session-recorder-ca/tls.crt"
-        assert "+/captures/%Y-%m-%d.mitm" in recorder["command"][-1]
+        [capture_mount] = [mount for mount in recorder["volumeMounts"] if mount["name"] == "captures"]
+        assert capture_mount["mountPath"] == "/captures"
         claim = find_resource(objects, "PersistentVolumeClaim", f"{name}-captures")
         assert claim["spec"]["storageClassName"] == "piraeus-hdd-local"
         assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"

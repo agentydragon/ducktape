@@ -583,6 +583,29 @@ in
         sleep-inactive-ac-type = "nothing";
       };
 
+      "org/gnome/shell/extensions/plaid-spend" = lib.mkIf config.ducktape.plaidSpend.enable {
+        panel-order = [
+          "status"
+          "balance"
+          "pace-window"
+          "pace"
+          "sparkline"
+        ];
+        panel-visible = [
+          "status"
+          "pace"
+          "sparkline"
+        ];
+        # CLEANUP(added 2026-11-22): Remove after the Plaid Spend extension artifact
+        # pin includes the removal of its panel-pace-window migration.
+        panel-pace-window-migrated = true;
+        pace-window = "7d";
+        sparkline-anchor-zero = true;
+        sparkline-show-leash = true;
+        sparkline-leash-color = "";
+        sparkline-history-days = "30";
+      };
+
       "org/gnome/shell/extensions/panel-date-format" = {
         format = "%a %Y-%m-%d %H:%M";
       };

@@ -1,16 +1,15 @@
-// Run the Lean footprint analysis on dumped bundles and compare with eslint-scope (and extract.mjs).
+// Run the Lean footprint analysis on dumped bundles and compare with eslint-scope.
 //
-//   node compare.mjs <bundle.json>... [--example]
+//   node compare.mjs <bundle.json>...
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
-import { footprints } from "../extract/extract.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const LOWER = resolve(process.env.LOWER ?? new URL("../lean/.lake/build/bin/lower", import.meta.url).pathname);
-const files = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const files = process.argv.slice(2);
 const set = (a) => new Set(a);
 const missing = (need, have) => [...need].filter((x) => !have.has(x));
 
@@ -82,7 +81,7 @@ function closureSizes(fps) {
   });
 }
 
-/** Render the split declarator snippets used by the legacy comparison report. */
+/** Render the split declarator snippets for the comparison report. */
 function unitSource({ node, start, end }, source) {
   const declaration = node.type === "ExportNamedDeclaration" ? node.declaration : node;
   const splitDeclarator = start !== node.start || end !== node.end;
@@ -214,42 +213,3 @@ console.table(
     })
   )
 );
-
-if (process.argv.includes("--example")) {
-  const dump = JSON.parse(readFileSync(files[0], "utf8"));
-  const mine = footprints(
-    topLevelStatements(dump)
-      .map((unit) => unitSource(unit, dump.sourceText))
-      .join("\n")
-  );
-  const fps = execFileSync(LOWER, [files[0]], { encoding: "utf8" })
-    .trim()
-    .split("\n")
-    .map((l) => JSON.parse(l));
-  let diffs = 0;
-  mine.forEach((m, i) => {
-    const f = fps[i];
-    const same = (a, b) => JSON.stringify([...new Set(a)].sort()) === JSON.stringify([...new Set(b)].sort());
-    if (!(
-      same(m.defs, f.defs) &&
-      same(m.eager, f.eager) &&
-      same(m.lazy, f.lazy) &&
-      m.hoisted === f.hoisted &&
-      m.effect === f.effect
-    )) {
-      diffs++;
-      console.log(
-        "DIFF",
-        i,
-        m.src,
-        "\n  js  :",
-        JSON.stringify({ ...m, src: undefined }),
-        "\n  lean:",
-        JSON.stringify(f)
-      );
-    }
-  });
-  console.log(
-    `\nextract.mjs vs Lean on the example: ${mine.length - diffs}/${mine.length} statements identical footprints`
-  );
-}

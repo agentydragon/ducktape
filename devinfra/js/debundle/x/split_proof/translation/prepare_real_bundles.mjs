@@ -7,9 +7,9 @@ import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump } from "../lowering/dump_core.mjs";
 
-const [directory, ...requested] = process.argv.slice(2);
-if (!directory || !path.isAbsolute(directory))
-  throw new Error("usage: prepare_real_bundles <absolute output dir> [bundle ...]");
+const [output, ...requested] = process.argv.slice(2);
+if (!output) throw new Error("usage: prepare_real_bundles <output dir> [bundle ...]");
+const directory = path.resolve(output);
 const stems = ["lodash", "acorn", "zod", "semver"].flatMap((name) => [name, `${name}.min`]);
 await mkdir(directory, { recursive: true });
 for (const variant of requested.length ? requested : stems) {

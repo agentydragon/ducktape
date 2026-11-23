@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -29,16 +28,14 @@ pytest_plugins = ("devinfra.testing.pytest_outputs",)
 
 
 @pytest.mark.asyncio
-async def test_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) -> None:
+async def test_dashboard_visual(test_outputs: BoundTestOutputs) -> None:
     root = Runfiles.CreateOrRaise().root()
     dashboard_path = root / os.environ["GRAFANA_DASHBOARD_RLOCATION"]
     dashboard = json.loads(dashboard_path.read_text())
     fixture_path = os.environ["GRAFANA_FIXTURE_RLOCATION"]
     fixture = expand_fixture(json.loads((root / fixture_path).read_text()))
     validate_fixture(dashboard, fixture)
-    with grafana_dashboard(
-        tmp_path, dashboard_path, "", render_fixture=True, variables=fixture.get("variables", {})
-    ) as base_url:
+    with grafana_dashboard(dashboard, variables=fixture.get("variables", {})) as base_url:
         async with (
             async_playwright() as playwright,
             deterministic_browser_context(

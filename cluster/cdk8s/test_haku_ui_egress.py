@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
+from cdk8s import App
 
 from agentplane.crd_group import GROUP
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
@@ -20,12 +20,7 @@ from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 @pytest.fixture(scope="module")
 def resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    app = scratch_app_factory()
-    return [
-        doc
-        for chart in (staging.chart(app), haku_rbac.chart(app))
-        for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    ]
+    return staging.chart(scratch_app_factory()).to_json() + haku_rbac.chart(scratch_app_factory()).to_json()
 
 
 def test_haku_ui_account_mounts_no_token(resources: list[dict[str, Any]]) -> None:
@@ -54,24 +49,27 @@ def test_haku_ui_standing_access_stays_within_claude_ais_except_ankiweb(resource
     assert special <= haku
     assert haku - special <= claude
 
-    claude_hosts = {
-        host
+    read_methods = {"GET", "HEAD"}
+    # Notebook downloads can request any path. A path-scoped Claude grant cannot cover them.
+    claude_reads = {
+        (host, method)
         for policy in resources
         if policy["kind"] == "PolicySet"
         and policy["metadata"]["namespace"] == staging.ENV.namespace
         and policy["metadata"]["name"] in claude
         for rule in policy["spec"]["rules"]
-        if rule["type"] == "egress"
+        if rule["type"] == "egress" and not rule.get("paths")
         for host in rule["hosts"]
+        for method in rule.get("methods", read_methods)
     }
     notebook = find_resource(resources, "PolicySet", HAKU_NOTEBOOK_FETCH_POLICY, namespace=staging.ENV.namespace)
     assert notebook["spec"]["rules"]
     for rule in notebook["spec"]["rules"]:
         assert rule["type"] == "egress"
         assert rule["hosts"]
-        assert set(rule["hosts"]) <= claude_hosts
         assert rule["methods"]
-        assert set(rule["methods"]) <= {"GET", "HEAD"}
+        assert set(rule["methods"]) <= read_methods
+        assert {(host, method) for host in rule["hosts"] for method in rule["methods"]} <= claude_reads
         assert "credentialRef" not in rule
         assert not rule.get("clusterInternal", False)
 

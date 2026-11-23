@@ -1,439 +1,208 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
-import { generate } from "astring";
+import { existsSync } from "node:fs";
+import {
+  id,
+  literal,
+  call,
+  conditional,
+  returns,
+  throws,
+  block,
+  arrow,
+  workerSplit,
+  assertWorkerResult,
+  observedProgram,
+} from "./testing/linked_programs.mjs";
 
-const root = process.env.TEST_TMPDIR;
-assert(root, "TEST_TMPDIR is required");
-
-const id = (name) => ({ type: "Identifier", name });
-const literal = (value) => ({ type: "Literal", value });
-const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
-const expression = (expression) => ({ type: "ExpressionStatement", expression });
-const returns = (argument) => ({ type: "ReturnStatement", argument });
-const block = (body) => ({ type: "BlockStatement", body });
-const arrow = (params, body) => ({
-  type: "ArrowFunctionExpression",
-  params,
-  body,
-  expression: body.type !== "BlockStatement",
-});
-const functionExpression = (params, body) => ({ type: "FunctionExpression", id: null, params, body });
-const variable = (kind, name, init) => ({
-  type: "VariableDeclaration",
-  kind,
-  declarations: [{ type: "VariableDeclarator", id: id(name), init }],
-});
-const importNamed = (source, bindings) => ({
-  type: "ImportDeclaration",
-  source: literal(source),
-  specifiers: bindings.map(([imported, local]) => ({
-    type: "ImportSpecifier",
-    imported: id(imported),
-    local: id(local),
-  })),
-});
-const exportNamed = (bindings) => ({
-  type: "ExportNamedDeclaration",
-  declaration: null,
-  specifiers: bindings.map(([local, exported]) => ({
-    type: "ExportSpecifier",
-    local: id(local),
-    exported: id(exported),
-  })),
-  source: null,
-});
-const program = (body) => generate({ type: "Program", sourceType: "module", body });
-
-const probe = path.join(root, "linked_programs_observe.mjs");
-writeFileSync(
-  probe,
-  `try {
-  const module = await import(process.argv[2]);
-  const names = JSON.parse(process.argv[3]);
-  const values = Object.fromEntries(names.map((name) => {
-    const exported = module[name];
-    const value = typeof exported === "function" ? exported() : exported;
-    return [name, typeof value === "function" ? value() : value];
-  }));
-  console.log(JSON.stringify({ values }));
-} catch (error) {
-  console.log(JSON.stringify({ error: error.name }));
+for (const [seed, value] of [0, "taken", "", 3].entries()) {
+  const selected = literal(seed + 30);
+  const skipped = call(arrow([], block([throws(literal(seed))])));
+  const choose = conditional(literal(value), value ? selected : skipped, value ? skipped : selected);
+  const source = observedProgram(arrow([], choose), call(id("worker")));
+  assertWorkerResult(`generated-conditional-${seed}`, source, seed + 30);
 }
-`
+
+// The temporal dead zone throws from the test and from the selected arm respectively.
+// Returning normally through either expression would bypass the catch.
+for (const [name, expr] of [
+  ["test", "later ? 1 : 2"],
+  ["arm", "true ? later : 2"],
+]) {
+  const source = `const worker = () => {
+    try { return ${expr}; let later; } catch { return 7; }
+  };
+  export const result = worker();`;
+  assertWorkerResult(`conditional-abrupt-${name}`, source, 7);
+}
+
+// The wrong comparison result throws during initialization, so an incorrect lowering
+// cannot pass by making the same mistake in both the original and the split.
+for (const [index, [left, op, right, expected]] of [
+  [literal("1"), "===", literal(1), false],
+  [id("worker"), "===", id("worker"), true],
+  [id("worker"), "!==", { type: "ObjectExpression", properties: [] }, true],
+  [id("NaN"), "===", id("NaN"), false],
+].entries()) {
+  const test = { type: "BinaryExpression", operator: op, left, right };
+  const abrupt = call(arrow([], block([throws(literal(index))])));
+  const result = conditional(test, expected ? literal(true) : abrupt, expected ? abrupt : literal(false));
+  assertWorkerResult(
+    `strict-comparison-${index}`,
+    observedProgram({ type: "ObjectExpression", properties: [] }, result),
+    expected
+  );
+}
+
+// A void operand still runs. Failing any assertion during initialization
+// prevents an identical lowering mistake in both modules from certifying.
+assertWorkerResult(
+  "void-observes-operand",
+  `const worker = () => {
+    const box = {value: 0};
+    const discarded = void (box.value = 4);
+    if (discarded !== undefined || box.value !== 4) throw "operand";
+    try { return void (() => { throw "abrupt"; })(); }
+    catch (error) { return error; }
+  };
+  export const result = worker();`,
+  "abrupt"
 );
 
-function observe(file, exportNames) {
-  const names = Array.isArray(exportNames) ? exportNames : [exportNames];
-  const result = spawnSync(process.execPath, [probe, pathToFileURL(file).href, JSON.stringify(names)], {
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
-  const observed = JSON.parse(result.stdout.trim());
-  if (observed.error) return observed;
-  return Object.fromEntries(names.map((name) => [name, observed.values[name]]));
+{
+  const voidExpr = (argument) => ({ type: "UnaryExpression", operator: "void", argument, prefix: true });
+  const operands = [literal(0), literal(null), arrow([], literal(3)), call(arrow([], literal("returned")))];
+  const checks = operands.map((operand) => ({
+    type: "IfStatement",
+    test: { type: "BinaryExpression", operator: "!==", left: voidExpr(operand), right: id("undefined") },
+    consequent: throws(literal("unexpected value")),
+    alternate: null,
+  }));
+  assertWorkerResult(
+    "generated-void-operands",
+    observedProgram(arrow([], block([...checks, returns(literal(true))])), call(id("worker"))),
+    true
+  );
 }
 
-function lower(source, spec, out, extra = []) {
-  const result = spawnSync(process.env.LOWERSPLIT, [source, spec, out, ...extra], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error) throw result.error;
-  const log = result.stdout + result.stderr;
-  assert([0, 1].includes(result.status), log);
-  const verdictLines = result.stdout.split(/\r?\n/).filter((line) => {
-    try {
-      JSON.parse(line);
-      return true;
-    } catch {
-      return false;
+const typeOf = (argument) => ({ type: "UnaryExpression", operator: "typeof", prefix: true, argument });
+
+// Exercise both direct evaluation and calls during initialization. The first seed
+// reproduces the proof-cost regression on a moved worker returning "undefined" != typeof undefined.
+for (const [index, [operand, tag, expected]] of [
+  [id("undefined"), "undefined", false],
+  [arrow([], literal(0)), "object", true],
+  [literal(null), "object", false],
+  [literal(3), "string", true],
+].entries()) {
+  const type = typeOf(operand);
+  const [left, right] = index % 2 === 0 ? [literal(tag), type] : [type, literal(tag)];
+  const expr = { type: "BinaryExpression", operator: "!=", left, right };
+  const source = index < 2 ? observedProgram(arrow([], expr), call(id("worker"))) : observedProgram(expr, id("worker"));
+  assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
+}
+
+// If the model gets a branch wrong, the initializer throws before certification.
+for (const [index, [left, right, equal]] of [
+  [literal("01"), literal("1"), false],
+  [literal("undefined"), typeOf(id("undefined")), true],
+  [typeOf(literal(null)), typeOf(literal(3)), false],
+].entries()) {
+  const comparison = { type: "BinaryExpression", operator: "==", left, right };
+  const wrong = call(arrow([], block([throws(literal("wrong equality result"))])));
+  const expected = literal(equal);
+  const result = conditional(comparison, equal ? expected : wrong, equal ? wrong : expected);
+  const source = observedProgram(arrow([], result), call(id("worker")));
+  assertWorkerResult(`generated-string-equality-${index}`, source, equal);
+}
+
+assertWorkerResult(
+  "string-equality-operand-order",
+  `const worker = () => {
+    const trace = { step: "start" };
+    const left = () => {
+      if (trace.step !== "start") throw "left repeated";
+      trace.step = "left";
+    };
+    const right = () => {
+      if (trace.step !== "left") throw "right out of order";
+      trace.step = "right";
+      return 1;
+    };
+    if (typeof left() == typeof right()) throw "unexpected equality";
+    const failing = () => { trace.step = "failed"; throw "left stopped"; };
+    try { typeof failing() == typeof right(); }
+    catch (error) {
+      if (error !== "left stopped" || trace.step !== "failed") throw error;
+      return "done";
     }
-  });
-  assert.equal(verdictLines.length, 1, log);
-  const verdict = JSON.parse(verdictLines[0]);
-  assert.equal(verdict.requested, "normal-completion", log);
-  assert.equal(verdict.scope, "linked-programs", log);
-  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
-  return { verdict, log };
-}
-
-function prepare(dir, { source, provider, extras = {}, sourceName = "source.mjs", spec }) {
-  mkdirSync(dir, { recursive: true });
-  const sourceFile = path.join(dir, sourceName);
-  const providerFile = path.join(dir, "provider.mjs");
-  const specFile = path.join(dir, "spec.json");
-  writeFileSync(sourceFile, source);
-  writeFileSync(providerFile, provider);
-  for (const [name, contents] of Object.entries(extras)) writeFileSync(path.join(dir, name), contents);
-  writeFileSync(specFile, JSON.stringify(spec, null, 2));
-  return { sourceFile, providerFile, specFile };
-}
-
-function generatedCase(seed) {
-  const publicFactory = `create${seed}`;
-  const sameValueFactory = `sameValue${seed}`;
-  const localFactory = `imported${seed}`;
-  const resultName = `publicResult${seed}`;
-  const plainResultName = `plainResult${seed}`;
-  const loaderName = `loader${seed}`;
-  const movedName = `moved${seed}`;
-  const ballastName = `ballast${seed}`;
-  const plainName = `plain${seed}`;
-  const fragment = `fragment-${seed}.mjs`;
-  const providerMode = seed % 3;
-  const hasSecondMovedDeclaration = seed % 2 === 1;
-  const callback = providerMode === 0 ? arrow([], id(movedName)) : arrow([], literal(seed + 70 + providerMode));
-  const sourceBody = [
-    importNamed("./provider.mjs", [[publicFactory, localFactory]]),
-    variable("const", ballastName, literal(seed)),
-    variable(seed % 2 === 0 ? "const" : "var", loaderName, call(id(localFactory), [callback])),
-    variable("const", movedName, arrow([], literal(seed + 20))),
-    ...(hasSecondMovedDeclaration ? [variable("const", `fragmentValue${seed}`, literal(seed + 40))] : []),
-    variable("const", plainName, arrow([], literal(seed + 60))),
-    exportNamed([
-      [loaderName, resultName],
-      [plainName, plainResultName],
-    ]),
-  ];
-  const movedIndex = 3;
-  const extraIndex = 4;
-  const plainIndex = hasSecondMovedDeclaration ? 5 : 4;
-  const exportedIndex = sourceBody.length - 1;
-  const fragmentIndices = [movedIndex, ...(hasSecondMovedDeclaration ? [extraIndex] : [])];
-  const fragmentSet = new Set(fragmentIndices);
-  const entryIndices = sourceBody.map((_, index) => index).filter((index) => !fragmentSet.has(index));
-  const spec = {
-    entry: "entry.mjs",
-    order: [fragment],
-    sequential: true,
-    modules: {
-      "entry.mjs": entryIndices.map((index) => `#${index}`),
-      [fragment]: fragmentIndices.map((index) => `#${index}`),
-    },
+    throw "missing throw";
   };
-  assert(entryIndices.includes(plainIndex));
-  assert(entryIndices.includes(exportedIndex));
-  const factory =
-    providerMode === 0
-      ? arrow([id("callback")], arrow([], call(id("callback"))))
-      : providerMode === 1
-        ? arrow([id("callback")], block([expression(call(id("callback"))), returns(arrow([], call(id("callback"))))]))
-        : functionExpression([id("callback")], block([returns(call(id("callback")))]));
-  const provider = program([
-    variable("var", "factory", factory),
-    variable("var", "twin", id("factory")),
-    exportNamed([
-      ["factory", publicFactory],
-      ["twin", sameValueFactory],
-    ]),
-  ]);
-  return {
-    source: program(sourceBody),
-    provider,
-    spec,
-    fragment,
-    publicFactory,
-    sameValueFactory,
-    localFactory,
-    resultName,
-    plainResultName,
-    providerMode,
-    expectedValue: providerMode === 0 ? seed + 20 : providerMode === 1 ? seed + 71 : seed + 72,
-  };
-}
+  export const result = worker();`,
+  "done"
+);
 
-function eagerProvider() {
-  return program([
-    variable(
-      "var",
-      "factory",
-      arrow([id("callback")], block([expression(call(id("callback"))), returns(arrow([], call(id("callback"))))]))
-    ),
-    exportNamed([["factory", "create"]]),
-  ]);
-}
-
-// Generated aliases, layouts and provider-body shapes exercise the ordinary
-// source-file CLI. The entry also owns a separate callable returning a primitive.
-for (let seed = 0; seed < 8; seed++) {
-  const fixture = generatedCase(seed);
-  const dir = path.join(root, `generated-${seed}`);
-  const files = prepare(dir, fixture);
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  const exportNames = [fixture.resultName, fixture.plainResultName];
-  const original = observe(files.sourceFile, exportNames);
-  assert.deepEqual(
-    original,
-    { [fixture.resultName]: fixture.expectedValue, [fixture.plainResultName]: seed + 60 },
-    `seed ${seed}`
+// An unbounded call chain still exhausts the ordinary search budget.
+{
+  const { verdict, out } = workerSplit(
+    "recursive-fuel",
+    observedProgram(arrow([], call(id("worker"))), call(id("worker")))
   );
-  if (fixture.providerMode === 1 && verdict.status === "rejected") {
-    assert(!existsSync(out), "an equivalent eager provider may be conservatively refused");
-    continue;
-  }
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", JSON.stringify(verdict));
-  assert(existsSync(path.join(out, "entry.mjs")), "the entry module is published");
-  assert(existsSync(path.join(out, fixture.fragment)), "the moved provider module is published");
-  assert(existsSync(path.join(out, "provider.mjs")), "the actual named provider is published beside the split");
-  assert.deepEqual(observe(path.join(out, "entry.mjs"), exportNames), original, `seed ${seed}`);
-
-  if (seed === 0) {
-    assert.equal(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict.status, "certified");
-    const providerFile = path.join(out, "provider.mjs");
-    const providerSource = readFileSync(providerFile, "utf8");
-    const changedProvider = providerSource.replace("callback()", "0");
-    assert.notEqual(changedProvider, providerSource, providerSource);
-    writeFileSync(providerFile, changedProvider);
-    const providerMutation = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
-    assert.equal(providerMutation.verdict.status, "rejected", providerMutation.log);
-    writeFileSync(providerFile, providerSource);
-
-    const entryFile = path.join(out, "entry.mjs");
-    const entrySource = readFileSync(entryFile, "utf8");
-    writeFileSync(entryFile, `// formatting outside callables is immaterial\n${entrySource}`);
-    const formatting = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
-    assert.equal(formatting.verdict.status, "certified", formatting.log);
-    writeFileSync(entryFile, entrySource);
-
-    const callable = entrySource.match(/\(\)\s*=>\s*moved0/)?.[0];
-    assert(callable, entrySource);
-    const alternateCallable = callable.includes("=> ")
-      ? callable.replace("=> ", "=>  ")
-      : callable.replace("=>", " =>");
-    assert.notEqual(alternateCallable, callable);
-    writeFileSync(entryFile, entrySource.replace(callable, alternateCallable));
-    const callableMutation = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
-    assert.equal(callableMutation.verdict.status, "rejected", callableMutation.log);
-    writeFileSync(entryFile, entrySource);
-
-    const link = new RegExp(`\\b${fixture.publicFactory}(?=\\s+as\\s+${fixture.localFactory}\\b)`);
-    assert.match(entrySource, link);
-    writeFileSync(entryFile, entrySource.replace(link, fixture.sameValueFactory));
-    const mutated = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
-    assert.equal(mutated.verdict.status, "rejected", mutated.log);
-    assert(mutated.verdict.reason, JSON.stringify(mutated.verdict));
-  }
-}
-
-// The provider's own import graph is discovered, copied beside the split and
-// checked as part of the output. The extra module remains a real relative import.
-{
-  const dir = path.join(root, "transitive-provider");
-  const files = prepare(dir, {
-    source: program([
-      importNamed("./provider.mjs", [["create", "make"]]),
-      variable("const", "loader", call(id("make"), [arrow([], id("moved"))])),
-      variable("const", "moved", arrow([], literal(83))),
-      exportNamed([["loader", "result"]]),
-    ]),
-    provider: program([
-      importNamed("./extra.mjs", [["run", "invoke"]]),
-      variable("var", "factory", arrow([id("callback")], arrow([], call(id("invoke"), [id("callback")])))),
-      exportNamed([["factory", "create"]]),
-    ]),
-    extras: {
-      "extra.mjs": program([
-        variable("var", "run", arrow([id("callback")], call(id("callback")))),
-        exportNamed([["run", "run"]]),
-      ]),
-    },
-    spec: {
-      entry: "entry.mjs",
-      order: ["fragment.mjs"],
-      sequential: true,
-      modules: { "entry.mjs": ["#0", "#1", "#3"], "fragment.mjs": ["#2"] },
-    },
-  });
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  assert(existsSync(path.join(out, "provider.mjs")));
-  assert(existsSync(path.join(out, "extra.mjs")));
-  assert.deepEqual(observe(files.sourceFile, "result"), { result: 83 });
-  assert.deepEqual(observe(path.join(out, "entry.mjs"), "result"), { result: 83 });
-  assert.equal(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict.status, "certified");
-}
-
-// Provider graph discovery refuses both a provider edge back to the input
-// source and a symlink alias for a module, which would make output links
-// ambiguous relative to the generated directory.
-{
-  const dir = path.join(root, "provider-request-back-to-source");
-  const files = prepare(dir, {
-    source: program([
-      importNamed("./provider.mjs", [["create", "make"]]),
-      variable("const", "marker", literal(9)),
-      variable("const", "loader", call(id("make"), [arrow([], literal(1))])),
-      exportNamed([
-        ["marker", "marker"],
-        ["loader", "result"],
-      ]),
-    ]),
-    provider: program([
-      importNamed("./source.mjs", [["marker", "sourceMarker"]]),
-      variable("var", "factory", arrow([id("callback")], arrow([], call(id("callback"))))),
-      exportNamed([["factory", "create"]]),
-    ]),
-    spec: {
-      entry: "entry.mjs",
-      order: [],
-      sequential: true,
-      modules: { "entry.mjs": ["#0", "#1", "#2", "#3"] },
-    },
-  });
-  const out = path.join(dir, "out");
-  const refused = lower(files.sourceFile, files.specFile, out);
-  assert.equal(refused.verdict.status, "rejected", refused.log);
-  assert.match(refused.verdict.reason, /request back to the source entry/i);
-  assert(!existsSync(out));
-}
-{
-  const dir = path.join(root, "provider-symlink-alias");
-  const files = prepare(dir, {
-    source: program([
-      importNamed("./provider-alias.mjs", [["create", "make"]]),
-      variable("const", "loader", call(id("make"), [arrow([], literal(1))])),
-      exportNamed([["loader", "result"]]),
-    ]),
-    provider: program([
-      variable("var", "factory", arrow([id("callback")], arrow([], call(id("callback"))))),
-      exportNamed([["factory", "create"]]),
-    ]),
-    spec: {
-      entry: "entry.mjs",
-      order: [],
-      sequential: true,
-      modules: { "entry.mjs": ["#0", "#1", "#2"] },
-    },
-  });
-  symlinkSync(files.providerFile, path.join(dir, "provider-alias.mjs"));
-  const out = path.join(dir, "out");
-  const refused = lower(files.sourceFile, files.specFile, out);
-  assert.equal(refused.verdict.status, "rejected", refused.log);
-  assert.match(refused.verdict.reason, /unsupported module alias/i);
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, /exhausted the fuel search budget \(64\)/);
+  assert.equal(verdict.reason_code, "probe_fuel");
   assert(!existsSync(out));
 }
 
-const eager = eagerProvider();
+assertWorkerResult(
+  "hoisted-local-function",
+  `const worker = (offset) => {
+    const answer = read(2);
+    if (answer !== 42) throw "incorrect hoisting or capture";
+    return answer;
 
-// An eager callback that sees the later const would read it in the TDZ in the
-// source module. Moving that const into a dependency would initialize it first,
-// so normal-completion certification must refuse this layout.
-{
-  const dir = path.join(root, "eager-observes-later-binding");
-  const fragment = "fragment.mjs";
-  const files = prepare(dir, {
-    provider: eager,
-    source: program([
-      importNamed("./provider.mjs", [["create", "make"]]),
-      variable("const", "loader", call(id("make"), [arrow([], id("moved"))])),
-      variable("const", "moved", arrow([], literal(7))),
-      exportNamed([["loader", "result"]]),
-    ]),
-    spec: {
-      entry: "entry.mjs",
-      order: [fragment],
-      sequential: true,
-      modules: { "entry.mjs": ["#0", "#1", "#3"], [fragment]: ["#2"] },
-    },
-  });
-  assert.deepEqual(observe(files.sourceFile, "result"), { error: "ReferenceError" });
+    function read(remaining) {
+      return remaining === 0 ? offset : read(remaining - 1);
+    }
+  };
+  export const result = worker(42);`,
+  42
+);
 
-  // This is the schedule a successful move would publish: imports evaluate the
-  // moved declaration before the entry invokes the eager factory.
-  const counterfactual = path.join(dir, "counterfactual");
-  mkdirSync(counterfactual, { recursive: true });
-  writeFileSync(path.join(counterfactual, "provider.mjs"), eager);
-  writeFileSync(
-    path.join(counterfactual, fragment),
-    program([variable("const", "moved", arrow([], literal(7))), exportNamed([["moved", "moved"]])])
+for (const [name, body, reason] of [
+  ["parameter", "function read() {} return read();", /overlaps a parameter or var binding/],
+  ["var", "var local; function local() {} return local();", /overlaps a parameter or var binding/],
+  ["duplicate", "function local() {} function local() {} return local();", /duplicate local function declaration/],
+]) {
+  const { verdict, out } = workerSplit(
+    `local-function-${name}`,
+    `const worker = (read) => { ${body} }; export const result = worker();`
   );
-  writeFileSync(
-    path.join(counterfactual, "entry.mjs"),
-    program([
-      importNamed("./provider.mjs", [["create", "make"]]),
-      importNamed(`./${fragment}`, [["moved", "moved"]]),
-      variable("const", "loader", call(id("make"), [arrow([], id("moved"))])),
-      exportNamed([["loader", "result"]]),
-    ])
-  );
-  assert.deepEqual(observe(path.join(counterfactual, "entry.mjs"), "result"), { result: 7 });
-
-  const out = path.join(dir, "out");
-  const refused = lower(files.sourceFile, files.specFile, out);
-  assert.equal(refused.verdict.status, "rejected", refused.log);
-  assert(!existsSync(out), "a behavior-changing eager provider move publishes no modules");
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, reason, name);
+  assert(!existsSync(out));
 }
 
-// The linked-module decoder rejects implicit `arguments` references: CoreJS
-// does not allocate the ordinary function's arguments object.
-{
-  const dir = path.join(root, "implicit-arguments");
-  const files = prepare(dir, {
-    source: program([
-      importNamed("./provider.mjs", [["create", "make"]]),
-      variable("const", "loader", call(id("make"), [arrow([], literal(1))])),
-      exportNamed([["loader", "result"]]),
-    ]),
-    provider: program([
-      variable("var", "factory", functionExpression([id("callback")], block([returns(arrow([], id("arguments")))]))),
-      exportNamed([["factory", "create"]]),
-    ]),
-    spec: {
-      entry: "entry.mjs",
-      order: [],
-      sequential: true,
-      modules: { "entry.mjs": ["#0", "#1", "#2"] },
-    },
-  });
-  const out = path.join(dir, "out");
-  const refused = lower(files.sourceFile, files.specFile, out);
-  assert.equal(refused.verdict.status, "rejected", refused.log);
-  assert.match(refused.verdict.reason, /unsupported implicit arguments reference/i);
+// Different numeric spellings compare by string contents.
+assertWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
+assertWorkerResult(
+  "typeof-local-tdz",
+  'const worker = () => { try { return "undefined" != typeof later; let later; } catch { return 7; } }; export const result = worker();',
+  7
+);
+assertWorkerResult(
+  "typeof-shadowed-host-name",
+  'const window = null; export const result = "undefined" != typeof window;',
+  true
+);
+for (const [name, expr, reason] of [
+  ["mixed-equality", '"01" == 1', /linked == requires two string operands/],
+  ["unguarded-equality", "worker == worker", /linked == requires two string operands/],
+  ["host-equality-typeof", '"undefined" == typeof window', /unsupported global window/],
+  ["mixed-inequality", '"01" != 1', /requires two string operands/],
+  ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
+]) {
+  const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, reason, name);
   assert(!existsSync(out));
 }

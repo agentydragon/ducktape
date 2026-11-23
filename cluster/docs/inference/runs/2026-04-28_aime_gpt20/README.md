@@ -9,7 +9,7 @@ the in-cluster Secret — no in-cluster Job needed.
 
 ## What ran
 
-- **Driver**: <../aime/run_aime.py> (shared uv hashbang script, sweeps `--efforts`).
+- **Driver**: <../run_inspect_sweep.py> (shared uv hashbang script, sweeps `--efforts`).
   Calls `inspect eval inspect_evals/aime2024 --model openai/gpt-oss:20b`
   once per effort level via the Inspect AI CLI.
 - **Re-grader**: <../aime/regrade.py> (shared uv hashbang script). Reads each
@@ -130,9 +130,9 @@ appears to follow the format consistently.)
 
 ```bash
 cd cluster/docs/inference/runs/2026-04-28_aime_gpt20
-../aime/run_aime.py --run-dir . --limit 10                  # full sweep low,medium,high × 10
+../run_inspect_sweep.py aime2024 --limit 10                  # full sweep low,medium,high × 10
 ../aime/regrade.py --run-dir .                             # re-grade existing eval_logs/
-../aime/run_aime.py --run-dir . --limit 5 --efforts high   # quick partial repro
+../run_inspect_sweep.py aime2024 --limit 5 --efforts high   # quick partial repro
 ```
 
 Requires: `kubectl` (for fetching the `ollama-direct-token` Secret) and

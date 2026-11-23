@@ -1,13 +1,13 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const validSettings = `namespace: agentplane
@@ -23,17 +23,8 @@ runner_security:
     ca_file: /run/agentplane/workload-trust/ca.crt
 `
 
-func writeSettings(t *testing.T, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, validSettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings))
 	for _, name := range []string{
 		"NAMESPACE",
 		"METRICS_BIND_ADDRESS",
@@ -81,7 +72,7 @@ func TestLoadConfigRejectsMissingFile(t *testing.T) {
 func TestBindAddressesDefaultWhenOmittedFromYAML(t *testing.T) {
 	settings := strings.Replace(validSettings, "metrics_bind_address: \":9090\"\n", "", 1)
 	settings = strings.Replace(settings, "health_probe_bind_address: \":9091\"\n", "", 1)
-	t.Setenv(configFileEnv, writeSettings(t, settings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, settings))
 
 	c, err := loadConfig()
 	if err != nil {
@@ -126,7 +117,7 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, writeSettings(t, content))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, content))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("started with invalid settings")
 			}
@@ -135,7 +126,7 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 }
 
 func TestRunnerGatewayTLSComesFromYAML(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, validSettings+`runner_gateway_tls:
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+`runner_gateway_tls:
   ca_file: /run/trust/ca.pem
   server_uri: `+peertls.SessionDispatcherURI+"\n"))
 	c, err := loadConfig()
@@ -157,7 +148,7 @@ func TestRunnerGatewayTLSRejectsIncompleteOrUnknownSettings(t *testing.T) {
 		"unknown TLS field": "  insecure_skip_verify: true\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, writeSettings(t, validSettings+"runner_gateway_tls:\n"+fields))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+"runner_gateway_tls:\n"+fields))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid runner Gateway TLS settings")
 			}
@@ -174,7 +165,7 @@ func TestControllerGatewayCallerUsesOnlyItsOwnSVID(t *testing.T) {
   client_uri: spiffe://agentplane/sandbox-controller
 `
 	source := strings.Replace(validSettings, "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n", "", 1) + transport
-	t.Setenv(configFileEnv, writeSettings(t, source))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, source))
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +179,7 @@ func TestControllerGatewayCallerUsesOnlyItsOwnSVID(t *testing.T) {
 		"partial":    strings.Replace(source, "  key_file: /run/agentplane/sandbox-controller-client-tls/tls.key\n", "", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, writeSettings(t, invalid))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, invalid))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid service SVID caller")
 			}
@@ -221,12 +212,12 @@ const environmentRuntimeProxySettings = `  runtime_proxy:
 `
 
 func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, validSettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings))
 	c, err := loadConfig()
 	if err != nil || c.EnvironmentService != nil {
 		t.Fatalf("existing settings enabled EnvironmentService: %+v, %v", c.EnvironmentService, err)
 	}
-	t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings))
 	c, err = loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +235,7 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 		"connection provenance": strings.Replace(environmentServiceSettings, "      - spiffe_id: spiffe://agentplane/actions", "      - spiffe_id: spiffe://agentplane/actions\n        connection_provenance: true", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, writeSettings(t, validSettings+invalid))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+invalid))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid EnvironmentService settings")
 			}
@@ -253,7 +244,7 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 }
 
 func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings))
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +253,7 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 		t.Fatalf("omitted runtime_proxy was populated: %+v", c.EnvironmentService.RuntimeProxy)
 	}
 
-	t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings+environmentRuntimeProxySettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+environmentRuntimeProxySettings))
 	c, err = loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +276,7 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 	}
 	for name, runtimeProxySettings := range invalid {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings+runtimeProxySettings))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+runtimeProxySettings))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid runtime_proxy settings")
 			}

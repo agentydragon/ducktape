@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 
-import pytest
 import pytest_bazel
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -96,95 +94,39 @@ def _resolve_provider_ref(ref: object, id_to_name: dict[str, str]) -> str | None
     return None
 
 
-def _blueprint_entries(blueprints_dir: Path) -> list[_BlueprintEntry]:
-    """Parse every blueprint document's `entries:` into typed models."""
-    return [
-        _BlueprintEntry.model_validate(entry)
-        for path in sorted(blueprints_dir.glob("*.yaml"))
-        for doc in yaml.load_all(path.read_text(), Loader=_BlueprintLoader)
-        if isinstance(doc, dict)
-        for entry in doc.get("entries", [])
-        if isinstance(entry, dict)
-    ]
-
-
-@dataclasses.dataclass(frozen=True)
-class _Wiring:
-    """Proxy-provider names by blueprint `state`, and each `present` outpost's `providers` resolved to names.
-
-    A reference that resolves to no proxy-provider name is `None`.
+def test_proxy_providers_and_outpost_assignments(runfiles: Runfiles) -> None:
+    """An unassigned provider sends login to the wrong host (haku's redirect_uri_mismatch).
+    Providers owned outside blueprints may be assigned by name. Tombstoned ones may not.
     """
-
-    present: set[str]
-    absent: set[str]
-    outposts: list[list[str | None]]
-
-
-@pytest.fixture(scope="session")
-def wiring(runfiles: Runfiles) -> _Wiring:
-    blueprints_dir = runfiles.root() / _BLUEPRINTS_DIR
-    if not blueprints_dir.exists():
-        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
-    entries = _blueprint_entries(blueprints_dir)
-    id_to_name: dict[str, str] = {}
+    directory = runfiles.root() / _BLUEPRINTS_DIR
+    paths = sorted(directory.glob("*.yaml"))
+    assert paths, directory
     present: set[str] = set()
     absent: set[str] = set()
-    for entry in entries:
-        name = entry.identifiers.name
-        if entry.model != _PROXY_PROVIDER_MODEL or name is None:
-            continue
-        if entry.id is not None:
-            id_to_name[entry.id] = name
-        if entry.state == "present":
-            present.add(name)
-        elif entry.state == "absent":
-            absent.add(name)
-    return _Wiring(
-        present=present,
-        absent=absent,
-        outposts=[
-            [_resolve_provider_ref(ref, id_to_name) for ref in entry.attrs.providers]
-            for entry in entries
-            if entry.model == _OUTPOST_MODEL and entry.state == "present"
-        ],
-    )
+    assigned: set[str] = set()
+    for path in paths:
+        for doc in yaml.load_all(path.read_text(), Loader=_BlueprintLoader):
+            if not isinstance(doc, dict):
+                continue
+            # Authentik resolves !KeyOf to an instance already applied in this blueprint.
+            id_to_name: dict[str, str] = {}
+            for raw in doc.get("entries", []):
+                entry = _BlueprintEntry.model_validate(raw)
+                if entry.model == _PROXY_PROVIDER_MODEL and (name := entry.identifiers.name) is not None:
+                    if entry.state == "absent":
+                        absent.add(name)
+                    elif entry.state in {"present", "created", "must_created"}:
+                        present.add(name)
+                        if entry.id is not None:
+                            id_to_name[entry.id] = name
+                elif entry.model == _OUTPOST_MODEL and entry.state == "present":
+                    for ref in entry.attrs.providers:
+                        provider = _resolve_provider_ref(ref, id_to_name)
+                        assert provider is not None, f"{path.name}: unresolved outpost provider {ref!r}"
+                        assigned.add(provider)
 
-
-def test_proxy_providers_assigned_to_outpost(wiring: _Wiring) -> None:
-    """Every `present` authentik proxy provider must be assigned to an outpost.
-
-    A proxy provider that exists but is on no outpost has no host->backend mapping: the
-    embedded outpost doesn't recognise its `external_host` and 302s to the Authentik login
-    flow served *on that host*, so "Sign in with Google" builds the OAuth callback against
-    the wrong host and Google rejects it with `redirect_uri_mismatch`. This guards the
-    wiring that broke `haku.allegedly.works` (and, latently, `tandoor.allegedly.works`).
-    """
-    assigned = {name for outpost in wiring.outposts for name in outpost}
-    unassigned = sorted(wiring.present - assigned)
-    assert not unassigned, (
-        f"Authentik proxy providers {unassigned} are defined but assigned to no outpost. Add them to the "
-        "embedded outpost's providers in blueprints/embedded-outpost.yaml (see goldilocks)."
-    )
-
-
-def test_outpost_provider_references_resolve(wiring: _Wiring) -> None:
-    """Embedded-outpost refs are valid and do not target retired providers.
-
-    Authentik accepts a blueprint with a dangling ``!KeyOf`` reference and only
-    reports the broken outpost wiring during reconciliation. Provider names that
-    are not defined in blueprints are allowed because the ownership split also has
-    Terraform-managed providers; explicit ``state: absent`` tombstones are not.
-    """
-    for outpost in wiring.outposts:
-        unresolved = [index for index, name in enumerate(outpost) if name is None]
-        assert not unresolved, (
-            f"Authentik outpost provider references {unresolved} do not resolve to a proxy-provider name "
-            "or blueprint entry."
-        )
-        retired = sorted(wiring.absent.intersection(outpost))
-        assert not retired, (
-            f"Authentik outpost references retired proxy providers {retired}. Remove them from embedded-outpost.yaml."
-        )
+    assert not (present - assigned), f"Proxy providers without an outpost: {sorted(present - assigned)}"
+    assert not (absent & assigned), f"Outposts reference retired proxy providers: {sorted(absent & assigned)}"
 
 
 if __name__ == "__main__":

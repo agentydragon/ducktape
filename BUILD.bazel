@@ -114,7 +114,6 @@ npm_link_package(
 
 # Export workspace files for npm_translate_lock data tracking
 exports_files([
-    ".github/workflows/cancel-closed-pr-ci.yml",
     ".github/workflows/cancel-obsolete-pr-ci.yml",
     ".github/workflows/nix-images.yml",
     "MODULE.bazel",
@@ -178,9 +177,7 @@ js_library(
     ],
 )
 
-# Prettier configuration as js_library
-# Makes the config and its plugins available to the prettier binary in //devinfra:prettier_bin
-# no-lint: This is a config file, not a target to lint
+# Prettier configuration for generated JavaScript trees.
 js_library(
     name = "prettierrc",
     srcs = [".prettierrc.cjs"],

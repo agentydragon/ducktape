@@ -314,7 +314,7 @@ _UNRESOLVED_DASHBOARD_VARIABLE = re.compile(
 )
 
 
-def _panel_results(query_results: list[dict], view_name: str, dashboard: dict) -> dict[str, dict]:
+def _panel_rows(query_results: list[dict], view_name: str, dashboard: dict) -> dict[str, list[dict]]:
     results = {
         result["panel_id"]: result for result in query_results if result["view"] == view_name and result.get("panel_id")
     }
@@ -323,10 +323,10 @@ def _panel_results(query_results: list[dict], view_name: str, dashboard: dict) -
         f"{view_name} missing datasource responses for panels {sorted(expected_panel_ids - results.keys())}; "
         f"received {sorted(results)}"
     )
-    for panel_id in expected_panel_ids:
-        frames = results[panel_id]["result"].get("frames", [])
-        assert _frame_rows(frames), f"{view_name} panel {panel_id} returned no nonempty frames"
-    return results
+    rows = {panel_id: _frame_rows(results[panel_id]["result"].get("frames", [])) for panel_id in expected_panel_ids}
+    for panel_id, panel_rows in rows.items():
+        assert panel_rows, f"{view_name} panel {panel_id} returned no nonempty frames"
+    return rows
 
 
 def _frame_rows(frames: list[dict]) -> list[dict]:
@@ -343,42 +343,28 @@ def _frame_rows(frames: list[dict]) -> list[dict]:
     return rows
 
 
-def _field_values(panel_result: dict, name: str) -> list:
-    for frame in panel_result["result"].get("frames", []):
-        fields = frame.get("schema", {}).get("fields", [])
-        columns = frame.get("data", {}).get("values", [])
-        for field, values in zip(fields, columns, strict=True):
-            if field.get("name") == name:
-                return list(values)
-    raise AssertionError(f"datasource response has no field {name!r}")
-
-
-def _assert_number(panel_result: dict, name: str, expected: float) -> None:
-    values = _field_values(panel_result, name)
-    assert len(values) == 1
-    assert math.isclose(float(values[0]), expected, rel_tol=0, abs_tol=0.01), (
-        f"expected {name}={expected}, got {values}"
-    )
+def _assert_number(rows: list[dict], name: str, expected: float) -> None:
+    [row] = rows
+    assert float(row[name]) == pytest.approx(expected, abs=0.01), name
 
 
 def _assert_dashboard_responses(query_results: list[dict], dashboard: dict, view_name: str, *, filtered: bool) -> None:
-    panels = _panel_results(query_results, view_name, dashboard)
+    panels = _panel_rows(query_results, view_name, dashboard)
     _assert_number(panels["1"], "attempts", 1 if filtered else 5)
     _assert_number(panels["2"], "failure_rate", 0 if filtered else 40)
     for panel_id, field in (("3", "p50_runtime"), ("4", "p95_runtime")):
         _assert_number(panels[panel_id], field, 900)
 
-    runtime_rows = _frame_rows(panels["5"]["result"]["frames"])
+    runtime_rows = panels["5"]
     assert all(math.isclose(float(row["P50"]), 900, abs_tol=0.01) for row in runtime_rows)
     assert all(math.isclose(float(row["P95"]), 900, abs_tol=0.01) for row in runtime_rows)
-    outcome_rows = _frame_rows(panels["6"]["result"]["frames"])
-    assert outcome_rows
+    outcome_rows = panels["6"]
     expected_success, expected_failure = (1, 0) if filtered else (3, 2)
     assert sum(int(row["Success"]) for row in outcome_rows) == expected_success
     assert sum(int(row["Failure"]) for row in outcome_rows) == expected_failure
 
-    workflow_rows = _frame_rows(panels["7"]["result"]["frames"])
-    job_rows = _frame_rows(panels["8"]["result"]["frames"])
+    workflow_rows = panels["7"]
+    job_rows = panels["8"]
     success_runs = [row for row in workflow_rows if row["Workflow"] == "CDviz integration success"]
     success_jobs = [
         row
@@ -387,26 +373,17 @@ def _assert_dashboard_responses(query_results: list[dict], dashboard: dict, view
         and row["Job"] == "Linux / test"
         and row["Outcome"] == "success"
     ]
-    if filtered:
-        assert len(workflow_rows) == len(success_runs) == 1
-        assert workflow_rows[0]["PR"] == "123"
-        assert workflow_rows[0]["Branch"] == "main"
-        assert workflow_rows[0]["Attempt"] == "1"
-        assert workflow_rows[0]["Outcome"] == "success"
-        assert math.isclose(float(workflow_rows[0]["Runtime"]), 900, abs_tol=0.01)
-        assert len(job_rows) == len(success_jobs) == 1
-        assert job_rows[0]["Branch"] == "main"
-        assert math.isclose(float(job_rows[0]["Runtime"]), 600, abs_tol=0.01)
-    else:
-        assert len(workflow_rows) == 5
-        assert len(job_rows) == 4
-        assert len(success_runs) == 1
-        assert success_runs[0]["PR"] == "123"
-        assert success_runs[0]["Branch"] == "main"
-        assert success_runs[0]["Outcome"] == "success"
-        assert math.isclose(float(success_runs[0]["Runtime"]), 900, abs_tol=0.01)
-        assert len(success_jobs) == 1
-        assert all(math.isclose(float(row["Runtime"]), 600, abs_tol=0.01) for row in job_rows)
+    assert len(workflow_rows) == (1 if filtered else 5)
+    assert len(job_rows) == (1 if filtered else 4)
+    [success_run] = success_runs
+    [success_job] = success_jobs
+    assert success_run["PR"] == "123"
+    assert success_run["Branch"] == "main"
+    assert success_run["Attempt"] == "1"
+    assert success_run["Outcome"] == "success"
+    assert float(success_run["Runtime"]) == pytest.approx(900, abs=0.01)
+    assert success_job["Branch"] == "main"
+    assert all(math.isclose(float(row["Runtime"]), 600, abs_tol=0.01) for row in job_rows)
 
 
 @pytest.mark.asyncio
@@ -742,8 +719,8 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                                     bucket=bucket,
                                 )
                             await page.close()
-                            panels = _panel_results(query_results, view_name, feedback)
-                            bucket_times = sorted({row["Time"] for row in _frame_rows(panels["4"]["result"]["frames"])})
+                            panels = _panel_rows(query_results, view_name, feedback)
+                            bucket_times = sorted({row["Time"] for row in panels["4"]})
                             offsets = (
                                 (180,) if bucket == "1 week" else (160, 130, 40, 30, 20) if filtered else (180, 60)
                             )
@@ -751,7 +728,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                             if filtered:
                                 _assert_number(panels["2"], "n", 5)
                                 _assert_number(panels["2"], "p50_seconds", 240)
-                                thresholds = _frame_rows(panels["6"]["result"]["frames"])
+                                thresholds = panels["6"]
                                 assert [row["eligible_heads"] for row in thresholds] == [13, 13, 10]
                                 assert [row["still_observing"] for row in thresholds] == [1, 1, 4]
                                 assert [row["heads_green"] for row in thresholds] == [3, 4, 4]

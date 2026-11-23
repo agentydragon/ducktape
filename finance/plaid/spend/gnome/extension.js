@@ -4,14 +4,15 @@ import GObject from "gi://GObject";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
 
+import { DBusGetter, loadInterfaceXml } from "./dbus.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
+import { panelOrder } from "./panelOrder.js";
 
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";
-const INTERFACE_NAME = "works.allegedly.PlaidSpend1";
 const TEST_START_NOW_MS = (() => {
   if (GLib.getenv("PLAID_SPEND_TEST") !== "1") return null;
   const value = GLib.getenv("PLAID_SPEND_TEST_NOW");
@@ -23,18 +24,7 @@ const TEST_START_NOW_MS = (() => {
   return timestamp;
 })();
 let TEST_NOW_MS = TEST_START_NOW_MS;
-const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
-  `<node><interface name="${INTERFACE_NAME}">
-    <method name="GetView"><arg name="view" type="s" direction="out"/></method>
-    <method name="GetPaceHistory"><arg name="history" type="s" direction="out"/></method>
-    <method name="Login"/>
-    <signal name="ViewChanged"><arg name="view" type="s"/></signal>
-    <property name="Status" type="s" access="read"/>
-    <property name="LastError" type="s" access="read"/>
-    <property name="LastAttemptAt" type="d" access="read"/>
-    <property name="NextRetryAt" type="d" access="read"/>
-  </interface></node>`
-).lookup_interface(INTERFACE_NAME);
+const [INTERFACE_INFO] = Gio.DBusNodeInfo.new_for_xml(loadInterfaceXml("daemon.xml")).interfaces;
 
 function decodeBytes(bytes) {
   return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
@@ -204,26 +194,6 @@ function panelSignal(allowance, window) {
   return { level: "good", label: "Pace ≤ leash" };
 }
 
-const PANEL_ITEMS = ["status", "balance", "pace-window", "pace", "sparkline"];
-
-function migratePanelPaceWindow(settings) {
-  if (settings.get_boolean("panel-pace-window-migrated")) return;
-  const visible = settings.get_strv("panel-visible");
-  if (visible.includes("pace") && !visible.includes("pace-window"))
-    settings.set_strv("panel-visible", [...visible, "pace-window"]);
-  const order = settings.get_strv("panel-order");
-  if (!order.includes("pace-window")) {
-    const paceIndex = order.indexOf("pace");
-    order.splice(paceIndex < 0 ? order.length : paceIndex, 0, "pace-window");
-    settings.set_strv("panel-order", order);
-  }
-  settings.set_boolean("panel-pace-window-migrated", true);
-}
-
-function panelOrder(settings) {
-  return [...new Set([...settings.get_strv("panel-order").filter((id) => PANEL_ITEMS.includes(id)), ...PANEL_ITEMS])];
-}
-
 function formatDaily(minorUnits, currency) {
   return minorUnits == null ? "n/a" : `${formatMoney(minorUnits, currency)}/day`;
 }
@@ -263,7 +233,6 @@ const PlaidSpendIndicator = GObject.registerClass(
       super._init(0.0, "Plaid Spend", false);
 
       this._settings = settings;
-      migratePanelPaceWindow(settings);
       this._openPreferences = openPreferences;
       this._destroyed = false;
       this._view = { cards: [], generated_at: null };
@@ -272,10 +241,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._lastAttemptAt = 0;
       this._nextRetryAt = 0;
       this._hasView = false;
-      this._viewRequestId = 0;
-      this._viewRequestCancellable = null;
-      this._historyRequestId = 0;
-      this._historyRequestCancellable = null;
+      this._viewGetter = new DBusGetter("GetView");
+      this._historyGetter = new DBusGetter("GetPaceHistory");
       this._history = null;
       this._historyError = false;
       this._proxyHandlerIds = [];
@@ -359,7 +326,7 @@ const PlaidSpendIndicator = GObject.registerClass(
                 INTERFACE_INFO,
                 BUS_NAME,
                 OBJECT_PATH,
-                INTERFACE_NAME,
+                INTERFACE_INFO.name,
                 this._daemonConnectCancellable,
                 (_source, proxyResult) => this._proxyReady(proxyResult, false)
               );
@@ -375,7 +342,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           INTERFACE_INFO,
           BUS_NAME,
           OBJECT_PATH,
-          INTERFACE_NAME,
+          INTERFACE_INFO.name,
           this._daemonConnectCancellable,
           (_source, result) => this._proxyReady(result, true)
         );
@@ -406,8 +373,8 @@ const PlaidSpendIndicator = GObject.registerClass(
         this._proxyHandlerIds.push(this._proxy.connect("g-properties-changed", () => this._readProperties()));
         this._proxyHandlerIds.push(
           this._proxy.connect("notify::g-name-owner", () => {
-            this._cancelViewRequest();
-            this._cancelHistoryRequest();
+            this._viewGetter.cancel();
+            this._historyGetter.cancel();
             this._history = null;
             this._readProperties();
             if (this._proxy.g_name_owner) this._fetchView();
@@ -462,89 +429,41 @@ const PlaidSpendIndicator = GObject.registerClass(
     }
 
     _fetchView() {
-      const proxy = this._proxy;
-      const owner = proxy?.g_name_owner;
-      if (!owner || this._destroyed) return;
-      this._cancelViewRequest();
-      const requestId = ++this._viewRequestId;
-      const cancellable = new Gio.Cancellable();
-      this._viewRequestCancellable = cancellable;
-      proxy.call("GetView", null, Gio.DBusCallFlags.NONE, -1, cancellable, (source, result) => {
-        const isCurrent = () =>
-          !this._destroyed &&
-          source === proxy &&
-          this._proxy === proxy &&
-          owner === proxy.g_name_owner &&
-          requestId === this._viewRequestId;
-        try {
-          const reply = source.call_finish(result);
-          if (!isCurrent()) return;
-          this._viewRequestCancellable = null;
-          const [rawView] = reply.deep_unpack();
-          this._acceptView(rawView);
-        } catch (error) {
-          if (!isCurrent()) return;
-          this._viewRequestCancellable = null;
+      if (this._destroyed) return;
+      this._viewGetter.read(
+        this._proxy,
+        (rawView) => this._acceptView(rawView),
+        (error) => {
           this._error = error.message;
           this._render();
         }
-      });
-    }
-
-    _cancelViewRequest() {
-      this._viewRequestId += 1;
-      if (this._viewRequestCancellable) {
-        this._viewRequestCancellable.cancel();
-        this._viewRequestCancellable = null;
-      }
-    }
-
-    _cancelHistoryRequest() {
-      this._historyRequestId += 1;
-      if (this._historyRequestCancellable) {
-        this._historyRequestCancellable.cancel();
-        this._historyRequestCancellable = null;
-      }
+      );
     }
 
     _fetchHistory() {
       if (this._fixtureMode) return;
-      this._cancelHistoryRequest();
       this._history = null;
       this._historyError = false;
-      if (!this._settings.get_strv("panel-visible").includes("sparkline")) return;
-      const proxy = this._proxy;
-      const owner = proxy?.g_name_owner;
-      if (!owner || this._destroyed || !this._hasView || this._status !== "ready") return;
-      const requestId = ++this._historyRequestId;
-      const cancellable = new Gio.Cancellable();
-      this._historyRequestCancellable = cancellable;
-      proxy.call("GetPaceHistory", null, Gio.DBusCallFlags.NONE, -1, cancellable, (source, result) => {
-        const isCurrent = () =>
-          !this._destroyed &&
-          source === proxy &&
-          this._proxy === proxy &&
-          owner === proxy.g_name_owner &&
-          requestId === this._historyRequestId;
-        try {
-          const reply = source.call_finish(result);
-          if (!isCurrent()) return;
-          this._historyRequestCancellable = null;
-          const [raw] = reply.deep_unpack();
+      if (!this._sparklineEnabled || this._destroyed || !this._hasView || this._status !== "ready") {
+        this._historyGetter.cancel();
+        return;
+      }
+      this._historyGetter.read(
+        this._proxy,
+        (raw) => {
           const history = JSON.parse(raw);
           if (!history || history.status !== "active" || !Array.isArray(history.windows))
             throw new Error("Pace history unavailable");
           this._history = history;
           this._historyError = false;
           this._render();
-        } catch (_error) {
-          if (!isCurrent()) return;
-          this._historyRequestCancellable = null;
+        },
+        () => {
           this._history = null;
           this._historyError = true;
           this._render();
         }
-      });
+      );
     }
 
     _historyPoints() {
@@ -642,7 +561,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       try {
         const view = JSON.parse(rawView);
         if (!view || !Array.isArray(view.cards)) throw new Error("invalid Plaid Spend view");
-        this._cancelViewRequest();
+        this._viewGetter.cancel();
         this._view = view;
         this._hasView = true;
         this._fetchHistory();
@@ -767,93 +686,64 @@ const PlaidSpendIndicator = GObject.registerClass(
     _exportTestInterface() {
       // Only exported in fixture mode. It lets the Bazel screenshot test
       // switch synthetic views and inspect the real panel/menu actors.
-      this._testIface = Gio.DBusExportedObject.wrapJSObject(
-        '<node><interface name="works.allegedly.PlaidSpendTest">' +
-          '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
-          '<method name="AdvanceClock"><arg type="d" direction="in" name="seconds"/></method>' +
-          '<method name="OpenMenu"/>' +
-          '<method name="OpenPreferences"/>' +
-          '<method name="HideOverview"/>' +
-          '<method name="GetOverviewVisible"><arg type="b" direction="out" name="visible"/></method>' +
-          '<method name="WaitForPaint"/>' +
-          '<method name="CloseMenu"/>' +
-          '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
-          '<method name="GetPanelState"><arg type="s" direction="out" name="state"/></method>' +
-          '<method name="SetPanelSettings"><arg type="s" direction="in" name="settings"/></method>' +
-          '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
-          '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
-          '<method name="GetSparklineGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
-          "</interface></node>",
-        {
-          Reload: (path) => this._loadFixtureFile(path),
-          AdvanceClock: (seconds) => {
-            if (TEST_NOW_MS === null || !Number.isFinite(seconds) || seconds <= 0) {
-              throw new Error("test clock can only advance by a positive number of seconds");
-            }
-            TEST_NOW_MS += seconds * 1000;
-            this._renderPopup();
-          },
-          WaitForPaintAsync: (_params, invocation) => {
-            const signal = global.stage.connect("after-paint", () => {
-              global.stage.disconnect(signal);
-              GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-                invocation.return_value(null);
-                return GLib.SOURCE_REMOVE;
-              });
+      this._testIface = Gio.DBusExportedObject.wrapJSObject(loadInterfaceXml("shell-test.xml"), {
+        Reload: (path) => this._loadFixtureFile(path),
+        AdvanceClock: (seconds) => {
+          if (TEST_NOW_MS === null || !Number.isFinite(seconds) || seconds <= 0) {
+            throw new Error("test clock can only advance by a positive number of seconds");
+          }
+          TEST_NOW_MS += seconds * 1000;
+          this._renderPopup();
+        },
+        WaitForPaintAsync: (_params, invocation) => {
+          const signal = global.stage.connect("after-paint", () => {
+            global.stage.disconnect(signal);
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+              invocation.return_value(null);
+              return GLib.SOURCE_REMOVE;
             });
-            global.stage.queue_redraw();
-          },
-          OpenMenu: () => this.menu.open(false),
-          OpenPreferences: () => this._openPreferences(),
-          HideOverview: () => Main.overview.hide(),
-          GetOverviewVisible: () => Main.overview.visible,
-          CloseMenu: () => this.menu.close(false),
-          GetPanelLabel: () => this._panelText,
-          GetPanelState: () => {
-            const actors = new Map([
-              [this._icon, "status"],
-              [this._label, "balance"],
-              [this._paceWindowLabel, "pace-window"],
-              [this._paceLabel, "pace"],
-              [this._sparkline, "sparkline"],
-              [this._sparklineUnavailable, "sparkline-unavailable"],
-            ]);
-            return JSON.stringify({
-              items: this._box.get_children().map((actor) => actors.get(actor)),
-              level: this._panelLevel,
-              window: this._settings.get_string("pace-window"),
-            });
-          },
-          SetPanelSettings: (raw) => {
-            const config = JSON.parse(raw);
-            if (config.order) this._settings.set_strv("panel-order", config.order);
-            if (config.visible) this._settings.set_strv("panel-visible", config.visible);
-            if (config.window) this._settings.set_string("pace-window", config.window);
-            if ("anchorZero" in config) this._settings.set_boolean("sparkline-anchor-zero", config.anchorZero);
-            if ("showLeash" in config) this._settings.set_boolean("sparkline-show-leash", config.showLeash);
-            if ("leashColor" in config) this._settings.set_string("sparkline-leash-color", config.leashColor);
-            if (config.historyDays) this._settings.set_string("sparkline-history-days", String(config.historyDays));
-          },
-          GetDaemonOwner: () => this._proxy?.g_name_owner || "",
-          GetMenuText: () =>
-            this.menu
-              ._getMenuItems()
-              .map((item) => item.label?.get_text() || "")
-              .join("\n"),
-          GetMenuGeometry: () => {
-            const actor = this.menu.actor;
-            const [x, y] = actor.get_transformed_position();
-            const [width, height] = actor.get_transformed_size();
-            return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
-          },
-          GetSparklineGeometry: () => {
-            const [x, y] = this._sparkline.get_transformed_position();
-            const [width, height] = this._sparkline.get_transformed_size();
-            return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
-          },
-        }
-      );
+          });
+          global.stage.queue_redraw();
+        },
+        OpenMenu: () => this.menu.open(false),
+        OpenPreferences: () => this._openPreferences(),
+        HideOverview: () => Main.overview.hide(),
+        GetOverviewVisible: () => Main.overview.visible,
+        CloseMenu: () => this.menu.close(false),
+        GetPanelLabel: () => this._panelText,
+        GetPanelState: () => {
+          const actors = new Map([
+            [this._icon, "status"],
+            [this._label, "balance"],
+            [this._paceWindowLabel, "pace-window"],
+            [this._paceLabel, "pace"],
+            [this._sparkline, "sparkline"],
+            [this._sparklineUnavailable, "sparkline-unavailable"],
+          ]);
+          return JSON.stringify({
+            items: this._box.get_children().map((actor) => actors.get(actor)),
+            level: this._panelLevel,
+            window: this._settings.get_string("pace-window"),
+          });
+        },
+        GetDaemonOwner: () => this._proxy?.g_name_owner || "",
+        GetMenuText: () =>
+          this.menu
+            ._getMenuItems()
+            .map((item) => item.label?.get_text() || "")
+            .join("\n"),
+        GetMenuGeometry: () => {
+          const actor = this.menu.actor;
+          const [x, y] = actor.get_transformed_position();
+          const [width, height] = actor.get_transformed_size();
+          return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+        },
+        GetSparklineGeometry: () => {
+          const [x, y] = this._sparkline.get_transformed_position();
+          const [width, height] = this._sparkline.get_transformed_size();
+          return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+        },
+      });
       this._testIface.export(Gio.DBus.session, "/works/allegedly/PlaidSpendTest");
       this._testBusOwnerId = Gio.bus_own_name(
         Gio.BusType.SESSION,
@@ -1008,8 +898,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._destroyed = true;
       this._stopTimingRefresh();
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
-      this._cancelViewRequest();
-      this._cancelHistoryRequest();
+      this._viewGetter.cancel();
+      this._historyGetter.cancel();
       this._daemonConnectCancellable.cancel();
       this._settings.disconnect(this._settingsChangedId);
       for (const handlerId of this._proxyHandlerIds) this._proxy.disconnect(handlerId);

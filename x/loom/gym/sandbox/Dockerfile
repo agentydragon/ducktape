@@ -11,8 +11,7 @@
 # and rules_python lays wheels out as runfiles, not the system site-packages a bare
 # `python3 -c ...` resolves. A Bazel build would need a rules_python venv layer
 # wired so interactive python3 finds it — more fragile than this, for no real gain.
-# So, like the RBE-worker / web_env images, it stays a Dockerfile; the GHA
-# container-images.yml job builds it and pushes it to GHCR.
+# See x/loom/gym/k8s/README.md for publishing the image when reviving the cluster eval.
 FROM python:3.14-slim
 
 # bash for the agent's bash tool; curl + ca-certificates for HTTPS fetches; g++ so

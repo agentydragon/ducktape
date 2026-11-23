@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -32,6 +33,38 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestCommandAdmissionWakesOnlyItsConversation(t *testing.T) {
+	store, dsn := newTestStoreWithDSN(t)
+	target := openSessionForStore(t, store, "")
+	other := openSessionForStore(t, store, "")
+	hub, err := wakeups.Listen(t.Context(), dsn, TurnChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	input, unsubscribe, err := hub.SubscribeKey(TurnChannel, target.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	unrelated, unsubscribeOther, err := hub.SubscribeKey(TurnChannel, other.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribeOther()
+	admitInput(t, store, target.ID, "steering", "next input")
+	select {
+	case <-input:
+	case <-time.After(5 * time.Second):
+		t.Fatal("command admission did not wake its conversation")
+	}
+	select {
+	case <-unrelated:
+		t.Fatal("command admission woke an unrelated conversation")
+	default:
+	}
+}
 
 func TestStoreOperationsExpireBeforeTheirCallerWhenBlockedOnDatabaseLocks(t *testing.T) {
 	for _, scenario := range []struct {
@@ -71,7 +104,7 @@ func TestStoreOperationsExpireBeforeTheirCallerWhenBlockedOnDatabaseLocks(t *tes
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			err = scenario.call(ctx, New(store.DB(), 100*time.Millisecond), session)
+			err = scenario.call(ctx, New(store.DB(), 100*time.Millisecond, nil), session)
 			var cancelled *pq.Error
 			if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &cancelled) && cancelled.Code == "57014") {
 				t.Fatalf("database operation error=%v, want deadline cancellation", err)
@@ -263,8 +296,14 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if newOwner.Generation != owner.Generation+1 {
 		t.Fatalf("generation=%d old=%d", newOwner.Generation, owner.Generation)
 	}
-	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late bytes")}); !errors.As(err, new(*LostOwnershipError)) {
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}
+	frame := protocol.WireBytes{Bytes: []byte("late bytes")}
+	if err := evidence.Record(t.Context(), frame, true); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("stale generation recorded provider evidence: %v", err)
+	}
+	evidence.Owner = newOwner
+	if err := evidence.Record(t.Context(), frame, true); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("new generation recorded progress for original generation's attempt: %v", err)
 	}
 	if err := store.AppendInput(t.Context(), owner, "stale input"); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("stale generation mutated conversation: %v", err)
@@ -291,9 +330,9 @@ func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&cursor); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.HTTPResponseHead{
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(), protocol.HTTPResponseHead{
 		ContentType: "text/event-stream", HTTPStatus: 200, ProviderRequestID: "compaction-response",
-	}, &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "compaction-output", Text: "summary"}}}); err != nil {
+	}, true, &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "compaction-output", Text: "summary"}}}); err != nil {
 		t.Fatalf("open compaction evidence was rejected: %v", err)
 	}
 
@@ -361,7 +400,7 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 			if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&before); err != nil {
 				t.Fatal(err)
 			}
-			err = (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late provider bytes")},
+			err = (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late provider bytes")}, true,
 				&eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "late-output", Text: "must not be committed"}}})
 			if !errors.Is(err, protocol.ErrPrecondition) {
 				t.Fatalf("late evidence for %s intent error=%v, want ErrPrecondition", scenario, err)
@@ -1283,7 +1322,7 @@ func TestStoreAbandonedProcessPreservesEvidenceAndLeavesScheduler(t *testing.T) 
 	if err := store.RegisterModelProcess(t.Context(), owner, "1234-unknown", 1234, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetainProcessOutput(t.Context(), owner, "1234-unknown", 9, []byte("observed output"), true, ptrInt(17)); err != nil {
+	if err := store.RetainProcessOutput(t.Context(), owner, "1234-unknown", 9, []byte("observed output"), true, new(17)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.AbandonProcess(t.Context(), owner, "1234-unknown", nil, nil, NestedUnknown, "retained-executor"); err != nil {
@@ -1318,7 +1357,7 @@ func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
 	if err != nil || process.ID != "1234-first" {
 		t.Fatalf("session 1234 resolved to %+v err=%v", process, err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "1234-first", nil, "exited", ptrInt(0), true); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "1234-first", nil, "exited", new(0), true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ProcessByModelSession(t.Context(), owner, 1234); !errors.Is(err, protocol.ErrMissing) {
@@ -1672,7 +1711,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "stored-process", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetainProcessOutput(t.Context(), owner, "stored-process", 4, []byte("unread"), true, ptrInt(2)); err != nil {
+	if err := store.RetainProcessOutput(t.Context(), owner, "stored-process", 4, []byte("unread"), true, new(2)); err != nil {
 		t.Fatal(err)
 	}
 	beforeEvents, err := store.Events(t.Context(), session.ID, 0, 16)
@@ -1760,8 +1799,6 @@ func intentRequestForDB(t *testing.T, store *Store, id string) (map[string]any, 
 	}
 	return request, nil
 }
-
-func ptrInt(value int) *int { return &value }
 
 func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	store := newTestStore(t)

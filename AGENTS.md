@@ -21,7 +21,7 @@ Default to [level 7](STYLE.md#level-7-for-human-facing-material) when discussing
 - RBE and remote cache are the defaults — never disable them (`--remote_executor=""` is never needed; <devinfra/buildbuddy/docs/rbe_workflows.md>). Browser/visual and Docker tests run **only** on RBE; never skip or stub them. `--noremote_cache`/`--noremote_accept_cached` are fine.
 - Can't reach BuildBuddy from outside the sandbox → stop and report (usually a broken session hook or VPN).
 - **Bazel Bash runfiles:** use `rules_shell`'s `sh_binary` or `sh_test` with `use_bash_launcher = True`; declare runtime files in `data`, pass `$(rlocationpath ...)` via `args` or `env`, and resolve with `rlocation` in the script. The launcher initializes the library; don't copy its bootstrap into each script.
-- Refs: <devinfra/buildbuddy/bbr.py> (config layers), `buildbuddy_api` skill (logs, target history), <devinfra/docs/bazel_configuration.md> (NixOS hosts).
+- Refs: <devinfra/buildbuddy/bbr.py> (config layers), `buildbuddy` skill (logs, target history), <devinfra/docs/bazel_configuration.md> (NixOS hosts).
 
 ## Infrastructure
 
@@ -82,7 +82,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 - Open the PR and let CI test; local `bbr` is for iterating on CI failures, uncertain changes, or what CI doesn't cover. Changes bypassing PR checks get validated first.
 - **Gotcha:** mypy/ruff aspects only lint targets named on the command line — `bbr build` changed `py_library` targets too. If gazelle is unavailable, building the library catches missing `@pypi//…` deps.
 - Touched `ansible/` → <ansible/AGENTS.md>.
-- **Watching CI:** `pull_request_read` `get_check_runs` paginates — `Pre-commit checks` is on a later page. Failure logs: `get_job_logs` with `run_id`, `failed_only: true`, `return_content: true`. `Bazel CI` failures → `buildbuddy_api` skill.
+- **Watching CI:** `pull_request_read` `get_check_runs` paginates — `Pre-commit checks` is on a later page. Failure logs: `get_job_logs` with `run_id`, `failed_only: true`, `return_content: true`. `Bazel CI` failures → `buildbuddy` skill.
 
 ## Git
 
@@ -104,7 +104,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 - Docker tests: `py_test` from `//devinfra/python:defs.bzl` with `requires_docker = True`; they run on RBE. Tests that start a PostgreSQL container use `size = "medium"` or larger.
 - Diagnostics (container logs, HAR dumps) go to `devinfra.testing.undeclared_outputs.undeclared_outputs_dir()`, not stdout.
 - **A timeout means a wedge, not slowness** — usually waiting on something that never arrives. Trace it (`--test_output=streamed --test_arg=-s`, fixture logs, `docker ps`); apart from the PostgreSQL minimum above, raise `size` or `timeout` only with evidence the test was actively working: `bbapi target history` timings plus a local pass (default `small`, 60s).
-- Localize breakages with `bbapi target history` (`buildbuddy_api` skill), not bisect.
+- Localize breakages with `bbapi target history` (`buildbuddy` skill), not bisect.
 - Syrupy snapshots: `uses_syrupy = True`, `.ambr` in `data`; <devinfra/docs/syrupy_snapshots.md>.
 - **Visual tests** exist to publish screenshots to the PR for review; one that captures the intended state and succeeds is valid without behavioral assertions. Add readiness checks so the capture isn't a loading state. All captures go through `deterministic_browser_context` + `VisualPage.capture()` (<testing/frontend_visual/README.md> § One way in; publication: <devinfra/pr_visuals/README.md>). Keep shared render-health checks; a pass doesn't mean the image is right — review the published images.
 - **Live OpenAI tests:** `live_openai_py_test` (`//openai_utils/testing:testing.bzl`) makes `.mock`/`.live` targets; mark `@pytest.mark.live_openai_api` (CI excludes the tag). Run non-Docker `.live` targets with `bazelisk test` for host credentials.

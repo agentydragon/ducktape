@@ -43,7 +43,6 @@ eslint = lint_eslint_aspect(
 # Test rule factories - use these in BUILD.bazel files:
 #   load("//devinfra/lint:linters.bzl", "eslint_test")
 #   eslint_test(name = "eslint", srcs = [":my_library"])
-# NOTE: ruff_test removed - ruff is enforced via pre-commit hook
 eslint_test = lint_test(aspect = eslint)
 
 # NOTE: mypy_aspect is configured in .bazelrc, not via lint_test.

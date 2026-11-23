@@ -6,7 +6,7 @@ import posixpath
 from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
-from cdk8s import ApiObjectMetadata, App, Chart, Yaml
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 from python.runfiles import Runfiles
@@ -23,7 +23,7 @@ from cluster.cdk8s.flux import (
     RenderedDirectory,
     SecretGeneratorArgs,
     artifact_directories,
-    kustomize_kustomization,
+    write_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
@@ -45,10 +45,6 @@ def write_generated_readme(root: Path) -> None:
     out_dir = root / GENERATED_ROOT
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "README.md").write_text(_GENERATED_README)
-
-
-def write_yaml(path: Path, manifest: dict[str, object]) -> None:
-    path.write_text(Yaml.format_objects([manifest]))
 
 
 def copy_source_file(root: Path, directory: str, source: str) -> str:
@@ -130,6 +126,7 @@ def write_directory(
     remote_resources: Sequence[str] = (),
     namespace: str | None = None,
     components: Sequence[str] = (),
+    include_copied_components: bool = False,
     generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
     secret_generator: Sequence[SecretGeneratorArgs] = (),
@@ -143,7 +140,7 @@ def write_directory(
     such as an upstream release manifest. `patch_charts` are synthesized into
     `patches.k8s.yaml` beside it and listed as strategic-merge patches, before
     `json6902_patches`. `namespace`, `components`, `generator_options`, `config_map_generator`,
-    `secret_generator` and `configurations` are `kustomize_kustomization`'s.
+    `secret_generator` and `configurations` are `write_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -154,35 +151,32 @@ def write_directory(
     directory's `decryption` is set when a sibling is SOPS ciphertext or a `secret_generator`
     reads a `.sops.yaml` file. Secret generators first package the encrypted file contents into
     a Kubernetes Secret; Flux's SOPS decryption then decrypts those generated Secret values
-    after the Kustomize build and before applying resources. Every copied directory of
-    `artifact` after the first must be a Component `components` name: the `image-pins`
-    directory a `GENERATED_ROOT` directory includes across the roots
-    (cluster/docs/cdk8s_remainder.md § Mixed-directory layout).
+    after the Kustomize build and before applying resources. When the artifact also copies
+    Kustomize Components, set `include_copied_components` to list their relative paths.
     """
     directory, *copied = artifact_directories(artifact)
-    included = {posixpath.normpath(posixpath.join(directory, component)) for component in components}
-    if shared := [base for base in copied if base not in included]:
-        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
+    if copied and not include_copied_components:
+        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {copied=}")
+    if include_copied_components and not copied:
+        raise ValueError(f"{artifact.name=} has no copied Component directories")
+    component_paths = [posixpath.relpath(path, directory) for path in copied]
     out_dir = root / directory
-    out_dir.mkdir(parents=True, exist_ok=True)
     resources = [write_app(root, directory, _app(chart_builders, app))] if chart_builders or app is not None else []
     patch_files: list[PatchFile] = []
     if patch_charts:
         # Partial objects: the fleet rules check the resources they patch, not the patches.
         _write_app(out_dir / _PATCH_FILE, _app(patch_charts))
         patch_files.append(PatchFile(path=_PATCH_FILE))
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[*resources, *siblings, *remote_resources],
-            namespace=namespace,
-            components=components,
-            generator_options=generator_options,
-            config_map_generator=config_map_generator,
-            secret_generator=secret_generator,
-            configurations=configurations,
-            patches=[*patch_files, *json6902_patches],
-        ),
+    write_kustomization(
+        out_dir,
+        resources=[*resources, *siblings, *remote_resources],
+        namespace=namespace,
+        components=[*components, *component_paths],
+        generator_options=generator_options,
+        config_map_generator=config_map_generator,
+        secret_generator=secret_generator,
+        configurations=configurations,
+        patches=[*patch_files, *json6902_patches],
     )
     return RenderedDirectory(
         artifact=artifact, decryption=sops_decryption(siblings, secret_generators=secret_generator)

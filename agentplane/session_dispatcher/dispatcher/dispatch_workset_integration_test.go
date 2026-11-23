@@ -47,9 +47,9 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 	// contributes current metadata but no command payload.
 	legacyReason := "sandbox_deleted: " + strings.Repeat("r", 300)
 	if _, err := queueStore.DB.ExecContext(ctx, `INSERT INTO dispatch_tombstone
-		(command_id,version,session_id,operation,state,reason,wake_assessment,created_at,updated_at)
-		SELECT 'legacy',nextval('dispatch_version_seq'),session_id,operation,'UNKNOWN',$2,
-			wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$1`, commandID, legacyReason); err != nil {
+		(command_id,version,session_id,operation_value,state_value,reason,wake_assessment,created_at,updated_at)
+		SELECT 'legacy',nextval('dispatch_version_seq'),session_id,operation_value,$3,$2,
+			wake_assessment,created_at,updated_at FROM dispatch WHERE command_id=$1`, commandID, legacyReason, store.UnknownState); err != nil {
 		t.Fatal(err)
 	}
 	hub := testWatchHub(t, queueStore)
@@ -72,7 +72,7 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 	}
 	exact.stop(t)
 	owner := claimSessionOwner(t, queueStore, sessionID)
-	if _, err := queueStore.Settle(ctx, commandID, owner, []string{store.QueueState}, store.DeliveringState, "", nil); err != nil {
+	if _, err := queueStore.Settle(ctx, commandID, owner, []dispatcherpb.DeliveryState{store.QueueState}, store.DeliveringState, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if delivering := watch.next(t).GetWorkset(); len(delivering.GetActive()) != 1 ||
@@ -80,7 +80,7 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 		delivering.GetActive()[0].GetReceiptVersion() <= active.GetReceiptVersion() {
 		t.Fatalf("delivering workset = %v", delivering)
 	}
-	if _, err := queueStore.Settle(ctx, commandID, owner, []string{store.DeliveringState}, store.AdmittedState, "", &eventlogpb.EventEntry{Cursor: 1}); err != nil {
+	if _, err := queueStore.Settle(ctx, commandID, owner, []dispatcherpb.DeliveryState{store.DeliveringState}, store.AdmittedState, "", &eventlogpb.EventEntry{Cursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	settled := watch.next(t)
@@ -129,12 +129,12 @@ func TestDispatchWorksetGeneratedFacadeReportsEachBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := queueStore.DB.ExecContext(t.Context(), `INSERT INTO dispatch
-		(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,reason,created_at,updated_at)
-		SELECT 'workset-' || rows.i,session_id,sandbox_name,sandbox_uid,operation,command,
-			CASE WHEN rows.i <= 1024 THEN 'QUEUED_IN_DISPATCHER'
-				WHEN rows.i <= 1045 THEN 'FAILED' ELSE 'CANCELLED_IN_DISPATCHER' END,
+		(command_id,session_id,sandbox_name,sandbox_uid,operation_value,command,state_value,reason,created_at,updated_at)
+		SELECT 'workset-' || rows.i,session_id,sandbox_name,sandbox_uid,operation_value,command,
+			CASE WHEN rows.i <= 1024 THEN $1::integer
+				WHEN rows.i <= 1045 THEN $2::integer ELSE $3::integer END,
 			repeat('r',300),now(),now()
-		FROM dispatch CROSS JOIN generate_series(1,1066) AS rows(i) WHERE command_id='head'`); err != nil {
+		FROM dispatch CROSS JOIN generate_series(1,1066) AS rows(i) WHERE command_id='head'`, store.QueueState, store.FailedState, store.CancelledState); err != nil {
 		t.Fatal(err)
 	}
 	hub, err := wakeups.Listen(t.Context(), databaseURL, store.NotifyChannel)

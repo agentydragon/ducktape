@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -237,10 +237,10 @@ func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.Se
 
 func (s *companionControl) command(request *controlpb.ClaimRequest) ([]string, error) {
 	binary := s.config.Binary
-	if request.GetImplementation() == codexexecserver.ImplementationCodex {
+	if request.GetImplementation() == backend.ImplementationCodex {
 		binary = s.config.CodexBinary
 	}
-	return codexexecserver.Command(request.GetImplementation(), binary, s.config.Listen, request.GetLimitsJson())
+	return backend.Command(request.GetImplementation(), binary, s.config.Listen, request.GetLimitsJson())
 }
 
 type companionOwnership struct {

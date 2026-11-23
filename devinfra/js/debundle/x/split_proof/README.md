@@ -34,8 +34,8 @@ To refresh the checked-in example instance after changing the inputs:
 
 ```sh
 dir=devinfra/js/debundle/x/split_proof
-bb build "//$dir:generated_instance" --remote_download_outputs=toplevel
-cp "bazel-bin/$dir/generated/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
+bbr build "//$dir/lean/generated:generate_instance" --remote_build_event_upload=all --remote_download_outputs=toplevel
+cp "bb-out/bazel-out/k8-fastbuild/bin/$dir/lean/generated/EsmSplit/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
 bbr test "//$dir/lean:instance_freshness_test"
 ```
 
@@ -51,18 +51,122 @@ Pass the source module, placement spec and a fresh output directory to the norma
 bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output
 ```
 
+An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
+
+For browser module scripts, the `browser-page` contract also permits `.js` output paths on emission and disk checking.
+
+For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. The linked proof can use two observations throughout initialization. Ambient `typeof window` returns `"object"`, and a bare ambient `window` read returns the same page object. Both observations preserve host state. The checker can carry the page reference as an opaque value. Accessing its properties, coercing it, or comparing it requires additional semantics. Local or imported bindings named `window` resolve through their actual cells. The verdict lists the selected profile and the observations used as premises.
+
+The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Carrying the operation in an unexecuted branch uses no assumption about constructor behavior. The caller is responsible for choosing a profile that holds in the deployment.
+
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
-Lean certifies the original annotated ESTree against the exact map of output module ASTs it hands to Astring, including generated imports and exports. Only then does the splitter print and publish the directory. The JavaScript guarantee assumes that Acorn and eslint-scope describe the source faithfully, that the printer preserves the certified trees, and that CoreJS models the supported syntax. To inspect an existing directory, pass `--check-output`. This certifies the same trees, then parses the files and compares their syntax, callable source spelling and module names with the expected output. Copied providers must match their source text. [Declaration correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
+Lean certifies the original annotated ESTree against the exact map of output module ASTs it hands to Astring, including generated imports and exports. Only then does the splitter print and publish the directory. The JavaScript guarantee assumes that Acorn and eslint-scope describe the source faithfully, that the printer preserves the certified trees, and that CoreJS models the supported syntax. To inspect an existing directory, pass `--check-output`. This parses the files and compares their syntax, callable source spelling and module names with the expected output before certifying the matched trees. Copied providers must match their source text. [Declaration correspondence theorems](lean/EsmSplit/CoreJS/DeclarationArtifacts.lean)
 
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the normal three-positional command with the original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
 Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world.
-The state includes the heap and captured bindings of exported closures. The proof uses
-a fixed interpreter fuel witness. Insufficient fuel, unsupported syntax or a proof that fails
-to reduce yields a rejection. A successful comparison reports `"scope":"linked-programs"`.
+
+For large certificates, the checker can elaborate AST correspondence in a separate Lean process. That check imports the execution theorem compiled for the current certificate and audits the result. For large linked programs that need neither host premises nor file-local write-batch rules, the checker also proves the source run first and records its complete final state. The candidate must reach that same state. If a checkpoint stage fails, the checker retries with the ordinary execution proof.
+
+The linked checker can retain an ordinary function whose body fails lowering. It checks the callable's source spelling, original unit and lexical position, and captured bindings in both trees. The interpreter allocates the closure and its properties as usual. Calling or constructing it then yields an unknown result with the body’s lowering error. Retention excludes functions with default parameters and bodies that require a module URL, method home object, enclosing implicit `arguments`, or direct `eval`.
+
+A named export list such as `export { local as publicName }` can publish an imported binding.
+Imports can follow a chain of these aliases to the declaration's live cell. A chain that
+cycles without reaching a declaration fails to link. Lean checks that each entry export
+resolves to the same live cell in both graphs. Source-bearing re-exports such as
+`export { name } from "./provider.mjs"` are outside this fragment.
+When a generated import needs a binding already published under an alias,
+it imports that public name under the original local name. This adds no entry export.
+
+Ordinary top-level function declarations initialize when the modules link. A call can reach a declared function before its statement executes, while its closed-over lexical bindings still observe their own initialization order. The checker uses the same scope correspondence for recursive references and deferred function bodies. Nested declarations and async and generator functions remain outside this fragment.
+
+Named parameters can have defaults such as `(x = 1, y = x) => y`. Missing and `undefined` arguments use the initializer. A `null` argument binds directly. Parameters initialize left to right and a read of the current or a later parameter before initialization throws, including inside `typeof`. Body lexical declarations are in a scope inside the parameter environment. The linked fragment refuses a body `var` whose name repeats a parameter or occurs free in an initializer. The function's `length` counts only parameters before the first default. Functions with defaults require identifier parameters, and implicit `arguments` remains outside the linked fragment.
+
+Linked ordinary functions and arrows accept nonempty flat object patterns in parameters and local `var`, `let`, and `const` declarations. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`. A local declaration evaluates its initializer once. Both forms use CoreJS property lookup, including the receiver for a getter, and stop at the first abrupt read. Keys may be identifiers or string literals. Module-level patterns, nested targets, defaults, rest, and computed keys are outside this lowering. An empty pattern still checks its argument for null or undefined and is also excluded.
+
+In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
+
+Linked functions can also use `switch` cases ending in `return`, `throw`, or an unlabeled `break` before the next clause. The discriminant is evaluated once. Case tests run in source order and match by strict equality. A trailing `default` runs when no test matches. The checker refuses fallthrough, a nontrailing default, nested breaks, and lexical declarations shared by the clauses. Independently braced case bodies keep their own lexical scopes.
+
+Linked sequence expressions evaluate their operands from left to right, stop at the first abrupt completion, and return the final operand's value. A sequence used as a call's callee supplies `undefined` as `this`, including when its last operand reads a member.
+
+Linked member expressions support dot access and computed keys with modeled primitive
+property names. A member call evaluates its receiver and key once, reads the callee before
+evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
+receiver and arrows capture the surrounding `this`. Private names and `super` are outside the linked fragment.
+
+A single optional member read `receiver?.key` or `receiver?.[key]` evaluates its modeled receiver once. A null or undefined receiver yields `undefined` without computing a key or invoking a getter. A reached read keeps the original base as the getter's `this`, even if key evaluation changes the value of the receiver expression.
+
+A single named method call `receiver?.method(args)` skips lookup and arguments when the receiver is null or undefined. The form `receiver.method?.(args)` performs ordinary property lookup first and skips the arguments if the returned method is null or undefined. Both forms evaluate the receiver once and preserve it as `this`. Bare optional calls, computed optional method calls, combined optional receiver and callee, continued chains, and chain expressions used directly as call targets still receive a refusal.
+
+Linked `key in base` evaluates the key expression and then the base expression.
+A primitive base throws before the key is converted. On a modeled object, CoreJS
+converts the primitive key and looks for a property on the object or its prototype
+chain without calling a getter. Reached object-to-primitive conversion stops with
+an unknown result. Symbol keys, proxies, and unmodeled host objects are outside
+the fragment.
+
+Simple assignments to dot and computed properties, such as `record.name = value` and `record[key()] = value`, use CoreJS strict property writes. CoreJS evaluates the receiver, computed key expression, and right-hand side in that order, writes through the original receiver, and returns the assigned value. Object-key coercion, host writes, and array writes can produce an unknown result during initialization.
+
+Plain `=` also writes local and module bindings. It evaluates the right-hand side once before writing and returns the assigned value. An anonymous function on the right-hand side takes the target identifier's name. An assignment through an existing import evaluates its right-hand side and then throws a `TypeError`. An assignment reached before its lexical binding initializes or after a `const` binding initializes also throws in CoreJS. Placement still requires writes to source module bindings to stay with their declarations. Destructuring and global assignments remain outside the linked lowering.
+
+Arithmetic and bitwise compound assignments read the target before the right-hand side runs, apply the corresponding binary operator, and return the value they write. This includes `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `>>>=`. The logical assignments `&&=`, `||=`, and `??=` read the same kinds of targets and short-circuit both the right-hand side and the write. Their anonymous functions receive the same identifier name as with plain assignment. Prefix and postfix `++` and `--` convert a modeled primitive to a number, write the updated number, and return the new or old number respectively. Compound assignments and updates target local or module bindings or properties.
+
+Linked `delete` accepts dot and computed member expressions. It evaluates the receiver and key, then removes an own configurable property. A missing own property succeeds, while a nonconfigurable property throws in strict code. Reached deletion on unmodeled values or a computed key that requires object coercion stops the model.
+
+Linked object literals may contain distinct identifier or string keys. Property values use the same linked expression lowering as other initializers. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. If one property's value throws, evaluation stops before the following property. Computed property definitions, `__proto__`, methods, accessors, and spread are outside this fragment. A directly anonymous function or arrow takes its name from the static key. An explicitly named function keeps its name.
+
+A logical expression in a static data property, such as `{mode: config.mode || "default"}`, evaluates its left operand first. Only the selected operand supplies the property value, and an abrupt completion stops construction of the record.
+
+A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
+
+Linked dense array literals evaluate their elements left to right. Inside function bodies the checker also records array spread elements and the bindings their operands capture. If initialization reaches such a literal, CoreJS stops with an unknown result because iterator behavior is outside the model. Top-level array spread and array holes are rejected during lowering.
+
+Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
+
+Linked binary `+`, `-`, `*`, `/`, and `%` evaluate both operands in source order and then apply CoreJS primitive coercion. Addition concatenates when either primitive operand is a string. Numeric operations use binary64, including signed zero, infinities, NaN, and JavaScript’s signed remainder. Linked unary `+` and `-` convert a primitive operand to a number. The bitwise operators `~`, `&`, `|`, `^`, `<<`, `>>`, and `>>>` reduce numeric operands to 32 bits and mask shift counts to five bits. Unsigned right shift returns the unsigned result. Object-to-primitive conversion and host values reach an unknown result when evaluated. BigInt, Symbol, and exponentiation remain outside the linked fragment.
+
+Linked `<`, `<=`, `>`, and `>=` evaluate operands in source order. CoreJS compares two strings by UTF-16 code unit and converts other primitive pairs to numbers. A numeric comparison with NaN is false. Supplementary Unicode characters are supported in string literals used directly as comparison operands. Isolated UTF-16 surrogates are refused. Reached object-to-primitive conversion remains unknown.
+
+Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. For `==` and `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
+
+The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
+The state includes the heap and captured bindings of exported closures. The checker
+runs both programs in a concrete `World.probe` to select an interpreter fuel witness.
+When both finish normally, it compares the complete final state: heap objects and
+closure code/environments, binding cells, allocation region, logged output, handed
+object handles, and the probe's unit world state. Floating-point values are compared
+by their IEEE bit patterns. If these probe states differ, `Ends.unique` proves that
+the programs cannot finish with one shared state in every world, so the checker
+refuses before generating the all-world proof. Matching probe states are only a
+necessary check; Lean still proves the guarantee for every modeled world.
+
+The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
+top-level record initializer it can make one more attempt with 64 plus the largest
+property count, capped at 2048. Exhausting the budget, unsupported syntax or an
+all-world proof that fails to reduce yields a rejection. A successful comparison
+reports `"scope":"linked-programs"`.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
+
+### Read a linked refusal
+
+Linked refusals from AST lowering and the concrete probe include a `reason_code`. A `linked_input` refusal means the input failed linked lowering or linkage. `probe_fuel` means the search exhausted its budget. `probe_mismatch` means both probe executions finished with different states. Its optional `observation` reports a differing exported value or object alias when one is visible in exported cells or their own data properties. Paths list the export name and, for an own property, the property name.
+
+### Measure certification
+
+Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.
+
+For public comparisons, use the wide-table reversal and the 48-reader linked module graph:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/translation:linked_wide_table_reversal_test" "$p/translation:linked_module_graph_scale_test" \
+  --test_env=SPLIT_PROOF_TIMINGS=1 --test_output=all --nocache_test_results
+```
+
+Compare the same fixture, proof mode and runner across revisions. Record peak memory separately from the phase times.
 
 ### Inspect an uncertified preview
 
@@ -230,13 +334,13 @@ The main development does not use `native_decide`, so the compiler is not truste
    The checker trusts the interpreter's rules and its printed premises ([`effects/`](effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
    golden cases with reorders, fuzzers over random bundles and splits, a mutation harness that removes one rule at a time. A wrong rule shows up as a wrong accept.
    A `var` inside a top-level block declares a module-scope name ([`debundle_cases/`](debundle_cases/README.md)).
-   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. The legacy `lowersplit --diagnostic … --lean` instance writer uses the interpreter's footprints, but does not certify emitted artifacts.
+   `lowersplit --diagnostic … --lean` uses the same analysis to generate the 12 statement footprints in [`Instance.lean`](lean/EsmSplit/Instance.lean). Lean checks the generated plan, including the accepted cycle and the three rejected placement specs.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
 5. **Emission.** Lean builds the output module ASTs and Astring prints them. A binding that the glue exports under another name is imported back under its own. The standalone kernel example renders its embedded statement strings with [`FixtureRender.lean`](lean/Experiments/FixtureRender.lean).
-6. **The lowering front end around the model.** Lean checks the generated module trees before printing. The shared parser, scope annotations and printer are part of the trusted boundary. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes CoreJS directly from supported source syntax. Its agreement with JavaScript semantics is tested against Node. An external `--corejs` program and the legacy `--lean` instance writer are available only under `--diagnostic`; neither certifies a split.
+6. **The lowering front end around the model.** Lean checks the generated module trees before printing. The shared parser, scope annotations and printer are part of the trusted boundary. The [Lean lowering](lean/EsmSplit/CoreJS/FromESTree.lean) computes CoreJS directly from supported source syntax. Its agreement with JavaScript semantics is tested against Node. An external `--corejs` program and the `--lean` structural plan writer are available under `--diagnostic`. Use the normal splitter command to certify emitted artifacts.
    - **One statement per declarator.** Lean splits a top-level `var`, `let` or `const` list into one AST node per declarator, including under `export`. The declaration extraction theorem relates these units to the original lists for the supported CoreJS subset.
    - **Imports and exports stay in the entry.** The normal command rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. Diagnostic mode may still write a preview after this rejection, but it cannot certify it. Moving the rule into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
    - **Outside modules run first.** The model has no outside modules. An `import` statement declares nothing and does nothing in it, and an imported name is a global: the same binding in every module. [The output AST builder](lean/EsmSplit/ESTreeEmit.lean) places the entry's `import` and `export … from` statements before its glue imports, in their order, so the outside modules run before every statement and in the bundle's order. Another module gets an `import` line of its own for the outside names it mentions. That this keeps the order is argued, not proved. It assumes that no outside module awaits at its top level, and that the modules are written where the bundle was, so a relative specifier names the same file. `export * from` is rejected.
@@ -291,7 +395,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 ## Limits
 
 - **Syntax.** The front end handles a small subset. It fails loudly outside it.
-- **Conservative.** Any call is an effect. `const banner = shout("x")` cannot move past a `register(...)`. A `/* @__PURE__ */` convention would lift this.
+- **Conservative.** Unknown calls can have effects, so the structural checker preserves their order relative to other effects.
 - **Sufficient, not necessary.** A rejected spec may be fine.
 - **Scale.** Compiled, the whole check takes 0.04 s for lodash (670 statements), 0.2 s for zod (1,072) and 10 s for 21,440 statements
   (32 renamed copies of lodash, 119 MB). Before the checks were indexed, lodash took 54 s and minified zod did not finish in 240 s.
@@ -299,7 +403,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
   In the kernel it is slow and needs memory: `decide +kernel` takes 23 s for 96 statements, 45 s for 144; at 288 it hit my 12 GB limit (numeric names would make it 1.7× faster, not 10×).
   `native_decide` runs the same decision procedure compiled and trusts Lean's compiler (2.3 s for lodash). The theorem does not depend on size.
   All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
-- **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
+- **Reassignment.** The structural checker orders writes to `let` and `var` cells and keeps their assignments with the declaration (`AssignsHome`) because ES imports are read-only.
 - **Outside the accepted subset:** [`SUPPORT.md`](SUPPORT.md) § Not supported.
 - **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
 
@@ -341,7 +445,6 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 | `lean/EsmSplit/Controls.lean`               | buggy-splitter plans, semantic non-vacuity                                                                                                                                                 |
 | `lean/EsmSplit/Audit.lean`                  | `#print axioms`                                                                                                                                                                            |
 | `lean/Main.lean`                            | the `render` executable                                                                                                                                                                    |
-| `extract/`                                  | JavaScript front end for the example (`extract.mjs`)                                                                                                                                       |
 | `example/`                                  | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                               |
 | `fuzz/`                                     | fuzzer and mutation test                                                                                                                                                                   |
 | `lowering/`, `es_order/`, `debundle_cases/` | JavaScript front ends and regression suites used by the Bazel commands above                                                                                                               |

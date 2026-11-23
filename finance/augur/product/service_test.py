@@ -49,7 +49,7 @@ from finance.augur.model.testing import (
 from finance.augur.policy.cash_band_household import CashBandHousehold, ManagedSleeve, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product import service
-from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.conftest import MakeProductService, with_fixture_macro
 from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.scenarios import (
     PRIMARY_ACCOUNT_ID,
@@ -99,7 +99,6 @@ from finance.augur.sim.market_path import IndexedAmount
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.testing.tlh import NO_HARVEST
 from finance.augur.x.models.independent import IndependentProviderConfig
-from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig
 
 LOCATION_A = LocationId("location_a")
 TEST_MANAGED = PortfolioId("test-managed")
@@ -312,34 +311,12 @@ def test_product_fails_when_sample_is_missing_required_series(
 def test_product_fails_when_crypto_holding_price_is_not_modeled(
     augur_config: Config, make_product_service: MakeProductService, scenario_key: ScenarioKey
 ) -> None:
-    provider = augur_config.models[augur_config.default_model_id]
-    assert isinstance(provider, CompositeProviderConfig)
-    # The fixture's macro provider is a mirroring wrapper (VOO mirrors SPY), so the series
-    # specs live one level down on `.model`.
-    assert isinstance(provider.macro, MirroringProviderConfig)
-    inner = provider.macro.model
-    assert isinstance(inner, IndependentProviderConfig)
-    model = provider.model_copy(
-        update={
-            "macro": provider.macro.model_copy(
-                update={
-                    "model": inner.model_copy(
-                        update={
-                            "asset_prices": inner.asset_prices.model_copy(
-                                update={
-                                    "security": {
-                                        symbol: spec
-                                        for symbol, spec in inner.asset_prices.security.items()
-                                        if symbol != "btc"
-                                    }
-                                }
-                            )
-                        }
-                    )
-                }
-            )
-        }
-    ).realize_model()
+    def without_btc(model: IndependentProviderConfig) -> IndependentProviderConfig:
+        securities = {symbol: spec for symbol, spec in model.asset_prices.security.items() if symbol != "btc"}
+        return model.model_copy(update={"asset_prices": model.asset_prices.model_copy(update={"security": securities})})
+
+    provider = with_fixture_macro(augur_config.models[augur_config.default_model_id], without_btc)
+    model = provider.realize_model()
     product = make_product_service(model, config=augur_config)
 
     with pytest.raises(ValueError, match="security:btc"):

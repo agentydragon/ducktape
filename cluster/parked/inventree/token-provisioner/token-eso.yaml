@@ -1,10 +1,3 @@
-# Mirror the provisioner-written inventree-api-token (token + username) out of the
-# inventree namespace into the sandbox namespaces, where the agents read it. ESO
-# replaces the kubernetes-reflector annotations the provisioner used to bake onto the
-# Secret — distribution is now a standalone, continuously-reconciled resource decoupled
-# from the provisioner (same pattern as the google-access-token ClusterExternalSecret in cluster/cdk8s/airlock.py). The ESO
-# ServiceAccount already has cluster-wide secret read. Lives in this (suspended) unit so
-# it activates together with InvenTree.
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:

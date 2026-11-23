@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { FAMILIES, generateProgram, renderProgram } from "./gen/index.mjs";
+import { FAMILIES, generateProgram, renderProgram } from "./testing/gen/index.mjs";
 import { featuresOf, parseModule } from "./syntax_inventory.mjs";
 
 const option = (name, fallback) => {

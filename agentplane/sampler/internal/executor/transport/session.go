@@ -424,7 +424,7 @@ func (e *Transport) ensureSessionLocked(ctx context.Context, method Method, proc
 	return &Failure{
 		Kind: FailureNotDispatched, Method: method, ProcessID: processID,
 		ExecutionSessionID: e.retainedSessionID(ctx), Cause: err,
-		RemoteOutcome: NotDispatched, RequestOutcome: outcomePointer(NotDispatched),
+		RemoteOutcome: NotDispatched, RequestOutcome: new(NotDispatched),
 	}
 }
 

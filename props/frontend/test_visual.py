@@ -9,7 +9,6 @@ from playwright.async_api import Locator, expect
 from testing.frontend_visual.capture import VisualHarness
 from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -46,6 +45,8 @@ async def _open_json_disclosures(request: Locator) -> None:
 async def test_fixture(visual: VisualHarness, scene: str) -> None:
     async with visual.open(query={"page": scene}, viewport=Viewport()) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
+        if scene in {"RunsBrowser", "RunDetailCritic"}:
+            await expect(view.page.get_by_text("exited (0)", exact=True)).to_be_visible()
         await view.capture(scene, target=view.page.locator("#shot"))
 
 

@@ -13,8 +13,6 @@ from python.runfiles import Runfiles
 from testing.frontend_visual.capture import VisualHarness
 from testing.frontend_visual.viewports import Viewport
 
-# gazelle:include_dep //testing/frontend_visual:fixtures
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

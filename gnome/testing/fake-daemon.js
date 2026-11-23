@@ -1,14 +1,13 @@
 import Gio from "gi://Gio";
 import GLib from "gi://GLib";
+import { loadInterfaceXml } from "./dbus.js";
 
 export class FakeViewDaemon {
-  constructor({ name, path, controlName, controlPath, mainXml, controlXml, initialView }) {
+  constructor({ name, path, controlName, controlPath, initialView }) {
     this.name = name;
     this.path = path;
     this.controlName = controlName;
     this.controlPath = controlPath;
-    this.mainXml = mainXml;
-    this.controlXml = controlXml;
     this.currentView = initialView;
     this.lastAttemptAt = 0;
     this.nextRetryAt = 0;
@@ -53,7 +52,7 @@ export class FakeViewDaemon {
 
   run(properties, controlMethods = {}) {
     const daemon = this;
-    const service = Gio.DBusExportedObject.wrapJSObject(this.mainXml, {
+    const service = Gio.DBusExportedObject.wrapJSObject(loadInterfaceXml("daemon.xml"), {
       ...properties,
       GetViewAsync(_parameters, invocation) {
         daemon.getCalls += 1;
@@ -67,7 +66,7 @@ export class FakeViewDaemon {
       },
     });
     service.export(Gio.DBus.session, this.path);
-    const control = Gio.DBusExportedObject.wrapJSObject(this.controlXml, {
+    const control = Gio.DBusExportedObject.wrapJSObject(loadInterfaceXml("fake-control.xml"), {
       ...controlMethods,
       SetView(view) {
         daemon.currentView = view;

@@ -41,12 +41,14 @@ class Permission:
 
 
 def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -> set[Permission]:
-    available = tuple(available)
-    return {permission for permission in required if not any(grant.covers(permission) for grant in available)}
+    grants = set(available)
+    return {
+        permission for permission in set(required) - grants if not any(grant.covers(permission) for grant in grants)
+    }
 
 
 class Rbac:
-    """Resolve declared RBAC from the dictionaries returned by ``Testing.synth``.
+    """Resolve declared RBAC from the rendered resource dictionaries.
 
     This is not an apiserver authorizer: admission, egress, and access obtained through exec/node
     proxy are outside this declarative contract, as is impersonation other than the egress proxy's

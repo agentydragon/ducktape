@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { parse } from "acorn";
 import { analyze } from "eslint-scope";
-import { astShape } from "./ast_assertions.mjs";
-import { generateAstBundle, generateRenamed } from "./ast_generator.mjs";
+import { astShape } from "./testing/ast_assertions.mjs";
+import { generateAstBundle, generateRenamed } from "./testing/ast_generator.mjs";
 
 const parseModule = (source) => parse(source, { ecmaVersion: "latest", sourceType: "module", ranges: true });
 const spellings = { top: (name) => `module_${name}`, local: (name) => `local_${name}` };
@@ -46,6 +46,8 @@ let maxDepth = 0;
 
 const unaryOperands = new Map();
 const eagerUnary = new Set();
+const eagerTypeComparisons = new Set();
+const eagerStrictComparisons = new Set();
 function walk(value, depth = 0) {
   if (value === null || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -123,7 +125,13 @@ for (const seed of [1, 2026, 2027, 1337]) {
     assert.equal(result.status, 0, `seed ${seed} round ${round} did not complete: ${result.stderr}`);
     // A direct top-level initializer runs whenever the module completes.
     for (const st of ast.body)
-      for (const { init } of st.declarations ?? []) if (init?.type === "UnaryExpression") eagerUnary.add(init.operator);
+      for (const { init } of st.declarations ?? []) {
+        if (init?.type === "BinaryExpression" && ["===", "!=="].includes(init.operator))
+          eagerStrictComparisons.add(init.operator);
+        if (init?.type === "UnaryExpression") eagerUnary.add(init.operator);
+        if (init?.type === "BinaryExpression" && init.operator === "!=")
+          eagerTypeComparisons.add([init.left.type, init.right.type].join("/"));
+      }
     const classes = ast.body
       .flatMap((st) => st.declarations ?? [])
       .map((d) => d.init)
@@ -161,8 +169,10 @@ for (const type of [
   "CallExpression",
 ])
   assert(kinds.has(type), `sample did not exercise ${type}`);
+assert.deepEqual([...eagerStrictComparisons].sort(), ["!==", "==="]);
 assert.deepEqual([...eagerUnary].sort(), ["!", "-"]);
-for (const op of ["!", "-"]) {
+assert.deepEqual([...eagerTypeComparisons].sort(), ["Literal/UnaryExpression", "UnaryExpression/Literal"]);
+for (const op of ["!", "-", "typeof"]) {
   const operands = unaryOperands.get(op);
   for (const kind of ["Literal", "Identifier", "BinaryExpression"])
     assert(operands?.has(kind), `missing generated ${op} on ${kind}`);

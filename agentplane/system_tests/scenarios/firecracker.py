@@ -15,19 +15,11 @@ from uuid import uuid4
 import grpc
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
-from tenacity import (
-    AsyncRetrying,
-    retry_if_exception,
-    retry_if_exception_type,
-    retry_if_result,
-    stop_after_delay,
-    wait_fixed,
-)
+from tenacity import AsyncRetrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service.api.history import history_service_pb2
-from agentplane.proto import event_pb2, session_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.native_platform import RUNNER_READY_SECONDS, NativePlatformClients
@@ -210,13 +202,7 @@ async def preserves_live_guest(
             shell_call_id=f"guest-proof-{number}",
             response="Guest proof observed.",
         )
-        summary: history_service_pb2.SessionSummary = await AsyncRetrying(
-            stop=stop_after_delay(30),
-            wait=wait_fixed(0.1),
-            retry=retry_if_result(lambda row: row.folded_through < session.cursor),
-        )(platform.history.get_session_summary, str(session.session_id))
-        assert summary.committed_cursor >= session.cursor
-        assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
+        await session.assert_completed_summary()
         (output / f"turn-{number}.txt").write_text(turn.transcript)
         reports = [
             line.removeprefix(_REPORT)

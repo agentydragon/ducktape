@@ -37,11 +37,10 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformSpecVars,
 )
 
-from cluster.cdk8s import ducktape_flux, flux
+from cluster.cdk8s import ducktape_flux, flux, tofu_state
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import artifact_directory
 from cluster.cdk8s.secret_ref import SecretKey
-from cluster.cdk8s.tofu_state import db
 
 NAMESPACE = "flux-system"
 
@@ -113,12 +112,12 @@ def tofu_state_terraform(
             targets=targets,
             service_account_name="tf-runner",
             backend_config=TerraformSpecBackendConfig(
-                custom_configuration=f'backend "pg" {{\n  conn_str    = "{db.STATE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
+                custom_configuration=f'backend "pg" {{\n  conn_str    = "{tofu_state.STATE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
             ),
             vars=vars,
             runner_pod_template=TerraformSpecRunnerPodTemplate(
                 spec=TerraformSpecRunnerPodTemplateSpec(
-                    env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
+                    env=[secret_env("PGPASSWORD", tofu_state.STATE_PASSWORD), *env],
                     node_selector=node_selector,
                     resources=_RUNNER_RESOURCES,
                     volumes=list(volumes) or None,
@@ -165,7 +164,7 @@ def gitops_terraform(
         scope,
         id,
         name=name,
-        schema=db.gitops_state_schema(name),
+        schema=tofu_state.gitops_state_schema(name),
         source_ref=TerraformSpecSourceRef(
             kind=TerraformSpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=flux.NAMESPACE
         ),

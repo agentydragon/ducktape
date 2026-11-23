@@ -6,62 +6,36 @@ import ipaddress
 
 import pytest
 import pytest_bazel
+import yaml
+from pydantic import ValidationError
 
-from cluster.scripts import nebula_mesh
+from cluster.scripts import nebula_mesh, render_mobile_nebula_config
 
 # gazelle:include_dep //cluster/scripts:nebula_mesh_fixtures
 pytest_plugins = ("cluster.scripts.nebula_mesh_fixtures",)
 
 
-def test_global_mtu_consumer_uses_smallest_destination_constraint() -> None:
-    """Mobile clients without per-peer routes must honor the smallest constraint."""
-    constrained_mesh = nebula_mesh.Mesh(
-        hosts={
-            "slow": nebula_mesh.Host(
-                nebula_ip="10.42.255.253", role="non-k8s", managed_by="mobile", destination_mtu=1100
-            ),
-            "fast": nebula_mesh.Host(
-                nebula_ip="10.42.255.254", role="non-k8s", managed_by="mobile", destination_mtu=1300
-            ),
-        }
-    )
-    assert constrained_mesh.minimum_path_mtu(1400) == 1100
-
-
-def test_global_mtu_consumer_keeps_default_without_constraints() -> None:
-    """An unconstrained roster must not lower a consumer's normal MTU."""
-    unconstrained_mesh = nebula_mesh.Mesh(
-        hosts={"mobile": nebula_mesh.Host(nebula_ip="10.42.255.254", role="non-k8s", managed_by="mobile")}
-    )
-    assert unconstrained_mesh.minimum_path_mtu(1300) == 1300
-
-
-@pytest.mark.parametrize(
-    ("destination_mtu", "message"),
-    [
-        (nebula_mesh.MIN_DESTINATION_MTU - 1, "greater than or equal to 500"),
-        (nebula_mesh.MESH_TUN_MTU + 1, "less than or equal to 1420"),
-    ],
-)
-def test_destination_mtu_must_fit_nebula_route_limits(destination_mtu: int, message: str) -> None:
-    """Reject route MTUs Nebula cannot install or that exceed the mesh TUN."""
-    with pytest.raises(ValueError, match=message):
-        nebula_mesh.Host(nebula_ip="10.42.255.254", role="non-k8s", managed_by="nixos", destination_mtu=destination_mtu)
-
-
-def test_destination_mtu_must_be_omitted_instead_of_null() -> None:
-    """Raw JSON consumers cannot safely treat an explicit null as an MTU."""
-    with pytest.raises(ValueError, match="omit destination_mtu instead of setting it to null"):
-        nebula_mesh.Host(nebula_ip="10.42.255.254", role="non-k8s", managed_by="nixos", destination_mtu=None)
-
-
-@pytest.mark.parametrize("destination_mtu", ["1100", 1100.0])
-def test_destination_mtu_must_be_a_strict_integer(destination_mtu: object) -> None:
-    """Raw JSON consumers require integer route and advertised-MSS values."""
-    with pytest.raises(ValueError, match="Input should be a valid integer"):
-        nebula_mesh.Host.model_validate(
-            {"nebula_ip": "10.42.255.254", "role": "non-k8s", "managed_by": "nixos", "destination_mtu": destination_mtu}
+@pytest.mark.parametrize(("limits", "expected"), [((), 1300), ((1400,), 1300), ((1200, 1100), 1100)])
+def test_mobile_tun_mtu_honors_the_smallest_path_limit(limits: tuple[int, ...], expected: int) -> None:
+    hosts = {"phone": nebula_mesh.Host(nebula_ip="10.42.0.1", role="non-k8s", managed_by="mobile")}
+    for i, limit in enumerate(limits, start=2):
+        hosts[f"peer-{i}"] = nebula_mesh.Host(
+            nebula_ip=f"10.42.0.{i}", role="non-k8s", managed_by="nixos", destination_mtu=limit
         )
+    config = render_mobile_nebula_config.render_config(
+        ca="test-ca", cert="test-cert", key="test-key", mesh=nebula_mesh.Mesh(hosts=hosts), include_dns=False
+    )
+    assert yaml.safe_load(config)["tun"]["mtu"] == expected
+
+
+@pytest.mark.parametrize("destination_mtu", [499, 1421, None, "1100", 1100.0])
+def test_destination_mtu_requires_an_integer_within_nebula_route_limits(destination_mtu: object) -> None:
+    """JSON consumers distinguish an omitted override from null and require an integer in [500, 1420]."""
+    with pytest.raises(ValidationError) as rejected:
+        nebula_mesh.Host.model_validate(
+            {"nebula_ip": "10.42.0.2", "role": "non-k8s", "managed_by": "nixos", "destination_mtu": destination_mtu}
+        )
+    assert [error["loc"] for error in rejected.value.errors()] == [("destination_mtu",)]
 
 
 def test_nebula_ips_are_valid_and_unique(nebula_roster: nebula_mesh.Mesh) -> None:

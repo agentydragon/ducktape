@@ -164,7 +164,7 @@ The detailed delivery and transport contract is in [SPEC.md](SPEC.md).
 
 ## Running
 
-Build the serving binary at `//agentplane/session_dispatcher/cmd:runner-gateway` or the
+Build the serving binary at `//agentplane/session_dispatcher/cmd:sessions` or the
 Sessions image at `//agentplane/session_dispatcher:image`. See the
 [Sessions settings](../README.md#source-and-tests) for TLS and caller grants. The binary uses
 `AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` to apply the embedded Goose migrations before

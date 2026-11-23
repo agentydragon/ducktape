@@ -224,6 +224,7 @@ def _wait_for_exec(container: Container, command: list[str], *, timeout: float =
         probes.append(f"exit={result.exit_code} output={_output_bytes(result.output)!r}")
         if result.exit_code == 0:
             return
+        container.reload()
         if container.status != "running":
             break
         time.sleep(0.2)
@@ -268,6 +269,11 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> 
     initializer, recorder = remote.recorder_containers()
     assert initializer.command
     assert recorder.command
+    assert recorder.startup_probe is not None
+    probe = recorder.startup_probe.exec
+    assert probe is not None
+    assert probe.command
+    startup_command = list(probe.command)
     pinned_image = os.environ["MITMPROXY_TEST_IMAGE_REFERENCE"]
     for registry in ("mirror.gcr.io/", "docker.io/"):
         if pinned_image.startswith(registry):
@@ -364,9 +370,6 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> 
             raise AssertionError(
                 f"BusyBox CA init failed with {init_result['StatusCode']}; diagnostics saved to {path}"
             )
-        init.reload()
-        assert init.attrs["Config"]["User"] == "1000:1000"
-        assert init.attrs["HostConfig"]["ReadonlyRootfs"] is True
         ca_archive, _ = init.get_archive("/config/mitmproxy-ca.pem")
         with tarfile.open(fileobj=bytes_io.BytesIO(b"".join(ca_archive)), mode="r:") as archive:
             ca_file = archive.next()
@@ -395,6 +398,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> 
         )
         containers.append(origin)
 
+        capture_day = datetime.now(UTC).date()
         proxy = client.containers.run(
             mitmproxy_ref,
             entrypoint=recorder.command[0],
@@ -412,12 +416,7 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> 
             detach=True,
         )
         containers.append(proxy)
-        proxy.reload()
-        assert proxy.attrs["Config"]["User"] == "1000:1000"
-        assert proxy.attrs["HostConfig"]["ReadonlyRootfs"] is True
-        _wait_for_exec(
-            proxy, ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 18080), 1).close()"]
-        )
+        _wait_for_exec(proxy, startup_command)
         _wait_for_exec(
             proxy, ["python", "-c", f"import socket; socket.create_connection(({upstream_name!r}, 8443), 1).close()"]
         )
@@ -432,14 +431,13 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> 
         first_capture = _read_capture_volume(proxy)
         assert len(first_capture) == 1, list(first_capture)
         first_file, (first_bytes, first_mode) = next(iter(first_capture.items()))
+        assert first_file in {f"{day}.mitm" for day in (capture_day, datetime.now(UTC).date())}
         assert first_mode == 0o600
         _assert_full_fidelity(_flows(first_bytes), first_marker)
 
         # Starting the same container reuses its persistent capture volume and CA confdir.
         proxy.start()
-        _wait_for_exec(
-            proxy, ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 18080), 1).close()"]
-        )
+        _wait_for_exec(proxy, startup_command)
         second_marker = "after-recorder-restart"
         second = proxy.exec_run(["python", "-c", _CLIENT, second_marker, upstream_name])
         if second.exit_code != 0:

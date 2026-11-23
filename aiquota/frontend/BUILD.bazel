@@ -283,19 +283,6 @@ esbuild(
     deps = [":screenshot_harness_lib"],
 )
 
-# Single-file views so $(rootpath) resolves to one path each.
-filegroup(
-    name = "screenshot_bundle_js",
-    testonly = True,
-    srcs = ["harness/bundle.js"],
-)
-
-filegroup(
-    name = "screenshot_bundle_css",
-    testonly = True,
-    srcs = ["harness/bundle.css"],
-)
-
 # Peak-burn hours and credit expiries render in the viewer's zone; the sweep's browser context is UTC.
 py_visual_test(
     name = "screenshots",
@@ -304,10 +291,10 @@ py_visual_test(
     assets = [
         ":scenes_json",
         "harness/index.html",
-        ":screenshot_bundle_css",
+        ":harness/bundle.css",
     ],
     env = {"FIXTURE_CATALOG": "$(rlocationpath :scenes_json)"},
-    harness = ":screenshot_bundle_js",
+    harness = ":harness/bundle.js",
     test_deps = [
         "//aiquota/testing:quota_fixtures",
         "//testing/frontend_visual:capture",

@@ -31,7 +31,7 @@ import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
 import { CommandDeliveryHistory, DeliveryHistoryFallback } from "./command_delivery_history";
 import { ThreadConversation } from "./conversation";
-import { DispatchWorksetPanel } from "./dispatch_workset_panel";
+import { OutstandingDispatchCommands, inlineDispatches } from "./thread_commands";
 import { useThreadDelivery } from "./thread_delivery";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
@@ -254,7 +254,11 @@ function SelectedThreadPage({ threadId, settingsOpen = false }: ThreadPageProps)
           </sync.Thread>
         )}
         {thread && materializationUnconfirmed && !thread.summary.projectionEpoch && (
-          <DispatchWorksetPanel delivery={delivery} onOpenDeliveryHistory={openDeliveryHistory} />
+          <OutstandingDispatchCommands
+            delivery={delivery}
+            items={inlineDispatches(delivery)}
+            onOpenDeliveryHistory={openDeliveryHistory}
+          />
         )}
       </Stack>
     </ChronologicalDebugProvider>

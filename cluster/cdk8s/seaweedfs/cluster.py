@@ -122,7 +122,7 @@ TENANTS = {
     "plaid-mcp",  # plaid_mcp/db.py
     "public-coder-agent",  # public_coder/backup.py
     "study-casino",  # study_casino/app.py
-    "tofu-state",  # tofu_state/db.py
+    "tofu-state",  # tofu_state.py
 }
 _HOSTNAME = "kubernetes.io/hostname"
 

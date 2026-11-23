@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.budget import sql_read_model
+from finance.budget.classified_transaction import ClassifiedTransaction
 from finance.budget.schema import (
     AccountCondition,
     AllOfCondition,
@@ -301,7 +302,7 @@ async def _custom_bucket_txns(
 
 async def _classified(
     session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig
-) -> tuple[sql_read_model.ClassifiedRow, ...]:
+) -> tuple[ClassifiedTransaction, ...]:
     return await sql_read_model.read_all_classified(
         session_factory=session_factory, config=config, window_start=_WINDOW_START, window_end=_WINDOW_END
     )

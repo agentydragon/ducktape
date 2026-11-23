@@ -13,28 +13,45 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-type observationSink struct{ events []*eventpb.Event }
+type observationSink struct {
+	events   []*eventpb.Event
+	progress []bool
+}
 
-func (s *observationSink) Record(_ context.Context, _ protocol.ProviderEvidence, events ...*eventpb.Event) error {
+func (s *observationSink) Record(_ context.Context, _ protocol.ProviderEvidence, semanticProgress bool, events ...*eventpb.Event) error {
 	s.events = append(s.events, events...)
+	s.progress = append(s.progress, semanticProgress)
 	return nil
 }
 
 func TestStreamingReasoningObservations(t *testing.T) {
 	frames := []string{
+		`{"id":"chat","choices":[{"delta":{"role":"assistant"}}]}`,
 		`{"id":"chat","choices":[{"delta":{"reasoning_content":"First "}}]}`,
 		`{"id":"chat","choices":[{"delta":{"reasoning_content":"thought","content":"Answer"}}]}`,
 		`{"id":"chat","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`{"id":"chat","choices":[],"usage":{"total_tokens":251}}`,
 		`[DONE]`,
 	}
 	for _, compact := range []bool{false, true} {
 		sink := &observationSink{}
-		result, err := readStream(t.Context(), sse(frames...), sink, compact, protocol.ProviderHooks{})
+		callbacks := 0
+		hooks := protocol.ProviderHooks{Progress: func() error {
+			if len(sink.progress) == 0 || !sink.progress[len(sink.progress)-1] {
+				t.Fatal("idle callback ran before evidence with semantic progress was recorded")
+			}
+			callbacks++
+			return nil
+		}}
+		result, err := readStream(t.Context(), sse(frames...), sink, compact, hooks)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(string(result.Record), `"reasoning_content":"First thought"`) {
 			t.Fatalf("reasoning missing from conversation record: %s", result.Record)
+		}
+		if want := []bool{false, true, true, true, false, false}; !slices.Equal(sink.progress, want) || callbacks != 3 {
+			t.Fatalf("semantic progress by frame=%v, want %v, idle callbacks=%d", sink.progress, want, callbacks)
 		}
 		if compact {
 			if len(sink.events) != 0 {

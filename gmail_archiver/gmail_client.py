@@ -14,7 +14,7 @@ from typing import TypeGuard, cast
 from googleapiclient.errors import HttpError
 from tenacity import RetryCallState, Retrying, retry_if_result, stop_after_attempt, wait_exponential
 
-from gmail_api.labels import GmailLabel
+from gmail_api.labels import CreateLabelRequest, GmailLabel
 from gmail_api.service import build_gmail_service
 from gmail_archiver.gmail_api_models import (
     CreateFilterRequest,
@@ -331,9 +331,8 @@ class GmailClient:
         if label_id := self.get_label_id(label_name):
             return label_id
 
-        label_object = {"name": label_name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}
-
-        result = self.service.users().labels().create(userId="me", body=label_object).execute()
+        body = CreateLabelRequest(name=label_name).model_dump(by_alias=True, exclude_none=True)
+        result = self.service.users().labels().create(userId="me", body=body).execute()
 
         self._label_cache = None
 

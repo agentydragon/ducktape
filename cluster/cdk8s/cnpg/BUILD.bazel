@@ -24,6 +24,21 @@ py_library(
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:database",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "role_credentials",
+    srcs = ["role_credentials.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cluster",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
@@ -55,6 +70,7 @@ py_library(
         "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

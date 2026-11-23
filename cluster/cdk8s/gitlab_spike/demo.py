@@ -16,8 +16,8 @@ from cdk8s_plus_34 import (
 )
 
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import write_kustomization
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.gitlab_spike.app import DEMO_NAMESPACE, REGISTRY_HOSTNAME
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.probes import http_probe
@@ -64,7 +64,4 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     manifest = write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[manifest], components=["image-pins"]),
-    )
+    write_kustomization(root / OUTPUT_DIR, resources=[manifest], components=["image-pins"])

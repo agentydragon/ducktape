@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import ApiObjectMetadata, App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -28,7 +28,7 @@ from cluster.cdk8s.flux import (
     artifact_directory,
     flux_kustomization,
     kustomizations_chart,
-    kustomize_kustomization,
+    write_kustomization,
 )
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
@@ -55,7 +55,7 @@ def test_wait_with_health_checks_fails_synth(scratch_app: App) -> None:
     chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=True, health_checks=_HEALTH_CHECKS)
     with pytest.raises(Exception, match="Kustomization/test-app"):
-        Cdk8sTesting.synth(chart)
+        chart.to_json()
 
 
 @pytest.mark.parametrize(("wait", "health_checks"), [(False, _HEALTH_CHECKS), (True, None)])
@@ -64,7 +64,7 @@ def test_wait_or_health_checks_alone_synthesizes(
 ) -> None:
     chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=wait, health_checks=health_checks)
-    (rendered,) = Cdk8sTesting.synth(chart)
+    (rendered,) = chart.to_json()
     assert rendered["spec"]["wait"] is wait
 
 
@@ -130,9 +130,10 @@ def test_artifact_rejects_unsafe_directory_paths(directory: str) -> None:
         artifact("test-app", directory)
 
 
-def test_missing_namespaces_identify_all_unplaced_generator_entries() -> None:
+def test_missing_namespaces_identify_all_unplaced_generator_entries(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="namespace") as error:
-        kustomize_kustomization(
+        write_kustomization(
+            tmp_path,
             resources=[],
             config_map_generator=[ConfigMapArgs(name="settings", namespace=None)],
             secret_generator=[SecretGeneratorArgs(name="credentials", namespace=None, files=["credentials.yaml"])],
@@ -147,9 +148,10 @@ def test_missing_namespaces_identify_all_unplaced_generator_entries() -> None:
     ids=["kustomization", "entry", "overlay"],
 )
 def test_generator_entry_placed_in_a_namespace_passes(
-    namespace: str | None, entry_namespace: str | None, namespaced_by_overlay: bool
+    tmp_path: Path, namespace: str | None, entry_namespace: str | None, namespaced_by_overlay: bool
 ) -> None:
-    kustomize_kustomization(
+    write_kustomization(
+        tmp_path,
         resources=[],
         namespace=namespace,
         config_map_generator=[ConfigMapArgs(name="test-config", namespace=entry_namespace)],
@@ -202,9 +204,7 @@ def test_config_map_data_preserves_values_through_kustomize(kustomize: Path, tmp
         options=GeneratorOptions(disable_name_suffix_hash=True),
     )
     (tmp_path / "file.conf").write_text("file-backed content\n")
-    (tmp_path / "kustomization.yaml").write_text(
-        yaml.safe_dump(kustomize_kustomization(resources=[], config_map_generator=[entry]))
-    )
+    write_kustomization(tmp_path, resources=[], config_map_generator=[entry])
 
     result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
@@ -215,17 +215,21 @@ def test_config_map_data_preserves_values_through_kustomize(kustomize: Path, tmp
     assert entry.data == data
 
 
-def test_file_backed_config_map_omits_literals() -> None:
-    rendered = kustomize_kustomization(
-        resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", files=["file.conf"])]
+def test_file_backed_config_map_omits_literals(tmp_path: Path) -> None:
+    write_kustomization(
+        tmp_path,
+        resources=[],
+        config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", files=["file.conf"])],
     )
+    rendered = yaml.safe_load((tmp_path / "kustomization.yaml").read_text())
     assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "files": ["file.conf"]}]
 
 
-def test_empty_config_map_data_serializes_as_empty_literals() -> None:
-    rendered = kustomize_kustomization(
-        resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", data={})]
+def test_empty_config_map_data_serializes_as_empty_literals(tmp_path: Path) -> None:
+    write_kustomization(
+        tmp_path, resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", data={})]
     )
+    rendered = yaml.safe_load((tmp_path / "kustomization.yaml").read_text())
     assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "literals": []}]
 
 

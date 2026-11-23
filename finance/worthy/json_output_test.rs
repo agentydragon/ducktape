@@ -1,8 +1,8 @@
+use asset::Asset;
 use chrono::prelude::*;
-use json_output::{
-    Asset, Conversion, ConverterSnapshot, ConverterType::*, Denomination::*, Snapshot,
-    SourceSnapshot, SourceType, SourceType::*,
-};
+use denomination::Denomination::*;
+use exchange_rate::ExchangeRate;
+use json_output::{ConverterSnapshot, ConverterType::*, Snapshot, SourceSnapshot, SourceType::*};
 use rust_decimal_macros::*;
 
 #[test]
@@ -50,12 +50,6 @@ fn parse_snapshot() {
         }
     "#;
     let parsed: Snapshot = serde_json::from_str(json).expect("could not parse");
-    println!("{parsed:#?}");
-
-    //denomination: Denomination::Currency {
-    //    symbol: "CHF".to_string(),
-    //},
-    //amount: dec!(1234),
     let expected = Snapshot {
         timestamp: DateTime::parse_from_rfc3339("2001-01-02T12:34:56+01:00").unwrap(),
         source_snapshot: vec![
@@ -65,7 +59,7 @@ fn parse_snapshot() {
                 source_type: Hardcoded,
                 snapshot: vec![Asset {
                     denomination: Currency {
-                        symbol: "A".to_string(),
+                        currency: "A".to_string(),
                     },
                     amount: dec!(1.23),
                 }],
@@ -73,7 +67,7 @@ fn parse_snapshot() {
             SourceSnapshot {
                 id: "b".to_string(),
                 name: "B".to_string(),
-                source_type: SourceType::IBFlex,
+                source_type: IBFlex,
                 snapshot: vec![
                     Asset {
                         denomination: Cryptocurrency {
@@ -99,25 +93,51 @@ fn parse_snapshot() {
         converter_snapshots: vec![ConverterSnapshot {
             id: "alphavantage".to_string(),
             converter_type: AlphaVantage,
-            snapshot: vec![Conversion {
-                source: Currency {
-                    symbol: "USD".to_string(),
+            snapshot: vec![ExchangeRate {
+                from: Currency {
+                    currency: "USD".to_string(),
                 },
-                target: Stock {
-                    symbol: "GOOG".to_string(),
+                to: Stock {
+                    stock: "GOOG".to_string(),
                 },
-                target_per_source: dec!(0.0004),
+                rate: dec!(0.0004),
             }],
         }],
         total: Asset {
             denomination: Currency {
-                symbol: "CHF".to_string(),
+                currency: "CHF".to_string(),
             },
             amount: dec!(1234),
         },
     };
 
     assert_eq!(expected, parsed);
+}
+
+#[test]
+fn snapshot_round_trips_original_field_names() {
+    let saved = serde_json::json!({
+        "Timestamp": "2001-01-02T12:34:56+01:00",
+        "SourceSnapshot": [{
+            "Id": "broker",
+            "Name": "Broker",
+            "Type": "ibflex",
+            "Snapshot": [{"Type": "stock", "Symbol": "GOOG", "Amount": dec!(2.5)}],
+        }],
+        "ConverterSnapshots": [{
+            "Id": "alpha",
+            "Type": "alphavantage",
+            "Snapshot": [{
+                "Source": {"Type": "stock", "Symbol": "GOOG"},
+                "Target": {"Type": "currency", "Symbol": "USD"},
+                "TargetPerSource": dec!(123.45),
+            }]
+        }],
+        "Total": {"Type": "currency", "Symbol": "USD", "Amount": dec!(308.625)}
+    });
+    let snapshot: Snapshot = serde_json::from_value(saved.clone()).unwrap();
+
+    assert_eq!(serde_json::to_value(snapshot).unwrap(), saved);
 }
 
 #[test]

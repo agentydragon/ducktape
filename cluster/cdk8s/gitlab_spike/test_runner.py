@@ -3,14 +3,14 @@
 import tomllib
 
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
+from cdk8s import App
 
 from cluster.cdk8s.gitlab_spike import runner
 from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_manager_and_job_policies_select_distinct_workloads(scratch_app: App) -> None:
-    resources = Cdk8sTesting.synth(runner.chart(scratch_app))
+    resources = runner.chart(scratch_app).to_json()
     helm = find_resource(resources, "HelmRelease", runner.NAME)
     values = helm["spec"]["values"]
     manager_service_account = values["serviceAccount"]["name"]

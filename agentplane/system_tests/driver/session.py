@@ -7,11 +7,13 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import grpc
+from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.session_events import SessionEventPages
-from agentplane.proto import session_pb2
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.system_tests.driver.tracing import tracer
@@ -116,6 +118,16 @@ class Session:
             finally:
                 self._cursor = collector.cursor
         raise AssertionError("History pagination ended before the turn completed")
+
+    async def assert_completed_summary(self) -> None:
+        """Wait until History has folded the turn just consumed by this driver."""
+        summary: history_service_pb2.SessionSummary = await AsyncRetrying(
+            stop=stop_after_delay(30),
+            wait=wait_fixed(0.1),
+            retry=retry_if_result(lambda row: row.folded_through < self.cursor),
+        )(self._history.get_session_summary, str(self.session_id))
+        assert summary.committed_cursor >= self.cursor
+        assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
 
     async def setup_output(self) -> tuple[str, str]:
         """Require successful setup and return its retained stdout/stderr, without App projection."""

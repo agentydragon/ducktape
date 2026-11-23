@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import re
-import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,13 +37,12 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture, meter_quota_view
-from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
-from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "ducktape/aiquota/gnome/aiquota.zip"
+pytest_plugins = ("gnome.testing.fixtures",)
+
 _EXTENSION_UUID = "aiquota@allegedly.works"
 _EMPTY_FIXTURE = "empty"
 
@@ -109,20 +107,6 @@ def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
-
-
-@pytest.fixture(scope="module")
-def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
-
-
-@pytest.fixture(scope="module")
-def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Unzip the distribution zip into a single dir for bind-mounting."""
-    dest = tmp_path_factory.mktemp("claude-quota-ext")
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as z:
-        z.extractall(dest)
-    return dest
 
 
 @pytest.fixture(scope="module")
@@ -202,6 +186,65 @@ def test_banked_reset_visibility(
             )
         finally:
             session.close_menu()
+
+
+def test_quota_bars_toggle_provider_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "binding_summary")
+    session.open_menu()
+    try:
+        assert len(_ProviderPopup(session, "codex").windows) == 2
+        for index in (0, 1):
+            assert session.call("GetDetailsOpen", "codex") == b"(false,)\n"
+            assert session.call("ActivateMeter", "codex", str(index)) == b"(true,)\n"
+            assert session.call("GetDetailsOpen", "codex") == b"(true,)\n"
+            if index == 0:
+                capture_menu.capture(session.open_menu(), label="Expanded quota bars", checkpoint="bar-details")
+            assert session.call("ActivateMeter", "codex", str(index)) == b"(true,)\n"
+    finally:
+        session.close_menu()
+
+
+def test_live_shaped_multiple_accounts(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "multi_account_live_shape")
+    pro = _ProviderPopup(session, "codex:example-pro")
+    maximum = _ProviderPopup(session, "codex:example-max")
+    assert len(pro.windows) == len(maximum.windows) == 1
+    assert "35%" in pro.windows[0]
+    assert "80%" in maximum.windows[0]
+    assert "1,235 credits" in maximum.header
+    assert json.loads(string_reply(session.call("GetPanelProviders"))) == [
+        "claude:example-claude",
+        "codex:example-pro",
+        "codex:example-max",
+    ]
+    session.open_menu()
+    try:
+        capture_menu.capture(session.open_menu(), label="Multiple accounts collapsed", checkpoint="collapsed")
+        assert session.call("ActivateMeter", "codex:example-pro", "0") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-pro") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-max") == b"(false,)\n"
+        capture_menu.capture(session.open_menu(), label="Multiple accounts first expanded", checkpoint="first-expanded")
+        assert session.call("ActivateMeter", "codex:example-max", "0") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-pro") == b"(false,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-max") == b"(true,)\n"
+        capture_menu.capture(
+            session.open_menu(), label="Multiple accounts second expanded", checkpoint="second-expanded"
+        )
+    finally:
+        session.close_menu()
+
+
+def test_balance_only_provider_keeps_details_toggle(session: GnomeSession) -> None:
+    _reload_fixture(session, "openai_platform_credits")
+    session.open_menu()
+    try:
+        popup = _ProviderPopup(session, "openai_platform")
+        assert not popup.windows
+        assert popup.details
+        session.call("SetDetailsOpen", "openai_platform", "true")
+        assert session.call("GetDetailsOpen", "openai_platform") == b"(true,)\n"
+    finally:
+        session.close_menu()
 
 
 def test_zero_resets_move_into_details_when_a_different_window_passes_reset(session: GnomeSession) -> None:
@@ -410,6 +453,29 @@ def test_wire_fields(session: GnomeSession) -> None:
     assert "pp" not in windows[0]
     assert "-55 pp" in codex.details
     assert "internal-only" not in "\n".join(windows)
+
+
+def test_panel_pace_unit_setting(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "binding_summary")
+    claude = _ProviderPopup(session, "claude")
+    codex = _ProviderPopup(session, "codex")
+    zai = _ProviderPopup(session, "zai")
+    assert claude.panel == "+10 pp"
+    assert codex.panel == "+18 pp"
+    assert zai.panel == "-15 pp"
+    setting = ("set", "org.gnome.shell.extensions.aiquota", "panel-show-pace-unit")
+    try:
+        session.gsettings(*setting, "false")
+        wait_until(
+            lambda: claude.panel == "+10" and codex.panel == "+18" and zai.panel == "-15", "panel did not update"
+        )
+        assert "+10 pp" in claude.details
+        geometry = session.open_menu()
+        capture_menu.capture(geometry, label="Panel pace without unit", checkpoint="compact-pace")
+    finally:
+        session.close_menu()
+        session.gsettings(*setting, "true")
+        wait_until(lambda: claude.panel == "+10 pp", "panel did not restore pace units")
 
 
 def test_binding_summary(session: GnomeSession) -> None:
@@ -669,6 +735,7 @@ def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(session: Gn
         daemon.call("ReleaseGetView")
         assert string_reply(session.call("GetCurrentView")) == signal_view
         assert daemon.counters() == (1, 1, 0)
+        assert string_reply(session.call("GetStreamStatus")) == "Connected"
 
         daemon.call("SetViewSilently", _view_json(3))
         session.call("FetchView")

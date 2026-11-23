@@ -39,6 +39,8 @@ def test_ui_bundle() -> None:
 
 
 class _Reader:
+    is_running = False
+
     async def read_view(self, *, estimate_period_id: EstimatePeriodId | None = None) -> SpendView:
         del estimate_period_id
         return SpendView(generated_at=datetime(2026, 10, 15, tzinfo=UTC), cards=[])
@@ -99,7 +101,8 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         web_oidc_client_secret=SecretStr("example-client-secret"),
         web_oidc_session_secret=SecretStr("example-session-secret"),
     )
-    app = create_app(settings, service=cast(SpendService, _Reader()), include_ui=False)
+    reader = _Reader()
+    app = create_app(settings, service=cast(SpendService, reader))
     app.state.principal_resolver = _Resolver()
     config = _web_login_config(settings)
     payload = LoginSession(
@@ -120,6 +123,9 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         "/api/v1/sustainability/windows",
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as client:
+        assert (await client.get("/healthz")).status_code == 503
+        reader.is_running = True
+        assert (await client.get("/healthz")).status_code == 200
         for path in paths:
             assert (await client.get(path)).status_code == 401
             assert (await client.get(path, headers={"Authorization": "Bearer example-valid-token"})).status_code == 200

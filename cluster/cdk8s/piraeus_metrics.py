@@ -205,8 +205,8 @@ def add_thin_pool_monitoring(
     labels = f'namespace="{namespace}",service="{name}",vg="{volume_group}",pool="{thin_pool}"'
     target = f'namespace="{namespace}",service="{name}"'
     expected = f'kube_daemonset_status_desired_number_scheduled{{namespace="{namespace}",daemonset="{name}"}} > 0'
-    # A laptop can be away for an arbitrary time. Alert for a missing collector
-    # while it is online, not for the intentional absence of its samples offline.
+    # The missing-metrics alert can fire before the roaming controller's
+    # out-of-service taint lands. Gate the collector on Node readiness.
     if only_when_node_ready:
         expected = (
             f"({expected}) and on() "

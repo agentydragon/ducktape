@@ -8,7 +8,7 @@ package(
 py_library(
     name = "gateway_process",
     srcs = ["gateway_process.py"],
-    data = ["//agentplane/session_dispatcher/cmd:runner-gateway"],
+    data = ["//agentplane/session_dispatcher/cmd:sessions"],
     deps = [
         "//agentplane/environments/testing:process",
         "//agentplane/identity/auth:listener",

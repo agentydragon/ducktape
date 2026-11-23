@@ -61,6 +61,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
@@ -324,8 +325,7 @@ def clickhouse_chart(app: App) -> Chart:
     mint_bearer_secret(
         chart,
         "aiquota-history-password",
-        name=client.AIQUOTA_HISTORY_CREDENTIALS,
-        namespace=client.NAMESPACE,
+        target=SecretRef(namespace=client.NAMESPACE, name=client.AIQUOTA_HISTORY_CREDENTIALS).key(client.PASSWORD_KEY),
         description="Read-only access to typed AIQuota history; never mounted by a sandbox.",
     )
     pod_template = "clickhouse"
@@ -599,13 +599,13 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
     Secrets, pod exec, writes, or status-subresource mutation.
     """
     chart = Chart(app, "agent-diagnostics-rbac", disable_resource_name_hashes=True)
-    name = "agent-clickhouse-diagnostics-reader"
+    reader = access.role_ref("clickhouse-diagnostics")
     read = ["get", "list", "watch"]
     k8s.KubeRole(
         chart,
         "role",
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=reader.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Read-only ClickHouse operator and observability resource status."},
         ),
@@ -631,11 +631,11 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
         chart,
         "binding",
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=reader.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to secret-free ClickHouse status."},
         ),
-        role_ref=access.role_ref("clickhouse-diagnostics"),
+        role_ref=reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("clickhouse-diagnostics")],
     )
     return chart

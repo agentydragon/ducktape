@@ -8,14 +8,6 @@ identify the source contract after its route is retired. Test which providers ca
 history, encrypted reasoning and opaque compaction items after a switch. Use that evidence to
 decide when a switch can proceed and what recovery to offer when a retained context cannot move.
 
-## Evaluate sampler-managed compaction for Messages and Responses
-
-Consider offering the Chat Completions approach as a per-route alternative to provider-native
-compaction for Anthropic Messages and OpenAI Responses. Append a configurable summary prompt to
-the cached prefix, request text, and replace the compacted prefix with a configurable summary
-message. Preserve complete retained turns and their tool exchanges. Compare cache reuse, latency,
-and summary quality against the existing provider-native modes.
-
 ## Evaluate Anthropic Message Batches for agent turns
 
 Investigate whether the central sampler can run a useful, delay-tolerant agent loop through the
@@ -36,3 +28,11 @@ turn state and recovery fit the sampler's existing ownership and journal boundar
 uncertain-effect and no-replay guarantees for client-side tools. Report whether a supported
 delay-tolerant Agentplane workflow justifies an implementation, rather than assuming that all
 interactive sessions should use batches. This TODO does not authorize a runtime cutover.
+
+## Revisit conversation retention across the central sampler and History
+
+The central sampler retains conversation items and exports journal entries covering the same
+conversation to History. How much of that overlap do we need? If the sampler only needs the
+current context window to continue a conversation, could it discard superseded items after
+successful compaction? If the sampler keeps the full conversation, could History read older
+items from it on demand, or could the two services share one retained copy?

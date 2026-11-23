@@ -8,7 +8,6 @@
 
 ## Infrastructure
 
-- [ ] Consolidate active runs display (currently in 2 places)
 - [ ] Launch optimization/improvement runs with live events display
 - [ ] Live events streaming on run detail view
 - [ ] Full status string display with elliptization

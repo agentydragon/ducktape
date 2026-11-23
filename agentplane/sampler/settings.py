@@ -302,6 +302,30 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed between durable semantic provider events after response headers.",
     )
+    provider_progress_lease_coalescing_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Round progress lease expiry up to this interval; defaults to 30 seconds.",
+    )
+    provider_retry_initial_backoff_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Initial delay for a transient provider failure; defaults to one second.",
+    )
+    provider_retry_max_backoff_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Maximum provider retry delay, including Retry-After; defaults to 30 seconds.",
+    )
+    provider_attempt_budget: int | None = Field(
+        default=None,
+        ge=1,
+        le=16,
+        description="Maximum attempts per new provider step, including the first; defaults to 3.",
+    )
     turn_timeout_seconds: int | None = Field(
         default=None,
         gt=0,
@@ -358,6 +382,15 @@ class Settings(BaseModel):
             observation_seconds = 300
         if observation_seconds + self.rpc_timeout_seconds > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS:
             raise ValueError("code-mode observation and RPC budgets must fit together in time.Duration")
+        return self
+
+    @model_validator(mode="after")
+    def provider_attempt_budgets_fit(self) -> Self:
+        if (self.provider_retry_initial_backoff_seconds or 1) > (self.provider_retry_max_backoff_seconds or 30):
+            raise ValueError("provider retry initial backoff must fit within maximum backoff")
+        progress = (self.provider_idle_timeout_seconds or 600) + 2 * self.rpc_timeout_seconds
+        if progress + (self.provider_progress_lease_coalescing_seconds or 30) > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS:
+            raise ValueError("rounded provider progress lease must fit in time.Duration")
         return self
 
     @field_validator("platform_instructions")

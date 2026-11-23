@@ -31,13 +31,17 @@ func providerAttemptTestPolicyPointer() *ProviderAttemptPolicy {
 }
 
 func providerAttemptTestRequest(kind PendingIntentKind) (IntentPayload, requestPreparation) {
+	request, preparation := providerAttemptTestPreparation(kind)
+	return request, requestPreparationFor(preparation)
+}
+
+func providerAttemptTestPreparation(kind PendingIntentKind) (IntentPayload, *providerrequest.Preparation) {
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	model := samplersettings.ModelConfig{
 		Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
 		ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite},
 	}
-	prepare := requestPreparationFor(&providerrequest.Preparation{ModelConfig: model, Compaction: kind == PendingIntentCompaction})
-	return ProviderRequestIntent(kind, connection, model), prepare
+	return ProviderRequestIntent(kind, connection, model), &providerrequest.Preparation{ModelConfig: model, Compaction: kind == PendingIntentCompaction}
 }
 
 func admitProviderCommand(t *testing.T, store *Store, owner Owner, sessionID, commandID string, compact bool) {
@@ -74,7 +78,7 @@ func reopenProviderAttemptStore(t *testing.T, store *Store, dsn string) *Store {
 		t.Fatal(err)
 	}
 	db := postgres.Open(t, dsn)
-	return New(db, 30*time.Second)
+	return New(db, 30*time.Second, nil)
 }
 
 func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
@@ -95,12 +99,20 @@ func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
 	if err != nil || attempt == nil || !attempt.Expired {
 		t.Fatalf("expired attempt=%+v err=%v", attempt, err)
 	}
-	if err := store.RenewProviderAttempt(t.Context(), owner, intentID, time.Minute); !errors.Is(err, protocol.ErrPrecondition) {
-		t.Fatalf("expired attempt was renewed: %v", err)
+	expiredLease, _ := readProviderAttemptLease(t, store, intentID)
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}
+	frame := protocol.WireBytes{Bytes: []byte("late frame")}
+	for _, progress := range []bool{false, true} {
+		if err := evidence.Record(t.Context(), frame, progress); !errors.Is(err, protocol.ErrPrecondition) {
+			t.Fatalf("expired attempt accepted evidence with progress=%t: %v", progress, err)
+		}
+	}
+	if got, _ := readProviderAttemptLease(t, store, intentID); !got.Equal(expiredLease) {
+		t.Fatalf("expired lease changed from %s to %s", expiredLease, got)
 	}
 	expireLease(t, store, session)
-	if err := store.RenewProviderAttempt(t.Context(), owner, intentID, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
-		t.Fatalf("expired owner renewed provider attempt: %v", err)
+	if err := evidence.Record(t.Context(), frame, true); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("expired owner recorded provider progress: %v", err)
 	}
 	newOwner := claim(t, store, session)
 	if newOwner.Generation != owner.Generation+1 {
@@ -110,6 +122,170 @@ func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
 		Class: ProviderAttemptPermanent, Reason: "recovered after owner expiry",
 	}); err != nil {
 		t.Fatalf("current owner could not abandon unresolved old-generation provider attempt: %v", err)
+	}
+}
+
+func readProviderAttemptLease(t *testing.T, store *Store, intentID string) (deadline, now time.Time) {
+	t.Helper()
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_attempt_lease_until,clock_timestamp()
+		FROM sampler_intent WHERE id=$1`, intentID).Scan(&deadline, &now); err != nil {
+		t.Fatal(err)
+	}
+	return deadline, now
+}
+
+func TestResponseEvidenceRenewsLeaseOnlyOnSemanticProgress(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Put the first renewal in the middle of a 30s bucket so a second progress
+	// event can exercise the same deadline without sleeping or racing its boundary.
+	_, now := readProviderAttemptLease(t, store, intentID)
+	wantDeadline := now.Truncate(30 * time.Second).Add(2 * time.Minute)
+	progressLease := wantDeadline.Add(-15 * time.Second).Sub(now)
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: progressLease}
+	frame := protocol.WireBytes{Bytes: []byte("response bytes")}
+	before, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialLease, _ := readProviderAttemptLease(t, store, intentID)
+	if err := evidence.Record(t.Context(), frame, false); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, _ := readProviderAttemptLease(t, store, intentID)
+	if !unchanged.Equal(initialLease) {
+		t.Fatalf("transport evidence changed lease from %s to %s", initialLease, unchanged)
+	}
+	if err := evidence.Record(t.Context(), frame, true); err != nil {
+		t.Fatal(err)
+	}
+	renewed, _ := readProviderAttemptLease(t, store, intentID)
+	if !renewed.Equal(wantDeadline) {
+		t.Fatalf("renewed lease=%s, want rounded DB deadline %s", renewed, wantDeadline)
+	}
+	rowVersion := func() string {
+		t.Helper()
+		var xmin string
+		if err := store.DB().QueryRowContext(t.Context(), `SELECT xmin::text FROM sampler_intent WHERE id=$1`, intentID).Scan(&xmin); err != nil {
+			t.Fatal(err)
+		}
+		return xmin
+	}
+	version := rowVersion()
+	if err := evidence.Record(t.Context(), frame, true); err != nil {
+		t.Fatal(err)
+	}
+	if rowVersion() != version {
+		t.Fatal("another chunk with the same deadline rewrote the attempt row")
+	}
+	// Shift the requested expiry by one bucket to exercise a subsequent renewal.
+	evidence.ProgressLease += 30 * time.Second
+	if err := evidence.Record(t.Context(), frame, true); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := readProviderAttemptLease(t, store, intentID)
+	if !next.Equal(wantDeadline.Add(30*time.Second)) || rowVersion() == version {
+		t.Fatalf("next renewal deadline=%s, want next bucket after %s and a new row version", next, wantDeadline)
+	}
+	// Silence after that last semantic event (including a transport-only read)
+	// leaves its full remaining idle and operation budgets on the durable attempt.
+	version = rowVersion()
+	if err := evidence.Record(t.Context(), frame, false); err != nil {
+		t.Fatal(err)
+	}
+	if rowVersion() != version {
+		t.Fatal("transport activity after the last progress event rewrote the attempt")
+	}
+	current, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Cursor != before.Cursor+10 {
+		t.Fatalf("want two events for each evidence record, cursor before=%d after=%d", before.Cursor, current.Cursor)
+	}
+	expireLease(t, store, session)
+	_ = claim(t, store, session)
+	if err := evidence.Record(t.Context(), frame, true); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("previous owner appended progress after handoff: %v", err)
+	}
+	if rowVersion() != version {
+		t.Fatal("previous owner rewrote the attempt after handoff")
+	}
+}
+
+func TestResponseEvidenceRollsBackLeaseWhenObservationAppendFails(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialLease, _ := readProviderAttemptLease(t, store, intentID)
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: 2 * time.Minute}
+	// The invalid UTF-8 fails protobuf encoding after the raw record has been appended.
+	observation := &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{
+		ItemId: "provider-item", Text: "\xff",
+	}}}
+	if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("response bytes")}, true, observation); err == nil || len(observation.GetSourceSequences()) == 0 {
+		t.Fatalf("want observation append failure after raw append, err=%v sources=%v", err, observation.GetSourceSequences())
+	}
+	if got, _ := readProviderAttemptLease(t, store, intentID); !got.Equal(initialLease) {
+		t.Fatalf("failed evidence changed lease from %s to %s", initialLease, got)
+	}
+	after, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.Events(t.Context(), session.ID, before.Cursor, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Cursor != before.Cursor || len(events) != 0 {
+		t.Fatalf("failed evidence committed events=%d, cursor before=%d after=%d", len(events), before.Cursor, after.Cursor)
+	}
+}
+
+func TestProviderAttemptAppliesConfiguredCoalescingAndRetryCap(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	const coalescingSeconds, retrySeconds = 61, 45
+	store = New(store.DB(), 30*time.Second, &samplersettings.Settings{
+		ProviderProgressLeaseCoalescingSeconds: new(coalescingSeconds),
+		ProviderRetryMaxBackoffSeconds:         new(retrySeconds),
+	})
+	admitProviderCommand(t, store, owner, session.ID, "configured-provider-timing", false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const progressLease = 2 * time.Minute
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: progressLease}
+	_, before := readProviderAttemptLease(t, store, intentID)
+	if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("semantic evidence")}, true); err != nil {
+		t.Fatal(err)
+	}
+	deadline, after := readProviderAttemptLease(t, store, intentID)
+	if deadline.Unix()%coalescingSeconds != 0 || deadline.Before(before.Add(progressLease)) ||
+		!deadline.Before(after.Add(progressLease+coalescingSeconds*time.Second)) {
+		t.Fatalf("deadline=%s, want a %ds epoch boundary covering the progress lease", deadline, coalescingSeconds)
+	}
+	failure := ProviderAttemptFailure{Class: ProviderAttemptTransient, Reason: "retry configured fixture", RetryAfter: (retrySeconds + 1) * time.Second}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, failure); !errors.Is(err, protocol.ErrInvalid) {
+		t.Fatalf("retry above configured cap: %v", err)
+	}
+	failure.RetryAfter = retrySeconds * time.Second
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, failure); err != nil {
+		t.Fatalf("retry at configured cap: %v", err)
+	}
+	frontier, err := store.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier == nil || !frontier.Retryable || frontier.Ready || frontier.RetryIn <= 0 || frontier.RetryIn > failure.RetryAfter {
+		t.Fatalf("configured retry frontier=%+v err=%v", frontier, err)
 	}
 }
 
@@ -342,8 +518,8 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 		t.Fatal(err)
 	}
 	partialID := "partial-provider-item"
-	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(),
-		protocol.WireBytes{Bytes: []byte("partial native provider frame")},
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(),
+		protocol.WireBytes{Bytes: []byte("partial native provider frame")}, true,
 		&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: partialID}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +528,7 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late frame")}); !errors.Is(err, protocol.ErrPrecondition) {
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late frame")}, false); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("late provider evidence after abandon: %v", err)
 	}
 	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"status": "complete"}, nil, nil); !errors.Is(err, protocol.ErrPrecondition) {
@@ -468,8 +644,8 @@ func TestProviderEvidenceRaceWithAbandonmentIsFenced(t *testing.T) {
 	go func() {
 		defer racers.Done()
 		<-start
-		recordResult <- (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(),
-			protocol.WireBytes{Bytes: []byte("frame racing abandonment")},
+		recordResult <- (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(),
+			protocol.WireBytes{Bytes: []byte("frame racing abandonment")}, true,
 			&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: "race-item"}}})
 	}()
 	go func() {

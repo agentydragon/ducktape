@@ -148,7 +148,7 @@ async def _held_delivery_settlement(cluster: Cluster, command: str) -> AsyncIter
     setup = f"""
 CREATE FUNCTION test_hold_delivery_settlement() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.command_id=TG_ARGV[0] AND NEW.state='RUNNER_ADMITTED' THEN
+    IF NEW.command_id=TG_ARGV[0] AND NEW.state_value={pb.DELIVERY_STATE_RUNNER_ADMITTED} THEN
         PERFORM pg_advisory_xact_lock(16422, 1);
     END IF;
     RETURN NEW;
@@ -196,7 +196,7 @@ async def _wait_for_blocked_settlement(cluster: Cluster, command: str) -> dict[s
             result = await _dispatcher_sql(
                 cluster,
                 f"""
-SELECT json_build_object('state', d.state, 'attempted', d.delivery_attempted,
+SELECT json_build_object('state', d.state_value, 'attempted', d.delivery_attempted,
     'session_holder', l.holder,
     'settlement_blocked', EXISTS (SELECT 1 FROM pg_locks
         WHERE locktype='advisory' AND classid=16422 AND objid=1 AND NOT granted))
@@ -206,7 +206,7 @@ WHERE d.command_id='{command}'
             )
             assert result.strip(), "Session step has not acquired its lease yet"
             row: dict[str, object] = json.loads(result)
-            assert row["state"] == "DELIVERING_TO_RUNNER"
+            assert row["state"] == pb.DELIVERY_STATE_DELIVERING_TO_RUNNER
             assert row["attempted"] is True
             assert row["settlement_blocked"] is True
             return row
@@ -238,7 +238,7 @@ async def _crashed_dispatcher_process(
     assert isinstance(pid, int)
     assert pid > 1
     executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-    assert executable.name == "runner-gateway", executable
+    assert executable.name == "sessions", executable
 
     async def send_signal(name: str) -> None:
         command = await asyncio.create_subprocess_exec(

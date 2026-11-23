@@ -75,6 +75,5 @@ class Config(BaseModel):
         default=1,
         description="Shallow-clone depth for git_remote; None for a full clone (the local transport can't shallow-fetch)",
     )
-    sops_config: str = Field(default=".sops.yaml", description="Repo path sops reads to pick the recipient set")
     git_author_name: str = "attic-jwt-rotation"
     git_author_email: str = "noreply@allegedly.works"

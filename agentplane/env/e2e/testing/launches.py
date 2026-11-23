@@ -77,8 +77,8 @@ def config(
     sandbox: SandboxIdentity,
     state_dir: Path,
     home: Path,
-    codex_executor_url: str | None = None,
-    codex_executor_socket: Path | None = None,
+    executor_url: str | None = None,
+    executor_socket: Path | None = None,
 ) -> RunnerTestConfig:
     return RunnerTestConfig(
         state_dir=state_dir,
@@ -86,8 +86,8 @@ def config(
         harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == session_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None,
-        codex_executor_url=codex_executor_url,
-        codex_executor_socket=codex_executor_socket,
+        executor_url=executor_url,
+        executor_socket=executor_socket,
     )
 
 
@@ -197,13 +197,13 @@ def command(
         environment=PID1Environment(
             supervision="pid1",
             executor=Executor(
-                url=config.codex_executor_url,
-                owner=CompanionExecutorOwner(socket=str(config.codex_executor_socket)),
+                url=config.executor_url,
+                owner=CompanionExecutorOwner(socket=str(config.executor_socket)),
                 implementation=config.executor_implementation,
                 placement="direct",
                 limits=config.executor_limits,
             )
-            if config.codex_executor_url is not None
+            if config.executor_url is not None
             else None,
         ),
         debug_checkpoint=DebugCheckpoint(name=config.debug_checkpoint[0], command_id=config.debug_checkpoint[1])

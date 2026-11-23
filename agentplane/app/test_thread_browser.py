@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
+import grpc
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
@@ -1731,13 +1732,24 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
             event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"After command {index}"))
         )
     await expect_projected_cursor(page, source.entries[-1].cursor)
-    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
-    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(f'.transcript-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
+    row = page.locator(f'[data-command-id="{command.command_id}"]')
+    label = "Execution failed" if outcome == "failed" else "No-op"
+    details_button = row.get_by_role("button", name=f"{label} · delivery details")
+    details = page.get_by_role("dialog", name="Delivery details")
+
+    async def open_retained_reason() -> None:
+        await expect(row).to_have_count(1)
+        await expect(row.get_by_text(submitted, exact=True)).to_be_visible()
+        await expect(row.locator(".transcript-user-bubble")).to_have_attribute("data-message-phase", outcome)
+        await details_button.press("Enter")
+        await expect(details.get_by_text(reason, exact=True)).to_be_visible()
+
+    await open_retained_reason()
+    await page.keyboard.press("Escape")
+    await expect(details).to_have_count(0)
+    await expect(details_button).to_be_focused()
     await page.reload()
-    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
-    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(f'.transcript-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
+    await open_retained_reason()
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
     assert source.runner.commands.empty()
 
@@ -1776,6 +1788,73 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     await expect(history.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
     await review_view.capture(label=f"Retained command after reload on {viewport_name}")
     assert source.runner.commands.empty()
+
+
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
+async def test_transferred_commands_show_unknown_and_failed_delivery_after_reload(
+    review_thread_browser: ThreadBrowser,
+    review_view: VisualPage,
+    viewport_name: str,
+    sandbox: SandboxCluster,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread_browser = review_thread_browser
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    attempted: asyncio.Queue[str] = asyncio.Queue()
+    release = asyncio.Event()
+    admit = source.runner.admit
+
+    async def hold(command: command_pb2.Command, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
+        attempted.put_nowait(command.command_id)
+        await release.wait()
+        return await admit(command, context)
+
+    monkeypatch.setattr(source.runner, "admit", hold)
+    try:
+        ids = []
+        originals = ("Admission in flight during deletion", "Still queued during deletion")
+        for text in originals:
+            composer = message_composer(page)
+            await composer.fill(text)
+            async with page.expect_response("**/upstream/dispatcher/v1/sessions/*:submitInput") as sent:
+                await composer.press("Enter")
+            receipt = await sent.value
+            assert receipt.ok
+            ids.append(dispatched_command_id(await receipt.text()))
+        async with asyncio.timeout(15):
+            assert await attempted.get() == ids[0]
+        # No History event or admission has confirmed either command. Only protected Dispatcher originals can own them.
+        await page.wait_for_function(
+            """([thread, ids]) => ids.every(id => ['agentplane.pending:', 'agentplane.input-echo:'].every(prefix =>
+                localStorage.getItem(prefix + encodeURIComponent(thread) + ':' + encodeURIComponent(id)) === null))""",
+            arg=[str(thread.id), ids],
+        )
+        await sandbox.custom_objects.delete_namespaced_custom_object(
+            "agentplane.allegedly.works",
+            "v1alpha1",
+            sandbox.namespace,
+            "sandboxes",
+            sandbox.name,
+            body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=sandbox.uid)),
+        )
+        await page.reload()
+        for command_id, original, state in zip(ids, originals, ("Outcome unknown", "Delivery failed"), strict=True):
+            row = page.locator(f'[data-command-id="{command_id}"]')
+            await expect(row).to_have_count(1)
+            await expect(row.get_by_text(original, exact=True)).to_be_visible()
+            await expect(row.get_by_role("button", name=f"{state} · delivery details")).to_be_visible()
+            await expect(
+                row.get_by_role("button", name=f"Dismiss delivery issue for command {command_id}")
+            ).to_be_visible()
+        await review_view.capture(label=f"Transferred command delivery after reload on {viewport_name}")
+        assert attempted.empty()
+        assert source.runner.commands.empty()
+    finally:
+        release.set()
 
 
 def _posted_input(request: Request) -> command_pb2.Command:

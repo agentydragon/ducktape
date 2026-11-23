@@ -8,11 +8,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import (
-    App,
-    Chart,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import App, Chart
 from more_itertools import one
 
 from agentplane.action_service.catalog import McpExecutorBinding
@@ -27,7 +23,7 @@ from cluster.scripts import nebula_mesh
 def ssh_resources(scratch_app_factory: Callable[[], App], nebula_roster: nebula_mesh.Mesh) -> list[dict[str, Any]]:
     chart = Chart(scratch_app_factory(), "test")
     ssh_mcp_backend.SshMcp(chart, ssh_mcp_config.NAME, config=ssh_mcp_config.load(), mesh=nebula_roster)
-    return Cdk8sTesting.synth(chart)
+    return chart.to_json()
 
 
 def test_actions_binding_uses_the_bearer_ssh_mcp_mints(

@@ -26,7 +26,7 @@ import {
   isCriticRun,
   isGraderRun,
 } from "../lib/api/client";
-import { getStatusColor, formatStatus } from "../lib/status";
+import RunStatusBadge from "./RunStatusBadge";
 import RunIdLink from "../lib/RunIdLink";
 import DefinitionIdLink from "../lib/DefinitionIdLink";
 import ExampleLink from "../lib/ExampleLink";
@@ -235,11 +235,7 @@ export default function RunDetail({
               </span>
             ) : null}
           </div>
-          {run ? (
-            <span className={`px-2 py-1 rounded text-sm font-medium capitalize ${getStatusColor(run.status)}`}>
-              {formatStatus(run.status)}
-            </span>
-          ) : null}
+          {run ? <RunStatusBadge run={run} /> : null}
         </div>
         <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Runs", href: "/runs" }, { label: runId }]} />
       </div>

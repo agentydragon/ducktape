@@ -94,17 +94,6 @@ def test_cut_config_power_shorthand_overrides_explicit_max():
     assert cc.power_max_pct == 60
 
 
-def _make_project(x_values: list[float] | None = None, y_values: list[float] | None = None) -> LightBurnProject:
-    resolved_x = x_values if x_values is not None else [10.0, 20.0, 30.0]
-    resolved_y = y_values if y_values is not None else [50.0, 100.0]
-    cfg = GridConfig(
-        title="Test grid",
-        x=AxisConfig(param=CutParam.POWER_PCT, values=resolved_x, label="Power [%]"),
-        y=AxisConfig(param=CutParam.SPEED_MM_S, values=resolved_y, label="Speed [mm/s]"),
-    )
-    return generate(cfg)
-
-
 def test_rd_grid_accepts_128_layers():
     config = _minimal_config(
         x=AxisConfig(param=CutParam.POWER_PCT, values=[20] * 128), y=AxisConfig(param=CutParam.SPEED_MM_S, values=[100])
@@ -112,31 +101,17 @@ def test_rd_grid_accepts_128_layers():
     assert len(generate_rd(config).layers) == 128
 
 
-def test_generate_cell_cut_settings_have_correct_params():
-    """Each cell layer should have x_param and y_param set correctly.
-
-    Cells are sorted by ascending energy (max_power * num_passes / speed).
-    x=power_pct [10, 20], y=speed_mm_s [50, 100]:
-      (r0,c0) 10/50=0.2, (r0,c1) 20/50=0.4, (r1,c0) 10/100=0.1, (r1,c1) 20/100=0.2
-    Sorted: 0.1 → 0.2 → 0.2 → 0.4
-    """
-    x_vals = [10.0, 20.0]
-    y_vals = [50.0, 100.0]
-    project = _make_project(x_values=x_vals, y_values=y_vals)
-    cell_layers = project.cut_settings[1:]  # skip text layer
-    assert len(cell_layers) == 4
-    # Lowest energy: power=10, speed=100 (energy=0.1)
-    assert cell_layers[0].max_power == 10.0
-    assert cell_layers[0].speed == 100.0
-    # power=10, speed=50 (energy=0.2)
-    assert cell_layers[1].max_power == 10.0
-    assert cell_layers[1].speed == 50.0
-    # power=20, speed=100 (energy=0.2)
-    assert cell_layers[2].max_power == 20.0
-    assert cell_layers[2].speed == 100.0
-    # Highest energy: power=20, speed=50 (energy=0.4)
-    assert cell_layers[3].max_power == 20.0
-    assert cell_layers[3].speed == 50.0
+def test_cell_layers_are_sorted_by_energy_in_both_formats():
+    config = _minimal_config(
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0, 100.0]),
+    )
+    # Power/speed gives 0.1, 0.2, 0.2, 0.4. The tie keeps row order.
+    expected = [(10.0, 10.0, 100.0), (10.0, 10.0, 50.0), (20.0, 20.0, 100.0), (20.0, 20.0, 50.0)]
+    lightburn_layers = generate(config).cut_settings[1:]  # skip text layer
+    ruida_layers = generate_rd(config).layers
+    assert [(layer.min_power, layer.max_power, layer.speed) for layer in lightburn_layers] == expected
+    assert [(layer.min_power_pct, layer.max_power_pct, layer.speed_mm_s) for layer in ruida_layers] == expected
 
 
 def test_cells_sorted_by_energy_across_subgrids():
@@ -163,7 +138,7 @@ def test_cells_sorted_by_energy_across_subgrids():
 
 
 def test_generate_xml_round_trips():
-    project = _make_project()
+    project = generate(_minimal_config(title="Test grid"))
     xml_str = project.to_xml_str()
     root = ET.fromstring(xml_str.split("\n", 1)[1])
     assert root.tag == "LightBurnProject"

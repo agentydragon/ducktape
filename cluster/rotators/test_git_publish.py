@@ -23,9 +23,7 @@ def test_sparse_publish_stages_only_rotated_outputs(tmp_path: Path, monkeypatch:
     remote = tmp_path / "remote.git"
     _git(tmp_path, "clone", "--bare", str(source), str(remote))
     monkeypatch.chdir(tmp_path)
-    enter_sparse_checkout(
-        tmp_path / "checkout", remote.as_uri(), [".sops.yaml", Path("rotated.yaml"), Path("unchanged.yaml")]
-    )
+    enter_sparse_checkout(tmp_path / "checkout", remote.as_uri(), [Path("rotated.yaml"), Path("unchanged.yaml")])
 
     assert not Path("excluded.yaml").exists()
     assert Path(".sops.yaml").read_text() == "old\n"

@@ -164,6 +164,36 @@
     7d:  40% used  ↻ 4d 21h  0% in ~3d 3h
   '''
 # ---
+# name: test_renders_shared_fixture[multi_account_live_shape]
+  '''
+  Subscriptions
+  
+  Claude · Example Claude
+    Balance: $13
+    Full resets: 4 remaining · expires Feb 15
+    Extra spend this month: $5 of $100 limit
+    7d:  65% used  ↻ 4d  0% in ~1d 14h
+  
+  Codex · Example Pro · pro
+    Banked resets: 1 · next known expiry Feb 1
+    7d:  35% used  ↻ 5d  0% in ~3d 17h
+  
+  Codex · Example Max · promax
+    1,235 credits
+    Banked resets: 2 · next known expiry Feb 2
+    7d:  80% used  ↻ 2d  0% in ~1d 6h
+  
+  API balances
+  
+  OpenAI API
+    Balance: $30
+  
+  Anthropic API · Example organization
+    Balance: $125
+    Grant: $95 remaining · expires Jul 1
+    Promo grant: $30 remaining · expires May 1 · scope: api
+  '''
+# ---
 # name: test_renders_shared_fixture[multi_window_reset_pending]
   '''
   Claude

@@ -25,11 +25,11 @@
 
 ## Session and Environment listings
 
-- [ ] Revisit the Environment-filtered Thread metadata query with
+- [ ] Revisit Environment-filtered Thread listing with
       [`SESSION_HISTORY_PRESENTATION`](../plans/task_dag.md#session_history_presentation--represent-sessions-without-a-required-sandbox),
       once the central Session and principal/attachment contracts in the
       [Session and Environment model](../plans/session_environment_model.md#two-relationships-one-session)
-      are reviewed. The current path repeats History lookups and scans metadata pages for archived
-      counts. Design bounded pagination and counting for the selected Session and Environment
-      relationships, preserving exact Environment UID attribution and service ownership. Avoid
-      optimizing the current single-Sandbox assumption as a standalone migration.
+      are reviewed. The browser joins Dispatcher Sessions with paged App metadata, counts archived
+      Threads locally, and watches History summaries for the selected Threads. Design bounded
+      pagination and counting for the selected Session and Environment relationships, preserving
+      exact Environment UID attribution and each service's ownership.

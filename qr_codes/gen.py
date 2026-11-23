@@ -3,12 +3,14 @@
 import argparse
 import subprocess
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import qrcode
-import svg
 from PIL import ImageFont
+from qrcode.image.svg import SvgPathImage
 
 _FONT_FAMILY = "Bebas Neue"
+_SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 _BORDER = 4  # quiet-zone modules
 
 # Letter paper at 96 dpi.
@@ -25,13 +27,9 @@ def _font_text_width_at_1em(text: str) -> float:
 
 
 def generate(text: str, output: Path, caption: str | None = None) -> None:
-    qr: qrcode.QRCode = qrcode.QRCode(border=_BORDER)
+    qr = qrcode.QRCode(border=_BORDER, image_factory=SvgPathImage)
     qr.add_data(text)
-    qr.make(fit=True)
-    matrix: list[list[bool | None]] = qr.modules
-
-    n = len(matrix)
-    modules_across = n + _BORDER * 2
+    modules_across = len(qr.get_matrix())
     box = _TARGET_QR_W // modules_across
     size = modules_across * box
 
@@ -48,40 +46,29 @@ def generate(text: str, output: Path, caption: str | None = None) -> None:
     vb_x = -(_PAPER_W - size) // 2
     vb_y = -(_PAPER_H - content_h) // 2
 
-    elements: list[svg.Element] = []
-
-    # White background.
-    elements.append(svg.Rect(x=0, y=0, width=size, height=content_h, fill="white"))
-
-    # QR modules.
-    offset = _BORDER * box
-    for row_idx, row in enumerate(matrix):
-        for col_idx, dark in enumerate(row):
-            if dark:
-                elements.append(
-                    svg.Rect(x=offset + col_idx * box, y=offset + row_idx * box, width=box, height=box, fill="black")
-                )
-
+    # Round-trip through bytes because qrcode can use either ElementTree or lxml.
+    symbol = ET.fromstring(qr.make_image().to_string())
+    symbol.attrib.update(width=str(size), height=str(size))
+    ns = f"{{{_SVG_NAMESPACE}}}"
+    ET.register_namespace("", _SVG_NAMESPACE)
+    canvas = ET.Element(f"{ns}svg", width="8.5in", height="11in", viewBox=f"{vb_x} {vb_y} {_PAPER_W} {_PAPER_H}")
+    ET.SubElement(canvas, f"{ns}rect", x="0", y="0", width=str(size), height=str(content_h), fill="white")
+    canvas.append(symbol)
     if caption:
-        elements.append(
-            svg.Text(
-                text=caption,
-                x=size / 2,
-                y=size + font_size // 2 + box // 4,
-                text_anchor="middle",
-                font_family=_FONT_FAMILY,
-                font_size=font_size,
-                fill="black",
-            )
-        )
+        ET.SubElement(
+            canvas,
+            f"{ns}text",
+            {
+                "x": str(size / 2),
+                "y": str(size + font_size // 2 + box // 4),
+                "text-anchor": "middle",
+                "font-family": _FONT_FAMILY,
+                "font-size": str(font_size),
+                "fill": "black",
+            },
+        ).text = caption
 
-    canvas = svg.SVG(
-        width=svg.Length(8.5, "in"),
-        height=svg.Length(11, "in"),
-        viewBox=svg.ViewBoxSpec(vb_x, vb_y, _PAPER_W, _PAPER_H),
-        elements=elements,
-    )
-    output.write_text(str(canvas))
+    output.write_text(ET.tostring(canvas, encoding="unicode"), encoding="utf-8")
 
 
 def main() -> None:

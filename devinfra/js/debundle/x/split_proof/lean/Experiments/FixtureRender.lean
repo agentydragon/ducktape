@@ -1,3 +1,4 @@
+import Lean.Data.Json
 import EsmSplit.Plan
 import EsmSplit.ModulePath
 
@@ -10,17 +11,22 @@ namespace FixtureRender
 private def renderBlocks (blocks : List (List String)) : String :=
   "\n\n".intercalate ((blocks.filter (!·.isEmpty)).map ("\n".intercalate ·)) ++ "\n"
 
+private def moduleName (name : String) : String :=
+  let initial := fun (c : Char) => c.isAlpha || c == '_' || c == '$'
+  if name.toList.head?.any initial && name.toList.all (fun c => initial c || c.isDigit) then name
+  else (Lean.Json.str name).compress
+
 /-- The glue `import`s of a module. A binding its source exports under another name is renamed back. -/
-private def importLines (P : Plan) (m : Module) : List String :=
+private def importLines (B : Bundle) (P : Plan) (m : Module) : List String :=
   m.imports.map fun (src, ns) =>
     -- Module destinations contain only URL-safe path segments, so no JS escapes are needed.
     let specifier := "\"" ++ relativeUrlSpecifier m.name src ++ "\""
     if ns.isEmpty then s!"import {specifier};"
     else
-      let source := P.find src
+      let exports := P.namedExports B src
       let spec (u : Name) :=
-        let p := (source.map (·.publicName u)).getD u
-        if p == u then u else s!"{p} as {u}"
+        let p := exportNameFor exports u
+        if p == u then u else s!"{moduleName p} as {u}"
       s!"import \{ {", ".intercalate (ns.map spec)} } from {specifier};"
 
 /-- The glue `export` of a module. -/
@@ -30,7 +36,7 @@ private def exportLines (m : Module) : List String :=
 
 /-- Source text of a module: its `import`s, its statements verbatim, its `export`. -/
 def render (B : Bundle) (P : Plan) (m : Module) : String :=
-  renderBlocks [importLines P m, m.stmts.map fun i => (B.stmt i).src, exportLines m]
+  renderBlocks [importLines B P m, m.stmts.map fun i => (B.stmt i).src, exportLines m]
 
 def writeModules (B : Bundle) (P : Plan) (dir : System.FilePath) : IO Unit := do
   IO.ofExcept (validateModulePaths (P.mods.map (·.name)))

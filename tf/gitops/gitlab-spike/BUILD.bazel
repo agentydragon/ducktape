@@ -15,3 +15,10 @@ tf_module(
     },
     tf_version = ">= 1.0",
 )
+
+# Native HCL assembled by cdk8s into the Inline Workspace.
+filegroup(
+    name = "inline_source",
+    srcs = glob(["*.tf"]),
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)

@@ -11,8 +11,20 @@
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
+import { classify, rejectKind, wanted } from "./verdict.mjs";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  constants,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -245,38 +257,49 @@ function translate(spec, chunk, statements) {
 
 // ---------------------------------------------------------------- running
 
+const subprocessTimeoutMs = 30_000;
+
 function run(cmd, cmdArgs, options = {}) {
-  const r = spawnSync(cmd, cmdArgs, { encoding: "utf8", timeout: 30_000, ...options });
-  return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", timedOut: r.error?.code === "ETIMEDOUT" };
+  const start = performance.now();
+  const r = spawnSync(cmd, cmdArgs, { encoding: "utf8", timeout: subprocessTimeoutMs, ...options });
+  return {
+    elapsedMs: Math.round(performance.now() - start),
+    code: r.status,
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? "",
+    failure:
+      r.error?.code === "ETIMEDOUT"
+        ? "timeout"
+        : r.error
+          ? `spawn-${r.error.code}`
+          : r.signal
+            ? `signal-${r.signal}`
+            : null,
+  };
 }
 
-function nodeRun(file, cwd) {
+function describeProcessFailure(phase, cmd, cmdArgs, caseDir, result) {
+  return {
+    phase,
+    command: [path.basename(cmd), ...cmdArgs.map((arg) => (path.isAbsolute(arg) ? path.relative(caseDir, arg) : arg))],
+    elapsedMs: result.elapsedMs,
+    timeoutMs: subprocessTimeoutMs,
+    exitCode: result.code,
+    cause: result.failure,
+    stderrTail: result.stderr.trimEnd().slice(-2048),
+  };
+}
+
+function nodeRun(phase, file, cwd) {
   const r = run(process.execPath, [file], { cwd });
   const error = (r.stderr.match(/^\w*Error: .*/m) ?? [""])[0];
-  return { stdout: r.stdout, code: r.code, error };
-}
-
-const rejectKind = (expected) =>
-  "atomic_conflict" in expected.reject ? "atomic_conflict" : "cycle" in expected.reject ? "cycle" : "stderr";
-
-/** What the emitted entry should print. The adapter renames nothing, so it is the original's output. */
-const wanted = (expected) => expected.accept.original_stdout ?? expected.accept.stdout;
-
-/**
- * `agree-*`: same verdict. `strict-*`: I reject what debundle accepts (`runs` when my plan, written anyway, prints
- * the expected output; `breaks` when it does not, so debundle's splitter is better than mine). `unsound-accept`: I
- * accept and the emitted modules print something else. `lenient`: I accept what debundle rejects (the output is the
- * same on this run). `refusal-test`: the case checks debundle's error text, which has no counterpart here.
- */
-function classify(expected, mine, node) {
-  if ("accept" in expected) {
-    const same = node.emitted === wanted(expected);
-    if (mine.verdict === "accept") return same ? "agree-accept" : "unsound-accept";
-    return same ? "strict-but-runs" : "strict-and-breaks";
-  }
-  if (rejectKind(expected) === "stderr") return "refusal-test";
-  if (mine.verdict === "reject") return "agree-reject";
-  return node.emitted === node.original ? "lenient" : "unsound-accept";
+  return {
+    stdout: r.stdout,
+    code: r.code,
+    failure: r.failure,
+    error,
+    processFailure: r.failure ? describeProcessFailure(phase, process.execPath, [file], cwd, r) : undefined,
+  };
 }
 
 function discover() {
@@ -345,17 +368,26 @@ function runCase(dir, specName, expected) {
       path.join(stage, "lean_spec.json"),
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
-    const checked = run(lowersplit, [
+    const checkerArgs = [
       "--diagnostic",
       path.join(stage, "bundle.json"),
       path.join(stage, "lean_spec.json"),
       path.join(stage, "split"),
       "--force",
-    ]);
+    ];
+    const checked = run(lowersplit, checkerArgs);
     if (checked.code === 3)
       return unsupported("statement kind the model rejects", checked.stderr.trim().split("\n").pop());
     if (checked.code !== 0 && checked.code !== 1)
-      return { ...record, outcome: "error:lowersplit", detail: checked.stderr.trim().split("\n").pop() };
+      return {
+        ...record,
+        outcome: "error:lowersplit",
+        detail: checked.failure ?? checked.stderr.trim().split("\n").pop(),
+        processFailure: {
+          ...describeProcessFailure("lowersplit", lowersplit, checkerArgs, stage, checked),
+          stdoutTail: checked.stdout.trimEnd().slice(-2048),
+        },
+      };
     const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(
       ([, what]) =>
         what.match(/^statement \d+ is an `(Import|Export)/)?.[1].concat("OutsideEntry") ?? what.split(/\s+/)[0]
@@ -368,30 +400,55 @@ function runCase(dir, specName, expected) {
       moved: placed.reduce((sum, [, held]) => sum + held.length, 0),
     };
 
+    // The adapter writes one flat chunk into split/. Debundle's runtime_files
+    // destinations are rooted at the chunk (e.g. main/provider.js).
+    const runtimeFiles = Object.entries(expected.accept?.runtime_files ?? {});
+    for (const [dest, src] of runtimeFiles) {
+      if (!dest.startsWith(chunk + "/")) continue;
+      const relative = dest.slice(chunk.length + 1);
+      if (
+        [relative, src].some(
+          (file) => path.isAbsolute(file) || file.split("/").some((part) => !part || part === "." || part === "..")
+        )
+      ) {
+        throw new Error(`invalid runtime fixture: ${dest}: ${src}`);
+      }
+      const file = path.join(stage, "split", relative);
+      mkdirSync(path.dirname(file), { recursive: true });
+      copyFileSync(path.join(dir, src), file, constants.COPYFILE_EXCL);
+    }
+
     if (keepDir) {
       writeFileSync(path.join(stage, "checker_output.txt"), checked.stdout + checked.stderr);
       cpSync(stage, path.join(keepDir, id), { recursive: true });
     }
-    const original = nodeRun(chunkFile, stage);
-    const emitted = nodeRun(path.join(stage, "split", plan.entry), stage);
-    const node = { original: original.stdout, emitted: emitted.stdout, emittedError: emitted.error };
+    const original = nodeRun("original", chunkFile, stage);
+    const emitted = nodeRun("emitted", path.join(stage, "split", plan.entry), stage);
+    const node = { original, emitted };
     const want = "accept" in expected ? wanted(expected) : null;
     const outcome = classify(expected, mine, node);
     return {
       ...record,
       outcome,
+      processFailure: original.processFailure ?? emitted.processFailure,
       mine,
       split,
       node: {
         originalMatchesExpect: want === null ? null : original.stdout === want,
         emittedMatchesExpect: want === null ? null : emitted.stdout === want,
         emittedMatchesOriginal: emitted.stdout === original.stdout,
+        originalCode: original.code,
+        emittedCode: emitted.code,
+        originalFailure: original.failure,
+        emittedFailure: emitted.failure,
         emittedError: emitted.error,
       },
       unchecked:
         "accept" in expected
-          ? Object.keys(expected.accept).filter((k) =>
-              ["source", "exports", "probes", "check_all_js", "runtime_files"].includes(k)
+          ? Object.keys(expected.accept).filter(
+              (k) =>
+                ["source", "exports", "probes", "check_all_js"].includes(k) ||
+                (k === "runtime_files" && runtimeFiles.some(([dest]) => !dest.startsWith(chunk + "/")))
             )
           : [],
     };
@@ -407,8 +464,16 @@ for (const dir of discover()) {
   for (const [specName, expected] of Object.entries(expectations)) {
     const id = `${path.relative(casesRoot, dir)}/${specName}`;
     if (filter && !id.includes(filter)) continue;
-    lines.push(JSON.stringify(runCase(dir, specName, expected)));
+    lines.push(runCase(dir, specName, expected));
   }
 }
-writeFileSync(outFile, `${lines.join("\n")}\n`);
+writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`);
 console.log(`${lines.length} cases -> ${outFile}`);
+if (args.includes("--regression")) {
+  const failures = lines.filter(({ outcome }) => outcome.startsWith("error:") || outcome === "unsound-accept");
+  console.log(`${lines.filter(({ outcome }) => outcome.startsWith("unsupported:")).length} unsupported`);
+  if (!lines.length) console.error("No cases selected.");
+  for (const { id, outcome, processFailure } of failures)
+    console.error(JSON.stringify({ id, outcome, processFailure }));
+  if (!lines.length || failures.length) process.exitCode = 1;
+}

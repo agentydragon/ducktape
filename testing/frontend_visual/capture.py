@@ -34,7 +34,6 @@ from testing.frontend_visual.page_capture import (
     assert_network_settled,
     hidden_caret,
     repaint,
-    screenshot_locator,
     wait_for_stable,
 )
 from testing.frontend_visual.viewports import Viewport
@@ -276,31 +275,29 @@ class VisualPage:
             status = await self.page.evaluate(_FONT_STATUS_JS, self.expected_font_family)
             if status != "loaded":
                 raise AssertionError(f"{context}: {self.expected_font_family} font did not load ({status})")
-        if (
-            target is None
-            and self.devtools_viewport is not None
-            and not full_page
-            and scale == "device"
-            and animations != "allow"
-        ):
+        devtools_viewport = self.devtools_viewport if target is None and not full_page and scale == "device" else None
+        if devtools_viewport is not None and animations != "allow":
             raise ValueError("DevTools captures require animations to be pinned before mount")
         await repaint(self.page)
-        if target is not None and (count := await target.count()) != 1:
-            raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
-        page_diagnostics = (
-            await target.evaluate(_CAPTURE_DIAGNOSTICS_JS)
+        sample = (
+            await target.evaluate_all(_CAPTURE_DIAGNOSTICS_JS)
             if target is not None
             else await self.page.evaluate(_CAPTURE_DIAGNOSTICS_JS)
         )
-        if target is not None:
-            screenshot = await screenshot_locator(
-                self.page, target, context=context, scale=scale, animations=animations
+        if "targetCount" in sample:
+            raise ValueError(
+                f"{context}: screenshot target must match exactly one element, got {sample['targetCount']}"
             )
-        elif self.devtools_viewport is not None and not full_page and scale == "device":
+        clip = sample["clip"]
+        if clip is not None and (clip["width"] == 0 or clip["height"] == 0):
+            raise ValueError(f"{context}: screenshot target has no visible extent: {clip=}")
+        if devtools_viewport is not None:
             async with hidden_caret(self.page):
-                screenshot = await self.devtools_viewport.screenshot()
+                screenshot = await devtools_viewport.screenshot()
         else:
-            screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
+            screenshot = await self.page.screenshot(
+                clip=clip, full_page=full_page or clip is not None, scale=scale, animations=animations
+            )
         await self.check(context=context)
         diagnostics = {
             "case_id": self.case_id,
@@ -308,7 +305,7 @@ class VisualPage:
             "sample": "before_screenshot",
             "scale": scale,
             "full_page": full_page,
-            **page_diagnostics,
+            **sample["diagnostics"],
         }
         self.outputs.publish(
             checkpoint=checkpoint,

@@ -196,17 +196,18 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 	if got := requestCount.Load(); got != 1 {
 		t.Fatalf("provider requests=%d, want one", got)
 	}
-	var finalLease time.Time
-	var leaseLive bool
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_attempt_lease_until,provider_attempt_lease_until>clock_timestamp()
-		FROM sampler_intent WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, "long-provider-turn").Scan(&finalLease, &leaseLive); err != nil {
+	var finalLease, checkedAt time.Time
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_attempt_lease_until,clock_timestamp()
+		FROM sampler_intent WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, "long-provider-turn").Scan(&finalLease, &checkedAt); err != nil {
 		t.Fatal(err)
 	}
-	// The initial lease includes the header phase (17s total here). A semantic renewal near
-	// the end of this 2.45s stream resets it to idle + two RPC budgets (11s), moving the
-	// deadline at least two seconds earlier than the initial deadline while still keeping it live.
-	if !finalLease.Before(initial.initialLease.Add(-2*time.Second)) || !leaseLive {
-		t.Fatalf("provider attempt lease was not renewed by semantic progress: initial=%s final=%s last_delta=%s live=%v", initial.initialLease, finalLease, last, leaseLive)
+	// The final progress event follows the entire buffered stream. Its lease covers
+	// the idle and RPC budgets, with less than one extra deadline bucket.
+	initialStart := initial.initialLease.Add(-settings.ProviderAttemptLease(settings.Models["fixture-model"]))
+	earliest := initialStart.Add(streamed + settings.ProviderProgressLease())
+	latest := checkedAt.Add(settings.ProviderProgressLease() + 30*time.Second)
+	if !finalLease.Equal(finalLease.Truncate(30*time.Second)) || finalLease.Before(earliest) || !finalLease.Before(latest) || !finalLease.After(checkedAt) {
+		t.Fatalf("final lease=%s, want a live 30s boundary between %s and %s (last delta %s)", finalLease, earliest, latest, last)
 	}
 
 	events, err := store.Events(t.Context(), session.ID, 0, 4096)

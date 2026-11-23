@@ -7,19 +7,24 @@ Preset and standing-account role grants plus retained cleanup scopes determine t
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import (
+    DUCKTAPE_SOURCE,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    write_kustomization,
+)
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
@@ -39,10 +44,6 @@ def external_charts(
         namespace: partial(_chart, env=env, target_namespace=namespace, role_names=sorted(roles[namespace]))
         for namespace in sorted(roles.keys() - {env.namespace})
     }
-
-
-def directory(env: Environment, target_namespace: str) -> str:
-    return f"{GENERATED_ROOT}/agentplane/binding-delegation/{env.namespace}/{target_namespace}"
 
 
 def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequence[str]) -> Chart:
@@ -74,24 +75,19 @@ def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequen
     return scope
 
 
-def write_manifests(root: Path, env: Environment, charts: Mapping[str, Callable[[App], Chart]]) -> None:
-    for target_namespace, build in charts.items():
-        output_dir = directory(env, target_namespace)
-        manifest = write_charts(root, output_dir, build)
-        write_yaml(root / output_dir / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
-
-
-def add_flux_kustomizations(
+def write_delegations(
+    root: Path,
     flux_chart: Chart,
     env: Environment,
     target_dependencies: Mapping[str, Kustomization],
-    target_namespaces: Iterable[str],
+    assignable_grants: Sequence[KubernetesGrant],
 ) -> None:
     """Each target owner gates its delegation; bootstrap roots have no generated owner."""
-    source = KustomizationSpecSourceRef(
-        kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-    )
-    for target_namespace in target_namespaces:
+    for target_namespace, build in external_charts(env, assignable_grants).items():
+        directory = f"{GENERATED_ROOT}/agentplane/binding-delegation/{env.namespace}/{target_namespace}"
+        manifest = write_charts(root, directory, build)
+        write_kustomization(root / directory, resources=[manifest])
+
         # Bootstrap creates these namespaces before the generated owners reconcile.
         depends_on = (
             None
@@ -101,8 +97,8 @@ def add_flux_kustomizations(
         flux_kustomization(
             flux_chart,
             f"{env.namespace}-binding-delegation-{target_namespace}",
-            source,
-            path=f"./{directory(env, target_namespace)}",
+            DUCKTAPE_SOURCE,
+            path=f"./{directory}",
             depends_on=depends_on,
             description=f"Delegates managed RoleBinding reconciliation in {target_namespace}.",
         )

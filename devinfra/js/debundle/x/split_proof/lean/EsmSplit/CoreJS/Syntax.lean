@@ -38,8 +38,12 @@ inductive LogOp where
   | and | or | nullish
   deriving DecidableEq, Repr
 
-/-- The standard functions the model defines. A call of any other one is unknown code. -/
+/-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
+  | globalTypeof (binding : String)
+  | globalRef (binding : String)
+  | opaqueConstructorRef (binding : String)
+  | opaqueAmbientMemberRef (receiver member : String)
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 
@@ -57,6 +61,11 @@ inductive OpaqueRun where
   only functions makes them when the program is linked, so it has no declaration and does nothing when it runs. -/
   | closures (fns : List (String × Nat × Bool))
 
+inductive ArrayElementKind where
+  | element
+  | spread
+  deriving DecidableEq
+
 mutual
 
 inductive Expr where
@@ -73,11 +82,15 @@ inductive Expr where
   | func (f : Func)
   | obj (props : List PropDef)
   | arr (elems : List Expr)
+  /-- The exact elements of an array literal containing spread. The interpreter stops if it reaches this expression. -/
+  | arrWithSpread (elems : List (ArrayElementKind × Expr))
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
   /-- A derived class with its implicit forwarding constructor and no fields. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
   | get (o k : Expr)
+  /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
+  | getOptional (o k : Expr)
   /-- `k in o`. -/
   | hasProp (k o : Expr)
   | delete (o k : Expr)
@@ -89,6 +102,10 @@ inductive Expr where
   | call (f : Expr) (args : List Expr)
   /-- `o[k](args)`: the callee is read from `o`, which is `this` in the call. -/
   | callMethod (o k : Expr) (args : List Expr)
+  /-- `o?.m(args)`: evaluate the receiver once, short circuit a nullish value, and keep the receiver as `this`. -/
+  | callOptionalReceiver (o k : Expr) (args : List Expr)
+  /-- `o.m?.(args)`: look up the callee once and keep `o` as `this` if called. -/
+  | callOptionalCallee (o k : Expr) (args : List Expr)
   | new (f : Expr) (args : List Expr)
   | prim (p : Prim) (args : List Expr)
   | unary (op : UnOp) (e : Expr)
@@ -120,9 +137,15 @@ inductive ClassMember where
 /-- `self`: a named function expression, whose body sees its own name. -/
 inductive Func where
   | mk (name : String) (kind : FuncKind) (self : Bool) (params : List Name) (body : List Stmt)
-  /-- Deferred code: creation captures `free` cells; invocation gives the world callee, receiver and raw arguments.
-  `code` is the containing source unit's stable ID; `part` identifies a lexical function within it. -/
-  | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat) (free : List Name)
+  /-- Raw argument slots and the observable arity. The body starts by initializing
+  the named parameters in a lexical scope around the original function body. -/
+  | withDefaults (name : String) (kind : FuncKind) (self : Bool)
+    (params : List Name) (arity : Nat) (body : List Stmt)
+  /-- Deferred code: creation captures `free` cells. Invocation either refuses for the given
+  reason or gives the world the callee, receiver and raw arguments. `code` is the containing
+  source unit's stable ID; `part` identifies a lexical function within it. -/
+  | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat)
+      (free : List Name) (refusal : Option String)
 
 inductive Stmt where
   | expr (e : Expr)
@@ -156,17 +179,22 @@ is handed their bindings in this order. -/
 def opaqueNames (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) : List Name :=
   decls.map (·.1) ++ (funs.map (·.1) ++ free)
 
-def Func.name : Func → String | .mk n .. | .opaque n .. => n
-def Func.kind : Func → FuncKind | .mk _ k .. | .opaque _ k .. => k
-def Func.self : Func → Bool | .mk _ _ s .. | .opaque _ _ s .. => s
+def Func.name : Func → String | .mk n .. | .withDefaults n .. | .opaque n .. => n
+def Func.kind : Func → FuncKind | .mk _ k .. | .withDefaults _ k .. | .opaque _ k .. => k
+def Func.self : Func → Bool | .mk _ _ s .. | .withDefaults _ _ s .. | .opaque _ _ s .. => s
 /-- Modeled parameter bindings; an opaque invocation receives raw arguments instead. -/
-def Func.params : Func → List Name | .mk _ _ _ ps _ => ps | .opaque .. => []
-def Func.length : Func → Nat | .mk _ _ _ ps _ => ps.length | .opaque _ _ _ n .. => n
+def Func.params : Func → List Name
+  | .mk _ _ _ ps _ | .withDefaults _ _ _ ps _ _ => ps
+  | .opaque .. => []
+def Func.length : Func → Nat
+  | .mk _ _ _ ps _ => ps.length
+  | .withDefaults _ _ _ _ arity _ => arity
+  | .opaque _ _ _ n .. => n
 /-- Modeled statements; opaque functions dispatch to the world before this accessor is used. -/
-def Func.body : Func → List Stmt | .mk _ _ _ _ b => b | .opaque .. => []
-def Func.opaqueBody : Func → Option (Nat × Nat × List Name)
-  | .opaque _ _ _ _ code part free => some (code, part, free)
-  | .mk .. => none
+def Func.body : Func → List Stmt | .mk _ _ _ _ b | .withDefaults _ _ _ _ _ b => b | .opaque .. => []
+def Func.opaqueBody : Func → Option (Nat × Nat × List Name × Option String)
+  | .opaque _ _ _ _ code part free refusal => some (code, part, free, refusal)
+  | .mk .. | .withDefaults .. => none
 
 /-! ## Modules -/
 
@@ -254,9 +282,10 @@ def Expr.free : Expr → List Name
   | .func f => f.free
   | .obj props => freeProps props
   | .arr elems => freeExprs elems
+  | .arrWithSpread elems => freeArrayElements elems
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .derived name self parent members => (parent.free ++ freeMembers members).filter fun x => !(self && x == name)
-  | .get o k => o.free ++ k.free
+  | .get o k | .getOptional o k => o.free ++ k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free
   | .assign t rhs => t.free ++ rhs.free
@@ -264,7 +293,8 @@ def Expr.free : Expr → List Name
   | .assignLogical t _ rhs => t.free ++ rhs.free
   | .update t _ _ => t.free
   | .call f args => f.free ++ freeExprs args
-  | .callMethod o k args => o.free ++ (k.free ++ freeExprs args)
+  | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args =>
+    o.free ++ (k.free ++ freeExprs args)
   | .new f args => f.free ++ freeExprs args
   | .prim _ args => freeExprs args
   | .unary _ e => e.free
@@ -288,8 +318,8 @@ def ClassMember.free : ClassMember → List Name
 
 /-- The names of the scope around a function that its code can mean. -/
 def Func.free : Func → List Name
-  | .opaque name _ self _ _ _ free => free.filter fun x => !(self && x == name)
-  | .mk name _ self params body =>
+  | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
+  | .mk name _ self params body | .withDefaults name _ self params _ body =>
     (freeStmts body).filter fun x =>
       !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x || (self && x == name))
 
@@ -310,6 +340,10 @@ def Stmt.free : Stmt → List Name
 def freeExprs : List Expr → List Name
   | [] => []
   | e :: es => e.free ++ freeExprs es
+
+def freeArrayElements : List (ArrayElementKind × Expr) → List Name
+  | [] => []
+  | (_, e) :: es => e.free ++ freeArrayElements es
 
 def freeProps : List PropDef → List Name
   | [] => []

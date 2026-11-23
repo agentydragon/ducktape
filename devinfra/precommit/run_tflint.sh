@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Pre-commit hook for tflint: initializes plugins then lints each changed
 # Terraform module directory.
-# tflint binary is installed by pre-commit via language: golang.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

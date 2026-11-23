@@ -49,14 +49,14 @@ from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
+    write_kustomization,
 )
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
 )
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_app, write_yaml
+from cluster.cdk8s.generation import write_app
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.litellm.endpoint import NAME, NAMESPACE, SERVICE
@@ -313,11 +313,8 @@ def _rugged_local_llm_endpoint(scope: Construct, mesh: Mesh) -> None:
 def write_manifests(root: Path, mesh: Mesh) -> Chart:
     app = App()
     chart = _chart(app, mesh)
-    write_yaml(
-        root / APP_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE, resources=[write_app(root, APP_DIR, app)], components=["./image-pins"]
-        ),
+    write_kustomization(
+        root / APP_DIR, namespace=NAMESPACE, resources=[write_app(root, APP_DIR, app)], components=["./image-pins"]
     )
 
     return chart

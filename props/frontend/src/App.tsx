@@ -29,6 +29,7 @@ import {
   setToken,
   useNeedsToken,
 } from "$lib/stores/token";
+import type { MeResponse } from "$lib/schema";
 import type { RunModalPrefill } from "$lib/types";
 import { createPropsQueryClient } from "$lib/queryClient";
 import DefinitionDetailPage from "./pages/DefinitionDetailPage";
@@ -107,7 +108,7 @@ function PropsApp(): JSX.Element {
         const response = await fetch("/auth/me", { credentials: "include" });
         if (!alive) return;
         if (response.ok) {
-          const data = (await response.json()) as { email: string };
+          const data = (await response.json()) as MeResponse;
           setUserEmail(data.email);
           markSessionAuthenticated();
         } else if (response.status === 404) {

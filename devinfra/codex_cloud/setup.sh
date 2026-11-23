@@ -182,22 +182,6 @@ persist_agent_shell_init() {
   ensure_line "try-import ${CODEX_BAZELRC_PATH}" "$USER_BAZELRC_PATH"
 }
 
-run_common_setup_steps() {
-  install_or_refresh_devtools
-  run_buildbuddy_setup
-  install_precommit_hooks
-  write_codex_bazelrcs
-  reconcile_bbr_remote "$REPO_ROOT"
-  materialize_kubeconfig_if_possible
-}
-
-validate_core_tools() {
-  bb --version >/dev/null
-  log "bb present"
-  bbr --help >/dev/null
-  log "bbr present"
-}
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 init_sops_runtime_prereqs
@@ -205,24 +189,27 @@ init_sops_runtime_prereqs
 log "repo=$REPO_ROOT"
 log "commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 
-case "$MODE" in
-  install)
-    install_nix_if_missing
-    run_common_setup_steps
-    persist_agent_shell_init
-    ;;
-  maintenance)
-    source_nix_profile_if_present
-    log "refreshing git remotes"
-    git fetch --all --prune
-    run_common_setup_steps
-    persist_agent_shell_init
-    validate_core_tools
-    ;;
-  *)
-    echo "Unsupported mode: $MODE" >&2
-    exit 2
-    ;;
-esac
+if [ "$MODE" = install ]; then
+  install_nix_if_missing
+else
+  source_nix_profile_if_present
+  log "refreshing git remotes"
+  git fetch --all --prune
+fi
+
+install_or_refresh_devtools
+run_buildbuddy_setup
+install_precommit_hooks
+write_codex_bazelrcs
+reconcile_bbr_remote "$REPO_ROOT"
+materialize_kubeconfig_if_possible
+persist_agent_shell_init
+
+if [ "$MODE" = maintenance ]; then
+  bb --version >/dev/null
+  log "bb present"
+  bbr --help >/dev/null
+  log "bbr present"
+fi
 
 log "complete"

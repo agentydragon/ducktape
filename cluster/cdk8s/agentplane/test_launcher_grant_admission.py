@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 from typing import Any, cast
 
-import cdk8s
 import pytest_bazel
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
@@ -91,7 +90,7 @@ def _without(body: Body, path: Path) -> Body:
 
 async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Chart) -> None:
     actions.add_launcher_admission(scratch_chart, NAMESPACE)
-    policy, binding = cdk8s.Testing.synth(scratch_chart)
+    policy, binding = scratch_chart.to_json()
     async with kubernetes_apiserver() as server:
         await server.install_admission_policy(policy, binding, namespaces=[NAMESPACE])
         async with server.impersonating(f"system:serviceaccount:{NAMESPACE}:actions") as impersonating:

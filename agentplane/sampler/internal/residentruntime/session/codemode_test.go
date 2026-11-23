@@ -387,7 +387,7 @@ func TestCodeModeDelegateCancelUsesGlobalIDWithoutSessionID(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("delegate did not start")
 	}
-	if err := peer.Send(codemode.Frame{Type: codemode.DelegateCancel, ID: int64Pointer(3001)}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.DelegateCancel, ID: new(int64(3001))}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -399,8 +399,6 @@ func TestCodeModeDelegateCancelUsesGlobalIDWithoutSessionID(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func int64Pointer(value int64) *int64 { return &value }
 
 func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testing.T) {
 	manager, peers := newFakeCodeModeManager(t)
@@ -444,7 +442,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 	}
 
 	lateValue := json.RawMessage(`{"type":"late"}`)
-	late := codemode.Frame{Type: codemode.Response, ID: int64Pointer(firstID), Result: &codemode.WireResult{Status: "ok", Value: lateValue}}
+	late := codemode.Frame{Type: codemode.Response, ID: new(firstID), Result: &codemode.WireResult{Status: "ok", Value: lateValue}}
 	if err := peer.Send(late); err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +457,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 		t.Fatalf("request IDs did not remain globally increasing: A=%d B=%d", firstID, secondID)
 	}
 	value, _ := json.Marshal(codemode.HostResponse{Type: "wait/completed", SessionID: second.ID()})
-	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(secondID), Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(secondID), Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -485,7 +483,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 
 	result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
 		if err := peer.Send(codemode.Frame{
-			Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"},
+			Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -538,11 +536,11 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
+		if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 			t.Fatal(err)
 		}
 		observation := json.RawMessage(`{"Result":{"cell_id":"next-cell","content_items":[{"type":"input_text","text":"retained"}]}}`)
-		if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
+		if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: new(id), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -581,7 +579,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 			}
 			result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, test.method, func(id int64) {
 				if err := peer.Send(codemode.Frame{
-					Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host operation returned an error"},
+					Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "error", Message: "host operation returned an error"},
 				}); err != nil {
 					t.Fatal(err)
 				}
@@ -643,7 +641,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		{
 			name: "unknown response status",
 			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
-				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "unexpected"}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "unexpected"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -651,7 +649,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		{
 			name: "empty host error message",
 			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
-				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error"}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "error"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -663,10 +661,10 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: new(id), Result: &codemode.WireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -677,7 +675,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET owner=$2 WHERE id=$1`, owner.ConversationID, "00000000-0000-4000-8000-000000000001"); err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -951,12 +949,10 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 				close(done)
 			}()
 			id := receiveOperationRequest(t, peer, code.ID())
-			deadline := time.Now().Add(3 * time.Second)
-			for test.next == "operation/yield" && !code.HasForeground() {
-				if time.Now().After(deadline) {
-					t.Fatal("wait request never became the foreground observation")
-				}
-				time.Sleep(time.Millisecond)
+			select {
+			case <-code.ForegroundStarted():
+			case <-time.After(3 * time.Second):
+				t.Fatal("wait request did not signal foreground entry")
 			}
 			sent, err := code.YieldForeground(ctx)
 			if err != nil || sent != (test.next == "operation/yield") {

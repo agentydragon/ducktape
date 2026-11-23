@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 )
 
 func (r *Runtime) Wake(sessionID string) {
@@ -21,13 +24,19 @@ func (r *Runtime) wake(sessionID string) {
 	r.mu.Unlock()
 }
 
-func (r *Runtime) Run(ctx context.Context, work <-chan struct{}) error {
+func (r *Runtime) Run(ctx context.Context, hub *wakeups.Hub) error {
+	work, unsubscribe, err := hub.Subscribe(sessionstore.WorkChannel)
+	if err != nil {
+		return err
+	}
+	defer unsubscribe()
 	r.mu.Lock()
 	if r.started {
 		r.mu.Unlock()
 		return errors.New("central sampler runtime already started")
 	}
 	r.started = true
+	r.turnWakeups = hub
 	// A service shutdown stops new work immediately, but an already dispatched effect must
 	// retain its context long enough to reach a durable result or the drain deadline.
 	r.runCtx, r.cancel = context.WithCancel(context.WithoutCancel(ctx))

@@ -30,8 +30,6 @@ _WORKLOADS = (
     ("policy-controller", "policy-controller", 64, 112),
     ("sessions", "sessions", 256, 320),
 )
-# History writers replay from the committed cursor, and followers resume on another replica.
-_UPDATE_MODES = {"frontend": "Recreate", "history-service": "Recreate"}
 
 
 def chart(app: App) -> Chart:
@@ -42,7 +40,9 @@ def chart(app: App) -> Chart:
             deployment,
             namespace=STAGING_NAMESPACE,
             container_name=container,
-            update_mode=_UPDATE_MODES.get(deployment, "Initial"),
+            update_mode="Recreate",
+            # Staging accepts a sync interruption while its sole Electric Pod is replaced.
+            min_replicas=1 if deployment == "electric" else None,
             min_memory_mib=memory_floor,
             max_memory_mib=memory_ceiling,
         )

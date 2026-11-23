@@ -160,21 +160,23 @@ def isConstructor (v : Val) : M W Bool := do
   | .host _ => unknown "host constructor capability"
   | _ => pure false
 
-/-- Heritage checks and the two prototype links, before allocating the class. -/
-def classParents (call : Call W) (base : Val) : M W (Addr × Option Addr) := do
+/-- Resolve non-null heritage through constructor capability and the prototype property. -/
+def classParentsNonNull (call : Call W) (base : Val) : M W (Addr × Option Addr) := do
+  if !(← isConstructor base) then throwErr .type "superclass is not a constructor" else do
+  let p ← getProp call base (.str "prototype")
+  let pp ← match p with
+    | .null => pure none
+    | .obj a => pure (some a)
+    | .host _ => unknown "host superclass prototype"
+    | _ => throwErr .type "superclass prototype is not an object or null"
   match base with
+  | .obj a => pure (a, pp)
+  | _ => unknown "host superclass"
+
+/-- Heritage checks and the two prototype links, before allocating the class. -/
+def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
-  | _ => do
-    if !(← isConstructor base) then throwErr .type "superclass is not a constructor" else do
-    let p ← getProp call base (.str "prototype")
-    let pp ← match p with
-      | .null => pure none
-      | .obj a => pure (some a)
-      | .host _ => unknown "host superclass prototype"
-      | _ => throwErr .type "superclass prototype is not an object or null"
-    match base with
-    | .obj a => pure (a, pp)
-    | _ => unknown "host superclass"
+  | base => classParentsNonNull call base
 
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
@@ -188,6 +190,12 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
   let _ ← runMembers env proto c members
   initSelf env self name (.obj c)
   pure (.obj c)
+
+/-- The descriptors of a freshly allocated dense array, in element order. -/
+def arrayObject (vs : List Val) : Obj :=
+  let items := vs.zipIdx.map fun (v, i) => (toString i, Property.data v true true true)
+  { proto := some arrayProto, array := true,
+    props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
 
 mutual
 
@@ -210,11 +218,9 @@ def evalExpr : Nat → Env → Expr → M W Val
       pure (.obj a)
     | .arr elems => do
       let vs ← evalArgs n env elems
-      let items := vs.zipIdx.map fun (v, i) => (toString i, Property.data v true true true)
-      let a ← alloc {
-        proto := some arrayProto, array := true,
-        props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
+      let a ← alloc (arrayObject vs)
       pure (.obj a)
+    | .arrWithSpread _ => unknown "array spread requires iterator semantics"
     | .cls name self ctor members => do
       let env ← selfScope env self name
       let closed := env.capture (ctor.free ++ freeMembers members)
@@ -243,6 +249,11 @@ def evalExpr : Nat → Env → Expr → M W Val
       let base ← evalExpr n env o
       let key ← evalExpr n env k
       getProp (callFn n) base key
+    | .getOptional o k => do
+      let base ← evalExpr n env o
+      if !(← lift (shortCircuits .nullish base)) then pure .undef else do
+        let key ← evalExpr n env k
+        getProp (callFn n) base key
     | .hasProp k o => do
       let key ← evalExpr n env k
       let base ← evalExpr n env o
@@ -254,6 +265,8 @@ def evalExpr : Nat → Env → Expr → M W Val
     | .assign t rhs => do
       let r ← evalTarget n env t
       let v ← evalExpr n env rhs
+      -- A property reference carries its raw key. PutValue checks the base and
+      -- converts the key after the RHS has finished.
       putRef (callFn n) env r v
       pure v
     | .assignOp t op rhs => do
@@ -283,6 +296,18 @@ def evalExpr : Nat → Env → Expr → M W Val
       let key ← evalExpr n env k
       let callee ← getProp (callFn n) base key
       callFn n callee base (← evalArgs n env args)
+    | .callOptionalReceiver o k args => do
+      let base ← evalExpr n env o
+      if !(← lift (shortCircuits .nullish base)) then pure .undef else do
+        let key ← evalExpr n env k
+        let callee ← getProp (callFn n) base key
+        callFn n callee base (← evalArgs n env args)
+    | .callOptionalCallee o k args => do
+      let base ← evalExpr n env o
+      let key ← evalExpr n env k
+      let callee ← getProp (callFn n) base key
+      if !(← lift (shortCircuits .nullish callee)) then pure .undef else
+        callFn n callee base (← evalArgs n env args)
     | .new f args => do
       let callee ← evalExpr n env f
       constructTarget n callee callee (← evalArgs n env args)
@@ -387,7 +412,8 @@ def callFn : Nat → Val → Val → List Val → M W Val
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
         match f.opaqueBody with
-        | some (code, part, free) =>
+        | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
+        | some (code, part, free, none) =>
           converse n code (free.map (closed.vars.lookup ·))
             (.run code part (← toW callee) (← toW (if f.kind == .arrow then closed.this else this))
               (← args.mapM toW) false)
@@ -422,7 +448,8 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         evalFields n { closed with this := .obj this } this fields
         let result ← match f.opaqueBody with
-          | some (code, part, free) =>
+          | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
+          | some (code, part, free, none) =>
             converse n code (free.map (closed.vars.lookup ·))
               (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true)
           | none =>
@@ -535,6 +562,26 @@ def loop : Nat → Env → List Name → Expr → Expr → Stmt → M W Flow
 
 end
 
+/-- A conditional evaluates its test once. Both truthiness and the chosen branch see
+the state left by the test. Any abrupt result of the test or branch propagates. -/
+theorem evalExpr_cond (n : Nat) (env : Env) (test yes no : Expr) (s : State W) :
+    evalExpr (n + 1) env (.cond test yes no) s =
+      match evalExpr n env test s with
+      | .ok v s' =>
+        (do
+          let b ← lift (toBoolean v)
+          evalExpr n env (if b then yes else no)) s'
+      | .throw v s' => .throw v s'
+      | .unknown why s' => .unknown why s'
+      | .fuel => .fuel := by
+  rw [evalExpr]
+  cases h : evalExpr n env test s with
+  | ok v s' =>
+    cases ht : toBoolean v with
+    | ok b => cases b <;> simp [bind, h, ht, lift, pure]
+    | error err => cases err <;> simp [bind, h, ht, lift, throwErr, throwVal, unknown]
+  | _ => simp [bind, h]
+
 def construct (n : Nat) (callee : Val) (args : List Val) : M W Val :=
   constructTarget n callee callee args
 
@@ -617,19 +664,33 @@ def declareTops : List (Nat × Stmt) → M W (List (Nat × List (Name × Addr)))
 def Module.scope (frames : List (Nat × List (Name × Addr))) (m : Module) : List (Name × Addr) :=
   m.body.flatMap fun (id, _) => (frames.lookup id).getD []
 
-/-- What `import { name as … } from source` binds: the binding of the name that `source` exports as `name`, itself.
-Importing a name that the module does not export is an error of the program, found before anything runs. -/
+private def Program.resolveImportCell (P : Program) (frames : List (Nat × List (Name × Addr))) :
+    Nat → String → Name → Except Abort Addr
+  | 0, _, _ => .error (.error .syntax "cyclic re-export of an imported binding")
+  | fuel + 1, source, name => do
+    let some m := P.find source | throw (.unknown "model: an import of a module that is not in the program")
+    let some x := m.exports.lookup name | throw (.error .syntax s!"the module {source} does not export {name}")
+    if let some a := (m.scope frames).lookup x then
+      return a
+    let request := m.imports.findSome? fun i =>
+      (i.names.find? (fun (_, localName) => localName == x)).map fun (publicName, _) => (i.source, publicName)
+    let some (provider, publicName) := request | throw (.error .syntax s!"the export {name} of {source} is unbound")
+    P.resolveImportCell frames fuel provider publicName
+
+/-- Named imports and local export lists alias the original declaration's cell. A resolution
+can visit each (module, public name) at most once before repeating the same request forever.
+The number of export entries bounds those visits, with one extra step to report a missing
+export or module after the last entry. -/
 def Program.importCell (P : Program) (frames : List (Nat × List (Name × Addr))) (source : String) (name : Name) :
     Except Abort Addr :=
-  match P.find source with
-  | none => .error (.unknown "model: an import of a module that is not in the program")
-  | some m =>
-    match m.exports.lookup name with
-    | none => .error (.error .syntax s!"the module {source} does not export {name}")
-    | some x =>
-      match (m.scope frames).lookup x with
-      | some a => pure a
-      | none => .error (.unknown "an export of a name that the module imports")
+  P.resolveImportCell frames ((P.modules.map (·.exports.length)).sum + 1) source name
+
+theorem Program.importCell_local {P : Program} {frames : List (Nat × List (Name × Addr))}
+    {source : String} {name x : Name} {m : Module} {a : Addr}
+    (hmod : P.find source = some m) (hexp : m.exports.lookup name = some x)
+    (hcell : (m.scope frames).lookup x = some a) : P.importCell frames source name = .ok a := by
+  simp only [Program.importCell, Program.resolveImportCell, hmod, hexp, hcell]
+  rfl
 
 def Program.importCells (P : Program) (frames : List (Nat × List (Name × Addr))) (source : String) :
     List (Name × Name) → Except Abort (List (Name × Addr))

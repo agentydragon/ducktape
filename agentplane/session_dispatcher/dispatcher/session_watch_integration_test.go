@@ -142,7 +142,7 @@ func TestWatchSessionsResumesAfterStreamDisconnect(t *testing.T) {
 	}
 
 	owner := claimSessionOwner(t, queueStore, id)
-	if _, err := queueStore.SettleSession(ctx, id, owner, []string{store.SessionWaitingState}, store.SessionAcceptedState, "materialized"); err != nil {
+	if _, err := queueStore.SettleSession(ctx, id, owner, []dispatcherpb.SessionStatus_Materialization{store.SessionWaitingState}, store.SessionAcceptedState, "materialized"); err != nil {
 		t.Fatal(err)
 	}
 	resumed := startSessionWatch(t, service, ctx, checkpoint)
@@ -175,14 +175,14 @@ func TestWatchSessionsReportsMaterializationAndEnvironmentDeletion(t *testing.T)
 		}
 	}
 	_ = receiveCaughtUp(t, run)
-	if _, err := queueStore.SettleSession(ctx, id, owner, []string{store.SessionWaitingState}, store.SessionInProgressState, "starting"); err != nil {
+	if _, err := queueStore.SettleSession(ctx, id, owner, []dispatcherpb.SessionStatus_Materialization{store.SessionWaitingState}, store.SessionInProgressState, "starting"); err != nil {
 		t.Fatal(err)
 	}
 	progress := receiveSessionWatchFrame(t, run).GetSession()
 	if progress.GetSessionId() != id || progress.GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_IN_PROGRESS {
 		t.Fatalf("materialization update = %v", progress.GetStatus())
 	}
-	if _, err := queueStore.SettleSession(ctx, failedID, failedOwner, []string{store.SessionWaitingState}, store.SessionFailedState, "rejected"); err != nil {
+	if _, err := queueStore.SettleSession(ctx, failedID, failedOwner, []dispatcherpb.SessionStatus_Materialization{store.SessionWaitingState}, store.SessionFailedState, "rejected"); err != nil {
 		t.Fatal(err)
 	}
 	failed := receiveSessionWatchFrame(t, run).GetSession()

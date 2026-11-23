@@ -23,8 +23,8 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
@@ -94,10 +94,8 @@ def _readonly_credentials(chart: Chart) -> None:
         chart,
         "readonly-external-secret",
         name=READONLY.name,
-        namespace=NAMESPACE,
+        cluster=POSTGRES,
         role=_READONLY_ROLE,
-        host=POSTGRES.rw.host,
-        port=POSTGRES.rw.port.number,
         database=_DATABASE,
         secret_type=None,
     )
@@ -109,10 +107,8 @@ def _spend_credentials(chart: Chart) -> None:
         chart,
         "spend-external-secret",
         name=SPEND.name,
-        namespace=NAMESPACE,
+        cluster=POSTGRES,
         role=_SPEND_ROLE,
-        host=POSTGRES.rw.host,
-        port=POSTGRES.rw.port.number,
         database=_DATABASE,
         secret_type=None,
     )

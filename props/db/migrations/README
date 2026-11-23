@@ -1,7 +1,7 @@
 Props Alembic migrations
 =======================
 
-20260926000000 is the squashed, frozen final schema through the former chain's
+20261017000000 is the squashed, frozen final schema through the former chain's
 last revision of the same name. A database already at that revision applies no
 DDL or data changes. An older deployed database must first upgrade with an image
 containing the old chain; never stamp it forward to hide missing migrations.
@@ -12,6 +12,9 @@ constraints, RLS policies, grants, evaluator role setup and default privileges.
 Fresh databases get a new agent-role salt and a populated (empty) examples view.
 Downgrade-to-base retains the original baseline's destructive public-schema drop;
 it is not a route back to an intermediate revision. No deployed DB is reset.
+
+The baseline includes startup_failed in the run status enum. For a local database or backup
+at 20260926000000, run the pre-squash image through 20261017000000 before switching.
 
 Dumps are independent test evidence, not migration code.
 

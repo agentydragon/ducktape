@@ -53,6 +53,7 @@ from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium, piraeus_storage
 from cluster.cdk8s.agentplane import (
     egress,
+    environment_service,
     environment_vm,
     history_service,
     llm_ingress,
@@ -65,7 +66,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -75,7 +76,6 @@ _POD_LABEL_NAME = "agentplane-environment-runtime"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 ENVIRONMENT_RUNTIME_LABELS = {**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS}
-_SANDBOX_CONTROLLER_CILIUM_LABELS = {"app.kubernetes.io/name": "sandbox-controller"}
 ENVIRONMENT_RUNTIME_SERVICE_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
 # Shared by the Runner configuration, its container volumeMount, and the
@@ -437,11 +437,5 @@ class EnvironmentSandboxTemplate(Construct):
             "environment-runtime-listener",
             metadata=ApiObjectMetadata(name=f"{NAME}-listener", namespace=namespace),
             endpoint_selector=pods(namespace).selector,
-            ingress=[
-                IngressRule.from_endpoints(
-                    {**_SANDBOX_CONTROLLER_CILIUM_LABELS, "k8s:io.kubernetes.pod.namespace": namespace},
-                    {"app.kubernetes.io/name": "environments", "k8s:io.kubernetes.pod.namespace": namespace},
-                    ports=[ENVIRONMENT_RUNTIME_SERVICE_PORT],
-                )
-            ],
+            ingress=[environment_service.environments_service(namespace).pods.admit(ENVIRONMENT_RUNTIME_SERVICE_PORT)],
         )

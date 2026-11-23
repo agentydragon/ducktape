@@ -372,20 +372,6 @@ apt.install(
     ],
 )
 
-# Budget exporter image: git + ca-certificates on debian:trixie-slim so the
-# export_ledger CronJob can clone/commit/push the Beancount ledger repo.
-apt.install(
-    dependency_set = "trixie_budget_exporter",
-    packages = [
-        "ca-certificates",
-        "git",
-    ],
-    suites = [
-        "trixie",
-        "trixie-security",
-    ],
-)
-
 # wayback cache service: libssl + CA bundle on debian:trixie-slim for the
 # Rust runtime image.
 apt.install(
@@ -400,10 +386,13 @@ apt.install(
     ],
 )
 
-# Exercise wt's sourced shell function in Zsh without adding it to the RBE image.
+# Exercise wt's Zsh shell function and rsync copy without adding tools to the RBE image.
 apt.install(
     dependency_set = "wt_shell_test",
-    packages = ["zsh"],
+    packages = [
+        "rsync",
+        "zsh",
+    ],
     suites = [
         "trixie",
         "trixie-security",
@@ -447,7 +436,7 @@ apt.install(
         "trixie-updates",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
 
 # CDviz collector, migration runner, and TimescaleDB test fixtures.
 oci.pull(

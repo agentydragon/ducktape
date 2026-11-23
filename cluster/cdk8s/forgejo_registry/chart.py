@@ -28,12 +28,12 @@ from cluster.cdk8s import namespaces, opentofu
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux_image_automation_ghcr import AUTOMATION_NAME
 from cluster.cdk8s.flux_webhook import WEBHOOK_HOST
-from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation, pull_credentials
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote as platform_sessions_remote
 from cluster.cdk8s.providers.flux.notification import ReceiverResource
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "forgejo-images"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
@@ -64,7 +64,7 @@ def workspace_chart(app: App) -> Chart:
     identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
     for namespace, names in (
         ("forgejo", ["forgejo-admin-password"]),
-        (NAME, ["forgejo-images-creds", WEBHOOK_TOKEN_SECRET]),
+        (NAME, [pull_credentials.SECRET_NAME, WEBHOOK_TOKEN_SECRET]),
     ):
         opentofu.secret_access(chart, f"{namespace}-secrets", identity=identity, namespace=namespace, read=names)
     opentofu.gitops_workspace(
@@ -99,9 +99,11 @@ def chart(app: App) -> Chart:
         },
     )
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.
-    forgejo_images_creds_external_secret(chart, "flux-system-creds", namespace="flux-system")
+    pull_credentials.forgejo_images_creds_external_secret(
+        chart, "flux-system-creds", namespace=forgejo_image_automation.NAMESPACE
+    )
     # Minted once: a new token would change the webhook's path.
-    mint_bearer_secret(chart, "webhook-token", name=WEBHOOK_TOKEN_SECRET, namespace=NAME, key="token")
+    mint_bearer_secret(chart, "webhook-token", target=SecretRef(namespace=NAME, name=WEBHOOK_TOKEN_SECRET).key("token"))
     Receiver(
         chart,
         "receiver",
@@ -119,13 +121,7 @@ def chart(app: App) -> Chart:
                         namespace=forgejo_image_automation.NAMESPACE,
                         filter=f"req.package.name == '{forgejo_image_automation.package_name(image)}'",
                     )
-                    for image in forgejo_image_automation.IMAGES
-                ),
-                *(
-                    ReceiverResource.image_repository(
-                        image, namespace=forgejo_image_automation.NAMESPACE, filter=f"req.package.name == '{image}'"
-                    )
-                    for image in platform_sessions_remote.PROVIDER_IMAGES
+                    for image in (*forgejo_image_automation.IMAGES, *platform_sessions_remote.PROVIDER_IMAGES)
                 ),
                 ReceiverResource.image_update_automation(AUTOMATION_NAME, namespace=forgejo_image_automation.NAMESPACE),
             ],

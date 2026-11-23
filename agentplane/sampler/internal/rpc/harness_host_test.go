@@ -37,7 +37,7 @@ import (
 func newHostFixture(t *testing.T) (*HarnessHost, string) {
 	t.Helper()
 	dsn := rpcIntegrationDatabase.Clone(t)
-	store := sessionstore.New(postgres.Open(t, dsn), 30*time.Second)
+	store := sessionstore.New(postgres.Open(t, dsn), 30*time.Second, nil)
 	hub, err := wakeups.Listen(t.Context(), dsn, sessionstore.OutboxChannel, sessionstore.WorkChannel)
 	if err != nil {
 		t.Fatal(err)

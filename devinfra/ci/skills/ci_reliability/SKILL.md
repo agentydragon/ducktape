@@ -64,7 +64,7 @@ costly. State what was inspected and which counts remain unknown. Mainline targe
 statistics, latest workflow outcomes and red-at-merge counts answer different
 questions and belong in the supporting breakdowns.
 
-Use the `buildbuddy_api` skill for API/log/artifact recipes and the current `bbapi`
+Use the `buildbuddy` skill for API/log/artifact recipes and the current `bbapi`
 CLI help for filters. GitHub Actions supplies workflow attempts, jobs, and tested
 revisions; BuildBuddy supplies invocation, target, shard, and attempt outcomes.
 
@@ -244,7 +244,7 @@ does not by itself identify the cause.
 When the test emits spans, inspect the exact failed physical attempt's trace
 before adding diagnostics. Consult the component's tracing documentation or
 producer code for artifact formats, clocks and execution lifetimes. Use the
-execution system's artifact tooling (`buildbuddy_api` for BuildBuddy) to retrieve
+execution system's artifact tooling (`buildbuddy` for BuildBuddy) to retrieve
 the failing result and a comparable pass; retain each artifact's tested source,
 target, and shard/run/attempt.
 Find the earliest causal span/event, then correlate it with native, service and

@@ -7,9 +7,11 @@ import * as eslintScope from "eslint-scope";
 import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
 import { lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
 
+const linkedAnnotations = { includeOpaqueCaptures: true };
+
 function program(file) {
   try {
-    return lowerDump(fs.readFileSync(file, "utf8"), acorn, eslintScope);
+    return lowerDump(fs.readFileSync(file, "utf8"), acorn, eslintScope, linkedAnnotations);
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
@@ -66,6 +68,7 @@ function comparableAst(node, source, description, taggedTemplateQuasi = false) {
   for (const [key, value] of Object.entries(node)) {
     const isAnnotation =
       (node.type === "Program" && (key === "sourceText" || key === "annotationVersion")) ||
+      key === "opaqueCaptures" ||
       (node.type === "Literal" && (key === "raw" || key === "lit")) ||
       (node.type === "Identifier" && ["k", "b", "d"].includes(key));
     if (ignoredAstFields.has(key) || isAnnotation) continue;
@@ -88,7 +91,7 @@ function readMap(file, description) {
   return value;
 }
 
-function checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir) {
+function checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath) {
   const expected = readMap(manifestPath, "generated-module manifest");
   const providers = readMap(providersManifestPath, "provider manifest");
   const originalSource = fs.readFileSync(originalSourcePath, "utf8");
@@ -111,22 +114,29 @@ function checkOutput(manifestPath, originalSourcePath, providersManifestPath, di
     );
   }
 
+  const grouped = [];
   for (const name of expectedNames) {
     const parsed = program(actual[name]);
     if (parsed.sourceText.startsWith("#!")) parsed.hashbang = parsed.sourceText.split(/[\r\n\u2028\u2029]/, 1)[0];
-    if (
-      !isDeepStrictEqual(
-        comparableAst(expected[name], originalSource, `manifest module ${name}`),
-        comparableAst(parsed, parsed.sourceText, `output module ${name}`)
-      )
-    )
-      throw new Error(`output module ${name} differs from its generated ESTree`);
+    const planned = comparableAst(expected[name], originalSource, `manifest module ${name}`);
+    const observed = comparableAst(parsed, parsed.sourceText, `output module ${name}`);
+    if (isDeepStrictEqual(planned, observed)) continue;
+
+    // Lean splits module-level declarations into ordered units. Only a grouped
+    // declaration can account for a difference under that operation.
+    const hasGroup = observed.body.some((statement) => {
+      const decl = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+      return decl?.type === "VariableDeclaration" && decl.declarations.length > 1;
+    });
+    if (!hasGroup) throw new Error(`output module ${name} differs from its generated ESTree`);
+    grouped.push({ name, planned, observed });
   }
   for (const name of providerNames) {
     const sourceText = providers[name]?.sourceText;
     if (typeof sourceText !== "string" || !fs.readFileSync(actual[name]).equals(Buffer.from(sourceText)))
       throw new Error(`provider ${name} differs from the source graph`);
   }
+  writeJson(groupedPath, grouped);
 }
 
 try {
@@ -147,10 +157,20 @@ try {
     const [input, sourceFile, output] = args;
     const { printProgram } = await import("./print.mjs");
     const source = fs.readFileSync(sourceFile, "utf8");
-    const units = readJson(input).map((unit) =>
-      printProgram({ type: "Program", sourceType: "module", body: [unit] }, source).trimEnd()
+    const units = readJson(input);
+    const seenStarts = new Set();
+    const splitStarts = new Set();
+    for (const { start } of units) {
+      // Every declarator split out of the same statement keeps that statement's range.
+      if (seenStarts.has(start)) splitStarts.add(start);
+      seenStarts.add(start);
+    }
+    const text = units.map((unit) =>
+      splitStarts.has(unit.start)
+        ? printProgram({ type: "Program", sourceType: "module", body: [unit] }, source).trimEnd()
+        : source.slice(unit.start, unit.end)
     );
-    writeJson(output, units);
+    writeJson(output, text);
   } else if (mode === "--parse") {
     const [input, output] = args;
     writeJson(output, program(input));
@@ -170,13 +190,13 @@ try {
         !isDeepStrictEqual(snapshot, lowerDump(snapshot.sourceText, acorn, eslintScope))
       )
         throw new Error("input annotations differ from a fresh parse of sourceText");
-      writeJson(output, snapshot);
+      writeJson(output, lowerDump(snapshot.sourceText, acorn, eslintScope, linkedAnnotations));
     } else {
-      writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope));
+      writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope, linkedAnnotations));
     }
   } else if (mode === "--check-output") {
-    const [manifestPath, originalSourcePath, providersManifestPath, dir] = args;
-    checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir);
+    const [manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath] = args;
+    checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath);
   } else if (mode === "--read-modules") {
     const [entry, names, output] = args;
     const source = fs.realpathSync(entry);

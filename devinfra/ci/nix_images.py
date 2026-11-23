@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import hashlib
 import json
 import logging
 import os
@@ -35,12 +34,10 @@ WORKFLOW = "nix-images.yml"
 # The workflow's build job `name:`, which wait_for_build looks for.
 BUILD_JOB = "Build & verify"
 CACHE_URL = "https://cache.allegedly.works/main"
-MARKER_NAME = "nix-image-verified"
 _SYSTEM = "x86_64-linux"
 # An image's own declaration of what it is built from (cpap/gateway/container-disk.nix). When the
 # newest publish carries the same value, the image is not pushed, even if its bytes differ.
 SOURCE_LABEL = "works.allegedly.nix-source"
-_NIX_BASE32 = "0123456789abcdfghijklmnpqrsvwxyz"
 
 
 @dataclass(frozen=True)
@@ -122,50 +119,24 @@ def wait_for_build(repository: str, sha: str, max_wait: datetime.timedelta) -> N
             print(f"stopped waiting for {run['html_url']} after {max_wait}")
 
 
-def _nix32(digest: bytes) -> str:
-    chars = []
-    for n in range((len(digest) * 8 - 1) // 5, -1, -1):
-        byte, bit = divmod(n * 5, 8)
-        c = digest[byte] >> bit
-        if byte + 1 < len(digest):
-            c |= digest[byte + 1] << (8 - bit)
-        chars.append(_NIX_BASE32[c & 0x1F])
-    return "".join(chars)
-
-
-def _marker_content(attr: str, out_path: str) -> str:
-    return f"verified {attr} {out_path}\n"
-
-
-def marker_path(attr: str, out_path: str) -> str:
-    """Store path `builtins.toFile MARKER_NAME <content>` produces, computed without writing it.
-
-    Writing it would put it among the paths finish-attic-upload pushes, marking an image verified
-    before it was.
-    """
-    inner = hashlib.sha256(_marker_content(attr, out_path).encode()).hexdigest()
-    fingerprint = hashlib.sha256(f"text:sha256:{inner}:/nix/store:{MARKER_NAME}".encode()).digest()
-    compressed = bytearray(20)
-    for i, b in enumerate(fingerprint):
-        compressed[i % 20] ^= b
-    return f"/nix/store/{_nix32(bytes(compressed))}-{MARKER_NAME}"
-
-
-def write_marker(attr: str, out_path: str) -> None:
-    path = subprocess.run(
+def marker_path(attr: str, out_path: str, *, write: bool = False) -> str:
+    """Only materialize the marker after verification. Attic uploads new store paths."""
+    return subprocess.run(
         [
-            "nix",
-            "eval",
+            "nix-instantiate",
+            "--eval",
+            *(["--read-write-mode"] if write else []),
             "--raw",
             "--expr",
-            f"builtins.toFile {json.dumps(MARKER_NAME)} {json.dumps(_marker_content(attr, out_path))}",
+            '{ content }: builtins.toFile "nix-image-verified" content',
+            "--argstr",
+            "content",
+            f"verified {attr} {out_path}\n",
         ],
         check=True,
         capture_output=True,
         text=True,
     ).stdout
-    if path != marker_path(attr, out_path):
-        raise RuntimeError(f"marker path mismatch: {path=} {marker_path(attr, out_path)=}")
 
 
 def in_cache(store_path: str) -> bool:
@@ -224,7 +195,7 @@ def build(images: dict[str, Image], attrs: list[str]) -> None:
             if subprocess.run(["bash", smoke], check=False).returncode != 0:
                 failed.append(f"{attr}: smoke test {smoke} failed")
                 continue
-        write_marker(attr, out)
+        marker_path(attr, out, write=True)
         print(f"{attr}: {out} verified")
     if failed:
         raise RuntimeError("; ".join(failed))

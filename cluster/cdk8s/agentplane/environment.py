@@ -59,7 +59,6 @@ class CentralSamplerProps:
     rpc_timeout_seconds: int
     lease_seconds: int
     admin_service_callers: tuple[str, ...] = ()
-    replicas: ReplicaProfile | None = None
     # The settings carry each credential file path; this map names only the Secret key
     # projected there, keyed by connection name.
     connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
@@ -191,7 +190,6 @@ class McpEdgeProps:
     operator_oidc: OperatorOidcSettings
     oauth_secret_name: str | None
     hostname: str | None
-    replicas: ReplicaProfile | None = None
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 

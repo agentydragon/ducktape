@@ -56,10 +56,10 @@
       "filename": "cpap.skill"
     },
     {
-      "name": "buildbuddy_api",
-      "pkg": "skill-buildbuddy_api",
-      "target": "//devinfra/buildbuddy/skill/buildbuddy_api:buildbuddy_api_skill",
-      "filename": "buildbuddy_api.skill"
+      "name": "buildbuddy",
+      "pkg": "skill-buildbuddy",
+      "target": "//devinfra/buildbuddy/skill:buildbuddy_skill",
+      "filename": "buildbuddy.skill"
     },
     {
       "name": "cihealth",

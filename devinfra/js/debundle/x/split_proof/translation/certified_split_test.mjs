@@ -10,10 +10,10 @@ import { lowerDump } from "../lowering/dump_core.mjs";
 const root = process.env.TEST_TMPDIR;
 const input = path.join(root, "input.json");
 const placement = path.join(root, "placement.json");
-function prepare(source, modules, order) {
+function prepare(source, modules, order, entry = "entry.mjs") {
   const ast = lowerDump(source, acorn, eslintScope);
   fs.writeFileSync(input, JSON.stringify(ast));
-  fs.writeFileSync(placement, JSON.stringify({ entry: "entry.mjs", order, sequential: true, modules }));
+  fs.writeFileSync(placement, JSON.stringify({ entry, order, sequential: true, modules }));
   return ast;
 }
 function requestFile(file, out, requested, ...args) {
@@ -140,6 +140,19 @@ for (let seed = 0; seed < 16; seed++) {
   fs.writeFileSync(file, changed);
   check(generated, all, "rejected", "--check-output");
 }
+// A printer can keep consecutive module-scope declarators in one statement.
+prepare("const a = 1, b = a; export const result = b;", { [entry]: ["#2"], [left]: ["#0", "#1"] }, [left]);
+const groupedOut = path.join(root, "grouped-declarators");
+check(groupedOut, normal, "certified");
+const groupedFile = path.join(groupedOut, left);
+const groupedCode = fs.readFileSync(groupedFile, "utf8").replace("const a = 1;\nconst b = a;", "const a = 1, b = a;");
+assert.match(groupedCode, /const a = 1, b = a;/);
+fs.writeFileSync(groupedFile, groupedCode);
+check(groupedOut, normal, "certified", "--check-output");
+for (const changed of ["const b = a, a = 1;", "let a = 1, b = a;", "const a = 2, b = a;"]) {
+  fs.writeFileSync(groupedFile, groupedCode.replace("const a = 1, b = a;", changed));
+  check(groupedOut, normal, "rejected", "--check-output");
+}
 // This cyclic placement needs the entry to expose a previously private binding to its peer.
 // Even an order-preserving CoreJS plan with all nine structural checks cannot certify that change.
 const leakingSource = "const first = later; var later = 1; export const publicValue = first;";
@@ -164,18 +177,39 @@ assert.match(check(reordered, all, "rejected").reason, /normal-completion/);
 assert(!fs.existsSync(reordered));
 assert.equal(check(reordered, normal, "certified").guarantee, normal);
 assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
-prepare("const opaque = [];", { [entry]: ["#0"] }, []);
+prepare("const sparse = [1, , 2];", { [entry]: ["#0"] }, []);
 const unsupported = path.join(root, "unsupported");
-check(unsupported, normal, "rejected");
+assert.match(check(unsupported, normal, "rejected").reason, /unsupported array hole/);
 check(unsupported, undefined, "rejected", "--force");
 const mixed = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", input, placement, unsupported, "--require", all]);
 assert.notEqual(mixed.status, 0);
 assert.match(mixed.stderr.toString(), /cannot be combined/);
 assert(!fs.existsSync(unsupported));
 
-// A valid module AST under another extension has no portable ESM loading contract.
+// Browser module scripts can use .js for both the entry and its imports.
+const browserTree = path.join(root, "browser-tree");
+const pageProfile = path.join(root, "browser.json");
+fs.writeFileSync(pageProfile, JSON.stringify({ profile: "browser-page" }));
+prepare(
+  "const value = 1; export const result = value;",
+  { "entry.js": ["#1"], "value.js": ["#0"] },
+  ["value.js"],
+  "entry.js"
+);
+assert.match(check(browserTree, all, "rejected").reason, /safe relative \.mjs path/);
+const browserArgs = ["--host-contract", pageProfile];
+check(browserTree, all, "certified", ...browserArgs);
+check(browserTree, all, "certified", ...browserArgs, "--check-output");
+const valueFile = path.join(browserTree, "value.js");
+const valueSource = fs.readFileSync(valueFile, "utf8");
+assert(valueSource.includes("value = 1"), valueSource);
+fs.writeFileSync(valueFile, valueSource.replace("value = 1", "value = 2"));
+assert.match(check(browserTree, all, "rejected", ...browserArgs, "--check-output").reason, /value\.js differs/);
+
+// A CommonJS extension has no portable ESM loading contract.
 prepare("const local = 1;", { [entry]: [], "other.cjs": ["#0"] }, ["other.cjs"]);
 assert.match(check(unsupported, all, "rejected").reason, /\.mjs/);
+assert.match(check(unsupported, all, "rejected", ...browserArgs).reason, /safe relative/);
 assert(!fs.existsSync(unsupported));
 const escaping = "../escaped.mjs";
 prepare("const local = 1;", { [entry]: [], [escaping]: ["#0"] }, [escaping]);

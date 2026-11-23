@@ -66,6 +66,7 @@ NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
 _METRICS = Port(name="metrics", number=9090)
 _NODE_METRICS = Port(name="node-metrics", number=9100)
+_SCRAPE_PORTS = (_METRICS, _NODE_METRICS)
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
 _VM_SHUTDOWN_GRACE_SECONDS = 87_000
@@ -114,9 +115,8 @@ _DEMAND_QUERY = (
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
 _NESTED_VIRT_FEATURES = ("svm", "vmx")
-# Qualified at fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; future guest images
-# require fresh-boot and workload qualification before changing this manual pin.
-_IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268"
+# Fresh-boot and workload evidence for this manual pin: devinfra/buildbuddy/kvm/x/nixos_worker_qualification/results.md.
+_IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:21df8d193ec6d68d5b1a596b49ef18318cc26019560694ed16462aa6e64a87ff"
 _HTTPS_HOSTS = ("remote.buildbuddy.io",)
 
 
@@ -348,17 +348,20 @@ def chart(app: App) -> Chart:
         "pool-network",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
-        ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
-        egress=[cilium.dns_egress(resolves=["*"]), EgressRule.to_fqdns(*_HTTPS_HOSTS), zot.HTTP.egress()],
+        ingress=[alloy_endpoints.NODE.admit(*(port.number for port in _SCRAPE_PORTS))],
+        egress=[
+            cilium.dns_egress(resolves=["*"]),
+            EgressRule.to_fqdns(*_HTTPS_HOSTS),
+            EgressRule.to_fqdns("time.cloudflare.com", port=123, protocol="UDP"),
+            zot.HTTP.egress(),
+        ],
     )
     k8s.KubeService(
         chart,
         "metrics-service",
         metadata=k8s.ObjectMeta(name=_METRICS_SERVICE, namespace=NAMESPACE, labels=_WORKER_LABELS),
         spec=k8s.ServiceSpec(
-            selector=_WORKER_LABELS,
-            ports=[_METRICS.k8s_service_port(), _NODE_METRICS.k8s_service_port()],
-            type="ClusterIP",
+            selector=_WORKER_LABELS, ports=[port.k8s_service_port() for port in _SCRAPE_PORTS], type="ClusterIP"
         ),
     )
     ServiceMonitor(
@@ -367,7 +370,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
-            endpoints=[Endpoint.plain(port=_METRICS.name), Endpoint.plain(port=_NODE_METRICS.name)],
+            endpoints=[Endpoint.plain(port=port.name) for port in _SCRAPE_PORTS],
         ),
     )
     PrometheusRule(

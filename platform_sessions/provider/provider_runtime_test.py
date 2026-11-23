@@ -90,7 +90,6 @@ async def _owner_lifespan(events: list[str]):
         events.append("owner stop")
 
 
-@pytest.mark.asyncio
 async def test_control_and_owner_remain_open_until_import_drain_completes():
     events: list[str] = []
     service = _Service(events)
@@ -111,7 +110,6 @@ async def test_control_and_owner_remain_open_until_import_drain_completes():
     ]
 
 
-@pytest.mark.asyncio
 async def test_cancellation_does_not_release_owner_or_listener_before_drain():
     events: list[str] = []
     entered = asyncio.Event()
@@ -150,7 +148,6 @@ def test_instance_ownership_uses_a_child_of_instance_state_dir(tmp_path):
             owner.close()
 
 
-@pytest.mark.asyncio
 async def test_ownership_acquisition_failure_prevents_provider_owner_start(tmp_path):
     state_dir = tmp_path / "instance-state"
     held_ownership = InstanceOwnership(state_dir / "imports")
@@ -170,7 +167,6 @@ async def test_ownership_acquisition_failure_prevents_provider_owner_start(tmp_p
     held_ownership.close()
 
 
-@pytest.mark.asyncio
 async def test_service_slot_failure_drains_and_releases_ownership(tmp_path, monkeypatch):
     events: list[str] = []
     state_dir = tmp_path / "instance-state"
@@ -195,7 +191,6 @@ async def test_service_slot_failure_drains_and_releases_ownership(tmp_path, monk
     successor.close()
 
 
-@pytest.mark.asyncio
 async def test_body_failure_still_releases_after_successful_owner_exit(tmp_path):
     events: list[str] = []
     state_dir = tmp_path / "instance-state"
@@ -212,7 +207,6 @@ async def test_body_failure_still_releases_after_successful_owner_exit(tmp_path)
     successor.close()
 
 
-@pytest.mark.asyncio
 async def test_listener_shutdown_failure_retains_ownership(tmp_path):
     events: list[str] = []
     state_dir = tmp_path / "instance-state"
@@ -233,7 +227,6 @@ async def test_listener_shutdown_failure_retains_ownership(tmp_path):
     successor.close()
 
 
-@pytest.mark.asyncio
 async def test_ownership_is_not_released_until_provider_owner_exits(tmp_path):
     events: list[str] = []
     state_dir = tmp_path / "instance-state"
@@ -267,7 +260,6 @@ async def test_ownership_is_not_released_until_provider_owner_exits(tmp_path):
     successor.close()
 
 
-@pytest.mark.asyncio
 async def test_failed_provider_owner_start_retains_ownership_until_process_exit(tmp_path, monkeypatch):
     events: list[str] = []
     state_dir = tmp_path / "instance-state"
@@ -306,7 +298,6 @@ async def test_failed_provider_owner_start_retains_ownership_until_process_exit(
     successor.close()
 
 
-@pytest.mark.asyncio
 async def test_failed_provider_owner_exit_retains_ownership_until_process_exit(tmp_path, monkeypatch):
     events: list[str] = []
     state_dir = tmp_path / "instance-state"

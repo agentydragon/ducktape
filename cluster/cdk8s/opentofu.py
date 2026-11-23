@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import flux
+from cluster.cdk8s import flux, tofu_state
 from cluster.cdk8s.flux import (
     Kustomization,
     RenderedDirectory,
@@ -36,7 +36,6 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.secret_ref import SecretKey
-from cluster.cdk8s.tofu_state import db
 
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
@@ -89,7 +88,7 @@ def gitops_workspace(
 ) -> Workspace:
     """Use PostgreSQL state; callers choose the workspace, lifecycle and Kubernetes identity."""
     if schema is None:
-        schema = db.gitops_state_schema(name)
+        schema = tofu_state.gitops_state_schema(name)
     configuration = 'terraform {\n  backend "pg" {}\n}\n'
     if kubernetes_identity is not None:
         configuration += (
@@ -101,7 +100,7 @@ def gitops_workspace(
         metadata=ApiObjectMetadata(name=provider_config_name),
         spec=ProviderConfigSpec(
             configuration=configuration,
-            backend_file=f'conn_str = "{db.STATE_CONNECTION_STRING}"\nschema_name = "{schema}"\n',
+            backend_file=f'conn_str = "{tofu_state.STATE_CONNECTION_STRING}"\nschema_name = "{schema}"\n',
         ),
     )
     return Workspace(
@@ -121,7 +120,7 @@ def gitops_workspace(
                 ]
                 if variables is not None
                 else None,
-                env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
+                env=[secret_env("PGPASSWORD", tofu_state.STATE_PASSWORD), *env],
             ),
         ),
     )

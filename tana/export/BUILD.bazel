@@ -48,6 +48,7 @@ py_binary(
 py_library(
     name = "materialize_searches",
     srcs = ["materialize_searches.py"],
+    visibility = ["//tana:__subpackages__"],
     deps = [
         "//tana/domain:types",
         "//tana/graph",

@@ -1,17 +1,10 @@
 # gazelle:ignore
 # gazelle:resolve py eso_github_access_token_crds //cluster/cdk8s/providers/external_secrets:githubaccesstoken
 
-# gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
-# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 # gazelle:resolve py agentplane_sandboxtemplate_crds //agentplane/crds:sandboxtemplate
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
-# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
-# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
 # gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -133,7 +126,7 @@ py_library(
         ":environment",
         ":service_database",
         "//cluster/cdk8s/cnpg:cluster",
-        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/cnpg:role_credentials",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/cnpg:cluster",
@@ -498,6 +491,7 @@ py_library(
     deps = [
         ":egress",
         ":environment",
+        ":environment_service",
         ":environment_vm",
         ":history_service",
         ":llm_ingress",
@@ -563,7 +557,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

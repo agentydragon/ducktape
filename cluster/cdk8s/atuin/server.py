@@ -37,8 +37,15 @@ def _database(chart: Chart) -> None:
         resize_in_use_volumes=False,
         initdb=cluster.same_owner_initdb(NAME),
         wal_archive=True,
+        resources=cluster.resource_requests(cpu_millis=250, memory_mib=160),
     )
-    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(
+        chart,
+        "db-backup",
+        ref=DATABASE,
+        retention="30d",
+        instance_sidecar_configuration=backup.sidecar_resource_requests(cpu_millis=75, memory_mib=192),
+    )
 
 
 def _server(chart: Chart) -> None:

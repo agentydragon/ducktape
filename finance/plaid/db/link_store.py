@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from pydantic import BaseModel
 from sqlalchemy import Date as SQLDate, and_, delete, exists, func, literal, or_, select, text, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -50,6 +48,7 @@ from finance.plaid.payloads import (
     PlaidSecurity,
     PlaidTransaction,
 )
+from util.alembic_upgrade import upgrade
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +59,6 @@ _SPEND_CHANGED_CHANNEL = "plaid_spend_changed"
 async def _notify_spend_changed(session: AsyncSession) -> None:
     """Queue an empty, transaction-scoped wake-up; this is not a durable change stream."""
     await session.execute(text("SELECT pg_notify(:channel, '')"), {"channel": _SPEND_CHANGED_CHANNEL})
-
-
-def _run_alembic_migrations(conn: Any) -> None:
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
-    cfg.attributes["connection"] = conn
-    alembic_command.upgrade(cfg, "head")
 
 
 class SyncAlreadyRunningError(RuntimeError):
@@ -163,7 +155,7 @@ class PlaidLinkStorage:
                 await conn.execute(
                     text("SELECT pg_advisory_xact_lock(hashtextextended('finance.plaid.db:migrations', 0))")
                 )
-                await conn.run_sync(_run_alembic_migrations)
+                await conn.run_sync(upgrade, _MIGRATIONS_DIR)
         except BaseException:
             await engine.dispose()
             raise

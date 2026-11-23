@@ -46,7 +46,10 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(values: dict[str, Any]) -
     for component in ("controller", "csiController", "affinityController"):
         assert cluster[component]["podTemplate"]["spec"]["nodeSelector"] == controller_selector
     assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7999"}]
-    assert cluster["highAvailabilityController"] == {"enabled": True}
+    ha_controller = cluster["highAvailabilityController"]
+    assert ha_controller["enabled"] is True
+    ha_pod_spec = ha_controller.get("podTemplate", {}).get("spec", {})
+    assert {"nodeSelector", "affinity", "nodeName"}.isdisjoint(ha_pod_spec)
     assert cluster["nfsServer"] == {"enabled": False}
 
     satellites = values["linstorSatelliteConfigurations"]

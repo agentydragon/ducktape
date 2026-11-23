@@ -53,8 +53,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
-import { kindOf } from "../translation/gen/core.mjs";
-import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
+import { kindOf } from "../translation/testing/gen/core.mjs";
+import { generateProgram, renderProgram } from "../translation/testing/gen/index.mjs";
 import { coreOf, coreProgramOf, splitInputs } from "../translation/split_dump.mjs";
 import { cases, inheritanceCases, inheritanceSplitCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {

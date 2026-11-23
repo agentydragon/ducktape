@@ -16,6 +16,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -25,6 +26,7 @@ import (
 const (
 	OutboxChannel = "central_sampler_outbox"
 	WorkChannel   = "central_sampler_work"
+	TurnChannel   = "central_sampler_turn"
 )
 
 type rowScanner interface {
@@ -33,14 +35,24 @@ type rowScanner interface {
 
 // Store owns the central sampler's durable conversation, Session and evidence records.
 type Store struct {
-	db               *sql.DB
-	operationTimeout time.Duration
+	db                         *sql.DB
+	operationTimeout           time.Duration
+	providerProgressCoalescing time.Duration
+	providerRetryMaxBackoff    time.Duration
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
 
-func New(db *sql.DB, operationTimeout time.Duration) *Store {
-	return &Store{db: db, operationTimeout: operationTimeout, now: time.Now}
+// New uses the default provider timing when settings is nil.
+func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.Settings) *Store {
+	if settings == nil {
+		settings = &samplersettings.Settings{}
+	}
+	return &Store{
+		db: db, operationTimeout: operationTimeout, now: time.Now,
+		providerProgressCoalescing: settings.ProviderProgressLeaseCoalescing(),
+		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
+	}
 }
 
 func (s *Store) DB() *sql.DB { return s.db }
@@ -207,6 +219,17 @@ const conversationColumns = `id::text, generation, owner::text, pending, stopped
 	executor_session, transcript_context_id, active_context_id, transcript_control, active_control, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
+	row, err := lockOwnerWithContextRefs(ctx, tx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := loadConversationItems(ctx, tx, row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func lockOwnerWithContextRefs(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	row, err := scanConversation(tx.QueryRowContext(ctx,
 		`SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -216,9 +239,6 @@ func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, err
 		return nil, err
 	}
 	if err := fenceOwner(ctx, tx, owner); err != nil {
-		return nil, err
-	}
-	if err := loadConversationItems(ctx, tx, row); err != nil {
 		return nil, err
 	}
 	return row, nil

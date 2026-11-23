@@ -35,8 +35,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func sessionTestStringPtr(value string) *string { return &value }
-
 func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 	authentication, err := auth.New(auth.Config{})
 	if err != nil {
@@ -115,7 +113,7 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) (http.Handler, *tes
 	config := settings.Config{
 		SandboxNamespace: "test-sandboxes",
 		SandboxPresets:   map[string]settings.SandboxPreset{"work": {ThreadPreset: "default"}},
-		ThreadPresets:    map[string]settings.ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
+		ThreadPresets:    map[string]settings.ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: new("high"), Instructions: "preset", SetupScript: "setup"}},
 	}
 	server := newHTTPServer(authentication)
 	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{
@@ -186,8 +184,8 @@ func TestSessionGatewayPreservesPresetPresenceAndWireContract(t *testing.T) {
 		wantHarness                             sessionpb.Harness
 		wantModel, wantInstructions, wantEffort string
 	}{
-		{"omitted", `{}`, "", sessionTestStringPtr("setup"), sessionpb.Harness_HARNESS_CODEX, "preset-model", "preset", "high"},
-		{"empty", `{"model":"","instructions":"","reasoning_effort":""}`, `,"setup_script":""`, sessionTestStringPtr(""), sessionpb.Harness_HARNESS_CODEX, "", "", ""},
+		{"omitted", `{}`, "", new("setup"), sessionpb.Harness_HARNESS_CODEX, "preset-model", "preset", "high"},
+		{"empty", `{"model":"","instructions":"","reasoning_effort":""}`, `,"setup_script":""`, new(""), sessionpb.Harness_HARNESS_CODEX, "", "", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}}

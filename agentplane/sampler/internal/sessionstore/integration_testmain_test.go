@@ -15,14 +15,14 @@ var integrationDatabase *postgres.Database
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &integrationDatabase))
 }
 
 func newTestStoreWithDSN(t testing.TB) (*Store, string) {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db := postgres.Open(t, dsn)
-	return New(db, 30*time.Second), dsn
+	return New(db, 30*time.Second, nil), dsn
 }
 
 func newTestStore(t testing.TB) *Store {

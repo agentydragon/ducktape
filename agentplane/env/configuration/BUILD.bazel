@@ -12,7 +12,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/configuration",
     deps = [
         "//agentplane/env/runtime/codexappserver",
-        "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/backend",
         "//agentplane/env/runtime/execution/settings",
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/session",
@@ -39,7 +39,7 @@ go_test(
     x_defs = {"github.com/agentydragon/ducktape/agentplane/env/configuration.environmentRuntimeRlocation": "$(rlocationpath //agentplane/env/runtime/cmd:agentplane-environment-runtime)"},
     deps = [
         "//agentplane/env/runtime/codexappserver",
-        "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/backend",
         "//agentplane/env/runtime/supervision",
         "@io_bazel_rules_go//go/runfiles",
         "@org_uber_go_zap//zapcore",

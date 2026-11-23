@@ -9,7 +9,8 @@ winnings are never re-gambled. React PWA installable on Windows (Edge/Chrome) an
 
 - `app.py`: FastAPI REST + thin WebSocket fan-out, serves the frontend
 - `store.py`: `SqlStore`, idempotent server-action runner over Postgres
-- `games.py` / `rng.py`: server-side slots, roulette, blackjack rules and audited RNG
+- <game_rules.json>: roulette wheel, bet multipliers and slot paytable shared by the server and UI.
+  Wheel and symbol order affect RNG replay. `games.py` settles wagers with the audited RNG in `rng.py`.
 - `credit_award.py`, `credit_constants.py`: millicredit accounting, streak/daily bonus (credit
   system v2) and its tunables
 - `state.py` / `actions.py` / `events.py`: wire models (reads, action results, game outcomes)

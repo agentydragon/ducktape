@@ -1,6 +1,7 @@
 # gazelle:exclude test_visual.py
 # gazelle:exclude test_navigation.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -112,6 +113,7 @@ ts_library(
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:queryClient",
         "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
         "//props/frontend/src/pages:DefinitionDetailPage",
@@ -265,46 +267,24 @@ ts_library(
     ],
 )
 
-js_binary(
-    name = "build_harness",
-    data = [
-        "tests/harness/esbuild.config.mjs",
-        ":harness_lib",
-        ":node_modules/esbuild",
-        ":node_modules/esbuild-plugin-tailwindcss",
-        ":node_modules/tailwindcss",
-    ],
-    entry_point = "tests/harness/esbuild.config.mjs",
-)
-
-js_run_binary(
+esbuild(
     name = "harness_bundle",
-    srcs = [
-        "tests/harness/esbuild.config.mjs",
-        ":harness_lib",
-    ],
-    outs = [
-        "tests/harness/dist/harness.css",
-        "tests/harness/dist/harness.js",
-    ],
-    args = ["tests/harness/dist"],
-    chdir = package_name(),
-    tool = ":build_harness",
-)
-
-filegroup(
-    name = "harness_js",
-    srcs = ["tests/harness/dist/harness.js"],
+    testonly = True,
+    config = ":esbuild_config",
+    entry_point = "tests/harness/harness.js",
+    format = "iife",
+    minify = False,
+    output = "tests/harness/dist/harness.js",
+    output_css = "tests/harness/dist/harness.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":harness_lib"],
 )
 
 # Visual regression tests.
 # Run all:  bazel test //props/frontend:visual
 # Run one:  bazel test //props/frontend:visual --test_filter=DefinitionDetail
-
-filegroup(
-    name = "visual_test_assets",
-    srcs = ["tests/harness/index.html"],
-)
 
 # small: a shard renders 3 scenarios. The 12 per-scenario targets this replaces were 6.0-9.4s
 # each, almost all of it browser launch and input staging paid once per scenario.
@@ -312,10 +292,10 @@ py_visual_test(
     name = "visual",
     size = "small",
     assets = [
-        ":harness_bundle",
-        ":visual_test_assets",
+        "tests/harness/dist/harness.css",
+        "tests/harness/index.html",
     ],
-    harness = ":harness_js",
+    harness = "tests/harness/dist/harness.js",
     shard_count = 4,
     test_deps = [
         "//testing/frontend_visual:capture",
@@ -332,10 +312,9 @@ py_visual_test(
 py_visual_test(
     name = "navigation",
     size = "small",
-    assets = [":harness_bundle"],
-    harness = ":harness_js",
+    harness = "tests/harness/dist/harness.js",
     inline_page = True,
-    page_url = "http://props.test/",
+    page_url = "https://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
         "//testing/frontend_visual:capture",

@@ -86,7 +86,7 @@
 }
 
 /* Three evidence stages: solid is reached (grey waiting/done, red failure); hollow is
-   uncertain or unreached. Failures and uncertain outcomes show detail inline. The tooltip is
+   uncertain or unreached. The tooltip is
    CSS-only for hover: a streaming row must not mount a ResizeObserver-backed portal under
    a resting pointer (see EvidenceToggle). Its position does not change the message layout. */
 .agentplane-command-progress {
@@ -110,24 +110,46 @@
   flex: none;
 }
 
-/* Let outcome text use the width below the bubble instead of squeezing it into the gutter. */
-.transcript-user-message-row:has(> .transcript-user-message-aside > .agentplane-command-progress-inline) {
-  flex-wrap: wrap;
-}
-
-.transcript-user-message-aside:has(> .agentplane-command-progress-inline) {
-  order: 1;
-  flex: 0 0 100%;
+/* Keep feedback beside the bubble, even when its content wraps. */
+.transcript-user-message-aside:has(.agentplane-command-progress-inline) {
   max-width: 100%;
+  flex-direction: row;
+  align-items: center;
+  align-self: center;
+  column-gap: 0.25rem;
 }
 
-.agentplane-command-card-line:has(> .agentplane-command-progress-inline) {
-  flex-wrap: wrap;
+.transcript-user-message-aside:has(.agentplane-command-progress-inline) + .transcript-user-bubble {
+  max-width: min(34rem, calc(100% - clamp(10rem, 53%, 14rem) - var(--mantine-spacing-xs)));
 }
 
-.agentplane-command-card-line > .agentplane-command-progress-inline {
-  order: 1;
-  flex-basis: 100%;
+.transcript-user-message-aside .agentplane-command-progress-inline {
+  gap: 0.25rem;
+  flex: 0 1 auto;
+  align-items: center;
+}
+
+.agentplane-command-delivery {
+  min-width: 0;
+}
+
+.agentplane-command-details-trigger {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+  min-width: 0;
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.agentplane-command-details-trigger:hover,
+.agentplane-command-details-trigger:focus-visible {
+  text-decoration-style: solid;
 }
 
 .agentplane-command-progress-hit {
@@ -193,12 +215,6 @@
   pointer-events: none;
 }
 
-.agentplane-command-card-line:hover
-  .agentplane-command-progress[data-stage="effected"]
-  .agentplane-command-progress-hit,
-.agentplane-command-card-line:focus-within
-  .agentplane-command-progress[data-stage="effected"]
-  .agentplane-command-progress-hit,
 .transcript-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
 .transcript-user-message-row:focus-within
   .agentplane-command-progress[data-stage="effected"]
@@ -271,12 +287,6 @@
   max-width: min(22rem, 100%);
 }
 
-/* Control indicators sit after the requested setting; open their detail inward, not off-screen. */
-.agentplane-command-card-line .agentplane-command-progress-label {
-  left: auto;
-  right: 0;
-}
-
 @keyframes agentplane-command-pulse {
   50% {
     opacity: 0.35;
@@ -290,36 +300,22 @@
   }
 }
 
-/* Settled no-op reasons stay available without widening the message gutter or control card. */
 .agentplane-command-noop {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
 }
 
-/* The requested setting and its compact progress lights share one line, including on phones. */
-.agentplane-command-card-line {
-  min-width: 0;
+.transcript-user-bubble.agentplane-control-command-bubble {
+  background-color: transparent;
 }
 
-.agentplane-command-card-description {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.agentplane-control-command-bubble > .transcript-verbatim {
+  text-align: right;
 }
 
-/* Controls belong to the conversation, not a separate region below the timeline. */
-.agentplane-control-command-row {
-  display: flex;
-  justify-content: flex-end;
+.agentplane-control-command-bubble[data-model-change="true"] > .transcript-verbatim {
+  font-style: italic;
 }
 
-.agentplane-control-command-card {
-  max-width: min(85%, 34rem);
-  min-width: 0;
-  background: var(--mantine-color-default-hover);
+.agentplane-control-command-bubble:has(> .transcript-inspection-toggle) {
+  padding-right: 2.25rem;
 }

@@ -1,9 +1,20 @@
+import EsmSplit.ESTreeUnits
 import EsmSplit.ESTreeEmit
 import EsmSplit.CoreJS.ModuleInput
 
 namespace EsmSplit.SplitFiles
 
 open Lean
+
+/-- Optional stderr timing keeps stdout available for the certification verdict. -/
+def timePhase (enabled : Bool) (phase : String) (action : Unit → IO α) : IO α := do
+  unless enabled do return ← action ()
+  let start ← IO.monoMsNow
+  try
+    action ()
+  finally
+    let elapsed := (← IO.monoMsNow) - start
+    IO.eprintln (Json.mkObj [("phase", toJson phase), ("elapsed_ms", toJson elapsed)]).compress
 
 /-- Run the shared Acorn frontend and ESTree printer. Bazel supplies the runfile and
 the native Lake binary locates the same entry point beside the project. -/
@@ -78,34 +89,50 @@ partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : 
       frontier := frontier.push (name, ast)
   return Json.mkObj providers.toList
 
+/-- Preserve module headers and compare the same ordered declaration units used by the linker. -/
+private def unitProgram (ast : Json) : Except String Json := do
+  let units ← ESTreeUnits.nodes ast
+  return .obj ((← ast.getObj?).insert "body" (.arr units))
+
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
 def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
-    (out work input : System.FilePath) (checkOnly : Bool) (asts : Array Json) (source : String)
+    (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
     (check : Json → IO Unit) : IO Unit := do
   let dependencies := (← IO.ofExcept providers.getObj?).toList
   for (name, _) in dependencies do
     if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
-  let programs ← IO.ofExcept (ESTreeEmit.programs asts B P source)
-  check programs
-  let manifest ← writeProgramManifest programs work
+  let programs ← timePhase timings "output_ast" fun _ => do
+    IO.ofExcept (ESTreeEmit.programs asts B P source)
   if checkOnly then
+    let manifest ← writeProgramManifest programs work
     let providerManifest := work / "provider-programs.json"
     IO.FS.writeFile providerManifest providers.compress
-    javascript #["--check-output"] #[manifest, input, providerManifest, out]
+    timePhase timings "output_comparison" fun _ => do
+      let grouped := work / "grouped-output.json"
+      javascript #["--check-output"] #[manifest, input, providerManifest, out, grouped]
+      for pair in ← IO.ofExcept (← readJson grouped).getArr? do
+        let name ← IO.ofExcept (pair.getObjValAs? String "name")
+        let planned ← IO.ofExcept (pair.getObjVal? "planned" >>= unitProgram)
+        let observed ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
+        unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
+    check programs
   else
-    let parent := out.parent.getD "."
-    IO.FS.createDirAll parent
-    -- A sibling directory makes publication a single same-filesystem rename.
-    let stage := parent / (".split-proof-" ++ work.fileName.get!)
-    IO.FS.createDir stage
-    try
-      javascript #["--print"] #[manifest, stage, input]
-      for (name, ast) in dependencies do
-        let dest := stage / name
-        IO.FS.createDirAll (dest.parent.getD stage)
-        IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-      IO.FS.rename stage out
-    finally
-      if ← stage.pathExists then IO.FS.removeDirAll stage
+    check programs
+    timePhase timings "output_publication" fun _ => do
+      let manifest ← writeProgramManifest programs work
+      let parent := out.parent.getD "."
+      IO.FS.createDirAll parent
+      -- A sibling directory makes publication a single same-filesystem rename.
+      let stage := parent / (".split-proof-" ++ work.fileName.get!)
+      IO.FS.createDir stage
+      try
+        javascript #["--print"] #[manifest, stage, input]
+        for (name, ast) in dependencies do
+          let dest := stage / name
+          IO.FS.createDirAll (dest.parent.getD stage)
+          IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+        IO.FS.rename stage out
+      finally
+        if ← stage.pathExists then IO.FS.removeDirAll stage
 
 end EsmSplit.SplitFiles

@@ -10,34 +10,18 @@ import logging
 import httpx
 from pydantic import SecretStr
 
-from att_gateway.login import log_in
-from att_gateway.pages import SyslogPage, parse_syslog, syslog_form
+from att_gateway.login import read_page
+from att_gateway.pages import parse_syslog, syslog_form
 from att_gateway.settings import Syslog, SyslogSettings
 
 logger = logging.getLogger(__name__)
-
-
-async def _fetch(client: httpx.AsyncClient) -> str:
-    response = await client.get("/cgi-bin/syslog.ha")
-    response.raise_for_status()
-    return response.text
-
-
-async def _read(client: httpx.AsyncClient, access_code: SecretStr, page_gap_seconds: float) -> SyslogPage:
-    """`syslog.ha` answers a session that has not logged in with the login form."""
-    try:
-        return parse_syslog(await _fetch(client))
-    except ValueError:
-        await log_in(client, access_code, page_gap_seconds)
-        await asyncio.sleep(page_gap_seconds)
-        return parse_syslog(await _fetch(client))
 
 
 async def reconcile(
     client: httpx.AsyncClient, desired: Syslog, access_code: SecretStr, page_gap_seconds: float
 ) -> bool:
     """Save `desired` if the gateway's setting differs; returns whether it saved."""
-    page = await _read(client, access_code, page_gap_seconds)
+    page = await read_page(client, "syslog", parse_syslog, access_code, page_gap_seconds)
     if page.syslog == desired:
         logger.info("gateway syslog is %s already", desired)
         return False
@@ -46,7 +30,7 @@ async def reconcile(
     response = await client.post("/cgi-bin/syslog.ha", data=syslog_form(desired, page.nonce))
     response.raise_for_status()
     await asyncio.sleep(page_gap_seconds)
-    saved = await _read(client, access_code, page_gap_seconds)
+    saved = await read_page(client, "syslog", parse_syslog, access_code, page_gap_seconds)
     if saved.syslog != desired:
         raise RuntimeError(f"gateway syslog is {saved.syslog=} after saving {desired=}")
     return True

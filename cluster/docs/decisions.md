@@ -267,14 +267,9 @@ sources themselves poll every 30m, only as the net for a lost delivery.
 
 ## InvenTree API Token Provisioning
 
-Via the `inventree-token-provisioner` image
-(`cluster/archive/inventree_token_provisioner/`), run as a Job plus a weekly
-renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the
-`sandbox-agent` user, issue a named API token, write the `inventree-api-token`
-Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
-into `claude-sandbox`. Renews when fewer than 30 days remain. Decommissioned
-together with InvenTree; the provisioner source remains available if the app is
-revived, but its CI image target is archived rather than published automatically.
+The parked [provisioner](../archive/inventree_token_provisioner/provision.py) writes
+`inventree-api-token` in the `inventree` namespace. [ESO](../parked/inventree/token-provisioner/token-eso.yaml)
+mirrors it into `claude-sandbox`. [Revival checklist](../parked/inventree/TODO.md)
 
 ## CPU limits policy (VPA)
 
@@ -404,10 +399,7 @@ applications").
   its revival package remains in Git.
 - **egress-proxy-rugged**: `cluster/parked/egress-proxy-rugged/` — decommissioned;
   its configuration remains in Git.
-- **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux
-  Kustomizations are removed from the active bundle, and the revival package remains in Git.
-  Its `rai_plugin` image (`//inventree_utils/rai_plugin:image`) left the publish roster
-  (`devinfra/ci/image_targets.json`, restore the `inventree` entry from `c995ec223a`).
+- **InvenTree**: decommissioned. [Revival checklist](../parked/inventree/TODO.md) for images, credentials, and Flux owners.
 - **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative
   experiment; its Flux Kustomization is removed from the active bundle and manifests
   remain for manual revival. Authentik is the active SSO provider.
@@ -416,7 +408,9 @@ applications").
   deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
-  post-relocation (not unblocked by atlas/wyrm2 returning).
+  post-relocation (not unblocked by atlas/wyrm2 returning). Keep the RTL-TCP image
+  publishing job and Flux image tracking available for revival.
+  [Owner decision on SDR](https://github.com/agentydragon/ducktape/pull/18583#issuecomment-7059852738).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
   MCP server (`bmorphism/manifold-mcp-server`). Its OCI build wrapper
   (`third_party/manifold_mcp_server/`, a nested Bazel module) was deleted; a revival

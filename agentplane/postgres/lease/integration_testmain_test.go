@@ -13,8 +13,8 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(
-		m,
+	os.Exit(postgres.RunIntegrationTests(
+		m.Run,
 		func(ctx context.Context, db *sql.DB) error {
 			_, err := db.ExecContext(ctx, `
 				CREATE TABLE test_row (id uuid PRIMARY KEY, holder uuid, until timestamptz,

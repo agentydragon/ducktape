@@ -4067,6 +4067,12 @@ spec:
         enabled: true
         podTemplate:
           spec:
+            containers:
+              - name: linstor-affinity-controller
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 64Mi
             nodeSelector:
               storage.allegedly.works/piraeus-ready: "true"
               topology.kubernetes.io/region: hil
@@ -4081,13 +4087,70 @@ spec:
         enabled: true
         podTemplate:
           spec:
+            containers:
+              - name: linstor-csi
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
+              - name: csi-attacher
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 32Mi
+              - name: csi-livenessprobe
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 32Mi
+              - name: csi-provisioner
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 64Mi
+              - name: csi-snapshotter
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
+              - name: csi-resizer
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
             nodeSelector:
               storage.allegedly.works/piraeus-ready: "true"
               topology.kubernetes.io/region: hil
       csiNode:
         enabled: true
+        podTemplate:
+          spec:
+            containers:
+              - name: linstor-csi
+                resources:
+                  requests:
+                    cpu: 75m
+                    memory: 96Mi
+              - name: csi-node-driver-registrar
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
+              - name: csi-livenessprobe
+                resources:
+                  requests:
+                    cpu: 15m
+                    memory: 48Mi
       highAvailabilityController:
         enabled: true
+        podTemplate:
+          spec:
+            containers:
+              - name: ha-controller
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
       nfsServer:
         enabled: false
       nodeAffinity:
@@ -4131,6 +4194,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 400m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4192,6 +4266,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 150m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4253,6 +4338,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4314,6 +4410,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 75m
+                    memory: 512Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4375,6 +4482,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 125m
+                    memory: 640Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4439,6 +4557,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 512Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4503,6 +4632,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4567,6 +4707,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 75m
+                    memory: 640Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4627,6 +4778,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 125m
+                    memory: 384Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:

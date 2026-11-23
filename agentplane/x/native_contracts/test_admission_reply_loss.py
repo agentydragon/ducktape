@@ -106,7 +106,6 @@ def _response(record: dict[str, object]) -> harness_host_pb2.SubmitInputResponse
         raise AssertionError(f"invalid recorded Runtime response: {error}") from error
 
 
-@pytest.mark.asyncio
 async def test_dispatcher_retries_after_real_runtime_admission_reply_is_lost(
     dispatcher: SessionDispatcherClient,
     history_service: GoHistoryService,

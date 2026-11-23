@@ -1,1 +1,1 @@
-exports_files(["assert_empty.sh"])
+exports_files(["empty"])

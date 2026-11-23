@@ -11,9 +11,10 @@ import type {
   RunSortKey,
   Split,
 } from "../lib/schema";
-import { AGENT_RUN_STATUS_VALUES, AGENT_TYPE_VALUES, fetchRuns, type RunsFilters } from "../lib/api/client";
+import { fetchRuns, type RunsFilters } from "../lib/api/client";
 import { formatAge } from "../lib/formatters";
-import { formatStatus } from "../lib/status";
+import runFilters from "../lib/run_filter_values.json";
+import RunStatusBadge, { formatStatus } from "./RunStatusBadge";
 import { toast } from "../lib/toast";
 import type { RunTrigger } from "../lib/types";
 import BackButton from "./BackButton";
@@ -31,21 +32,6 @@ interface Props {
 }
 
 const LIMIT = 50;
-
-function statusColor(status: AgentRunStatus): string {
-  switch (status) {
-    case "in_progress":
-      return "blue";
-    case "exited":
-      return "green";
-    case "timed_out":
-      return "yellow";
-    case "startup_failed":
-      return "red";
-    default:
-      return "gray";
-  }
-}
 
 export default function RunsBrowser({
   initialDefinitionId,
@@ -185,7 +171,7 @@ export default function RunsBrowser({
         <Select
           label="Status"
           placeholder="All"
-          data={AGENT_RUN_STATUS_VALUES.map((value) => ({ value, label: formatStatus(value) }))}
+          data={runFilters.statuses.map((value) => ({ value, label: formatStatus(value) }))}
           value={statusFilter || null}
           onChange={(value) => {
             setStatusFilter((value as AgentRunStatus | null) ?? "");
@@ -197,7 +183,7 @@ export default function RunsBrowser({
         <Select
           label="Agent Type"
           placeholder="All"
-          data={AGENT_TYPE_VALUES.map((value) => ({ value, label: value }))}
+          data={runFilters.agentTypes}
           value={agentTypeFilter || null}
           onChange={(value) => {
             setAgentTypeFilter((value as AgentType | null) ?? "");
@@ -266,12 +252,7 @@ export default function RunsBrowser({
                       {run.model}
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={statusColor(run.status)} variant="light" tt="capitalize">
-                        {formatStatus(run.status)}
-                        {run.status === "exited" && run.container_exit_code != null
-                          ? ` (${run.container_exit_code})`
-                          : ""}
-                      </Badge>
+                      <RunStatusBadge run={run} />
                     </Table.Td>
                     <Table.Td ta="right" c="dimmed" className="text-xs">
                       {run.reported_issues_count ?? "—"}

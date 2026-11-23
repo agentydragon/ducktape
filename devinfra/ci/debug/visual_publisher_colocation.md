@@ -1,10 +1,9 @@
 # Visual publisher on the Bazel runner
 
-The opt-in `visual-colocation` mode of `bench-remote-bazel.yml` runs a remote
-test alongside the existing released publisher on one GitHub runner. Normal CI
-and publication remain separate. The probe republishes an already completed
-same-repository PR run, while its PR head executes only on BuildBuddy; it does
-not publish artifacts from that new test invocation.
+The retired `visual-colocation` experiment ran a remote test alongside the
+released publisher on one GitHub runner. It republished an already completed
+same-repository PR run and executed its PR head on BuildBuddy. The new test
+invocation produced no published artifacts.
 
 ## Hosted proof, 2026-10-31
 
@@ -58,7 +57,8 @@ failure behavior, and a gate design that accepts or avoids the publication tail.
 The current Bazel workflow still executes PR-controlled setup on its host;
 the prototype's trusted-checkout boundary must precede any credential sharing.
 
-To repeat, dispatch `bench-remote-bazel.yml` on a revision containing the probe
-with `mode=visual-colocation` and `visual_ci_run_id=<completed same-repo PR CI>`.
-This uses existing publishing credentials and refreshes that review in the
-configured bucket; choose a review that may be republished.
+To repeat the experiment, recover the
+[workflow from the tested revision](https://github.com/agentydragon/ducktape/blob/b6b0d0d114b9f2df4b0b2132a40b884c135d1b65/.github/workflows/bench-remote-bazel.yml)
+into a trusted branch and dispatch it with `mode=visual-colocation` and
+`visual_ci_run_id=<completed same-repo PR CI>`. The experiment uses publishing
+credentials and refreshes the selected review in the configured bucket.

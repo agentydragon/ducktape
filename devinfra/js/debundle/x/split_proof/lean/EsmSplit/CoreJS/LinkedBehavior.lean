@@ -19,19 +19,41 @@ def normal {W : World} : Res W Unit → Bool
   | .ok .. => true
   | _ => false
 
-/-- Kernel reduction discharges both premises with a symbolic world. A matching throw,
-unknown result or exhausted bound cannot discharge the first premise. -/
+/-- Normal completion and execution equality share the source result during
+kernel reduction in a symbolic world. -/
 theorem of_evaluation {source candidate : Program} (fuel : Nat)
-    (completed : ∀ W, normal (runProgram W fuel source) = true)
-    (equal : ∀ W, runProgram W fuel source = runProgram W fuel candidate) :
+    (checks : ∀ W, normal (runProgram W fuel source) = true ∧
+      runProgram W fuel source = runProgram W fuel candidate) :
     Equivalent source candidate := by
   apply of_runs fuel
   intro W
-  have h := completed W
-  have eq := equal W
+  obtain ⟨h, eq⟩ := checks W
   cases hs : runProgram W fuel source with
   | ok _ t => exact ⟨t, rfl, eq.symm.trans hs⟩
   | _ => simp [hs, normal] at h
+
+/-- Two normal probe executions with different final states cannot satisfy the
+all-world linked behavior claim. `Ends.unique` transports each concrete result
+to the shared state required by `Equivalent`. -/
+theorem different_probe_states_refute_equivalence {w : World} {source candidate : Program} {fuel : Nat}
+    {sourceState candidateState : State w}
+    (sourceRun : runProgram w fuel source = .ok () sourceState)
+    (candidateRun : runProgram w fuel candidate = .ok () candidateState)
+    (different : sourceState ≠ candidateState) :
+    ¬ Equivalent source candidate := by
+  intro equivalent
+  obtain ⟨shared, sourceEnds, candidateEnds⟩ := equivalent w
+  have sourceProbeEnds : Ends w source (.ok () sourceState) :=
+    ⟨fuel, sourceRun, by simp⟩
+  have candidateProbeEnds : Ends w candidate (.ok () candidateState) :=
+    ⟨fuel, candidateRun, by simp⟩
+  have sourceStateEq : sourceState = shared := by
+    have sameResult := Ends.unique sourceProbeEnds sourceEnds
+    injection sameResult with _ stateEq
+  have candidateStateEq : candidateState = shared := by
+    have sameResult := Ends.unique candidateProbeEnds candidateEnds
+    injection sameResult with _ stateEq
+  exact different (sourceStateEq.trans candidateStateEq.symm)
 
 private def entryExports (entry : String) (linked : List (Module × Env)) :
     Option (List (Name × Addr)) := do

@@ -4,6 +4,10 @@ Marks a roaming laptop node (one tainted `node-role.kubernetes.io/roaming=true:N
 as out of service while its kubelet is silent, so the cluster treats an offline laptop as
 gone instead of failing, while keeping its Node object and everything bound to it.
 
+Isolated laptops can still be in use. The evaluated Medik8s Self Node Remediation
+strategy reboots nodes on loss of API contact. Running separate k3s clusters and
+federating them would add a control plane to each laptop.
+
 ## Behavior
 
 - **Taint:** a roaming node whose kubelet Lease (`kube-node-lease/<node>`) has not been renewed

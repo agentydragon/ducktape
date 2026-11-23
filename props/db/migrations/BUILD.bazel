@@ -16,18 +16,6 @@ filegroup(
 )
 
 py_test(
-    name = "test_migration_sequence",
-    srcs = ["test_migration_sequence.py"],
-    data = [":migrations"],
-    deps = [
-        "//:conftest",
-        "//props:conftest",
-        "@pypi//alembic",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_materialize_examples",
     size = "medium",
     srcs = ["test_materialize_examples.py"],

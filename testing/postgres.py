@@ -30,9 +30,8 @@ fixture name. For setup that also needs role creation,
 a source template, or extensions, compose `migrated_database_template` inside an explicit fixture.
 For application-specific initialization that is not a `MigrationRunner`, use
 `PostgresDatabaseTemplate` directly and perform that initialization once on `template.url`. It also
-supports `template=` when one test schema must extend another. Keep tests that verify starting from an
-empty database or applying a specific old migration state on `create_temporary_database` instead of
-cloning a migrated template.
+supports `template=` when one test schema must extend another. Use the `empty_postgres_url` fixture
+for tests that start from an empty database and apply their own migration state.
 
 PostgreSQL refuses to clone a template while it has open connections. Let migration engines and
 pools close before the first clone, and keep the template connection-free afterwards. Schema-level
@@ -42,20 +41,21 @@ them. For resources outside the database that must be removed first, such as an 
 replication slot, compose a cleanup context inside the clone context. Put a service context inside
 that when the service must stop before slot cleanup; context exit then proceeds service, slot, clone.
 
-When a caller needs custom cleanup or may retain a database for debugging, use
-`create_database_sync(admin_url, name, template=template.template_name)` directly and pair it with
-`force_drop_database_sync` as appropriate.
+Pass `DatabaseNames` to try another candidate after a database-name collision. A fixed
+name fails on collision. For callers that own clone retention, `create_clone` registers
+the force-drop on their `ExitStack`; the helper leaves databases it did not create alone.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from hashlib import sha256
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 
 from util.db_migrations import MigrationRunner
 from util.db_url import render_postgresql_url
@@ -70,6 +70,10 @@ _TERMINATE_SQL = text(
 )
 
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
+
+PUBLIC_RELATION_IDENTITIES = text(
+    "SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid"
+)
 
 
 def database_name_for_test(node_id: str, *, counter: int | None = None) -> str:
@@ -111,7 +115,7 @@ class DatabaseClones:
 
     def clone(self, template: PostgresDatabaseTemplate, *, drivername: str) -> str:
         """Create and register a writable clone, returning its URL with the requested driver."""
-        url = self._stack.enter_context(template.clone(self._names()))
+        url = template.create_clone(self._names(), cleanup=self._stack)
         return render_postgresql_url(url, drivername)
 
 
@@ -178,14 +182,38 @@ def force_drop_database_sync(admin_url: str, db_name: str) -> None:
         engine.dispose()
 
 
+def _is_database_name_conflict(error: DBAPIError) -> bool:
+    sqlstate = getattr(error.orig, "sqlstate", None) or getattr(error.orig, "pgcode", None)
+    constraint = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+    # Concurrent CREATE DATABASE commands can race past PostgreSQL's name precheck
+    # and hit the unique index on pg_database.datname instead.
+    return sqlstate == "42P04" or (sqlstate == "23505" and constraint == "pg_database_datname_index")
+
+
+def _create_owned_database(
+    admin_url: str, db_name: str | DatabaseNames, cleanup: ExitStack, *, template: str | None = None
+) -> str:
+    name = db_name if isinstance(db_name, str) else db_name()
+    while True:
+        try:
+            url = create_database_sync(admin_url, name, template=template)
+            break
+        except DBAPIError as error:
+            if isinstance(db_name, str) or not _is_database_name_conflict(error):
+                raise
+            name = db_name()
+
+    cleanup.callback(force_drop_database_sync, admin_url, name)
+    return url
+
+
 @contextmanager
-def create_temporary_database(admin_url: str, db_name: str, *, template: str | None = None) -> Iterator[str]:
+def create_temporary_database(
+    admin_url: str, db_name: str | DatabaseNames, *, template: str | None = None
+) -> Iterator[str]:
     """Create a database for a context and force-drop it when the context exits."""
-    url = create_database_sync(admin_url, db_name, template=template)
-    try:
-        yield url
-    finally:
-        force_drop_database_sync(admin_url, db_name)
+    with ExitStack() as cleanup:
+        yield _create_owned_database(admin_url, db_name, cleanup, template=template)
 
 
 class PostgresDatabaseTemplate:
@@ -218,11 +246,13 @@ class PostgresDatabaseTemplate:
         """Template URL, retaining the driver's scheme and connection query parameters."""
         return _database_url(self.admin_url, self.template_name)
 
-    @contextmanager
-    def clone(self, db_name: str) -> Iterator[str]:
-        """Yield an isolated writable copy, then drop it."""
-        with create_temporary_database(self.admin_url, db_name, template=self.template_name) as url:
-            yield url
+    def clone(self, db_name: str | DatabaseNames) -> AbstractContextManager[str]:
+        """Open a writable copy and force-drop it when the context exits."""
+        return create_temporary_database(self.admin_url, db_name, template=self.template_name)
+
+    def create_clone(self, db_name: str | DatabaseNames, *, cleanup: ExitStack) -> str:
+        """Create a writable copy owned by the caller's cleanup stack."""
+        return _create_owned_database(self.admin_url, db_name, cleanup, template=self.template_name)
 
 
 @contextmanager

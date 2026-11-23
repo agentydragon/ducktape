@@ -193,9 +193,10 @@ checks that on every split (`model/differential.mjs`).
 def moduleOf (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) (m : EsmSplit.Module) : Module where
   name := m.name
   imports := m.imports.map fun (source, names) =>
-    { source, names := names.map fun u => (((P.find source).map (·.publicName u)).getD u, u) }
+    let exports := P.namedExports B source
+    { source, names := names.map fun u => (EsmSplit.exportNameFor exports u, u) }
   body := m.stmts.filterMap fun i => (ss[i]?).map (i, ·)
-  exports := m.exports ++ (m.published B).filterMap fun (pub, loc) => loc.map (pub, ·)
+  exports := m.namedExports B
 
 /-- The split of the bundle `ss` by the plan `P`. `B` has the footprints; of them only what the `export` statements
 publish is used. -/
@@ -590,43 +591,37 @@ theorem scope_lookup_decl (hfp : FootprintsOfSyntax ss B) (hF : FramesOf ((List.
   · obtain ⟨p, hp, rfl⟩ := hjM
     exact ⟨p, hp, rfl⟩
 
-/-- The export that `publicName` names stands for the binding: glue and `export` statements publish different names. -/
+/-- A generated import names the export of its intended local binding. -/
 theorem moduleOf_exports (md : EsmSplit.Module) {x : Name} (hexp : md.exportsLocal B x = true)
-    (hnd : (md.publicNames B).Nodup) : (moduleOf ss B P md).exports.lookup (md.publicName x) = some x := by
+    (hnd : (md.publicNames B).Nodup) :
+    (moduleOf ss B P md).exports.lookup (EsmSplit.exportNameFor (md.namedExports B) x) = some x := by
   unfold EsmSplit.Module.publicNames at hnd
   obtain ⟨hpub, hglue, hdis⟩ := List.nodup_append.1 hnd
-  have hrest : ∀ k v, (k, v) ∈ (md.published B).filterMap (fun (pub, loc) => loc.map (pub, ·)) →
-      (k, some v) ∈ md.published B := by
-    intro k v h
-    obtain ⟨⟨k', l⟩, hm, he⟩ := List.mem_filterMap.1 h
-    obtain ⟨v', rfl, he'⟩ := Option.map_eq_some_iff.1 he
-    obtain ⟨rfl, rfl⟩ := Prod.mk.inj he'
-    exact hm
-  simp only [moduleOf, EsmSplit.Module.publicName]
-  cases hf : md.exports.find? (·.2 == x) with
+  have hsub : ((EsmSplit.localExports (md.published B)).map Prod.fst).Sublist ((md.published B).map Prod.fst) := by
+    generalize md.published B = published
+    induction published with
+    | nil => exact .slnil
+    | cons entry _ ih =>
+      obtain ⟨key, loc⟩ := entry
+      cases loc with
+      | none => exact .cons key ih
+      | some name => exact .cons_cons key ih
+  have hkeys : ((md.namedExports B).map Prod.fst).Nodup := by
+    simp only [EsmSplit.Module.namedExports, EsmSplit.Module.namedExportsFrom, List.map_append]
+    refine List.nodup_append.2 ⟨hglue, hsub.nodup hpub, ?_⟩
+    rintro k hk _ hw rfl
+    exact hdis k (hsub.subset hw) k hk rfl
+  simp only [moduleOf, EsmSplit.exportNameFor]
+  cases hf : (md.namedExports B).find? (·.2 == x) with
   | some e =>
     have he : e.2 = x := by simpa using List.find?_some hf
-    have hem : (e.1, x) ∈ md.exports := by rw [← he]; exact List.mem_of_find?_eq_some hf
+    have hem : (e.1, x) ∈ md.namedExports B := by rw [← he]; exact List.mem_of_find?_eq_some hf
     simp only [Option.map_some, Option.getD_some]
-    refine lookup_of_mem (List.mem_append_left _ hem) fun v hv => ?_
-    rcases List.mem_append.1 hv with hv | hv
-    · exact nodup_keys hglue hv hem
-    · exact absurd rfl (hdis _ (List.mem_map_of_mem (f := (·.1)) (hrest _ _ hv)) _ (List.mem_map_of_mem (f := (·.1)) hem))
+    exact lookup_of_mem hem fun _ hv => nodup_keys hkeys hv hem
   | none =>
-    have hng : ∀ e ∈ md.exports, e.2 ≠ x := fun e he h => by
-      have := List.find?_eq_none.1 hf e he
-      simp [h] at this
-    have hpx : (x, some x) ∈ md.published B := by
-      unfold EsmSplit.Module.exportsLocal at hexp
-      rcases Bool.or_eq_true_iff.1 hexp with h | h
-      · obtain ⟨e, he, h⟩ := List.any_eq_true.1 h
-        exact absurd (by simpa using h) (hng e he)
-      · exact List.contains_iff_mem.1 h
-    simp only [Option.map_none, Option.getD_none]
-    refine lookup_of_mem (List.mem_append_right _ (List.mem_filterMap.2 ⟨_, hpx, rfl⟩)) fun v hv => ?_
-    rcases List.mem_append.1 hv with hv | hv
-    · exact absurd rfl (hdis _ (List.mem_map_of_mem (f := (·.1)) hpx) _ (List.mem_map_of_mem (f := (·.1)) hv))
-    · exact Option.some.inj (nodup_keys hpub (hrest _ _ hv) hpx)
+    obtain ⟨e, he, hs⟩ := List.any_eq_true.1 hexp
+    have hn := List.find?_eq_none.1 hf e he
+    simp [hs] at hn
 
 
 section linking
@@ -763,7 +758,7 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
     fun md j hj hjn => ⟨(j, ss[j]), (hbody md _).2 ⟨hj, by simp [hjn]⟩, rfl⟩
   -- an import of the split finds the binding of the statement that declares the name
   have hcell : ∀ md ∈ P.mods, ∀ e ∈ md.imports, ∀ u ∈ e.2, ∃ a,
-      (splitProgram ss B P).importCell frames e.1 (((P.find e.1).map (·.publicName u)).getD u) = .ok a ∧
+      (splitProgram ss B P).importCell frames e.1 (EsmSplit.exportNameFor (P.namedExports B e.1) u) = .ok a ∧
         env0.vars.lookup u = some a := by
     intro md hmd e he u hu
     obtain ⟨hdecl, hexp⟩ := ((hlink md hmd).1 e he).2.2 u hu
@@ -779,15 +774,16 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
       have hjn := hlt md' hmd' j hj
       obtain ⟨a, ha⟩ := hframe_some hjn hxj
       refine ⟨a, ?_, (henv_decl hjn hxj).trans ha⟩
-      simp only [Option.map_some, Option.getD_some, Program.importCell, split_find, hf,
-        moduleOf_exports md' (by simpa using hexp) (hexpU md' hmd'),
-        scope_lookup_decl hfp hF hud (hin md' hj hjn) hjn hxj, ha]
-      rfl
+      rw [EsmSplit.Plan.namedExports, hf]
+      simp only [Option.map_some, Option.getD_some]
+      exact Program.importCell_local (by rw [split_find, hf, Option.map_some])
+        (moduleOf_exports md' (by simpa using hexp) (hexpU md' hmd'))
+        ((scope_lookup_decl hfp hF hud (hin md' hj hjn) hjn hxj).trans ha)
   have himported : ∀ md ∈ P.mods, ∃ cells,
       (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
         ∀ x, cells.lookup x = if x ∈ md.imports.flatMap (·.2) then env0.vars.lookup x else none := fun md hmd =>
     imported_ok (splitProgram ss B P) frames (env0.vars.lookup ·)
-      (fun (src : String) (u : Name) => ((P.find src).map fun md' : EsmSplit.Module => md'.publicName u).getD u) md.imports fun e he =>
+      (fun src u => EsmSplit.exportNameFor (P.namedExports B src) u) md.imports fun e he =>
         ⟨by rw [split_find, Option.isSome_map]; exact ((hlink md hmd).1 e he).2.1, hcell md hmd e he⟩
   -- a statement of the split has, on the names it mentions, the bindings it has in the bundle
   have hagree : ∀ md ∈ P.mods, ∀ i ∈ md.stmts, ∀ s, ss[i]? = some s → ∀ cells,

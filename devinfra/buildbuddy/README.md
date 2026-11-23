@@ -7,10 +7,10 @@ This directory owns the tools and integration code specific to that service.
   and inner invocation-ID tracking. The repo-root [`.bbrc`](../../.bbrc) supplies
   native runner defaults for both `bbr` and GitHub Actions.
 - [`bbapi/`](bbapi/) contains our Go API CLI, distinct from upstream `bb`.
-  Its [command reference](skill/buildbuddy_api/SKILL.md) covers invocation state,
+  Its [command reference](skill/SKILL.md) covers invocation state,
   build-event exports, artifact/blob downloads, and cancellation. Read RPCs use
   the generated gRPC client; mutations, suggestions, and download routes use HTTP.
-- [`skill/buildbuddy_api/`](skill/buildbuddy_api/) packages the API skill.
+- [`skill/`](skill/) packages the API skill.
 - [`ci/`](ci/) contains invocation readers, artifact downloads, cancellation,
   live test status, runner probes, and CI linkage helpers. General release and
   publication orchestration remains in [`devinfra/ci`](../ci/).

@@ -266,6 +266,22 @@ def test_full_message_batch_returns_successes_and_explicit_failures() -> None:
     assert "HTTP 404" in errors[0][1]
 
 
+def test_get_or_create_label_sends_shared_visibility_defaults_and_reuses_label() -> None:
+    client = object.__new__(GmailClient)
+    client.service = Mock()
+    client._label_cache = None
+    labels = client.service.users().labels()
+    labels.list.return_value.execute.side_effect = [{}, {"labels": [{"id": "Label_1", "name": "Test receipts"}]}]
+    labels.create.return_value.execute.return_value = {"id": "Label_1"}
+
+    assert client.get_or_create_label("Test receipts") == "Label_1"
+    assert client.get_or_create_label("Test receipts") == "Label_1"
+
+    labels.create.assert_called_once_with(
+        userId="me", body={"name": "Test receipts", "labelListVisibility": "labelShow", "messageListVisibility": "show"}
+    )
+
+
 @pytest.mark.parametrize(
     ("add_label_ids", "remove_label_ids", "expected_label_fields"),
     [

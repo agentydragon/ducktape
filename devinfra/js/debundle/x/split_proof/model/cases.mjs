@@ -157,6 +157,28 @@ export const inheritanceSplitCases = [
   },
 ];
 
+// Each coefficient · 2^exponent is an exact binary64 rounding boundary. Use
+// integer arithmetic so neither decimal neighbor rounds before the test runs.
+function roundingBoundaryStrings() {
+  const midpoints = [
+    [1n, -1075], // zero and the least subnormal
+    [3n, -1075], // adjacent subnormals, with the upper significand even
+    [(1n << 53n) - 1n, -1075], // largest subnormal and least normal
+    [(1n << 53n) + 1n, -53], // just above 1, with the lower significand even
+    [(1n << 53n) + 3n, -53], // just above 1, with the upper significand even
+    [(1n << 54n) - 1n, -53], // rounding carries into the next exponent at 2
+    [(1n << 54n) - 1n, 970], // overflow threshold
+  ];
+  return midpoints.flatMap(([coefficient, exponent]) => {
+    const places = Math.max(0, -exponent);
+    const digits = exponent < 0 ? coefficient * 5n ** BigInt(places) : coefficient << BigInt(exponent);
+    return [-1n, 0n, 1n].flatMap((offset) => {
+      const decimal = `${digits * 10n + offset}e-${places + 1}`;
+      return [decimal, `-${decimal}`];
+    });
+  });
+}
+
 export const cases = [
   {
     name: "var destructuring evaluates its RHS once and writes earlier targets before a getter throws",
@@ -413,6 +435,17 @@ export const cases = [
       console.log("a" < "b", "a" < "B", "10" < "9", 10 < "9", "x" < 1, null <= 0, undefined <= 0, "abc" >= "ab", 2 > "1");
       console.log(!"", !"0", !0, !NaN, !null, !{}, !-0, void 0, typeof void 0, "abc".length, "abc"[1], "é".length);
       console.log(null ?? "n", undefined ?? "u", 0 ?? "z", 0 || "o", 1 && "a", "" && "never", String(null), \`\${1}-\${true}-\${null}\`);
+    `,
+  },
+  {
+    name: "string subtraction rounds at binary64 boundaries",
+    end: "normal",
+    source: `
+      const inputs = ${JSON.stringify(roundingBoundaryStrings())};
+      for (let i = 0; i < inputs.length; i++) {
+        const rounded = inputs[i] - 0;
+        console.log(rounded, 1 / rounded);
+      }
     `,
   },
   {

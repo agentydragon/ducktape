@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from finance.augur.config_paths import config_relative_path
 from finance.augur.dates import months_between
 from finance.augur.fit.evidence_data import ExogenousEvidence, _one_month_returns_from_aligned_levels
 from finance.augur.model.asset_key import PrivateEquityAssetKey
@@ -120,7 +121,7 @@ def _fit_private_equity_factor(
     config_path: Path, historical: DatedHistoricalSeries | HistoricalSeries
 ) -> StateSpaceAdditionalFactor:
     config = load_training_config(config_path)
-    observations_path = _resolve_path(config.observations_path, config_path.parent)
+    observations_path = config_relative_path(config.observations_path, config_path.parent)
     observations = load_price_observations_jsonl(observations_path)
     artifact = fit_private_equity_model(observations, config)
     issuer_observations = sorted(
@@ -229,10 +230,3 @@ def _monthly_sigma(historical: DatedHistoricalSeries | HistoricalSeries, factor_
         ]
     )
     return float(np.std(returns, ddof=1))
-
-
-def _resolve_path(path: str | Path, base_dir: Path) -> Path:
-    value = Path(path)
-    if value.is_absolute():
-        return value
-    return (base_dir / value).resolve()

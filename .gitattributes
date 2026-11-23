@@ -1,8 +1,5 @@
-# Lint/Format Exclusions
-# This file is the source of truth for files excluded from linting and formatting.
-# devinfra/precommit/git_hook.py reads these attributes.
-# For Python files, patterns must also be mirrored in ruff.toml exclude.
-# See README.md "Lint/Format Exclusions" section for details.
+# Git attributes for generated files and the repository's staged-file hook.
+# See devinfra/docs/linting.md for individual checker and formatter exclusions.
 
 # Zsh files - shfmt doesn't support zsh syntax
 # TODO: Install a zsh-specific formatter to handle .zsh files properly
@@ -60,7 +57,6 @@ cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
-cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/external-credentials/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true

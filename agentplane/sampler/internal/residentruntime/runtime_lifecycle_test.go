@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	runtimepkg "runtime"
@@ -27,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -41,9 +43,24 @@ import (
 
 func startRuntimeForTest(t *testing.T, runtime *Runtime) (context.CancelFunc, <-chan error) {
 	t.Helper()
+	// Listen on the same per-test database as the runtime.
+	dsn, err := url.Parse(integrationDatabase.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var databaseName string
+	if err := runtime.store.DB().QueryRowContext(t.Context(), "SELECT current_database()").Scan(&databaseName); err != nil {
+		t.Fatal(err)
+	}
+	dsn.Path = "/" + databaseName
+	hub, err := wakeups.Listen(t.Context(), dsn.String(), sessionstore.WorkChannel, sessionstore.TurnChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hub.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- runtime.Run(ctx, nil) }()
+	go func() { done <- runtime.Run(ctx, hub) }()
 
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
@@ -625,7 +642,7 @@ func (f *drainFixture) peer(t *testing.T) *runtimetesting.CodeModePeer {
 func sendNestedExecCommand(t *testing.T, peer *runtimetesting.CodeModePeer, codeSession string, id int64) {
 	t.Helper()
 	if err := peer.Send(codemode.Frame{
-		Type: codemode.DelegateRequest, ID: int64Pointer(id), SessionID: codeSession,
+		Type: codemode.DelegateRequest, ID: new(id), SessionID: codeSession,
 		Request: &codemode.Delegate{Type: "tool/invoke", CellID: "cell-1", Invocation: codemode.ToolInvocation{
 			CellID: "cell-1", ToolName: codemode.ToolName{Name: "exec_command"}, ToolKind: "function", Input: json.RawMessage(`{"cmd":"true","yield_time_ms":10}`),
 		}},
@@ -640,11 +657,11 @@ func yieldCell(t *testing.T, peer *runtimetesting.CodeModePeer, executeID int64)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(executeID), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(executeID), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 		t.Fatal(err)
 	}
 	observation := json.RawMessage(`{"Yielded":{"cell_id":"cell-1","content_items":[]}}`)
-	if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(executeID), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: new(executeID), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -658,7 +675,7 @@ func completeCell(t *testing.T, peer *runtimetesting.CodeModePeer, codeSession s
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(waitID), Result: &codemode.WireResult{Status: "ok", Value: completed}}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: new(waitID), Result: &codemode.WireResult{Status: "ok", Value: completed}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -882,8 +899,6 @@ func TestDrainDiagnosticsRetainBindingAndDatabaseAfterDriverRelease(t *testing.T
 		t.Fatalf("conversation owner is still set after driver release: %v", conversation["owner"])
 	}
 }
-
-func int64Pointer(value int64) *int64 { return &value }
 
 func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*residentsession.CodeModeHost, func() []*runtimetesting.CodeModePeer) {
 	t.Helper()

@@ -7,10 +7,9 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 [Maintenance conventions](../docs/task_dag_maintenance.md) distinguish dispatchable phases,
 operator decisions and proportional acceptance from the [low-priority freezer](task_freezer.md).
 
-Start dispatch from the [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt),
-stale since their sprint ended on 2026-11-13 until the operator restates them: session resilience
-first, then the daily CI agent and caller-privilege Session spawning, with small launch-UX
-improvements alongside. Component TODOs and research plans do not set a competing queue.
+Start with the [operator’s current interests and release decisions](task_dag.md#operator-interests-2026-11-22).
+The operator listed the directions without ranking them. The DAG also tracks the current
+[staging archive and deletion failure](task_dag.md#wedged_session_and_sandbox_recovery--archive-a-session-and-delete-a-sandbox-when-the-runtime-cannot-recover).
 
 ## Open plans and gates
 
@@ -34,7 +33,7 @@ improvements alongside. Component TODOs and research plans do not set a competin
 - [Session runtime model](session_runtime_model.md) — current environment component boundaries and
   agreed names/layout; future Session vocabulary for environment-bound
   native harnesses, central sampling, execution attachments and backend-specific constraints
-- [Authored conversation CLI experiment](authored_conversation_experiment.md) — our own loop with
+- [Authored conversation CLI experiment evidence](../debug/authored_conversation/README.md) — our own loop with
   Qwen through LiteLLM, a shared thread operated through tools, and bounded comparative win
   conditions; the eventual history architecture remains open
 - [Thread spike](thread_spike.md) — an off-by-default Thread in Notifications that the operator and a

@@ -40,8 +40,7 @@ out of service while offline.
   "nebula_ip":    "10.42.0.N",          // required, IPv4 in 10.42.0.0/16, unique
   "endpoint":     "<ip-or-host>:4242",  // required if lighthouse=true; omit for behind-NAT
   "role":         "control-plane" | "worker" | "laptop" | "non-k8s",
-  "lighthouse":   true | false,         // default false
-  "relay":        true | false,         // default false
+  "lighthouse":   true | false,         // default false; lighthouses also serve as relays
   "managed_by":   "tofu-ovh" | "tofu-proxmox" | "tofu-home" | "nixos" | "ansible" | "mobile",
   "cert_groups":  [...],                // optional; embedded in the Nebula cert
   "destination_mtu": 1100               // optional; MTU all peers use when sending to this host
@@ -69,7 +68,7 @@ any TF apply.
 
 1. Order/activate the OVH server out-of-band — see <kimsufi_provisioning.md>.
 2. Edit `nebula-mesh.json`: add the host with `nebula_ip`, `endpoint`, role,
-   `lighthouse: true`, `relay: true`, `managed_by: "tofu-ovh"`,
+   `lighthouse: true`, `managed_by: "tofu-ovh"`,
    `cert_groups: ["lighthouse"]`.
 3. Add the host's provisioning facts (OVH service, disks, zone, storage tier)
    under the same name in `local.kimsufi_server_provisioning` in
@@ -167,8 +166,8 @@ OVH reallocates a Kimsufi IP:
 
 ## Control-plane add or remove
 
-CP membership is the host's `role` in `nebula-mesh.json` (leave `lighthouse`,
-`relay` and `cert_groups` alone). The Talos machine type in `ovh-nodes.tf`, the
+CP membership is the host's `role` in `nebula-mesh.json` (leave `lighthouse`
+and `cert_groups` alone). The Talos machine type in `ovh-nodes.tf`, the
 etcd metrics scrape EndpointSlice in
 `cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml` (without it
 `ControlPlaneLeasePutLatency` alerts point nowhere) and the `api.allegedly.works`

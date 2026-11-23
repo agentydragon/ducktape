@@ -75,31 +75,36 @@ Both replays stop at structural checks before reaching the module URL guard.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_certificate
+bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_single_certificate
 ```
 
 The generated editor spec assigns `#1337` and `#1338` to
-`packages/excalidraw/scene/scroll.mjs`. This trial keeps those two selections
-and assigns the other 1,785 units to `entry.mjs` in source order. The replay resolves
+`packages/excalidraw/scene/scroll.mjs`. CI checks the pair in strict mode. The
+on-demand single trial moves only `#1337`. Each assigns the other units to
+`entry.mjs` in source order. The replay resolves
 the stable `editor.js` alias via the generated JS roster and runs the normal splitter
-on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. With
-`--require normal-completion`, the linked CoreJS decoder stops at statement 5
-with `expected a single declarator`. The splitter publishes no modules. The test outputs
-include the source filename, placement spec and verdict. [Full editor replay](https://app.buildbuddy.io/invocation/4ac19c1e-8230-4cc0-8d2d-81d82c3f5ed8)
+on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. The
+decoder retains the React factory in statement 5. The factory’s
+`Object.assign` read is inside its deferred body. Both trials stop at the
+eager `new Uint8Array` in statement 41 and leave the output directory absent.
+Each target records the source filename, placement spec and verdict.
 
-The same target renders two diagnostic placements with `--diagnostic … --force` into separate
+Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.
 Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
 Lean's structural checker; it is diagnostic evidence only.
 
-| Units moved                         | Entry names added                | Entry names lost | Inverted conflicts | Failed check |
-| ----------------------------------- | -------------------------------- | ---------------: | -----------------: | ------------ |
-| Authored scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `ct`, `qb$1`, `vn` |                0 |                518 | `OrderOk`    |
-| 1337 only                           | none                             |                0 |                259 | `OrderOk`    |
+| Units moved                         | Entry names added    | Entry names lost | Inverted conflicts | Failed check |
+| ----------------------------------- | -------------------- | ---------------: | -----------------: | ------------ |
+| Authored scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `qb$1` |                0 |                518 | `OrderOk`    |
+| 1337 only                           | none                 |                0 |                259 | `OrderOk`    |
 
 Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
-reads `Jb` and five bindings resident in the entry. Extracting both requires the renderer to
-expose all five to the new module. Comparing export names here detects additions and removals.
-Artifact certification also needs to establish which live binding each name denotes.
+reads `Jb` and five bindings resident in the entry. The renderer imports `ct` and `vn`
+through their existing public names and adds exports for the other three. Comparing export
+names here detects additions and removals. Artifact certification also needs to establish
+which live binding each name denotes.
+[Alias replay](https://app.buildbuddy.io/invocation/50a13338-069e-4061-a8b3-d049f7740076)
 
 The first five conflicts for the single-arrow placement are with units 5–9. Unit 5 is the
 first statement after five named-import declarations and initializes `po` with `Ve(callback)`.
@@ -112,13 +117,14 @@ The separate CoreJS theorem covers wrapper creation and the independent arrow de
 a common linked environment. Both orders reach exactly the same successful final states.
 [Linked reproduction](../../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
 
-The single-arrow replay now records the ordinary move plan's 259 structural source-order
-conflicts. All cross the moved unit `#1337`; one is the conflict with the first source unit
-after imports. The replay makes no linked-provider proof claim for this complete editor chunk;
-the source-level strict trial is rejected as described above. The generic plan evidence is published
-as `scroll-move-report.json`, alongside `import-boundary.json` and `entry-exports.json`.
-The small source-file E2E target exercises linked named providers and output verification:
-`bbr test //devinfra/js/debundle/x/split_proof/translation:linked_programs_test`.
+The single-arrow move plan records 259 structural source-order conflicts. All
+cross `#1337`, including the conflict with the first source unit after imports.
+The test records them in `scroll-move-report.json` alongside
+`import-boundary.json` and `entry-exports.json`. The reduced case in
+[`linked_host_profile_test.mjs`](../../linked_host_profile_test.mjs) uses a
+small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
+lexical `Symbol` binding passes strict certification and the Node control in
+the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
 ### Direct AST lowering for negated initializers

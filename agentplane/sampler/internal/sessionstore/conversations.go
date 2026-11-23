@@ -86,27 +86,12 @@ func (s *Store) pgError(err error) error {
 }
 
 func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	store := newContentDB(ctx, tx)
-	transcriptID, err := conversation.storeContext(store, conversation.Transcript)
-	if err != nil {
-		return err
-	}
-	transcriptControl, err := conversation.contextControl(conversation.Transcript)
-	if err != nil {
+	if err := checkpointConversationContexts(ctx, tx, conversation); err != nil {
 		return err
 	}
 	var activeControl any
-	var activeID string
-	if conversation.ActiveContext != nil {
-		activeID, err = conversation.storeContext(store, conversation.ActiveContext)
-		if err != nil {
-			return err
-		}
-		control, err := conversation.contextControl(conversation.ActiveContext)
-		if err != nil {
-			return err
-		}
-		activeControl = []byte(control)
+	if len(conversation.activeControl) != 0 {
+		activeControl = []byte(conversation.activeControl)
 	}
 	pending, err := marshal(conversation.Pending)
 	if err != nil {
@@ -123,9 +108,36 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
 		transcript_context_id=$5,active_context_id=$6,transcript_control=$7,active_control=$8,
 		context_tokens=$9,executor_shell=$10,environment_context=$11 WHERE id=$1`, conversation.ID,
-		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), nullableContextID(transcriptID), nullableContextID(activeID), []byte(transcriptControl), activeControl, contextTokens,
+		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), nullableContextID(conversation.transcriptContextID), nullableContextID(conversation.activeContextID), []byte(conversation.transcriptControl), activeControl, contextTokens,
 		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
+}
+
+func checkpointConversationContexts(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
+	store := newContentDB(ctx, tx)
+	transcriptID, err := conversation.storeContext(store, conversation.Transcript)
+	if err != nil {
+		return err
+	}
+	transcriptControl, err := conversation.contextControl(conversation.Transcript)
+	if err != nil {
+		return err
+	}
+	var activeControl []byte
+	var activeID string
+	if conversation.ActiveContext != nil {
+		activeID, err = conversation.storeContext(store, conversation.ActiveContext)
+		if err != nil {
+			return err
+		}
+		activeControl, err = conversation.contextControl(conversation.ActiveContext)
+		if err != nil {
+			return err
+		}
+	}
+	conversation.transcriptContextID, conversation.transcriptControl = transcriptID, transcriptControl
+	conversation.activeContextID, conversation.activeControl = activeID, activeControl
+	return nil
 }
 
 func nullableJSON(value string) any {

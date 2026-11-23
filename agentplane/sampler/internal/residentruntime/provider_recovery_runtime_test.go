@@ -196,7 +196,10 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 		}
 	}))
 	t.Cleanup(server.Close)
-	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
+	settings := providerSamplingSettings(server.URL, 1)
+	const attemptBudget = 5
+	settings.ProviderAttemptBudget = new(attemptBudget)
+	runtime, stop := startProviderSamplingRuntime(t, store, settings)
 	runtime.Wake(session.ID)
 
 	firstBody := receiveProviderRequest(t, requests)
@@ -217,14 +220,15 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	}
 	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 
-	var attempts, abandoned, committed int
+	var attempts, abandoned, committed, configuredBudget int
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*),count(*) FILTER (WHERE result->>'status'='abandoned'),
-		count(*) FILTER (WHERE result IS NOT NULL AND NOT (result ? 'status')) FROM sampler_intent
-		WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, commandID).Scan(&attempts, &abandoned, &committed); err != nil {
+		count(*) FILTER (WHERE result IS NOT NULL AND NOT (result ? 'status')),
+		count(*) FILTER (WHERE provider_attempt_budget=$2) FROM sampler_intent
+		WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, commandID, attemptBudget).Scan(&attempts, &abandoned, &committed, &configuredBudget); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 3 || abandoned != 2 || committed != 1 || count.Load() != 3 {
-		t.Fatalf("provider attempts=%d abandoned=%d committed=%d requests=%d; want 3/2/1/3", attempts, abandoned, committed, count.Load())
+	if attempts != 3 || abandoned != 2 || committed != 1 || configuredBudget != 3 || count.Load() != 3 {
+		t.Fatalf("provider attempts=%d abandoned=%d committed=%d with budget %d=%d requests=%d, want 3/2/1/3/3", attempts, abandoned, committed, attemptBudget, configuredBudget, count.Load())
 	}
 	owner := runtimeOwner(t, runtime, session.ID)
 	conversation, err := store.Read(t.Context(), owner)
@@ -437,6 +441,49 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 	stop()
 }
 
+func TestInterruptWakesInFlightProviderRequest(t *testing.T) {
+	store := runtimetesting.NewStore(t, integrationDatabase)
+	session := runtimetesting.OpenSessionForStore(t, store, "")
+	runtimetesting.AdmitInput(t, store, session.ID, "turn", "begin sampling")
+	requested := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+		select {
+		case requested <- struct{}{}:
+		default:
+		}
+		select {
+		case <-r.Context().Done():
+		case <-t.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	runtime, _ := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
+	select {
+	case <-requested:
+	case <-time.After(10 * time.Second):
+		t.Fatal("provider request never started")
+	}
+	owner := runtimeOwner(t, runtime, session.ID)
+	id, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually.Within(t, 10*time.Second, func() (bool, string) {
+		var cancelled bool
+		err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE((result->>'provider_cancelled')::boolean, false)
+			FROM sampler_interrupt WHERE id=$1`, id).Scan(&cancelled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cancelled, "waiting for the active turn to acknowledge the interrupt"
+	})
+}
+
 func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
@@ -554,6 +601,8 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 		t.Fatal(err)
 	}
 
+	// A new deployment may configure a different budget. Recovery keeps the step's durable budget.
+	settings.ProviderAttemptBudget = new(5)
 	runtime := New(store, settings, manager)
 	cancel, done := startRuntimeForTest(t, runtime)
 	var stopOnce sync.Once

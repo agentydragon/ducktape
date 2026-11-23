@@ -98,15 +98,15 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 		owner, ownerArgs := OwnerScope(caller, "o.", len(args)+1)
 		args = append(args, ownerArgs...)
 		rows, err := tx.QueryContext(ctx, `WITH changes AS (
-			SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,operation,state,reason,
+			SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,operation_value,state_value,reason,
 				admission,delivery_blocker,wake_assessment,created_at,updated_at,false AS deleted
 			FROM dispatch WHERE version>$1 AND version<=$2
 			UNION ALL
-			SELECT version,command_id,session_id,''::varchar,''::text,operation,state,reason,
+			SELECT version,command_id,session_id,''::varchar,''::text,operation_value,state_value,reason,
 				admission,delivery_blocker,wake_assessment,created_at,updated_at,true AS deleted
 			FROM dispatch_tombstone WHERE version>$1 AND version<=$2
 		)
-		SELECT c.version,c.command_id,c.session_id,c.sandbox_name,c.sandbox_uid,c.operation,c.state,c.reason,
+		SELECT c.version,c.command_id,c.session_id,c.sandbox_name,c.sandbox_uid,COALESCE(c.operation_value,0),COALESCE(c.state_value,0),c.reason,
 			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at,NULL::bytea,c.deleted
 		FROM changes c JOIN session o ON o.session_id=c.session_id
 			AND (c.deleted OR (o.sandbox_name=c.sandbox_name AND o.sandbox_uid::text=c.sandbox_uid))

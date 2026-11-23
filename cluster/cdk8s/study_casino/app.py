@@ -20,6 +20,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
+    ClusterSpecPrimaryUpdateMethod,
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
@@ -33,8 +34,8 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 
 from cluster.cdk8s import namespaces, node_scheduling, public_web_pki
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -131,8 +132,16 @@ def _database(scope: Construct) -> None:
         ),
         initdb=cluster.same_owner_initdb(_DATABASE),
         wal_archive=True,
+        resources=cluster.resource_requests(cpu_millis=250, memory_mib=192),
+        primary_update_method=ClusterSpecPrimaryUpdateMethod.SWITCHOVER,
     )
-    backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, retention="30d")
+    backup.CnpgBackup(
+        scope,
+        "db-backup",
+        ref=POSTGRES,
+        retention="30d",
+        instance_sidecar_configuration=backup.sidecar_resource_requests(cpu_millis=75, memory_mib=192),
+    )
 
 
 def _readonly_credentials(scope: Construct) -> None:
@@ -142,10 +151,8 @@ def _readonly_credentials(scope: Construct) -> None:
         scope,
         "readonly-credentials",
         name=_READONLY.name,
-        namespace=_NAMESPACE,
+        cluster=POSTGRES,
         role=_READONLY_ROLE,
-        host=POSTGRES.rw.host,
-        port=POSTGRES.rw.port.number,
         database=_DATABASE,
         target_annotations={
             "description": (

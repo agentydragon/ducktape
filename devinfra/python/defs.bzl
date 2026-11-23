@@ -44,7 +44,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         requires_docker: Whether this test needs Docker. If True, adds the
             "requires_docker" tag and sets RYUK_CONTAINER_IMAGE to RYUK_TAG.
         uses_syrupy: Whether this test uses syrupy snapshots. If True, wires
-            BazelAmberExtension to copy updated .ambr files to undeclared outputs.
+            the pytest plugin to export updated .ambr files to undeclared outputs.
         tags: Additional tags. Must not include "requires_docker" (use the parameter).
         imports: Python import paths. Defaults to repo root.
         args: Extra args passed to the test binary.
@@ -89,14 +89,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         base_deps = base_deps + ["//devinfra/testing:sharding"]
         kwargs["shard_count"] = shard_count
     if uses_syrupy:
-        base_args = base_args + [
-            "--snapshot-default-extension=devinfra.testing.bazel_snapshot_extension.BazelAmberExtension",
-            "-p",
-            "devinfra.testing.bazel_snapshot_extension",
-        ]
-        base_deps = base_deps + [
-            "//devinfra/testing:bazel_snapshot_extension",
-        ]
+        base_args = base_args + ["-p", "devinfra.testing.syrupy_plugin"]
+        base_deps = base_deps + ["//devinfra/testing:syrupy_plugin"]
 
     _py_test(
         name = name,

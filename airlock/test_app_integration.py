@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
 import json
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping
@@ -15,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 import pytest_bazel
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from itsdangerous import TimestampSigner
 
 from airlock.app import create_app
@@ -224,10 +224,7 @@ async def test_oauth_callback_keeps_pkce_state_bound_to_operator(
     assert exchange_calls[0][0] == "auth-code"
     verifier = exchange_calls[0][1]
     assert verifier is not None
-    expected_challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
-    )
-    assert authorize_params["code_challenge"] == [expected_challenge]
+    assert authorize_params["code_challenge"] == [create_s256_code_challenge(verifier)]
     assert [call.args[0] for call in mock_k8s_store.write_token.await_args_list] == ["test-refresh", "test-access"]
     assert mock_k8s_store.write_token.await_args_list[0].args[1] == "airlock-test"
     assert mock_k8s_store.write_token.await_args_list[0].args[2] == token

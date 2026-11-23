@@ -288,7 +288,7 @@ def main(
     enter_sparse_checkout(
         Path("/tmp/repo"),
         github_remote(config.github_repo, github_pat),
-        [config.sops_config, *(path for rotation in config.rotations for path in rotation.output_paths)],
+        (path for rotation in config.rotations for path in rotation.output_paths),
     )
 
     # Isolate entries: one broken rotation must not starve the others (a bad

@@ -472,6 +472,7 @@ py_library(
     srcs = ["private_equity_fit.py"],
     deps = [
         ":trained_private_equity",
+        "//finance/augur:config_paths",
         "//finance/augur:dates",
         "//finance/augur/model:schemas",
         "//finance/augur/model:series",
@@ -507,6 +508,7 @@ py_library(
     deps = [
         ":private_equity_fit",
         ":state_space",
+        "//finance/augur:config_paths",
         "//finance/augur:dates",
         "//finance/augur/fit:evidence_data",
         "//finance/augur/model:asset_key",

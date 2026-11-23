@@ -8,7 +8,6 @@ it; they retry until the Cluster accepts connections.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
-from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
 from constructs import Construct
 
 from cluster.cdk8s.cnpg import backup, cluster
@@ -40,8 +39,6 @@ class Db(Construct):
             wal_archive=True,
         )
         backup.CnpgBackup(self, "db-backup", ref=POSTGRES, retention="30d")
-        # `vector`: the console's 0135 migration baseline creates a `halfvec` column on a fresh
-        # database (0136 drops it), and the migration role cannot install the extension itself.
         # This Database adopts the one created by `bootstrap.initdb`, hence `retain`: with
         # `delete`, dropping this object would drop the console's whole database.
         cluster.Database(
@@ -51,5 +48,4 @@ class Db(Construct):
             cluster=postgres,
             name=DATABASE,
             owner=DATABASE,
-            extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
         )

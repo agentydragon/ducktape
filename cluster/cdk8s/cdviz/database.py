@@ -13,7 +13,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.health import database_health
-from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.namespaces import Vpa
 
@@ -26,14 +26,7 @@ def chart(app: App) -> Chart:
     roles = []
     for role, secret in [("cdviz_collector", config.COLLECTOR_PASSWORD), ("cdviz_reader", config.GRAFANA_PASSWORD)]:
         mint_db_role_secret(
-            chart,
-            role,
-            name=secret.name,
-            namespace=secret.namespace,
-            role=role,
-            host=config.DATABASE.rw.host,
-            port=config.DATABASE.rw.port.number,
-            database=config.DATABASE_NAME,
+            chart, role, name=secret.name, cluster=config.DATABASE, role=role, database=config.DATABASE_NAME
         )
         roles.append(
             ClusterSpecManagedRoles(

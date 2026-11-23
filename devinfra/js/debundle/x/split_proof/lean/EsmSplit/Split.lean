@@ -45,9 +45,9 @@ def freshName (u : Name) (taken : NameSet) : Name :=
   if taken.contains u then freshFrom u taken (taken.size + 1) 1 else u
 
 /-- Glue exports of the bindings `needed` from a module whose own `export` statements publish `pub`.
-A binding they publish under its own name (`export { u }`, `export const u`) needs none. -/
+A binding they already publish, including under an alias, needs none. -/
 def glueExports (pub : List (Name × Option Name)) (needed : List Name) : List (Name × Name) :=
-  let own : NameSet := pub.foldl (fun acc e => if e.2 == some e.1 then acc.insert e.1 else acc) ∅
+  let own : NameSet := (localExports pub).foldl (fun acc e => acc.insert e.2) ∅
   ((needed.filter fun u => !own.contains u).foldl
     (fun (acc : List (Name × Name) × NameSet) u =>
       let p := freshName u acc.2
@@ -134,7 +134,7 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
   let imported : Std.TreeMap ModName (List Name) := base.foldl (fun acc o =>
     o.imports.foldl (fun acc e => acc.insert e.1 (e.2.reverse ++ acc.getD e.1 [])) acc) ∅
   let withExports := base.map fun md =>
-    { md with exports := glueExports (md.stmts.flatMap fun i => (arr.getD i default).exports)
+    { md with exports := glueExports (md.publishedFrom arr)
                            (dedup (imported.getD md.name []).reverse) }
   let p1 : Plan := { entry := S.entry, mods := withExports }
   -- a module nobody imports still has to run: the entry imports it for its effects

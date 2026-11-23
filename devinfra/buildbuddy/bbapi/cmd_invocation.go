@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	invocationstatuspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -277,16 +278,21 @@ func getChildInvocationIDs(c *client, invocationID string) ([]string, error) {
 func childInvocationIDs(inv *invocationpb.Invocation) []string {
 	var ids []string
 	for _, ev := range inv.GetEvent() {
-		for _, child := range ev.GetBuildEvent().GetChildren() {
-			if id := child.GetChildInvocationCompleted().GetInvocationId(); id != "" {
-				ids = append(ids, id)
-			}
+		ids = appendAnnouncedChildren(ids, ev.GetBuildEvent())
+	}
+	return ids
+}
+
+func appendAnnouncedChildren(ids []string, event *bespb.BuildEvent) []string {
+	for _, child := range event.GetChildren() {
+		if id := child.GetChildInvocationCompleted().GetInvocationId(); id != "" {
+			ids = append(ids, id)
 		}
 	}
 	return ids
 }
 
-// resolveInvocationIDs returns the invocation ID(s) to query for artifacts/targets.
+// resolveInvocationIDs returns the invocation ID(s) to query for targets and tool logs.
 // For workflow invocations (which have children), returns child IDs.
 // For regular invocations, returns the original ID.
 func resolveInvocationIDs(c *client, invocationID string) ([]string, error) {

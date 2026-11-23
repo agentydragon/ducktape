@@ -1,4 +1,18 @@
-# Linting architecture
+# Linting and formatting
+
+## Run pre-commit
+
+Install the hooks from the repository root. Run the checks on a topic branch so
+the protected-branch hook accepts it.
+
+```bash
+nix shell .#precommit -c pre-commit install
+nix shell .#precommit -c pre-commit run --all-files
+```
+
+Inside the devshell, use `pre-commit run --files <paths>` to check changed files
+or `pre-commit run buildifier --files path/to/BUILD.bazel` for one formatter.
+Ruff, Prettier and Buildifier hooks can rewrite files. Stage the result and rerun.
 
 ## Configuration owners
 
@@ -11,8 +25,7 @@
   [eslint.config.js](../../eslint.config.js) and [.prettierrc.cjs](../../.prettierrc.cjs)
   own each tool's rules. Do not add package-level Ruff or mypy configuration.
 
-ESLint and mypy run through Bazel, not pre-commit. Buildifier's Nix and Bazel
-pins are separate; changing one does not automatically update the other.
+Bazel runs ESLint and mypy. Pre-commit runs Buildifier and Prettier from the Nix devshell.
 
 A hook that runs `bazel` serializes pre-commit's parallel batches on the Bazel
 client lock; `bazel run --script_path` writes a launcher that runs after Bazel
@@ -29,11 +42,15 @@ intended, such as the [lockfile workflows](lockfiles.md).
 
 ## Exclusions
 
-[.gitattributes](../../.gitattributes) holds `rules-lint-ignored=true` flags;
-[.pre-commit-config.yaml](../../.pre-commit-config.yaml) holds hook-specific file
-filters. Ruff, mypy and ESLint also have exclusions in their own configuration
-files above. Check each relevant owner when changing coverage; a copied list of
-common directory patterns is not the source of truth.
+- The repository's staged-file hook reads attributes from
+  [.gitattributes](../../.gitattributes), including `rules-lint-ignored` and
+  `filename-conventions-ignored`. Use `filename-conventions-ignored=true`
+  for paths that follow their own naming convention, such as `cluster/` and `tf/`.
+- [.pre-commit-config.yaml](../../.pre-commit-config.yaml) filters which paths
+  reach the hooks.
+- [ruff.toml](../../ruff.toml) and [.prettierignore](../../.prettierignore) own
+  the Ruff and Prettier exclusions. mypy and ESLint have their own filters in
+  [mypy.ini](../../mypy.ini) and [eslint.config.js](../../eslint.config.js).
 
 ## CI boundaries
 

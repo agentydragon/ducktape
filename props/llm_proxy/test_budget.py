@@ -23,7 +23,6 @@ from props.testing.models import BUDGET_TEST_MODEL
 pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("budget_usd", [10.0, 0.0], ids=["positive-budget", "zero-budget"])
 async def test_budget_allows_no_spend(synced_db: Database, budget_usd: float) -> None:
     """No spend is allowed with a positive budget and at the zero-budget boundary."""
@@ -43,7 +42,6 @@ async def test_budget_allows_no_spend(synced_db: Database, budget_usd: float) ->
         await _check_budget(session, run_id, budget_usd=budget_usd)
 
 
-@pytest.mark.asyncio
 async def test_budget_rejects_over_budget(synced_db: Database) -> None:
     """Request over budget should raise HTTPException(429)."""
     with synced_db.session() as session:
@@ -70,7 +68,6 @@ async def test_budget_rejects_over_budget(synced_db: Database) -> None:
         assert "Budget exceeded" in exc_info.value.detail
 
 
-@pytest.mark.asyncio
 async def test_budget_includes_child_run_costs(synced_db: Database) -> None:
     """Budget check should include costs from child (descendant) runs."""
     with synced_db.session() as session:

@@ -8,8 +8,11 @@ load("//gnome:devkit.bzl", "gnome_devkit")
 pkg_files(
     name = "extension_files",
     srcs = [
+        "dbus/daemon.xml",
+        "dbus/shell-test.xml",
         "extension.js",
         "metadata.json",
+        "panelOrder.js",
         "prefs.js",
         "schemas/org.gnome.shell.extensions.plaid-spend.gschema.xml",
         "stylesheet.css",
@@ -20,7 +23,10 @@ pkg_files(
 
 pkg_zip(
     name = "plaid_spend_extension",
-    srcs = [":extension_files"],
+    srcs = [
+        ":extension_files",
+        "//gnome:dbus",
+    ],
     out = "plaid-spend-desktop.zip",
     visibility = ["//visibility:public"],
 )
@@ -35,6 +41,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    data = ["dbus/fake-control.xml"],
     deps = ["//gnome/testing:fake_daemon_js"],
 )
 
@@ -52,18 +59,18 @@ py_test(
         ":plaid_spend_extension",
         ":test_fixtures",
     ],
+    env = {"GNOME_EXTENSION_ZIP": "$(rlocationpath :plaid_spend_extension)"},
     requires_docker = True,
     tags = ["visual"],
     deps = [
         "//:conftest",
-        "//devinfra/oci",
         "//devinfra/testing:output_writer",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",
         "//finance/plaid/spend/testing:dashboard",
-        "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
+        "//gnome/testing:fixtures",  # keep: pytest_plugins
         "//gnome/testing:session",
         "@pypi//pillow",
         "@pypi//pytest",

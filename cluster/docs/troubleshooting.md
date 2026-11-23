@@ -179,36 +179,31 @@ it does not apply to PG state.
 
 ### Resource ID Desync After Wiping a Backing Datastore
 
-Generalization of the Authentik-DB-wipe failure mode: any
-tofu-controller `Terraform` CR that manages resources inside another stateful
-system (Authentik DB, Forgejo DB, etc.) will go into
-`Unable to read user/object … not found with id N` if that backing system is
-wiped without also clearing the corresponding tofu state. The tfstate still
-references the old numeric IDs.
+After a database restore or wipe, OpenTofu can still hold IDs from the previous
+database. A provider then reports `Unable to read … not found with id N`. For example,
+the Forgejo database rebuild removed the user whose ID was still in
+`forgejo_user.props`. [Forgejo recovery](lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md)
 
-Recent instances:
-
-- `sso-providers` after Authentik DB wipes (the original instance).
-- `forgejo-props` after the 2026-06-02 Forgejo recovery
-  (<lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>): the
-  forgejo-db CNPG cluster was rebuilt, so `forgejo_user.props` lost its id=2.
-
-Recovery (PG-backend CRs — current default):
-
-1. `flux suspend kustomization -n flux-system <name>` on the affected CR's
-   Kustomization (e.g. `forgejo-props`, `sso-providers`).
-2. From a pod with PG access (`kubectl exec` into any tofu-state-db client,
-   or `kubectl port-forward` to it), `DROP SCHEMA <cr_name> CASCADE;` on the
-   `tofu-state` database. Each CR has its own schema named after the CR.
-   This wipes the tfstate; the next reconcile re-creates resources from
-   scratch.
-3. Clean up any orphan objects in the backing system (e.g. delete the
-   half-created Authentik provider, or any leftover Forgejo user/repo).
-4. `flux resume kustomization -n flux-system <name>` and watch a fresh
-   plan-and-apply.
-
-State loss re-mints `random_password` values: a consumer that persisted the old one at
-init (write-once DB password, bootstrap token) diverges from the new Secret.
+1. Identify the root, its active reconciler, and its exact backend. For Authentik,
+   the `sso-providers` Crossplane Workspace selects its ProviderConfig via
+   `spec.providerConfigRef`. Read the PostgreSQL schema from that config's
+   `spec.backendFile` (`sso_providers`) and the OpenTofu workspace from the
+   resource's `crossplane.io/external-name` (`default`). For the Forgejo example,
+   the `forgejo-props` Terraform CR declares schema `forgejo_props` in
+   `spec.backendConfig.customConfiguration`. Both use database `tfstate`.
+2. Quiesce the affected reconciler before repairing state. Use
+   `crossplane.io/paused: "true"` on the Workspace or `spec.suspend: true` on
+   the Terraform CR. Keep Flux from reverting the pause, confirm the controller
+   observed it, and wait for any in-flight apply to finish. Suspending only the
+   parent Flux Kustomization leaves the existing child under its controller.
+3. Back up the selected state securely. Compare the affected resource addresses
+   and IDs with the service after restore. Prefer restoring the missing service
+   data when possible. If an object survived under a different ID, import it at
+   its existing address after removing the stale binding. If it is confirmed
+   gone, remove only its stale binding if the provider cannot plan its recreation.
+   Preserve unrelated bindings and generated credentials such as `random_password`.
+4. Review the plan against the repaired state before resuming automatic applies.
+   Check the root's readiness and verify a dependent login or registry operation.
 
 ### SOPS Decryption Failure
 

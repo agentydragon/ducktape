@@ -2859,7 +2859,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app.kubernetes.io/component: sessions
+    app.kubernetes.io/name: sessions
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -6614,9 +6614,6 @@ spec:
       app.kubernetes.io/name: agentplane-environment-runtime
   ingress:
     - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
         - matchLabels:
             app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging

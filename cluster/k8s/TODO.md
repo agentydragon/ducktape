@@ -170,7 +170,7 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       and point the GitRepository's `secretRef` at it instead.
 
 - [ ] **Bound tofu-state lock retries.** PostgreSQL keepalives
-      (`cluster/cdk8s/tofu_state/db.py`) detect a dead runner's session in about
+      (`cluster/cdk8s/tofu_state.py`) detect a dead runner's session in about
       two minutes. Consider a bounded Terraform `tfstate.lockTimeout` to reduce
       retry churn, then failure-test runner node loss. RCA and recovery matrix:
       `cluster/docs/lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md`.

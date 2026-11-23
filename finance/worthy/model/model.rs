@@ -1,3 +1,5 @@
+mod differential;
+
 use chrono::Duration;
 use chrono::prelude::*;
 use log::info;
@@ -8,8 +10,8 @@ fn hack_pow(a: Decimal, b: Decimal) -> Decimal {
     Decimal::from_f64(a.to_f64().unwrap().powf(b.to_f64().unwrap())).unwrap()
 }
 
-// TODO: deduplicate
 fn decimal_log(x: Decimal) -> Decimal {
+    info!("ln({x})");
     Decimal::from_f64(x.to_f64().unwrap().ln()).unwrap()
 }
 
