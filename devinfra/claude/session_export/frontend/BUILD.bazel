@@ -454,27 +454,15 @@ esbuild(
     deps = [":visual_harness_lib"],
 )
 
-filegroup(
-    name = "visual_harness_js",
-    testonly = True,
-    srcs = ["harness/dist/harness.js"],
-)
-
-filegroup(
-    name = "visual_harness_css",
-    testonly = True,
-    srcs = ["harness/dist/harness.css"],
-)
-
 py_visual_test(
     name = "visual",
     # Browser startup plus 11–12 captures per shard can exceed small's 60-second budget on RBE.
     size = "medium",
     assets = [
         "harness/index.html",
-        ":visual_harness_css",
+        ":harness/dist/harness.css",
     ],
-    harness = ":visual_harness_js",
+    harness = ":harness/dist/harness.js",
     shard_count = 4,
     test_deps = [
         "//testing/frontend_visual:capture",

@@ -175,26 +175,14 @@ esbuild(
     deps = [":visual_harness_lib"],
 )
 
-filegroup(
-    name = "visual_harness_js",
-    testonly = True,
-    srcs = ["harness/dist/harness.js"],
-)
-
-filegroup(
-    name = "visual_harness_css",
-    testonly = True,
-    srcs = ["harness/dist/harness.css"],
-)
-
 py_visual_test(
     name = "visual",
     size = "small",
     assets = [
         "harness/index.html",
-        ":visual_harness_css",
+        ":harness/dist/harness.css",
     ],
-    harness = ":visual_harness_js",
+    harness = ":harness/dist/harness.js",
     test_deps = [
         "//testing/frontend_visual:capture",
         "//testing/frontend_visual:viewports",
