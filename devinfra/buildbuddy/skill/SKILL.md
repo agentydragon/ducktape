@@ -1,5 +1,5 @@
 ---
-name: buildbuddy_api
+name: buildbuddy
 description: >-
   Reference for querying the BuildBuddy API: build/test logs, invocations, RBE
   execution details, cache stats, undeclared test outputs, target pass/fail
