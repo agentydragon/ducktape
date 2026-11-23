@@ -16,11 +16,14 @@ node pair.mjs bundle.json output.json --out cert.json
 ../lean/.lake/build/bin/translate bundle.json output.json cert.json [--premises premises.json] [--table table.json] [--obligations obligations.jsonl]
 ```
 
-Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and reshuffled. `4` the translation is faithful, but the output runs some effectful units in a different order, and nothing justifies it yet (a list of **obligations**).
+Exit code `0` means accepted. Code `1` means rejection during translation or
+structural checking. Code `4` means structural checks passed and the output
+reverses conflicting units (**obligations**), including conflicts on shared
+bindings. Code `2` covers incorrect positional usage.
 
 `--premises` names the assumptions the footprints rest on, and the checker prints the ones it used: see [Footprints](#footprints). `--table` writes the list of rewrites it accepted (below).
 
-`--obligations` writes every obligation as `[runs first in the output, runs first in the bundle, reasons]`, one per line. `reasons` is the sum of 1 both units touch the world, 2 the later one binds a name the earlier one reads, 4 the earlier binds a name the later reads, 8 both bind a name. [`obligations_report.py`](obligations_report.py) counts them by set of reasons and, given the footprints `lower` printed, by how many names each unit may write. It then groups them by the directory of the output tree: units, effect units, obligations inside a directory and across its border, by reason, and the units in the most obligations. A directory with no obligation can be moved freely.
+`--obligations` writes every obligation as `[runs first in the output, runs first in the bundle, reasons]`, one per line. `reasons` is the sum of 1 both units touch the world, 2 the later one binds a name the earlier one reads, 4 the earlier binds a name the later reads, 8 both bind a name. [`obligations_report.py`](obligations_report.py) counts them by set of reasons and, given the footprints `lower` printed, by how many names each unit may write. It then groups them by the directory of the output tree: units, effect units, obligations inside a directory and across its border, by reason, and the units in the most obligations. The report describes the order in the supplied output tree.
 
 ## Footprints
 
@@ -79,7 +82,7 @@ Each round builds a bundle of 8 to 21 units from a catalog of templates and spli
 
 Node runs the bundle and each tree. A tree that the checker accepts must print the same and end the same way. One that does not is a **wrong accept**, and the run fails. A tree that the checker rejects although Node agrees is counted too (the checker is then stricter than needed; so far every such tree has an assignment through an import that never happens to run).
 
-On the final checker, ten seeds of 150 bundles (8,958 trees): 1,737 accepted, all matching Node; 4,074 with obligations (266 match Node); 3,147 rejected (206 match Node); **0 wrong accepts**. About 900 trees take 20 seconds.
+In the initial experiment, ten seeds of 150 bundles (8,958 trees): 1,737 accepted, all matching Node; 4,074 with obligations (266 match Node); 3,147 rejected (206 match Node); **0 wrong accepts**. About 900 trees take 20 seconds.
 
 `--leaks` adds templates for `import.meta.url`, direct `eval`, top-level `await` and `fn.name` (see Trusted). The checker must refuse a split that changes the first three. For function-name probes, the fuzzer counts a separate discrepancy only when the plan renames declarations without introducing capture, both executions complete, and every output difference is in a tagged `fn.name` value. `fuzz_leaks_test` requires the fixed seed to produce at least one such discrepancy.
 
@@ -92,9 +95,12 @@ Both have a fixture that fails on the checker before the fix.
 
 ### Does the fuzzer notice a weaker checker?
 
-[`fuzz_mutate.py`](fuzz_mutate.py) removes one rule of the model or of the analysis at a time from a scratch copy, rebuilds `translate` and `lower`, runs the golden cases of [`../effects/run.mjs`](../effects/run.mjs) and then the fuzzer on it. Each of its 59 mutants is caught by a proof (the build fails), by the cases, by the fuzzer, or listed as a survivor with the reason it is harmless. The last run is in [`../effects/README.md`](../effects/README.md#tests).
+[`fuzz_mutate.py`](fuzz_mutate.py) removes one rule at a time in a scratch copy,
+rebuilds `translate` and `lower`, then runs the Effects cases and the fuzzer.
+A mutant is caught by a proof that stops compiling, an Effects case or the
+fuzzer. [Recorded results and surviving mutants](../effects/README.md#tests)
 
-The catalog is the list of ways a move can go wrong that somebody wrote down. A way nobody generated stays invisible, so a new construct in a bundle means a new template. `ast_write_mutation_test` is the one mutant that runs in CI: the checker with every unit's computed `writes` erased, against the AST corpus.
+The bounded CI write-footprint mutant is described in [Corpora](#corpora).
 
 ## Pairing is not trusted
 
@@ -130,44 +136,64 @@ when loading the unsafe output. The extractor also has a separate regression tes
 
 ## Corpora
 
-The translation differential fuzzer also has a deterministic `--callback-corpus` mode. Sixteen rounds cover identity and closure-factory calls, direct results and plain, object or array aliases, callbacks saved either on `globalThis` or in a module-local mutable slot, and a shadowed binding. Each generates an accepted order-preserving control (in one or two modules) and a two-module ordering that calls the saved callback before initialization. Node must distinguish the latter, the checker must reject it, and the safe control must be accepted. The seed varies values; the shape is selected by the round number. `callback_fuzz_test` covers all 16 combinations in CI. Run `callback_fuzz_second_seed_test` explicitly to sample another value for each combination. The unsafe cases must reach an ordering obligation rather than a structural rejection.
+The translation corpora compare the checker with Node completion status, stdout
+and error type. Wrong accepts retain the source, split tree, pairing and
+seed/round under Bazel undeclared outputs, or in the temporary work directory.
+The AST corpus also retains the generated AST.
 
-The differential fuzzer's `--ast-corpus` mode builds JavaScript as bounded random ASTs, rather than assembling source templates. Its lexical environments track initialized values, numeric and callable bindings, local shadows and callbacks that depend on later declarations. The generator permits a deferred closure to capture a reserved result or second binding before initialization, but does not invoke it until the bindings exist. Placement reads node kinds directly, and the printer spells each identifier from its binding and destination module. The AST corpus does not convert bound names to source-text markers. The supported subset is deliberately small: numeric expressions, conditionals, blocks, functions and returned arrows, calls, arrays and objects, mutation, logging, and field-free class expressions. One quarter of AST rounds build a chain of two to four classes. Their literal-key methods and getters use expressions from the generated environment. Each program constructs the leaf and observes every member through it or its constructor. The validation target parses, scope-checks, and executes 128 programs across four seeds and requires at least 24 distinct inheritance shapes.
+| Target                       | Required control and distinguishing case                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `callback_fuzz_test`         | Accept order-preserving splits. Refuse invocation of an escaped callback before its captured initializer with an ordering obligation. The matrix varies factories, aliases, storage and shadowing. `callback_fuzz_second_seed_test` repeats the matrix with different values. |
+| `ast_fuzz_test`              | Accept each same-module control and compare randomized plans, including a callback-before-initialization plan when generation supplies a suitable crossing. Report syntax, depth, alias and forward-reference coverage. `ast_fuzz_second_seed_test` adds a seed.              |
+| `ast_write_mutation_test`    | Require an equivalent accepted reorder and a Node-divergent read moved before an increment. The real checker must refuse the latter and a mutant with erased `writes` must accept it.                                                                                         |
+| `ast_indirect_callback_test` | Require a Node-divergent plan refused for ordering when a callback escapes through a wrapper or object/array cell. The argument excludes both deferred bindings so that an eager read cannot explain the refusal. Accept the original-order controls.                         |
 
-A same-module control must be accepted and match Node for each bundle. Other plans use seeded random placements; when a generated early-saved callback is later invoked and no intervening direct use makes the crossing trivial, one plan biases the invocation before initialization. Verdicts are checked against Node status, output, and error type. Wrong accepts retain the original, AST, tree, pairing, and seed/round information in the undeclared outputs directory (or retain the temporary work directory when no output directory was supplied). `ast_fuzz_test` checks AST coverage including update expressions in CI, and reports node types, maximum depth, callback/alias/forward-reference features, plan strategies, and checker-versus-Node outcomes. Run `ast_fuzz_second_seed_test` explicitly for the same checks with another seed. These samples and mutation tests can find counterexamples; they do not prove the checker sound.
+The [AST generator](testing/ast_generator.mjs) tracks lexical bindings,
+initialization and deferred captures directly. Placement and printing use
+binding identity. Its validation target parses, scope-checks and runs generated
+inheritance chains, constructs the leaf, and observes every member through it
+or its constructor. [Validation test](ast_generator_validation_test.mjs)
 
-The AST grammar can also snapshot a previously incremented module binding and later log that snapshot. A write-guided plan keeps all units in one module but moves the generated read ahead of its chosen increment. The `ast_write_mutation_test` checks seeds 17 and 2026 against both the actual checker and a test-only checker with its computed write footprints erased. These seeds were selected because they generate observable write/read pairs. It requires a nontrivial accepted equivalent plan, a differing write-guided plan refused by the real checker, and an accepted write-guided plan from the mutant whose successful Node output changes at the logged snapshot. These are fixed samples of one mutation, not coverage of all writes or JavaScript behavior.
+### Shift emitter fuzzing
 
-The random AST callback grammar also stores functions through wrappers and object or array cells. A guided same-module plan moves a later callback invocation before an initializer captured by the earlier saved callback; seed 17's `ast_indirect_callback_test` requires at least one Node-divergent placement rejected by an ordering obligation, alongside accepted original-order controls. The seed is selected for this scenario. The callback argument excludes the two deferred bindings, and the second numeric binding can be either an alias or an independent literal, so the corpus exercises indirect observation without an incidental eager argument read. These bounded samples do not prove JavaScript equivalence.
+[`shift_fuzz_test.mjs`](shift_fuzz_test.mjs) tries randomized two-module
+assignments with the real `lowersplit` emitter. Its ES2019 Shift module and
+script grammars supply candidates, parsed by Acorn as modules. The harness skips
+import/export declarations and early errors. It compares original and accepted
+emitted code in separate bounded Node VM contexts with seeded randomness,
+captured console output and primitive top-level observations. It counts accepted
+plans whose source throws as `acceptedThrowing` and omits their comparison
+under P4. The test requires an accepted reorder and retains the source, ASTs,
+spec, emitted tree, seed and observations on mismatch.
 
-The separate `shift_fuzz_test` and `shift_fuzz_second_seed_test` sample 128 seeds each from the external [Shift fuzzer](https://shift-ast.org/fuzzer.html), whose ES2019 grammar generates broader AST shapes than the targeted generator. Acorn parses the generated modules; the real `lowersplit` emitter receives randomized two-module assignments. Original and accepted emitted modules run in separate bounded Node VM module contexts, with a deterministic random source, captured console output and an added observation of primitive top-level values. The tests require at least one accepted reordered split and preserve the source, Shift AST, lowered AST, spec, emitted tree, seed, and observations on a mismatch. They print all attempted AST node types, types in accepted programs, and counts of parser failures, import/export skips, small programs, timeouts, runtime throws, nondeterminism, lowering failures and emitter rejections. An accepted split whose original throws is counted (`acceptedThrowing`) and not compared: premise P4.
-
-`shift_script_fuzz_test` adds a second source of candidate programs using Shift's script grammar; it still parses and runs each accepted candidate as an ECMAScript module. This avoids generating top-level imports and exports that the current emitter harness skips, while module early errors can still reject script-grammar output. The statistics distinguish accepted and reordered splits whose original program completed successfully from those whose original threw. `shift_fuzz_test` runs the first module-grammar seed range in CI. Run `shift_fuzz_second_seed_test` explicitly for the second range.
-
-This is a broad grammar sample, not a semantic-validity generator: early errors, unresolved names, runtime exceptions and nontermination can occur. Programs with import/export declarations are currently skipped, module execution is in a restricted Node VM rather than a browser or a production host, and object identity and arbitrary heap state are not comprehensively observed. Shift's last supported grammar is ES2019. The existing targeted callback, write and regression corpora remain required; this mode does not replace them or prove JavaScript equivalence.
-
-For a larger on-demand sample, override the fixed test arguments, for example:
+`shift_fuzz_test` and `shift_script_fuzz_test` run routine module- and script-grammar
+samples. `shift_fuzz_second_seed_test` is opt-in. Override the sample with:
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/translation:shift_fuzz_test --test_arg=--seed --test_arg=4000 --test_arg=--count --test_arg=256
 ```
 
-The Shift grammar emitter fuzz tests also write `syntax-coverage-<seed>.json` to their
-undeclared test outputs. For each named source syntax family, the report counts parsed programs, exclusion
-reasons, accepted plans with matching observations, and accepted plans with that
-syntax in a side-module unit. Reordered counts use the emitter-reported
-statement order and do not imply that a particular construct executed or crossed
-another statement. The `Ok` counts additionally require successful
-baseline evaluation, so matching exceptions do not inflate them. A zero exposes a gap in this fixed sample, not a claim that the syntax is
-unsupported. Each plan contributes once per feature, regardless of how many
-occurrences it contains. `acceptedSameInSide` records placement, not whether that
-syntax ran or crossed another statement. The comparison observes evaluation status and the captured console trace; it is not a proof of equivalence. The list is a curated
-syntax inventory, not a complete ECMAScript grammar; generated import/export
-glue, lexical and regexp subfeatures, and runtime APIs are outside these counts.
+The undeclared output `syntax-coverage-<seed>.json` counts candidate exclusions
+and accepted plans by syntax family. Each plan contributes once per feature.
+`Ok` counts require successful baseline evaluation. Reordered counts use the
+emitter's statement order. `acceptedSameInSide` means the syntax was placed in a
+side module. These counters measure placement, and a zero describes the sample.
 
-`shift_modern_fuzz_test` supplements the ES2019 grammar by using Acorn AST ranges to compose optional chains, nullish coalescing and class-field reads around generated primitive literal expressions. The rewritten source is parsed again and passed to the same real emitter and Node differential oracle; the existing Shift seed ranges are retained. In the 96-seed CI sample, successful accepted reorderings executed nullish coalescing in two programs, optional chaining in three and class fields in two, with no observed mismatches. Per-feature runtime counters require a successful, accepted reordered program to evaluate each form, independently; syntactic presence alone is reported separately by the coverage table.
+`shift_modern_fuzz_test` composes optional chaining, nullish coalescing and
+class-field reads around generated literals. A fresh non-enumerable, read-only
+VM global marks executed expressions and returns their values unchanged. The
+test compares the markers separately from console output and requires each
+modern form to execute in a successful accepted reorder. The harness skips
+inputs with global-reflection or dynamic-code constructs and disables VM code
+generation. The marker and wrapper allocations are trusted instrumentation.
+[`modern_syntax.mjs`](modern_syntax.mjs)
 
-Runtime coverage uses a seed-specific marker binding absent from the original AST, installed as a non-enumerable, non-writable VM global. The marker records a bounded set after an expression has produced its value and returns that value unchanged; the original and emitted marker sets are compared separately from their console traces. Modern-mode inputs referring to `this`, global-object names, eval, Function, Reflect, Proxy or dynamic import are conservatively skipped, and VM string/wasm code generation is disabled. The marker and the wrapper allocations are trusted instrumentation: the restricted VM and filters do not prove that no JavaScript program could observe them, and the sampled syntax does not cover all forms of these features. `instrumentationRejected` records filtered inputs.
+The initial 96-seed run had no observed mismatches. Successful accepted
+reorders executed optional chaining in three programs, nullish coalescing in
+two and class-field reads in two.
+
+The VM comparison covers the recorded observations. Arbitrary heap state and
+object identity are outside that comparison.
 
 ## What the generators cover
 
@@ -224,13 +250,25 @@ What it cannot see: reads; closure-private state (a variable a function captured
 
 ## The generator of the whole language
 
-[`testing/gen/`](gen) builds programs from the productions of the language instead of from a catalog of templates, so that every construct has a chance. A program is 12 to 25 top-level units that share state, because that is what a split moves, and it is made to complete, to print the same every time and to leave its state in view:
+The [type-directed generator](testing/gen/index.mjs) composes families of
+terminating, deterministic programs that share module state. Bindings carry
+types and initialization state. Calls track writes so they cannot mutate a
+loop's bound or collection mid-iteration. Destructuring patterns are generated
+with values they can match. The output includes per-unit, final and, when
+needed, post-continuation observations. Class observers make private fields
+visible to Node output even when the footprint oracle cannot see them.
 
-- Generation is type-directed. A binding has a type (`num`, `str`, `bool`, an object with the fields it has, an array, a map, a set, a function that records which module-scope names it may change), and an expression is built for a type from the bindings that are initialized where it runs, so it does not throw. A number that may be `undefined` (a deleted field, a hole) is converted before a method is called on it. Strings stored in state are cut to 24 characters, so that no loop can double one.
-- A loop counts to a constant and never writes its counter (a `for (x = 0; …)` over a module-scope variable freezes it in the body), a loop over a collection does not change it, and a call is not made where the callee would change what a loop iterates or counts with (`type.writes`). A function calls only functions declared before it; a recursion is cut to depth 5 after the statements of its body. A `throw` is inside a `try` that catches it, no `break`, `continue` or `return` leaves a `finally`, and generators and async functions do not loop over collections that code between their steps may grow.
-- Nothing reads a clock or a random number, and nothing patches a standard object (premises P1 and P4). Observers print each binding between the units (`o3 …`), the last unit prints all of them (`final …`), and a program with an async function prints them once more from a timer after the continuations ran (`late …`).
-- Module-scope names and a unit's own names are marked in the text, as the splitter of `fuzz.mjs` wants them, so that it can rename them and add imports. `gen_validity_test` renames every marked name and checks that the output does not change.
+Use the [sampled coverage report](COVERAGE.md) for syntax and intrinsics and
+the [plan](PLAN.md#7-a-generator-that-can-reach-any-program-and-a-footprint-oracle)
+for open forms. [`gen_validity_test`](gen_validity_test.mjs) checks termination,
+repeatable output and invariance under its name markers' renaming.
+`full_fuzz_test` also checks splits through `translate` and Node.
 
-Families are installed one by one (`testing/gen/index.mjs`): `expressions` (every operator, the standard functions that have a row and some that have none), `statements` (declarations, every assignment operator, writes to objects, arrays, maps and sets, `if`, the six loops, `switch` with fall-through, `try`, labels, jumps), `functions` (declarations, expressions and arrows with default, rest and `arguments` parameters, recursion, closures, objects with methods and `this`, generators, async functions, callbacks of array and collection methods, `call`, `apply`, `bind`, tagged templates), `classes` (declarations, expressions, anonymous, named and local to a block; instance, private, static and computed fields; arrow-function fields; methods that are plain, private, static, generator, async or computed; accessors, also private and static; static blocks; `extends` an identifier, an expression or `null`; `super(…)`, `super.m(…)`, `new.target`, `#x in o`, `instanceof`; a member calls only members written before it, so there is no recursion and no override), `patterns` (destructuring in declarations, assignments, parameters, callbacks and loop heads with defaults, rest, holes, computed keys and nesting; spread in calls and arrays; values that may be `null` and the optional chains over them; logical assignment on elements and members; `for … in` and `for … of` into existing targets; several declarators; block-level functions). A pattern is built together with a value that matches it, so what it binds is typed and the match cannot throw. `protocols` (object literals with `valueOf`, `toString`, `Symbol.toPrimitive`, `toJSON`, `Symbol.iterator` as a generator or as a hand-written iterator with `return`, getters, setters, generator, async and computed methods, a prototype, shorthand properties; what calls them implicitly: coercion, `JSON.stringify`, spread, `for … of`, `yield*`, array patterns; a `Proxy` whose traps count in an object that observers print, and a function behind one; `Object.defineProperty` that adds an accessor that counts; `Object` and `Reflect` queries and changes; frozen, sealed, null-prototype and cloned objects), `modules` (Node's built-in modules imported in the five import forms, the lines repeated in every module a program is split into; `import()` from a continuation and `await import()`; `import.meta`; an `EventEmitter` whose handlers are fixed where it is made) and `unmodeled` (typed arrays and the views that alias them through `subarray`, `buffer` and `DataView`; a global regular expression whose `lastIndex` moves; `Date` setters; `WeakRef`, `WeakMap`; `eval`, indirect `eval` and `Function` of code made from numbers only; continuations that run after the program: `queueMicrotask`, `process.nextTick`, `Promise.withResolvers`, `setTimeout`; `Intl`, `BigInt`, URI coding, `Symbol.for`, copies of arrays, the `console` methods that print). `node fuzz.mjs --full-corpus [--families a,b]` runs the end-to-end oracle on them. `node footprint_oracle_sweep.mjs --only full` runs the footprint oracle on them, and `node footprint_reduce.mjs program.mjs` cuts a program with a finding down to the units that matter.
+```sh
+node fuzz.mjs --full-corpus --families a,b
+node footprint_oracle_sweep.mjs --only full
+node footprint_reduce.mjs program.mjs
+```
 
-`gen_validity_test` generates 40 programs for each set of families and checks that each parses, declares a name before every use, completes in Node with no output on stderr, prints the same twice and with every name renamed, and that the families produced the forms they are for. `full_fuzz_test` is the end-to-end oracle on 16 programs. The export forms are what is left ([`PLAN.md`](PLAN.md)): the translation checker refuses `export default`, `export … from` and `export *`, and the splitter exports by name, so an aliased export needs a change there. The oracle cannot see a private class member or a closure's variable (see above), so `classes` has the observers print them (a pure `peek` method reads the private fields), and the reorder oracle and the translation fuzzer see them in the output.
+Omit `--families` for all families. The reducer keeps the units needed to
+reproduce the oracle finding.

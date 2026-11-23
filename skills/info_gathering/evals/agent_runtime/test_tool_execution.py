@@ -13,10 +13,9 @@ from fastmcp.exceptions import ToolError
 from hamcrest import assert_that, contains_string, has_entries
 from more_itertools import one
 
-from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
+from openai_utils.model import FunctionCallItem, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from openai_utils.testing.openai_mock import make_mock
-from openai_utils.testing.responses import DecoratorMock, ResponsesFactory
+from openai_utils.testing.responses import DecoratorMock, PlayGen
 from skills.info_gathering.evals.agent_runtime.agent import Agent, _make_strict_function_tool, _sanitize_tool_result
 from skills.info_gathering.evals.agent_runtime.events import ToolCallOutput
 from skills.info_gathering.evals.agent_runtime.loop_control import RequireAnyTool
@@ -119,14 +118,15 @@ async def test_tool_error_continues_turn(validation_server) -> None:
 
 async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: FunctionCallItem) -> tuple[str, list]:
     """Run tool calls and capture the agent's response and events."""
-    factory = ResponsesFactory()
 
-    async def handle_request(req: ResponsesRequest) -> ResponsesResult:
-        if len(req.input) == 1:
-            return factory.make(*first_turn_calls)
-        return factory.make(factory.assistant_text("I received an error"))
+    @DecoratorMock.mock()
+    def client(m: DecoratorMock) -> PlayGen:
+        first_request = yield None
+        assert len(first_request.input) == 1
+        retry = yield list(first_turn_calls)
+        assert len(retry.input) > 1
+        yield m.assistant_text("I received an error")
 
-    client = make_mock(handle_request)
     capture = TextCaptureHandler()
     agent = Agent(tool_provider=mcp_tool_provider_echo, client=client, handlers=[capture], tool_policy=RequireAnyTool())
     agent.process_message(UserMessage.text("use echo"))

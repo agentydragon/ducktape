@@ -3,6 +3,7 @@
 Design, source-change path and Kubernetes identities: cluster/docs/crossplane-opentofu-artifact-triggers.md.
 """
 
+import json
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -116,7 +117,8 @@ def gitops_workspace(
                 module=inline_module(f"tf/gitops/{name}"),
                 plan_args=["-lock-timeout=5m"],
                 vars=[
-                    WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()
+                    WorkspaceSpecForProviderVars(key=key, value=value if isinstance(value, str) else json.dumps(value))
+                    for key, value in variables.model_dump(mode="json").items()
                 ]
                 if variables is not None
                 else None,

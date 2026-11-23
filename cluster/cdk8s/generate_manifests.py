@@ -761,6 +761,7 @@ def generate_manifests(root: Path) -> None:
             functools.partial(
                 crossplane.opentofu_provider_chart,
                 kubernetes_identities=(
+                    gitlab_spike_flux.KUBERNETES_IDENTITY,
                     sso_providers.KUBERNETES_IDENTITY,
                     agent_machine_access.KUBERNETES_IDENTITY,
                     forgejo_images.KUBERNETES_IDENTITY,
@@ -1473,18 +1474,13 @@ def generate_manifests(root: Path) -> None:
         timeout="15m",
         depends_on=flux.flux_kustomization_depends_on_many(gitlab_spike_app_kustomization),
     )
-    gitlab_spike_module = terraform.gitops_module("gitlab-spike")
     gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
     gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
         flux_chart,
-        write_directory(
-            root,
-            gitlab_spike_gitops_artifact,
-            lambda app: gitlab_spike_flux.gitops_chart(app, module=gitlab_spike_module),
-        ),
+        write_directory(root, gitlab_spike_gitops_artifact, gitlab_spike_flux.gitops_chart),
         gitlab_spike_bootstrap_kustomization,
-        tofu_controller_kustomization,
         forgejo_kustomization,
+        crossplane_opentofu_provider_kustomization,
     )
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
@@ -2627,7 +2623,6 @@ def generate_manifests(root: Path) -> None:
             agentplane_staging_vpa_artifact,
             website_artifact,
             home_switch_module,
-            gitlab_spike_module,
         ],
         flux_system=[external_creds_artifact],
     )

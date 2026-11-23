@@ -236,6 +236,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
         "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",

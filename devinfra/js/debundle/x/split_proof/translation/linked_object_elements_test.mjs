@@ -11,23 +11,15 @@ import {
   lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
   property,
   returns,
-  root,
+  sequentialSplit,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
-function split(name, source, modules, order) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-const inherited = split(
+const inherited = sequentialSplit(
   "inherited-accessor",
   `
   const base = { get value() { return this.slot; }, set value(v) { this.slot = v; }, read() { return this.value; } };
@@ -72,7 +64,7 @@ for (const key of [1, 42]) {
       exportNamed([["result", "result"]]),
     ]);
     const order = ["obj.mjs", "seed.mjs"];
-    const test = split(
+    const test = sequentialSplit(
       `element-${key}-${lazy}`,
       source,
       { "seed.mjs": ["#0"], "obj.mjs": ["#1"], [entry]: ["#2", "#3"] },

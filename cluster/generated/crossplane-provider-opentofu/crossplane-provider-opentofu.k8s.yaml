@@ -251,6 +251,25 @@ data:
           cluster: cluster
           user: opentofu-github-secrets-sync
     current-context: root
+  opentofu-gitlab-spike: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-gitlab-spike
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-gitlab-spike
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-gitlab-spike
+    current-context: root
   opentofu-haku-state: |
     apiVersion: v1
     kind: Config

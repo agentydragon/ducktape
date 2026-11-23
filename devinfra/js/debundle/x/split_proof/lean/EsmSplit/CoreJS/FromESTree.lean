@@ -106,7 +106,10 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
-    if profile == .browserPage && x == "window" then return .prim (.globalRef x) []
+    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
+    -- A successful typeof guard does not establish what a direct lookup would do.
+    if profile.opaqueBinding x then
+      return .prim (.opaqueAmbientRef x) []
     match x with
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
@@ -190,7 +193,8 @@ private def localBinding (id : Json) : Except String Name := do
 
 /-- Flat object-pattern bindings in property evaluation order. Even an empty pattern
 checks coercibility, so it cannot be lowered to an empty sequence of property reads. -/
-private def linkedObjectPattern (j : Json) : Except String (List (Name × Name)) := do
+private def linkedObjectPattern (j : Json) (binder : Json → Except String Name := localBinding) :
+    Except String (List (Name × Name)) := do
   unless (← field j "type") == "ObjectPattern" do throw "expected an object pattern"
   let props ← j.getObjValAs? (List Json) "properties"
   if props.isEmpty then throw "unsupported empty object pattern"
@@ -203,7 +207,7 @@ private def linkedObjectPattern (j : Json) : Except String (List (Name × Name))
     unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
     let target ← p.getObjVal? "value"
     unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
-    return (key, ← localBinding target)
+    return (key, ← binder target)
 
 /-- These expressions produce strings whenever they complete normally. Loose equality and inequality
 between two such operands never invoke numeric or object coercion. -/
@@ -228,7 +232,11 @@ private def linkedObject (lower : Name → Json → Except String Expr)
   let mut seen : Std.HashMap String String := {}
   let mut props := #[]
   for p in ← j.getObjValAs? (Array Json) "properties" do
-    unless (← field p "type") == "Property" do throw "expected a static data property or method"
+    let propType ← field p "type"
+    if propType == "SpreadElement" then
+      props := props.push (.spread (← lower "" (← p.getObjVal? "argument")))
+      continue
+    unless propType == "Property" do throw "expected a static data property or method"
     if ← p.getObjValAs? Bool "computed" then throw "expected a static data property or method"
     let key ← staticPropertyName (← p.getObjVal? "key")
     let keyExpr ← stringExpr key
@@ -290,8 +298,10 @@ private def linkedMember (lower : Json → Except String Expr) (j : Json) (allow
   let prop ← j.getObjVal? "property"
   if (← field obj "type") == "Super" then throw "unsupported super member access"
   if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
-  if let some member := ambientSymbolMember? j then throw s!"unsupported ambient member Symbol.{member}"
-  let base ← lower obj
+  let base ← (lower obj).mapError fun reason =>
+    match ambientSymbolMember? j with
+    | some member => s!"unsupported ambient member Symbol.{member}"
+    | none => reason
   let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
   return (base, key)
 
@@ -327,6 +337,18 @@ private partial def containsBreak (j : Json) : Bool :=
   | .obj fields => (field j "type").toOption == some "BreakStatement" ||
       fields.toList.any (fun (_, child) => containsBreak child)
   | .arr items => items.any containsBreak
+  | _ => false
+
+/-- A retained body has no model for its source module or a method's home object.
+Direct eval could also refer to cells absent from the static capture list. -/
+partial def needsOpaqueContext (j : Json) : Bool :=
+  match j with
+  | .obj fields =>
+    let kind := (field j "type").toOption.getD ""
+    ["Super", "MetaProperty", "ImportExpression"].contains kind ||
+      (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
+      fields.toList.any (fun (_, child) => needsOpaqueContext child)
+  | .arr items => items.any needsOpaqueContext
   | _ => false
 
 mutual
@@ -428,7 +450,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | other => throw s!"unsupported unary operator {other}"
     if op == .typeof && (← field argument "type") == "Identifier" && (field argument "k").toOption == some "G" then
       let name ← identifier argument
-      if (profile.stableTypeof name).isSome then return .prim (.globalTypeof name) []
+      if (profile.bindingType name).isSome then return .prim (.globalTypeof name) []
     return .unary op (← linkedExpr profile imports inFunction "" argument)
   | "BinaryExpression" =>
     let op ← field j "operator"
@@ -548,11 +570,20 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
-  let stmts ← if (← field body "type") == "BlockStatement" then
+  let lowered := if (← field body "type") == "BlockStatement" then
     linkedFunctionBody profile imports body (allowFunctions := true)
   else if kind == .arrow then
-    pure [.ret (← linkedExpr profile imports true "" body)]
+    linkedExpr profile imports true "" body |>.map (fun e => [.ret e])
   else throw "expected a function body block"
+  if let .error reason := lowered then
+    if !hasDefaults && (kind == .normal || kind == .arrow) && !needsOpaqueContext j then
+      let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
+      let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
+      let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
+      -- CoreJS does not allocate the enclosing function's implicit arguments cell.
+      if captures.contains "arguments" then throw reason
+      return .opaque name kind self params.size code part captures (some reason)
+  let stmts ← lowered
   let functions := (funDecls stmts).map Func.name
   let bodyVars := if hasDefaults || !functions.isEmpty then varNamesOf stmts else []
   -- CoreJS allocates every function name in its own body-scope cell. JavaScript
@@ -762,20 +793,39 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
 
 end
 
-/-- Function declarations initialize their module cells at link time. Recursive reads resolve
-through the module scope. -/
-def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) : Except String (Name × Stmt) := do
-  if (← field j "type") == "FunctionDeclaration" then
+/-- Lower one module declaration and list its declared names in binding order.
+Function declarations initialize their cells at link time. -/
+def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :
+    Except String (List Name × Stmt) := do
+  match ← field j "type" with
+  | "FunctionDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
-    return (name, .funDecl (← linkedFunction profile imports .normal name false j))
-  if (← field j "type") == "ClassDeclaration" then
+    return ([name], .funDecl (← linkedFunction profile imports .normal name false j))
+  | "ClassDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
-    return (name, .decl .let_ name (← linkedClass profile imports false name j))
-  declarationWith moduleBinding (linkedExpr profile imports false) j
+    return ([name], .decl .let_ name (← linkedClass profile imports false name j))
+  | "VariableDeclaration" =>
+    let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
+    let kind ← field j "kind"
+    let id ← d.getObjVal? "id"
+    if (← field id "type") != "ObjectPattern" then
+      let (name, s) ← declaratorWith moduleBinding (linkedExpr profile imports false) kind d
+      return ([name], s)
+    unless kind == "var" do throw "unsupported module lexical object pattern"
+    unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
+    let bindings ← linkedObjectPattern id moduleBinding
+    let init ← d.getObjVal? "init"
+    if init == .null then throw "object pattern declaration needs an initializer"
+    let value ← linkedExpr profile imports false "" init
+    -- Only the saved initializer is block-local. The var names still belong to the module.
+    let saved := ":destructure"
+    let reads := bindings.map fun (key, name) => Stmt.decl .var name (.get (.var saved) (.str key))
+    return (bindings.map Prod.snd, .block (.decl .const saved value :: reads))
+  | _ => throw "expected a module declaration"
 
 /-- A top-level executable statement of the linked fragment. -/
 def linkedUnit (imports : List Name) (j : Json) (profile : HostProfile := .empty) : Except String Stmt := do
-  if ["FunctionDeclaration", "ClassDeclaration"].contains (← field j "type") then
+  if ["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"].contains (← field j "type") then
     return (← linkedDeclaration imports j profile).2
   linkedStatement profile imports false j
 

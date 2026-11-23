@@ -6,6 +6,7 @@ js_binary(
     data = [
         "gen_spec.mjs",
         "smoke.mjs",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
         "//devinfra/js/debundle/x/split_proof/lean:lower",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
@@ -20,6 +21,7 @@ js_binary(
 
 js_binary(
     name = "summarize_real_splits",
+    data = ["//devinfra/js/debundle/x/split_proof:reporting"],
     entry_point = "summarize.mjs",
     tags = ["manual"],
 )

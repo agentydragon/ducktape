@@ -26,7 +26,7 @@ private def capturedObject : Obj :=
 private def capturedThisObject : Obj :=
   { proto := none, props := [],
     code := some (.closure (.mk "callback" .arrow false [] []) { vars := [], this := .obj protectedAddr } []) }
-private def opaqueObject : Obj := { proto := none, props := [], code := some (.opaque 0 1 [some protectedAddr]) }
+private def opaqueObject : Obj := { proto := none, props := [], code := some (.opaque 0 1 [some protectedAddr] false) }
 
 /-- Prototype edges count even if no property has yet been read. -/
 theorem prototype_reachable : Reachable (objectState prototypeObject) [] (.obj protectedAddr) :=
@@ -49,6 +49,23 @@ theorem opaque_cell_reachable : Reachable (objectState opaqueObject) [] (.cell p
 theorem hidden_capture_not_away : ¬ Away 1 (fun _ => False) (Reachable (objectState capturedObject) []) := by
   intro h
   exact h.region _ closure_cell_reachable rfl
+
+private def hoistedProgram (free : List Name) : Program := Program.single [
+  .decl .var "pivot" .undef, .opaque 17 [] [("callback", 0, true)] free .world]
+
+private def outsidePivot (node : HeapNode) : Bool := node.addr.region != 1
+
+private def linkedHoistCheck (W : World) (free : List Name) : Option Bool :=
+  let p := hoistedProgram free
+  match link p (initialState W p.regions) with
+  | .ok _ s => some (accessOk s [] outsidePivot)
+  | _ => none
+
+/-- The actual linker creates a constructible opaque callback in its own region,
+including its prototype cycle. Adding a capture of the pivot binding breaks separation. -/
+theorem hoisted_capture_check (W : World) :
+    linkedHoistCheck W [] = some true ∧ linkedHoistCheck W ["pivot"] = some false := by
+  constructor <;> cbv <;> rfl
 
 private def bindingState (value : Option Val) (mutable : Bool) : State readOnceWorld where
   heap := #[#[], #[]]
@@ -233,6 +250,20 @@ theorem publish_alias :
     rfl
   rw [bind_of_ok hread, bind_of_ok hinit]
   exact halias
+
+/-- The read-once world can receive an object handle or catch a TDZ error from the
+same request. Both outcomes retain the envelope for its final reply. -/
+theorem readOnce_conversation {r R cells A} (away : Away r R A) (n code : Nat) (told : Told) :
+    ReachFrame r R cells A (SafeVal A) (converse n code cells told : M readOnceWorld Val) := by
+  apply converse_reachFrame
+  intro k _ req ⟨msg, seen, issued⟩
+  cases seen
+  · have h : req = .readVar 0 := issued.symm
+    subst req
+    exact perform_bindingOrKeys away _ _ _ _ rfl
+  · have h : req = .done (.prim .undef) := issued.symm
+    subst req
+    exact reachFrame_unknown r R cells A _ _
 
 end ReachabilityExamples
 end CoreJS

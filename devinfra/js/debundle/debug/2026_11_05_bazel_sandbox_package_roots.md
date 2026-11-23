@@ -1,6 +1,6 @@
 # Bazel sandbox package-root investigation (2026-11-05)
 
-`pipeline.bzl` sets `no-sandbox` on all four Debundle actions. The stated reason is a real path mismatch in Bazel's symlink-based local sandbox: `vendor/packages.rs::resolve_package_subpath` checks that the canonical vendor subpath stays under the canonical package root, while the sandbox may make the root a directory and each input leaf a symlink into the host execroot. Removing the execution requirement alone would reject valid package inputs. This investigation did not establish a sound, validated replacement; keep the requirement until the checks below pass.
+`_run_debundler` in `pipeline.bzl` sets `no-sandbox` for pipeline actions. The stated reason is a real path mismatch in Bazel's symlink-based local sandbox: `vendor/packages.rs::resolve_package_subpath` checks that the canonical vendor subpath stays under the canonical package root, while the sandbox may make the root a directory and each input leaf a symlink into the host execroot. Removing the execution requirement alone would reject valid package inputs. This investigation did not establish a sound, validated replacement; keep the requirement until the checks below pass.
 
 ## Observed mechanism
 

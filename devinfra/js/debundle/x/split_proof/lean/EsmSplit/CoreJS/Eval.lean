@@ -66,7 +66,7 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
 def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat) (constructor : Bool) :
     M W Val := do
   let a ← alloc {
-    proto := some functionProto, code := some (.opaque code part cells),
+    proto := some functionProto, code := some (.opaque code part cells constructor),
     props := [("length", .data (.num (Float.ofNat length)) false false true),
       ("name", .data (.str name) false false true)] }
   (if constructor then addPrototype a else pure ())
@@ -155,7 +155,7 @@ def isConstructor (v : Val) : M W Bool := do
     | some .derived => pure true
     | some (.closure f _ _) => pure (f.kind == .normal || f.kind == .classCtor)
     | some (.host name) => if name == "Function.prototype" then pure false else unknown "host constructor capability"
-    | some (.opaque ..) => unknown "opaque constructor capability"
+    | some (.opaque _ _ _ constructor) => pure constructor
     | none => pure false
   | .host _ => unknown "host constructor capability"
   | _ => pure false
@@ -362,6 +362,7 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
     | .setter k f =>
       let key ← toKey (← evalExpr n env k)
       defineOwn a key { set := some (← makeFunc env f), enumerable := some true, configurable := some true }
+    | .spread source => copySpread (callFn n) a (← evalExpr n env source)
     | .proto v =>
       match ← evalExpr n env v with
       | .obj parent => modifyObj a fun o => { o with proto := some parent }
@@ -412,7 +413,8 @@ def callFn : Nat → Val → Val → List Val → M W Val
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
         match f.opaqueBody with
-        | some (code, part, free) =>
+        | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
+        | some (code, part, free, none) =>
           converse n code (free.map (closed.vars.lookup ·))
             (.run code part (← toW callee) (← toW (if f.kind == .arrow then closed.this else this))
               (← args.mapM toW) false)
@@ -422,7 +424,7 @@ def callFn : Nat → Val → Val → List Val → M W Val
           | .ret v => pure v
           | _ => pure .undef
       | some (.host name) => hostCall name this args
-      | some (.opaque code part cells) => do
+      | some (.opaque code part cells _) => do
         converse n code cells (.run code part (← toW callee) (← toW this) (← args.mapM toW) false)
       | none => throwErr .type "not a function"
     | .host name => hostCall name this args
@@ -447,7 +449,8 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         evalFields n { closed with this := .obj this } this fields
         let result ← match f.opaqueBody with
-          | some (code, part, free) =>
+          | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
+          | some (code, part, free, none) =>
             converse n code (free.map (closed.vars.lookup ·))
               (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true)
           | none =>
@@ -460,7 +463,8 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         | .error kind msg => pure (.error kind msg)
         | .host name => unknown s!"host value {name} is inspected"
         | _ => pure (.obj this)
-      | some (.opaque code part cells) => do
+      | some (.opaque _ _ _ false) => throwErr .type "not a constructor"
+      | some (.opaque code part cells true) => do
         let proto ← getProp (callFn n) newTarget (.str "prototype")
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         match ← converse n code cells (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true) with

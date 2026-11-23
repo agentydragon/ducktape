@@ -488,7 +488,7 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
           refine (ihE env v he.1 fun z hz => hw z (by simp [readsNowProps, hz])).bind' fun _ => ?_
           exact (local_defineOwn ha name _).bind' fun _ =>
             ihP env a ps he.2 (fun z hz => hw z (by simp [readsNowProps, hz])) ha
-        | getter | setter | proto => simp only [allocOnlyProps, Bool.false_eq_true] at he
+        | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 
 /-- **A declaration whose initializer only allocates is local**: run in region `r`, it sees region `r` and the
 bindings of the names its initializer reads, and changes region `r`, when its own binding is in region `r`. -/
@@ -760,15 +760,6 @@ theorem declareTops_regions : ∀ (tops : List (Nat × Stmt)) {s s' : State W} {
       cases hframe
       exact (newCells_regions _ hu1).1 p hp
     · exact declareTops_regions rest htail q hq p hp
-
-theorem lookup_mem {α γ : Type} [BEq α] [LawfulBEq α] {k : α} {v : γ} : ∀ {l : List (α × γ)}, l.lookup k = some v → (k, v) ∈ l
-  | [], h => by cases h
-  | (k', v') :: l, h => by
-    by_cases hk : k = k'
-    · subst hk; simp only [List.lookup, beq_self_eq_true, Option.some.injEq] at h; subst h; simp
-    · have : (k == k') = false := beq_false_of_ne hk
-      simp only [List.lookup, this] at h
-      exact List.mem_cons_of_mem _ (lookup_mem h)
 
 /-- A name of the bundle's scope means the binding of the statement that declares it, in that statement's region. -/
 theorem bundleEnv_lookup {ss : List Stmt} {B : EsmSplit.Bundle} {frames : List (Nat × List (Name × Addr))}

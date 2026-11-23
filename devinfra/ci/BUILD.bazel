@@ -337,6 +337,7 @@ py_test(
         ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/buildbuddy/ci:invocation_ids",
+        "//testing:threaded_http",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
@@ -359,6 +360,7 @@ py_test(
     data = ["//:.github/workflows/nix-images.yml"],
     deps = [
         ":nix_images",
+        "//testing:git_repo",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -384,6 +386,7 @@ py_test(
         ":pr_mergeability",
         ":precommit_file_selection",
         "//:conftest",
+        "//testing:git_repo",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

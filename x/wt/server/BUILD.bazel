@@ -201,6 +201,8 @@ py_test(
     data = ["//x/wt/testing:post_create_shell"],
     deps = [
         ":conftest",
+        ":git_manager",
+        ":github_client",
         ":worktree_service",
         "//:conftest",
         "@pypi//pytest",

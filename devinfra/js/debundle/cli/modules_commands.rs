@@ -1,6 +1,7 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
+use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{
@@ -27,39 +28,41 @@ pub(super) struct ModulesNs {
 }
 
 impl ModulesNs {
-    pub(super) fn supports_selected_ownership_edit(&self) -> bool {
-        matches!(&self.command, ModulesNsCommand::Apply(_))
-    }
-    pub(super) fn edits_with_graph(&self) -> bool {
+    fn graph_edit_args(&self) -> Option<&GraphEditArgs> {
         match &self.command {
-            ModulesNsCommand::Merge(args) => args.edit.dependency_graph_path.is_some(),
-            ModulesNsCommand::Delete(args) => args.edit.dependency_graph_path.is_some(),
-            ModulesNsCommand::Apply(_) => true,
-            _ => false,
-        }
-    }
-    pub(super) fn writes_with_graph(&self) -> bool {
-        match &self.command {
-            ModulesNsCommand::Merge(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            ModulesNsCommand::Delete(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            ModulesNsCommand::Apply(args) => !args.dry_run,
-            _ => false,
-        }
-    }
-    pub(super) fn format(&self) -> Option<OutputFormat> {
-        match &self.command {
-            ModulesNsCommand::Merge(args) => args.edit.format,
-            ModulesNsCommand::Delete(args) => args.edit.format,
-            ModulesNsCommand::Propose(args) => args.format,
-            ModulesNsCommand::Check(args) => args.format,
-            ModulesNsCommand::Apply(args) => args.format,
+            ModulesNsCommand::Merge(args) => Some(&args.edit),
+            ModulesNsCommand::Delete(args) => Some(&args.edit),
             _ => None,
         }
     }
+
+    pub(super) fn supports_selected_ownership_edit(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(_))
+    }
+
+    pub(super) fn edits_with_graph(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(_))
+            || self
+                .graph_edit_args()
+                .is_some_and(GraphEditArgs::edits_with_graph)
+    }
+
+    pub(super) fn writes_with_graph(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(args) if !args.dry_run)
+            || self
+                .graph_edit_args()
+                .is_some_and(GraphEditArgs::writes_with_graph)
+    }
+
+    pub(super) fn format(&self) -> Option<OutputFormat> {
+        match &self.command {
+            ModulesNsCommand::Propose(args) => args.format,
+            ModulesNsCommand::Check(args) => args.format,
+            ModulesNsCommand::Apply(args) => args.format,
+            _ => self.graph_edit_args().and_then(|edit| edit.format),
+        }
+    }
+
     pub(super) fn verify_graph(
         &self,
         roots: &CurrentRoots,
@@ -67,9 +70,10 @@ impl ModulesNs {
         if let ModulesNsCommand::Propose(args) = &self.command {
             return verify_proposal_graphs(args, roots);
         }
+        if let Some(edit) = self.graph_edit_args() {
+            return edit.verify_graph(roots).map(crate::single_graph_context);
+        }
         let context = match &self.command {
-            ModulesNsCommand::Merge(args) => args.edit.verify_graph(roots),
-            ModulesNsCommand::Delete(args) => args.edit.verify_graph(roots),
             ModulesNsCommand::Check(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,

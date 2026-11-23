@@ -59,9 +59,11 @@ pub struct BindingGroupMemberSelector {
     pub parsed_selector: ParsedSourceMatchSelector,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct ParsedSourceMatchSelector {
+    #[serde(flatten)]
     selector: AnonymousStatementSelector,
+    #[serde(skip)]
     parsed: Arc<Module>,
 }
 

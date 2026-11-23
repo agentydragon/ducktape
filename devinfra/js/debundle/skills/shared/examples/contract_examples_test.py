@@ -8,18 +8,14 @@ import zipfile
 from pathlib import Path
 
 import pytest_bazel
-from python.runfiles import runfiles
+from python.runfiles import Runfiles
 
 
-def test_callback_contract_recipe_and_conservative_controls(tmp_path: Path) -> None:
-    files = runfiles.Create()
-    assert files is not None
-    debundle = files.Rlocation(os.environ["DEBUNDLE_CONTRACT_ENGINE"])
-    node = files.Rlocation(os.environ["DEBUNDLE_CONTRACT_NODE"])
-    skill = files.Rlocation(os.environ["DEBUNDLE_CONTRACT_SKILL"])
-    assert debundle is not None
-    assert node is not None
-    assert skill is not None
+def test_callback_contract_recipe_and_conservative_controls(runfiles: Runfiles, tmp_path: Path) -> None:
+    files = runfiles.root()
+    debundle = str(files / os.environ["DEBUNDLE_CONTRACT_ENGINE"])
+    node = str(files / os.environ["DEBUNDLE_CONTRACT_NODE"])
+    skill = str(files / os.environ["DEBUNDLE_CONTRACT_SKILL"])
 
     extracted = tmp_path / "skill"
     with zipfile.ZipFile(skill) as archive:

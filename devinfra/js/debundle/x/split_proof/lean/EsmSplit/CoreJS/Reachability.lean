@@ -30,7 +30,7 @@ def Env.nodes (env : Env) : List HeapNode := env.vars.map (fun p => .cell p.2) +
 def Code.nodes : Code → List HeapNode
   | .derived => []
   | .closure _ env _ => env.nodes
-  | .opaque _ _ cells => cells.filterMap (fun a => a.map HeapNode.cell)
+  | .opaque _ _ cells _ => cells.filterMap (fun a => a.map HeapNode.cell)
   | .host _ => []
 
 def Property.nodes : Property → List HeapNode
@@ -57,6 +57,67 @@ structure Access (cells : List (Option Addr)) (A : HeapNode → Prop) (s : State
   handed : ∀ a ∈ s.world.handed, A (.obj a)
   supplied : ∀ a, some a ∈ cells → A (.cell a)
   closed : ∀ a b, A a → Edge s a b → A b
+
+/-- Enumerate the allocated records by their real addresses, so protected sources can be skipped. -/
+private def rowsClosed (rows : Array (Array α)) (node : Addr → HeapNode) (edges : α → List HeapNode)
+    (allowed : HeapNode → Bool) : Bool :=
+  rows.zipIdx.all fun (row, region) => row.zipIdx.all fun (item, index) =>
+    !allowed (node ⟨region, index⟩) || (edges item).all allowed
+
+private theorem rowsClosed_edges {rows : Array (Array α)} {node edges allowed}
+    (ok : rowsClosed rows node edges allowed = true) {a : Addr} {item : α}
+    (found : (rows[a.region]?).bind (·[a.index]?) = some item) (src : allowed (node a) = true) :
+    ∀ n ∈ edges item, allowed n = true := by
+  obtain ⟨row, hr, hi⟩ := Option.bind_eq_some_iff.mp found
+  have allRows := Array.all_eq_true_iff_forall_mem.mp ok
+  have allItems := allRows (row, a.region) (Array.mem_zipIdx_iff_getElem?.2 hr)
+  have entry := Array.all_eq_true_iff_forall_mem.mp allItems (item, a.index) (Array.mem_zipIdx_iff_getElem?.2 hi)
+  simpa [src, List.all_eq_true] using entry
+
+private theorem rowsClosed_of_edges {rows : Array (Array α)} {node edges allowed}
+    (closed : ∀ (a : Addr) item, (rows[a.region]?).bind (·[a.index]?) = some item →
+      allowed (node a) = true → ∀ n ∈ edges item, allowed n = true) :
+    rowsClosed rows node edges allowed = true := by
+  apply Array.all_eq_true_iff_forall_mem.mpr
+  intro (row, region) hrow
+  apply Array.all_eq_true_iff_forall_mem.mpr
+  intro (item, index) hitem
+  have hr : rows[region]? = some row := Array.mem_zipIdx_iff_getElem?.1 hrow
+  have hi : row[index]? = some item := Array.mem_zipIdx_iff_getElem?.1 hitem
+  cases h : allowed (node ⟨region, index⟩) with
+  | false => simp [h]
+  | true =>
+    simp only [h, Bool.not_true, Bool.false_or]
+    exact List.all_eq_true.mpr (closed ⟨region, index⟩ item (by simp [hr, hi]) h)
+
+/-- Check the actual handed and supplied capabilities and all outgoing edges in a concrete heap.
+The world's private state is never inspected, so the same check works on a linked state for arbitrary worlds. -/
+def accessOk (s : State W) (cells : List (Option Addr)) (allowed : HeapNode → Bool) : Bool :=
+  s.world.handed.all (fun a => allowed (.obj a)) &&
+    cells.all (fun cell => cell.all (fun a => allowed (.cell a))) &&
+    rowsClosed s.heap .obj Obj.nodes allowed && rowsClosed s.cells .cell Binding.nodes allowed
+
+theorem accessOk_sound {s : State W} {cells allowed} (ok : accessOk s cells allowed = true) :
+    Access cells (fun n => allowed n = true) s := by
+  simp only [accessOk, Bool.and_eq_true] at ok
+  obtain ⟨⟨⟨handed, supplied⟩, objects⟩, bindings⟩ := ok
+  refine ⟨Array.all_eq_true_iff_forall_mem.mp handed, ?_, ?_⟩
+  · intro a ha; exact List.all_eq_true.mp supplied (some a) ha
+  · intro src dst hsrc edge
+    cases edge with
+    | obj ho hm => exact rowsClosed_edges objects ho hsrc _ hm
+    | cell hc hm => exact rowsClosed_edges bindings hc hsrc _ hm
+
+theorem accessOk_iff {s : State W} {cells allowed} :
+    accessOk s cells allowed = true ↔ Access cells (fun n => allowed n = true) s := by
+  refine ⟨accessOk_sound, fun hs => ?_⟩
+  simp only [accessOk, Bool.and_eq_true]
+  refine ⟨⟨⟨Array.all_eq_true_iff_forall_mem.mpr hs.handed, List.all_eq_true.mpr ?_⟩, ?_⟩, ?_⟩
+  · intro cell hc; cases cell with
+    | none => rfl
+    | some a => exact hs.supplied a hc
+  · exact rowsClosed_of_edges fun _ _ ho ha _ hm => hs.closed _ _ ha (.obj ho hm)
+  · exact rowsClosed_of_edges fun _ _ hc ha _ hm => hs.closed _ _ ha (.cell hc hm)
 
 /-- The envelope excludes the changed region and every binding an allocation initializer reads. -/
 structure Away (r : Nat) (R : Addr → Prop) (A : HeapNode → Prop) : Prop where

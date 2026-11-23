@@ -7,6 +7,7 @@ import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump } from "../lowering/dump_core.mjs";
 import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
+import { lcg32 } from "../seeded_random.mjs";
 
 const root = process.env.TEST_TMPDIR;
 assert(root, "TEST_TMPDIR is required");
@@ -16,11 +17,8 @@ mkdirSync(dir, { recursive: true });
 const seed = Number(process.argv[2] ?? "2026");
 assert(Number.isSafeInteger(seed), `expected an integer seed, got ${seed}`);
 function random(seed) {
-  let state = seed >>> 0;
-  return (limit) => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state % limit;
-  };
+  const next = lcg32(seed);
+  return (n) => next() % n;
 }
 
 const chooseBodies = [

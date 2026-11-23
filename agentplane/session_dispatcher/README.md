@@ -108,10 +108,19 @@ the compatibility phases.
    An unmappable legacy delivery state stays out of exact state filters and projects as
    `UNKNOWN` where the old receipt projection did.
 
-Remove the text columns and conversion layer in a separate migration only after all
-text readers and writers have left, any unmappable rows have an approved disposition,
-and backup restore and rollback tests demonstrate that no supported recovery uses
-the old columns.
+4. **Retire the text representation (00034).** Ship this separately after every
+   replica and direct SQL client uses the numeric columns and the operator has closed
+   the rollback window for text-dependent binaries. Both counts in the preflight below
+   must be zero for every table. Resolve any nonzero count before proceeding, preserving
+   the underlying evidence. Take and verify a pre-cleanup backup in isolation.
+   Plan a maintenance window for table validation under exclusive locks. The migration rechecks all
+   rows under those locks and aborts before dropping columns if any values are missing,
+   unmapped or inconsistent.
+
+   The numeric binary from step 3 remains a rollback target after 00034. Goose has no
+   down migration for the text columns. Running a text-dependent binary again requires
+   restoring the earlier schema and data in isolation or a separately reviewed forward
+   repair. Restoring the old snapshot over the current database would lose later writes.
 
 #### Backfill and completeness
 

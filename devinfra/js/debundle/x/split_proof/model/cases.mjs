@@ -181,6 +181,42 @@ function roundingBoundaryStrings() {
 
 export const cases = [
   {
+    name: "object spread snapshots own keys, then checks each descriptor before reading",
+    end: "normal",
+    source: `
+      const source = {
+        __proto__: { inherited: 1 },
+        get 10() { console.log("ten"); return this.marker; },
+        get 2() {
+          console.log("two");
+          delete this.gone;
+          this.added = 1;
+          Object.defineProperty(this, "hidden", { enumerable: false });
+          return 2;
+        },
+        gone: 3, hidden: 4, marker: 5,
+      };
+      Object.defineProperty(source, "__proto__", { value: 6, enumerable: true });
+      const target = { set marker(v) { throw "setter called"; }, ...source, 10: 9 };
+      console.log(target[2], target[10], target.marker, target.__proto__, Object.getPrototypeOf(target) === Object.getPrototypeOf({}));
+      console.log("inherited" in target, "gone" in target, "added" in target, "hidden" in target);
+      target.marker = 7;
+      console.log(source.marker, target.marker, delete target.marker);
+    `,
+  },
+  {
+    name: "object spread evaluates operands once and stops on a throwing getter",
+    end: "normal",
+    source: `
+      const source = { get value() { console.log("getter"); throw "stop"; } };
+      function operand() { console.log("operand"); return source; }
+      try { const result = { first: console.log("before"), ...operand(), last: console.log("after") }; }
+      catch (e) { console.log(e); }
+      const mixed = { ...null, ...false, ...42, ...undefined, ..."éø", ...["x"] };
+      console.log(mixed[0], mixed[1], "length" in mixed);
+    `,
+  },
+  {
     name: "var destructuring evaluates its RHS once and writes earlier targets before a getter throws",
     end: "normal",
     source: `let calls = 0;
@@ -339,6 +375,11 @@ export const cases = [
       delete top.inherited;
       console.log({}.inherited);
     `,
+  },
+  {
+    name: "Object.create with a null prototype refuses unmodeled property descriptors",
+    source: `console.log(Object.create(null, { x: { value: 7 } }).x);`,
+    end: "unknown",
   },
   {
     name: "setPrototypeOf: a new chain, a cycle, a primitive",

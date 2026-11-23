@@ -80,16 +80,18 @@ bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_sing
 
 The generated editor spec assigns `#1337` and `#1338` to
 `packages/excalidraw/scene/scroll.mjs`. CI checks the pair in strict mode. The
-on-demand single trial moves only `#1337`. Each assigns the other units to
-`entry.mjs` in source order. The replay resolves
-the stable `editor.js` alias via the generated JS roster and runs the normal splitter
-on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. The
-decoder lowers the React factory body when it reads the declaration in
-statement 5. It retains the deferred `Symbol.for` calls and the read of
-`Symbol.iterator`, then lowers the nested function declaration `Mf`.
-Both trials stop at the later ambient `Object` reference and leave the output
-directory absent. Each target records the source filename, placement spec
-and verdict.
+on-demand single trial moves only `#1337`. Each keeps the other units in source
+order in `chunk-PN7KOLDJ.js`. The replay resolves the stable `editor.js` alias
+via the generated JS roster and runs the normal splitter on that original
+esbuild file beside its actual providers with the `browser-page` profile. It
+checks that all 13 `import()` and
+`import.meta` sites stay in that entry, the 11 relative dynamic imports resolve
+to existing bundle files, and the scroll module uses a new asset path.
+The decoder retains the React factory in statement 5, lowers the `Uint8Array`
+constructor reference in statement 41 and accepts the flat object bindings in
+statements 104 and 105. Both trials reject the module-level `try` in statement
+176 and leave the output directory absent.
+Each target records the source filename, placement spec and verdict.
 
 Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.
@@ -128,6 +130,23 @@ small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
 lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
+
+### Browser smoke
+
+Run these opt-in targets on RBE:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof/translation
+bbr test "$p:excalidraw_original_editor_browser_smoke"
+bbr test "$p:excalidraw_certified_scroll_browser_smoke"
+```
+
+The baseline loads the pinned editor. The split test first certifies the single
+move with the `browser-page` profile and repeats certification with
+`--check-output`. After certification, Chromium draws a rectangle, calls the
+moved export and compares the entry's exported names with the baseline. It also
+checks that the browser loaded the exact certified entry and scroll bytes.
+[Smoke test](browser_smoke_test.py)
 
 ### Direct AST lowering for negated initializers
 

@@ -26,3 +26,10 @@ tf_module(
     ],
     providers_versions = ":providers",
 )
+
+# Native HCL assembled by cdk8s into the Inline Workspace.
+filegroup(
+    name = "inline_source",
+    srcs = glob(["*.tf"]),
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)

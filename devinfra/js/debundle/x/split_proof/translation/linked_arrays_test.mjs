@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   array,
   arrow,
+  assertWorkerResult,
   block,
   call,
   catchClause,
@@ -23,27 +24,10 @@ import {
   tryStatement,
   unary,
   variable,
+  workerSplit,
 } from "./testing/linked_programs.mjs";
 
-function workerSplit(name, source) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }, order: ["worker.mjs"] },
-  });
-  const out = path.join(dir, "out");
-  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertWorkerResult(name, source, expected) {
-  const { files, out, verdict, log } = workerSplit(name, source);
-  assert.equal(verdict.status, "certified", `${name}: ${log}`);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, name);
-  }
-}
+const entryUnits = ["#1", "#2"];
 
 function observedProgram(initializer, result) {
   return program([
@@ -58,7 +42,8 @@ function observedProgram(initializer, result) {
 {
   const { files, out, verdict, log } = workerSplit(
     "dense-array",
-    "const worker = () => [undefined, [1], null]; const value = worker; export { value as result };"
+    "const worker = () => [undefined, [1], null]; const value = worker; export { value as result };",
+    entryUnits
   );
   assert.equal(verdict.status, "certified", log);
   assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
@@ -79,7 +64,8 @@ function observedProgram(initializer, result) {
 {
   const { files, out, verdict, log } = workerSplit(
     "deferred-array-spread",
-    'const worker = [50, { name: "item" }]; const value = () => [0, ...worker, worker[1], ...[4]]; export { value as result };'
+    'const worker = [50, { name: "item" }]; const value = () => [0, ...worker, worker[1], ...[4]]; export { value as result };',
+    entryUnits
   );
   assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
@@ -116,7 +102,8 @@ function observedProgram(initializer, result) {
         return [];
       }
     };
-    const value = worker(); export { value as result };`
+    const value = worker(); export { value as result };`,
+    entryUnits
   );
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, /original reached an unknown result during linked initialization: array spread/);
@@ -138,7 +125,8 @@ for (const width of [0, 1, 2, 5]) {
   assertWorkerResult(
     `generated-array-${width}`,
     observedProgram(literal(width), expression),
-    elements.map(([, value]) => value)
+    elements.map(([, value]) => value),
+    entryUnits
   );
 }
 
@@ -153,7 +141,8 @@ assertWorkerResult(
     }
   };
   const value = worker(); export { value as result };`,
-  "first"
+  "first",
+  entryUnits
 );
 
 // Generate a pair with the same reversed schedule. A read in the first array
@@ -214,7 +203,8 @@ for (const [kind, syntax] of [
 ]) {
   const { verdict, out } = workerSplit(
     `array-${kind}`,
-    `const worker = 1; const value = ${syntax}; export { value as result };`
+    `const worker = 1; const value = ${syntax}; export { value as result };`,
+    entryUnits
   );
   assert.equal(verdict.status, "rejected");
   assert.equal(verdict.reason, `statement 1: unsupported array ${kind}`);

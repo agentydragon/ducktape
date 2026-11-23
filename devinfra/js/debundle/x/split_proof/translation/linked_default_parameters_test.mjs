@@ -3,38 +3,23 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  assertCertifiedResult,
   block,
   call,
   exportNamed,
   forcePreview,
   id,
   literal,
-  lower,
   observe,
-  prepare,
   program,
   returns,
-  root,
+  sequentialSplit,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
 const worker = "worker.mjs";
-
-function split(name, source, modules = { [worker]: ["#0"], [entry]: ["#1", "#2"] }, order = [worker]) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, out, dir, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, out, verdict, log }, expected) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result: expected });
-  assert.deepEqual(observe(path.join(out, entry), "result"), { result: expected });
-}
 
 function defaultParam(name, value) {
   return { type: "AssignmentPattern", left: id(name), right: value };
@@ -66,11 +51,11 @@ for (const [name, args, expected] of [
     ])
   );
   const source = program([workerDecl, variable("const", "result", call(check)), exportNamed([["result", "result"]])]);
-  assertCertified(split(name, source), expected);
+  assertCertifiedResult(sequentialSplit(name, source), expected);
 }
 
-assertCertified(
-  split(
+assertCertifiedResult(
+  sequentialSplit(
     "function-length-receiver-name",
     `function pick(first, value = this.value, last, fn = () => value) {
       if (pick.length !== 1 || fn.name !== "fn" || fn() !== "receiver") throw "wrong default metadata";
@@ -84,8 +69,8 @@ assertCertified(
 
 // Defaults resolve outside the body's lexical scope. A closure created by a
 // default still reads the same parameter cell the function body can update.
-assertCertified(
-  split(
+assertCertifiedResult(
+  sequentialSplit(
     "parameter-environment",
     `const label = "outer";
     function run(value = label, capture = () => value, readLabel = () => label) {
@@ -107,8 +92,8 @@ for (const [name, signature] of [
   ["self-tdz", "value = value"],
   ["later-tdz", "value = typeof later, later = 1"],
 ]) {
-  assertCertified(
-    split(
+  assertCertifiedResult(
+    sequentialSplit(
       name,
       `const pick = (${signature}) => value;
       const result = (() => {
@@ -128,14 +113,14 @@ for (const explicit of [false, true]) {
     const value = ((input = label) => input)(${explicit ? '"ready"' : ""});
     export { value as result };`;
   const order = [worker, "label.mjs"];
-  const test = split(
+  const test = sequentialSplit(
     `reordered-default-${explicit}`,
     source,
     { "label.mjs": ["#0"], [worker]: ["#1"], [entry]: ["#2"] },
     order
   );
   if (explicit) {
-    assertCertified(test, "ready");
+    assertCertifiedResult(test, "ready");
   } else {
     assert.equal(test.verdict.status, "rejected", test.log);
     assert.match(test.verdict.reason, /split threw during linked initialization/);
@@ -162,14 +147,17 @@ for (const [name, expression, reason] of [
     /unsupported (?:implicit arguments reference|global arguments)/,
   ],
 ]) {
-  const { out, verdict, log } = split(name, `const pick = ${expression}; const result = true; export { result };`);
+  const { out, verdict, log } = sequentialSplit(
+    name,
+    `const pick = ${expression}; const result = true; export { result };`
+  );
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, reason, log);
   assert(!existsSync(out));
 }
 
 {
-  const { out, verdict, log } = split(
+  const { out, verdict, log } = sequentialSplit(
     "body-var-shadows-default",
     `const label = "outer";
     const pick = (value = () => label) => { var label = "body"; return value(); };

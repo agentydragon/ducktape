@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -174,6 +174,17 @@ export function prepare(dir, { source, provider, extras = {}, sourceName = "sour
   return { sourceFile, providerFile, specFile };
 }
 
+export function threeUnitFixture(name, source, entry = "entry.mjs") {
+  const dir = path.join(root, name);
+  const files = prepare(dir, {
+    source,
+    provider: "",
+    spec: { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"], sequential: true },
+  });
+  const out = path.join(dir, "out");
+  return { ...files, out, run: (...opts) => lower(files.sourceFile, files.specFile, out, opts).verdict };
+}
+
 // Compute evaluation order from the emitted requests, including the cycle a fixed
 // schedule can introduce when the second provider reads the first provider.
 export function moduleEvaluationOrder(directory, entry) {
@@ -204,25 +215,58 @@ export function forcePreview(files, directory) {
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
 }
 
-// Move the first declaration to its own module and observe the result exported by the entry.
-export function workerSplit(name, source) {
+export function runSplit(name, fixture) {
   const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] }, order: ["worker.mjs"] },
-  });
+  const files = prepare(dir, fixture);
   const out = path.join(dir, "out");
-  return { files, out, ...lower(files.sourceFile, files.specFile, out) };
+  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
 }
 
-export function assertWorkerResult(name, source, expected) {
-  const { files, out, verdict, log } = workerSplit(name, source);
-  assert.equal(verdict.status, "certified", `${name}: ${log}`);
+const entry = "entry.mjs";
+const worker = "worker.mjs";
+const workerModules = { [worker]: ["#0"], [entry]: ["#1", "#2"] };
+
+export function sequentialSplit(name, source, modules = workerModules, order = [worker], provider = "") {
+  return runSplit(name, { source, provider, spec: { entry, modules, order, sequential: true } });
+}
+
+const owner = "owner.mjs";
+const reader = "reader.mjs";
+
+export function ownerReaderSplit(
+  name,
+  source,
+  modules = { [owner]: ["#0"], [reader]: ["#1"], [entry]: ["#2"] },
+  order = [owner, reader]
+) {
+  return sequentialSplit(name, source, modules, order);
+}
+
+// Move the first declaration to its own module and observe the result exported by the entry.
+export function workerSplit(name, source, entryUnits = ["#1"]) {
+  return runSplit(name, {
+    source,
+    provider: "",
+    spec: { entry, modules: { [worker]: ["#0"], [entry]: entryUnits }, order: [worker] },
+  });
+}
+
+export function assertCertifiedResult({ files, out, verdict, log }, result) {
+  assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, "result"), { result: expected }, name);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result }, file);
   }
+}
+
+export function assertRejected({ verdict, log, out }, reason) {
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(verdict.reason, reason, log);
+  assert(!existsSync(out), out);
+}
+
+export function assertWorkerResult(name, source, expected, entryUnits) {
+  assertCertifiedResult(workerSplit(name, source, entryUnits), expected);
 }
 
 export function observedProgram(initializer, result) {

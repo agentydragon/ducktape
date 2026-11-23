@@ -51,11 +51,8 @@ impl EsmImportOrder {
     ) -> Self {
         let linker_order = chunk_linker_order_from_pairs(constraining_pairs.iter().copied());
         let linker_position = position_lookup(&linker_order);
-        let source_import_order = chunk_source_import_order_from_adjacency(
-            constraining_pairs.iter().copied(),
-            i_successors,
-            extra_nodes,
-        );
+        let source_import_order =
+            chunk_source_import_order_from_adjacency(&linker_position, i_successors, extra_nodes);
         let source_import_position = position_lookup(&source_import_order);
         Self {
             linker_order,

@@ -1,27 +1,23 @@
-import subprocess
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
 from cluster.rotators.git_publish import enter_sparse_checkout, push_outputs
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+from testing.git_repo import git, init_git_repo
 
 
 def test_sparse_publish_stages_only_rotated_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "source"
     source.mkdir()
-    _git(source, "init", "-b", "devel")
+    init_git_repo(source, branch="devel")
     for filename in (".sops.yaml", "rotated.yaml", "unchanged.yaml", "excluded.yaml"):
         (source / filename).write_text("old\n")
-    _git(source, "add", ".")
-    _git(source, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "seed")
+    git(source, "add", ".")
+    git(source, "commit", "-m", "seed")
 
     remote = tmp_path / "remote.git"
-    _git(tmp_path, "clone", "--bare", str(source), str(remote))
+    git(tmp_path, "clone", "--bare", str(source), str(remote))
     monkeypatch.chdir(tmp_path)
     enter_sparse_checkout(tmp_path / "checkout", remote.as_uri(), [Path("rotated.yaml"), Path("unchanged.yaml")])
 
@@ -33,10 +29,10 @@ def test_sparse_publish_stages_only_rotated_outputs(tmp_path: Path, monkeypatch:
     assert push_outputs([Path("rotated.yaml")], names=["fake-token"], **identity)
     assert not push_outputs([Path("rotated.yaml")], names=["fake-token"], **identity)
 
-    assert _git(remote, "show", "devel:rotated.yaml") == "new"
-    assert _git(remote, "show", "devel:unchanged.yaml") == "old"
-    assert _git(remote, "log", "-1", "--format=%ae", "devel") == "rotator@example.test"
-    assert _git(remote, "log", "-1", "--format=%s", "devel").endswith(": fake-token")
+    assert git(remote, "show", "devel:rotated.yaml") == "new\n"
+    assert git(remote, "show", "devel:unchanged.yaml") == "old\n"
+    assert git(remote, "log", "-1", "--format=%ae", "devel").strip() == "rotator@example.test"
+    assert git(remote, "log", "-1", "--format=%s", "devel").strip().endswith(": fake-token")
 
 
 if __name__ == "__main__":

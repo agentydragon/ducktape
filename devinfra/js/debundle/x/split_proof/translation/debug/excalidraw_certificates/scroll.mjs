@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { parseModule, topLevelStatements } from "../../scope_metadata.mjs";
+import { walk } from "../../syntax_inventory.mjs";
 import { dumpParsed } from "../../../lowering/dump_core.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
@@ -18,9 +20,9 @@ assert.equal(selectors.length, 1787);
 const all = Array.from({ length: selectors.length }, (_, i) => "#" + i);
 assert.deepEqual(new Set(selectors), new Set(all));
 const { entry } = authored;
-const placement = (moved) => ({
-  entry,
-  modules: { [entry]: all.filter((id) => !moved.includes(id)), [scroll]: moved },
+const placement = (moved, outputEntry = entry) => ({
+  entry: outputEntry,
+  modules: { [outputEntry]: all.filter((id) => !moved.includes(id)), [scroll]: moved },
   order: [scroll],
   sequential: true,
 });
@@ -100,16 +102,65 @@ const editor = readFileSync(roster, "utf8")
   .split("\n")
   .map((line) => line.split("\t"))
   .find(([alias]) => alias === "editor.js");
-assert(bundle && editor?.[1]);
+assert(bundle);
+assert.equal(editor?.[1], "chunk-PN7KOLDJ.js");
 const strictSource = path.join(bundle, editor[1]);
 assert.equal(readFileSync(strictSource, "utf8"), code);
 const strictSelection = process.argv.includes("--strict-single") ? selected.slice(0, 1) : selected;
-const spec = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-spec.json");
-writeFileSync(spec, JSON.stringify(placement(strictSelection), null, 2));
+const strictPlacement = placement(strictSelection, editor[1]);
+const retained = new Set(strictPlacement.modules[strictPlacement.entry]);
+const urlSites = [];
+const sourceUrl = pathToFileURL(strictSource);
+for (const [index, { node }] of units.entries()) {
+  const id = all[index];
+  walk(node, (site) => {
+    if (site.type === "ImportExpression") {
+      assert.equal(site.source.type, "Literal");
+      const request = site.source.value;
+      assert(typeof request === "string" && request.startsWith("./"));
+      assert(statSync(new URL(request, sourceUrl)).isFile());
+      urlSites.push([id, request]);
+    } else if (site.type === "MetaProperty" && site.meta.name === "import") {
+      urlSites.push([id, "import.meta"]);
+    }
+  });
+}
+assert.deepEqual(urlSites, [
+  ["#354", "./file-open-002ab408-75HCAGST.js"],
+  ["#354", "./file-open-7c801643-M7Y3IQ2R.js"],
+  ["#356", "./directory-open-4ed118d0-ETS5I3GL.js"],
+  ["#356", "./directory-open-01563666-Q3PKB2M7.js"],
+  ["#357", "./file-save-745eba88-2D2PE256.js"],
+  ["#357", "./file-save-3189631c-5CLXVCTQ.js"],
+  ["#872", "import.meta"],
+  ["#872", "import.meta"],
+  ["#877", "./subset-worker.chunk-RPUG463Z.js"],
+  ["#878", "./subset-shared.chunk-VM6EX75R.js"],
+  ["#1751", "./image-GAAHSSAO-YDUOJAAS.js"],
+  ["#1767", "./pica-RKQJY2SF.js"],
+  ["#1767", "./image-blob-reduce.esm-ZI2TXCGP.js"],
+]);
+assert(
+  urlSites.every(([unit]) => retained.has(unit)),
+  "URL-sensitive units must stay in the entry"
+);
+assert(
+  !lstatSync(path.join(bundle, scroll), { throwIfNoEntry: false }),
+  "the scroll module must use a new public asset path"
+);
+report.urlContext = { entry: strictPlacement.entry, sites: urlSites };
+
+const artifacts = process.env.TEST_UNDECLARED_OUTPUTS_DIR;
+const spec = path.join(artifacts, "scroll-spec.json");
+writeFileSync(spec, JSON.stringify(strictPlacement, null, 2));
+const profile = path.join(artifacts, "host.json");
+writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const out = path.join(process.env.TEST_TMPDIR, "modules");
-const run = spawnSync(process.env.LOWERSPLIT, [strictSource, spec, out, "--require", "normal-completion"], {
-  encoding: "utf8",
-});
+const run = spawnSync(
+  process.env.LOWERSPLIT,
+  [strictSource, spec, out, "--require", "normal-completion", "--host-contract", profile],
+  { encoding: "utf8" }
+);
 if (run.error) throw run.error;
 assert.equal(run.signal, null);
 assert.equal(run.status, 1, run.stdout + run.stderr);
@@ -134,8 +185,8 @@ assert.equal(first.type, "ImportDeclaration");
 assert.equal(verdict.requested, "normal-completion");
 assert.equal(verdict.status, "rejected");
 assert.equal(verdict.guarantee, null);
-assert.equal(verdict.scope, "linked-programs");
-assert.equal(verdict.reason, "statement 5: unsupported global Object");
+assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
+assert.equal(verdict.reason, "statement 176: unsupported statement TryStatement");
 assert(!existsSync(out), "a rejected trial published modules");
 
 // The pinned editor exposes its public names through an export list. Read the actual

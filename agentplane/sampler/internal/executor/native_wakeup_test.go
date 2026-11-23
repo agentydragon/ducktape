@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
@@ -10,25 +9,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedbackend"
 	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 func TestSilentSetupCompletesAfterLongReadTimeout(t *testing.T) {
 	core := native.New()
 	t.Cleanup(func() { _ = core.Close() })
-	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	pb.RegisterExecutorServer(server, typedbackend.New(core))
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	conn, err := grpc.NewClient("passthrough:///native", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	client := pb.NewExecutorClient(conn)
+	client := pb.NewExecutorClient(grpcserver.ConnectInMemory(t, server))
 	fake := &execfake.Client{
 		OnOpenSession: func(ctx context.Context, r *pb.OpenSessionRequest) (grpc.ServerStreamingClient[pb.OpenSessionResponse], error) {
 			return client.OpenSession(ctx, r)

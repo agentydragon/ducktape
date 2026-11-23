@@ -4,16 +4,14 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { lcg32 } from "../seeded_random.mjs";
 
 const evalorder = path.resolve(process.env.EVALORDER);
 const graphs = Number(process.argv[2] ?? 40);
 if (!Number.isSafeInteger(graphs) || graphs < 1) throw new Error("expected a positive graph count");
 const initialSeed = Number(process.argv[3] ?? 1);
-let seed = initialSeed;
-const random = () => {
-  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-  return seed / 2 ** 32;
-};
+const next = lcg32(initialSeed);
+const random = () => next() / 2 ** 32;
 
 function stdout(command, ...args) {
   const result = spawnSync(command, args, { encoding: "utf8", timeout: 15_000 });

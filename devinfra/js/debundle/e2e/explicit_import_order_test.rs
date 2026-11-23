@@ -2,28 +2,13 @@
 
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::{
-    FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, logical_module,
-    run_debundle, run_emit_on_rejection_fixture_with_graphs, run_fixture_with_args,
-    run_fixture_with_graphs, run_rejection_fixture, run_rejection_fixture_with_args,
-    run_tree_fixture, run_tree_graph_fixture, unassigned_mode_inline, write_tree_fixture,
+    FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output,
+    import_priority_fixture, logical_module, node_module_evaluation_order, run_debundle,
+    run_emit_on_rejection_fixture_with_graphs, run_fixture_with_args, run_fixture_with_graphs,
+    run_rejection_fixture, run_rejection_fixture_with_args, run_tree_fixture,
+    run_tree_graph_fixture, unassigned_mode_inline, write_tree_fixture,
 };
 use std::fs;
-
-fn priority_fixture() -> FixtureOpts<'static> {
-    FixtureOpts::new(
-        r#"const hub = () => [a, b];
-const a = { dependency: hub, lazy: () => b };
-const b = { dependency: hub };
-console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
-"#,
-        vec![
-            logical_module("hub", &[Member::new("hub")]),
-            logical_module("a", &[Member::new("a")]),
-            logical_module("b", &[Member::new("b")]),
-        ],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-}
 
 fn paths(priority: &[&str]) -> Vec<String> {
     priority.iter().map(|path| (*path).to_string()).collect()
@@ -31,7 +16,7 @@ fn paths(priority: &[&str]) -> Vec<String> {
 
 #[test]
 fn supplied_priority_is_retained_and_accepted_output_runs_under_node() {
-    let fixture = run_fixture_with_graphs(priority_fixture().with_import_order(&["a", "b", "hub"]));
+    let fixture = run_fixture_with_graphs(import_priority_fixture(&["a", "b", "hub"]));
 
     assert_entry_output(&fixture, "true true true\n");
     assert_eq!(
@@ -43,13 +28,19 @@ fn supplied_priority_is_retained_and_accepted_output_runs_under_node() {
             .collect::<Vec<_>>(),
         paths(&["a", "b", "hub"]),
     );
+
+    // Starting at a visits b, then hub. Their back edges reach modules already
+    // on the stack, so Node completes hub, b, a, then the entry.
+    assert_eq!(
+        node_module_evaluation_order(&fixture, &["a", "b", "hub", "entry"]),
+        ["hub", "b", "a", "entry"],
+    );
 }
 
 #[test]
 fn rejected_priority_is_not_repaired_and_invalid_universes_are_rejected() {
-    let rejected = run_emit_on_rejection_fixture_with_graphs(
-        priority_fixture().with_import_order(&["b", "a", "hub"]),
-    );
+    let rejected =
+        run_emit_on_rejection_fixture_with_graphs(import_priority_fixture(&["b", "a", "hub"]));
     assert!(
         rejected.gate_rejected_marker().exists(),
         "the incompatible witness must remain rejected: {}",
@@ -75,7 +66,7 @@ fn rejected_priority_is_not_repaired_and_invalid_universes_are_rejected() {
             &["a", "b", "hub", "anon_residual_sentinel"][..],
         ),
     ] {
-        let rejected = run_rejection_fixture(priority_fixture().with_import_order(priority));
+        let rejected = run_rejection_fixture(import_priority_fixture(priority));
         assert!(
             rejected.stderr.contains(
                 "import priority must contain every emitted nonentry module exactly once"

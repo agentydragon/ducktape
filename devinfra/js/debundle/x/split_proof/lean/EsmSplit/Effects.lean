@@ -2157,6 +2157,13 @@ def analyze (units : Array Json) (imports : Std.HashMap String (String × String
                let ob := s.objs[o]!
                (ob.any.size + ob.props.fold (fun n _ v => n + v.size) 0, describe o)).qsort (fun a b => a.1 > b.1) |>.extract 0 6 }
 
+def declaredNames (tops : Array Top) : Std.HashSet String :=
+  tops.foldl (fun names t => t.defs.foldl (·.insert ·) names) {}
+
+/-- Only assignments to module bindings constrain which module may contain the statement. -/
+def assignedNames (t : Top) (declared : Std.HashSet String) : List String :=
+  (dedupeArr ((t.assignedEager ++ t.assignedLazy).filter declared.contains)).toList
+
 /-- What the checker needs from each statement. Reads are the names it mentions (`Lower`) and the names the run read
 through functions it called (`deps`); a unit that touches the world also counts what its own closures mention. Writes
 come from the run, and a unit that runs code the analysis cannot see writes every name that can reach an object the
@@ -2172,7 +2179,7 @@ def footprints (units : Array Json) (imports : Std.HashMap String (String × Str
   let tracked := r.patches.filter (·.tracked)
   let named : Std.HashSet String := tracked.foldl (fun s p => s.insert ("%" ++ p.path ++ "." ++ p.key.getD "*")) {}
   let any : Std.HashSet String := tracked.foldl (fun s p => s.insert ("%" ++ p.path ++ ".*")) {}
-  let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
+  let declared := declaredNames tops
   -- what an import stands for is held by the world: unknown code may have changed it
   let importNames := imports.toArray.map (·.1)
   let fps := (tops.zip r.units).map fun (t, e) =>
@@ -2187,7 +2194,7 @@ def footprints (units : Array Json) (imports : Std.HashMap String (String × Str
       deps := (dedupeArr e.reads).toList.filter (fun n => !n.startsWith "%" && !seeds.contains n),
       hoisted := t.hoisted, effect := world,
       writes := (dedupeArr (if unk then e.writes ++ r.escaped ++ importNames else e.writes)).toList,
-      assigns := (dedupeArr ((t.assignedEager ++ t.assignedLazy).filter declared.contains)).toList,
+      assigns := assignedNames t declared,
       fallback := (dedupeArr t.fallback).toList, rawEager := (dedupeArr t.rawEager).toList,
       rawLazy := (dedupeArr t.rawLazy).toList }
   (fps, r)

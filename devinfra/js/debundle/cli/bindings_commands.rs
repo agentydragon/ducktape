@@ -25,39 +25,35 @@ pub(super) struct BindingsNs {
 }
 
 impl BindingsNs {
-    pub(super) fn edits_with_graph(&self) -> bool {
+    fn graph_edit_args(&self) -> Option<&GraphEditArgs> {
         match &self.command {
-            BindingsNsCommand::Assign(args) => args.edit.dependency_graph_path.is_some(),
-            BindingsNsCommand::Unassign(args) => args.edit.dependency_graph_path.is_some(),
-            _ => false,
-        }
-    }
-    pub(super) fn writes_with_graph(&self) -> bool {
-        match &self.command {
-            BindingsNsCommand::Assign(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            BindingsNsCommand::Unassign(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            _ => false,
-        }
-    }
-    pub(super) fn format(&self) -> Option<OutputFormat> {
-        match &self.command {
-            BindingsNsCommand::Assign(args) => args.edit.format,
-            BindingsNsCommand::Unassign(args) => args.edit.format,
+            BindingsNsCommand::Assign(args) => Some(&args.edit),
+            BindingsNsCommand::Unassign(args) => Some(&args.edit),
             _ => None,
         }
     }
+
+    pub(super) fn edits_with_graph(&self) -> bool {
+        self.graph_edit_args()
+            .is_some_and(GraphEditArgs::edits_with_graph)
+    }
+
+    pub(super) fn writes_with_graph(&self) -> bool {
+        self.graph_edit_args()
+            .is_some_and(GraphEditArgs::writes_with_graph)
+    }
+
+    pub(super) fn format(&self) -> Option<OutputFormat> {
+        self.graph_edit_args().and_then(|edit| edit.format)
+    }
+
     pub(super) fn verify_graph(
         &self,
         roots: &CurrentRoots,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
-        match &self.command {
-            BindingsNsCommand::Assign(args) => args.edit.verify_graph(roots),
-            BindingsNsCommand::Unassign(args) => args.edit.verify_graph(roots),
-            _ => Ok(None),
+        match self.graph_edit_args() {
+            Some(edit) => edit.verify_graph(roots),
+            None => Ok(None),
         }
     }
 }

@@ -10,6 +10,7 @@ py_test(
         "//tana/domain:nodes",
         "//tana/export:convert",
         "//tana/export:export_node_subset",
+        "//tana/export:tana_issues_to_tanapaste",
         "//tana/graph",
         "//tana/graph:loader",
         "@pypi//pytest",

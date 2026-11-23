@@ -41,8 +41,6 @@ from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk, timescaledb_pg18
 
-pytest_plugins = ("devinfra.testing.pytest_outputs",)
-
 _REPO = "agentydragon/ducktape"
 _TOKEN = "isolated-cdviz-webhook-signing-key"
 _OWNER_PASSWORD = "isolated-cdviz-database-owner"

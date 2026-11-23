@@ -8,25 +8,16 @@ import {
   forcePreview,
   id,
   literal,
-  lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
   program,
   returns,
-  root,
+  sequentialSplit,
   throws,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
-
-function split(name, source, modules, order) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
-}
 
 for (const [name, body, expected] of [
   [
@@ -62,7 +53,9 @@ for (const [name, body, expected] of [
   ],
 ]) {
   const source = `const run = () => { ${body} }; export const result = run();`;
-  const { files, out, verdict, log } = split(name, source, { "run.mjs": ["#0"], [entry]: ["#1"] }, ["run.mjs"]);
+  const { files, out, verdict, log } = sequentialSplit(name, source, { "run.mjs": ["#0"], [entry]: ["#1"] }, [
+    "run.mjs",
+  ]);
   assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
@@ -98,7 +91,7 @@ for (const [seed, value] of ["value", 42].entries()) {
   const modules = { "value.mjs": ["#0"], "call.mjs": ["#1"], "choose.mjs": ["#2"], [entry]: ["#3"] };
   for (const early of [false, true]) {
     const order = early ? ["call.mjs", "value.mjs", "choose.mjs"] : ["value.mjs", "call.mjs", "choose.mjs"];
-    const { dir, files, out, verdict, log } = split(`reordered-${seed}-${early}`, source, modules, order);
+    const { dir, files, out, verdict, log } = sequentialSplit(`reordered-${seed}-${early}`, source, modules, order);
     assert.deepEqual(observe(files.sourceFile, "result"), { result: value });
     let candidate = out;
     if (early) {
@@ -119,7 +112,7 @@ for (const [seed, value] of ["value", 42].entries()) {
   }
 }
 
-const { out, verdict, log } = split(
+const { out, verdict, log } = sequentialSplit(
   "unsupported-dead-branch",
   "const run = () => { if (false) do {} while (false); return 1; }; export const result = run();",
   { "run.mjs": ["#0"], [entry]: ["#1"] },

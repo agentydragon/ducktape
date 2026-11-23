@@ -54,7 +54,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
 import { kindOf } from "../translation/testing/gen/core.mjs";
-import { generateProgram, renderProgram } from "../translation/testing/gen/index.mjs";
+import { FAMILY_SAMPLES, generateProgram, renderProgram } from "../translation/testing/gen/index.mjs";
 import { coreOf, coreProgramOf, splitInputs } from "../translation/split_dump.mjs";
 import { cases, inheritanceCases, inheritanceSplitCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {
@@ -70,6 +70,7 @@ import {
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
+import { mulberry32 } from "../seeded_random.mjs";
 
 const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);
@@ -103,17 +104,7 @@ const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "core
 const progress = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR ?? work, "progress.log");
 const checkpoint = (label) => appendFileSync(progress, `${label}\n`);
 
-// The sets of `gen_validity_test.mjs`: each family with the ones before it.
-const SETS = !broad
-  ? []
-  : [
-      ["expressions", "statements"],
-      ["expressions", "statements", "functions"],
-      ["expressions", "statements", "functions", "classes"],
-      ["expressions", "statements", "functions", "classes", "patterns"],
-      ["expressions", "statements", "functions", "classes", "patterns", "protocols"],
-      ["expressions", "statements", "functions", "classes", "patterns", "protocols", "modules", "unmodeled"],
-    ];
+const familySamples = broad ? FAMILY_SAMPLES : [];
 // How often a generated program is tried again without the unit in which the model reached unknown code.
 const ROUNDS = 8;
 
@@ -452,7 +443,7 @@ for (const c of allOpaqueCases) {
 await runNode(jobs);
 runModel(jobs);
 
-const summary = SETS.map((families) => ({
+const summary = familySamples.map((families) => ({
   families: families.join("+"),
   programs: 0,
   wholeAccepted: 0,
@@ -466,7 +457,7 @@ const summary = SETS.map((families) => ({
 }));
 const reasons = {}; // the unknown code that units of generated programs were left out for
 let pending = [];
-SETS.forEach((families, set) => {
+familySamples.forEach((families, set) => {
   for (let seed = firstSeed; seed < firstSeed + count; seed++) {
     const program = generateProgram(seed, { families });
     summary[set].programs++;
@@ -566,18 +557,6 @@ for (const job of jobs) {
 }
 
 // Splits by the real tool.
-
-/** A random number generator with a seed (mulberry32): `next()` is in [0, 1). */
-function random(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /**
  * Three specs for a bundle's units: `cut` (consecutive pieces, run in order), `ordered` (a random module
@@ -827,7 +806,7 @@ for (const [index, job] of candidates
   const { dump, bundle, units } = splitInputFor(job);
   if (units.length < 2) continue;
   tally.programs++;
-  const next = random(firstSeed * 7919 + index);
+  const next = mulberry32(firstSeed * 7919 + index);
   for (const [kind, spec] of Object.entries(specsFor(units, next))) split(job, bundle, dump, kind, spec, null);
 }
 const bundleJobs = [...new Set(splitJobs.map((s) => s.of))];

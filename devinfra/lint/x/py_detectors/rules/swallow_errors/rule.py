@@ -31,6 +31,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                     DET_NAME,
                     PROP,
                     path,
+                    source,
                     h.lineno,
                     h.end_lineno,
                     "Blanket except swallows errors (pass/return None); catch specific errors or let them propagate.",

@@ -1,8 +1,8 @@
 {
   "pins": {
     "bbr": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-3269d79d559b/bbr-0.1.0-py3-none-any.whl",
-      "sha256": "MmnXnVWbIsHksIr3xKxG2oMKQ/4H5KZpH1a/WZVn0Rg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-2c7c9b0d28c9/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "LHybDSjJiFNvlczKcv3UlD/TWjsZiDE8FceHXi/jab4="
     },
     "bb": {
       "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.500/bazel-5.0.500-linux-x86_64",
@@ -25,8 +25,8 @@
       "sha256": "E9iZxt1l78MzpRZcPpbOhkfqBaYZf6e4N05MSlHKy7s="
     },
     "difftree": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-5131a141a251/difftree-0.1.0-py3-none-any.whl",
-      "sha256": "UTGhQaJRKcw/5hQ5a6gRuXZcwwiQfgACQbjsAUg9Gz4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-3ec6bfed10a7/difftree-0.1.0-py3-none-any.whl",
+      "sha256": "Psa/7RCnNM8ot8vlJ8C61YRJJbXnXnfB9IchZ+kHyj8="
     },
     "gmail-archiver": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-6939a50d9967/gmail_archiver-0.1.0-py3-none-any.whl",
@@ -145,8 +145,8 @@
       "sha256": "U3WcONwVx+rLxikYGzFuqYZYpgtqT4DTBCH5fhsf0SQ="
     },
     "skill-freecad": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-f32e387920b4/freecad.skill",
-      "sha256": "8y44eSC03Yqtn83NZ3TbsuuE0QD3Jg7VSSYBTuAFdAY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-34b9adbc0e39/freecad.skill",
+      "sha256": "NLmtvA45RxTAg9J0p3RGpeWIS8/O1s7FuCHvIAyYJ58="
     },
     "skill-google_photos_link": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-google_photos_link-0fd36d8f127e/google_photos_link.skill",

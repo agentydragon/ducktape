@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  assertCertifiedResult,
+  assertRejected,
   block,
   call,
   exportNamed,
@@ -13,11 +14,10 @@ import {
   lower,
   moduleEvaluationOrder,
   observe,
-  prepare,
+  ownerReaderSplit,
   program,
   property,
   returns,
-  root,
   variable,
 } from "./testing/linked_programs.mjs";
 
@@ -26,32 +26,7 @@ const owner = "owner.mjs";
 const reader = "reader.mjs";
 const writer = "writer.mjs";
 
-function split(
-  name,
-  source,
-  modules = { [owner]: ["#0"], [reader]: ["#1"], [entry]: ["#2"] },
-  order = [owner, reader]
-) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
-  const out = path.join(dir, "out");
-  return { files, dir, out, ...lower(files.sourceFile, files.specFile, out) };
-}
-
-function assertCertified({ files, verdict, log, out }, result) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result });
-  assert.deepEqual(observe(path.join(out, entry), "result"), { result });
-}
-
-function assertRejected({ verdict, log, out }, reason) {
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
-  assert(!existsSync(out));
-}
-
-const evaluated = split(
+const evaluated = ownerReaderSplit(
   "optional-callee-captures-receiver",
   `const run = () => {
     let trace = "";
@@ -76,14 +51,14 @@ const evaluated = split(
   const result = run();
   export { result };`
 );
-assertCertified(evaluated, ["original!", "rgac"]);
+assertCertifiedResult(evaluated, ["original!", "rgac"]);
 assert.deepEqual(
   lower(evaluated.files.sourceFile, evaluated.files.specFile, evaluated.out, ["--check-output"]).verdict,
   evaluated.verdict
 );
 
-assertCertified(
-  split(
+assertCertifiedResult(
+  ownerReaderSplit(
     "optional-callee-nullish-method",
     `const run = () => {
       let trace = "";
@@ -106,7 +81,7 @@ for (const [name, expression, expectedError, thrown] of [
   ["null-receiver", "(null).method?.(fail())", 'typeof error === "object"', "TypeError"],
 ]) {
   // Only the expected error escapes. A different error or an absent throw reaches normal completion.
-  const test = split(
+  const test = ownerReaderSplit(
     name,
     `const run = () => {
       const fail = () => { throw "argument"; };
@@ -154,16 +129,16 @@ const generated = program([
   ),
   exportNamed([["result", "result"]]),
 ]);
-assertCertified(split("generated-optional-callee", generated), 42);
+assertCertifiedResult(ownerReaderSplit("generated-optional-callee", generated), 42);
 
 const reordered = `const target = { value: "ready" };
   target.method = function () { return this.value; };
   const result = target.method?.() ?? "missing";
   export { result };`;
 const placements = { [owner]: ["#0"], [writer]: ["#1"], [reader]: ["#2"], [entry]: ["#3"] };
-assertCertified(split("install-before-call", reordered, placements, [owner, writer, reader]), "ready");
+assertCertifiedResult(ownerReaderSplit("install-before-call", reordered, placements, [owner, writer, reader]), "ready");
 const earlyOrder = [owner, reader, writer];
-const early = split("call-before-install", reordered, placements, earlyOrder);
+const early = ownerReaderSplit("call-before-install", reordered, placements, earlyOrder);
 assertRejected(early, /probe executions completed normally with different final states/);
 const preview = path.join(early.dir, "preview");
 forcePreview(early.files, preview);
@@ -176,7 +151,7 @@ for (const [name, body, reason, expected] of [
   ["computed-callee", 'return target["method"]?.();', /unsupported computed optional method call/, { value: 42 }],
   ["continued-callee", "return target.method?.().value;", /unsupported optional chain/, 42],
 ]) {
-  const test = split(
+  const test = ownerReaderSplit(
     name,
     `const run = (target) => { ${body} };
       const result = run({ method() { return { value: 42 }; } });
@@ -186,7 +161,7 @@ for (const [name, body, reason, expected] of [
   assertRejected(test, reason);
 }
 
-const host = split(
+const host = ownerReaderSplit(
   "optional-callee-opaque-host-value",
   `const run = () => ({}).toString?.();
    const result = run();

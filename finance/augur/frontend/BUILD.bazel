@@ -6,11 +6,11 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
 load("//devinfra/python:defs.bzl", "py_binary")
 load(":vitest.bzl", "augur_vitest_test")
@@ -577,38 +577,14 @@ diff_test(
     file2 = ":frontend_layout_listing",
 )
 
-# Type-aware ESLint (no-floating-promises, no-misused-promises, await-thenable).
-# Runs as a whole-program test, not via the per-file lint-gate aspect: type-aware
-# rules need the full TS program (built from tsconfig.json), which only a
-# whole-package sandbox provides.
-eslint_bin.eslint_test(
+typed_eslint_test(
     name = "eslint_typed_test",
-    args = [
-        "--no-config-lookup",
-        "--config",
-        "eslint.typed.config.js",
-        ".",
-    ],
-    chdir = package_name(),
-    data = [
-        "eslint.typed.config.js",
-        "tsconfig.json",
-        ":typed_lint_srcs",
+    srcs = ":typed_lint_srcs",
+    extra_data = [
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
-        "//:node_modules/@types/react",
-        "//:node_modules/@typescript-eslint/eslint-plugin",
-        "//:node_modules/@typescript-eslint/parser",
-        "//:node_modules/eslint-plugin-react",
-        "//:node_modules/eslint-plugin-react-hooks",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
     ],
-    # ts_library already copies these same sources to bin to compile them, so a second copy
-    # here would be two actions writing one path. eslint reads them where they are.
-    no_copy_to_bin = [":typed_lint_srcs"],
-    tags = ["lint"],
+    tsconfig = "tsconfig.json",
 )
 
 # The sources eslint_typed_test builds its program from. A ts_library propagates the `.js` and

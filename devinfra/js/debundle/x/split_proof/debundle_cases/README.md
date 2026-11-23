@@ -24,6 +24,13 @@ Use `--filter <substring>` for a smaller run.
 
 `--keep <dir>` copies each translated entry (bundle, translated spec, emitted modules, checker output) to `<dir>/<id>`.
 
+For direct Node runs, first [install the translation dependencies](../translation/README.md#run-it). Then run from this directory:
+
+```sh
+cp package.json.in package.json && npm ci --no-audit --no-fund
+node run_cases.mjs --out "$out/cases.jsonl"
+```
+
 ## What the adapter does
 
 1. `acorn` parses the case's one chunk and `eslint-scope` supplies scope annotations. For placement proposals, the adapter numbers the top-level source units, counting each declarator in a top-level list separately. A block's unit includes the names its nested `var` declarations bind.

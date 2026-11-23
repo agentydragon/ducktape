@@ -6,19 +6,17 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"net"
 	"os"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -291,25 +289,9 @@ func readFile(t *testing.T, path string) []byte {
 
 func startWorkloadServer(t *testing.T, server *Server) *grpc.ClientConn {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
 	workload.RegisterSpiffeWorkloadAPIServer(grpcServer, server)
-	go func() {
-		_ = grpcServer.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-	})
-	connection, err := grpc.NewClient("passthrough:///workload-api", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-		return listener.Dial()
-	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = connection.Close()
-	})
-	return connection
+	return grpcserver.ConnectInMemory(t, grpcServer)
 }
 
 func fetchX509SVID(t *testing.T, client workload.SpiffeWorkloadAPIClient) (workload.SpiffeWorkloadAPI_FetchX509SVIDClient, context.CancelFunc) {

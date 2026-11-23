@@ -7,16 +7,24 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from devinfra.lint.x.py_detectors.models import Detection, LineRange
-from devinfra.lint.x.py_detectors.utils import iter_py_files, parse_python_file, read_snippet
+from devinfra.lint.x.py_detectors.utils import iter_py_files, parse_python_file
 
 # Per-file detector: receives a parsed file and yields detections.
 FileDetector = Callable[[Path, ast.AST, str], Iterable[Detection]]
 
 
 def detection(
-    detector: str, prop: str, path: Path, start_line: int, end_line: int | None, message: str, confidence: float = 0.9
+    detector: str,
+    prop: str,
+    path: Path,
+    source: str,
+    start_line: int,
+    end_line: int | None,
+    message: str,
+    confidence: float = 0.9,
 ) -> Detection:
-    """Create a Detection with auto-generated snippet."""
+    """Create a detection and its snippet from the parsed source."""
+    excerpt = source.splitlines()[start_line - 1 : end_line or start_line]
     return Detection(
         property=prop,
         path=path,
@@ -24,7 +32,7 @@ def detection(
         detector=detector,
         confidence=confidence,
         message=message,
-        snippet=read_snippet(path, start_line, end_line, context=0),
+        snippet="\n".join(f"{number:>5}: {line}" for number, line in enumerate(excerpt, start_line)),
     )
 
 

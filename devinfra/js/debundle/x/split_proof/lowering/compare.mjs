@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
+import { statementShape } from "./statement_shape.mjs";
 
 const LOWER = resolve(process.env.LOWER ?? new URL("../lean/.lake/build/bin/lower", import.meta.url).pathname);
 const files = process.argv.slice(2);
@@ -48,18 +49,6 @@ function scopeFootprints(scopes, units) {
   }
   return oracle;
 }
-
-const shape = (s) => {
-  if (s.type === "VariableDeclaration")
-    return `${s.kind} ${[...new Set(s.declarations.map((d) => d.init?.type ?? "none"))].join("|")}`;
-  if (s.type === "ExpressionStatement") {
-    const e = s.expression;
-    if (e.type === "AssignmentExpression") return `assign ${e.left.type}=${e.right.type}`;
-    if (e.type === "CallExpression") return `call ${e.callee.type}`;
-    return e.type;
-  }
-  return s.type;
-};
 
 function closureSizes(fps) {
   const owners = new Map();
@@ -148,7 +137,10 @@ for (const file of files) {
       f.fallback.forEach((t) => fallbackTypes.set(t, (fallbackTypes.get(t) ?? 0) + 1));
     }
     if (f.assigns.length) assigns++;
-    if (f.effect) effShapes.set(shape(node), (effShapes.get(shape(node)) ?? 0) + 1);
+    if (f.effect) {
+      const shape = statementShape(node);
+      effShapes.set(shape, (effShapes.get(shape) ?? 0) + 1);
+    }
   });
   const eff = fps.filter((f) => f.effect).length;
   const hoisted = fps.filter((f) => f.hoisted).length;

@@ -168,6 +168,17 @@ private partial def funcEq : MatchEq Func
     let ⟨a⟩ ← scalarEq arity arity'
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ a ▸ b ▸ rfl⟩
+  | .opaque name kind self arity code part free refusal,
+      .opaque name' kind' self' arity' code' part' free' refusal' => do
+    let ⟨n⟩ ← scalarEq name name'
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨s⟩ ← scalarEq self self'
+    let ⟨a⟩ ← scalarEq arity arity'
+    let ⟨c⟩ ← scalarEq code code'
+    let ⟨p⟩ ← scalarEq part part'
+    let ⟨f⟩ ← scalarEq free free'
+    let ⟨r⟩ ← scalarEq refusal refusal'
+    return ⟨n ▸ k ▸ s ▸ a ▸ c ▸ p ▸ f ▸ r ▸ rfl⟩
   | _, _ => none
 
 private partial def classMemberEq : MatchEq ClassMember
@@ -206,6 +217,7 @@ private partial def propEq : MatchEq PropDef
     let ⟨key⟩ ← exprEq k k'
     let ⟨fn⟩ ← funcEq f f'
     return ⟨key ▸ fn ▸ rfl⟩
+  | .spread a, .spread b => (exprEq a b).map fun h => ⟨congrArg PropDef.spread h.down⟩
   | .proto v, .proto v' => (exprEq v v').map fun h => ⟨congrArg PropDef.proto h.down⟩
   | _, _ => none
 
@@ -845,17 +857,6 @@ macro "verify_linked_programs " fuel:num useCbv:(" cbv_first")? : tactic => do
      · apply sameExports_of_match
        intro w <;> $reduce))
 
-/-- A successful link together with the resulting scopes and initial execution state. -/
-structure CheckedLink (p : Program) (w : World) where
-  linked : List (Module × Env)
-  ready : State w
-  equation : link p (initialState w p.regions) = .ok linked ready
-
-private theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : CheckedLink p w) :
-    runProgram w fuel p = runUnits fuel (unitsOf checked.linked) checked.ready := by
-  unfold runProgram
-  exact bind_of_ok checked.equation
-
 /-- Reduce only the real link operation. Reflexivity fills the two output fields
 with the kernel-checked module scopes and state. -/
 macro "check_linked_layout" : tactic =>
@@ -1111,11 +1112,19 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let records := recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
-  -- Only observations present in the checked programs can need a world hypothesis.
-  -- The generated execution theorem independently checks the chosen strength.
-  let uses := fun name => [sourceTerm, candidateTerm].any fun e => (e.find? (·.isConstOf name)).isSome
-  let premises : HostPremises :=
-    { windowTypeof := uses ``Prim.globalTypeof, windowRef := uses ``Prim.globalRef }
+  -- Collect host observations from both concrete executions. These runs only select
+  -- hypotheses. The resulting theorem still checks the executions in the kernel.
+  let premises := if profile == .empty then {} else Id.run do
+    let world := HostPremises.observations profile
+    let limit := max (recordFuelLimit source) (recordFuelLimit candidate)
+    let observed := fun (program : Program) =>
+      match runProgram world limit program with
+      | .ok _ s | .throw _ s | .unknown _ s => s.world.state
+      | .fuel => ({} : HostPremises)
+    let left := observed source
+    let right := observed candidate
+    return { typeofBindings := (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
+             refs := (left.refs ++ right.refs).eraseDups.reverse }
   let fuel ← liftM (witnessFuel premises source candidate)
   -- An initial reflexivity attempt can expand the parameter prelude before the
   -- reflection tactic uses the evaluator's equations.
@@ -1160,7 +1169,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
   let profiles := fun (visibility : String) =>
     s!"{visibility}def profile := {profileTerm profile}\n" ++
-    s!"{visibility}def premises : HostPremises := ⟨{premises.windowTypeof}, {premises.windowRef}⟩\n"
+    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.refs}⟩\n"
   let execution := "namespace LinkedExecutionProof\n" ++ data ++ programs ++ profiles "" ++ layouts ++
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++ "end LinkedExecutionProof\n"

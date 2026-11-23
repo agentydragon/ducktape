@@ -60,6 +60,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                     DET_NAME,
                     PROP,
                     path,
+                    source,
                     stmt.lineno,
                     next_stmt.lineno,
                     f"Assign then immediate guard on '{name}' — consider walrus in guard (assign L{stmt.lineno}, guard L{next_stmt.lineno}, test={desc}).",

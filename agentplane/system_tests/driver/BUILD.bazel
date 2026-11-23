@@ -112,6 +112,16 @@ py_test(
     ],
 )
 
+py_library(
+    name = "history_fixtures",
+    srcs = ["history_fixtures.py"],
+    deps = [
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/proto:event_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
 py_test(
     name = "test_agent",
     srcs = ["test_agent.py"],
@@ -119,11 +129,11 @@ py_test(
     args = ["$(location test_agent.py)"],
     deps = [
         ":agent",
+        ":history_fixtures",
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
@@ -175,13 +185,13 @@ py_test(
     srcs = ["test_session.py"],
     args = ["$(location test_session.py)"],
     deps = [
+        ":history_fixtures",
         ":session",
         "//:conftest",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",

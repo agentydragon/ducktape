@@ -444,7 +444,7 @@ fn validate_modules_against_source(
                         &module_path,
                         None,
                         SelectorKind::SourceMatches,
-                        Some(&claim.source_match().selector()),
+                        Some(&claim.selector()),
                         error.into(),
                     ));
                 }

@@ -432,6 +432,7 @@ rust_library(
         "support/runtime.rs",
         "support/saved_analysis.rs",
         "support/serialized.rs",
+        "support/source_record_namespace.rs",
         "support/tree_assertions.rs",
         "support/unescaped_local_callable.rs",
         "support/workspace.rs",

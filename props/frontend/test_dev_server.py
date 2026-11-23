@@ -3,7 +3,6 @@
 import json
 import os
 import subprocess
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -14,6 +13,7 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.threaded_http import serve_http_in_thread
 
 
 class BackendHandler(BaseHTTPRequestHandler):
@@ -58,34 +58,26 @@ def test_serves_built_frontend() -> None:
             else:
                 raise AssertionError(f"dev server did not serve assets; see {log_path}")
 
-            with ThreadingHTTPServer(("127.0.0.1", 8000), BackendHandler) as backend:
-                thread = threading.Thread(target=backend.serve_forever)
-                thread.start()
-                try:
-                    request = urllib.request.Request(
-                        "http://localhost:5173/api/runs/validation?split=train",
-                        data=b'{"example":1}',
-                        headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
-                    )
-                    with urllib.request.urlopen(request) as response:
-                        assert response.status == 201
-                        assert response.headers["Set-Cookie"] == "props_session=test; HttpOnly"
-                        assert json.load(response) == {
-                            "path": "/api/runs/validation?split=train",
-                            "authorization": "Bearer test",
-                            "body": '{"example":1}',
-                        }
+            with serve_http_in_thread(ThreadingHTTPServer(("127.0.0.1", 8000), BackendHandler)):
+                request = urllib.request.Request(
+                    "http://localhost:5173/api/runs/validation?split=train",
+                    data=b'{"example":1}',
+                    headers={"Authorization": "Bearer test", "Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request) as response:
+                    assert response.status == 201
+                    assert response.headers["Set-Cookie"] == "props_session=test; HttpOnly"
+                    assert json.load(response) == {
+                        "path": "/api/runs/validation?split=train",
+                        "authorization": "Bearer test",
+                        "body": '{"example":1}',
+                    }
 
-                    request = urllib.request.Request(
-                        "http://localhost:5173/auth/me", headers={"Cookie": "session=test"}
-                    )
-                    with pytest.raises(urllib.error.HTTPError) as exc:
-                        urllib.request.urlopen(request)
-                    assert exc.value.code == 401
-                    assert json.load(exc.value) == {"path": "/auth/me", "cookie": "session=test"}
-                finally:
-                    backend.shutdown()
-                    thread.join()
+                request = urllib.request.Request("http://localhost:5173/auth/me", headers={"Cookie": "session=test"})
+                with pytest.raises(urllib.error.HTTPError) as exc:
+                    urllib.request.urlopen(request)
+                assert exc.value.code == 401
+                assert json.load(exc.value) == {"path": "/auth/me", "cookie": "session=test"}
 
             with pytest.raises(urllib.error.HTTPError) as exc:
                 urllib.request.urlopen("http://localhost:5173/api/stats/overview")

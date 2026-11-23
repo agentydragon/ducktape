@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { FAMILIES, generateProgram, renderProgram } from "./testing/gen/index.mjs";
+import { FAMILIES, FAMILY_SAMPLES, generateProgram, renderProgram } from "./testing/gen/index.mjs";
 import { featuresOf, parseModule } from "./syntax_inventory.mjs";
 
 const option = (name, fallback) => {
@@ -98,17 +98,7 @@ const MUST_CONTAIN = {
     /new WeakMap\(/,
   ],
 };
-// The families are tried cumulatively, each with the ones before it: the expressions make no unit by themselves. A set must
-// produce the forms of the families in it.
-const SETS = [
-  ["expressions", "statements"],
-  ["expressions", "statements", "functions"],
-  ["expressions", "statements", "functions", "classes"],
-  ["expressions", "statements", "functions", "classes", "patterns"],
-  ["expressions", "statements", "functions", "classes", "patterns", "protocols"],
-  ["expressions", "statements", "functions", "classes", "patterns", "protocols", "modules", "unmodeled"],
-];
-assert.deepEqual([...new Set(SETS.flat())].sort(), Object.keys(FAMILIES).sort(), "a family is not tried");
+assert.deepEqual([...new Set(FAMILY_SAMPLES.flat())].sort(), Object.keys(FAMILIES).sort(), "a family is not tried");
 
 function check(seed, families) {
   const program = generateProgram(seed, { families });
@@ -156,7 +146,7 @@ function check(seed, families) {
 }
 
 const summary = {};
-for (const families of SETS) {
+for (const families of FAMILY_SAMPLES) {
   const found = new Set();
   const types = new Set();
   const written = new Set();

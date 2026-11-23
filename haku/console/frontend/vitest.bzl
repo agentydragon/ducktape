@@ -1,19 +1,8 @@
-"""`vitest_test` for the haku console frontend's specs, with its config and tsconfig filled in."""
+"""Vitest tests for the Haku Console frontend."""
 
-load("//devinfra/js:vitest.bzl", "vitest_test")
+load("//devinfra/js:vitest.bzl", "vitest_test_for")
 
-def haku_vitest_test(name, srcs, **kwargs):
-    """A `vitest_test` of the frontend's shared `vitest_config` and `ts_config`, in any of its packages.
-
-    Args:
-        name: The test target.
-        srcs: The spec files.
-        **kwargs: As for `vitest_test`, minus `config` and `tsconfig`.
-    """
-    vitest_test(
-        name = name,
-        srcs = srcs,
-        config = "//haku/console/frontend:vitest_config",
-        tsconfig = "//haku/console/frontend:tsconfig",
-        **kwargs
-    )
+haku_vitest_test = vitest_test_for(
+    config = "//haku/console/frontend:vitest_config",
+    tsconfig = "//haku/console/frontend:tsconfig",
+)

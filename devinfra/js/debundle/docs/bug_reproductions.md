@@ -43,6 +43,9 @@ strings, or other source-specific material from a private debundling target to
 Ducktape. Keep each fixture focused on one bug class and assert the external
 contract: emitted exports, source shape, file layout, or runtime behavior.
 
+Use the public Excalidraw corpus (`excalidraw/README.md`) when it can reproduce
+the private failure through the pipeline or browser.
+
 If the private failure cannot genuinely be reproduced with a synthetic
 fixture, explain that limit in the PR, add coverage at the next useful level,
 and smoke-test the private corpus.

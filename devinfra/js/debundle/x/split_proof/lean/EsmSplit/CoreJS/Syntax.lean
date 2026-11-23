@@ -42,6 +42,7 @@ inductive LogOp where
 inductive Prim where
   | globalTypeof (binding : String)
   | globalRef (binding : String)
+  | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
@@ -126,6 +127,7 @@ inductive PropDef where
   | setter (k : Expr) (f : Func)
   /-- `__proto__: v`. -/
   | proto (v : Expr)
+  | spread (source : Expr)
 
 inductive ClassMember where
   | method (static : Bool) (k : Expr) (f : Func)
@@ -141,9 +143,11 @@ inductive Func where
   the named parameters in a lexical scope around the original function body. -/
   | withDefaults (name : String) (kind : FuncKind) (self : Bool)
     (params : List Name) (arity : Nat) (body : List Stmt)
-  /-- Deferred code: creation captures `free` cells; invocation gives the world callee, receiver and raw arguments.
-  `code` is the containing source unit's stable ID; `part` identifies a lexical function within it. -/
-  | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat) (free : List Name)
+  /-- Deferred code: creation captures `free` cells. Invocation either refuses for the given
+  reason or gives the world the callee, receiver and raw arguments. `code` is the containing
+  source unit's stable ID; `part` identifies a lexical function within it. -/
+  | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat)
+      (free : List Name) (refusal : Option String)
 
 inductive Stmt where
   | expr (e : Expr)
@@ -190,8 +194,8 @@ def Func.length : Func → Nat
   | .opaque _ _ _ n .. => n
 /-- Modeled statements; opaque functions dispatch to the world before this accessor is used. -/
 def Func.body : Func → List Stmt | .mk _ _ _ _ b | .withDefaults _ _ _ _ _ b => b | .opaque .. => []
-def Func.opaqueBody : Func → Option (Nat × Nat × List Name)
-  | .opaque _ _ _ _ code part free => some (code, part, free)
+def Func.opaqueBody : Func → Option (Nat × Nat × List Name × Option String)
+  | .opaque _ _ _ _ code part free refusal => some (code, part, free, refusal)
   | .mk .. | .withDefaults .. => none
 
 /-! ## Modules -/
@@ -308,7 +312,7 @@ def Target.free : Target → List Name
 def PropDef.free : PropDef → List Name
   | .init k v => k.free ++ v.free
   | .getter k f | .setter k f => k.free ++ f.free
-  | .proto v => v.free
+  | .proto v | .spread v => v.free
 
 def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free
@@ -316,7 +320,7 @@ def ClassMember.free : ClassMember → List Name
 
 /-- The names of the scope around a function that its code can mean. -/
 def Func.free : Func → List Name
-  | .opaque name _ self _ _ _ free => free.filter fun x => !(self && x == name)
+  | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
   | .mk name _ self params body | .withDefaults name _ self params _ body =>
     (freeStmts body).filter fun x =>
       !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x || (self && x == name))

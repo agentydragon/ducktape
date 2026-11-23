@@ -1,0 +1,32 @@
+import { spawnSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import * as acorn from "acorn";
+import * as eslintScope from "eslint-scope";
+import { lowerDump } from "../../lowering/dump_core.mjs";
+
+export const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" });
+
+// These fixtures assign one ordinal per statement. Factory and identity controls
+// move the penultimate statement unless they specify a different placement.
+export function prepareSideSplit(name, code, selectedSide) {
+  const dir = path.join(process.env.TEST_TMPDIR, name);
+  mkdirSync(dir, { recursive: true });
+  const source = dir + ".mjs";
+  const input = dir + "-ast.json";
+  const spec = dir + "-spec.json";
+  const dump = lowerDump(code, acorn, eslintScope);
+  const side = selectedSide ?? [dump.body.length - 2];
+  const modules = {
+    "entry.mjs": dump.body.flatMap((_, i) => (side.includes(i) ? [] : [`#${i}`])),
+    "side.mjs": side.map((i) => `#${i}`),
+  };
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(dump));
+  writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules }));
+  return { dir, source, input, spec };
+}
+
+export function lowerDiagnostic({ input, spec, dir }, ...flags) {
+  return run(process.env.LOWERSPLIT, ["--diagnostic", input, spec, dir, ...flags]);
+}

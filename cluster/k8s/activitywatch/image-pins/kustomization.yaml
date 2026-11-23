@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/aw-server
-    newTag: devel-20261123215205-9506bbb # {"$imagepolicy": "flux-system:aw-server:tag"}
+    newTag: devel-20261123225742-01a6651 # {"$imagepolicy": "flux-system:aw-server:tag"}

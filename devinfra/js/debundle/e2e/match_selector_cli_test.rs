@@ -73,6 +73,21 @@ fn addressed_selectors_use_the_full_typed_spec_schema() {
     let module_selector = format!("{}#/source_matches/0", module.display());
     let module_result = run(&module_selector, false);
     process::assert_success(&module_result);
+    let report: Value = serde_json::from_slice(&module_result.stdout).unwrap();
+    assert_eq!(
+        report["comparisons"][0]["selector"],
+        json!({
+            "origin": module_selector,
+            "match": "const value = renderPanel(\"left\");",
+            "identifiers": "alpha_all",
+            "target_binding": "value",
+            "kind": "binding_group",
+        })
+    );
+    assert_eq!(
+        report["comparisons"][0]["result"]["matched_binding"],
+        "leftPanel"
+    );
     let flat_result = run("#/logical_modules/app/ui~1left/source_matches/0", true);
     process::assert_success(&flat_result);
 

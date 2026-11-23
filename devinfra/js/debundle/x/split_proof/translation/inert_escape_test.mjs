@@ -9,102 +9,59 @@
 // Not covered, because the checker assumes it does not happen (premise P4: evaluation completes): a source that throws
 // when it runs, such as one that reads a `const` before its declaration.
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { frontBundle } from "./frontend.mjs";
+import { checkTranslation } from "./testing/check_translation.mjs";
+import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
-const frontend = path.join(here, "frontend.mjs");
 const fixture = (name) => readFileSync(path.join(here, "testdata/inert_escape", name), "utf8");
 
-// The source, its annotated ESTree and a split that moves the statements `side` into `side.mjs`.
-function prepare(name, code, side) {
-  const dir = path.join(temp, name);
-  mkdirSync(dir, { recursive: true });
-  const parsed = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
-  const source = path.join(temp, `${name}.mjs`);
-  const input = path.join(temp, `${name}-ast.json`);
-  const spec = path.join(temp, `${name}-spec.json`);
-  writeFileSync(source, code);
-  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
-  writeFileSync(
-    spec,
-    JSON.stringify({
-      entry: "entry.mjs",
-      modules: {
-        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
-        "side.mjs": side.map((i) => `#${i}`),
-      },
-    })
-  );
-  return { dir, source, input, spec };
-}
-
-// `translate` on the tree in `dir` against the source.
-function translate(name, source, dir) {
-  const bundle = path.join(temp, `${name}-bundle.json`);
-  const tree = path.join(temp, `${name}-tree.json`);
-  const cert = path.join(temp, `${name}-cert.json`);
-  for (const args of [
-    [frontend, "bundle", source, "--out", bundle],
-    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", tree],
-    [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
-  ]) {
-    const result = run(process.execPath, args);
-    assert.equal(result.status, 0, result.stderr);
-  }
-  return run(process.env.TRANSLATE, [bundle, tree, cert]);
-}
-
-const lowersplit = (p, ...flags) => run(process.env.LOWERSPLIT, ["--diagnostic", p.input, p.spec, p.dir, ...flags]);
 const describe = (name, r) => `${name}: ${r.stdout}\n${r.stderr}`;
 
 function refuse(name, code, side) {
-  const p = prepare(name, code, side);
-  const rejected = lowersplit(p);
+  const p = prepareSideSplit(name, code, side);
+  const rejected = lowerDiagnostic(p);
   assert.equal(rejected.status, 1, describe(name, rejected));
   assert.match(rejected.stdout, /FAIL\s+OrderOk/, name);
   assert(!existsSync(path.join(p.dir, "entry.mjs")), `${name} wrote a module without --force`);
-  assert.equal(lowersplit(p, "--force").status, 1, name);
+  assert.equal(lowerDiagnostic(p, "--force").status, 1, name);
   const before = run(process.execPath, [p.source]);
   const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
   assert.notEqual(after.status, 0, `${name}: the forced split should fail`);
   assert.match(after.stderr, /ReferenceError/, name);
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.equal(checked.status, 4, describe(name, checked));
   assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
 
 function accept(name, code, side) {
-  const p = prepare(name, code, side);
-  const emitted = lowersplit(p);
+  const p = prepareSideSplit(name, code, side);
+  const emitted = lowerDiagnostic(p);
   assert.equal(emitted.status, 0, describe(name, emitted));
   const before = run(process.execPath, [p.source]);
   const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, before.stdout, name);
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.equal(checked.status, 0, describe(name, checked));
 }
 
 function byBehavior(name, code, side) {
-  const p = prepare(name, code, side);
-  const unforced = lowersplit(p);
-  lowersplit(p, "--force");
+  const p = prepareSideSplit(name, code, side);
+  const unforced = lowerDiagnostic(p);
+  lowerDiagnostic(p, "--force");
   const before = run(process.execPath, [p.source]);
   const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
   const differs = after.status !== 0 || after.stdout !== before.stdout;
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   if (differs) {
     assert.equal(
       unforced.status,
@@ -187,7 +144,7 @@ console.log(trigger());`,
 // Both programs complete. Moving just the factory initialization changes what the callback observes.
 {
   const name = "escaped_array_includes_observes_factory";
-  const p = prepare(
+  const p = prepareSideSplit(
     name,
     `var ratios = [1, 2, 3];
 globalThis.installObserver(ratios, () => typeof factory);
@@ -204,10 +161,10 @@ export { ratios, factory };`,
   Object.defineProperty(ratios, "0", { get() { console.log(observe()); return 1; } });
 };`
   );
-  const rejected = lowersplit(p);
+  const rejected = lowerDiagnostic(p);
   assert.equal(rejected.status, 1, describe(name, rejected));
   assert.match(rejected.stdout, /FAIL\s+OrderOk/, name);
-  assert.equal(lowersplit(p, "--force").status, 1, name);
+  assert.equal(lowerDiagnostic(p, "--force").status, 1, name);
   for (const [file, expected] of [
     [p.source, "undefined\n2\n"],
     [path.join(p.dir, "entry.mjs"), "function\n2\n"],
@@ -216,7 +173,7 @@ export { ratios, factory };`,
     assert.equal(result.status, 0, describe(name, result));
     assert.equal(result.stdout, expected, name);
   }
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.equal(checked.status, 4, describe(name, checked));
   assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
@@ -225,8 +182,8 @@ export { ratios, factory };`,
 // their bindings during evaluation.
 {
   const name = "export_declaration";
-  const p = prepare(name, `export const local = 7;\nglobalThis.hook();`, [1]);
-  const rejected = lowersplit(p);
+  const p = prepareSideSplit(name, `export const local = 7;\nglobalThis.hook();`, [1]);
+  const rejected = lowerDiagnostic(p);
   assert.equal(rejected.status, 1, describe(name, rejected));
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
 }
@@ -327,7 +284,7 @@ for (const [name, code, side] of [
 // Read the global separately so that no array operation or coercion can mask getter reentry.
 {
   const name = "host_global_getter_observes_factory";
-  const p = prepare(
+  const p = prepareSideSplit(
     name,
     `var values = [1, 2, 3];
 globalThis.observe = () => typeof factory;
@@ -343,8 +300,8 @@ console.log(values.includes(ratio));`,
     get() { console.log(globalThis.observe()); return 2; }
   });`
   );
-  const verdict = lowersplit(p);
-  const forced = lowersplit(p, "--force");
+  const verdict = lowerDiagnostic(p);
+  const forced = lowerDiagnostic(p, "--force");
   for (const [file, expected] of [
     [p.source, "undefined\ntrue\n"],
     [path.join(p.dir, "entry.mjs"), "function\ntrue\n"],
@@ -353,7 +310,7 @@ console.log(values.includes(ratio));`,
     assert.equal(result.status, 0, describe(name, result));
     assert.equal(result.stdout, expected, name);
   }
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.deepEqual([verdict.status, checked.status], [1, 4], describe(name, verdict) + describe(name, checked));
   assert.equal(forced.status, 1, describe(name, forced));
   assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
@@ -365,9 +322,9 @@ for (const [name, setup, length] of [
   ["replaced_array_constructor", "globalThis.Array = function () { console.log(typeof factory); };", "3"],
   ["array_length_coercion", "var width = {valueOf() { console.log(typeof factory); return 3; }};", "(width + 2) * 2"],
 ]) {
-  const p = prepare(name, `${setup}\nvar slots = new Array(${length});\nvar factory = () => 7;`, [2]);
-  const verdict = lowersplit(p);
-  const forced = lowersplit(p, "--force");
+  const p = prepareSideSplit(name, `${setup}\nvar slots = new Array(${length});\nvar factory = () => 7;`, [2]);
+  const verdict = lowerDiagnostic(p);
+  const forced = lowerDiagnostic(p, "--force");
   for (const [file, expected] of [
     [p.source, "undefined\n"],
     [path.join(p.dir, "entry.mjs"), "function\n"],
@@ -376,7 +333,7 @@ for (const [name, setup, length] of [
     assert.equal(result.status, 0, describe(name, result));
     assert.equal(result.stdout, expected, name);
   }
-  const checked = translate(name, p.source, p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.dir);
   assert.deepEqual(
     [verdict.status, forced.status, checked.status],
     [1, 1, 4],

@@ -7,6 +7,7 @@ js_library(
     name = "differential",
     srcs = ["differential.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )
 
 js_library(
@@ -19,7 +20,10 @@ js_library(
         "to_core.mjs",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
-    deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
 )
 
 # Include first-party runfile helpers as lint sources.

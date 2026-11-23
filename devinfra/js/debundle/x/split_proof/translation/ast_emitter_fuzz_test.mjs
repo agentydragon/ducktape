@@ -8,17 +8,15 @@ import { topLevelStatements } from "./scope_metadata.mjs";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { generateAstBundle } from "./testing/ast_generator.mjs";
+import { lcg32 } from "../seeded_random.mjs";
 
 const tmp = process.env.TEST_TMPDIR;
 assert(tmp);
 const diagnostics = process.env.TEST_UNDECLARED_OUTPUTS_DIR ?? tmp;
 const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" });
 function random(seed) {
-  let state = seed >>> 0;
-  return (n) => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state % n;
-  };
+  const next = lcg32(seed);
+  return (n) => next() % n;
 }
 function preserve(dir, seed, round, plan, message) {
   const target = path.join(diagnostics, `ast-emitter-seed-${seed}-round-${round}-plan-${plan}`);

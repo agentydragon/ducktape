@@ -17,7 +17,34 @@ js_library(
 js_library(
     name = "ast_generator",
     srcs = ["ast_generator.mjs"],
-    deps = ["//devinfra/js/debundle/x/split_proof/translation:node_modules/astring"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+    ],
+)
+
+js_library(
+    name = "check_translation",
+    srcs = ["check_translation.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof/translation:frontend",
+        "//devinfra/js/debundle/x/split_proof/translation:pair",
+    ],
+)
+
+js_library(
+    name = "diagnostic_split",
+    srcs = ["diagnostic_split.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/eslint-scope",
+    ],
+)
+
+js_library(
+    name = "lint_sources",
+    srcs = glob(["**/*.mjs"]),
 )
 
 js_library(
@@ -32,4 +59,5 @@ js_library(
 js_library(
     name = "program_generator",
     srcs = glob(["gen/*.mjs"]),
+    deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )

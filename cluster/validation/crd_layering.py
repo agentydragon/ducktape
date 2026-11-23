@@ -123,9 +123,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "clickhouse-operator": {"ClickHouseInstallation", "ClickHouseKeeperInstallation"},
     "volsync": {"ReplicationDestination", "ReplicationSource"},
     "snapshot-controller-crds": {"VolumeSnapshotClass"},
-    # Flux bootstrap installs these CRDs; this Kustomization owns the shared
-    # ImageUpdateAutomation, and the Forgejo image resources depend on it.
-    "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 
 # Derived: CRD kind -> operator name (for error messages)

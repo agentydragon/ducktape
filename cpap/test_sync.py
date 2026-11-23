@@ -13,6 +13,7 @@ import pytest_bazel
 
 from cpap.card import FileEntry
 from cpap.sync import MANIFEST_FILENAME, SyncManifest, run_sync
+from testing.git_repo import configure_git_author, git
 
 NOW = datetime(2026, 6, 10, tzinfo=UTC)
 
@@ -21,24 +22,21 @@ NIGHT1_PATH = "DATALOG\\20260418\\202604~1.EDF"
 NIGHT2_PATH = "DATALOG\\20260419\\202604~2.EDF"
 
 
-def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
-
-
 @pytest.fixture
 def remote(tmp_path: Path) -> Path:
     """Bare repo with an initial README commit (simulates Forgejo auto_init)."""
     bare = tmp_path / "remote.git"
-    _git("init", "--bare", "-b", "main", str(bare))
+    git(tmp_path, "init", "--bare", "-b", "main", str(bare))
     # Let --filter=blob:none clones and lazy promisor fetches work over file://.
-    _git("-C", str(bare), "config", "uploadpack.allowfilter", "true")
-    _git("-C", str(bare), "config", "uploadpack.allowanysha1inwant", "true")
+    git(bare, "config", "uploadpack.allowfilter", "true")
+    git(bare, "config", "uploadpack.allowanysha1inwant", "true")
     seed = tmp_path / "seed"
-    _git("clone", str(bare), str(seed))
+    git(tmp_path, "clone", str(bare), str(seed))
+    configure_git_author(seed)
     (seed / "README.md").write_text("# cpap-data\n")
-    _git("-C", str(seed), "add", "README.md")
-    _git("-C", str(seed), "-c", "user.name=test", "-c", "user.email=test@invalid", "commit", "-m", "init")
-    _git("-C", str(seed), "push", "origin", "main")
+    git(seed, "add", "README.md")
+    git(seed, "commit", "-m", "init")
+    git(seed, "push", "origin", "main")
     return bare
 
 
@@ -79,7 +77,7 @@ def sync(card: FakeCard, remote: Path) -> None:
 
 
 def tree_paths(remote: Path) -> set[str]:
-    return set(_git("-C", str(remote), "ls-tree", "-r", "--name-only", "main").splitlines())
+    return set(git(remote, "ls-tree", "-r", "--name-only", "main").splitlines())
 
 
 def blob(remote: Path, path: str) -> bytes:
@@ -87,7 +85,7 @@ def blob(remote: Path, path: str) -> bytes:
 
 
 def commit_count(remote: Path) -> int:
-    return int(_git("-C", str(remote), "rev-list", "--count", "main"))
+    return int(git(remote, "rev-list", "--count", "main"))
 
 
 def test_initial_sync_commits_all_files(remote: Path) -> None:
@@ -113,7 +111,7 @@ def test_initial_sync_commits_all_files(remote: Path) -> None:
     assert manifest.files["DATALOG/20260419/202604~2.EDF"].size == len(b"night-2")
     assert manifest.files["STR.EDF"].create_time == 100
     assert commit_count(remote) == 2
-    assert _git("-C", str(remote), "log", "-1", "--format=%s").strip() == "cpap: sync 2026-06-10"
+    assert git(remote, "log", "-1", "--format=%s").strip() == "cpap: sync 2026-06-10"
 
 
 def test_rerun_is_noop(remote: Path) -> None:
