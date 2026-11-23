@@ -26,7 +26,11 @@ Two complete two-module closures now certify at linked `normal-completion` and p
 
 A control changes only the predicate initializer. It reads the first crossed provider binding, catches a temporal-dead-zone error in source order, and chooses a different predicate if the binding has already initialized. Both orders finish and expose the same single public name. The same-order control certifies. The checker refuses the authored reversal and publishes no files. With the same input, Node returns `true` from the original control and `false` from the diagnostic preview.
 
-**Next target.** Use the closure survey to select a crossing that exchanges two heap allocations. Check whether the existing final-state comparison can certify their observable identities, and minimize any refusal before extending the model.
+**Two allocating providers.** The ordinary checker certifies generated splits that evaluate two array allocations in reverse source order. It preserves which array an exported alias denotes. Changing an initializer to catch a temporal-dead-zone read lets both orders complete with different aliases. The checker refuses that crossing, and Node observes the difference. Each original statement keeps its allocation region when it moves between modules. The generated five-module test also certifies two providers that read a shared record and a hoisted builder that spreads their arrays. [Generated alias controls](translation/linked_arrays_test.mjs) and [five-module cases](translation/linked_composition_test.mjs).
+
+The selected complete production extraction has five authored modules and a 705-field string dictionary. Both concrete CoreJS initialization probes finish normally. Node compares the original, archived and diagnostic output by calling the sole exported builder and checking its whole return value, including which nested records are shared across calls. The full linked certificate is still open.
+
+**Next proof obligation.** Make the proof of evaluating the full dictionary tractable. A two-module reproducer needs only a single declaration `const table = {field0: "value0", …}` and a named export. At 95 distinct fields the ordinary checker certifies it. At 96 it exhausts the kernel tactic’s reduction budget. Use the complete dictionary for acceptance, then check the emitted files and the nearby control in which the reversed order changes an alias. [Adjacent-width results](https://app.buildbuddy.io/invocation/4c80f4e6-841b-40bc-bbde-a3a61367edbb).
 
 ### Known blockers on the production input
 
