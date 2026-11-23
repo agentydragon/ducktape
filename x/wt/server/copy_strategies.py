@@ -8,8 +8,7 @@ from pathlib import Path
 
 from x.wt.shared.configuration import CowMethod
 
-# Unified list of top-level entries to exclude when copying a worktree directory
-# Keep in sync with rsync excludes
+# Top-level entries excluded by both copy strategies.
 EXCLUDE_NAMES: tuple[str, ...] = (".git", ".worktrees")
 
 
@@ -46,7 +45,9 @@ class ReflinkCopyStrategy(CopyStrategy):
 
 class RsyncCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
-        exclude_args = [f"--exclude={name}/" for name in EXCLUDE_NAMES]
+        # Protect root entries of any type, including a linked worktree's .git file.
+        # Keep the existing recursive directory exclusions.
+        exclude_args = [f"--exclude={pattern}" for name in EXCLUDE_NAMES for pattern in (f"/{name}", f"{name}/")]
         subprocess.run(["rsync", "-a", "--delete", *exclude_args, f"{src}/", f"{dst}/"], check=True)
 
     @property

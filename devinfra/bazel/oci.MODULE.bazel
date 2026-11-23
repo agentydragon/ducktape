@@ -400,10 +400,13 @@ apt.install(
     ],
 )
 
-# Exercise wt's sourced shell function in Zsh without adding it to the RBE image.
+# Exercise wt's Zsh shell function and rsync copy without adding tools to the RBE image.
 apt.install(
     dependency_set = "wt_shell_test",
-    packages = ["zsh"],
+    packages = [
+        "rsync",
+        "zsh",
+    ],
     suites = [
         "trixie",
         "trixie-security",
