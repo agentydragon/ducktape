@@ -19,11 +19,12 @@ rejected.
 
 ## A11 intrinsic integrity assumption
 
-For purity rules still relying on A11 alone, migrate builtin rows to the existing
-source-write census as described in [the abstract-interpreter plan](plans/abstract_interpreter.md).
-The census already guards exact slots for migrated consumers. Hidden writes
-and host or external mutations remain the author’s
+The source-write census already guards exact slots for migrated native consumers.
+Hidden writes and host or external mutations remain the author's
 [A11 obligation](docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
+For purity-table consumers, see [the planned migration](plans/abstract_interpreter.md).
+For broader whole-chunk admission, decide whether an additional mandatory
+check is worth its cost before changing the runtime contract.
 
 ## Defensive comment in linker ordering
 
