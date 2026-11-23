@@ -45,6 +45,15 @@ js_library(
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
 )
 
+js_library(
+    name = "reporting",
+    srcs = ["reporting.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/experiments/splits:__pkg__",
+    ],
+)
+
 # Lowering entries and torture.mjs are inputs to the experiment.
 js_library(
     name = "lint_sources",
@@ -62,6 +71,7 @@ eslint_test(
     name = "eslint_test",
     srcs = [
         ":lint_sources",
+        ":reporting",
         ":seeded_random",
     ],
 )
