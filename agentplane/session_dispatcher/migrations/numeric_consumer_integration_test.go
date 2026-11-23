@@ -16,7 +16,7 @@ func TestNumericConsumerReadsHistoricalStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.UpTo(ctx, 30); err != nil {
+	if _, err := provider.UpTo(ctx, 28); err != nil {
 		t.Fatal(err)
 	}
 	insertRetainedEvidence(t, db)
@@ -24,6 +24,14 @@ func TestNumericConsumerReadsHistoricalStates(t *testing.T) {
 		(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at)
 		SELECT 'historical-command',session_id,sandbox_name,sandbox_uid,operation,command,'older-state',created_at,updated_at
 		FROM dispatch WHERE command_id='uncertain-command'`); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-retention Dispatchers physically deleted these rows when an environment went away.
+	if _, err := db.ExecContext(ctx, `INSERT INTO dispatch
+		(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at)
+		SELECT 'deleted-' || command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at
+		FROM dispatch WHERE session_id='retained-session';
+		DELETE FROM dispatch WHERE command_id IN ('deleted-uncertain-command','deleted-historical-command')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := provider.UpTo(ctx, 31); err != nil {
@@ -47,16 +55,17 @@ func TestNumericConsumerReadsHistoricalStates(t *testing.T) {
 			t.Errorf("receipt %q has state %v", receipt.CommandId, receipt.State)
 		}
 	}
-	for _, deleted := range []bool{false, true} {
-		if deleted {
-			if _, err := db.ExecContext(ctx, "DELETE FROM dispatch WHERE session_id=$1", sessionID); err != nil {
-				t.Fatal(err)
-			}
+	workset, _, err := consumer.ReadDispatchWorkset(ctx, sessionID, caller, 0, false)
+	if err != nil || len(workset.GetRecentIssues()) != 2 {
+		t.Fatalf("recent issues = %v, error %v", workset, err)
+	}
+	want := map[string]bool{"uncertain-command": false, "deleted-uncertain-command": true}
+	for _, issue := range workset.GetRecentIssues() {
+		wasDeleted, ok := want[issue.CommandId]
+		if !ok || issue.LegacyDeletionReceipt != wasDeleted {
+			t.Fatalf("unexpected recent issue %v", issue)
 		}
-		workset, _, err := consumer.ReadDispatchWorkset(ctx, sessionID, caller, 0, false)
-		if err != nil || len(workset.GetRecentIssues()) != 1 || workset.RecentIssues[0].CommandId != "uncertain-command" || workset.RecentIssues[0].LegacyDeletionReceipt != deleted {
-			t.Fatalf("recent issues after deletion=%t: %v, error %v", deleted, workset, err)
-		}
+		delete(want, issue.CommandId)
 	}
 	filter := &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: sessionID}}
 	changes, err := consumer.ReadDispatchChanges(ctx, filter, caller, 0, false)
@@ -64,7 +73,7 @@ func TestNumericConsumerReadsHistoricalStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, change := range changes.Changes {
-		if change.Dispatch.GetCommandId() == "historical-command" && change.Deleted && change.Dispatch.GetState() == store.UnknownState {
+		if change.Dispatch.GetCommandId() == "deleted-historical-command" && change.Deleted && change.Dispatch.GetState() == store.UnknownState {
 			return
 		}
 	}
