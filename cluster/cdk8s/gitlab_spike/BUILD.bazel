@@ -1,9 +1,3 @@
-# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
-# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
-# gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/providers/flux:imageupdateautomation
-# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
-
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])

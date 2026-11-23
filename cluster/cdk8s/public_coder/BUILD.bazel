@@ -1,4 +1,3 @@
-# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])

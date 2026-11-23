@@ -1,6 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
 cdk8s_import(

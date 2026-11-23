@@ -1,6 +1,3 @@
-# gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
-# gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
-# gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 # gazelle:resolve py buildbuddy_secret_crds //cluster/cdk8s/providers/crossplane:buildbuddy_secret
 # gazelle:resolve py buildbuddy_providerconfig_crds //cluster/cdk8s/providers/crossplane:buildbuddy_providerconfig
 

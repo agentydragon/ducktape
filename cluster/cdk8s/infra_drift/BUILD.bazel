@@ -1,7 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
-# gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(

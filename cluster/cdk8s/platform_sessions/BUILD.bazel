@@ -1,7 +1,6 @@
 # gazelle:ignore
 
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 load("@image_pins//:pins.bzl", "MITMPROXY_12_2_3_REFERENCE")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
