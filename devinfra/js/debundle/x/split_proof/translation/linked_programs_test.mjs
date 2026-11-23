@@ -153,6 +153,35 @@ assertWorkerResult(
   assert(!existsSync(out));
 }
 
+assertWorkerResult(
+  "hoisted-local-function",
+  `const worker = (offset) => {
+    const answer = read(2);
+    if (answer !== 42) throw "incorrect hoisting or capture";
+    return answer;
+
+    function read(remaining) {
+      return remaining === 0 ? offset : read(remaining - 1);
+    }
+  };
+  export const result = worker(42);`,
+  42
+);
+
+for (const [name, body, reason] of [
+  ["parameter", "function read() {} return read();", /overlaps a parameter or var binding/],
+  ["var", "var local; function local() {} return local();", /overlaps a parameter or var binding/],
+  ["duplicate", "function local() {} function local() {} return local();", /duplicate local function declaration/],
+]) {
+  const { verdict, out } = workerSplit(
+    `local-function-${name}`,
+    `const worker = (read) => { ${body} }; export const result = worker();`
+  );
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, reason, name);
+  assert(!existsSync(out));
+}
+
 // Different numeric spellings compare by string contents.
 assertWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
 assertWorkerResult(

@@ -86,9 +86,10 @@ the stable `editor.js` alias via the generated JS roster and runs the normal spl
 on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. The
 decoder lowers the React factory body when it reads the declaration in
 statement 5. It retains the deferred `Symbol.for` calls and the read of
-`Symbol.iterator`, then stops at the nested function declaration `Mf` in
-that factory. Both trials refuse and leave the output directory absent. Each
-target records the source filename, placement spec and verdict.
+`Symbol.iterator`, then lowers the nested function declaration `Mf`.
+Both trials stop at the later ambient `Object` reference and leave the output
+directory absent. Each target records the source filename, placement spec
+and verdict.
 
 Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.

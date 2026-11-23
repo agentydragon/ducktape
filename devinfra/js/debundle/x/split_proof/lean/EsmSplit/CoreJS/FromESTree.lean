@@ -549,12 +549,18 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
   let stmts ← if (← field body "type") == "BlockStatement" then
-    linkedFunctionBody profile imports body
+    linkedFunctionBody profile imports body (allowFunctions := true)
   else if kind == .arrow then
     pure [.ret (← linkedExpr profile imports true "" body)]
   else throw "expected a function body block"
+  let functions := (funDecls stmts).map Func.name
+  let bodyVars := if hasDefaults || !functions.isEmpty then varNamesOf stmts else []
+  -- CoreJS allocates every function name in its own body-scope cell. JavaScript
+  -- can instead reuse a parameter or var cell, or select the last declaration.
+  unless functions.Nodup do throw "duplicate local function declaration"
+  if functions.any (fun x => bound.contains x || bodyVars.contains x) then
+    throw "local function declaration overlaps a parameter or var binding"
   if hasDefaults then
-    let bodyVars := varNamesOf stmts
     let defaultReads := params.toList.flatMap fun p => p.2.toList.flatMap Expr.free
     -- The evaluator hoists body vars at entry. Only admit that hoisting when
     -- it cannot shadow a reference in a default or merge a body's var with the parameter cell.
@@ -641,11 +647,16 @@ private partial def linkedLocalDeclarations (profile : HostProfile) (imports : L
 
 /-- Keep every declarator in its enclosing statement list. Function instantiation hoists
 all its vars, and block instantiation creates the lexical bindings before initialization. -/
-private partial def linkedFunctionBody (profile : HostProfile) (imports : List Name) (block : Json) : Except String (List Stmt) := do
+private partial def linkedFunctionBody (profile : HostProfile) (imports : List Name) (block : Json)
+    (allowFunctions := false) : Except String (List Stmt) := do
   let mut result := #[]
   for stmt in ← block.getObjValAs? (Array Json) "body" do
-    if (← field stmt "type") == "VariableDeclaration" then
+    let kind ← field stmt "type"
+    if kind == "VariableDeclaration" then
       result := result ++ (← linkedLocalDeclarations profile imports result.size stmt)
+    else if allowFunctions && kind == "FunctionDeclaration" then
+      let name ← stmt.getObjVal? "id" >>= localBinding
+      result := result.push (.funDecl (← linkedFunction profile imports .normal name false stmt))
     else
       result := result.push (← linkedStatement profile imports true stmt)
   return result.toList
