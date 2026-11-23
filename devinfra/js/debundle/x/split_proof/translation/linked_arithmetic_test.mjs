@@ -4,7 +4,6 @@ import path from "node:path";
 import {
   arrow,
   block,
-  call,
   exportNamed,
   forcePreview,
   id,
@@ -48,11 +47,13 @@ assertCertified(
   split(
     "length-offset",
     `const last = (index, values) => index === values.length - 1;
-     const result = [last(2, [0, 0, 0]), last("2", [0, 0, 0]), last(2, { length: "3" })];
+     const result = () => [last(2, [0, 0, 0]), last("2", [0, 0, 0]), last(2, { length: "3" })];
      export { result };`
   ),
   [true, false, true]
 );
+
+assertCertified(split("eager-subtraction", "const length = 5; const result = length - 1; export { result };"), 4);
 
 assertCertified(
   split(
@@ -79,7 +80,7 @@ assertCertified(
         throw error;
       }
     };
-    const result = [run(false), run(true)];
+    const result = () => [run(false), run(true)];
     export { result };`
   ),
   [21, "left"]
@@ -104,8 +105,8 @@ function requireEqual(actual, expected) {
   };
 }
 
-// Guard both the value and its type inside the model. A zero is observed via
-// its reciprocal so that Node's JSON serialization cannot erase its sign.
+// Check both value and type when calling the relocated closure. A zero is
+// observed via its reciprocal so Node's JSON serialization preserves its sign.
 const cases = [
   ["+", 0.1, 0.2, 0.30000000000000004],
   ["+", "amount:", 1e21, "amount:1e+21"],
@@ -140,7 +141,7 @@ for (const [index, [operator, a, b, value]] of cases.entries()) {
 }
 const generated = program([
   variable("const", "run", arrow([], block([...assertions, returns(array(observations))]))),
-  variable("const", "result", call(id("run"))),
+  variable("const", "result", id("run")),
   exportNamed([["result", "result"]]),
 ]);
 assertCertified(split("generated-arithmetic", generated), expected);
@@ -168,16 +169,16 @@ assertRejected(bigint, /unsupported literal/);
 {
   const source = `var factor;
     factor = 2;
-    const result = "scaled:" + (6 * factor);
+    const result = 6 * factor === 12;
     export { result };`;
   const reader = "reader.mjs";
   const modules = { [worker]: ["#0", "#1"], [reader]: ["#2"], [entry]: ["#3"] };
-  assertCertified(split("ordered-arithmetic", source, modules, [worker, reader]), "scaled:12");
+  assertCertified(split("ordered-arithmetic", source, modules, [worker, reader]), true);
   const early = split("early-arithmetic", source, modules, [reader, worker]);
   assertRejected(early, /probe executions completed normally with different final states/);
   const preview = path.join(early.dir, "preview");
   forcePreview(early.files, preview);
   assert.deepEqual(moduleEvaluationOrder(preview, entry), [reader, worker, entry]);
-  assert.deepEqual(observe(early.files.sourceFile, "result"), { result: "scaled:12" });
-  assert.deepEqual(observe(path.join(preview, entry), "result"), { result: "scaled:NaN" });
+  assert.deepEqual(observe(early.files.sourceFile, "result"), { result: true });
+  assert.deepEqual(observe(path.join(preview, entry), "result"), { result: false });
 }
