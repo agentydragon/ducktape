@@ -49,9 +49,8 @@ not suppress publication after a successful retry.
 An unfinished runner, unreadable child, contradictory lineage or missing final
 result preserves the publication test step without suppressing it from an
 earlier attempt's failures. The `bbapi invocation export` contract carries the
-attempt and parent IDs, ordered children and terminal exit-code name. Until a
-CLI with those fields is pinned, successful initial invocations remain reusable,
-while failed invocations with no exit-code evidence keep their test gates enabled.
+attempt and parent IDs, ordered children and terminal exit-code name. Failed
+invocations with no exit-code evidence keep their test gates enabled.
 
 ## Identity
 
@@ -89,35 +88,24 @@ landed. The planner, release job, and Nix overrides use the same resolver for a
 label's single default-group, non-aspect output and its expected filename.
 Unlike the planner it fails loud, because it runs in the job about to publish.
 
-## The planner fails open; the push job does not
+## When an image or release stays in the matrix
 
-`release` and `push-images` run under `always() && !cancelled()`, so they run
-even when `bazel-ci` failed or was skipped. **In the planner, anything short of
-proof that an item is unchanged republishes it.** No invocation, an output the
-stream never mentions, an unreadable blob, an unreachable registry — all keep the
-item in the matrix.
+`release` and `push-images` can run after an unrelated Bazel CI failure. Each planner checks the evidence for
+the individual item.
 
-The asymmetry is deliberate: wrongly including an item costs one job, wrongly
-excluding one silently skips a deployment. A planner that cannot prove anything
-must degrade to the full fan-out it replaced, never to publishing nothing.
+| Evidence                                                                            | Publication decision                                                                          |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Missing CI invocation, missing target output or unreadable digest blob              | Keep the candidate. Its publication job builds the target and checks its content again.       |
+| Push CI recorded a failure for a literal test in the item's gate                    | Omit the item from the matrix. An unproven pass keeps the publication test step enabled.      |
+| The release's content-addressed GitHub release already exists                       | Skip the release. If the lookup fails, keep the candidate.                                    |
+| The Bazel image digest equals the registry's `latest` digest                        | Skip the image. A missing repository or tag allows a first push.                              |
+| The image planner has a local digest but registry authentication or transport fails | Fail the plan. The push job also fails if its own digest comparison cannot read the registry. |
 
-What makes that cheap is that the item's own job decides again, from what it
-built rather than from what the planner could read. A release is content-addressed
-— same bytes, same tag, nothing new to publish. An image is not: every push mints
-a fresh `devel-<timestamp>-<sha>` tag that Flux picks up, so publishing an
-unchanged image still costs a commit, a reconcile and a rollout. So
-`devinfra/ci/push_image.py` compares its built digest against what the registry
-last published and pushes only on a difference. Before it was decommissioned and
-removed from the image roster, `manifold-mcp-server` churned a deployment on every
-merge because this sweep could not see its nested-module target.
-
-**And there the asymmetry reverses.** The push job is the last check, so a
-registry it cannot read fails the job rather than publishing regardless. Carrying
-the planner's rule down here would have meant a blip republishing the very images
-this check exists to hold back — and it would rarely buy anything, since the push
-that follows goes to the same registry with the same credentials. A push not made
-is recovered by the next merge, which still sees the difference; a push wrongly
-made is a rollout.
+The final digest comparison matters for images outside the devel sweep. Before its retirement,
+`manifold-mcp-server` rolled on every merge because CI could not see its nested-module target. A new pinned
+tag can make Flux roll a workload even when its bytes match a previous push.
+[Image planner](../plan_image_pushes.py) · [Push job](../push_image.py) ·
+[Release planner](../plan_releases.py)
 
 ## What a `//...` sweep cannot cover
 

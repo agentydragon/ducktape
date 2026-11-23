@@ -78,9 +78,9 @@ Guide: <docs/container-images.md>.
   carrying an `$imagepolicy` marker** — `ImageUpdateAutomation` re-serializes the document
   differently from prettier and pushes to `devel` as `chore: update images [skip ci]`
   without CI, turning `devel` red on every image update. Use block style.
-- One `ImageRepository` + one `ImagePolicy` not reused elsewhere: one `<name>-image.yaml`,
-  repository first. `ImageUpdateAutomation` gets its own file. A Receiver reference alone
-  doesn't force a split.
+- For hand-written manifests, keep an `ImageRepository` and its single-use `ImagePolicy`
+  in one `<name>-image.yaml`, repository first. Give `ImageUpdateAutomation` its own file.
+  A Receiver reference alone does not require splitting the pair.
 
 ## Storage Selection
 

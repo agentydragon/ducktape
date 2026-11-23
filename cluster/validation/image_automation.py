@@ -50,9 +50,8 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
 
     return [
         *(
-            f"ImageRepository '{name}' is not listed in any Receiver; new tags will only be picked up on the 5m poll, "
-            "not on push. Add it to the Receiver for its registry (cluster/cdk8s/flux_webhook.py for GHCR, "
-            "cluster/cdk8s/forgejo_registry/chart.py for the Forgejo registry)."
+            f"ImageRepository '{name}' has no webhook Receiver. New tags will be discovered on the next poll. "
+            "See cluster/docs/container-images.md for the registry's roster and Receiver."
             for name in sorted(image_repos - webhook_repos)
         ),
         *(
@@ -83,7 +82,7 @@ def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[st
         relative = path.relative_to(k8s_dir)
         errors.extend(
             f"{relative} has an $imagepolicy marker for '{ref}', but no such "
-            "ImagePolicy is defined under cluster/k8s. Flux will silently never update this image."
+            "ImagePolicy appears in the rendered cluster. Flux cannot update this image."
             for ref in refs
             # A field-scoped setter has a third component such as ":tag".
             if ":".join(ref.split(":")[:2]) not in policies

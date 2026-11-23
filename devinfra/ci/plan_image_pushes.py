@@ -15,10 +15,9 @@ repository's directory name is mangled by bzlmod and cannot be reconstructed, an
 most image targets here are literally named `image`, so a path or basename guess
 resolves to the wrong file — quietly.
 
-It fails open. An image the stream never mentions, an unreadable blob, an
-unreachable registry — anything short of proof that the image is unchanged keeps
-it in the push matrix, where the per-image job checks properly. Wrongly including
-an image costs one job; wrongly excluding one silently skips a deployment.
+A missing or unreadable CI digest leaves the comparison to the per-image job.
+If the planner has the digest, a registry lookup error stops planning. A missing
+repository or tag allows an initial push. See devinfra/ci/docs/publish_planning.md.
 
 Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
 library. `crane` comes from the workflow's setup-crane step.
