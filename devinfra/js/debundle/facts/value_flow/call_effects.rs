@@ -5,7 +5,7 @@
 use super::*;
 use crate::inference::IterativeFacts;
 use petgraph::{
-    algo::{kosaraju_scc, toposort},
+    algo::kosaraju_scc,
     graph::{DiGraph, NodeIndex},
     graphmap::DiGraphMap,
     visit::EdgeRef,
@@ -221,12 +221,11 @@ impl CallEffectRules {
             work.component_edges = component_graph.edge_count();
         }
 
-        let order = toposort(&component_graph, None)
-            .expect("the strongly connected component graph is acyclic");
-        for component in order.into_iter().rev() {
+        // Kosaraju numbers SCCs in reverse topological order.
+        for component in 0..summaries.len() {
+            let (dependencies, current) = summaries.split_at_mut(component);
             for successor in component_graph.neighbors(component) {
-                let successor_summary = summaries[successor].clone();
-                summaries[component].union_with(&successor_summary);
+                current[0].union_with(&dependencies[successor]);
                 #[cfg(test)]
                 {
                     work.successor_unions += 1;

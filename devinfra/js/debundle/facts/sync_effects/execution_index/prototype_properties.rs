@@ -36,17 +36,8 @@ fn prototype_intrinsic_roots(
         &BTreeMap::new(),
         &CallableReturnInputs::default(),
     )
-    .into_iter()
-    .filter_map(|root| match root {
-        NativeReceiverRoot::Intrinsic(root)
-        | NativeReceiverRoot::IntrinsicPrototype(root)
-        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(root),
-        NativeReceiverRoot::OrdinaryDirect { .. }
-        | NativeReceiverRoot::OrdinaryDescendant { .. }
-        | NativeReceiverRoot::ArrayIteratorPrototype
-        | NativeReceiverRoot::SetIteratorPrototype
-        | NativeReceiverRoot::BundleGlobal => None,
-    })
+    .iter()
+    .filter_map(NativeReceiverRoot::intrinsic_root)
     .collect()
 }
 
@@ -760,34 +751,19 @@ impl CapabilityGraph {
         let roots_changed = state.roots[node] != roots;
         state.roots[node] = roots;
 
+        let intrinsic_roots = |index: usize| {
+            state.roots[index]
+                .iter()
+                .filter_map(NativeReceiverRoot::intrinsic_root)
+        };
         let mut contained = self.nodes[node].extra.clone();
-        contained.extend(state.roots[node].iter().filter_map(|root| match root {
-            NativeReceiverRoot::Intrinsic(root)
-            | NativeReceiverRoot::IntrinsicPrototype(root)
-            | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
-            NativeReceiverRoot::OrdinaryDirect { .. }
-            | NativeReceiverRoot::OrdinaryDescendant { .. }
-            | NativeReceiverRoot::ArrayIteratorPrototype
-            | NativeReceiverRoot::SetIteratorPrototype
-            | NativeReceiverRoot::BundleGlobal => None,
-        }));
+        contained.extend(intrinsic_roots(node));
         for input in &self.nodes[node].contained {
             match input {
                 ContainedInput::Nested(child) => {
                     contained.extend(state.contained[*child].iter().copied());
                 }
-                ContainedInput::Roots(child) => {
-                    contained.extend(state.roots[*child].iter().filter_map(|root| match root {
-                        NativeReceiverRoot::Intrinsic(root)
-                        | NativeReceiverRoot::IntrinsicPrototype(root)
-                        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
-                        NativeReceiverRoot::OrdinaryDirect { .. }
-                        | NativeReceiverRoot::OrdinaryDescendant { .. }
-                        | NativeReceiverRoot::ArrayIteratorPrototype
-                        | NativeReceiverRoot::SetIteratorPrototype
-                        | NativeReceiverRoot::BundleGlobal => None,
-                    }));
-                }
+                ContainedInput::Roots(child) => contained.extend(intrinsic_roots(*child)),
             }
         }
         let contained_changed = state.contained[node] != contained;

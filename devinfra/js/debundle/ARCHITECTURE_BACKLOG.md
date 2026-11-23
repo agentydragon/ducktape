@@ -25,10 +25,3 @@ admission and is not detected. A top-level scan for assignments such as
 `<Builtin>.prototype.<x> = ...` could check the in-corpus portion; pollution from
 host code or other bundles remains an external assumption. Decide whether that
 check is worth its cost before changing the runtime contract.
-
-## Defensive comment in linker ordering
-
-`graph/linker_order.rs::chunk_source_import_order_from_adjacency` has a
-`None`-after-`Some` clause described as protection against future filter changes
-that might admit non-constraining members. If the filter shape changes, test the
-resulting invariant or remove the defensive branch.
