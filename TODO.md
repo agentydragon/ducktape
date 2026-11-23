@@ -6,6 +6,8 @@
 
 ## Linting
 
+- [ ] Consider a standard XML formatter and linter, including D-Bus introspection validation for the GNOME extensions.
+
 - [ ] Catch **over-declared** `ts_library`/`js_library` deps. Under-declaration already fails the
       build — `ts_library` compiles each target's srcs as its own program against its deps' `.d.ts`,
       so a missing dep is a TS2307 — but a dep nothing imports is invisible, and it widens the
