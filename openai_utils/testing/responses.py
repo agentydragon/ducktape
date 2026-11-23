@@ -72,7 +72,7 @@ class DecoratorMock(Model):
     Example:
         @DecoratorMock.mock()
         def my_mock(m: DecoratorMock):
-            req = yield
+            req = yield None
             yield m.assistant_text("Done")
     """
 
@@ -88,10 +88,7 @@ class DecoratorMock(Model):
     def mock(cls) -> Callable[[Callable[[Self], PlayGen]], Self]:
         """Decorate a generator that receives an instance of this mock class."""
 
-        def decorator(fn: Callable[[Self], PlayGen]) -> Self:
-            return cls(fn)
-
-        return decorator
+        return cls
 
     def tool_call(
         self, name: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None

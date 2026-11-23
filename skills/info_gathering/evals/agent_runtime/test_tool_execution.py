@@ -121,7 +121,7 @@ async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: Fu
 
     @DecoratorMock.mock()
     def client(m: DecoratorMock) -> PlayGen:
-        first_request = yield
+        first_request = yield None
         assert len(first_request.input) == 1
         retry = yield list(first_turn_calls)
         assert len(retry.input) > 1
