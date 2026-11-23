@@ -4,7 +4,7 @@ import GObject from "gi://GObject";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
 
-import { loadInterfaceXml } from "./dbus.js";
+import { DBusGetter, loadInterfaceXml } from "./dbus.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
@@ -241,10 +241,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._lastAttemptAt = 0;
       this._nextRetryAt = 0;
       this._hasView = false;
-      this._viewRequestId = 0;
-      this._viewRequestCancellable = null;
-      this._historyRequestId = 0;
-      this._historyRequestCancellable = null;
+      this._viewGetter = new DBusGetter("GetView");
+      this._historyGetter = new DBusGetter("GetPaceHistory");
       this._history = null;
       this._historyError = false;
       this._proxyHandlerIds = [];
@@ -375,8 +373,8 @@ const PlaidSpendIndicator = GObject.registerClass(
         this._proxyHandlerIds.push(this._proxy.connect("g-properties-changed", () => this._readProperties()));
         this._proxyHandlerIds.push(
           this._proxy.connect("notify::g-name-owner", () => {
-            this._cancelViewRequest();
-            this._cancelHistoryRequest();
+            this._viewGetter.cancel();
+            this._historyGetter.cancel();
             this._history = null;
             this._readProperties();
             if (this._proxy.g_name_owner) this._fetchView();
@@ -431,89 +429,41 @@ const PlaidSpendIndicator = GObject.registerClass(
     }
 
     _fetchView() {
-      const proxy = this._proxy;
-      const owner = proxy?.g_name_owner;
-      if (!owner || this._destroyed) return;
-      this._cancelViewRequest();
-      const requestId = ++this._viewRequestId;
-      const cancellable = new Gio.Cancellable();
-      this._viewRequestCancellable = cancellable;
-      proxy.call("GetView", null, Gio.DBusCallFlags.NONE, -1, cancellable, (source, result) => {
-        const isCurrent = () =>
-          !this._destroyed &&
-          source === proxy &&
-          this._proxy === proxy &&
-          owner === proxy.g_name_owner &&
-          requestId === this._viewRequestId;
-        try {
-          const reply = source.call_finish(result);
-          if (!isCurrent()) return;
-          this._viewRequestCancellable = null;
-          const [rawView] = reply.deep_unpack();
-          this._acceptView(rawView);
-        } catch (error) {
-          if (!isCurrent()) return;
-          this._viewRequestCancellable = null;
+      if (this._destroyed) return;
+      this._viewGetter.read(
+        this._proxy,
+        (rawView) => this._acceptView(rawView),
+        (error) => {
           this._error = error.message;
           this._render();
         }
-      });
-    }
-
-    _cancelViewRequest() {
-      this._viewRequestId += 1;
-      if (this._viewRequestCancellable) {
-        this._viewRequestCancellable.cancel();
-        this._viewRequestCancellable = null;
-      }
-    }
-
-    _cancelHistoryRequest() {
-      this._historyRequestId += 1;
-      if (this._historyRequestCancellable) {
-        this._historyRequestCancellable.cancel();
-        this._historyRequestCancellable = null;
-      }
+      );
     }
 
     _fetchHistory() {
       if (this._fixtureMode) return;
-      this._cancelHistoryRequest();
       this._history = null;
       this._historyError = false;
-      if (!this._settings.get_strv("panel-visible").includes("sparkline")) return;
-      const proxy = this._proxy;
-      const owner = proxy?.g_name_owner;
-      if (!owner || this._destroyed || !this._hasView || this._status !== "ready") return;
-      const requestId = ++this._historyRequestId;
-      const cancellable = new Gio.Cancellable();
-      this._historyRequestCancellable = cancellable;
-      proxy.call("GetPaceHistory", null, Gio.DBusCallFlags.NONE, -1, cancellable, (source, result) => {
-        const isCurrent = () =>
-          !this._destroyed &&
-          source === proxy &&
-          this._proxy === proxy &&
-          owner === proxy.g_name_owner &&
-          requestId === this._historyRequestId;
-        try {
-          const reply = source.call_finish(result);
-          if (!isCurrent()) return;
-          this._historyRequestCancellable = null;
-          const [raw] = reply.deep_unpack();
+      if (!this._sparklineEnabled || this._destroyed || !this._hasView || this._status !== "ready") {
+        this._historyGetter.cancel();
+        return;
+      }
+      this._historyGetter.read(
+        this._proxy,
+        (raw) => {
           const history = JSON.parse(raw);
           if (!history || history.status !== "active" || !Array.isArray(history.windows))
             throw new Error("Pace history unavailable");
           this._history = history;
           this._historyError = false;
           this._render();
-        } catch (_error) {
-          if (!isCurrent()) return;
-          this._historyRequestCancellable = null;
+        },
+        () => {
           this._history = null;
           this._historyError = true;
           this._render();
         }
-      });
+      );
     }
 
     _historyPoints() {
@@ -611,7 +561,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       try {
         const view = JSON.parse(rawView);
         if (!view || !Array.isArray(view.cards)) throw new Error("invalid Plaid Spend view");
-        this._cancelViewRequest();
+        this._viewGetter.cancel();
         this._view = view;
         this._hasView = true;
         this._fetchHistory();
@@ -948,8 +898,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._destroyed = true;
       this._stopTimingRefresh();
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
-      this._cancelViewRequest();
-      this._cancelHistoryRequest();
+      this._viewGetter.cancel();
+      this._historyGetter.cancel();
       this._daemonConnectCancellable.cancel();
       this._settings.disconnect(this._settingsChangedId);
       for (const handlerId of this._proxyHandlerIds) this._proxy.disconnect(handlerId);

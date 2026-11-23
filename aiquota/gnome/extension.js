@@ -6,7 +6,7 @@ import Clutter from "gi://Clutter";
 import Pango from "gi://Pango";
 import Atk from "gi://Atk";
 
-import { loadInterfaceXml } from "./dbus.js";
+import { DBusGetter, loadInterfaceXml } from "./dbus.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
@@ -236,9 +236,7 @@ const QuotaIndicator = GObject.registerClass(
       this._proxy = null;
       this._daemonConnectPending = false;
       this._proxySignalIds = [];
-      this._getterCancellable = null;
-      this._ownerGeneration = 0;
-      this._viewSignalSequence = 0;
+      this._viewGetter = new DBusGetter("GetView", 15000);
       this._streamStatus = "starting";
       this._streamError = "";
       this._lastAttemptAt = 0;
@@ -471,7 +469,7 @@ const QuotaIndicator = GObject.registerClass(
             this._proxySignalIds.push(
               proxy.connect("g-signal", (_proxy, sender, name, parameters) => {
                 if (name !== "ViewChanged" || (sender && sender !== proxy.g_name_owner)) return;
-                this._viewSignalSequence++;
+                this._viewGetter.cancel();
                 const [rawView] = parameters.deep_unpack();
                 this._acceptView(rawView);
               })
@@ -479,9 +477,7 @@ const QuotaIndicator = GObject.registerClass(
             this._proxySignalIds.push(proxy.connect("g-properties-changed", () => this._readProperties()));
             this._proxySignalIds.push(
               proxy.connect("notify::g-name-owner", () => {
-                this._ownerGeneration++;
-                this._getterCancellable?.cancel();
-                this._getterCancellable = null;
+                this._viewGetter.cancel();
                 if (proxy.g_name_owner) {
                   this._setStreamState("connecting", "");
                   this._readProperties();
@@ -525,43 +521,12 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _fetchView() {
-      const proxy = this._proxy;
-      const owner = proxy?.g_name_owner;
-      if (!owner || this._destroyed) return;
-      this._getterCancellable?.cancel();
-      const cancellable = new Gio.Cancellable();
-      const ownerGeneration = this._ownerGeneration;
-      const signalSequence = this._viewSignalSequence;
-      this._getterCancellable = cancellable;
-      proxy.call("GetView", null, Gio.DBusCallFlags.NONE, 15000, cancellable, (source, result) => {
-        let rawView;
-        try {
-          [rawView] = proxy.call_finish(result).deep_unpack();
-        } catch (error) {
-          const stale =
-            this._destroyed ||
-            this._getterCancellable !== cancellable ||
-            cancellable.is_cancelled() ||
-            this._proxy !== proxy ||
-            this._ownerGeneration !== ownerGeneration ||
-            proxy.g_name_owner !== owner ||
-            this._viewSignalSequence !== signalSequence;
-          if (this._getterCancellable === cancellable) this._getterCancellable = null;
-          if (!stale) this._setStreamState("disconnected", errorMessage(error));
-          return;
-        }
-        const stale =
-          this._destroyed ||
-          this._getterCancellable !== cancellable ||
-          cancellable.is_cancelled() ||
-          this._proxy !== proxy ||
-          this._ownerGeneration !== ownerGeneration ||
-          proxy.g_name_owner !== owner ||
-          this._viewSignalSequence !== signalSequence;
-        if (this._getterCancellable === cancellable) this._getterCancellable = null;
-        if (stale) return;
-        if (rawView) this._acceptView(rawView);
-      });
+      if (this._destroyed) return;
+      this._viewGetter.read(
+        this._proxy,
+        (rawView) => this._acceptView(rawView),
+        (error) => this._setStreamState("disconnected", errorMessage(error))
+      );
     }
 
     _renderStreamStatus() {
@@ -1260,8 +1225,7 @@ const QuotaIndicator = GObject.registerClass(
     destroy() {
       this._destroyed = true;
       if (this._fixtureMode) fixtureNowMs = null;
-      this._getterCancellable?.cancel();
-      this._getterCancellable = null;
+      this._viewGetter.cancel();
       if (this._proxy) {
         for (const signalId of this._proxySignalIds) this._proxy.disconnect(signalId);
       }

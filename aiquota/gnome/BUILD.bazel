@@ -45,7 +45,7 @@ pkg_zip(
     srcs = [
         ":extension_files",
         ":shared_presentation_file",
-        "//gnome:dbus_loader",
+        "//gnome:dbus",
     ],
     out = "aiquota.zip",
     visibility = ["//visibility:public"],

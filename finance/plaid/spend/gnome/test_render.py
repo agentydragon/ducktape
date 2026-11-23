@@ -704,6 +704,15 @@ def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_
                 lambda: json.loads(string_reply(session.call("GetPanelState")))["items"] == ["sparkline"],
                 "extension did not adopt the latest history",
             )
+
+            daemon.call("SetHistory", "null")
+            daemon.call("SetView", json.dumps(fixture["view"]))
+            wait_until(lambda: pending() == 1, "extension did not request the unavailable history")
+            daemon.call("ReleaseGetHistory")
+            wait_until(
+                lambda: "Pace history unavailable" in string_reply(session.call("GetMenuText")),
+                "extension did not report the invalid history reply",
+            )
             _assert_no_plaid_extension_error(session)
     finally:
         _reset_panel_settings(session)
