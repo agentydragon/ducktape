@@ -186,6 +186,13 @@ def diff(filters_file: FiltersFileArg, token_file: TokenFileOption = None):
     display_diff(diff_filters(yaml_filters, gmail_filters), console)
 
 
+def _create_filter(client: GmailClient, rule: NormalizedFilter, label_maps: LabelMaps) -> None:
+    for label_name in rule.add_labels:
+        label_maps.ensure_label(label_name, client.get_or_create_label)
+
+    client.create_filter(normalized_to_create_request(rule, label_maps.by_name))
+
+
 @filters_app.command("upload")
 def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     """Upload filters from YAML to Gmail (creates only, skips existing)."""
@@ -215,10 +222,7 @@ def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_fil
         created = 0
         for f in filter_diff.to_create:
             try:
-                for label_name in f.add_labels:
-                    label_maps.ensure_label(label_name, client.get_or_create_label)
-
-                client.create_filter(normalized_to_create_request(f, label_maps.by_name))
+                _create_filter(client, f, label_maps)
                 created += 1
                 console.print(f"  [green]✓[/green] Created: {format_filter_for_display(f)}")
             except Exception as e:
@@ -268,10 +272,7 @@ def sync(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file:
             console.print(f"\n[bold]Creating {len(filter_diff.to_create)} filter(s)...[/bold]")
             for f in filter_diff.to_create:
                 try:
-                    for label_name in f.add_labels:
-                        label_maps.ensure_label(label_name, client.get_or_create_label)
-
-                    client.create_filter(normalized_to_create_request(f, label_maps.by_name))
+                    _create_filter(client, f, label_maps)
                     console.print(f"  [green]+[/green] Created: {format_filter_for_display(f)}")
                 except Exception as e:
                     console.print(f"  [red]✗[/red] Failed to create: {e}")
