@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
@@ -25,18 +24,16 @@ import pytest_bazel
 from PIL import Image, ImageChops, ImageStat
 from python.runfiles import Runfiles
 
-from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import PeriodId
 from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
-from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
+pytest_plugins = ("gnome.testing.fixtures",)
+
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_GSETTINGS = f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas"
 _SETTINGS_SCHEMA = "org.gnome.shell.extensions.plaid-spend"
 _FIXTURE_NAMES = (
     "ready_allowance",
@@ -72,19 +69,6 @@ def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
-
-
-@pytest.fixture(scope="module")
-def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
-
-
-@pytest.fixture(scope="module")
-def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    dest = tmp_path_factory.mktemp("plaid-spend-extension")
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
-        extension_zip.extractall(dest)
-    return dest
 
 
 @pytest.fixture(scope="module")
@@ -176,7 +160,6 @@ def plaid_gnome_session(
         fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
-        compile_extension_schemas=True,
     )
 
 
@@ -196,16 +179,13 @@ def _set_panel_settings(
     session: GnomeSession, settings: dict[str, str | list[str] | bool], *, wait_for_paint: bool = True
 ) -> None:
     for key, value in settings.items():
-        argument = shlex.quote(json.dumps(value, ensure_ascii=False))
-        result = session.exec(f"{_GSETTINGS} set {_SETTINGS_SCHEMA} {key} {argument}")
-        assert result.exit_code == 0, (key, exec_output(result))
+        session.gsettings("set", _SETTINGS_SCHEMA, key, json.dumps(value, ensure_ascii=False))
     if wait_for_paint:
         session.wait_for_paint()
 
 
 def _reset_panel_settings(session: GnomeSession) -> None:
-    result = session.exec(f"{_GSETTINGS} reset-recursively {_SETTINGS_SCHEMA}")
-    assert result.exit_code == 0, exec_output(result)
+    session.gsettings("reset-recursively", _SETTINGS_SCHEMA)
     session.wait_for_paint()
 
 
@@ -735,7 +715,7 @@ def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTest
         result = session.exec(
             "gdbus call --session --timeout 10 --dest org.gnome.Shell.Extensions "
             "--object-path /org/gnome/Shell/Extensions --method org.gnome.Shell.Extensions.OpenExtensionPrefs "
-            "'plaid-spend@allegedly.works' '' '{}'"
+            f"{shlex.quote(_EXTENSION_UUID)} '' '{{}}'"
         )
         raise AssertionError(f"Preferences service call failed: {exec_output(result)}") from error
     test_outputs.publish(

@@ -73,15 +73,15 @@ py_test(
         ":fake_daemon",
         "//aiquota/testing:fixtures",
     ],
+    env = {"GNOME_EXTENSION_ZIP": "$(rlocationpath :aiquota_zip)"},
     requires_docker = True,
     tags = ["visual"],
     deps = [
         "//:conftest",
         "//aiquota/testing:quota_fixtures",
-        "//devinfra/oci",
         "//devinfra/testing:output_writer",
-        "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
+        "//gnome/testing:fixtures",  # keep: pytest_plugins
         "//gnome/testing:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

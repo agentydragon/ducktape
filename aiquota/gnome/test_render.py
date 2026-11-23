@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import re
-import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,13 +37,12 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture, meter_quota_view
-from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
-from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
-from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, gnome_session, string_reply, wait_until
+from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "ducktape/aiquota/gnome/aiquota.zip"
+pytest_plugins = ("gnome.testing.fixtures",)
+
 _EXTENSION_UUID = "aiquota@allegedly.works"
 _EMPTY_FIXTURE = "empty"
 
@@ -112,20 +110,6 @@ def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
 
 
 @pytest.fixture(scope="module")
-def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
-
-
-@pytest.fixture(scope="module")
-def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Unzip the distribution zip into a single dir for bind-mounting."""
-    dest = tmp_path_factory.mktemp("claude-quota-ext")
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as z:
-        z.extractall(dest)
-    return dest
-
-
-@pytest.fixture(scope="module")
 def fixture_json_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Materialize the normal API view payload for the GNOME JS test hook."""
     dest = tmp_path_factory.mktemp("ai-quota-fixtures")
@@ -156,7 +140,6 @@ def session(
         object_path=_TEST_DBUS_PATH,
         environment={"AI_QUOTA_FIXTURE": f"/fixtures/{_EMPTY_FIXTURE}.json"},
         display_size=(1280, 1024),
-        compile_extension_schemas=True,
     ) as session:
         yield session
 
@@ -480,13 +463,9 @@ def test_panel_pace_unit_setting(session: GnomeSession, capture_menu: GnomeMenuC
     assert claude.panel == "+10 pp"
     assert codex.panel == "+18 pp"
     assert zai.panel == "-15 pp"
-    command = (
-        f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
-        "set org.gnome.shell.extensions.aiquota panel-show-pace-unit"
-    )
+    setting = ("set", "org.gnome.shell.extensions.aiquota", "panel-show-pace-unit")
     try:
-        result = session.exec(f"{command} false")
-        assert result.exit_code == 0, exec_output(result)
+        session.gsettings(*setting, "false")
         wait_until(
             lambda: claude.panel == "+10" and codex.panel == "+18" and zai.panel == "-15", "panel did not update"
         )
@@ -495,8 +474,7 @@ def test_panel_pace_unit_setting(session: GnomeSession, capture_menu: GnomeMenuC
         capture_menu.capture(geometry, label="Panel pace without unit", checkpoint="compact-pace")
     finally:
         session.close_menu()
-        result = session.exec(f"{command} true")
-        assert result.exit_code == 0, exec_output(result)
+        session.gsettings(*setting, "true")
         wait_until(lambda: claude.panel == "+10 pp", "panel did not restore pace units")
 
 
