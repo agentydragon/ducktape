@@ -166,7 +166,7 @@ theorem frames_newCallback (r R) (call : Call W) (construct : Val → List Val �
     (frames_toW r R (.obj a)).bind' fun w => frames_pure r R (Told.value w)
 
 private theorem opaqueCapturesAccessible {cells A} {s : State W} (hs : Access cells A s)
-    (code part node) (h : node ∈ (Code.opaque code part cells).nodes) : A node := by
+    (code part ctor node) (h : node ∈ (Code.opaque code part cells ctor).nodes) : A node := by
   obtain ⟨slot, hslot, eq⟩ := List.mem_filterMap.mp h
   cases slot with
   | none => simp at eq
@@ -186,7 +186,7 @@ theorem access_newCallback {r R cells A} (away : Away r R A) (call : Call W)
   apply access_alloc_publish away _ _ s hs hr
   intro node hn
   simp [Obj.nodes, Property.nodes, Val.nodes] at hn
-  exact hn.elim (fun h => h ▸ root) (opaqueCapturesAccessible hs code part node)
+  exact hn.elim (fun h => h ▸ root) (opaqueCapturesAccessible hs code part false node)
 
 /-- Constructible functions allocate their own prototype object and set both links
 before publishing the function handle. -/
@@ -235,7 +235,7 @@ theorem access_newConstructor {r R cells A} (away : Away r R A) (call : Call W)
       · exact Or.inr rfl
   · intro node hn
     simp [Obj.nodes, Property.nodes, Val.nodes] at hn
-    exact hn.elim (fun h => h ▸ functionRoot) (opaqueCapturesAccessible hs code part node)
+    exact hn.elim (fun h => h ▸ functionRoot) (opaqueCapturesAccessible hs code part true node)
 
 /-- The largest envelope excluding the protected region and the initializer's read cells.
 Its closure under heap edges is still an obligation on the initial state. -/

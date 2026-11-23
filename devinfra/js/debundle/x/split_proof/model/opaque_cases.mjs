@@ -349,10 +349,26 @@ export const opaqueCases = [
     },
   },
   {
+    name: "an opaque arrow with a public prototype still cannot construct or serve as a superclass",
+    source: `
+      const [pick] = [() => 3];
+      pick.prototype = {};
+      try { new pick(); } catch (e) { console.log("new", e.name); }
+      try { const Derived = class extends pick {}; } catch (e) { console.log("extends", e.name); }
+    `,
+    scripts: {
+      "0/0": [
+        ["newFunction", 1, "", 0, false],
+        ["initVar", 0, r(2)],
+      ],
+    },
+  },
+  {
     name: "the world makes a constructor whose body receives the new object",
     source: `
       const [Box] = [function(n) { this.n = n; }];
-      console.log(new Box(11).n, Box.length);
+      class Derived extends Box {}
+      console.log(new Box(11).n, Box.length, new Derived(17).n);
     `,
     scripts: {
       "0/0": [

@@ -70,8 +70,9 @@ inductive Code where
   | derived
   | closure (f : Func) (env : Env) (fields : List (String × Expr))
   | host (name : String)
-  /-- Part `part` of the opaque code `code`, which the world runs; `cells` are the bindings it was handed. -/
-  | opaque (code part : Nat) (cells : List (Option Addr))
+  /-- Part of the code the world runs with the supplied cells. The constructor capability is
+  independent of changes to the function's public `prototype` property. -/
+  | opaque (code part : Nat) (cells : List (Option Addr)) (constructor : Bool)
 
 structure Obj where
   proto : Option Addr
