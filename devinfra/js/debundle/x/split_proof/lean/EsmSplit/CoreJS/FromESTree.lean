@@ -329,13 +329,24 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let (base, key) ← linkedMember (linkedExpr profile imports inFunction "") j
     return .get base key
   | "ChainExpression" =>
-    let member ← j.getObjVal? "expression"
+    let body ← j.getObjVal? "expression"
+    let lower := linkedExpr profile imports inFunction ""
+    if (← field body "type") == "CallExpression" then
+      if ← body.getObjValAs? Bool "optional" then throw "unsupported optional call"
+      let member ← body.getObjVal? "callee"
+      unless (← field member "type") == "MemberExpression" && (← member.getObjValAs? Bool "optional") do
+        throw "unsupported optional chain"
+      if ← member.getObjValAs? Bool "computed" then throw "unsupported computed optional method call"
+      let (base, key) ← linkedMember lower member (allowOptional := true)
+      let args ← body.getObjValAs? (List Json) "arguments"
+      return .callOptionalReceiver base key (← args.mapM lower)
+    let member := body
     unless (← field member "type") == "MemberExpression" do throw "unsupported optional chain"
     unless ← member.getObjValAs? Bool "optional" do throw "unsupported optional chain"
     let receiver ← member.getObjVal? "object"
     unless (← field receiver "type") == "Identifier" do
       throw "optional member base is not a lexical binding"
-    let (base, key) ← linkedMember (linkedExpr profile imports inFunction "") member (allowOptional := true)
+    let (base, key) ← linkedMember lower member (allowOptional := true)
     let .var _ := base | throw "optional member base is not a lexical binding"
     -- The guards only read a lexical cell. No effects intervene before the
     -- property read fetches its base, then evaluates the key and reads the property.

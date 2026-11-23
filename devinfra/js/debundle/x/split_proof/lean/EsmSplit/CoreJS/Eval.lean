@@ -291,6 +291,12 @@ def evalExpr : Nat → Env → Expr → M W Val
       let key ← evalExpr n env k
       let callee ← getProp (callFn n) base key
       callFn n callee base (← evalArgs n env args)
+    | .callOptionalReceiver o k args => do
+      let base ← evalExpr n env o
+      if !(← lift (shortCircuits .nullish base)) then pure .undef else do
+        let key ← evalExpr n env k
+        let callee ← getProp (callFn n) base key
+        callFn n callee base (← evalArgs n env args)
     | .new f args => do
       let callee ← evalExpr n env f
       constructTarget n callee callee (← evalArgs n env args)

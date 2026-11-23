@@ -3,9 +3,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  block,
   call,
   exportNamed,
   forcePreview,
+  functionExpression,
   id,
   literal,
   lower,
@@ -14,6 +16,7 @@ import {
   prepare,
   program,
   property,
+  returns,
   root,
   variable,
 } from "./linked_programs_test_support.mjs";
@@ -116,6 +119,116 @@ assertCertified(split("generated-optional-reads", generated), [
   [0, "present"],
 ]);
 
+// An evaluated receiver runs once per call. Only the reached call looks up a
+// method and computes the argument, in that order.
+const evaluated = split(
+  "optional-method-evaluated-receiver",
+  `const run = () => {
+    let trace = "";
+    let current = null;
+    const holder = { get parent() { trace += "p"; return current; } };
+    const argument = () => { trace += "a"; };
+    const skipped = holder.parent?.method(argument()) === undefined;
+    current = {
+      value: 42,
+      get method() {
+        trace += "g";
+        return function () { return this.value; };
+      }
+    };
+    const result = holder.parent?.method(argument());
+    return [skipped, result, trace];
+  };
+  const result = run();
+  export { result };`
+);
+assertCertified(evaluated, [true, 42, "ppga"]);
+assert.deepEqual(
+  lower(evaluated.files.sourceFile, evaluated.files.specFile, evaluated.out, ["--check-output"]).verdict,
+  evaluated.verdict
+);
+
+// Changing the lexical binding during argument evaluation leaves the original
+// receiver in the call. An undefined receiver skips that change altogether.
+assertCertified(
+  split(
+    "optional-method-lexical-receiver",
+    `const run = () => {
+      let target;
+      const argument = () => { target = null; return 2; };
+      const skipped = target?.method(argument()) === undefined && target === undefined;
+      target = { value: 5, method(delta) { return this.value + delta; } };
+      const result = target?.method(argument());
+      return [skipped, result, target === null];
+    };
+    const result = run();
+    export { result };`
+  ),
+  [true, 7, true]
+);
+
+const optionalMethod = (object, method, args) => ({
+  type: "ChainExpression",
+  expression: {
+    type: "CallExpression",
+    callee: optionalMember(object, id(method), false).expression,
+    arguments: args,
+    optional: false,
+  },
+});
+const method = {
+  ...property(
+    "method",
+    functionExpression(
+      [],
+      block([
+        returns({
+          type: "MemberExpression",
+          object: { type: "ThisExpression" },
+          property: id("value"),
+          computed: false,
+          optional: false,
+        }),
+      ])
+    )
+  ),
+  method: true,
+};
+const generatedCalls = program([
+  variable("const", "invoke", arrow([id("receiver")], optionalMethod(id("receiver"), "method", []))),
+  variable("const", "result", {
+    type: "ArrayExpression",
+    elements: [
+      literal(null),
+      { type: "ObjectExpression", properties: [method, property("value", literal(false))] },
+    ].map((base) => call(id("invoke"), [base])),
+  }),
+  exportNamed([["result", "result"]]),
+]);
+assertCertified(split("generated-optional-method-calls", generatedCalls), [null, false]);
+
+const missingMethod = split(
+  "optional-method-falsy-receiver",
+  `const run = (target) => target?.method();
+    const result = run(false);
+    export { result };`
+);
+assertRejected(missingMethod, /original threw during linked initialization/);
+assert.deepEqual(observe(missingMethod.files.sourceFile, "result"), { error: "TypeError" });
+
+const uninitialized = split(
+  "optional-method-tdz",
+  `const run = () => {
+    const result = receiver?.method();
+    const receiver = { method() { return 7; } };
+    return result;
+  };
+  const result = run();
+  export { result };`
+);
+assertRejected(uninitialized, /original threw during linked initialization/);
+assert.deepEqual(observe(uninitialized.files.sourceFile, "result"), { error: "ReferenceError" });
+
 const reordered = `function read() { return current?.value ?? "missing"; }
   var current;
   current = { value: "ready" };
@@ -134,7 +247,9 @@ assert.deepEqual(observe(path.join(preview, entry), "result"), { result: "missin
 
 for (const [name, body, reason, expected] of [
   ["parenthesized-method", "(target?.method)()", /unsupported optional chain as a call target/, 42],
-  ["optional-method", "target?.method()", /unsupported optional chain/, 42],
+  ["optional-callee", "target.method?.()", /unsupported optional call/, 42],
+  ["optional-receiver-and-callee", "target?.method?.()", /unsupported optional call/, 42],
+  ["computed-optional-method", 'target?.["method"]()', /unsupported computed optional method call/, 42],
   ["continued-member", "target?.record.value", /unsupported optional chain/, 17],
   ["delete-chain", "delete target?.value", /delete/, true],
 ]) {
