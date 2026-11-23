@@ -1250,6 +1250,8 @@ js_library(
 js_library(
     name = "shift_candidate",
     srcs = ["shift_candidate.mjs"],
+    # shift-fuzzer 3.0.0 requires shift-parser/src/utils.js at runtime.
+    data = [":node_modules/shift-parser"],
     deps = [
         ":modern_syntax",
         ":node_modules/shift-codegen",
