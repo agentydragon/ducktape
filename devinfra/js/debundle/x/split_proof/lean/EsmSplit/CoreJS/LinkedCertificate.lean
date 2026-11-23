@@ -3,6 +3,7 @@ import Lean.Elab.Tactic.Cbv
 import Lean.Util.CollectAxioms
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
+import EsmSplit.CoreJS.LiteralRecord
 
 namespace CoreJS.LinkedBehavior
 -- Lean cannot derive DecidableEq for nested mutual inductives. Compare the constructors
@@ -176,19 +177,121 @@ deriving instance Lean.ToExpr for Program
 
 /-- Render only the constructor applications, closed constants and literals produced by
 `ToExpr`. Program strings are data, including line breaks, quotes and Lean comment delimiters. -/
-private partial def term (e : Lean.Expr) : Except String String :=
+private partial def termWith (replace : Lean.Expr → Option String) (e : Lean.Expr) : Except String String := do
+  if let some quoted := replace e then return quoted
   match e with
   | .app .. => do
-    let f ← term e.getAppFn
-    let args ← e.getAppArgs.toList.mapM term
+    let f ← termWith replace e.getAppFn
+    let args ← e.getAppArgs.toList.mapM (termWith replace)
     return "(" ++ String.intercalate " " (f :: args) ++ ")"
   | .const n _ => return "@" ++ n.toString
   | .lit (.strVal s) => return s.quote
   | .lit (.natVal n) => return toString n
   | _ => throw "unsupported expression in quoted CoreJS data"
 
+private def term := termWith (fun _ => none)
+
 /-- A closed Lean constructor term for the complete decoded program. -/
 def programLiteral (p : Program) : Except String String := term (Lean.toExpr p)
+
+private abbrev StringFields := List (String × String)
+
+private structure RecordQuotes where
+  fields : Array StringFields := #[]
+  replacements : Std.HashMap Lean.Expr String := {}
+
+/-- Intern ordered field lists across the two programs. Replace complete top-level
+units, whose source identities distinguish them from statements in function bodies. -/
+private def recordQuotes (source candidate : Program) : Except String RecordQuotes := do
+  let mut quotes : RecordQuotes := {}
+  for program in [source, candidate] do
+    for md in program.modules do
+      for unit in md.body do
+        let (ordinal, stmt) := unit
+        let .decl kind name (.obj props) := stmt | continue
+        -- The ordinary proof reaches its reduction limit at 96 static fields.
+        if props.length < 96 then continue
+        let some fields := props.mapM (fun
+          | .init (.str key) (.str value) => some (key, value)
+          | _ => none) | continue
+        let index := (quotes.fields.findIdx? (· == fields)).getD quotes.fields.size
+        if index == quotes.fields.size then quotes := { quotes with fields := quotes.fields.push fields }
+        let k ← term (Lean.toExpr kind)
+        let replacement := s!"({ordinal}, CoreJS.Stmt.decl {k} {name.quote} (CoreJS.Expr.obj record{index}Props))"
+        quotes := { quotes with replacements := quotes.replacements.insert (Lean.toExpr unit) replacement }
+  return quotes
+
+private partial def literalReadKeys (keys : Std.HashSet String) (e : Lean.Expr) : Std.HashSet String :=
+  match e with
+  | .app .. => Id.run do
+    let args := e.getAppArgs
+    let mut keys := keys
+    if e.isAppOfArity ``Expr.get 2 || e.isAppOfArity ``Expr.callMethod 3 then
+      let key := args[1]!
+      if key.isAppOfArity ``Expr.str 1 then
+        if let .lit (.strVal s) := key.appArg! then keys := keys.insert s
+    return args.foldl literalReadKeys keys
+  | _ => keys
+
+/-- Reduction used by the generated equation for a checked wide record. -/
+def evalQuotedRecordBody {W : World} (fields : List (String × String)) (props : List PropDef)
+    (width fuel : Nat) (env : Env) : M W Val :=
+  match fuel with
+  | 0 => outOfFuel
+  | n + 1 =>
+    if width < n then .obj <$> alloc (literalRecord fields) else
+      (do
+        let addr ← alloc { proto := some objectProto, props := [] }
+        evalProps n env addr props
+        pure (.obj addr))
+
+/-- The generated equation specializes the usual record rule using the checked
+property list and width. It preserves the ordinary evaluator at insufficient fuel. -/
+theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props : List PropDef} {width : Nat}
+    (props_eq : props = fields.map literalField) (width_eq : fields.length = width)
+    (fuel : Nat) (env : Env) :
+    (evalExpr fuel env (.obj props) : M W Val) = evalQuotedRecordBody fields props width fuel env := by
+  cases fuel with
+  | zero => rfl
+  | succ n =>
+    dsimp only [evalQuotedRecordBody]
+    split
+    · rename_i h
+      have budget : fields.length < n := by simpa only [width_eq] using h
+      rw [props_eq]
+      exact evalExpr_obj_string_fields n env fields budget
+    · rw [evalExpr] <;> rfl
+
+/-- Kernel opacity keeps the concrete list out of the execution proof. The subtype
+proof exposes it only in the short equations checked before the execution proof. -/
+private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Array String) : String := Id.run do
+  let stem := s!"record{index}"
+  let data := String.intercalate ",\n  " (fields.map fun (k, v) => s!"({k.quote}, {v.quote})")
+  let mut definitions :=
+    s!"private def {stem}Data : List (String × String) := [\n  {data}]\n" ++
+    s!"private opaque {stem}Witness : " ++ "{ v : List (String × String) // v = " ++
+    s!"{stem}Data" ++ " } := " ++ s!"⟨{stem}Data, rfl⟩\n" ++
+    s!"@[cbv_opaque] private def {stem}Fields := {stem}Witness.val\n" ++
+    s!"private theorem {stem}Eq : {stem}Fields = {stem}Data := {stem}Witness.property\n" ++
+    s!"private theorem {stem}Length : {stem}Fields.length = {fields.length} := by rw [{stem}Eq] <;> rfl\n" ++
+    s!"@[cbv_opaque] private def {stem}Props := {stem}Fields.map CoreJS.literalField\n" ++
+    s!"@[cbv_eval] private theorem {stem}Eval " ++ "{W : World} (fuel : Nat) (env : Env) :\n" ++
+    s!"    (evalExpr fuel env (.obj {stem}Props) : M W Val) =\n" ++
+    s!"      CoreJS.LinkedBehavior.evalQuotedRecordBody {stem}Fields {stem}Props {fields.length} fuel env :=\n" ++
+    s!"  CoreJS.LinkedBehavior.evalQuotedRecord (W := W) (props := {stem}Props) (fields := {stem}Fields) " ++
+    s!"rfl {stem}Length fuel env\n" ++
+    s!"@[cbv_eval] private theorem {stem}Reverse : {stem}Fields.reverse = {stem}Data.reverse :=\n" ++
+    s!"  congrArg List.reverse {stem}Eq\n"
+  let reversed := fields.reverse
+  for (key, i) in keys.zipIdx do
+    let result := match reversed.lookup key with
+      | some value => s!"some (CoreJS.literalDataProperty {value.quote})"
+      | none => "none"
+    definitions := definitions ++
+      s!"@[cbv_eval] private theorem {stem}Read{i} :\n" ++
+      s!"    (CoreJS.literalProperties {stem}Fields).lookup {key.quote} = {result} := by\n" ++
+      s!"  rw [CoreJS.lookup_literalProperties, {stem}Eq] <;> rfl\n"
+  return definitions
 
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
@@ -308,13 +411,23 @@ private def witnessFuel (source candidate : Program) : Except String Nat := do
 The caller accepts only successful elaboration and kernel checking of the complete file. -/
 def certificate (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (source candidate : Program) : Except String String := do
   let fuel ← witnessFuel source candidate
-  let s ← programLiteral source
-  let c ← programLiteral candidate
+  let records ← recordQuotes source candidate
+  let sourceTerm := Lean.toExpr source
+  let candidateTerm := Lean.toExpr candidate
+  let replace := fun e =>
+    if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]? else none
+  let s ← termWith replace sourceTerm
+  let c ← termWith replace candidateTerm
+  let recordTerms := if records.fields.isEmpty then "" else
+    let keys := (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
+    "attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++
+      String.join (records.fields.zipIdx.toList.map fun (fields, index) => recordDefinitions index fields keys)
   let p ← term (Lean.toExpr plan)
   let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
     jsonDefinitions "files" files
   return "import EsmSplit.CoreJS.LinkedCertificate\n\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
+    recordTerms ++
     String.join asts.toList ++
     "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
     "private def source : Program := " ++ s ++ "\n" ++
