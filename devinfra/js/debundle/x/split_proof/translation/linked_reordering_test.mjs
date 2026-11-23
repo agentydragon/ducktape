@@ -131,7 +131,11 @@ for (const [observed, leftArg, rightArg] of [
     let candidate = out;
     if (capturesCall && reversed) {
       assert.equal(verdict.status, "rejected", log);
-      assert.match(verdict.reason, /could not prove equivalent linked executions/, log);
+      assert.match(
+        verdict.reason,
+        /could not prove equivalent linked executions \(Lean exited with status [1-9]\d*\)/,
+        log
+      );
       assert(!existsSync(out));
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);

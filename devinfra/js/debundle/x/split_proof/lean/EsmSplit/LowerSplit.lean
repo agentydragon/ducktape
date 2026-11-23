@@ -415,7 +415,8 @@ private def verifyExecution (work : System.FilePath) (program providers files : 
       IO.Process.output { cmd := "lake", args := #["env", "lean"] ++ args, cwd := some project }
   unless proc.exitCode == 0 do
     let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
-    throw (IO.userError s!"could not prove equivalent linked executions: {detail}")
+    let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
+    throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) : IO UInt32 := do
   let fields := match outcome with
