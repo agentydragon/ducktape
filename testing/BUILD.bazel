@@ -19,6 +19,16 @@ py_library(
 )
 
 py_library(
+    name = "pytest_otel",
+    srcs = ["pytest_otel.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "postgres",
     testonly = True,
     srcs = ["postgres.py"],
