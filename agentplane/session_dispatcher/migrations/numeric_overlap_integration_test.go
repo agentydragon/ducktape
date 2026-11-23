@@ -24,7 +24,8 @@ func upWithEnumBackfill(t *testing.T, db *sql.DB) error {
 	if _, err := db.ExecContext(t.Context(), "CALL backfill_dispatch_enum_values(2)"); err != nil {
 		t.Fatal("backfill enums:", err)
 	}
-	return Up(t.Context(), db)
+	_, err = provider.UpTo(t.Context(), 33)
+	return err
 }
 
 func TestDispatcherNumericWriterOverlap(t *testing.T) {
@@ -66,7 +67,7 @@ func TestDispatcherNumericWriterOverlap(t *testing.T) {
 	if _, err := provider.UpTo(ctx, 31); err != nil {
 		t.Fatal(err)
 	}
-	if err := Up(ctx, db); err == nil || !strings.Contains(err.Error(), "numeric backfill is incomplete") {
+	if _, err := provider.UpTo(ctx, 32); err == nil || !strings.Contains(err.Error(), "numeric backfill is incomplete") {
 		t.Fatalf("unbackfilled database migration = %v", err)
 	}
 	if err := upWithEnumBackfill(t, db); err != nil {
@@ -234,7 +235,7 @@ func TestInterruptedNumericReceiptIndexBuildResumes(t *testing.T) {
 	if err := db.QueryRowContext(ctx, indexOID).Scan(&oldOID); err != nil {
 		t.Fatal(err)
 	}
-	if err := Up(ctx, db); err != nil {
+	if _, err := provider.UpTo(ctx, 33); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, indexOID).Scan(&newOID); err != nil || newOID != oldOID {
