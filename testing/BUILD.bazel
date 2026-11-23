@@ -60,6 +60,7 @@ py_test(
         "//:conftest",
         "//testing:postgres_fixtures",
         "@pypi//psycopg",
+        "@pypi//psycopg2_binary",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

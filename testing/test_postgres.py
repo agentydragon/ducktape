@@ -1,5 +1,9 @@
 """Integration checks for migrated PostgreSQL database templates."""
 
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
+from threading import Barrier
+
 import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, text
@@ -7,10 +11,17 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from testcontainers.postgres import PostgresContainer
 
-from testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
+from testing.postgres import (
+    DatabaseClones,
+    DatabaseNames,
+    PostgresDatabaseTemplate,
+    create_temporary_database,
+    force_drop_database_sync,
+)
 
 # SQLAlchemy loads this driver from the explicit URL scheme below.
 # gazelle:include_dep @pypi//psycopg
+# gazelle:include_dep @pypi//psycopg2_binary
 # pytest loads the shared container fixture as a plugin.
 # gazelle:include_dep //testing:postgres_fixtures
 
@@ -56,19 +67,20 @@ def _database_exists(admin_url: str, db_name: str) -> bool:
 def test_temporary_database_drops_after_body_failure(admin_url: str) -> None:
     name = "template_helper_temporary_database"
 
-    def fail_inside_database() -> None:
+    def fail_inside_database(connections: ExitStack) -> None:
         with create_temporary_database(admin_url, name) as url:
             engine = create_engine(url)
-            try:
-                with engine.connect() as connection:
-                    assert connection.execute(text("SELECT current_database()")).scalar_one() == name
-            finally:
-                engine.dispose()
+            connections.callback(engine.dispose)
+            connection = connections.enter_context(engine.connect())
+            connections.callback(connection.invalidate)
+            assert connection.execute(text("SELECT current_database()")).scalar_one() == name
             raise RuntimeError("failure from the test body")
 
-    with pytest.raises(RuntimeError, match="failure from the test body"):
-        fail_inside_database()
-    assert not _database_exists(admin_url, name)
+    # Keep a connection checked out until after clone cleanup has run.
+    with ExitStack() as connections:
+        with pytest.raises(RuntimeError, match="failure from the test body"):
+            fail_inside_database(connections)
+        assert not _database_exists(admin_url, name)
 
 
 def test_template_clones_keep_schema_extensions_and_isolate_writes(admin_url: str) -> None:
@@ -188,6 +200,70 @@ def test_failed_duplicate_creation_keeps_the_existing_database(admin_url: str) -
         with pytest.raises(DBAPIError, match="already exists"), PostgresDatabaseTemplate(admin_url, name):
             pytest.fail("A duplicate database must not open")
         assert _database_exists(admin_url, name)
+
+
+@pytest.mark.parametrize("drivername", ["postgresql+psycopg", "postgresql+psycopg2"])
+def test_clone_retry_preserves_a_kept_database(admin_url: str, drivername: str) -> None:
+    url = make_url(admin_url).set(drivername=drivername).render_as_string(hide_password=False)
+    names = DatabaseNames("test_" + "long_name_" * 10)
+    first = names()
+    with PostgresDatabaseTemplate(url, "template_helper_retry") as template:
+        with ExitStack() as owner:
+            kept_url = template.create_clone(first, cleanup=owner)
+            engine = create_engine(kept_url)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text("CREATE TABLE kept_sentinel AS SELECT 42 AS value"))
+            finally:
+                engine.dispose()
+            owner.pop_all()
+
+        try:
+            names = DatabaseNames(names.node_id)
+            engine = create_engine(kept_url)
+            try:
+                with engine.connect() as connection:
+                    with template.clone(names) as clone_url:
+                        retry_name = make_url(clone_url).database
+                        assert retry_name is not None
+                        assert retry_name != first
+                        assert len(retry_name.encode()) <= 63
+                        retry_engine = create_engine(clone_url)
+                        try:
+                            with retry_engine.connect() as retry:
+                                assert retry.execute(text("SELECT to_regclass('kept_sentinel')")).scalar_one() is None
+                        finally:
+                            retry_engine.dispose()
+                    assert not _database_exists(admin_url, retry_name)
+                    assert connection.execute(text("SELECT value FROM kept_sentinel")).scalar_one() == 42
+            finally:
+                engine.dispose()
+        finally:
+            force_drop_database_sync(admin_url, first)
+
+
+def test_concurrent_clones_retry_the_same_name(admin_url: str) -> None:
+    node_id = "template_helper_concurrent_clone"
+    barrier = Barrier(2, timeout=10)
+    with PostgresDatabaseTemplate(admin_url, "template_helper_concurrent") as template:
+
+        def allocate() -> str:
+            names = DatabaseNames(node_id)
+            barrier.wait()
+            with template.clone(names) as url:
+                name = make_url(url).database
+                assert name is not None
+                barrier.wait()
+                return name
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(allocate)
+            second = pool.submit(allocate)
+            names = {first.result(), second.result()}
+
+    expected = DatabaseNames(node_id)
+    assert names == {expected(), expected()}
+    assert all(not _database_exists(admin_url, name) for name in names)
 
 
 if __name__ == "__main__":
