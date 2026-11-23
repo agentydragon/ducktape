@@ -799,6 +799,52 @@ macro "verify_linked_programs " fuel:num useCbv:(" cbv_first")? : tactic => do
      · apply sameExports_of_match
        intro w <;> $reduce))
 
+/-- A successful link together with the resulting scopes and initial execution state. -/
+structure CheckedLink (p : Program) (w : World) where
+  linked : List (Module × Env)
+  ready : State w
+  equation : link p (initialState w p.regions) = .ok linked ready
+
+private theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : CheckedLink p w) :
+    runProgram w fuel p = runUnits fuel (unitsOf checked.linked) checked.ready := by
+  unfold runProgram
+  exact bind_of_ok checked.equation
+
+/-- Reduce only the real link operation. Reflexivity fills the two output fields
+with the kernel-checked module scopes and state. -/
+macro "check_linked_layout" : tactic =>
+  `(tactic|
+    first
+    | refine some ⟨?linked, ?ready, ?equation⟩
+      case equation =>
+        conv =>
+          lhs
+          cbv
+        all_goals rfl
+    | exact none)
+
+/-- Reuse each checked link between execution and export matching. -/
+macro "verify_linked_programs_from " fuel:num source:ident candidate:ident : tactic => do
+  let reduce ← `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩)
+  `(tactic|
+    (constructor
+     · first
+       | apply of_evaluation $fuel
+         intro w
+         rw [run_after_link $fuel (($source w).get (by rfl)),
+             run_after_link $fuel (($candidate w).get (by rfl))] <;> $reduce
+       | apply of_browser_evaluation $fuel
+         intro w
+         rw [run_after_link $fuel (($source (HostProfile.browserPage.specialize w)).get (by rfl)),
+             run_after_link $fuel (($candidate (HostProfile.browserPage.specialize w)).get (by rfl))]
+         -- Lean 4.35 can panic when cbv simplifies the conjunction in the specialized world.
+         constructor <;> (first | cbv <;> rfl | rfl)
+     · apply sameExports_of_match
+       intro w
+       unfold exportsMatch exports
+       rw [(($source w).get (by rfl)).equation, (($candidate w).get (by rfl)).equation]
+       first | rfl | cbv <;> rfl))
+
 -- Check the actual theorem, whose reduction lemmas depend on the input program.
 open Lean Elab Command in
 elab "#audit_linked_programs " thm:ident : command => do
@@ -900,6 +946,16 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   let profileTerm := fun (p : HostProfile) => match p with
     | .empty => "CoreJS.HostProfile.empty"
     | .browserPage => "CoreJS.HostProfile.browserPage"
+  let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
+  -- Larger module graphs can spend most of one reduction budget on linking.
+  let stageLink := (source.modules.map (·.body.length)).sum ≥ 32
+  let (layouts, tactic) := if stageLink then
+    ("private noncomputable def sourceLink (w : World) : Option (LinkedBehavior.CheckedLink source w) := by\n" ++
+     "  check_linked_layout\n" ++
+     "private noncomputable def candidateLink (w : World) : Option (LinkedBehavior.CheckedLink candidate w) := by\n" ++
+     "  check_linked_layout\n",
+     s!"  first\n  | verify_linked_programs_from {fuel} sourceLink candidateLink\n  | {ordinaryTactic}\n")
+    else ("", s!"  {ordinaryTactic}\n")
   let code := "import EsmSplit.CoreJS.LinkedCertificate\n" ++ writeImports ++ "\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
     recordTerms ++ String.join writeTerms ++
@@ -909,8 +965,9 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
     "private def candidate : Program := " ++ c ++ "\n" ++
     "private def profile := " ++ profileTerm profile ++ "\n" ++
     "private def premises := " ++ profileTerm premises ++ "\n" ++
+    layouts ++
     "private theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
-    s!"  verify_linked_programs {fuel}{strategy}\n" ++
+    tactic ++
     "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan)) :=\n" ++
     "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions\n" ++
     "#audit_linked_programs verified\n" ++
