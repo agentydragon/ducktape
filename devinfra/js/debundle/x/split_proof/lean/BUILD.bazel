@@ -49,15 +49,18 @@ lean_library(
     deps = [":estree"],
 )
 
-_PROOF_SOURCES = [
-    "EsmSplit.lean",
-    "EsmSplit/Controls.lean",
-    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
-]
+lean_library(
+    name = "example_proof",
+    srcs = [
+        "EsmSplit.lean",
+        "EsmSplit/Controls.lean",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
+    ],
+    deps = [":planner"],
+)
 
 lean_axiom_test(
     name = "axioms_test",
-    srcs = _PROOF_SOURCES,
     imports = ["EsmSplit"],
     theorems = [
         "EsmSplit.Bundle.conflict_symm",
@@ -81,7 +84,7 @@ lean_axiom_test(
         "Example.effect_order_observes_differently",
         "Example.cycle_tdz_observes_differently",
     ],
-    deps = [":planner"],
+    deps = [":example_proof"],
 )
 
 lean_binary(
@@ -89,10 +92,10 @@ lean_binary(
     srcs = [
         "Experiments/FixtureRender.lean",
         "Main.lean",
-    ] + _PROOF_SOURCES,
+    ],
     entry = "Main.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
-    deps = [":planner"],
+    deps = [":example_proof"],
 )
 
 sh_test(
@@ -545,17 +548,20 @@ lean_axiom_test(
     ],
 )
 
-_PROOF_FIXTURE_SOURCES = [
-    "Experiments/MiniJS.lean",
-    "Experiments/MiniJSSource.lean",
-    "Experiments/ProofFixture.lean",
-    "Experiments/FixtureRender.lean",
-    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
-]
+lean_library(
+    name = "proof_fixture",
+    srcs = [
+        "Experiments/FixtureRender.lean",
+        "Experiments/MiniJS.lean",
+        "Experiments/MiniJSSource.lean",
+        "Experiments/ProofFixture.lean",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
+    ],
+    deps = [":planner"],
+)
 
 lean_axiom_test(
     name = "proof_fixture_axioms_test",
-    srcs = _PROOF_FIXTURE_SOURCES,
     imports = ["Experiments.ProofFixture"],
     theorems = [
         "Example.plan_valid",
@@ -582,14 +588,14 @@ lean_axiom_test(
         "ProofFixture.rendered_base",
         "ProofFixture.rendered_entry",
     ],
-    deps = [":planner"],
+    deps = [":proof_fixture"],
 )
 
 lean_binary(
     name = "proof_fixture_render",
-    srcs = ["ProofFixtureMain.lean"] + _PROOF_FIXTURE_SOURCES,
+    srcs = ["ProofFixtureMain.lean"],
     entry = "ProofFixtureMain.lean",
-    deps = [":planner"],
+    deps = [":proof_fixture"],
 )
 
 sh_test(
@@ -610,7 +616,7 @@ sh_test(
 
 lean_test(
     name = "experiments_test",
-    srcs = _PROOF_SOURCES + [
+    srcs = [
         "Experiments.lean",
         "Experiments/Automation.lean",
         "Experiments/Ladder.lean",
@@ -621,12 +627,12 @@ lean_test(
     ],
     entry = "Experiments.lean",
     tags = ["manual"],
-    deps = [":planner"],
+    deps = [":example_proof"],
 )
 
 lean_test(
     name = "lowered_example_certificate_test",
-    srcs = _PROOF_SOURCES + ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_lowered_example_certificate"],
+    srcs = ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_lowered_example_certificate"],
     entry = "Experiments/Generated.lean",
     deps = [":planner"],
 )
