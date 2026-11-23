@@ -80,11 +80,14 @@ bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_sing
 
 The generated editor spec assigns `#1337` and `#1338` to
 `packages/excalidraw/scene/scroll.mjs`. CI checks the pair in strict mode. The
-on-demand single trial moves only `#1337`. Each assigns the other units to
-`entry.mjs` in source order. The replay resolves
-the stable `editor.js` alias via the generated JS roster and runs the normal splitter
-on esbuild’s original `chunk-PN7KOLDJ.js`, beside its actual providers. The
-decoder retains the React factory in statement 5. The factory’s
+on-demand single trial moves only `#1337`. Each keeps the other units in source
+order in `chunk-PN7KOLDJ.js`. The replay resolves the stable `editor.js` alias
+via the generated JS roster and runs the normal splitter on that original
+esbuild file beside its actual providers with the `browser-page` profile. It
+checks that all 13 `import()` and
+`import.meta` sites stay in that entry, the 11 relative dynamic imports resolve
+to existing bundle files, and the scroll module uses a new asset path.
+The decoder retains the React factory in statement 5. The factory’s
 `Object.assign` read is inside its deferred body. Both trials stop at the
 eager `new Uint8Array` in statement 41 and leave the output directory absent.
 Each target records the source filename, placement spec and verdict.

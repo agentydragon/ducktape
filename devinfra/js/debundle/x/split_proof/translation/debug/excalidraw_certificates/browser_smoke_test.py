@@ -105,6 +105,12 @@ def serve_file(url: str, file: Path) -> Route:
     return Route(f"/{url}", get)
 
 
+def replacement_routes(source: Path, certified: Path) -> list[Route]:
+    if (source.parent / SCROLL).exists(follow_symlinks=False):
+        raise ValueError(f"the emitted scroll route shadows an original public asset ({SCROLL})")
+    return [serve_file(name, certified / name) for name in (source.name, SCROLL)]
+
+
 async def smoke(
     playwright_driver: Playwright, runfiles: Runfiles, source: Path, certified: Path | None = None
 ) -> list[str]:
@@ -112,7 +118,7 @@ async def smoke(
     app = Starlette(
         routes=[
             serve_file("", bundled_file(runfiles, "EXCALIDRAW_INPUTS", "chunks") / "index.html"),
-            *([serve_file(name, certified / name) for name in (editor, SCROLL)] if certified is not None else []),
+            *(replacement_routes(source, certified) if certified is not None else []),
             Mount(
                 "/fonts",
                 app=StaticFiles(directory=resolve(runfiles, os.environ["EXCALIDRAW_PACKAGE"]) / "dist/prod/fonts"),
@@ -183,6 +189,23 @@ async def smoke(
                 # The replacement and scroll module must be loaded from the exact checked files.
                 assert await responses[f"{origin}/{name}"].body() == (certified / name).read_bytes()
         return list(namespace["names"])
+
+
+async def test_original_editor_replacement_routes(tmp_path: Path) -> None:
+    source = tmp_path / "original" / "chunk-HASH.js"
+    source.parent.mkdir()
+    source.write_text("export {};")
+    certified = tmp_path / "certified"
+    (certified / SCROLL).parent.mkdir(parents=True)
+    (certified / SCROLL).write_text("export {};")
+    (certified / source.name).write_text("export {};")
+    assert [route.path for route in replacement_routes(source, certified)] == [f"/{source.name}", f"/{SCROLL}"]
+
+    existing = source.parent / SCROLL
+    existing.parent.mkdir(parents=True)
+    existing.write_text("export const original = true;")
+    with pytest.raises(ValueError, match="shadows an original public asset"):
+        replacement_routes(source, certified)
 
 
 async def test_original_editor(playwright_driver: Playwright, runfiles: Runfiles, editor_source: Path) -> None:
