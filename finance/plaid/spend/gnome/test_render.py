@@ -567,29 +567,28 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         )
 
 
-def test_existing_pace_panel_setting_is_migrated(
+def test_pace_panel_setting_is_preserved_across_restart(
     plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    def set_legacy_settings(session: GnomeSession) -> None:
+    def set_panel_settings(session: GnomeSession) -> None:
         command = (
             f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
             "set org.gnome.shell.extensions.plaid-spend "
         )
         for key, value in [
             ("panel-visible", "['pace']"),
-            ("panel-order", "['sparkline', 'pace', 'status', 'balance']"),
+            ("panel-order", "['sparkline', 'pace-window', 'pace', 'status', 'balance']"),
         ]:
             result = session.exec(f"{command}{key} {shlex.quote(value)}")
             assert result.exit_code == 0, exec_output(result)
 
     with plaid_gnome_session(
-        screenshot_dir=tmp_path_factory.mktemp("gnome-panel-migration"),
+        screenshot_dir=tmp_path_factory.mktemp("gnome-panel-settings"),
         environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_allowance.json"},
-        before_start=set_legacy_settings,
+        before_start=set_panel_settings,
     ) as session:
-        assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace-window", "pace"]
-        assert string_reply(session.call("GetPanelLabel")) == "7d 90%"
-        session.call("SetPanelSettings", json.dumps({"visible": ["pace"]}))
+        assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace"]
+        assert string_reply(session.call("GetPanelLabel")) == "90%"
         for method in ("DisableExtension", "EnableExtension"):
             result = session.exec(
                 "gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell "

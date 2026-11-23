@@ -596,8 +596,6 @@ in
           "pace"
           "sparkline"
         ];
-        # Prevent the extension's migration from adding pace-window to panel-visible.
-        panel-pace-window-migrated = true;
         pace-window = "7d";
         sparkline-anchor-zero = true;
         sparkline-show-leash = true;
