@@ -4192,8 +4192,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 400m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4253,8 +4273,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 150m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4314,8 +4354,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4375,8 +4435,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 75m
+                    memory: 512Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4436,8 +4516,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 125m
+                    memory: 640Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4500,8 +4600,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 512Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4564,8 +4684,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 576Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
@@ -4627,6 +4767,15 @@ spec:
             target:
               kind: ConfigMap
               name: reactor-config
+              version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
               version: v1
         podTemplate:
           spec:
@@ -4699,8 +4848,28 @@ spec:
               kind: ConfigMap
               name: reactor-config
               version: v1
+          - patch: |
+              - op: add
+                path: /spec/updateStrategy
+                value: {type: OnDelete}
+            target:
+              group: apps
+              kind: DaemonSet
+              name: linstor-satellite
+              version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 125m
+                    memory: 384Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:
