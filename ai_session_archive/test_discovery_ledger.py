@@ -1,4 +1,3 @@
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -16,7 +15,7 @@ from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.source_paths import HarnessRoot
 
-pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ("ai_session_archive.testing",)
 
 MACHINE_ID = "discovery-ledger-test"
 PATH = "/.claude/projects/project/session.jsonl"

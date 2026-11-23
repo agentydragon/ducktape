@@ -1,6 +1,5 @@
 """Incremental candidates follow observation inserts, retries, and deletes."""
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -12,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ai_session_archive.database import CodexTitleCandidateRow, CodexTitleObservationRow, MachineRow, ResticSnapshotRow
 
-pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ("ai_session_archive.testing",)
 START = datetime(2026, 1, 1, tzinfo=UTC)
 PATH = "/.codex/sessions/test.jsonl"
 
