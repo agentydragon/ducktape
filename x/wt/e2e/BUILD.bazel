@@ -22,6 +22,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//x/wt/shared:git_utils",
         "//x/wt/testing:git_helpers",
         "@pypi//pygit2",
         "@pypi//pytest",

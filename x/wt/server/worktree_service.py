@@ -124,7 +124,11 @@ class WorktreeService:
         return worktree_path
 
     def _hydrate_worktree(self, config: Configuration, src: Path, dst: Path) -> None:
-        dst.mkdir(parents=True, exist_ok=True)
+        # Worktree creation uses --no-checkout, so seed the index from HEAD without writing files.
+        repo = self.git_manager.get_repo(dst)
+        index = repo.index
+        index.read_tree(repo.head.peel(pygit2.Commit).tree)
+        index.write()
         get_copy_strategy(config.cow_method).copy(src, dst)
 
     @staticmethod
