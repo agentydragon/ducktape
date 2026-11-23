@@ -86,6 +86,7 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
             slug,
         )
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()
+        await view.capture("SnapshotHashQuery", target=view.page.locator(".mantine-AppShell-root"))
         await view.page.get_by_role("tab", name="True Positives (2)").click()
         occurrence_link = view.page.get_by_role("link", name="example-issue/example-occurrence")
         await expect(occurrence_link).to_have_attribute(
@@ -112,7 +113,6 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         assert file_requests[-1] == f"/api/gt/snapshots/{slug}/files/{quote(file_path)}"
         await view.page.go_back()
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()
-        await view.capture("SnapshotHashQuery", target=view.page.locator(".mantine-AppShell-root"))
         await view.page.go_back()
         await view.page.go_back()
         await expect(view.page.get_by_role("cell", name=slug, exact=True)).to_be_visible()
