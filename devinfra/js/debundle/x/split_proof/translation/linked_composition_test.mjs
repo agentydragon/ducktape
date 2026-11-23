@@ -14,7 +14,7 @@ import {
   returns,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const record = (properties) => ({ type: "ObjectExpression", properties });
 const array = (elements) => ({ type: "ArrayExpression", elements });

@@ -6,7 +6,7 @@ import path from "node:path";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump } from "../lowering/dump_core.mjs";
-import { assertSelectedSourceUnits, parseSourceUnits } from "./ast_assertions.mjs";
+import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
 
 const root = process.env.TEST_TMPDIR;
 assert(root, "TEST_TMPDIR is required");

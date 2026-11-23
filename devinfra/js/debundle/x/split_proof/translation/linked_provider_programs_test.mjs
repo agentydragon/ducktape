@@ -24,7 +24,7 @@ import {
   observe,
   lower,
   prepare,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 function generatedTryCase(seed) {
   switch (seed % 4) {

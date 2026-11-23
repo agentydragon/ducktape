@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { exportNamed, importNamed, lower, observe, prepare, program, root } from "./linked_programs_test_support.mjs";
+import { exportNamed, importNamed, lower, observe, prepare, program, root } from "./testing/linked_programs.mjs";
 
 const source = `
 import { publicValue } from "./provider.mjs";

@@ -7,7 +7,7 @@ import { lowerDump } from "../lowering/dump_core.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { generateAstBundle } from "./ast_generator.mjs";
+import { generateAstBundle } from "./testing/ast_generator.mjs";
 
 const tmp = process.env.TEST_TMPDIR;
 assert(tmp);

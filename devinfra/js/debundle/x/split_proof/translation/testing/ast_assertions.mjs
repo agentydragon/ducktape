@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import * as acorn from "acorn";
-import { topLevelStatements } from "./scope_metadata.mjs";
+import { topLevelStatements } from "../scope_metadata.mjs";
 
 const IGNORED_AST_FIELDS = new Set(["start", "end", "range", "loc", "sourceText"]);
 

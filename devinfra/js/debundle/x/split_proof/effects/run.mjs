@@ -44,7 +44,7 @@ if ((auditGaps || generatedGaps) && (process.env.CASES || permutations || (audit
 const caseFiles = auditGaps
   ? Object.keys(knownGaps)
   : generatedGaps
-    ? ["../translation/gen/implicit_calls.mjs"]
+    ? ["../translation/testing/gen/implicit_calls.mjs"]
     : process.env.CASES
       ? [process.env.CASES]
       : ["./cases.mjs", "./cases_general.mjs"];

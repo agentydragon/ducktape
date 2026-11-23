@@ -1,0 +1,35 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+js_library(
+    name = "ast_assertions",
+    srcs = ["ast_assertions.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+)
+
+js_library(
+    name = "ast_generator",
+    srcs = ["ast_generator.mjs"],
+    deps = ["//devinfra/js/debundle/x/split_proof/translation:node_modules/astring"],
+)
+
+js_library(
+    name = "linked_programs",
+    srcs = ["linked_programs.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+    ],
+)
+
+js_library(
+    name = "program_generator",
+    srcs = glob(["gen/*.mjs"]),
+)

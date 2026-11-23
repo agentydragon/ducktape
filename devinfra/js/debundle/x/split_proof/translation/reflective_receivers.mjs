@@ -1,4 +1,4 @@
-import { rng } from "./gen/core.mjs";
+import { rng } from "./testing/gen/core.mjs";
 
 const operations = [
   { method: "get", property: "accessor" },

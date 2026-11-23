@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { parse } from "acorn";
 import { analyze } from "eslint-scope";
-import { astShape } from "./ast_assertions.mjs";
-import { generateAstBundle, generateRenamed } from "./ast_generator.mjs";
+import { astShape } from "./testing/ast_assertions.mjs";
+import { generateAstBundle, generateRenamed } from "./testing/ast_generator.mjs";
 
 const parseModule = (source) => parse(source, { ecmaVersion: "latest", sourceType: "module", ranges: true });
 const spellings = { top: (name) => `module_${name}`, local: (name) => `local_${name}` };
