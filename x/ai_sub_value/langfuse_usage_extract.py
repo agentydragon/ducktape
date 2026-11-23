@@ -9,11 +9,10 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
-import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -157,15 +156,17 @@ def checkpoint_chunks(
     checkpoint_dir: Path, start: datetime, end: datetime
 ) -> list[tuple[datetime, datetime, list[dict[str, Any]]]]:
     chunks = []
-    for path in checkpoint_dir.glob("*.json.gz"):
+    for path in checkpoint_dir.glob("*Z--*Z.json.gz"):
         chunk_start, chunk_end, rows = read_checkpoint(path)
+        if path != checkpoint_path(checkpoint_dir, chunk_start, chunk_end):
+            raise ValueError(f"{path}: checkpoint filename and stored interval disagree")
         if chunk_start >= start and chunk_end <= end:
             chunks.append((chunk_start, chunk_end, rows))
     chunks.sort(key=lambda chunk: chunk[0])
     return chunks
 
 
-def write_checkpoint(checkpoint_dir: Path, start: datetime, end: datetime, rows: list[dict[str, Any]]) -> None:
+def write_checkpoint(checkpoint_dir: Path, start: datetime, end: datetime, rows: list[dict[str, Any]]) -> Path:
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     path = checkpoint_path(checkpoint_dir, start, end)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -176,6 +177,7 @@ def write_checkpoint(checkpoint_dir: Path, start: datetime, end: datetime, rows:
             separators=(",", ":"),
         )
     temporary.replace(path)
+    return path
 
 
 @dataclass
@@ -183,6 +185,7 @@ class WindowedQuery:
     template: str
     max_execution_seconds: int
     checkpoint_dir: Path | None = None
+    used_checkpoints: set[Path] = field(default_factory=set, init=False)
 
     def run(self, start: datetime, end: datetime) -> tuple[list[dict[str, Any]], int, int]:
         if self.checkpoint_dir is None:
@@ -200,6 +203,7 @@ class WindowedQuery:
                 combined.extend(gap_rows)
                 query_seconds += elapsed
                 query_windows += windows
+            self.used_checkpoints.add(checkpoint_path(self.checkpoint_dir, chunk_start, chunk_end))
             combined.extend(rows)
             cursor = chunk_end
         if cursor < end:
@@ -223,7 +227,7 @@ class WindowedQuery:
         if result is not None and result.returncode == 0:
             rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
             if self.checkpoint_dir is not None:
-                write_checkpoint(self.checkpoint_dir, window_start, window_end, rows)
+                self.used_checkpoints.add(write_checkpoint(self.checkpoint_dir, window_start, window_end, rows))
             return rows, round(time.monotonic() - started), 1
 
         elapsed = round(time.monotonic() - started)
@@ -804,7 +808,8 @@ def main() -> None:
     id_audit["request_dedup_audit"] = dedup_audit
     write_usage_reports(args.output_dir, five_minute, hourly_rows, weekly_rows)
     write_json(args.output_dir / "langfuse-usage-identifier-audit.json", id_audit)
-    shutil.rmtree(checkpoint_dir)
+    for path in usage_query.used_checkpoints:
+        path.unlink(missing_ok=True)
     print(f"wrote aggregate identifier audit using {audit_windows} query window(s)", file=sys.stderr)
 
 
