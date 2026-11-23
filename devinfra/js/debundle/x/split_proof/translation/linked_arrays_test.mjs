@@ -163,3 +163,59 @@ for (const [kind, syntax] of [
   assert.equal(verdict.reason, `statement 1: unsupported array ${kind}`);
   assert(!existsSync(out));
 }
+
+// Both modules allocate arrays with identical contents. Only reference identity
+// reveals which array the facade's third public binding denotes.
+for (const elements of [[], [literal(2), array([literal(null)])]]) {
+  for (const dependsOnOrder of [false, true]) {
+    const dir = path.join(root, `array-identity-${elements.length}-${dependsOnOrder}`);
+    const spec = {
+      entry: "entry.mjs",
+      modules: { "left.mjs": ["#0", "#1"], "right.mjs": ["#2"], "entry.mjs": ["#3"] },
+      order: ["right.mjs", "left.mjs"],
+      sequential: true,
+    };
+    const alias = dependsOnOrder
+      ? call(
+          arrow(
+            [],
+            block([tryStatement(block([returns(id("right"))]), catchClause(null, block([returns(id("left"))])))])
+          )
+        )
+      : id("left");
+    const files = prepare(dir, {
+      source: program([
+        variable("const", "left", array(elements)),
+        variable("const", "alias", alias),
+        variable("const", "right", array(elements)),
+        exportNamed(["left", "alias", "right"].map((name) => [name, name])),
+      ]),
+      provider: "",
+      spec,
+    });
+    const out = path.join(dir, "out");
+    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+    let candidate = out;
+    if (dependsOnOrder) {
+      assert.equal(verdict.status, "rejected", log);
+      assert.match(verdict.reason, /could not prove equivalent linked executions/);
+      assert(!existsSync(out));
+      candidate = path.join(dir, "preview");
+      forcePreview(files, candidate);
+    } else {
+      assert.equal(verdict.status, "certified", log);
+      assert.equal(verdict.guarantee, "normal-completion", log);
+    }
+    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
+    for (const [file, target] of [
+      [files.sourceFile, "left"],
+      [path.join(candidate, spec.entry), dependsOnOrder ? "right" : "left"],
+    ]) {
+      const ns = await import(pathToFileURL(file).href);
+      assert.deepEqual(Object.keys(ns), ["alias", "left", "right"]);
+      assert.deepEqual(ns.left, ns.right);
+      assert.notEqual(ns.left, ns.right);
+      assert.equal(ns.alias, ns[target]);
+    }
+  }
+}
