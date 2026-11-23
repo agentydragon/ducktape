@@ -8,9 +8,8 @@
 use super::{Purity, PurityReason, PurityRule};
 use crate::analysis_inputs::ProofDependencies;
 use crate::inference::{FactChange, FactContext, IterativeInference, IterativeRules};
-use petgraph::algo::{tarjan_scc, toposort};
+use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
-use petgraph::graphmap::DiGraphMap;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -536,36 +535,26 @@ fn project_effect_maps(
     }
     let components = tarjan_scc(&call_graph);
     let mut component_by_node = vec![0; keys.len()];
-    let mut keys_by_component = vec![Vec::new(); components.len()];
-    for (component_index, nodes) in components.iter().enumerate() {
+    for (component, nodes) in components.iter().enumerate() {
         for node in nodes {
-            component_by_node[node.index()] = component_index;
-            keys_by_component[component_index].push(keys[node.index()].clone());
+            component_by_node[node.index()] = component;
         }
-        keys_by_component[component_index].sort_by(|left, right| {
+    }
+
+    // Tarjan returns SCCs in reverse topological order, so callee SCCs
+    // are already projected when their callers are visited.
+    let mut projected = BTreeMap::new();
+    for mut nodes in components {
+        nodes.sort_by(|left, right| {
+            let left = &keys[left.index()];
+            let right = &keys[right.index()];
             distances
                 .get(left)
                 .cmp(&distances.get(right))
                 .then_with(|| left.cmp(right))
         });
-    }
-    let mut component_graph = DiGraphMap::<usize, ()>::new();
-    for component in 0..components.len() {
-        component_graph.add_node(component);
-    }
-    for (caller, callees) in &callees_by_caller {
-        let caller_component = component_by_node[node_by_key[caller].index()];
-        for callee in callees {
-            let callee_component = component_by_node[node_by_key[callee].index()];
-            if caller_component != callee_component {
-                component_graph.add_edge(callee_component, caller_component, ());
-            }
-        }
-    }
-    let component_order = toposort(&component_graph, None).expect("SCC condensation is acyclic");
-    let mut projected = BTreeMap::new();
-    for component in component_order {
-        for key in &keys_by_component[component] {
+        for node in nodes {
+            let key = &keys[node.index()];
             let effect = &effects[key];
             if !effect.is_effectful() {
                 projected.insert(
@@ -581,7 +570,7 @@ fn project_effect_maps(
             for effect_reason in effect.reasons.values() {
                 let mut reason = effect_reason.reason.clone();
                 if let Some(callee) = &effect_reason.callee {
-                    let caller_component = component_by_node[node_by_key[key].index()];
+                    let caller_component = component_by_node[node.index()];
                     let callee_component = component_by_node[node_by_key[callee].index()];
                     if caller_component != callee_component
                         || distances.get(callee) < distances.get(key)
