@@ -4,6 +4,7 @@ import GObject from "gi://GObject";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
 
+import { loadInterfaceXml } from "./dbus.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
@@ -12,7 +13,6 @@ import { panelOrder } from "./panelOrder.js";
 
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";
-const INTERFACE_NAME = "works.allegedly.PlaidSpend1";
 const TEST_START_NOW_MS = (() => {
   if (GLib.getenv("PLAID_SPEND_TEST") !== "1") return null;
   const value = GLib.getenv("PLAID_SPEND_TEST_NOW");
@@ -24,18 +24,7 @@ const TEST_START_NOW_MS = (() => {
   return timestamp;
 })();
 let TEST_NOW_MS = TEST_START_NOW_MS;
-const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
-  `<node><interface name="${INTERFACE_NAME}">
-    <method name="GetView"><arg name="view" type="s" direction="out"/></method>
-    <method name="GetPaceHistory"><arg name="history" type="s" direction="out"/></method>
-    <method name="Login"/>
-    <signal name="ViewChanged"><arg name="view" type="s"/></signal>
-    <property name="Status" type="s" access="read"/>
-    <property name="LastError" type="s" access="read"/>
-    <property name="LastAttemptAt" type="d" access="read"/>
-    <property name="NextRetryAt" type="d" access="read"/>
-  </interface></node>`
-).lookup_interface(INTERFACE_NAME);
+const [INTERFACE_INFO] = Gio.DBusNodeInfo.new_for_xml(loadInterfaceXml("daemon.xml")).interfaces;
 
 function decodeBytes(bytes) {
   return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
@@ -339,7 +328,7 @@ const PlaidSpendIndicator = GObject.registerClass(
                 INTERFACE_INFO,
                 BUS_NAME,
                 OBJECT_PATH,
-                INTERFACE_NAME,
+                INTERFACE_INFO.name,
                 this._daemonConnectCancellable,
                 (_source, proxyResult) => this._proxyReady(proxyResult, false)
               );
@@ -355,7 +344,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           INTERFACE_INFO,
           BUS_NAME,
           OBJECT_PATH,
-          INTERFACE_NAME,
+          INTERFACE_INFO.name,
           this._daemonConnectCancellable,
           (_source, result) => this._proxyReady(result, true)
         );
@@ -747,82 +736,64 @@ const PlaidSpendIndicator = GObject.registerClass(
     _exportTestInterface() {
       // Only exported in fixture mode. It lets the Bazel screenshot test
       // switch synthetic views and inspect the real panel/menu actors.
-      this._testIface = Gio.DBusExportedObject.wrapJSObject(
-        '<node><interface name="works.allegedly.PlaidSpendTest">' +
-          '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
-          '<method name="AdvanceClock"><arg type="d" direction="in" name="seconds"/></method>' +
-          '<method name="OpenMenu"/>' +
-          '<method name="OpenPreferences"/>' +
-          '<method name="HideOverview"/>' +
-          '<method name="GetOverviewVisible"><arg type="b" direction="out" name="visible"/></method>' +
-          '<method name="WaitForPaint"/>' +
-          '<method name="CloseMenu"/>' +
-          '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
-          '<method name="GetPanelState"><arg type="s" direction="out" name="state"/></method>' +
-          '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
-          '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
-          '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
-          '<method name="GetSparklineGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
-          "</interface></node>",
-        {
-          Reload: (path) => this._loadFixtureFile(path),
-          AdvanceClock: (seconds) => {
-            if (TEST_NOW_MS === null || !Number.isFinite(seconds) || seconds <= 0) {
-              throw new Error("test clock can only advance by a positive number of seconds");
-            }
-            TEST_NOW_MS += seconds * 1000;
-            this._renderPopup();
-          },
-          WaitForPaintAsync: (_params, invocation) => {
-            const signal = global.stage.connect("after-paint", () => {
-              global.stage.disconnect(signal);
-              GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-                invocation.return_value(null);
-                return GLib.SOURCE_REMOVE;
-              });
+      this._testIface = Gio.DBusExportedObject.wrapJSObject(loadInterfaceXml("shell-test.xml"), {
+        Reload: (path) => this._loadFixtureFile(path),
+        AdvanceClock: (seconds) => {
+          if (TEST_NOW_MS === null || !Number.isFinite(seconds) || seconds <= 0) {
+            throw new Error("test clock can only advance by a positive number of seconds");
+          }
+          TEST_NOW_MS += seconds * 1000;
+          this._renderPopup();
+        },
+        WaitForPaintAsync: (_params, invocation) => {
+          const signal = global.stage.connect("after-paint", () => {
+            global.stage.disconnect(signal);
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+              invocation.return_value(null);
+              return GLib.SOURCE_REMOVE;
             });
-            global.stage.queue_redraw();
-          },
-          OpenMenu: () => this.menu.open(false),
-          OpenPreferences: () => this._openPreferences(),
-          HideOverview: () => Main.overview.hide(),
-          GetOverviewVisible: () => Main.overview.visible,
-          CloseMenu: () => this.menu.close(false),
-          GetPanelLabel: () => this._panelText,
-          GetPanelState: () => {
-            const actors = new Map([
-              [this._icon, "status"],
-              [this._label, "balance"],
-              [this._paceWindowLabel, "pace-window"],
-              [this._paceLabel, "pace"],
-              [this._sparkline, "sparkline"],
-              [this._sparklineUnavailable, "sparkline-unavailable"],
-            ]);
-            return JSON.stringify({
-              items: this._box.get_children().map((actor) => actors.get(actor)),
-              level: this._panelLevel,
-              window: this._settings.get_string("pace-window"),
-            });
-          },
-          GetDaemonOwner: () => this._proxy?.g_name_owner || "",
-          GetMenuText: () =>
-            this.menu
-              ._getMenuItems()
-              .map((item) => item.label?.get_text() || "")
-              .join("\n"),
-          GetMenuGeometry: () => {
-            const actor = this.menu.actor;
-            const [x, y] = actor.get_transformed_position();
-            const [width, height] = actor.get_transformed_size();
-            return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
-          },
-          GetSparklineGeometry: () => {
-            const [x, y] = this._sparkline.get_transformed_position();
-            const [width, height] = this._sparkline.get_transformed_size();
-            return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
-          },
-        }
-      );
+          });
+          global.stage.queue_redraw();
+        },
+        OpenMenu: () => this.menu.open(false),
+        OpenPreferences: () => this._openPreferences(),
+        HideOverview: () => Main.overview.hide(),
+        GetOverviewVisible: () => Main.overview.visible,
+        CloseMenu: () => this.menu.close(false),
+        GetPanelLabel: () => this._panelText,
+        GetPanelState: () => {
+          const actors = new Map([
+            [this._icon, "status"],
+            [this._label, "balance"],
+            [this._paceWindowLabel, "pace-window"],
+            [this._paceLabel, "pace"],
+            [this._sparkline, "sparkline"],
+            [this._sparklineUnavailable, "sparkline-unavailable"],
+          ]);
+          return JSON.stringify({
+            items: this._box.get_children().map((actor) => actors.get(actor)),
+            level: this._panelLevel,
+            window: this._settings.get_string("pace-window"),
+          });
+        },
+        GetDaemonOwner: () => this._proxy?.g_name_owner || "",
+        GetMenuText: () =>
+          this.menu
+            ._getMenuItems()
+            .map((item) => item.label?.get_text() || "")
+            .join("\n"),
+        GetMenuGeometry: () => {
+          const actor = this.menu.actor;
+          const [x, y] = actor.get_transformed_position();
+          const [width, height] = actor.get_transformed_size();
+          return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+        },
+        GetSparklineGeometry: () => {
+          const [x, y] = this._sparkline.get_transformed_position();
+          const [width, height] = this._sparkline.get_transformed_size();
+          return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+        },
+      });
       this._testIface.export(Gio.DBus.session, "/works/allegedly/PlaidSpendTest");
       this._testBusOwnerId = Gio.bus_own_name(
         Gio.BusType.SESSION,

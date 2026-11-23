@@ -238,6 +238,12 @@ repos:
         language: system
         files: "\\.(js|mjs|cjs|jsx|ts|tsx|css|md|yaml|yml|json|html)$"
 
+      - id: gnome-dbus-xml
+        name: GNOME D-Bus XML formatting and validation
+        entry: format-gnome-dbus-xml
+        language: system
+        files: ^(aiquota/gnome|finance/plaid/spend/gnome)/dbus/[^/]+\.xml$
+
       # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.
       - id: no-subdir-pyproject-toml
         name: No sub-directory pyproject.toml files

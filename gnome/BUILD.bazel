@@ -1,4 +1,13 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+
 exports_files(
     ["devkit.sh"],
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "dbus_loader",
+    srcs = ["dbus.js"],
+    strip_prefix = strip_prefix.files_only(),
     visibility = ["//visibility:public"],
 )

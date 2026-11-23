@@ -11,6 +11,8 @@ pkg_files(
     # truth: the zip target, local devkit launcher, and render tests all
     # consume this package mapping.
     srcs = [
+        "dbus/daemon.xml",
+        "dbus/shell-test.xml",
         "extension.js",
         "icons/claude-symbolic.svg",
         "icons/openai-symbolic.svg",
@@ -43,6 +45,7 @@ pkg_zip(
     srcs = [
         ":extension_files",
         ":shared_presentation_file",
+        "//gnome:dbus_loader",
     ],
     out = "aiquota.zip",
     visibility = ["//visibility:public"],
@@ -52,6 +55,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    data = ["dbus/fake-control.xml"],
     deps = ["//gnome/testing:fake_daemon_js"],
 )
 
