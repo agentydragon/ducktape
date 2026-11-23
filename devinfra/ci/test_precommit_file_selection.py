@@ -9,10 +9,7 @@ import pytest_bazel
 
 from devinfra.ci.pr_mergeability import SourceRevisionError
 from devinfra.ci.precommit_file_selection import main, needs_ansible_roles, prepare_changed_files
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+from testing.git_repo import configure_git_author, git, init_git_repo
 
 
 @dataclass(frozen=True)
@@ -29,28 +26,25 @@ def checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PullRequestChec
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     origin = tmp_path / "origin"
     origin.mkdir()
-    _git(origin, "init", "--initial-branch=devel")
-    _git(origin, "config", "user.name", "Test Author")
-    _git(origin, "config", "user.email", "test@example.invalid")
+    init_git_repo(origin, branch="devel")
     for name in ("upstream.txt", "removed.txt", "old-name.txt"):
         (origin / name).write_text(name + "\n")
-    _git(origin, "add", ".")
-    _git(origin, "commit", "-m", "base")
-    _git(origin, "switch", "-c", "pr")
+    git(origin, "add", ".")
+    git(origin, "commit", "-m", "base")
+    git(origin, "switch", "-c", "pr")
     for name in ("pr.txt", "space and\n雪.txt", ".ansible-lint.yaml"):
         (origin / name).write_text("PR change\n")
     (origin / "removed.txt").unlink()
-    _git(origin, "mv", "old-name.txt", "new-name.txt")
-    _git(origin, "add", "--all")
-    _git(origin, "commit", "-m", "PR")
-    head_sha = _git(origin, "rev-parse", "HEAD")
-    _git(origin, "switch", "-c", "tested-merge", "devel")
-    _git(origin, "merge", "--no-ff", "pr", "-m", "test merge")
-    merge_sha = _git(origin, "rev-parse", "HEAD")
+    git(origin, "mv", "old-name.txt", "new-name.txt")
+    git(origin, "add", "--all")
+    git(origin, "commit", "-m", "PR")
+    head_sha = git(origin, "rev-parse", "HEAD").strip()
+    git(origin, "switch", "-c", "tested-merge", "devel")
+    git(origin, "merge", "--no-ff", "pr", "-m", "test merge")
+    merge_sha = git(origin, "rev-parse", "HEAD").strip()
     path = tmp_path / "checkout"
-    _git(origin, "clone", "--depth=2", "--no-single-branch", "--branch=tested-merge", origin.as_uri(), str(path))
-    _git(path, "config", "user.name", "Test Author")
-    _git(path, "config", "user.email", "test@example.invalid")
+    git(origin, "clone", "--depth=2", "--no-single-branch", "--branch=tested-merge", origin.as_uri(), str(path))
+    configure_git_author(path)
     monkeypatch.chdir(path)
     return PullRequestCheckout(origin=origin, path=path, merge_sha=merge_sha, head_sha=head_sha)
 
@@ -58,10 +52,10 @@ def checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PullRequestChec
 def test_base_advancing_after_checkout_does_not_select_upstream_edits(
     checkout: PullRequestCheckout, tmp_path: Path
 ) -> None:
-    _git(checkout.origin, "switch", "devel")
+    git(checkout.origin, "switch", "devel")
     (checkout.origin / "upstream.txt").write_text("landed after the test merge\n")
-    _git(checkout.origin, "commit", "-am", "advance base")
-    _git(checkout.path, "fetch", "--depth=1", "origin", "devel")
+    git(checkout.origin, "commit", "-am", "advance base")
+    git(checkout.path, "fetch", "--depth=1", "origin", "devel")
     changed_files = tmp_path / "changed-files"
 
     needs_roles, paths = prepare_changed_files(
@@ -103,7 +97,7 @@ def test_non_pr_events_keep_all_file_role_setup(event_name: str) -> None:
 
 
 @pytest.mark.parametrize("event_name", ["push", "workflow_dispatch"])
-def test_non_pr_selection_keeps_roles_without_running_git(
+def test_non_pr_selection_keeps_roles_without_runninggit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event_name: str
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -121,12 +115,12 @@ def test_unknown_selection_keeps_ansible_roles() -> None:
 
 
 def test_empty_pr_diff_is_known_and_has_no_ansible_roles(checkout: PullRequestCheckout, tmp_path: Path) -> None:
-    _git(checkout.path, "switch", "-c", "empty-pr")
-    _git(checkout.path, "commit", "--allow-empty", "-m", "empty PR")
-    head_sha = _git(checkout.path, "rev-parse", "HEAD")
-    _git(checkout.path, "switch", "--detach", checkout.merge_sha)
-    _git(checkout.path, "merge", "--no-ff", "empty-pr", "-m", "empty test merge")
-    merge_sha = _git(checkout.path, "rev-parse", "HEAD")
+    git(checkout.path, "switch", "-c", "empty-pr")
+    git(checkout.path, "commit", "--allow-empty", "-m", "empty PR")
+    head_sha = git(checkout.path, "rev-parse", "HEAD").strip()
+    git(checkout.path, "switch", "--detach", checkout.merge_sha)
+    git(checkout.path, "merge", "--no-ff", "empty-pr", "-m", "empty test merge")
+    merge_sha = git(checkout.path, "rev-parse", "HEAD").strip()
     changed_files = tmp_path / "changed-files"
 
     needs_roles, paths = prepare_changed_files(
@@ -149,7 +143,7 @@ def test_invalid_pr_source_does_not_publish_a_selection(
     elif mismatch == "head":
         expected_head_sha = checkout.merge_sha
     elif mismatch == "non_merge":
-        _git(checkout.path, "switch", "--detach", checkout.head_sha)
+        git(checkout.path, "switch", "--detach", checkout.head_sha)
         expected_sha = checkout.head_sha
     else:
         expected_head_sha = ""
@@ -170,7 +164,7 @@ def test_depth_one_checkout_does_not_publish_a_selection(
     checkout: PullRequestCheckout, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     shallow = tmp_path / "shallow"
-    _git(checkout.origin, "clone", "--depth=1", "--branch=tested-merge", checkout.origin.as_uri(), str(shallow))
+    git(checkout.origin, "clone", "--depth=1", "--branch=tested-merge", checkout.origin.as_uri(), str(shallow))
     monkeypatch.chdir(shallow)
     changed_files = tmp_path / "changed-files"
 

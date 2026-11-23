@@ -141,7 +141,7 @@ def test_cli_cached(runner, staged_and_unstaged_repo, monkeypatch):
 
 def test_cli_reads_pipe_before_falling_back(staged_and_unstaged_repo, run_git, monkeypatch, capsys):
     monkeypatch.chdir(staged_and_unstaged_repo)
-    patch = run_git("diff", "--cached", "--color=always").stdout
+    patch = run_git("diff", "--cached", "--color=always")
     read_fd, write_fd = os.pipe()
     with os.fdopen(read_fd) as pipe, os.fdopen(write_fd, "w") as producer:
         read = pipe.read
