@@ -87,9 +87,9 @@ esbuild file beside its actual providers with the `browser-page` profile. It
 checks that all 13 `import()` and
 `import.meta` sites stay in that entry, the 11 relative dynamic imports resolve
 to existing bundle files, and the scroll module uses a new asset path.
-The decoder retains the React factory in statement 5. The factory’s
-`Object.assign` read is inside its deferred body. Both trials stop at the
-eager `new Uint8Array` in statement 41 and leave the output directory absent.
+The decoder retains the React factory in statement 5 and lowers the `Uint8Array`
+constructor reference in statement 41. Both trials reject statement 104 with
+`expected an identifier` and leave the output directory absent.
 Each target records the source filename, placement spec and verdict.
 
 Both targets render two diagnostic placements with `--diagnostic … --force` into separate
