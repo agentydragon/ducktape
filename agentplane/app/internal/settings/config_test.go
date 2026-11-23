@@ -384,10 +384,6 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 				c.NotificationsRequestTimeoutSeconds, c.SessionDispatcherRequestTimeoutSecs,
 				c.HistoryServiceRequestTimeoutSeconds, c.EgressAdminTimeoutSeconds, c.ShutdownTimeoutSeconds)
 		}
-		if c.RunnerGatewayRequestTimeoutSeconds != 0 || c.RunnerGatewayLifecycleTimeoutSecs != 0 {
-			t.Fatalf("unused Runner Gateway timeouts took defaults: request=%v lifecycle=%v",
-				c.RunnerGatewayRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
-		}
 		if names := c.SandboxPresetNames(); len(names) != 2 || names[0] != "Work Space" || names[1] != "Alpha" || c.ThreadPresets["DefaultThread"].CWD != "/state/workspaces/{session_id}" {
 			t.Fatalf("unexpected Sandbox preset order %v or Thread preset defaults %+v", names, c.ThreadPresets)
 		}

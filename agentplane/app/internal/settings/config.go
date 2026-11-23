@@ -62,13 +62,7 @@ type Config struct {
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	// RunnerGateway timeouts are unused: the app health-probes runner_gateway_target and opens no
-	// Runtime-proxy call, so nothing reads either value. The renderer no longer writes them; they stay
-	// accepted, unset and unvalidated so an already-deployed settings file still loads on rollback.
-	// CLEANUP(added 2026-11-20): delete these two fields once no deployed settings file names them.
-	RunnerGatewayRequestTimeoutSeconds float64 `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs  float64 `mapstructure:"runner_gateway_lifecycle_timeout_s"`
-	sandboxPresetOrder                 []string
+	sandboxPresetOrder                  []string
 }
 
 // EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required
