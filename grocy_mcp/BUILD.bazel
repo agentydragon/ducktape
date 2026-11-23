@@ -132,6 +132,7 @@ py_library(
     deps = [
         ":grocy_fixtures",
         "//testing:otel_tracing",
+        "//testing:pytest_otel",
     ],
 )
 

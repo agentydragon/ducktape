@@ -15,6 +15,15 @@ py_library(
         "//util:otel",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
+    name = "pytest_otel",
+    srcs = ["pytest_otel.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
     ],
 )

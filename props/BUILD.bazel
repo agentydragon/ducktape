@@ -67,6 +67,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//testing:otel_tracing",
+        "//testing:pytest_otel",
         "@pypi//pytest",
     ],
 )

@@ -4,7 +4,8 @@ import os
 
 import pytest
 
-from testing.otel_tracing import configure_tracing, pytest_runtest_protocol
+from testing.otel_tracing import configure_tracing
+from testing.pytest_otel import pytest_runtest_protocol
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
