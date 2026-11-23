@@ -341,21 +341,21 @@ private partial def containsBreak (j : Json) : Bool :=
 
 /-- A retained body has no model for its source module or a method's home object.
 Direct eval could also refer to cells absent from the static capture list. -/
-partial def needsOpaqueContext (j : Json) : Bool :=
+partial def needsOpaqueContext (j : Json) (checkPrivateNames := false) : Bool :=
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
-    ["Super", "PrivateIdentifier", "MetaProperty", "ImportExpression"].contains kind ||
+    ["Super", "MetaProperty", "ImportExpression"].contains kind || (checkPrivateNames && kind == "PrivateIdentifier") ||
       (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
-      fields.toList.any (fun (_, child) => needsOpaqueContext child)
-  | .arr items => items.any needsOpaqueContext
+      fields.toList.any (fun (_, child) => needsOpaqueContext child checkPrivateNames)
+  | .arr items => items.any (fun child => needsOpaqueContext child checkPrivateNames)
   | _ => false
 
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
 private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : Bool)
     (arity : Nat) (reason : String) : Except String Func := do
-  if needsOpaqueContext j then throw reason
+  if needsOpaqueContext j (checkPrivateNames := kind == .asyncMethod) then throw reason
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
