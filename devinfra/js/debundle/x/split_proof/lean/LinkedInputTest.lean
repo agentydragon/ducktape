@@ -1,7 +1,25 @@
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 
 open Lean (Json toJson)
+
+private def location (input : Json) : Except String Json := do
+  let originalName ← input.getObjValAs? String "originalName"
+  let emittedName ← input.getObjValAs? String "emittedName"
+  let plan : EsmSplit.Plan := { entry := emittedName, mods := [
+    ⟨emittedName, ← input.getObjValAs? (List Nat) "retained", [], []⟩,
+    ⟨"new/scroll.mjs", ← input.getObjValAs? (List Nat) "moved", [], []⟩] }
+  let assets (j : Json) : Except String (String → Option CoreJS.ModuleLocation.Resource) := do
+    let entries : List (String × CoreJS.ModuleLocation.Resource) ← (← j.getObj?).toList.mapM fun (name, r) => do
+      return (name, ⟨← r.getObjValAs? String "url", ← r.getObjValAs? String "source"⟩)
+    let table := Std.HashMap.ofList entries
+    return fun name => table[name]?
+  let sites ← CoreJS.ModuleLocation.check (← input.getObjVal? "source") originalName plan
+    (← assets (← input.getObjVal? "before")) (← assets (← input.getObjVal? "after"))
+  return .arr (sites.map fun (id, use) => match use with
+    | .metaUrl => .arr #[toJson id, toJson "import.meta.url"]
+    | .dynamicImport request target => .arr #[toJson id, toJson request, toJson target])
 
 /-- The original entry keeps the import, wrapped call, and export. The split entry
 imports a captured callback dependency from the module holding the two moved arrows. -/
@@ -40,6 +58,7 @@ private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
     let result ← match ← fixture.getObjValAs? String "kind" with
+      | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"

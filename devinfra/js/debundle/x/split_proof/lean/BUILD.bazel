@@ -225,6 +225,7 @@ lean_library(
         "EsmSplit/CoreJS/LinkedInput.lean",
         "EsmSplit/CoreJS/LiteralRecord.lean",
         "EsmSplit/CoreJS/ModuleInput.lean",
+        "EsmSplit/CoreJS/ModuleLocation.lean",
         "EsmSplit/CoreJS/Move.lean",
         "EsmSplit/CoreJS/OpaqueFrame.lean",
         "EsmSplit/CoreJS/OpaqueInput.lean",
