@@ -15,7 +15,7 @@
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,6 +94,8 @@ async function worker() {
         path.join(dir, "out"),
         "--footprints",
         footprints,
+        "--plan",
+        path.join(dir, "plan.json"),
         "--force",
       ]);
       const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(
@@ -106,12 +108,18 @@ async function worker() {
       const got = await smoke(family, path.join(dir, "out", spec.entry));
       const node = JSON.stringify(got) === baseline ? "same" : "different";
       const detail = node === "same" ? "" : got.ok ? "returned a different value" : got.error;
+      const emitted = JSON.parse(await readFile(path.join(dir, "plan.json"), "utf8"));
+      const reordered = emitted.order.flatMap((m) => emitted.modules[m]).some((unit, i) => unit !== i);
+      if (verdict === "accept" && node !== "same") {
+        await copyFile(path.join(dir, "spec.json"), `${out}.${plan.strategy}-${plan.args.join("-")}.spec.json`);
+      }
       const line = {
         bundle,
         strategy: plan.label ?? plan.strategy,
         args: plan.args,
         modules: Object.keys(spec.modules).length,
         verdict,
+        reordered,
         failed,
         node,
         detail,
@@ -141,3 +149,5 @@ if (tally["accept/different"]) {
   console.error("UNSOUND: an accepted split behaves differently");
   process.exitCode = 1;
 }
+
+if (rest.includes("--require-accepted") && !tally["accept/same"]) throw new Error("no accepted matching split");

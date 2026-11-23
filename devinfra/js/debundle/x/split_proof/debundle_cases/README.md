@@ -14,9 +14,11 @@ From the repository root, set `out` to an absolute output directory:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
-bb run "$p:debundle_cases" -- --out "$out/cases.jsonl"
-bb run "$p:summarize_debundle_cases" -- "$out/cases.jsonl" > "$out/summary.md"
+bb run "$p/debundle_cases:debundle_cases" -- --out "$out/cases.jsonl"
+bb run "$p/debundle_cases:summarize_debundle_cases" -- "$out/cases.jsonl" > "$out/summary.md"
 ```
+
+Add `--regression` to fail after writing the report on an empty selection, a runner error, an invalid baseline, or an accepted split with a different observation. Unsupported entries are counted separately.
 
 Use `--filter <substring>` for a smaller run.
 

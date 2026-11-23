@@ -15,14 +15,15 @@ const random = () => {
   return seed / 2 ** 32;
 };
 
-function stdout(command, file) {
-  const result = spawnSync(command, [file], { encoding: "utf8", timeout: 15_000 });
+function stdout(command, ...args) {
+  const result = spawnSync(command, args, { encoding: "utf8", timeout: 15_000 });
   if (result.error) throw result.error;
-  assert.equal(result.status, 0, `${command} ${file}: ${result.signal ?? result.stderr}`);
+  assert.equal(result.status, 0, `${command} ${args}: ${result.signal ?? result.stderr}`);
   return result.stdout;
 }
 
-function compare(entry, modules, { reverseImports = false } = {}) {
+const batch = [];
+function compare(entry, modules, { reverseImports = false, batched = false } = {}) {
   const dir = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? tmpdir(), "es_order_"));
   try {
     for (const [name, imports] of Object.entries(modules)) {
@@ -30,9 +31,14 @@ function compare(entry, modules, { reverseImports = false } = {}) {
       const body = order.map((src) => `import "./${src}";`).join("\n");
       writeFileSync(path.join(dir, name), `${body}\nconsole.log(${JSON.stringify(name)});\n`);
     }
+    const node = stdout(process.execPath, path.join(dir, entry));
+    if (batched) {
+      batch.push({ graph: { entry, modules }, node });
+      return;
+    }
     const graph = path.join(dir, "graph.json");
     writeFileSync(graph, JSON.stringify({ entry, modules }));
-    return { node: stdout(process.execPath, path.join(dir, entry)), lean: stdout(evalorder, graph) };
+    return { node, lean: stdout(evalorder, graph) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -64,7 +70,22 @@ for (let g = 0; g < graphs; g++) {
     })
   );
   const entry = names[Math.floor(random() * n)];
-  const result = compare(entry, modules);
-  assert.equal(result.lean, result.node, `seed ${initialSeed}, graph ${g}: ${JSON.stringify({ entry, modules })}`);
+  compare(entry, modules, { batched: true });
+}
+const scratch = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? tmpdir(), "graph_batch_"));
+try {
+  const file = path.join(scratch, "graphs.json");
+  writeFileSync(file, JSON.stringify(batch.map(({ graph }) => graph)));
+  const orders = JSON.parse(stdout(evalorder, "--batch", file));
+  assert.equal(orders.length, batch.length);
+  batch.forEach(({ graph, node }, i) => {
+    assert.deepEqual(
+      orders[i],
+      node.trimEnd().split("\n"),
+      `seed ${initialSeed}, graph ${i}: ${JSON.stringify(graph)}`
+    );
+  });
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
 }
 console.log(`${graphs} random graphs matched Node (seed ${initialSeed}); reversed-import control differed`);

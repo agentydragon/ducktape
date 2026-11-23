@@ -11,6 +11,7 @@
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
+import { classify, rejectKind, wanted } from "./verdict.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -247,36 +248,25 @@ function translate(spec, chunk, statements) {
 
 function run(cmd, cmdArgs, options = {}) {
   const r = spawnSync(cmd, cmdArgs, { encoding: "utf8", timeout: 30_000, ...options });
-  return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", timedOut: r.error?.code === "ETIMEDOUT" };
+  return {
+    code: r.status,
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? "",
+    failure:
+      r.error?.code === "ETIMEDOUT"
+        ? "timeout"
+        : r.error
+          ? `spawn-${r.error.code}`
+          : r.signal
+            ? `signal-${r.signal}`
+            : null,
+  };
 }
 
 function nodeRun(file, cwd) {
   const r = run(process.execPath, [file], { cwd });
   const error = (r.stderr.match(/^\w*Error: .*/m) ?? [""])[0];
-  return { stdout: r.stdout, code: r.code, error };
-}
-
-const rejectKind = (expected) =>
-  "atomic_conflict" in expected.reject ? "atomic_conflict" : "cycle" in expected.reject ? "cycle" : "stderr";
-
-/** What the emitted entry should print. The adapter renames nothing, so it is the original's output. */
-const wanted = (expected) => expected.accept.original_stdout ?? expected.accept.stdout;
-
-/**
- * `agree-*`: same verdict. `strict-*`: I reject what debundle accepts (`runs` when my plan, written anyway, prints
- * the expected output; `breaks` when it does not, so debundle's splitter is better than mine). `unsound-accept`: I
- * accept and the emitted modules print something else. `lenient`: I accept what debundle rejects (the output is the
- * same on this run). `refusal-test`: the case checks debundle's error text, which has no counterpart here.
- */
-function classify(expected, mine, node) {
-  if ("accept" in expected) {
-    const same = node.emitted === wanted(expected);
-    if (mine.verdict === "accept") return same ? "agree-accept" : "unsound-accept";
-    return same ? "strict-but-runs" : "strict-and-breaks";
-  }
-  if (rejectKind(expected) === "stderr") return "refusal-test";
-  if (mine.verdict === "reject") return "agree-reject";
-  return node.emitted === node.original ? "lenient" : "unsound-accept";
+  return { stdout: r.stdout, code: r.code, failure: r.failure, error };
 }
 
 function discover() {
@@ -355,7 +345,11 @@ function runCase(dir, specName, expected) {
     if (checked.code === 3)
       return unsupported("statement kind the model rejects", checked.stderr.trim().split("\n").pop());
     if (checked.code !== 0 && checked.code !== 1)
-      return { ...record, outcome: "error:lowersplit", detail: checked.stderr.trim().split("\n").pop() };
+      return {
+        ...record,
+        outcome: "error:lowersplit",
+        detail: checked.failure ?? checked.stderr.trim().split("\n").pop(),
+      };
     const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(
       ([, what]) =>
         what.match(/^statement \d+ is an `(Import|Export)/)?.[1].concat("OutsideEntry") ?? what.split(/\s+/)[0]
@@ -374,7 +368,7 @@ function runCase(dir, specName, expected) {
     }
     const original = nodeRun(chunkFile, stage);
     const emitted = nodeRun(path.join(stage, "split", plan.entry), stage);
-    const node = { original: original.stdout, emitted: emitted.stdout, emittedError: emitted.error };
+    const node = { original, emitted };
     const want = "accept" in expected ? wanted(expected) : null;
     const outcome = classify(expected, mine, node);
     return {
@@ -386,6 +380,10 @@ function runCase(dir, specName, expected) {
         originalMatchesExpect: want === null ? null : original.stdout === want,
         emittedMatchesExpect: want === null ? null : emitted.stdout === want,
         emittedMatchesOriginal: emitted.stdout === original.stdout,
+        originalCode: original.code,
+        emittedCode: emitted.code,
+        originalFailure: original.failure,
+        emittedFailure: emitted.failure,
         emittedError: emitted.error,
       },
       unchecked:
@@ -407,8 +405,19 @@ for (const dir of discover()) {
   for (const [specName, expected] of Object.entries(expectations)) {
     const id = `${path.relative(casesRoot, dir)}/${specName}`;
     if (filter && !id.includes(filter)) continue;
-    lines.push(JSON.stringify(runCase(dir, specName, expected)));
+    lines.push(runCase(dir, specName, expected));
   }
 }
-writeFileSync(outFile, `${lines.join("\n")}\n`);
+writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`);
 console.log(`${lines.length} cases -> ${outFile}`);
+if (args.includes("--regression")) {
+  const failures = lines.filter(({ outcome }) => outcome.startsWith("error:") || outcome === "unsound-accept");
+  console.log(`${lines.filter(({ outcome }) => outcome.startsWith("unsupported:")).length} unsupported`);
+  if (!lines.length || failures.length) {
+    console.error(
+      "No cases selected or unexpected outcomes:",
+      failures.map(({ id, outcome }) => ({ id, outcome }))
+    );
+    process.exitCode = 1;
+  }
+}

@@ -26,7 +26,7 @@ run() {
   "$split" "$bundle" "$strategy" "$@" --bundles "$bundles" --footprints "$footprints" \
     --out "$results/${bundle}_${strategy}.jsonl" || status=$?
 }
-run halves
+run halves --require-accepted
 if [[ ${1:-} != --sample ]]; then
   run cuts --step "$cut_step"
   run cuts_entry_first --step "$entry_first_step"
