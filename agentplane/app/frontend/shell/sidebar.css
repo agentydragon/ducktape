@@ -73,6 +73,14 @@
   .agentplane-sidebar.agentplane-sidebar-open .agentplane-sidebar-close {
     display: inline-flex;
   }
+
+  .agentplane-sidebar .agentplane-sidebar-header {
+    padding: 4px var(--mantine-spacing-sm);
+  }
+
+  .agentplane-sidebar-new {
+    margin-left: auto;
+  }
 }
 
 .agentplane-sidebar-header {
