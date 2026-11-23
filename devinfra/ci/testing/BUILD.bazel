@@ -16,6 +16,12 @@ py_library(
 )
 
 py_library(
+    name = "fake_crane",
+    srcs = ["fake_crane.py"],
+    deps = ["//devinfra/oci:crane"],
+)
+
+py_library(
     name = "fake_git",
     srcs = ["fake_git.py"],
 )
