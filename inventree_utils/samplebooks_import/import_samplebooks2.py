@@ -1,17 +1,14 @@
 import sys
-from collections import defaultdict
 
-import pint
-from inventree.base import Parameter, ParameterTemplate
+from inventree.api import InvenTreeAPI
+from inventree.base import ParameterTemplate
 from inventree.part import Part as InvPart
 from inventree.stock import StockItem
-from samplebooks_parts_data import BasePart, Resistor, parts
 from tqdm import tqdm
 
 from inventree_utils.beautifier.config import api_from_config
-from inventree_utils.beautifier.inventree_util import part_url
-
-api = api_from_config()
+from inventree_utils.beautifier.inventree_util import create_part_parameter, list_part_parameters, part_url
+from inventree_utils.samplebooks_import.samplebooks_parts_data import BookPart, Resistor, parts
 
 RESISTOR_CATEGORY_ID = 8
 CAPACITOR_CATEGORY_ID = 12
@@ -32,12 +29,8 @@ LOC_0402 = 2
 LOC_0603 = 3
 LOC_0805 = 4
 
-ureg = pint.UnitRegistry()
-ohm = ureg.ohm
-pf = ureg.pF
 
-
-def format_value(part: BasePart) -> str:
+def format_value(part: BookPart) -> str:
     """
     Return the human-friendly quantity string (e.g. "4.7 nF" or "10 kΩ").
     """
@@ -52,16 +45,11 @@ def format_value(part: BasePart) -> str:
     return f"{round(q.magnitude, 3):g} {q.units:~P}"
 
 
-def get_package_string(pkg: str) -> str:
-    # Prepend "SMD " to the numeric size
-    return f"SMD {pkg}"
-
-
-def get_part_category(part: BasePart) -> int:
+def get_part_category(part: BookPart) -> int:
     return RESISTOR_CATEGORY_ID if isinstance(part, Resistor) else CAPACITOR_CATEGORY_ID
 
 
-def get_location_id(part: BasePart) -> int:
+def get_location_id(part: BookPart) -> int:
     """
     Which stock location to place it in:
       - 0201 => LOC_0201
@@ -82,12 +70,12 @@ def get_location_id(part: BasePart) -> int:
     raise ValueError(f"Unknown package '{pkg}'")
 
 
-def get_quantity(part: BasePart) -> int:
+def get_quantity(part: BookPart) -> int:
     """
     Apply your custom count rules.
     """
     if isinstance(part, Resistor):
-        val_ohms = part.resistance.to(ohm).magnitude
+        val_ohms = part.resistance.to("ohm").magnitude
 
         if part.package == "0201":
             # R0201
@@ -115,7 +103,7 @@ def get_quantity(part: BasePart) -> int:
         raise ValueError(f"No resistor rules for package {part.package}")
 
     # It's a capacitor
-    val_pf = part.capacitance.to(pf).magnitude
+    val_pf = part.capacitance.to("pF").magnitude
 
     if part.package == "0201":
         # C0201
@@ -142,7 +130,7 @@ def get_quantity(part: BasePart) -> int:
     raise ValueError(f"No capacitor rules for package {part.package}")
 
 
-def build_part_name(p: BasePart) -> str:
+def build_part_name(p: BookPart) -> str:
     """
     E.g. "R 0201 4.7kΩ" or "C 0603 100nF".
     Keep it fairly short, since you'll store details in param fields.
@@ -160,7 +148,7 @@ def build_part_name(p: BasePart) -> str:
     return name
 
 
-def build_part_description(p: BasePart) -> str:
+def build_part_description(p: BookPart) -> str:
     """
     Append an auto-gen marker to the user-supplied description (if any).
     """
@@ -171,66 +159,33 @@ def build_part_description(p: BasePart) -> str:
     return marker
 
 
-def part_matches_in_db(
-    invpart: InvPart,
-    p: BasePart,
-    param_templates: dict[str, ParameterTemplate],
-    existing_params_for_part: list[Parameter],
-) -> bool:
-    """
-    Compare name, category, description, param fields, etc.
-    Return True if it exactly matches what we'd create now.
-    Instead of re-querying the server, we use existing_params_for_part,
-    which is a pre-fetched list of Parameter objects for invpart.pk.
-    """
+def part_parameters(p: BookPart) -> dict[str, str]:
+    values = {PACKAGE_PT_NAME: f"SMD {p.package}"}
+    value_template = RESISTANCE_PT_NAME if isinstance(p, Resistor) else CAPACITANCE_PT_NAME
+    values[value_template] = format_value(p)
+    if p.tolerance:
+        values[TOLERANCE_PT_NAME] = p.tolerance
+    if not isinstance(p, Resistor):
+        if p.dielectric:
+            values[DIELECTRIC_PT_NAME] = p.dielectric
+        if p.voltage_rating is not None:
+            values[VOLTAGE_PT_NAME] = f"{p.voltage_rating:g} V"
+    return values
+
+
+def part_matches_in_db(invpart: InvPart, p: BookPart, param_templates: dict[str, ParameterTemplate]) -> bool:
+    """Compare only the fields owned by the importer. Operators can edit descriptions and add parameters."""
     differences = []
 
-    def diff(label: str, actual: str | int, expected: str | int | None):
-        """Helper: if expected is nonempty and differs from actual, record mismatch."""
-        if expected and str(actual) != str(expected):
+    def diff(label: str, actual: str | int, expected: str | int):
+        if str(actual) != str(expected):
             differences.append(f"{label} differs: InvenTree='{actual}' vs Script='{expected}'")
 
-    # 1) Check top-level fields
-    script_name = build_part_name(p)
-    script_cat = get_part_category(p)
-    diff("Name", invpart.name, script_name)
-    diff("Category", invpart.category, script_cat)
-    # diff("Description", invpart.description, build_part_description(p))
-
-    # Build a dict: templateName -> paramValue
-    param_dict = {}
-    for ep in existing_params_for_part:
-        tmpl_id = ep.template
-        # find template name
-
-        for name, tmpl in param_templates.items():
-            if tmpl.pk == tmpl_id:
-                param_dict[name] = str(ep.data).strip()
-                break
-        # otherwise, if not in param_templates, then don't care about this parameter
-        # (it's not one we set)
-
-    # 2) Build a dict of parameter -> expected value
-    expected_params = {}
-    expected_params[PACKAGE_PT_NAME] = get_package_string(p.package)
-
-    if isinstance(p, Resistor):
-        expected_params[RESISTANCE_PT_NAME] = format_value(p)
-        if p.tolerance:
-            expected_params[TOLERANCE_PT_NAME] = p.tolerance
-    else:  # Capacitor
-        expected_params[CAPACITANCE_PT_NAME] = format_value(p)
-        if p.tolerance:
-            expected_params[TOLERANCE_PT_NAME] = p.tolerance
-        if p.dielectric:
-            expected_params[DIELECTRIC_PT_NAME] = p.dielectric
-        if p.voltage_rating is not None:
-            expected_params[VOLTAGE_PT_NAME] = f"{p.voltage_rating:g} V"
-
-    # 3) Compare each parameter
-    for param_name, script_val in expected_params.items():
-        inv_val = param_dict.get(param_name, "")
-        diff(f"[{param_name}]", inv_val, script_val)
+    diff("Name", invpart.name, build_part_name(p))
+    diff("Category", invpart.category, get_part_category(p))
+    actual_values = {row["template"]: str(row["data"]).strip() for row in invpart.parameters}
+    for name, expected in part_parameters(p).items():
+        diff(f"[{name}]", actual_values.get(param_templates[name].pk, ""), expected)
 
     if not differences:
         return True
@@ -241,11 +196,13 @@ def part_matches_in_db(
     return False
 
 
-def create_part_in_inventree(p: BasePart, param_templates: dict[str, ParameterTemplate]) -> InvPart:
-    """
-    Actually create the part if not found or mismatch.
-    Return the newly created InvenTree Part object.
-    """
+def create_part_in_inventree(api: InvenTreeAPI, p: BookPart, param_templates: dict[str, ParameterTemplate]) -> InvPart:
+    parameters = part_parameters(p)
+    for name, value in parameters.items():
+        choices = param_templates[name].choices
+        if choices and value not in choices.split(","):
+            raise ValueError(f"{value!r} not in {choices}")
+
     data = {
         "name": build_part_name(p),
         "category": get_part_category(p),
@@ -253,53 +210,21 @@ def create_part_in_inventree(p: BasePart, param_templates: dict[str, ParameterTe
         # Store the "autogen" marker in keywords as well.
         "keywords": ANCHOR,
     }
-    newp = InvPart.create(api, data)
-    # Set parameters
-    pkg_str = get_package_string(p.package)
-    set_part_parameter(newp, param_templates[PACKAGE_PT_NAME], pkg_str)
-
-    if isinstance(p, Resistor):
-        set_part_parameter(newp, param_templates[RESISTANCE_PT_NAME], format_value(p))
-        if p.tolerance:
-            set_part_parameter(newp, param_templates[TOLERANCE_PT_NAME], p.tolerance)
-
-    else:  # Capacitor
-        set_part_parameter(newp, param_templates[CAPACITANCE_PT_NAME], format_value(p))
-        if p.tolerance:
-            set_part_parameter(newp, param_templates[TOLERANCE_PT_NAME], p.tolerance)
-        if p.dielectric:
-            set_part_parameter(newp, param_templates[DIELECTRIC_PT_NAME], p.dielectric)
-        if p.voltage_rating is not None:
-            volt_str = f"{int(p.voltage_rating)} V"
-            set_part_parameter(newp, param_templates[VOLTAGE_PT_NAME], volt_str)
-
+    newp: InvPart | None = InvPart.create(api, data)
+    if newp is None:
+        raise RuntimeError(f"InvenTree returned no part for {data['name']}")
+    # A category may supply initial parameters when the part is created.
+    existing = {row.template: row for row in list_part_parameters(api, model_id=newp.pk)}
+    for name, value in parameters.items():
+        template = param_templates[name]
+        if template.pk in existing:
+            existing[template.pk].save({"data": value})
+        else:
+            create_part_parameter(api, newp, template, value)
     return newp
 
 
-def set_part_parameter(prt: InvPart, tmpl: ParameterTemplate, value: str):
-    """
-    Create (or update) a parameter with the given template and string value.
-    """
-    # If a parameter with this template already exists, update it; otherwise create a new one
-    existing_params = Parameter.list(api, part=prt.pk, template=tmpl.pk)
-    if tmpl.choices:
-        assert value in tmpl.choices.split(","), f"{value!r} not in {tmpl.choices}"
-    if existing_params:
-        assert len(existing_params) == 1, f"Multiple parameters with template {tmpl.pk}"
-        param_pk = existing_params[0].pk
-        param = Parameter(api, param_pk)
-        param["data"] = value
-        param.save()
-    else:
-        create_data = {"part": prt.pk, "template": tmpl.pk}
-        create_data["data"] = value
-        Parameter.create(api, create_data)
-
-
-def create_stock_for_part(prt: InvPart, p: BasePart):
-    """
-    Create a stock item with the correct location and quantity.
-    """
+def create_stock_for_part(api: InvenTreeAPI, prt: InvPart, p: BookPart):
     loc = get_location_id(p)
     qty = get_quantity(p)
     # status "OK" is 10 by default
@@ -320,7 +245,7 @@ def prompt_user(prompt_text: str) -> str:
 
 
 def main():
-    # 1) Load parameter templates
+    api = api_from_config()
     needed_templates = [
         RESISTANCE_PT_NAME,
         CAPACITANCE_PT_NAME,
@@ -329,59 +254,35 @@ def main():
         VOLTAGE_PT_NAME,
         PACKAGE_PT_NAME,
     ]
-    all_templates = ParameterTemplate.list(api)
-    # Map name->template
+    all_templates = ParameterTemplate.list(api, raise_error=True)
     tmpl_map = {t.name: t for t in all_templates}
-    # Check that each needed template is present
     for nt in needed_templates:
         if nt not in tmpl_map:
             raise RuntimeError(f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first.")
 
-    # 2) Retrieve all existing "autogen" parts to check what we already have
-    #    We'll search by "keywords={ANCHOR}" for quick filtering
-    existing_autogen_parts = InvPart.list(api, keyword=ANCHOR, limit=0)  # no limit
-    # Convert to dict name->InvPart for quick lookup
-    existing_map = {}
-    for ep in existing_autogen_parts:
-        existing_map[ep.name] = ep
+    # Check every existing name before offering to create a part, including manually entered parts.
+    existing_map = {part.name: part for part in InvPart.list(api, parameters=True, limit=0, raise_error=True)}
 
-    # Pre-fetch all parameters for parts we already added.
-    print("fetching parameters")
-    existing_ids = [str(ep.pk) for ep in existing_autogen_parts]
-    existing_ids_str = ",".join(existing_ids)
-    all_params = Parameter.list(api, part__in=existing_ids_str, limit=0)
-
-    params_by_part = defaultdict(list)
-    for param in all_params:
-        params_by_part[param.part].append(param)
-    print(f"Loaded {len(all_params)} parameters for {len(existing_autogen_parts)} parts")
-
-    # 4) Precompute quantity checks
-    #    (Your request: "make sure all rules i said above are satisfied" => crash if mismatch)
-    #    For debugging, we'll just do it: we call get_quantity for each to confirm no exceptions.
+    # Validate every stock quantity before the first write.
     for p in parts:
-        _ = get_quantity(p)  # Will raise if any weirdness
+        get_quantity(p)
 
-    # 5) Identify missing or changed parts
     missing_parts = []
     for p in parts:
         name = build_part_name(p)
         if name in existing_map:
-            # Check if it matches
             invp = existing_map[name]
-            if not part_matches_in_db(invp, p, tmpl_map, params_by_part[invp.pk]):
+            if not part_matches_in_db(invp, p, tmpl_map):
                 print(
                     f"WARNING: Part '{name}' already exists but differs from the script's data! {part_url(api, invp)}"
                 )
-            # else it is fine => skip
         else:
             missing_parts.append(p)
 
     if not missing_parts:
-        print("All parts are already present and match script data. Nothing to do.")
+        print("No missing parts.")
         return
 
-    # 6) Interactive prompt
     print(f"\nThe following {len(missing_parts)} parts are missing:")
     for mp in missing_parts:
         print("   ", build_part_name(mp))
@@ -393,10 +294,9 @@ def main():
     add_one = choice.startswith("o")
     assert choice.startswith("a")
 
-    # 7) Insert missing parts
     for mp in tqdm(missing_parts):
-        newp = create_part_in_inventree(mp, tmpl_map)
-        si = create_stock_for_part(newp, mp)
+        newp = create_part_in_inventree(api, mp, tmpl_map)
+        si = create_stock_for_part(api, newp, mp)
         print(f"{newp.name} (N={int(si.quantity)}) created: {part_url(api, newp)}")
         if add_one:
             print("Stopped after adding one part (debug mode).")

@@ -98,6 +98,7 @@ py_test(
     deps = [
         ":assign_jellybean",
         "//:conftest",
+        "@pypi//inventree",
         "@pypi//pytest_bazel",
     ],
 )
