@@ -135,6 +135,16 @@ class TestWorktreeService:
         dst = service.create_worktree(config, "dst", source_worktree=src)
         assert (dst / "untracked.txt").exists()
 
+    def test_copy_source_cannot_be_the_managed_directory(self, repo_factory, config_factory, service_builder):
+        main = repo_factory.create_repo()
+        service, config = self._make_service(
+            repo_factory, config_factory, repo_path=main, service_builder=service_builder, worktrees_dir=str(main)
+        )
+        with pytest.raises(RuntimeError, match="Managed worktrees directory is the copy source"):
+            service.create_worktree(config, "destination", source_worktree=main)
+        assert not (main / "destination").exists()
+        assert not service.git_manager.branch_exists(f"{config.branch_prefix}destination")
+
     def test_copy_skips_hydration_when_disabled(self, repo_factory, config_factory, service_builder):
         service, config = self._make_service(
             repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=False

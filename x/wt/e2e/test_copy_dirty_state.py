@@ -12,9 +12,9 @@ from x.wt.testing.git_helpers import add_and_commit, worktree_exists
 
 
 @pytest.fixture(params=["reflink", "rsync"])
-def real_config(request, real_temp_repo, daemon_config_factory, tmp_path):
+def real_config(request, real_temp_repo, daemon_config_factory):
     return daemon_config_factory(real_temp_repo).integration(
-        github_repo=None, cow_method=request.param, worktrees_dir=str(tmp_path / "worktrees")
+        github_repo=None, cow_method=request.param, worktrees_dir=str(real_temp_repo / "local" / "[worktrees]")
     )
 
 
@@ -33,18 +33,31 @@ def copy_cli(real_config, wt_cli, tmp_path):
     return wt_cli
 
 
-@pytest.mark.parametrize("source", ["linked", "main"])
-def test_copy_dirty_state(copy_cli, real_config, source, monkeypatch, service_builder):
+@pytest.mark.parametrize("source", ["linked", "detached", "main", "main-cwd"])
+def test_copy_dirty_state(copy_cli, real_config, source):
     src = "src_wt"
-    if source == "linked":
+    if source in {"linked", "detached"}:
         result = copy_cli.sh_c(src, cwd=real_config.main_repo)
         assert result.returncode == 0, result.stderr
         src_path = real_config.worktrees_dir / src
     else:
         src_path = real_config.main_repo
-    src_branch = pygit2.Repository(src_path).head.shorthand
+    # The configured root contains more than registered worktrees. Its neighboring files are ordinary content.
+    managed_root = real_config.worktrees_dir
+    (managed_root / "unregistered.txt").write_text("managed")
+    neighbor = src_path / "local" / "w"
+    neighbor.parent.mkdir(exist_ok=True)
+    neighbor.parent.chmod(0o750)
+    neighbor.write_text("keep")
+    neighbor.chmod(0o755)
+    (neighbor.parent / "alias").symlink_to("w")
 
     add_and_commit(src_path, {"changed.txt": "base\n", "deleted.txt": "base\n", "clean.txt": "clean\n"}, "base files")
+    if source == "detached":
+        git_run(["checkout", "--detach"], cwd=src_path)
+    source_repo = pygit2.Repository(src_path)
+    src_branch = source_repo.head.shorthand
+    source_head = source_repo.head.target
     (src_path / "changed.txt").write_text("staged\n")
     (src_path / "newly-staged.txt").write_text("new content\n")
     (src_path / "deleted.txt").unlink()
@@ -58,20 +71,26 @@ def test_copy_dirty_state(copy_cli, real_config, source, monkeypatch, service_bu
 
     # Distinct name lengths keep rsync's size/mtime check from masking a .git overwrite.
     dst = "dst-with-own-branch"
-    if source == "linked":
-        result = copy_cli.sh("cp", src, dst, cwd=real_config.main_repo)
-        assert result.returncode == 0, result.stderr
+    if source in {"main-cwd", "detached"}:
+        result = copy_cli.sh("cp", dst, cwd=neighbor.parent)
     else:
-        monkeypatch.setenv("PATH", copy_cli.env["PATH"])
-        service = service_builder(real_config).with_real_git().build_worktree_service()
-        service.create_worktree(real_config, dst, source_worktree=src_path, source_branch=src_branch)
+        result = copy_cli.sh("cp", src if source == "linked" else "main", dst, cwd=real_config.main_repo)
+    assert result.returncode == 0, result.stderr
 
     dst_path = real_config.worktrees_dir / dst
+    assert pygit2.Repository(dst_path).head.target == source_head
     assert pygit2.Repository(dst_path).head.shorthand == f"{real_config.branch_prefix}{dst}"
     assert pygit2.Repository(src_path).head.shorthand == src_branch
     assert worktree_exists(pygit2.Repository(real_config.main_repo), dst_path)
     assert git_run(["diff", "--cached"], cwd=src_path).stdout == source_staged_diff
 
+    assert not (dst_path / managed_root.relative_to(real_config.main_repo)).exists()
+    assert (managed_root / "unregistered.txt").read_text() == "managed"
+    copied_neighbor = dst_path / "local" / "w"
+    assert copied_neighbor.read_text() == "keep"
+    assert copied_neighbor.stat().st_mode == neighbor.stat().st_mode
+    assert copied_neighbor.parent.stat().st_mode == neighbor.parent.stat().st_mode
+    assert (dst_path / "local" / "alias").readlink() == (neighbor.parent / "alias").readlink()
     assert (dst_path / "changed.txt").read_text() == "staged\nunstaged\n"
     assert (dst_path / "clean.txt").read_text() == "clean\n"
     assert (dst_path / "newly-staged.txt").read_text() == "new content\n"
@@ -86,6 +105,8 @@ def test_copy_dirty_state(copy_cli, real_config, source, monkeypatch, service_bu
         " D deleted.txt",
         "?? newly-staged.txt",
         "?? nested/content",
+        "?? local/w",
+        "?? local/alias",
         "?? untracked.txt",
     }
 
