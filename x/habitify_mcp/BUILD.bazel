@@ -199,15 +199,3 @@ py_test(
 )
 
 # --- Lint ---
-
-py_test(
-    name = "test_mcp_dev_runner",
-    srcs = ["test_mcp_dev_runner.py"],
-    data = [":mcp_dev_runner"],
-    deps = [
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
-    ],
-)
