@@ -74,7 +74,7 @@ evaluating arguments, and passes the receiver as `this`. Ordinary functions have
 receiver and arrows capture the surrounding `this`. Optional chains, private names, and
 `super` are outside the linked fragment.
 
-Linked object literals may contain distinct identifier or string keys and values that are supported primitive literals or binding reads. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. Computed keys, `__proto__`, methods, accessors, and spread are outside this fragment.
+Linked object literals may contain distinct identifier or string keys. Property values may be supported primitive literals, binding reads, nested object and dense array literals, or nonoptional member reads. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. Computed property definitions, `__proto__`, methods, accessors, and spread are outside this fragment. A direct function expression or arrow as a property value is also outside the fragment, since an anonymous function in that position would take its name from the property key.
 
 Linked array literals may be empty or contain any linked expression in each element slot. Elements evaluate left to right. Array holes and spread elements are outside this fragment.
 
