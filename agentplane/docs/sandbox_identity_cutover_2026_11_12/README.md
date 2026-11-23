@@ -145,3 +145,27 @@ proxy decision-log observation remains tracked by `STANDING_WORKLOAD_IDENTITY` i
 This record accepts the live Sandbox cutover; it does not claim that standing-workload observation
 is complete. The unused rollout hold plan and patch were retired. Lasting recovery guidance is in
 [workload authentication](../workload_authentication.md#sandbox-rollout-and-recovery).
+
+## Automated acceptance
+
+- The [Pod egress scenario](../../system_tests/scenarios/egress.py#L133) exercises the
+  Identity-authenticated model hop and Notifications platform RPC, and checks the proxy's
+  Identity-filtered decision. The [focused Pod and VM run](https://app.buildbuddy.io/invocation/aba13b0d-7daf-4d0d-b515-60e8152770df)
+  passed in [#18993](https://github.com/agentydragon/ducktape/pull/18993).
+- [Proxy tests](../../egress/internal/proxy/gate_test.go#L833) cover Identity binding refusal
+  and admission. The shared-account test removes one Identity's Kubernetes use rule, checks its
+  next request is denied, and verifies the second Identity still uses the same account through
+  its own grant. See the [Identity cutover CI run](https://github.com/agentydragon/ducktape/actions/runs/43190948740).
+- The [account lifecycle test](../../policy_controller/internal/controller/accounts_envtest_test.go#L29)
+  covers expiry of the managed account and its ServiceAccount, and removal of its native role
+  bindings. The envtest API server has no garbage collector, so this test does not establish
+  cascading deletion of owned declarative objects. See
+  [Policy Controller account grants](https://github.com/agentydragon/ducktape/pull/15076).
+- The [Session deletion scenario](../../system_tests/scenarios/session_deletion.py#L664)
+  checks that the Identity-owned PolicyBinding disappears and the Session's History remains.
+  [Both deletion cases passed on RBE](https://app.buildbuddy.io/invocation/a905cb0e-51c3-4589-a549-eba44c2ba12f)
+  in [#18848](https://github.com/agentydragon/ducktape/pull/18848).
+- The [Firecracker continuity case](../../system_tests/scenarios/firecracker.py#L191) reads
+  rules through the launcher relay and checks the Sandbox Identity across checkpoints.
+  [Both Firecracker cases passed on KVM](https://app.buildbuddy.io/invocation/aff0b4c7-a3dd-4e98-be46-f570ac04fd5b)
+  in [#19045](https://github.com/agentydragon/ducktape/pull/19045).

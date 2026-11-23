@@ -33,7 +33,8 @@ cached generation without that validation is not a fence; do not assume cross-se
    is not implemented; callers must not deliberately reuse its UUID if added later.
    `deletionTimestamp` is not a cross-service linearization point, and manual finalizer removal or
    foreground deletion bypasses the managed handshake. See
-   [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
+   [Session and inbox lifetime](task_dag.md#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes)
+   for retention and reconciliation after future explicit Session deletion.
 2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
    checks. Whether an accepted command is cancelled on a later user grant revocation remains a
    separate generalized-policy decision in
