@@ -365,7 +365,9 @@ class WtClient:
             obj = json.loads(text)
 
             # Check if this is a stream event (has "event" discriminator field)
-            if isinstance(obj, dict) and "event" in obj:
+            if not isinstance(obj, dict):
+                raise ValueError("Expected a JSON-RPC object from daemon")
+            if "event" in obj:
                 event = stream_adapter.validate_python(obj)
                 match event:
                     case HookOutputEvent() as hook_ev:
