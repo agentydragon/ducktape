@@ -1,6 +1,5 @@
 """GNOME Terminal theme follower — copies a source profile's colors to a mutable "Auto" profile."""
 
-import ast
 import subprocess
 from uuid import UUID
 
@@ -21,51 +20,9 @@ class GSettingsProfiles:
         return {UUID(x) for x in self.settings.get_strv("list")}
 
 
-class ProfileDConf:
-    def __init__(self, profile_uuid: UUID):
-        self.profile_uuid = profile_uuid
-
-    def _path(self, property_name: str) -> str:
-        """Construct the dconf path for the given property."""
-        return f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
-
-    def read_property(self, property_name: str) -> str | bool | list[str]:
-        try:
-            out = subprocess.check_output(["dconf", "read", self._path(property_name)]).decode("utf-8").strip()
-            if not out:
-                raise KeyError
-            if out == "true":
-                return True
-            if out == "false":
-                return False
-            value = ast.literal_eval(out)
-            if isinstance(value, str | bool):
-                return value
-            if isinstance(value, list) and all(isinstance(x, str) for x in value):
-                return value
-            raise TypeError(f"Unsupported dconf value type: {type(value)}")
-        except subprocess.CalledProcessError as e:
-            raise KeyError(f"Reading '{property_name}' from {self.profile_uuid} failed") from e
-
-    def write_property(self, property_name: str, value: bool | str | list[str]) -> None:
-        """Write a property to the profile."""
-        if value is True:
-            v = "true"
-        elif value is False:
-            v = "false"
-        elif isinstance(value, str):
-            assert "'" not in value, "Value must not contain single quotes"
-            v = f"'{value}'"
-        elif isinstance(value, list) and all(isinstance(x, str) for x in value):
-            v = repr(value)
-        else:
-            raise TypeError(f"Unsupported value type: {type(value)}. Must be bool, str, or list[str].")
-        subprocess.check_call(["dconf", "write", self._path(property_name), v])
-
-
 def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
     """Copy color-related properties from one profile to another."""
-    source_dconf, target_dconf = ProfileDConf(source_uuid), ProfileDConf(target_uuid)
+    profiles_path = "/org/gnome/terminal/legacy/profiles:/"
     for prop in [
         "background-color",
         "foreground-color",
@@ -80,13 +37,14 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         "font",
         "use-theme-colors",
     ]:
-        try:
-            value = source_dconf.read_property(prop)
-        except KeyError:
+        # dconf read and write use the same GVariant text format.
+        value = subprocess.check_output(["dconf", "read", f"{profiles_path}:{source_uuid}/{prop}"], encoding="utf-8")
+        value = value.rstrip("\n")
+        if not value:
             logging.warning("Property %s not found in source profile %s", prop, source_uuid)
             continue
         logging.info(f"Copy {prop}={value}")
-        target_dconf.write_property(prop, value)
+        subprocess.run(["dconf", "write", f"{profiles_path}:{target_uuid}/{prop}", value], check=True)
 
 
 def _main(_):
