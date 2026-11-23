@@ -111,7 +111,7 @@ for (const computed of [false, true]) {
   }
   const { verdict, log } = test;
   assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /could not prove equivalent linked executions/);
+  assert.match(verdict.reason, /probe executions completed normally with different final states/);
   assert(!existsSync(test.out));
   const preview = path.join(test.dir, "preview");
   forcePreview(test.files, preview);

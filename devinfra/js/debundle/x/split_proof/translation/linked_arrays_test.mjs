@@ -189,7 +189,7 @@ for (const dependent of [false, true]) {
   let candidate = out;
   if (dependent) {
     assert.equal(verdict.status, "rejected", log);
-    assert.match(verdict.reason, /could not prove equivalent linked executions/);
+    assert.match(verdict.reason, /probe executions completed normally with different final states/);
     assert(!existsSync(out));
     candidate = path.join(dir, "preview");
     forcePreview(files, candidate);
@@ -214,8 +214,9 @@ for (const [kind, syntax] of [
   assert(!existsSync(out));
 }
 
-// Both modules allocate arrays with identical contents. Only reference identity
-// reveals which array the facade's third public binding denotes.
+// Both modules allocate arrays with identical contents. Independent bindings
+// remain certified across the crossing; only the order-sensitive alias changes
+// the facade's third public binding.
 for (const elements of [[], [literal(2), array([literal(null)])]]) {
   for (const dependsOnOrder of [false, true]) {
     const dir = path.join(root, `array-identity-${elements.length}-${dependsOnOrder}`);
@@ -248,7 +249,7 @@ for (const elements of [[], [literal(2), array([literal(null)])]]) {
     let candidate = out;
     if (dependsOnOrder) {
       assert.equal(verdict.status, "rejected", log);
-      assert.match(verdict.reason, /could not prove equivalent linked executions/);
+      assert.match(verdict.reason, /probe executions completed normally with different final states/);
       assert(!existsSync(out));
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
@@ -266,6 +267,14 @@ for (const elements of [[], [literal(2), array([literal(null)])]]) {
       assert.deepEqual(ns.left, ns.right);
       assert.notEqual(ns.left, ns.right);
       assert.equal(ns.alias, ns[target]);
+    }
+    if (dependsOnOrder) {
+      const original = await import(pathToFileURL(files.sourceFile).href);
+      const split = await import(pathToFileURL(path.join(candidate, spec.entry)).href);
+      assert.deepEqual(original.alias, split.alias, "this control changes only which equal array is aliased");
+      assert.notStrictEqual(original.alias, split.alias);
+      assert.strictEqual(original.alias, original.left);
+      assert.strictEqual(split.alias, split.right);
     }
   }
 }
