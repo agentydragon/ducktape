@@ -546,7 +546,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
   let t4 ← lap "mkPlan" t3
   if let some request := required then
-    let layoutOk ← timePhase timings "plan_checks" fun _ => reportLayout B S P false
+    let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
     -- Only the closed-declaration theorem needs the footprint-based order check.
     let declaration := if layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
     if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then

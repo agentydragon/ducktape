@@ -434,16 +434,10 @@ def main (args : List String) : IO UInt32 := do
     let P := res.plan
     let order ← IO.lazyPure fun _ => P.evalOrder
     IO.println s!"  modules evaluated from the entry: {order.length} of {P.mods.length}"
-    let rs := [← timedCheck "UniqueDefs" fun _ => decide (UniqueDefs B),
-               ← timedCheck "ReadsClosed" fun _ => decide (ReadsClosed B),
-               ← timedCheck "Linkable" fun _ => decide (Linkable B P),
-               ← timedCheck "ExportsUnique" fun _ => decide (ExportsUnique B P),
-               ← timedCheck "Hygienic" fun _ => decide (Hygienic B P),
-               ← timedCheck "AssignsHome" fun _ => decide (AssignsHome B P),
-               ← timedCheck "Permutes" fun _ => decide (Permutes B P)]
+    let layout ← checkLayout B P none true
     let ordered ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
-    if rs.all id && ordered then IO.println "PLAN SOUND"; return 0
-    if !rs.all id then IO.println "PLAN NOT SOUND: a structural check failed"; return 1
+    if layout && ordered then IO.println "PLAN SOUND"; return 0
+    if !layout then IO.println "PLAN NOT SOUND: a structural check failed"; return 1
     let (n, sample, every) ← IO.lazyPure fun _ => conflictInversions B P obligationsPath?.isSome
     IO.println s!"OBLIGATIONS: {n} pairs of conflicting units run in the opposite order from the bundle"
     for (a, b) in sample do IO.println s!"    unit {b} came first in the bundle; the output runs unit {a} before it"
