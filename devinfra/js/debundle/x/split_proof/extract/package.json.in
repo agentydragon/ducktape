@@ -1,8 +1,0 @@
-{
-  "name": "esm-split-extract",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "acorn": "8.18.0"
-  }
-}

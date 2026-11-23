@@ -5,7 +5,6 @@ js_binary(
     testonly = True,
     data = [
         "verdict.mjs",
-        "//:node_modules/acorn",
         "//:node_modules/yaml",
         "//devinfra/js/debundle/e2e:corpus_files",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
