@@ -24,8 +24,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generate as printJs } from "astring";
 import { frontBundle, frontTree } from "./frontend.mjs";
-import { generateAstBundle, astStatistics, generateRenamed } from "./ast_generator.mjs";
-import { generateProgram } from "./gen/index.mjs";
+import { generateAstBundle, astStatistics, generateRenamed } from "./testing/ast_generator.mjs";
+import { generateProgram } from "./testing/gen/index.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");

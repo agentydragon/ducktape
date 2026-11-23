@@ -13,7 +13,7 @@ import {
   program,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
 function split(name, source, modules, order) {

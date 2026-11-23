@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
-import { assertSelectedSourceUnits } from "../../ast_assertions.mjs";
+import { assertSelectedSourceUnits } from "../../testing/ast_assertions.mjs";
 import { splitInputs } from "../../split_dump.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));

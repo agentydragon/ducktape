@@ -69,7 +69,7 @@ the interpreter families, linked graphs, opaque cases, and original named splits
 All three targets run in CI; splitting their workloads keeps their coverage assertions
 and execution independent as the certificate families grow.
 
-The broad [`translation/gen`](../translation/gen/) sample remains separate: the harness
+The broad [`translation/gen`](../translation/testing/gen/) sample remains separate: the harness
 reports units accepted alone and units surviving dependency/unknown-code filtering.
 Those counts do not measure which syntax executed. Random plans remain manual-first
 and bounded by `--splits`; the dedicated generator's required moves bypass that budget.

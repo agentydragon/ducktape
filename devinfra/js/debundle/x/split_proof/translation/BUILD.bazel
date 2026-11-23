@@ -18,16 +18,7 @@ js_library(
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
-    ],
-)
-
-js_library(
-    name = "ast_assertions",
-    testonly = True,
-    srcs = ["ast_assertions.mjs"],
-    deps = [
-        ":node_modules/acorn",
-        ":scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
 )
 
@@ -69,7 +60,13 @@ js_library(
 
 eslint_test(
     name = "eslint_test",
-    srcs = [":lint_sources"],
+    srcs = [
+        ":lint_sources",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    ],
 )
 
 _SHIFT_FUZZ_DATA = [
@@ -123,18 +120,12 @@ _CHECKER_RUNFILES = [
     _TRANSLATE,
 ]
 
-js_library(
-    name = "ast_generator",
-    testonly = True,
-    srcs = ["ast_generator.mjs"],
-    deps = [":node_modules/astring"],
-)
-
-# What `fuzz.mjs` imports besides the front end: the AST corpus and the generator of `gen/`.
+# What `fuzz.mjs` imports besides the front end: the AST corpus and the generator of `testing/gen/`.
 _FUZZ_SOURCES = [
-    ":ast_generator",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
     ":node_modules/astring",
-] + glob(["gen/*.mjs"])
+    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+]
 
 js_test(
     name = "fixtures_test",
@@ -175,7 +166,7 @@ _LOWER_CALLBACK_FUZZ_DATA = [
 js_test(
     name = "ast_emitter_fuzz_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_generator"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator"],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -184,7 +175,7 @@ js_test(
     name = "ast_emitter_fuzz_seed_2027_test",
     size = "medium",
     args = ["2027"],
-    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_generator"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator"],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -207,18 +198,8 @@ js_test(
     tags = ["manual"],
 )
 
-js_library(
-    name = "linked_programs_test_support",
-    testonly = True,
-    srcs = ["linked_programs_test_support.mjs"],
-    deps = [
-        ":node_modules/acorn",
-        ":node_modules/astring",
-    ],
-)
-
 _LINKED_PROGRAMS_TEST_DATA = [
-    ":linked_programs_test_support",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
@@ -502,7 +483,7 @@ js_test(
 js_test(
     name = "lower_chunk_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_assertions"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions"],
     entry_point = "lower_chunk_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -511,7 +492,7 @@ js_test(
     name = "estree_printer_test",
     size = "small",
     args = ["2026"],
-    data = _LOWER_CALLBACK_FUZZ_DATA + [":ast_assertions"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions"],
     entry_point = "estree_printer_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
@@ -718,8 +699,7 @@ js_test(
         "20261121",
     ],
     data = _EFFECTS_CASES_DATA + [
-        "gen/core.mjs",
-        "gen/implicit_calls.mjs",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
     ],
     entry_point = _EFFECTS + ":run",
     env = _EFFECTS_CASES_ENV,
@@ -759,7 +739,7 @@ js_test(
 )
 
 _REFLECTIVE_RECEIVER_DATA = _EFFECTS_CASES_DATA + [
-    "gen/core.mjs",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
     "reflective_receivers.mjs",
 ]
 
@@ -838,10 +818,10 @@ exports_files(
 js_test(
     name = "ast_generator_validation_test",
     data = [
-        ":ast_assertions",
-        ":ast_generator",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
     ],
     entry_point = "ast_generator_validation_test.mjs",
 )
@@ -971,18 +951,19 @@ js_test(
     env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
 )
 
-# The generator of `gen/`: every program parses, runs to the end, prints the same twice, and keeps its names consistent.
+# The generator of `testing/gen/`: every program parses, runs to the end, prints the same twice, and keeps its names consistent.
 js_test(
     name = "gen_validity_test",
     size = "medium",
-    data = glob(["gen/*.mjs"]) + [
+    data = [
         "syntax_inventory.mjs",
         ":node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
     ],
     entry_point = "gen_validity_test.mjs",
 )
 
-# The end-to-end oracle on programs of `gen/`: a tree the checker accepts must print what the bundle prints.
+# The end-to-end oracle on programs of `testing/gen/`: a tree the checker accepts must print what the bundle prints.
 js_test(
     name = "full_fuzz_test",
     size = "medium",
@@ -1019,11 +1000,12 @@ js_test(
     entry_point = "footprint_reduce_test.mjs",
 )
 
-# The CoreJS model (`lean/EsmSplit/CoreJS`) against Node, on hand-written cases and on programs of `gen/` cut down to
+# The CoreJS model (`lean/EsmSplit/CoreJS`) against Node, on hand-written cases and on programs of `testing/gen/` cut down to
 # the model's fragment: both must print the same and end the same way.
 _MODEL = "//devinfra/js/debundle/x/split_proof/model"
 
-_COREJS_DIFFERENTIAL_DATA = glob(["gen/*.mjs"]) + [
+_COREJS_DIFFERENTIAL_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
     "scope_metadata.mjs",
     "split_dump.mjs",
     ":node_modules/acorn",
@@ -1183,7 +1165,7 @@ js_test(
     name = "excalidraw_authored_placements",
     size = "large",
     data = _COREJS_DIFFERENTIAL_DATA + [
-        ":ast_assertions",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
         ":" + _EXCALIDRAW_EDITOR_SPEC,
         ":" + _EXCALIDRAW_MAIN_SPEC,
         "//devinfra/js/debundle/excalidraw:inputs",
@@ -1223,6 +1205,7 @@ js_test(
 
 js_binary(
     name = "translation_fuzz",
+    testonly = True,
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},

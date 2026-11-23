@@ -23,7 +23,7 @@ import {
   prepare,
   moduleEvaluationOrder,
   forcePreview,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 // Move the first declaration to its own module and observe the result exported by the entry.
 function workerSplit(name, source) {

@@ -21,7 +21,7 @@ import {
   throws,
   tryStatement,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const array = (elements) => ({ type: "ArrayExpression", elements });
 

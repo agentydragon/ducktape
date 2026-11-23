@@ -14,7 +14,7 @@ import {
   program,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const profile = path.join(root, "profile.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));

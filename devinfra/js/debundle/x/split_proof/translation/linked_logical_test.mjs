@@ -16,7 +16,7 @@ import {
   property,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 // Source order reads a later binding only when the left operand selects the right.
 // In the emitted order that binding has already initialized.

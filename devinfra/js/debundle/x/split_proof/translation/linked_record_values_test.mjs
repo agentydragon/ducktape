@@ -17,7 +17,7 @@ import {
   root,
   throws,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const member = (object, key) => ({ type: "MemberExpression", object, property: literal(key), computed: true });
 const equal = (left, right) => ({ type: "BinaryExpression", operator: "===", left, right });

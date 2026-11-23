@@ -20,7 +20,7 @@ import {
   prepare,
   moduleEvaluationOrder,
   forcePreview,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 // Source initializes left, then right. Pin the reverse order across all cases.
 // Mutating one initializer to read its neighbor introduces a TDZ in exactly one execution.

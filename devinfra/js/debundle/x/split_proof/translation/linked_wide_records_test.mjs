@@ -13,7 +13,7 @@ import {
   property,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const fields = Array.from({ length: 705 }, (_, i) => property(`field${i}`, literal(`value${i}`)));
 const record = { type: "ObjectExpression", properties: fields };

@@ -1,5 +1,5 @@
 import { BINARY, LOGICAL, UNARY } from "./to_core.mjs";
-import { rng } from "../translation/gen/core.mjs";
+import { rng } from "../translation/testing/gen/core.mjs";
 
 // Bounded CoreJS programs. Every selected family executes; no unit filtering or unknown-code retry.
 // Prefix units 0 and 1 are independent allocations. Swapping them is a required real-emitter move control.
