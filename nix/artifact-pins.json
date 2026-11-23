@@ -9,8 +9,8 @@
       "sha256": "+KGIkTID8jlhph8cXrZLDu9lzyTgAU7AdLVZivT7xoo="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a73e14f7377f/bbapi",
-      "sha256": "pz4U9zd/H6isxRSvuRtwvIk62j6g1FPusMBUej3OxK0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a7717c00585a/bbapi",
+      "sha256": "p3F8AFhal6UYCuD0f8Ovwa2cvGDkqG6HEO305iCysdI="
     },
     "claude-statusline": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-40ad2bd647a8/claude_statusline-0.1.0-py3-none-any.whl",
@@ -21,8 +21,8 @@
       "sha256": "TP5aJ+TWELnZApWauo7AfUwVfTR2UF8N2mQneezp74s="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-3281af39c1a2/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "MoGvOcGiZJkXyqtla6jTt8u5v4ZABGBxcR650NhvLS8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-13d899c6dd65/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "E9iZxt1l78MzpRZcPpbOhkfqBaYZf6e4N05MSlHKy7s="
     },
     "difftree": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-5131a141a251/difftree-0.1.0-py3-none-any.whl",
