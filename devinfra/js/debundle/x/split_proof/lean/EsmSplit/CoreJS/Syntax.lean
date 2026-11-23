@@ -87,6 +87,8 @@ inductive Expr where
   /-- A derived class with its implicit forwarding constructor and no fields. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
   | get (o k : Expr)
+  /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
+  | getOptional (o k : Expr)
   /-- `k in o`. -/
   | hasProp (k o : Expr)
   | delete (o k : Expr)
@@ -279,7 +281,7 @@ def Expr.free : Expr → List Name
   | .arrWithSpread elems => freeArrayElements elems
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .derived name self parent members => (parent.free ++ freeMembers members).filter fun x => !(self && x == name)
-  | .get o k => o.free ++ k.free
+  | .get o k | .getOptional o k => o.free ++ k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free
   | .assign t rhs => t.free ++ rhs.free

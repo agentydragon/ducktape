@@ -345,15 +345,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let member := body
     unless (← field member "type") == "MemberExpression" do throw "unsupported optional chain"
     unless ← member.getObjValAs? Bool "optional" do throw "unsupported optional chain"
-    let receiver ← member.getObjVal? "object"
-    unless (← field receiver "type") == "Identifier" do
-      throw "optional member base is not a lexical binding"
     let (base, key) ← linkedMember lower member (allowOptional := true)
-    let .var _ := base | throw "optional member base is not a lexical binding"
-    -- The guards only read a lexical cell. No effects intervene before the
-    -- property read fetches its base, then evaluates the key and reads the property.
-    let absent := Expr.logical .or (.binary .strictEq base .undef) (.binary .strictEq base .null)
-    return .cond absent .undef (.get base key)
+    return .getOptional base key
   | "AssignmentExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr profile imports inFunction ""

@@ -119,6 +119,67 @@ assertCertified(split("generated-optional-reads", generated), [
   [0, "present"],
 ]);
 
+// Rebinding the receiver during key evaluation leaves the reached getter's
+// original `this` intact. The absent receiver still runs its getter once.
+assertCertified(
+  split(
+    "optional-read-evaluated-receiver",
+    `const run = () => {
+      let trace = "";
+      let current;
+      const holder = { get field() { trace += "r"; return current; } };
+      const key = () => { trace += "k"; current = null; return "selected"; };
+      const skipped = holder.field?.[key()] === undefined;
+      current = {
+        value: 42,
+        get selected() { trace += "g"; return this.value; }
+      };
+      const result = holder.field?.[key()];
+      return [skipped, result, trace];
+    };
+    const result = run();
+    export { result };`
+  ),
+  [true, 42, "rrkg"]
+);
+
+const fieldOf = (name) => ({
+  type: "MemberExpression",
+  object: id("record"),
+  property: id(name),
+  computed: false,
+  optional: false,
+});
+const generatedReceiverReads = program([
+  variable("const", "record", {
+    type: "ObjectExpression",
+    properties: [
+      property("empty", literal(null)),
+      property("filled", { type: "ObjectExpression", properties: [property("id", literal(7))] }),
+    ],
+  }),
+  variable("const", "result", {
+    type: "ArrayExpression",
+    elements: ["empty", "filled"].map((name) => optionalMember(fieldOf(name), id("id"), false)),
+  }),
+  exportNamed([["result", "result"]]),
+]);
+const generatedReads = split("generated-optional-evaluated-receiver", generatedReceiverReads);
+assertCertified(generatedReads, [null, 7]);
+assert.deepEqual(
+  lower(generatedReads.files.sourceFile, generatedReads.files.specFile, generatedReads.out, ["--check-output"]).verdict,
+  generatedReads.verdict
+);
+
+const failedReceiver = split(
+  "optional-read-receiver-error",
+  `const holder = { get field() { return null.field; } };
+    const result = holder.field?.id;
+    export { result };`
+);
+assertRejected(failedReceiver, /original threw during linked initialization/);
+assert.deepEqual(observe(failedReceiver.files.sourceFile, "result"), { error: "TypeError" });
+
 // An evaluated receiver runs once per call. Only the reached call looks up a
 // method and computes the argument, in that order.
 const evaluated = split(

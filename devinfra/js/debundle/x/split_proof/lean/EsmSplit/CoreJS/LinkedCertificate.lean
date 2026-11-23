@@ -70,6 +70,10 @@ private partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
+  | .getOptional o k, .getOptional o' k' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    return ⟨base ▸ key ▸ rfl⟩
   | .delete o k, .delete o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
@@ -417,7 +421,7 @@ private partial def literalReadKeys (keys : Std.HashSet String) (e : Lean.Expr) 
   | .app .. => Id.run do
     let args := e.getAppArgs
     let mut keys := keys
-    if e.isAppOfArity ``Expr.get 2 || e.isAppOfArity ``Expr.callMethod 3 then
+    if e.isAppOfArity ``Expr.get 2 || e.isAppOfArity ``Expr.getOptional 2 || e.isAppOfArity ``Expr.callMethod 3 then
       let key := args[1]!
       if key.isAppOfArity ``Expr.str 1 then
         if let .lit (.strVal s) := key.appArg! then keys := keys.insert s
