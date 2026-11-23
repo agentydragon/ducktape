@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Button,
   Card,
   Checkbox,
   Group,
@@ -13,6 +12,7 @@ import {
   useComputedColorScheme,
 } from "@mantine/core";
 import { chartPalette, mountChart, movingAverageColor } from "./chart";
+import { ChartLegend, toggleLegendItem } from "./chart_legend";
 import type { AllowanceView, PaceHistory } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { money } from "./spend_display";
@@ -263,40 +263,15 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
             </div>
             <details open>
               <summary>Category totals and reference lines</summary>
-              <Group gap="xs" mt="xs">
-                {chart.categories.map((category) => (
-                  <Button
-                    key={category.id}
-                    size="xs"
-                    styles={{
-                      root: { maxWidth: "100%", height: "auto", minHeight: 30 },
-                      label: { whiteSpace: "normal" },
-                    }}
-                    variant={selected.has(category.id) ? "filled" : "light"}
-                    aria-pressed={selected.has(category.id)}
-                    onClick={() =>
-                      setSelected((current) => {
-                        const next = new Set(current);
-                        if (next.has(category.id)) next.delete(category.id);
-                        else next.add(category.id);
-                        return next;
-                      })
-                    }
-                    onMouseEnter={() => setHovered(category.id)}
-                    onMouseLeave={() => setHovered(null)}
-                    onFocus={() => setHovered(category.id)}
-                    onBlur={() => setHovered(null)}
-                    leftSection={
-                      <span
-                        aria-hidden="true"
-                        style={{ width: 10, height: 10, background: category.color, display: "inline-block" }}
-                      />
-                    }
-                  >
-                    {category.label} · {money(category.total, allowance.currency)}
-                  </Button>
-                ))}
-              </Group>
+              <ChartLegend
+                items={chart.categories.map((category) => ({
+                  ...category,
+                  label: `${category.label} · ${money(category.total, allowance.currency)}`,
+                }))}
+                selected={selected}
+                onToggle={(id) => setSelected((current) => toggleLegendItem(current, id))}
+                onHover={setHovered}
+              />
               <Text size="xs" c="dimmed" mt="xs">
                 Select categories to highlight them; select again to clear each one. Leash level:{" "}
                 {money(history.daily_reference_minor_units, allowance.currency)}/day.

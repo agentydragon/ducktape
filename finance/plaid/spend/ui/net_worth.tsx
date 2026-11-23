@@ -11,9 +11,10 @@ import {
   Title,
   useComputedColorScheme,
 } from "@mantine/core";
-import { Legend, type Scale } from "chart.js";
+import { type Scale } from "chart.js";
 
 import { chartPalette, mountChart, seriesColor } from "./chart";
+import { ChartLegend, toggleLegendItem } from "./chart_legend";
 import type { NetWorthHistory } from "./schema";
 import { money } from "./spend_display";
 
@@ -128,6 +129,9 @@ function AccountChangesChart({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scheme = useComputedColorScheme("light");
   const hasChanges = days.some((day) => day.account_changes_minor_units != null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [hovered, setHovered] = useState<string | null>(null);
+  const highlighted = useMemo(() => new Set([...selected, ...(hovered ? [hovered] : [])]), [selected, hovered]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -137,19 +141,24 @@ function AccountChangesChart({
     const scales = dateChartScales(color);
     return mountChart(canvas, {
       type: "bar",
-      plugins: [Legend],
       data: {
         labels: days.map((day) => dayLabel(day.date)),
-        datasets: accountLabels.map((label, index) => ({
-          label,
-          backgroundColor: seriesColor(scheme, index),
-          data: days.map((day) => day.account_changes_minor_units?.[index] ?? null),
-        })),
+        datasets: accountLabels.map((label, index) => {
+          const base = seriesColor(scheme, index);
+          const muted = base.startsWith("#") ? `${base}55` : base.replace(")", " / 0.33)");
+          return {
+            label,
+            backgroundColor: highlighted.size > 0 && !highlighted.has(String(index)) ? muted : base,
+            borderColor: highlighted.has(String(index)) ? chartPalette[scheme].emphasis : base,
+            borderWidth: highlighted.has(String(index)) ? 2 : 0,
+            borderSkipped: false as const,
+            data: days.map((day) => day.account_changes_minor_units?.[index] ?? null),
+          };
+        }),
       },
       options: {
         layout: { autoPadding: false },
         plugins: {
-          legend: { position: "bottom", onClick: () => {}, labels: { color: color("text"), boxWidth: 12 } },
           tooltip: {
             filter: ({ parsed }) => parsed.y !== 0,
             callbacks: {
@@ -172,7 +181,7 @@ function AccountChangesChart({
         },
       },
     });
-  }, [accountLabels, days, previousDay, scheme]);
+  }, [accountLabels, days, highlighted, previousDay, scheme]);
 
   return (
     <Stack component="section" aria-labelledby="account-changes-title" gap="xs">
@@ -183,9 +192,32 @@ function AccountChangesChart({
         Changes use consecutive days with complete balances. Transfers can show up on both sides of zero.
       </Text>
       {hasChanges ? (
-        <Box h={{ base: 280, sm: 320 }}>
-          <canvas ref={canvasRef} role="img" aria-label="Daily changes in net worth by account in US dollars" />
-        </Box>
+        <>
+          <Box h={{ base: 280, sm: 320 }}>
+            <canvas
+              ref={canvasRef}
+              role="img"
+              aria-label="Daily changes in net worth by account in US dollars"
+              data-highlighted-accounts={[...highlighted].sort().join(",")}
+            />
+          </Box>
+          <details open>
+            <summary>Accounts</summary>
+            <ChartLegend
+              items={accountLabels.map((label, index) => ({
+                id: String(index),
+                label,
+                color: seriesColor(scheme, index),
+              }))}
+              selected={selected}
+              onToggle={(id) => setSelected((current) => toggleLegendItem(current, id))}
+              onHover={setHovered}
+            />
+            <Text size="xs" c="dimmed" mt="xs">
+              Select accounts to highlight them; select again to clear each one.
+            </Text>
+          </details>
+        </>
       ) : (
         <Text size="sm" c="dimmed">
           No consecutive days have complete balances in this range.

@@ -217,11 +217,22 @@ async def test_header_navigation_and_sign_out(
         sign_out = page.get_by_role("menuitem", name="Sign out")
         right_control = menu_button
     await expect(right_control).to_be_visible()
+    badge = page.get_by_role("banner").get_by_text("Live updates", exact=True)
+    await expect(badge).to_be_visible()
     container = page.locator("header .mantine-Container-root")
     container_bounds = await container.bounding_box()
     button_bounds = await right_control.bounding_box()
+    badge_bounds = await badge.bounding_box()
     assert container_bounds is not None
     assert button_bounds is not None
+    assert badge_bounds is not None
+    assert badge_bounds["x"] + badge_bounds["width"] <= button_bounds["x"]
+    assert badge_bounds["y"] < button_bounds["y"] + button_bounds["height"]
+    assert button_bounds["y"] < badge_bounds["y"] + badge_bounds["height"]
+    if inline_navigation:
+        tabs_bounds = await tabs.bounding_box()
+        assert tabs_bounds is not None
+        assert tabs_bounds["x"] + tabs_bounds["width"] <= badge_bounds["x"]
     assert abs(button_bounds["x"] + button_bounds["width"] - container_bounds["x"] - container_bounds["width"]) < 20
     if not inline_navigation:
         await menu_button.click()
@@ -337,6 +348,16 @@ async def test_net_worth_navigation_and_history(
 
     await expect(page.get_by_role("radio", name="30 days")).to_be_checked()
     await expect_aligned_axes("Sep 14")
+    account_button = account_section.get_by_role("button", name="Example Brokerage")
+    await expect(account_button).to_have_attribute("aria-pressed", "false")
+    await account_button.click()
+    await expect(account_button).to_have_attribute("aria-pressed", "true")
+    await expect(account_chart).to_have_attribute("data-highlighted-accounts", "0")
+    await account_button.click()
+    await page.mouse.move(0, 0)
+    await account_button.blur()
+    await expect(account_button).to_have_attribute("aria-pressed", "false")
+    await expect(account_chart).to_have_attribute("data-highlighted-accounts", "")
     await view.capture(f"linked-net-worth-{width}")
     await view.capture(f"linked-net-worth-account-changes-{width}", target=account_section)
     await page.get_by_text("All history", exact=True).click()
