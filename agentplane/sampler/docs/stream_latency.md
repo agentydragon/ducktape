@@ -137,9 +137,22 @@ requires multiple journal inserts, cursor updates and notifications in one trans
   batch. Measure first-delta delay as well as throughput; preserve ordering, raw evidence and
   reconnect/replay semantics. Reading ahead alone could just move the backlog into memory.
 
-Test interrupt polling and checkpointing with narrow reads while preserving ownership checks and
-monotonic export cursors. To measure cross-session interference, run the same Responses replay
-with interrupt polling and export active, once alongside a Qwen reasoning stream and once alone.
+**Interrupt delivery proposal for review.** A user interrupt already creates a durable
+`sampler_interrupt` row. [Command admission](../internal/sessionstore/admission.go) also
+notifies `central_sampler_work` in that transaction. The [replica listens](../cmd/main.go)
+for work, but the in-flight turn still checks on its own timer. The direct
+[RequestInterrupt path](../internal/sessionstore/processes.go) inserts the row without a wakeup.
+
+Use the existing [keyed LISTEN/NOTIFY hub](../../postgres/wakeups/hub.go) to wake the affected
+conversation on every interrupt insertion. Subscribe before the first pending-row read, then
+re-read on wakeup and reconnect. Keep the generation and target-turn checks when acting on the
+row. The ticker also checks for queued steering while a tool is in the foreground. Cover both
+steering arrival and a tool entering the foreground with steering already queued before removing
+the ticker. Test an interrupt committed during listener disconnection and during owner takeover.
+
+Test a narrower export checkpoint transaction that preserves monotonic cursors. To measure
+cross-session interference, run the same Responses replay with export and interrupt handling
+active, once alongside a Qwen reasoning stream and once alone.
 
 Compare candidates with an identical burst of already-buffered SSE events at multiple context
 lengths. Record per-operation wall time (including pool acquisition), transaction count, first
