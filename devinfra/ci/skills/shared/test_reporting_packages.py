@@ -12,8 +12,7 @@ def _runfile(runfiles: Runfiles, env_var: str) -> Path:
     return Path(location)
 
 
-def test_both_skill_archives_include_the_canonical_reporting_reference() -> None:
-    runfiles = Runfiles.CreateOrRaise()
+def test_both_skill_archives_include_the_canonical_reporting_reference(runfiles: Runfiles) -> None:
     source = _runfile(runfiles, "REPORTING_SOURCE").read_bytes()
 
     for skill_name, env_var in (("ci_latency", "CI_LATENCY_ARCHIVE"), ("ci_reliability", "CI_RELIABILITY_ARCHIVE")):
