@@ -79,6 +79,32 @@ Tactics finish leaf goals. The ideas (the frame fact, "slide the maximum to the 
 
 Times and conditions: [`TIMINGS.md`](TIMINGS.md). Raw output: [`records/`](records).
 
+### Reproduce the timing workload
+
+[Stage the public bundle dumps](#public-bundle-inputs) and keep their absolute
+directory in `out`. From the repository root, use Lake from the Lean release
+pinned in [`lean-toolchain`](../lean/lean-toolchain).
+
+```sh
+p=devinfra/js/debundle/x/split_proof
+(cd "$p/lowering" && cp package.json.in package.json && npm ci --no-audit --no-fund)
+(cd "$p/translation" && cp package.json.in package.json && npm ci --no-audit --no-fund)
+(cd "$p/lean" && lake build lowersplit)
+BUNDLES_DIR="$out" "$p/lowering/scale.sh"
+BUNDLES_DIR="$out" "$p/lowering/scale.sh" replicate
+```
+
+[`scale.sh`](../lowering/scale.sh) measures diagnostic checks on contiguous
+blocks. It derives unit counts from the staged ASTs and caps each run at 240 s.
+The normal mode includes lodash prefixes. The replication mode measures renamed
+copies of the bundle and discards their output. The table distinguishes checker
+refusals, timeouts and execution errors. Set `LOWERSPLIT` to select another
+compiled checker.
+
+### Historical results
+
+The tables below record the study's inputs and checker revisions.
+
 **The first version was slow in the wrong places.** The checks were plain statements (`∀ i ∈ range n, …`) and `decide` ran them as written.
 A profile of real bundles found the cost at once: a closure recomputed inside a loop, list scans for membership, and `B.stmt i`, which is a list lookup.
 Each check now has an algorithm over `TreeSet`/`TreeMap` tables and a theorem that it computes the statement
@@ -96,7 +122,7 @@ The `Decidable` instances run the fast algorithms, compiled and in the kernel. T
 | `mkPlan` (untrusted)                  | list scans                                               | index maps; the same modules as before on 30 real splits                                                      |
 
 **Compiled, real bundles**, split into contiguous blocks (a timing workload; § 7 shows which block splits are valid). "Whole run" is parse JSON, footprints, `mkPlan` and the seven checks; every stage is in [`records/real_bundles_3_final.md`](records/real_bundles_3_final.md).
-The minified rows were measured with a declarator list as one statement; `dump.mjs` now writes these bundles as 447 and 1,072 statements.
+The historical minified rows count each declarator list as one statement. The current checker gives each declarator its own ordinal.
 
 | Input             | Statements | Modules | Whole run before        | Whole run now | `ReadsClosed` now | Verdict                          |
 | ----------------- | ---------- | ------- | ----------------------- | ------------- | ----------------- | -------------------------------- |
@@ -110,7 +136,7 @@ The minified rows were measured with a declarator list as one statement; `dump.m
 | zod, minified     | 805        | 8       | did not finish in 240 s | 320 ms        | 61 ms             | rejected: OrderOk front-end rule |
 | zod               | 1,072      | 8       | not run                 | 218 ms        | 19 ms             | rejected: OrderOk front-end rule |
 
-**Compiled, K renamed copies of lodash** (timing only; [`lowering/scale.sh replicate`](../lowering/scale.sh)). The total after each stage of the work:
+**Compiled, K renamed copies of lodash.** The total after each stage of the work:
 
 | K   | Statements | Modules | Indexed closure, module tables | + shared tables, `Permutes` sets, `mkPlan` indexes | + `Faithful` tables | Final run: `mkPlan` | `ReadsClosed` | `Faithful` | `OrderOk` | all checks |
 | --- | ---------- | ------- | ------------------------------ | -------------------------------------------------- | ------------------- | ------------------- | ------------- | ---------- | --------- | ---------- |
@@ -211,13 +237,19 @@ The generated certificate is accepted by the kernel; its axioms are `propext`, `
 - A semantics. The frame assumption is unchanged. Only its _footprint side_ moved into Lean.
 - Imports from outside modules, top-level reassignment, and `import.meta`: rejected or guarded, not modeled. `lowersplit` keeps a bundle's `import` statements in the entry and writes them first; that this keeps the order of evaluation is argued in the [README](../README.md#what-is-not-proved), not proved.
 
-The Bazel `lean:lowered_example_certificate_test` builds a certificate from the example’s ESTree dump and checks it in Lean. For footprint comparisons on public libraries, set `out` to an absolute output directory and run:
+The Bazel `lean:lowered_example_certificate_test` builds a certificate from the example’s ESTree dump and checks it in Lean.
+
+### Public bundle inputs
+
+From the repository root, set `out` to an absolute output directory and prepare
+the public bundles and their annotated ESTree:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
 bb run "$p/translation:prepare_real_bundles" -- "$out"
-bb run "$p:compare_footprints" -- "$out/"*.json
 ```
+
+Compare their footprints with `bb run "$p:compare_footprints" -- "$out/"*.json`.
 
 ## 7. Real splits: halves, cuts, blocks, random placements
 

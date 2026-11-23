@@ -1,42 +1,77 @@
 #!/usr/bin/env bash
-# Real bundles through the whole check, compiled. One markdown row per run, every stage in ms.
-# The specs are contiguous blocks, a timing workload: most such splits are not valid reshuffles (see § 7 of ../experiments/README.md).
-# `lowering/bundles/*.json` can be staged with `prepare_real_bundles`. Each run is capped at 240 s. T = scratch directory.
-#
-#   ./scale.sh                 six real bundles and prefixes of lodash
-#   ./scale.sh replicate       K renamed copies of lodash, K = 1 … 64 (timing only; the text of the modules is meaningless)
-cd "$(dirname "$0")"
-T=${T:-$(mktemp -d)}
-LS=../lean/.lake/build/bin/lowersplit
+# Measure the diagnostic checker on contiguous block splits. See experiments/README.md § 5.
+set -euo pipefail
 
-row() { # label bundle statements modules [replicate K]
-  node ../experiments/splits/gen_spec.mjs "$3" blocks "$4" >"$T/spec.json"
-  timeout 240 "$LS" --diagnostic "bundles/$2.json" "$T/spec.json" "$T/out" ${5:+--replicate "$5"} 2>&1 | awk -v label="$1" -v n="$3" -v k="$4" '
+cd "$(dirname "$0")"
+bundles=${BUNDLES_DIR:-bundles}
+lowersplit=${LOWERSPLIT:-../lean/.lake/build/bin/lowersplit}
+work=$(mktemp -d "${T:-${TMPDIR:-/tmp}}/split-proof-scale.XXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+failed=0
+
+row() {
+  local label=$1 bundle=$2 blocks=$3 copies=${4:-1}
+  local dir dimensions statements modules status=0 verdict
+  local -a replicate=()
+  if [[ $# -eq 4 ]]; then replicate=(--replicate "$copies"); fi
+  dir=$(mktemp -d "$work/row.XXXXXX")
+  dimensions=$(
+    node --input-type=module - "$bundle" "$blocks" "$copies" "$dir/spec.json" <<'JS'
+import { readFileSync, writeFileSync } from "node:fs";
+import { spec } from "../experiments/splits/gen_spec.mjs";
+import { topLevelStatements } from "../translation/scope_metadata.mjs";
+
+const [bundle, blocks, copies, output] = process.argv.slice(2);
+const program = JSON.parse(readFileSync(bundle, "utf8"));
+const statements = topLevelStatements(program).length * Number(copies);
+const placement = spec(statements, "blocks", [blocks]);
+writeFileSync(output, JSON.stringify(placement));
+console.log(statements, Object.keys(placement.modules).length);
+JS
+  )
+  read -r statements modules <<<"$dimensions"
+
+  timeout 240 "$lowersplit" --diagnostic "$bundle" "$dir/spec.json" "$dir/out" "${replicate[@]}" >"$dir/log" 2>&1 || status=$?
+  case "$status" in
+    0) verdict=accepted ;;
+    124) verdict="timed out" ;;
+    *)
+      if [[ $status -eq 1 ]] && grep -Fxq 'rejected; nothing written' "$dir/log"; then
+        verdict=rejected
+      else
+        verdict="error (exit $status)"
+        cat "$dir/log" >&2
+        failed=1
+      fi
+      ;;
+  esac
+  awk -v label="$label" -v n="$statements" -v k="$modules" -v verdict="$verdict" '
     /\[time\] read/ { json = $(NF - 1) }
     /\[time\] footprints/ { fp = $(NF - 1) }
     /\[time\] mkPlan/ { plan = $(NF - 1) }
-    /\[time\] total/ { total = $(NF - 1) }
-    /pass|FAIL/ && /ms\)/ { gsub(/[()]/, ""); t[$2] = $3; if ($1 == "FAIL") bad = bad " " $2 }
-    /^ +FAIL/ && !/ms\)/ { bad = bad " front-end rule" }
+    /^ +(pass|FAIL) / && /ms\)/ { t[$2] = substr($3, 2); if ($1 == "FAIL") bad = bad " " $2; next }
+    /^ +FAIL/ { bad = bad " front-end rule" }
     /\[time\] all checks/ { checks = $(NF - 1) }
-    END { printf "| %s | %d | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", label, n, k, json, fp, plan, t["UniqueDefs"], t["ReadsClosed"], t["Faithful"], t["Linkable"], t["Hygienic"], t["Permutes"], t["OrderOk"], checks, (bad == "" ? "accepted" : "rejected:" bad) }'
+    END { printf "| %s | %d | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", label, n, k, json, fp, plan, t["UniqueDefs"], t["ReadsClosed"], t["Faithful"], t["Linkable"], t["Hygienic"], t["Permutes"], t["OrderOk"], checks, verdict (verdict == "rejected" ? ":" bad : "") }' "$dir/log"
+  rm -rf -- "$dir"
 }
 
 echo "| Input | Statements | Modules | JSON | Footprints | mkPlan | UniqueDefs | ReadsClosed | Faithful | Linkable | Hygienic | Permutes | OrderOk | All checks | Verdict |"
 echo "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
-if [ "${1:-}" = replicate ]; then
-  for K in 1 2 4 8 16 32 64; do row "lodash x$K" lodash $((670 * K)) $((6 * K)) $K; done
+if [[ ${1:-} == replicate ]]; then
+  for copies in 1 2 4 8 16 32 64; do
+    row "lodash x$copies" "$bundles/lodash.json" $((6 * copies)) "$copies"
+  done
 else
   for n in 100 200 300; do
-    node prefix.mjs bundles/lodash.json $n >"$T/lodash_prefix.json"
-    cp "$T/lodash_prefix.json" bundles/lodash_prefix.json
-    row "lodash, first $n" lodash_prefix "$n" $((n / 25))
-    rm -f bundles/lodash_prefix.json
+    node prefix.mjs "$bundles/lodash.json" "$n" >"$work/lodash_prefix.json"
+    row "lodash, first $n" "$work/lodash_prefix.json" $((n / 25))
   done
-  row "semver" semver 59 4
-  row "lodash" lodash 670 6
-  row "acorn" acorn 447 5
-  row "acorn, minified" acorn.min 447 5
-  row "zod, minified" zod.min 1072 8
-  row "zod" zod 1072 8
+  row "semver" "$bundles/semver.json" 4
+  row "lodash" "$bundles/lodash.json" 6
+  row "acorn" "$bundles/acorn.json" 5
+  row "acorn, minified" "$bundles/acorn.min.json" 5
+  row "zod, minified" "$bundles/zod.min.json" 8
+  row "zod" "$bundles/zod.json" 8
 fi
+exit "$failed"
