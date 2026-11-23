@@ -354,8 +354,8 @@ func TestRecoveryNeverSubstitutesMissingRetainedSession(t *testing.T) {
 		openErr  error
 	}{
 		{name: "unknown outcome", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "fake session outcome unknown"}}},
-		{name: "rejection", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "fake access denied", UpstreamCode: int32Pointer(-32600)}}},
-		{name: "different rejected session", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "unknown session id fake-other-session", UpstreamCode: int32Pointer(-32600)}}},
+		{name: "rejection", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "fake access denied", UpstreamCode: new(int32(-32600))}}},
+		{name: "different rejected session", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "unknown session id fake-other-session", UpstreamCode: new(int32(-32600))}}},
 		{name: "different completed session", response: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: "fake-other-session"}},
 		{name: "unavailable adapter", openErr: status.Error(codes.Unavailable, "fake adapter unavailable")},
 	} {
@@ -395,7 +395,7 @@ func TestOpenRejectionRequiresNativeEvidenceBeforeRecovery(t *testing.T) {
 	journal := &memoryJournal{frameErr: frameErr}
 	transport, _ := newTestTransport(&executorfake.Client{}, journal, "", transportOptions{})
 	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
-		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: int32Pointer(-32600), Message: "unknown session id fake-retained-session",
+		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: new(int32(-32600)), Message: "unknown session id fake-retained-session",
 	}}
 	frameErrObserved := transport.recordNativeFrames(t.Context(), "fake-intent", "fake-retained-session", MethodInitialize, []*executorpb.ExecutionNativeFrame{{Direction: "response", Payload: []byte("fake frame")}})
 	err := transport.finishOpenFailure(t.Context(), "fake-intent", response, frameErrObserved)
@@ -750,8 +750,6 @@ func (b *testBroadcaster) SignalProcessChange() {
 	b.count++
 	b.mu.Unlock()
 }
-
-func int32Pointer(value int32) *int32 { return &value }
 
 func boolInt(value bool) int {
 	if value {

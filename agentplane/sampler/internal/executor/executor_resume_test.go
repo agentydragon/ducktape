@@ -86,7 +86,7 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 					if r.ProcessId == "old-process" {
 						t.Fatal("old process reached replacement executor")
 					}
-					return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+					return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 				}
 				executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 				executor.environment = map[string]string{}
@@ -291,7 +291,7 @@ func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T
 		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 	}
 	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
@@ -437,7 +437,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 	}
 	client.OnReadProcess = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
@@ -616,7 +616,7 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 	}
 	secondClient.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		secondReads++
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	secondExecutor := newFakeExecutor(t, store, owner, secondClient, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	secondExecutor.environment = map[string]string{}

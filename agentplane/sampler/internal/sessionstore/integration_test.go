@@ -1316,7 +1316,7 @@ func TestStoreAbandonedProcessPreservesEvidenceAndLeavesScheduler(t *testing.T) 
 	if err := store.RegisterModelProcess(t.Context(), owner, "1234-unknown", 1234, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetainProcessOutput(t.Context(), owner, "1234-unknown", 9, []byte("observed output"), true, ptrInt(17)); err != nil {
+	if err := store.RetainProcessOutput(t.Context(), owner, "1234-unknown", 9, []byte("observed output"), true, new(17)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.AbandonProcess(t.Context(), owner, "1234-unknown", nil, nil, NestedUnknown, "retained-executor"); err != nil {
@@ -1351,7 +1351,7 @@ func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
 	if err != nil || process.ID != "1234-first" {
 		t.Fatalf("session 1234 resolved to %+v err=%v", process, err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "1234-first", nil, "exited", ptrInt(0), true); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "1234-first", nil, "exited", new(0), true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ProcessByModelSession(t.Context(), owner, 1234); !errors.Is(err, protocol.ErrMissing) {
@@ -1705,7 +1705,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "stored-process", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetainProcessOutput(t.Context(), owner, "stored-process", 4, []byte("unread"), true, ptrInt(2)); err != nil {
+	if err := store.RetainProcessOutput(t.Context(), owner, "stored-process", 4, []byte("unread"), true, new(2)); err != nil {
 		t.Fatal(err)
 	}
 	beforeEvents, err := store.Events(t.Context(), session.ID, 0, 16)
@@ -1793,8 +1793,6 @@ func intentRequestForDB(t *testing.T, store *Store, id string) (map[string]any, 
 	}
 	return request, nil
 }
-
-func ptrInt(value int) *int { return &value }
 
 func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	store := newTestStore(t)

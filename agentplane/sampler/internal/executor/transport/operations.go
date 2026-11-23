@@ -249,7 +249,7 @@ func (e *Transport) rpc(ctx context.Context, method Method, params any) (Operati
 			Kind: FailureRejected, Method: method, RejectionCode: int(statusValue.GetUpstreamCode()), RejectionMessage: message,
 			IntentID: intent, ProcessID: executorProcessID(params), ExecutionSessionID: e.sessionID,
 			AfterSequence: afterSequence, Recorded: true, RemoteOutcome: Rejected,
-			RequestOutcome: outcomePointer(Rejected),
+			RequestOutcome: new(Rejected),
 		}
 		failure.Evidence = evidenceJSON
 		return Operation[json.RawMessage]{Outcome: Rejected, IntentID: intent, ExecutionSessionID: e.sessionID, Evidence: evidenceJSON, Failure: failure}, nil
@@ -350,7 +350,7 @@ func (e *Transport) newEnvironmentFailure(method Method, intentID, processID, ex
 	return &Failure{
 		Kind: FailureEnvironment, Method: method, IntentID: intentID, ProcessID: processID,
 		ExecutionSessionID: executionSessionID, EnvironmentState: detail.GetState().String(),
-		RemoteOutcome: NotDispatched, RequestOutcome: outcomePointer(NotDispatched),
+		RemoteOutcome: NotDispatched, RequestOutcome: new(NotDispatched),
 		AfterSequence: afterSequence, Output: output, TransportError: cause.Error(), Cause: cause,
 	}
 }

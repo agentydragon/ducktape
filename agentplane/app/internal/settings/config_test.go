@@ -82,7 +82,7 @@ func validTestConfig() Config {
 			Harnesses: map[string][]string{"HARNESS_CLAUDE": {"model-a"}, "HARNESS_CODEX": {"model-a"}},
 		},
 		ThreadPresets: map[string]ThreadPreset{
-			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: stringPtr("low")},
+			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: new("low")},
 		},
 		SandboxPresets: map[string]SandboxPreset{
 			"work": {Title: "Work", Template: "linux", ThreadPreset: "default", InboxTags: []string{"team"}},
@@ -114,8 +114,6 @@ func validTestConfig() Config {
 		ListenAddress: "127.0.0.1:8080", EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
 	}
 }
-
-func stringPtr(value string) *string { return &value }
 
 func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	if err := validTestConfig().validate(); err != nil {

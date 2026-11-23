@@ -74,7 +74,7 @@ func TestNotificationPayloadsChunkCommittedIDsWithoutDecisionDetails(t *testing.
 		records[i].EventID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("event-%d", i)))
 		records[i].Host = "secret-host.example"
 		records[i].Method = "secret-method"
-		records[i].Policy = stringPtr("secret-policy")
+		records[i].Policy = new("secret-policy")
 		ids[records[i].EventID] = false
 	}
 
@@ -135,8 +135,6 @@ func TestNotificationOverflowFailsClosedAndEmptyLegacyPayloadIsInvalid(t *testin
 		}
 	}
 }
-
-func stringPtr(value string) *string { return &value }
 
 type testListenerConnection struct {
 	closed  chan struct{}
