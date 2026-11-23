@@ -206,20 +206,6 @@ function panelSignal(allowance, window) {
 
 const PANEL_ITEMS = ["status", "balance", "pace-window", "pace", "sparkline"];
 
-function migratePanelPaceWindow(settings) {
-  if (settings.get_boolean("panel-pace-window-migrated")) return;
-  const visible = settings.get_strv("panel-visible");
-  if (visible.includes("pace") && !visible.includes("pace-window"))
-    settings.set_strv("panel-visible", [...visible, "pace-window"]);
-  const order = settings.get_strv("panel-order");
-  if (!order.includes("pace-window")) {
-    const paceIndex = order.indexOf("pace");
-    order.splice(paceIndex < 0 ? order.length : paceIndex, 0, "pace-window");
-    settings.set_strv("panel-order", order);
-  }
-  settings.set_boolean("panel-pace-window-migrated", true);
-}
-
 function panelOrder(settings) {
   return [...new Set([...settings.get_strv("panel-order").filter((id) => PANEL_ITEMS.includes(id)), ...PANEL_ITEMS])];
 }
@@ -263,7 +249,6 @@ const PlaidSpendIndicator = GObject.registerClass(
       super._init(0.0, "Plaid Spend", false);
 
       this._settings = settings;
-      migratePanelPaceWindow(settings);
       this._openPreferences = openPreferences;
       this._destroyed = false;
       this._view = { cards: [], generated_at: null };
