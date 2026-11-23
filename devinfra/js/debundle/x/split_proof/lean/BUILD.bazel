@@ -197,10 +197,10 @@ sh_binary(
     ],
 )
 
+# Keep the shared proofs reusable when linked input or certificate generation changes.
 lean_library(
-    name = "corejs_certificates",
+    name = "corejs_certificate_support",
     srcs = [
-        "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/BatchState.lean",
         "EsmSplit/CoreJS/BindingCertificate.lean",
         "EsmSplit/CoreJS/BindingFootprint.lean",
@@ -221,8 +221,6 @@ lean_library(
         "EsmSplit/CoreJS/HeritageMove.lean",
         "EsmSplit/CoreJS/LinkedBehavior.lean",
         "EsmSplit/CoreJS/LinkedCells.lean",
-        "EsmSplit/CoreJS/LinkedCertificate.lean",
-        "EsmSplit/CoreJS/LinkedInput.lean",
         "EsmSplit/CoreJS/LiteralRecord.lean",
         "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/ModuleLocation.lean",
@@ -235,6 +233,21 @@ lean_library(
         "EsmSplit/CoreJS/WriteExpr.lean",
     ],
     deps = [
+        ":corejs_runtime",
+        ":effects",
+        ":planner",
+    ],
+)
+
+lean_library(
+    name = "corejs_certificates",
+    srcs = [
+        "EsmSplit/CertificateData.lean",
+        "EsmSplit/CoreJS/LinkedCertificate.lean",
+        "EsmSplit/CoreJS/LinkedInput.lean",
+    ],
+    deps = [
+        ":corejs_certificate_support",
         ":corejs_runtime",
         ":effects",
         ":planner",
