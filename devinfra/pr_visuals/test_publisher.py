@@ -1818,8 +1818,17 @@ def test_build_bundle_classifies_structured_assets_against_eligible_baseline(tmp
     }
     assert metadata.tests[0].summary == ClassificationCounts(modified=1, new=1, removed=1, unchanged=1)
     assert metadata.tests[0].baseline_eligible
-    assert by_label["changed"].diff_sha256 is not None
     assert by_label["gone"].candidate_sha256 is None
+    staged = tmp_path / "site" / "assets"
+    for label, name in [("changed", "changed.png"), ("gone", "gone.png")]:
+        baseline_body = (baseline_dir / name).read_bytes()
+        digest = hashlib.sha256(baseline_body).hexdigest()
+        assert by_label[label].baseline_sha256 == digest
+        assert (staged / f"{digest}.png").read_bytes() == baseline_body
+    overlay = staged / f"{by_label['changed'].diff_sha256}.png"
+    with Image.open(overlay) as image:
+        assert image.getpixel((0, 0)) == (255, 0, 0, 255)
+    assert by_label["gone"].diff_sha256 is None
     assert not list(bundle.rglob("*.png"))
 
 

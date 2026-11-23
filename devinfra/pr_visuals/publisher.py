@@ -11,10 +11,12 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, Literal, Protocol, cast
@@ -502,34 +504,31 @@ def _review_asset(
         checkpoint=asset.checkpoint,
         role=asset.role,
         variants=[ReviewVariant(sha256=v.sha256, results=v.results) for v in asset.variants],
+        candidate_sha256=asset.variants[0].sha256 if len(asset.variants) == 1 else None,
         classification=classification,
     )
 
 
 def _classify_test_assets(
-    test: CollectedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, target_dir: Path
+    test: CollectedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, output_root: Path
 ) -> list[ReviewAsset]:
-    """Compare structured identities; paths only address the rendered page and staging files."""
+    """Compare structured identities and stage the shared images the review references."""
     baseline_by_identity = {_asset_identity(asset): asset for asset in baseline.metadata.assets}
     if len(baseline_by_identity) != len(baseline.metadata.assets):
         raise ValueError(f"{test.target_label}: duplicate identities in baseline metadata")
-    baseline_dir = target_dir / "baseline"
-    diff_dir = target_dir / "diff"
     enriched: list[ReviewAsset] = []
     stale = True if baseline.fallback else None
 
-    def materialize_baseline(asset: ReviewAsset, path: str) -> Path:
-        if asset.candidate_sha256 is None:
+    def fetch_baseline(asset: ReviewAsset) -> tuple[bytes, str]:
+        digest = asset.candidate_sha256
+        if digest is None:
             raise ValueError(f"{test.target_label}: baseline has no image digest for {asset.case_id!r}")
-        body = baseline_source.fetch(shared_image_key(asset.candidate_sha256))
+        body = baseline_source.fetch(shared_image_key(digest))
         if body is None:
-            raise ValueError(f"{test.target_label}: missing baseline image {asset.candidate_sha256}")
-        if hashlib.sha256(body).hexdigest() != asset.candidate_sha256:
-            raise ValueError(f"{test.target_label}: corrupted baseline image {asset.candidate_sha256}")
-        baseline_dir.mkdir(parents=True, exist_ok=True)
-        destination = baseline_dir / path
-        destination.write_bytes(body)
-        return destination
+            raise ValueError(f"{test.target_label}: missing baseline image {digest}")
+        if hashlib.sha256(body).hexdigest() != digest:
+            raise ValueError(f"{test.target_label}: corrupted baseline image {digest}")
+        return body, digest
 
     for asset in test.assets:
         if len(asset.variants) > 1:
@@ -543,16 +542,17 @@ def _classify_test_assets(
         if not _requires_pixel_comparison(asset, baseline_asset):
             enriched.append(_review_asset(asset, "unchanged"))
             continue
-        baseline_png = materialize_baseline(baseline_asset, asset.review_filename)
-        comparison = compare_pngs(candidate.local_path, baseline_png)
+        baseline_body, digest = fetch_baseline(baseline_asset)
+        comparison = compare_pngs(candidate.local_path, baseline_body)
         if comparison.classification == "unchanged":
-            baseline_png.unlink()
             enriched.append(_review_asset(asset, "unchanged"))
             continue
-        if comparison.diff_overlay is not None:
-            diff_dir.mkdir(parents=True, exist_ok=True)
-            comparison.diff_overlay.save(diff_dir / asset.review_filename)
         result = _review_asset(asset, "modified")
+        result.baseline_sha256 = _stage_shared_png(output_root, baseline_body, digest=digest)
+        if comparison.diff_overlay is not None:
+            with BytesIO() as overlay:
+                comparison.diff_overlay.save(overlay, format="PNG")
+                result.diff_sha256 = _stage_shared_png(output_root, overlay.getvalue())
         result.changed_fraction = comparison.changed_fraction
         result.changed_pixels = comparison.changed_pixels
         result.candidate_dimensions = list(comparison.actual_size)
@@ -566,28 +566,30 @@ def _classify_test_assets(
         for identity, baseline_asset in baseline_by_identity.items():
             if identity in candidate_identities:
                 continue
-            materialize_baseline(baseline_asset, baseline_asset.path)
+            baseline_body, digest = fetch_baseline(baseline_asset)
             removed = baseline_asset.model_copy(deep=True)
             removed.classification = "removed"
             removed.candidate_sha256 = None
+            removed.baseline_sha256 = _stage_shared_png(output_root, baseline_body, digest=digest)
+            removed.diff_sha256 = None
             removed.variants = []
             removed.baseline_stale = stale
             enriched.append(removed)
     return enriched
 
 
-def _share_png(image: Path, output_root: Path, *, known_digest: str | None = None) -> str | None:
-    if not image.is_file():
-        return None
-    digest = known_digest or hashlib.sha256(image.read_bytes()).hexdigest()
+def _stage_shared_png(output_root: Path, body: bytes, *, digest: str | None = None) -> str:
+    digest = digest or hashlib.sha256(body).hexdigest()
     destination = output_root / shared_image_key(digest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
             raise ValueError(f"corrupt staged image at {destination}")
-        image.unlink()
     else:
-        image.replace(destination)
+        with tempfile.TemporaryDirectory(dir=destination.parent) as staging:
+            image = Path(staging) / destination.name
+            image.write_bytes(body)
+            image.replace(destination)
     return digest
 
 
@@ -649,11 +651,11 @@ def build_bundle(
                     for asset in test.assets
                 ]
             else:
-                assets = _classify_test_assets(test, baseline, baseline_source, target_dir)
+                assets = _classify_test_assets(test, baseline, baseline_source, output_root)
         else:
             assets = [_review_asset(asset, "unstable" if len(asset.variants) > 1 else None) for asset in test.assets]
         for asset in test.assets:
-            for index, variant in enumerate(asset.variants):
+            for variant in asset.variants:
                 if (
                     image_materialization is not None
                     and variant.sha256 in image_materialization.cas_only_digests
@@ -664,14 +666,7 @@ def build_bundle(
                     body = read_verified_png(variant.local_path, digest=variant.sha256, size=variant.size)
                 except ValueError as error:
                     raise ValueError(f"{test.target_label}: {asset.case_id!r}: {error}") from error
-                staged = target_dir / f".{asset.review_filename}.{index}"
-                staged.write_bytes(body)
-                _share_png(staged, output_root, known_digest=variant.sha256)
-        for review_asset in assets:
-            if len(review_asset.variants) == 1:
-                review_asset.candidate_sha256 = review_asset.variants[0].sha256
-            review_asset.baseline_sha256 = _share_png(target_dir / "baseline" / review_asset.path, output_root)
-            review_asset.diff_sha256 = _share_png(target_dir / "diff" / review_asset.path, output_root)
+                _stage_shared_png(output_root, body, digest=variant.sha256)
         review_test = ReviewTest(
             target_label=test.target_label,
             slug=test.slug,

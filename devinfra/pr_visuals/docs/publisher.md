@@ -24,8 +24,9 @@ Collection records each variant's CAS source, digest, size, and candidate stagin
 path under `<work-dir>/tests/<target-slug>/`. Comparison planning selects the
 digests whose pixels are needed before rendering. The bundle is staged under
 `<work-dir>/site/reviews-test-outputs/<sha>/`, while shared images are staged
-under `<work-dir>/site/assets/`. The image barrier receives that site root
-explicitly and may fetch remaining candidates directly into `assets/`.
+under `<work-dir>/site/assets/<sha256>.png`. Pixel comparison reads Before images
+from fetched bytes; the publisher stages Before and diff images when the review
+references them. The image barrier may fetch remaining candidates into `assets/`.
 The publisher logs phase starts and workload counts; Actions timestamps on those
 lines show the time spent listing, downloading, building, and uploading.
 
