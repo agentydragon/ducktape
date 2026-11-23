@@ -118,6 +118,30 @@ for (const file of ["entry.mjs", "side.mjs"])
 const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
+
+// A diagnostic instance gives MiniJS the original spelling of whole statements
+// and standalone declarations for units split out of a declaration list.
+{
+  const source = path.join(temp, "instance-source.mjs");
+  const spec = path.join(temp, "instance-spec.json");
+  const instance = path.join(temp, "instance.lean");
+  const original = "const /* retained */ seed = 1;";
+  writeFileSync(source, `${original}\nconst left = seed, right = 2;\n`);
+  writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["seed", "left", "right"] } }));
+  const result = run(process.env.LOWERSPLIT, [
+    "--diagnostic",
+    source,
+    spec,
+    path.join(temp, "instance-out"),
+    "--lean",
+    instance,
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const generated = readFileSync(instance, "utf8");
+  for (const unit of [original, "const left = seed;", "const right = 2;"])
+    assert(generated.includes(`src := ${JSON.stringify(unit)}`), unit);
+}
+
 const frontend = path.join(here, "frontend.mjs");
 writeFileSync(bundle, JSON.stringify(bundleFromParsed(parsed)));
 for (const args of [

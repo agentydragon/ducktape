@@ -6,7 +6,7 @@ open EsmSplit MJS
 
 namespace ProofFixture
 
-/-- Derived from the exact source strings in the extractor-generated bundle. -/
+/-- Derived from the exact source strings in the generated diagnostic instance. -/
 def program : List MStmt := (sourceBundle Example.bundle).getD []
 
 theorem source_accepted : sourceBundle Example.bundle = some program := by decide +kernel
@@ -27,8 +27,10 @@ theorem unsupported_keyword : sourceStmt "const x = true;" = none := by decide +
 theorem unsupported_reserved_name : sourceStmt "const new = 1;" = none := by decide +kernel
 theorem unsupported_strict_name : sourceStmt "const eval = 1;" = none := by decide +kernel
 
-/-- `src` is rendered verbatim; MiniJS footprints intentionally contain no source text. -/
-theorem extracted_footprints : Example.bundle.map (fun s => { s with src := "" }) = toBundle program := by
+/-- `Stmt.binds` already includes the defined names. Drop the redundant initialization writes
+when comparing to MiniJS and keep every write to another binding. -/
+theorem extracted_footprints : Example.bundle.map (fun s =>
+    { s with src := "", writes := s.writes.filter (fun name => !s.defs.contains name) }) = toBundle program := by
   rfl
 
 theorem well_formed : WF program := by
