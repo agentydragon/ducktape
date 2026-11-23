@@ -234,5 +234,19 @@ theorem publish_alias :
   rw [bind_of_ok hread, bind_of_ok hinit]
   exact halias
 
+/-- The read-once world can receive an object handle or catch a TDZ error from the
+same request. Both outcomes retain the envelope for its final reply. -/
+theorem readOnce_conversation {r R cells A} (away : Away r R A) (n code : Nat) (told : Told) :
+    ReachFrame r R cells A (SafeVal A) (converse n code cells told : M readOnceWorld Val) := by
+  apply converse_reachFrame
+  intro k _ req ⟨msg, seen, issued⟩
+  cases seen
+  · have h : req = .readVar 0 := issued.symm
+    subst req
+    exact perform_bindingOrKeys away _ _ _ _ rfl
+  · have h : req = .done (.prim .undef) := issued.symm
+    subst req
+    exact reachFrame_unknown r R cells A _ _
+
 end ReachabilityExamples
 end CoreJS
