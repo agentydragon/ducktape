@@ -61,7 +61,7 @@ func captureStdout(t *testing.T, run func() error) ([]byte, error) {
 	return output, runErr
 }
 
-func TestMatchGlob(t *testing.T) {
+func TestNameMatcher(t *testing.T) {
 	tests := []struct {
 		pattern string
 		s       string
@@ -74,19 +74,22 @@ func TestMatchGlob(t *testing.T) {
 		{"test_*/*.ambr", "test_foo/snapshot.ambr", true},
 		{"test_*/*.ambr", "other/snapshot.ambr", false},
 		{"no-star", "no-star", true},
-		{"no-star", "no-stardust", false},
+		{"no-star", "no-stardust", true},
 		{"*.log", "foo/bar/test.log", true},
+		{"*.log", "logs.log/nested/test.log", true},
+		{"steps[0]/*.patch", "steps[0]/generated.patch", true},
+		{"aa*aa", "aaa", false},
 		{"*test.outputs/*", "foo/test.outputs/snapshot.ambr", true},
 		{"test.outputs/*", "test.outputs/snapshot.ambr", true},
 		{"test.outputs/*", "foo/test.outputs/snapshot.ambr", false},
 		{"*.ambr", "", false},
 		{"", "", true},
-		{"", "nonempty", false},
+		{"", "nonempty", true},
 	}
 	for _, tt := range tests {
-		got := matchGlob(tt.pattern, tt.s)
+		got := nameMatcher(tt.pattern)(tt.s)
 		if got != tt.want {
-			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+			t.Errorf("nameMatcher(%q)(%q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
 		}
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,34 +15,29 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// matchGlob reports whether s matches a simple glob pattern supporting '*' only.
-func matchGlob(pattern, s string) bool {
-	for {
-		star := strings.IndexByte(pattern, '*')
-		if star < 0 {
-			return pattern == s
-		}
-		prefix := pattern[:star]
-		if !strings.HasPrefix(s, prefix) {
+// nameMatcher uses a substring for unstarred patterns. In a glob, only '*' is special
+// and it spans slashes, so a single pattern can match both the target label and the file name.
+func nameMatcher(pattern string) func(string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return func(name string) bool { return strings.Contains(name, pattern) }
+	}
+	return func(name string) bool {
+		rest, ok := strings.CutPrefix(name, parts[0])
+		if !ok {
 			return false
 		}
-		s = s[len(prefix):]
-		pattern = pattern[star+1:]
-		if pattern == "" {
-			// Trailing '*' matches the rest.
-			return true
-		}
-		// Find the earliest occurrence of the literal text before the next '*'.
-		nextStar := strings.IndexByte(pattern, '*')
-		nextLit := pattern
-		if nextStar >= 0 {
-			nextLit = pattern[:nextStar]
-		}
-		i := strings.Index(s, nextLit)
-		if i < 0 {
+		rest, ok = strings.CutSuffix(rest, parts[len(parts)-1])
+		if !ok {
 			return false
 		}
-		s = s[i:]
+		for _, literal := range parts[1 : len(parts)-1] {
+			_, rest, ok = strings.Cut(rest, literal)
+			if !ok {
+				return false
+			}
+		}
+		return true
 	}
 }
 
@@ -201,7 +197,7 @@ Patterns containing '*' use glob matching; otherwise substring match against
 
   bbapi artifact download <id> .ambr          # first match containing .ambr
   bbapi artifact download <id> '*.ambr'        # first glob match ending .ambr
-  bbapi artifact download <id> --all           # all undeclared test outputs
+  bbapi artifact download <id> --all           # all listed test and build outputs
   bbapi artifact download <id> '*.ambr' --all  # all glob matches`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: withClient(func(c *client, args []string) error {
@@ -369,18 +365,11 @@ func nearArtifacts(artifacts []artifact, pattern string, limit int) []artifact {
 // filterArtifacts returns all artifacts matching pattern (glob if it contains
 // '*', otherwise substring match against "label/name").
 func filterArtifacts(artifacts []artifact, pattern string) []artifact {
+	matchesName := nameMatcher(pattern)
 	var matches []artifact
-	if strings.Contains(pattern, "*") {
-		for _, a := range artifacts {
-			if matchGlob(pattern, a.matchKey()) {
-				matches = append(matches, a)
-			}
-		}
-	} else {
-		for _, a := range artifacts {
-			if strings.Contains(a.matchKey(), pattern) {
-				matches = append(matches, a)
-			}
+	for _, a := range artifacts {
+		if matchesName(a.matchKey()) {
+			matches = append(matches, a)
 		}
 	}
 	return matches
@@ -424,13 +413,14 @@ func downloadAllArtifacts(c *client, artifacts []artifact, dir string) error {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 	names := downloadNames(artifacts)
+	var failures []error
 	for i, a := range artifacts {
 		dest := filepath.Join(dir, names[i])
 		if err := saveArtifact(c, a, dest); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to download %s: %v\n", a.GetFile().GetName(), err)
+			failures = append(failures, fmt.Errorf("download %s: %w", a.matchKey(), err))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 // downloadNames gives each artifact the file name it is saved under when they all go to one directory. An
