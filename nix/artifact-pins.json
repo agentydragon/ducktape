@@ -9,8 +9,8 @@
       "sha256": "+KGIkTID8jlhph8cXrZLDu9lzyTgAU7AdLVZivT7xoo="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-972a6fd5bfa0/bbapi",
-      "sha256": "lypv1b+gj/OVsTZD9f6/k5nxHgQgp6AYvCDbzT6edvo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a73e14f7377f/bbapi",
+      "sha256": "pz4U9zd/H6isxRSvuRtwvIk62j6g1FPusMBUej3OxK0="
     },
     "claude-statusline": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-40ad2bd647a8/claude_statusline-0.1.0-py3-none-any.whl",
