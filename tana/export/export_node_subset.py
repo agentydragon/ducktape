@@ -9,7 +9,7 @@ from typing import Any
 from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, TupleNode
 from tana.domain.system_nodes import SUPERTAG_KEY_ID
 from tana.domain.types import NodeId
-from tana.export.convert import RenderContext
+from tana.export.convert import RenderContext, format_tanapaste
 from tana.graph.graph import TanaGraph
 from tana.graph.wrappers import is_wrapper
 
@@ -89,12 +89,12 @@ def export_node_with_tracking(store: TrackingGraph, node_id: NodeId) -> tuple[st
     accessed = {node_id}
     store.accessed_nodes = accessed
     try:
-        lines = ["%%tana%%", *RenderContext(store, "tana").render_node(node)]
+        tanapaste = format_tanapaste(RenderContext(store, "tana").render_node(node))
     finally:
         store.accessed_nodes = None
 
-    tanapaste = "\n".join(lines).rstrip() + "\n\n"
-    return tanapaste, accessed | collect_supertag_dependencies(store, accessed)
+    # Subset files end with a blank line.
+    return tanapaste + "\n", accessed | collect_supertag_dependencies(store, accessed)
 
 
 def create_subset_json(original_data: dict[str, Any], touched_nodes: set[NodeId]) -> dict[str, Any]:
