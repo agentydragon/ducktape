@@ -732,8 +732,7 @@ js_test(
     entry_point = "modern_syntax_test.mjs",
 )
 
-# The coverage audit: which constructs each generator produces. `COVERAGE.md` is its output, written by hand with
-# `node coverage_audit.mjs`; the Lean sources it reads are not runfiles, so this test covers the parts.
+# Sample the generator coverage report against the same Lean sources the standalone audit reads.
 js_test(
     name = "coverage_audit_test",
     data = _FUZZ_SOURCES + [
@@ -746,6 +745,7 @@ js_test(
         ":node_modules/eslint-scope",
         ":scope_metadata",
         ":syntax_inventory",
+        "//devinfra/js/debundle/x/split_proof/lean:analysis_inventory_sources",
     ],
     entry_point = "coverage_audit_test.mjs",
 )

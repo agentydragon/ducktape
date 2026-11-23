@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { GENERATORS, analysisOf, renderReport, sampleGenerator } from "./coverage_audit.mjs";
-import { memberPaths, nodeTypeArms, stringList, tableKeys } from "./analysis_inventory.mjs";
+import { memberPaths, nodeTypeArms, readAnalysisInventory, tableKeys } from "./analysis_inventory.mjs";
 import { FORMS, NODE_TYPES, featuresOf, parseModule } from "./syntax_inventory.mjs";
 
 const work = realpathSync(mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "coverage_audit_test_")));
@@ -72,9 +72,6 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Math.abs", {}), ("Math.max", {}),
   ("env:console.log", { world := true })
 ] : List (String × Summary)) ++ iteratorHelperRows)
-
-def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [
-  "Object", "Array"]
 `;
   assert.deepEqual(tableKeys(intrinsics), [
     "Object.keys",
@@ -86,7 +83,6 @@ def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [
     "Set.prototype.map",
     "Set.prototype.filter",
   ]);
-  assert.deepEqual(stringList(intrinsics, "intrinsicGlobals"), ["Object", "Array"]);
   assert.deepEqual(memberPaths('def memberPaths : List String := [\n  "Array.from",\n  "Array.of"\n]\n'), [
     "Array.from",
     "Array.of",
@@ -163,17 +159,7 @@ def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [
 
 // ---- a sample of two generators renders a report with the tables
 {
-  const inventory = {
-    arms: {
-      eval: new Set(["Identifier", "Literal"]),
-      exec: new Set(["ExpressionStatement"]),
-      evalClass: new Set(),
-      bindPattern: new Set(),
-    },
-    tableKeys: ["Object.assign", "env:console.log"],
-    memberPaths: ["Object.assign", "JSON.stringify", "env:console.log"],
-    intrinsicGlobals: [],
-  };
+  const inventory = readAnalysisInventory();
   const keysFile = path.join(work, "audit_keys.json");
   writeFileSync(keysFile, JSON.stringify([...inventory.tableKeys, ...inventory.memberPaths]));
   const samples = [];
