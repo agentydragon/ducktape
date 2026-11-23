@@ -13,7 +13,7 @@ ExternalDNS owns the former Route 53 record sets.
 | Crossplane OpenTofu provider   | 19 cluster-scoped Workspaces, 268 HCL resource blocks in inline desired modules | All Workspaces Ready                                                     |
 | Crossplane LiteLLM provider    | Nine namespaced Keys and three Teams                                            | All Ready and Synced                                                     |
 | Crossplane BuildBuddy provider | One namespaced Secret for live tests                                            | Ready and Synced                                                         |
-| tofu-controller                | `home-switch`, `infra-drift`                                    | Initializing, Ready respectively                                  |
+| tofu-controller                | `home-switch`, `infra-drift`                                                    | Initializing, Ready respectively                                         |
 | ExternalDNS                    | Public Route 53 records                                                         | Ownership and adoption documented in [DNS automation](dns_automation.md) |
 
 All three installed Crossplane providers reported Installed and Healthy. Ready
