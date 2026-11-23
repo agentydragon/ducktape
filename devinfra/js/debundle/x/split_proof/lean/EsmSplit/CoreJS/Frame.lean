@@ -453,7 +453,7 @@ theorem allocOnly_keeps (n : Nat) :
           refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
           refine keeps_bind (ihE env v base s2 he.1 hb2) fun vv s3 _ hb3 => ?_
           exact keeps_bind (defineOwn_keeps a name _ hb3 ha) fun _ s4 _ hb4 => ihP env a ps base s4 he.2 hb4 ha
-        | getter | setter | proto => simp only [allocOnlyProps, Bool.false_eq_true] at he
+        | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 
 /-- **An expression that only allocates changes nothing that existed**, however it ends: with a value, with a throw
 (a name in its dead zone), or out of fuel. Every object and binding of `s` is in the final state unchanged, and the

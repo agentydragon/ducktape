@@ -362,6 +362,7 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
     | .setter k f =>
       let key ← toKey (← evalExpr n env k)
       defineOwn a key { set := some (← makeFunc env f), enumerable := some true, configurable := some true }
+    | .spread source => copySpread (callFn n) a (← evalExpr n env source)
     | .proto v =>
       match ← evalExpr n env v with
       | .obj parent => modifyObj a fun o => { o with proto := some parent }
