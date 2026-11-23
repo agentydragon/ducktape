@@ -255,7 +255,6 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_object_spread_test",
         "linked_optional_callee_test",
         "linked_optional_chain_test",
-        "linked_programs_test",
         "linked_provider_programs_test",
         "linked_realm_constructors_test",
         "linked_record_values_test",
@@ -269,6 +268,15 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_wide_table_reversal_test",
     ]
 ]
+
+js_test(
+    name = "linked_programs_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_programs_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+    shard_count = 3,
+)
 
 js_test(
     name = "linked_host_profile_test",
