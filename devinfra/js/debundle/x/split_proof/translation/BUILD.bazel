@@ -473,6 +473,14 @@ js_test(
 )
 
 js_test(
+    name = "linked_wide_table_reversal_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_wide_table_reversal_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+)
+
+js_test(
     name = "unary_literal_safety_test",
     size = "medium",
     data = _LOWER_CALLBACK_FUZZ_DATA,
