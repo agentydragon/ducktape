@@ -11,7 +11,7 @@ import httpx
 from dotenv import load_dotenv
 
 from x.habitify_mcp.types import Area, Habit, HabitStatus, Status
-from x.habitify_mcp.utils.date_utils import format_date_for_api
+from x.habitify_mcp.utils.date_utils import target_datetime
 
 logger = logging.getLogger("habitify.client")
 
@@ -122,10 +122,10 @@ class HabitifyClient:
         Filter/order values: api_reference/API_REFERENCE.md.
         Request examples: api_reference/get_journal{,_filtered}.yaml.
         """
-        target_date = format_date_for_api(date)
+        target_date = target_datetime(date)
 
         # Build query parameters
-        params = {"target_date": target_date}
+        params = {"target_date": target_date.isoformat()}
 
         if order_by:
             params["order_by"] = order_by
@@ -151,25 +151,16 @@ class HabitifyClient:
     ) -> HabitStatus:
         """GET /status/{habit_id}: return status with a timezone-aware date (today by default)."""
         habit_id = self._validate_habit_id(habit_id)
-        check_date = format_date_for_api(date)
+        check_date = target_datetime(date)
 
         try:
-            response = await self.client.get(f"/status/{habit_id}", params={"target_date": check_date})
+            response = await self.client.get(f"/status/{habit_id}", params={"target_date": check_date.isoformat()})
             response.raise_for_status()
             result = cast(HabitStatus, self._process_response(response, HabitStatus))
 
             # If API didn't return a date, add the request date as timezone-aware datetime
             if not result.date:
-                if isinstance(date, datetime.datetime):
-                    result.date = date if date.tzinfo else date.replace(tzinfo=datetime.UTC)
-                elif isinstance(date, datetime.date):
-                    result.date = datetime.datetime.combine(date, datetime.time.min, tzinfo=datetime.UTC)
-                elif isinstance(date, str):
-                    # Parse string to datetime
-                    parsed = datetime.datetime.fromisoformat(date)
-                    result.date = parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.UTC)
-                else:
-                    result.date = datetime.datetime.now(tz=datetime.UTC)
+                result.date = check_date
 
             return result
         except Exception as e:
@@ -188,11 +179,11 @@ class HabitifyClient:
             raise HabitifyError("Status is required")
 
         habit_id = self._validate_habit_id(habit_id)
-        target_date = format_date_for_api(date)
+        target_date = target_datetime(date)
 
         # Build the request body based on examples (API expects string value)
         # Status is a str-based enum, so it can be used directly as a string
-        request_body: dict[str, Any] = {"status": status, "target_date": target_date}
+        request_body: dict[str, Any] = {"status": status, "target_date": target_date.isoformat()}
 
         # Add optional parameters if provided
         if note is not None:
@@ -205,19 +196,7 @@ class HabitifyClient:
             response = await self.client.put(f"/status/{habit_id}", json=request_body)
             response.raise_for_status()
 
-            # Create result model with the input data since the API returns null for success
-            # Convert to timezone-aware datetime
-            if isinstance(date, datetime.datetime):
-                result_date = date if date.tzinfo else date.replace(tzinfo=datetime.UTC)
-            elif isinstance(date, datetime.date):
-                result_date = datetime.datetime.combine(date, datetime.time.min, tzinfo=datetime.UTC)
-            elif isinstance(date, str):
-                parsed = datetime.datetime.fromisoformat(date)
-                result_date = parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.UTC)
-            else:
-                result_date = datetime.datetime.now(tz=datetime.UTC)
-
-            return HabitStatus(status=status, date=result_date, note=note, value=value)
+            return HabitStatus(status=status, date=target_date, note=note, value=value)
         except Exception as e:
             raise self._handle_error(e)
 

@@ -11,7 +11,10 @@ py_library(
     name = "types",
     srcs = ["types.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":date_utils",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
