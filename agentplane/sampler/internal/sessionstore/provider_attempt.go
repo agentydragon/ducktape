@@ -226,44 +226,6 @@ func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessi
 	return attempt, err
 }
 
-// RenewProviderAttempt extends only a still-live unresolved attempt under its original owner
-// generation. The conversation fence is acquired before touching the attempt row.
-func (s *Store) RenewProviderAttempt(ctx context.Context, owner Owner, intentID string, lease time.Duration) error {
-	if lease <= 0 {
-		return protocol.ErrInvalid
-	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		if conversation.Pending == nil || conversation.Pending.ID != intentID ||
-			(conversation.Pending.Kind != PendingIntentSampling && conversation.Pending.Kind != PendingIntentCompaction) {
-			return protocol.ErrPrecondition
-		}
-		intent, err := intentFor(ctx, tx, intentID)
-		if err != nil {
-			return err
-		}
-		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
-			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
-		}
-		tag, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET provider_attempt_lease_until=clock_timestamp()+make_interval(secs=>$2)
-			WHERE id=$1 AND result IS NULL AND provider_attempt_lease_until>clock_timestamp() AND request->>'kind' IN ('sampling','compaction')`, intentID, lease.Seconds())
-		if err != nil {
-			return err
-		}
-		count, err := tag.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if count != 1 {
-			return protocol.ErrPrecondition
-		}
-		return nil
-	})
-}
-
 // AbandonProviderAttempt settles only the exact pending provider request. Its raw provider
 // observations remain untouched; sampling partial items are reconciled as ABSENT. Retry time is
 // written on this predecessor, so a crash before creating its successor loses no retry work.

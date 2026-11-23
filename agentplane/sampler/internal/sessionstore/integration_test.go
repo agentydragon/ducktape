@@ -296,8 +296,14 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if newOwner.Generation != owner.Generation+1 {
 		t.Fatalf("generation=%d old=%d", newOwner.Generation, owner.Generation)
 	}
-	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late bytes")}); !errors.As(err, new(*LostOwnershipError)) {
+	evidence := ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}
+	frame := protocol.WireBytes{Bytes: []byte("late bytes")}
+	if err := evidence.Record(t.Context(), frame, true); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("stale generation recorded provider evidence: %v", err)
+	}
+	evidence.Owner = newOwner
+	if err := evidence.Record(t.Context(), frame, true); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("new generation recorded progress for original generation's attempt: %v", err)
 	}
 	if err := store.AppendInput(t.Context(), owner, "stale input"); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("stale generation mutated conversation: %v", err)
@@ -324,9 +330,9 @@ func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&cursor); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.HTTPResponseHead{
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(), protocol.HTTPResponseHead{
 		ContentType: "text/event-stream", HTTPStatus: 200, ProviderRequestID: "compaction-response",
-	}, &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "compaction-output", Text: "summary"}}}); err != nil {
+	}, true, &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "compaction-output", Text: "summary"}}}); err != nil {
 		t.Fatalf("open compaction evidence was rejected: %v", err)
 	}
 
@@ -394,7 +400,7 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 			if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&before); err != nil {
 				t.Fatal(err)
 			}
-			err = (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late provider bytes")},
+			err = (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late provider bytes")}, true,
 				&eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "late-output", Text: "must not be committed"}}})
 			if !errors.Is(err, protocol.ErrPrecondition) {
 				t.Fatalf("late evidence for %s intent error=%v, want ErrPrecondition", scenario, err)

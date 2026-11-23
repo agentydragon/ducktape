@@ -49,9 +49,8 @@ The third row measures time spent before the reader records another chunk whose 
 already has. The [Chat Completions reader](../providers/chatcompletions/stream.go) waits for
 the [evidence write](../internal/sessionstore/provider_evidence.go) and the
 [progress hook](../internal/providerio/timeouts.go) before consuming the next chunk.
-The hook [renews the attempt](../internal/residentruntime/session/provider_recovery.go)
-on each reasoning delta. Renewal locks and loads the conversation and fetches the intent
-before extending its lease.
+In the measured image (`3ce34c7`), the hook renewed the lease on each reasoning delta.
+Each renewal locked and loaded the conversation and fetched the intent before extending its lease.
 
 At 20:11:30–20:12:05 UTC, the repeated 10 ms primary sample found a median **208 ms before
 COMMIT for lease renewal** (15 transactions, p90 265 ms), and **48 ms for evidence** (21,
@@ -61,9 +60,9 @@ of identified renewals showed the content fetch or recursive context query as th
 or last statement. These observations include client waits. They do not time either query
 or link individual transactions to Qwen deltas.
 
-**First experiment:** make lease renewal check the owner, pending intent, generation and
-live lease without loading conversation items or the full intent payload. Keep the per-delta
-evidence write and renewal cadence for this comparison. Replay the same buffered reasoning
+The first change folds renewal into the evidence transaction. The owner, pending intent,
+generation and live lease are checked there already. This removes a full conversation load
+and a separate commit per semantic event. Replay the same buffered reasoning
 chunks at the same concurrency and context length. Compare renewal duration, same-read
 inter-chunk spacing and wire-to-projection p50/p95. If spacing remains high, measure the
 evidence transaction's individual round trips before changing the write boundary.
@@ -211,18 +210,13 @@ to a particular Qwen delta.
 
 ## Fix candidates and what would distinguish them
 
-The [Responses reader](../providers/responses/provider.go) waits for
-[evidence](../internal/sessionstore/provider_evidence.go) on each event and then
-[lease renewal](../internal/sessionstore/provider_attempt.go) on semantic progress.
-Renewal locks and [loads the conversation](../internal/sessionstore/store.go), including
-native contexts, while evidence already uses a smaller owner header. A projected delta also
-requires multiple journal inserts, cursor updates and notifications in one transaction.
+The [Responses reader](../providers/responses/provider.go) waits for each
+[evidence transaction](../internal/sessionstore/provider_evidence.go). A projected delta still
+requires journal inserts, cursor updates and notifications. Compare short and long contexts to
+check how much each benefits from removing the separate renewal transaction.
 
-- **Reduce work per event:** test a header-only renewal and minimal intent fence; compare
-  short and long contexts. This keeps the durability boundary unchanged.
-- **Reduce round trips:** combine evidence and renewal atomically, or renew only with a safe
-  margin before expiry. Check that stale owners still cannot append, and semantic idle timeout
-  still measures real progress.
+- **Reduce lease writes:** coalesce deadline updates while enforcing ownership and expiry on
+  every append. Check the idle budget after a last delta followed by silence.
 - **Batch journal writes:** amortize appends, cursor updates and notifications over a bounded
   batch. Measure first-delta delay as well as throughput; preserve ordering, raw evidence and
   reconnect/replay semantics. Reading ahead alone could just move the backlog into memory.

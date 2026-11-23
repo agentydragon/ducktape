@@ -320,15 +320,13 @@ func (s Settings) ProviderIdleTimeout() time.Duration {
 }
 
 // ProviderAttemptLease covers response-header setup, one full semantic-idle interval, and three
-// bounded RPC operations for durable head/event/renewal writes. Each semantic event renews
-// the idle interval with two RPC operations reserved for evidence and the renewal.
+// RPC timeout intervals of headroom for durable writes.
 func (s Settings) ProviderAttemptLease(model ModelConfig) time.Duration {
 	phaseSeconds := int64(s.ProviderResponseHeaderTimeout(model)/time.Second) + int64(s.ProviderIdleTimeout()/time.Second) + 3*int64(s.RPCTimeoutSeconds)
 	return time.Duration(phaseSeconds) * time.Second
 }
 
-// ProviderProgressLease covers one semantic-idle interval and the bounded database operation
-// that follows it. The header phase has already completed when this renewal runs.
+// ProviderProgressLease preserves two RPC timeout intervals of headroom after semantic idle.
 func (s Settings) ProviderProgressLease() time.Duration {
 	return s.ProviderIdleTimeout() + 2*time.Duration(s.RPCTimeoutSeconds)*time.Second
 }

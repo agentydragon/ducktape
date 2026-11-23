@@ -137,7 +137,7 @@ func (s *RecoveryScenario) BeginSampling(ctx context.Context) (string, protocol.
 	if err != nil {
 		return "", nil, err
 	}
-	return intentID, &sessionstore.ResponseEvidence{Store: s.source.store, Owner: s.owner, IntentID: intentID}, nil
+	return intentID, &sessionstore.ResponseEvidence{Store: s.source.store, Owner: s.owner, IntentID: intentID, ProgressLease: time.Minute}, nil
 }
 
 func (s *RecoveryScenario) FinishSampling(ctx context.Context, intentID string, audit any, records []json.RawMessage, contextTokens *int) error {

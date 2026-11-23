@@ -114,7 +114,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := priorEvidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("unrelated")},
+				if err := priorEvidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("unrelated")}, false,
 					&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
 						ItemId: "unrelated", Kind: eventpb.ItemKind_ITEM_KIND_REASONING,
 					}}}); err != nil {
@@ -146,7 +146,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if api == protocol.APIStyleResponses && cut == "before_terminal" {
 					// More than one reverse page must be read before reaching the item evidence.
 					for range 130 {
-						if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("tail")}); err != nil {
+						if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("tail")}, false); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -227,7 +227,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 						t.Fatalf("recovery changed earlier context record %d", index)
 					}
 				}
-				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}); !exportfixture.LostOwnership(err) {
+				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}, false); !exportfixture.LostOwnership(err) {
 					t.Fatalf("late provider evidence was not fenced: %v", err)
 				}
 				if err := scenario.Release(t.Context()); err != nil {

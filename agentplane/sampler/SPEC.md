@@ -943,7 +943,8 @@ frontier carries a named suppression reason and cannot reuse that frozen request
 after the model-visible reset uses a fresh prepared request in the runtime recovery path. Partial
 sampling evidence remains retained, while observed response items are reconciled `ABSENT`; no
 partial tool call is committed or dispatched before Finish. Semantic progress renews the attempt
-lease only after its event evidence is durable. Initial leases cover response-head and semantic-idle
+lease in the transaction that records the event and its projected observations. The local idle
+timer resets after that transaction commits. Initial leases cover response-head and semantic-idle
 budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
