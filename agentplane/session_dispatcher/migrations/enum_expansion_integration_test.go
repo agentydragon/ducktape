@@ -69,7 +69,11 @@ func TestEnumExpansionPreservesLegacyWritersAndReceiptVersions(t *testing.T) {
 	}
 
 	priorVersions, priorFiles := snapshot(), filenodes()
-	if err := Up(t.Context(), db); err != nil {
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 31); err != nil {
 		t.Fatal("add enum shadows:", err)
 	}
 	if filenodes() != priorFiles || snapshot() != priorVersions {
@@ -189,7 +193,11 @@ func TestEnumExpansionPreservesLegacyWritersAndReceiptVersions(t *testing.T) {
 
 func TestEnumExpansionMatchesPublicEnumNumbers(t *testing.T) {
 	db := openMigrationDatabase(t)
-	if err := Up(t.Context(), db); err != nil {
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 31); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {

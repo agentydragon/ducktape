@@ -35,7 +35,7 @@ func TestDispatchVersionUpgradePreservesRows(t *testing.T) {
 		 'test','owner','old-service-account-uid','test','owner','old-service-account-uid')`, uid, []byte{0x08, 0x03}); err != nil {
 		t.Fatal("insert second pre-version dispatch:", err)
 	}
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal("apply dispatch version migration:", err)
 	}
 	assertRetainedEvidence(t, db)
@@ -148,7 +148,7 @@ func TestSessionLeaseUpgradePreservesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertRetainedEvidence(t, db)
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal(err)
 	}
 	assertRetainedEvidence(t, db)
@@ -168,7 +168,7 @@ func TestSessionWatchUpgradeBackfillsAndVersionsOldWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertRetainedEvidence(t, db)
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal(err)
 	}
 	assertRetainedEvidence(t, db)
@@ -349,7 +349,7 @@ func TestCutoverRemovesPreIdentityAndUnattributedRows(t *testing.T) {
 	insertDispatch("standalone-action-command", "missing-session", "action")
 	insertDispatch("standalone-wake-caller-command", "missing-session", "wake_caller")
 
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal("apply cutover migration:", err)
 	}
 
@@ -510,7 +510,7 @@ func TestSessionActivityUpgradeDoesNotRewriteRows(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), "SELECT version FROM session WHERE session_id='retained-session'").Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal(err)
 	}
 	assertRetainedEvidence(t, db)
@@ -538,7 +538,7 @@ func TestSamplerActivityUpgradePreservesHostedLeaseAndOldWrites(t *testing.T) {
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO sandbox_activity_watch (sandbox_uid,stream_epoch) VALUES ($1,$2)`, uid, epoch); err != nil {
 		t.Fatal(err)
 	}
-	if err := Up(t.Context(), db); err != nil {
+	if err := upWithEnumBackfill(t, db); err != nil {
 		t.Fatal(err)
 	}
 	var retained string
@@ -599,7 +599,7 @@ func TestInterruptedReceiptIndexBuildResumes(t *testing.T) {
 	if err := db.QueryRowContext(ctx, completedOID).Scan(&previousOID); err != nil {
 		t.Fatal(err)
 	}
-	if err := Up(ctx, db); err != nil {
+	if _, err := provider.UpTo(ctx, 30); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, completedOID).Scan(&currentOID); err != nil || currentOID != previousOID {
