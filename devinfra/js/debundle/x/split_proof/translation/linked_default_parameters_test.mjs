@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   arrow,
   assertCertifiedResult,
+  assertRejected,
   block,
   call,
   exportNamed,
@@ -16,6 +18,7 @@ import {
   sequentialSplit,
   throws,
   variable,
+  workerSplit,
 } from "./testing/linked_programs.mjs";
 
 const entry = "entry.mjs";
@@ -166,4 +169,37 @@ for (const [name, expression, reason] of [
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, /body var overlaps named default parameters or their references/);
   assert(!existsSync(out));
+}
+
+const retained = sequentialSplit(
+  "deferred-body-defaults-and-methods",
+  `const input = "value";
+   function matches(x, text = input) { return /value/.test(text) && x; }
+   class Record {
+     constructor(text = input) { this.value = /value/.test(text); }
+     get matches() { return /value/.test(input); }
+     read(text = input) { return /value/.test(text); }
+   }
+   export { matches, Record };`,
+  { "input.mjs": ["#0"], [worker]: ["#1", "#2"], [entry]: ["#3"] },
+  ["input.mjs", worker]
+);
+assert.equal(retained.verdict.status, "certified", retained.log);
+for (const file of [retained.files.sourceFile, path.join(retained.out, entry)]) {
+  const { matches, Record } = await import(pathToFileURL(file).href);
+  assert.equal(matches.length, 1);
+  assert.equal(Record.length, 0);
+  assert.equal(Record.prototype.read.length, 0);
+  const record = new Record();
+  assert.deepEqual([matches(true), record.value, record.matches, record.read("other")], [true, true, true, false]);
+}
+for (const [name, declaration, invocation] of [
+  ["defaults", "function read(x = 1) { return /x/; }", "read()"],
+  ["getter", "const box = { get value() { return /x/; } };", "box.value"],
+  ["constructor", "class Box { constructor() { this.pattern = /x/; } }", "new Box()"],
+]) {
+  assertRejected(
+    workerSplit(`invoked-deferred-${name}`, `${declaration} export const result = ${invocation};`),
+    /deferred function .*unsupported literal/
+  );
 }

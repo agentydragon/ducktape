@@ -370,8 +370,8 @@ partial def needsOpaqueContext (j : Json) (checkPrivateNames := false) : Bool :=
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
 private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : Bool)
-    (arity : Nat) (reason : String) : Except String Func := do
-  if needsOpaqueContext j (checkPrivateNames := kind == .asyncFn) then throw reason
+    (arity : Nat) (reason : String) (checkPrivateNames := true) : Except String Func := do
+  if needsOpaqueContext j checkPrivateNames then throw reason
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
@@ -569,8 +569,8 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     throw "unsupported generator function"
   let parameters ← j.getObjValAs? (Array Json) "params"
   let tags ← parameters.mapM fun param => field param "type"
+  let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
   if async then
-    let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
     -- makeFunc captures the enclosing this as well as named cells. No async
     -- callable enters the ordinary function evaluator.
     return ← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics"
@@ -609,8 +609,8 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     linkedExpr profile imports true "" body |>.map (fun e => [.ret e])
   else throw "expected a function body block"
   if let .error reason := lowered then
-    if !hasDefaults && (kind == .normal || kind == .arrow) then
-      return ← deferredFunction j kind name self params.size reason
+    return ← deferredFunction j kind name self arity reason
+      (checkPrivateNames := hasDefaults || kind == .method || kind == .classCtor)
   let stmts ← lowered
   let functions := (funDecls stmts).map Func.name
   let bodyVars := if hasDefaults || !functions.isEmpty then varNamesOf stmts else []
@@ -625,7 +625,6 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     -- it cannot shadow a reference in a default or merge a body's var with the parameter cell.
     if bodyVars.any (fun x => bound.contains x || defaultReads.contains x) then
       throw "body var overlaps named default parameters or their references"
-    let arity := (params.toList.takeWhile fun p => p.2.isNone).length
     let slots := params.zipIdx.toList.map fun (_, i) => s!":parameter:{i}"
     let initializers := (params.toList.zip slots).map fun ((x, defaultValue), slot) =>
       Stmt.decl .let_ x (withBindingDefault slot defaultValue)
