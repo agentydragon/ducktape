@@ -42,7 +42,7 @@ from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
-from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
+from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, gnome_session, string_reply, wait_until
 
 _EXTENSION_ZIP = "ducktape/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"
@@ -156,6 +156,7 @@ def session(
         object_path=_TEST_DBUS_PATH,
         environment={"AI_QUOTA_FIXTURE": f"/fixtures/{_EMPTY_FIXTURE}.json"},
         display_size=(1280, 1024),
+        compile_extension_schemas=True,
     ) as session:
         yield session
 
@@ -469,6 +470,34 @@ def test_wire_fields(session: GnomeSession) -> None:
     assert "pp" not in windows[0]
     assert "-55 pp" in codex.details
     assert "internal-only" not in "\n".join(windows)
+
+
+def test_panel_pace_unit_setting(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "binding_summary")
+    claude = _ProviderPopup(session, "claude")
+    codex = _ProviderPopup(session, "codex")
+    zai = _ProviderPopup(session, "zai")
+    assert claude.panel == "+10 pp"
+    assert codex.panel == "+18 pp"
+    assert zai.panel == "-15 pp"
+    command = (
+        f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
+        "set org.gnome.shell.extensions.aiquota panel-show-pace-unit"
+    )
+    try:
+        result = session.exec(f"{command} false")
+        assert result.exit_code == 0, exec_output(result)
+        wait_until(
+            lambda: claude.panel == "+10" and codex.panel == "+18" and zai.panel == "-15", "panel did not update"
+        )
+        assert "+10 pp" in claude.details
+        geometry = session.open_menu()
+        capture_menu.capture(geometry, label="Panel pace without unit", checkpoint="compact-pace")
+    finally:
+        session.close_menu()
+        result = session.exec(f"{command} true")
+        assert result.exit_code == 0, exec_output(result)
+        wait_until(lambda: claude.panel == "+10 pp", "panel did not restore pace units")
 
 
 def test_binding_summary(session: GnomeSession) -> None:

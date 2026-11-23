@@ -237,6 +237,9 @@ const QuotaIndicator = GObject.registerClass(
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
+      this._openPreferences = () => extension.openPreferences();
+      this._settings = extension.getSettings();
+      this._settingsChangedId = this._settings.connect("changed::panel-show-pace-unit", () => this._renderPanel());
       this._displayTickId = null;
       this._destroyed = false;
       this._proxy = null;
@@ -723,6 +726,9 @@ const QuotaIndicator = GObject.registerClass(
       const apiProviders = this._providers.filter(({ id }) => isApiProvider(id));
       if (subscriptions.length) this._addProviderSection("Subscriptions", subscriptions);
       if (apiProviders.length) this._addProviderSection("API balances", apiProviders);
+      const preferences = new PopupMenu.PopupMenuItem("Preferences…");
+      preferences.connect("activate", () => this._openPreferences());
+      this.menu.addMenuItem(preferences);
     }
 
     _addProviderSection(title, providers) {
@@ -1055,7 +1061,8 @@ const QuotaIndicator = GObject.registerClass(
       } = quotaActivity(liveWindows, stale, state.currentlyOverPlan, state.paidCreditsActive);
       const tint = resetPending || stale ? "stale" : overPlan || paidCreditsActive ? "hot" : state.summaryTint;
       this._setTint(icon, paceLabel, tint);
-      const paceText = state.summaryIndex == null ? "" : (liveWindows[state.summaryIndex]?.pace ?? "");
+      const fullPace = state.summaryIndex == null ? "" : (liveWindows[state.summaryIndex]?.pace ?? "");
+      const paceText = this._settings.get_boolean("panel-show-pace-unit") ? fullPace : fullPace.replace(/ pp$/, "");
       const burning = state.burn?.in_peak === true ? "🔥" : "";
       if (resetPending) {
         paceLabel.set_text(`↻?${stale ? " ~" : ""}${burning}`);
@@ -1307,6 +1314,7 @@ const QuotaIndicator = GObject.registerClass(
       this._proxySignalIds = [];
       this._proxy = null;
       this._unexportTestInterface();
+      this._settings.disconnect(this._settingsChangedId);
       this._stopDisplayTick();
       if (this._menuOpenId) {
         this.menu.disconnect(this._menuOpenId);
