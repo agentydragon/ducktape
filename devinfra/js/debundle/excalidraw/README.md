@@ -107,6 +107,8 @@ text-to-diagram dialog loads, so that dialog cannot load in this build.
    chunks, the clsx chunk's export name in `vendor_marks.yaml`, vendor versions
    in `package.json` matching the ones Excalidraw resolves, and any selector the
    new source no longer matches, validating the new source/spec pair as one.
+   If the pin introduces a `named_from_default`, `named_from_module_default` or
+   `named_from_json_default` vendor wrapper, exercise it in the spec and browser smoke.
 
 ## License
 
