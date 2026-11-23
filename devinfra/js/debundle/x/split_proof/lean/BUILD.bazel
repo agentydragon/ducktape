@@ -303,6 +303,7 @@ lean_library(
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Run.lean",
         "EsmSplit/CoreJS/Syntax.lean",
+        "EsmSplit/CoreJS/SyntaxMatch.lean",
         "EsmSplit/CoreJS/Value.lean",
     ],
     deps = [":estree"],
