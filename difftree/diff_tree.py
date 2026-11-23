@@ -9,8 +9,6 @@ This module handles the VIEW layer - rendering TreeNode data with:
 Takes immutable TreeNode from tree.py and renders it to Rich console output.
 """
 
-from io import StringIO
-
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.table import Table
 from rich.text import Text
@@ -38,21 +36,7 @@ class DiffTree:
         nodes_in_order: list[TreeNode] = []
         tree = self._build_tree_structure(self.root, nodes_in_order, depth=0)
 
-        # Render tree to capture its visual structure
-        # Use a temporary console that doesn't output to avoid double printing
-        temp_output = StringIO()
-        temp_console = Console(
-            file=temp_output,
-            width=options.max_width or 80,
-            legacy_windows=False,
-            force_terminal=True,  # Force ANSI codes to preserve styling
-            color_system="standard" if console._color_system else None,  # Match parent console
-        )
-        temp_console.print(tree)
-
-        # Parse the rendered output into lines
-        tree_output = temp_output.getvalue()
-        tree_lines = [Text.from_ansi(line) for line in tree_output.rstrip("\n").split("\n")]
+        tree_lines = console.render_lines(tree, options.reset_height(), pad=False)
 
         table = Table.grid(padding=0)  # No padding to avoid space between bars
 
@@ -82,9 +66,11 @@ class DiffTree:
             row: list[Text | ProgressBar] = []
             for column in self.config.columns:
                 if column == Column.TREE:
-                    # Add space after tree column
-                    tree_with_space = Text.assemble(tree_line, " ")
-                    row.append(tree_with_space)
+                    label = Text()
+                    for segment in tree_line:
+                        label.append(segment.text, style=segment.style)
+                    label.append(" ")
+                    row.append(label)
                 elif column == Column.COUNTS:
                     additions_cell, deletions_cell = self._make_count_cells(node)
                     # Add space after additions, before deletions
