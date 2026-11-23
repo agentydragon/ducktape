@@ -193,8 +193,8 @@ private def localBinding (id : Json) : Except String Name := do
 
 /-- Flat object-pattern bindings in property evaluation order. Even an empty pattern
 checks coercibility, so it cannot be lowered to an empty sequence of property reads. -/
-private def linkedObjectPattern (j : Json) (binder : Json → Except String Name := localBinding) :
-    Except String (List (Name × Name)) := do
+private def linkedObjectPattern (j : Json) (binding : Json → Except String α) :
+    Except String (List (Name × α)) := do
   unless (← field j "type") == "ObjectPattern" do throw "expected an object pattern"
   let props ← j.getObjValAs? (List Json) "properties"
   if props.isEmpty then throw "unsupported empty object pattern"
@@ -205,9 +205,17 @@ private def linkedObjectPattern (j : Json) (binder : Json → Except String Name
       throw "expected a static object pattern property"
     let key ← moduleExportName (← p.getObjVal? "key")
     unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
-    let target ← p.getObjVal? "value"
-    unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
-    return (key, ← binder target)
+    return (key, ← p.getObjVal? "value" >>= binding)
+
+private def linkedPatternIdentifier (binder : Json → Except String Name) (target : Json) : Except String Name := do
+  unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
+  binder target
+
+/-- A default reads a saved value. An undefined value triggers the initializer. -/
+private def withBindingDefault (name : Name) (fallback : Option Expr) : Expr :=
+  match fallback with
+  | none => .var name
+  | some init => .cond (.binary .strictEq (.var name) .undef) init (.var name)
 
 /-- These expressions produce strings whenever they complete normally. Loose equality and inequality
 between two such operands never invoke numeric or object coercion. -/
@@ -577,7 +585,7 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
       bound := bound.push x
     | "ObjectPattern" =>
       if hasDefaults then throw "unsupported object pattern alongside default parameters"
-      let fields ← linkedObjectPattern param
+      let fields ← linkedObjectPattern param (linkedPatternIdentifier localBinding)
       let arg := s!":parameter:{i}"
       params := params.push (arg, none)
       for (key, x) in fields do
@@ -611,11 +619,7 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     let arity := (params.toList.takeWhile fun p => p.2.isNone).length
     let slots := params.zipIdx.toList.map fun (_, i) => s!":parameter:{i}"
     let initializers := (params.toList.zip slots).map fun ((x, defaultValue), slot) =>
-      let raw := Expr.var slot
-      let value := match defaultValue with
-        | some e => Expr.cond (.binary .strictEq raw .undef) e raw
-        | none => raw
-      Stmt.decl .let_ x value
+      Stmt.decl .let_ x (withBindingDefault slot defaultValue)
     return .withDefaults name kind self slots arity (initializers ++ [.block stmts])
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
@@ -671,18 +675,30 @@ private partial def linkedLocalDeclarations (profile : HostProfile) (imports : L
         | "let" => pure DeclKind.let_
         | "const" => pure DeclKind.const
         | _ => throw s!"unsupported declaration {kind}"
-      let bindings ← linkedObjectPattern id
+      let patternIdentifier := linkedPatternIdentifier localBinding
+      let bindings ← linkedObjectPattern id fun target => do
+        if (← field target "type") != "AssignmentPattern" then
+          return (← patternIdentifier target, none)
+        let name ← target.getObjVal? "left" >>= patternIdentifier
+        let fallback ← linkedExpr profile imports true name (← target.getObjVal? "right")
+        return (name, some fallback)
       let initializer ← d.getObjVal? "init"
       if initializer == .null then throw "object pattern declaration needs an initializer"
       let value ← linkedExpr profile imports true "" initializer
-      if let [(key, bound)] := bindings then
+      if let [(key, (bound, none))] := bindings then
         result := result.push (.decl declKind bound (.get value (.str key)))
       else
         -- Keep the initializer value while each read and binding runs in source order.
         let source := s!":destructure:{offset + result.size}"
         result := result.push (.decl .const source value)
-        for (key, bound) in bindings do
-          result := result.push (.decl declKind bound (.get (.var source) (.str key)))
+        for (key, bound, fallback) in bindings do
+          let property := Expr.get (.var source) (.str key)
+          if fallback.isSome then
+            let saved := s!":destructure:value:{offset + result.size}"
+            result := result.push (.decl .const saved property)
+            result := result.push (.decl declKind bound (withBindingDefault saved fallback))
+          else
+            result := result.push (.decl declKind bound property)
     else
       result := result.push (← Prod.snd <$> declaratorWith localBinding (linkedExpr profile imports true) kind d)
   return result
@@ -824,7 +840,7 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
       return ([name], s)
     unless kind == "var" do throw "unsupported module lexical object pattern"
     unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
-    let bindings ← linkedObjectPattern id moduleBinding
+    let bindings ← linkedObjectPattern id (linkedPatternIdentifier moduleBinding)
     let init ← d.getObjVal? "init"
     if init == .null then throw "object pattern declaration needs an initializer"
     let value ← linkedExpr profile imports false "" init
