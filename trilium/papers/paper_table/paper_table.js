@@ -108,8 +108,19 @@ class PaperTable {
     // TODO: pagination...
     this.$paperList.empty();
 
+    const finishedFilter =
+      {
+        [EXCLUDE]: "AND Finished.finishedReading IS NOT 'true'",
+        [ONLY]: "AND Finished.finishedReading = 'true'",
+      }[this.finishedReadingMode] ?? "";
+    const priorityFilter =
+      {
+        [EXCLUDE]: "AND Priority.priority IS NOT NULL",
+        [ONLY]: "AND Priority.priority IS NULL",
+      }[this.unprioritizedMode] ?? "";
+
     // TODO: check there's up to 1 attribute for each paper
-    let sql = `
+    const sql = `
       SELECT DISTINCT
         Papers.noteId,
         Papers.title,
@@ -160,29 +171,11 @@ class PaperTable {
           AND attributes.name = 'finishedReading'
       ) AS Finished USING (noteId)
       WHERE TRUE
-    `;
-
-    if (this.finishedReadingMode == INCLUDE) {
-    } else if (this.finishedReadingMode == EXCLUDE) {
-      // TODO: do this on the 0/1 level
-      sql += `AND NOT (Finished.finishedReading = 'true') OR Finished.finishedReading IS NULL `;
-    } else if (this.finishedReadingMode == ONLY) {
-      sql += `AND (Finished.finishedReading = 'true') `;
-    }
-
-    if (this.unprioritizedMode == INCLUDE) {
-    } else if (this.unprioritizedMode == EXCLUDE) {
-      // TODO: do this on the 0/1 level
-      sql += `AND Priority.priority IS NOT NULL`;
-    } else if (this.unprioritizedMode == ONLY) {
-      sql += `AND Priority.priority IS NULL`;
-    }
-
-    sql += `
+        ${finishedFilter}
+        ${priorityFilter}
       ORDER BY priority ASC
+      LIMIT 100
     `;
-    // TODO: variable limit
-    sql += "LIMIT 100";
 
     const rows = await api.runOnBackend(
       (sql) => {
@@ -198,27 +191,19 @@ class PaperTable {
   fillControls() {
     this.$controls.empty();
 
-    const finishedReadingButton = $("<input type=button>");
-    finishedReadingButton.val("Finished reading: " + this.finishedReadingMode);
-    finishedReadingButton.click(async () => {
-      const oldIndex = OPTIONS.indexOf(this.finishedReadingMode);
-      const newIndex = (oldIndex + 1) % OPTIONS.length;
-      this.finishedReadingMode = OPTIONS[newIndex];
-      finishedReadingButton.val("Finished reading: " + this.finishedReadingMode);
-      await this.fillPaperList();
-    });
-    this.$controls.append(finishedReadingButton);
-
-    const unprioritizedButton = $("<input type=button>");
-    unprioritizedButton.val("Unprioritized: " + this.unprioritizedMode);
-    unprioritizedButton.click(async () => {
-      const oldIndex = OPTIONS.indexOf(this.unprioritizedMode);
-      const newIndex = (oldIndex + 1) % OPTIONS.length;
-      this.unprioritizedMode = OPTIONS[newIndex];
-      unprioritizedButton.val("Unprioritized: " + this.unprioritizedMode);
-      await this.fillPaperList();
-    });
-    this.$controls.append(unprioritizedButton);
+    for (const [property, label] of [
+      ["finishedReadingMode", "Finished reading"],
+      ["unprioritizedMode", "Unprioritized"],
+    ]) {
+      const button = $("<input type=button>").val(`${label}: ${this[property]}`);
+      button.click(async () => {
+        const current = OPTIONS.indexOf(this[property]);
+        this[property] = OPTIONS[(current + 1) % OPTIONS.length];
+        button.val(`${label}: ${this[property]}`);
+        await this.fillPaperList();
+      });
+      this.$controls.append(button);
+    }
   }
 
   async render(root) {
