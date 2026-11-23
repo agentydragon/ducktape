@@ -70,13 +70,28 @@ private def jsonFixture := Json.mkObj [
   ("z", .num ⟨-20, 1⟩), ("a", .arr #[.null, .bool false]),
   ("q", .str "\"\\\n/- -- #eval λ"), ("b", .bool true)]
 
+private def wideJsonFixture : Json :=
+  Json.mkObj [("body", .arr #[.arr (Array.ofFn fun i : Fin 705 =>
+    Json.mkObj [("type", .str "Property"), ("key", .str s!"field{i.val}"),
+      ("computed", .bool false), ("method", .bool false), ("shorthand", .bool false),
+      ("value", .num ⟨-Int.ofNat i.val, 2⟩), ("kind", .str "init")])])]
+
 open Lean Elab in
-elab "quotedJsonFixture%" : term => do
-  let .ok stx := Parser.runParserCategory (← getEnv) `term (LinkedBehavior.jsonLiteral jsonFixture)
+elab "quotedJsonFixture%" n:ident : term => do
+  let fixture := if n.getId == `wide then wideJsonFixture else jsonFixture
+  let .ok stx := Parser.runParserCategory (← getEnv) `term (LinkedBehavior.jsonLiteral fixture)
     | throwError "could not parse the fixture AST literal"
   Term.elabTerm stx (some (mkConst ``Json))
 
-theorem jsonLiteralRoundTrip : quotedJsonFixture% = jsonFixture := rfl
+theorem jsonLiteralRoundTrip : (quotedJsonFixture% small) = jsonFixture := rfl
+
+-- The recursion budget here applies only to elaborating the generated syntax.
+set_option maxRecDepth 512 in
+private def quotedWideJsonFixture : Json := quotedJsonFixture% wide
+
+#eval do
+  unless quotedWideJsonFixture == wideJsonFixture do
+    throw (IO.userError "wide JSON literal did not round-trip")
 
 private def node (kind : String) (fields : List (String × Json)) : Json :=
   Json.mkObj (("type", .str kind) :: fields)
