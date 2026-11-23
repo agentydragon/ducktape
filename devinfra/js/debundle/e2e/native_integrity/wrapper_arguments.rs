@@ -5,27 +5,20 @@ use debundle_e2e_support::*;
 // receiver it reaches the `%Map%` global slot `factory()` constructs from.
 
 const WRAPPER: &str = "export const wrap = (callback, cache) => () => (cache || callback((cache = { value: {} }).value, cache), cache.value);\n";
-const PROVIDER: &str = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const NAMESPACE: &str = "import { wrap } from './wrapper.js';\nexport const load = wrap(function(output, container) { (function(root, fill) { typeof output === 'object' && typeof container < 'u' ? fill(output) : (root = globalThis, root.shared = root.shared || {}, root.shared.Map = {}, fill(root.shared.Map)); })(output, function(value) { value.ready = true; }); });\nload();\n";
 
-fn opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
-    FixtureOpts::new(
-        "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
-        vec![
-            logical_module("queue", &binding_members(["queue", "readLater"])),
-            logical_module("later", &[Member::new("Later")]),
-        ],
-    ).with_extra_chunks(chunks)
+fn wrapper_chunks<'a>(wrapper: &'a str, namespace: &'a str) -> [(&'a str, &'a str); 3] {
+    [
+        source_record_namespace::PEER,
+        ("static/wrapper", wrapper),
+        ("static/namespace", namespace),
+    ]
 }
 
 #[test]
 fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
-    let chunks = [
-        ("static/peer", PROVIDER),
-        ("static/wrapper", WRAPPER),
-        ("static/namespace", NAMESPACE),
-    ];
-    let fixture = run_fixture_with_graphs(opts(&chunks));
+    let chunks = wrapper_chunks(WRAPPER, NAMESPACE);
+    let fixture = run_fixture_with_graphs(source_record_namespace::opts(&chunks));
     assert_preserved_entry_output(&fixture, "0 Later\n");
     let program_graph = fixture.program_graph();
     let witness = program_graph
@@ -87,12 +80,7 @@ fn unsupported_or_escaping_callback_entries_keep_the_native_guard() {
         "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.store = class { constructor() { globalThis.shared.Map = {}; } }); }); load();",
         "import { wrap } from 'example:wrapper'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.Map = {}); });",
     ] {
-        let chunks = [
-            ("static/peer", PROVIDER),
-            ("static/wrapper", WRAPPER),
-            ("static/namespace", namespace),
-        ];
-        expect_atomic_conflict_rejection(opts(&chunks), &["queue", "later"], &[]);
+        source_record_namespace::expect_split_conflict(&wrapper_chunks(WRAPPER, namespace));
     }
 }
 
@@ -106,12 +94,7 @@ fn callback_return_or_unknown_argument_wrapper_does_not_supply_entry_coverage() 
         "export const wrap = (callback, cache) => () => (cache || callback((cache = { value: {} }).value, cache), globalThis.consume(callback), cache.value);",
         "export const wrap = (callback, cache) => () => (cache || callback((cache = { value: {} }).value, cache), cache.value = callback, cache.value);",
     ] {
-        let chunks = [
-            ("static/peer", PROVIDER),
-            ("static/wrapper", wrapper),
-            ("static/namespace", NAMESPACE),
-        ];
-        expect_atomic_conflict_rejection(opts(&chunks), &["queue", "later"], &[]);
+        source_record_namespace::expect_split_conflict(&wrapper_chunks(wrapper, NAMESPACE));
     }
 }
 

@@ -4091,21 +4091,9 @@ fn unused_or_ineligible_source_record_factory_has_no_graph_proof_use() {
     }
 }
 
-const SOURCE_RECORD_NAMESPACE_PEER: &str = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
-
-fn source_record_namespace_opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
-    FixtureOpts::new(
-        "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
-        vec![
-            logical_module("queue", &binding_members(["queue", "readLater"])),
-            logical_module("later", &[Member::new("Later")]),
-        ],
-    ).with_extra_chunks(chunks)
-}
-
 fn source_record_with_global_namespace(namespace: &str) -> Fixture {
-    run_fixture(source_record_namespace_opts(&[
-        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+    run_fixture(source_record_namespace::opts(&[
+        source_record_namespace::PEER,
         ("static/namespace", namespace),
     ]))
 }
@@ -4148,14 +4136,10 @@ fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
         "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; globalThis[key].for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
         "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; const alias = globalThis[key]; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
     ] {
-        expect_atomic_conflict_rejection(
-            source_record_namespace_opts(&[
-                ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
-                ("static/namespace", namespace),
-            ]),
-            &["queue", "later"],
-            &[],
-        );
+        source_record_namespace::expect_split_conflict(&[
+            source_record_namespace::PEER,
+            ("static/namespace", namespace),
+        ]);
     }
 }
 
@@ -4176,15 +4160,11 @@ fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
         ),
     ] {
         let namespace = format!("import './replacement.js';\n{namespace}");
-        expect_atomic_conflict_rejection(
-            source_record_namespace_opts(&[
-                ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
-                ("static/namespace", &namespace),
-                ("static/replacement", replacement),
-            ]),
-            &["queue", "later"],
-            &[],
-        );
+        source_record_namespace::expect_split_conflict(&[
+            source_record_namespace::PEER,
+            ("static/namespace", &namespace),
+            ("static/replacement", replacement),
+        ]);
     }
 }
 
@@ -4197,17 +4177,13 @@ fn source_record_native_integrity_handles_long_aliases_and_cycles() {
     namespace.push_str("export function publish(value) { globalThis[key256] = value; }\n");
     let fixture = source_record_with_global_namespace(&namespace);
     assert_preserved_entry_output(&fixture, "0 Later\n");
-    expect_atomic_conflict_rejection(
-        source_record_namespace_opts(&[
-            ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
-            (
-                "static/namespace",
-                "var first = second; var second = first; export function publish(value) { globalThis[first] = value; }",
-            ),
-        ]),
-        &["queue", "later"],
-        &[],
-    );
+    source_record_namespace::expect_split_conflict(&[
+        source_record_namespace::PEER,
+        (
+            "static/namespace",
+            "var first = second; var second = first; export function publish(value) { globalThis[first] = value; }",
+        ),
+    ]);
 }
 
 #[test]
@@ -4215,7 +4191,7 @@ fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
     let source = "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nglobalThis.saved = readLater;\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
     let namespace = "const key = Symbol.for('example.registry');\nglobalThis[key] = Symbol;\nglobalThis[key].for = () => 'Map';\nglobalThis[Symbol.for('other.registry')] = function () { try { globalThis.saved(); return { size: 'ready' }; } catch (error) { return { size: error.name }; } };\n";
     let chunks = [
-        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+        source_record_namespace::PEER,
         ("static/namespace", namespace),
     ];
     let fixture = run_fixture(

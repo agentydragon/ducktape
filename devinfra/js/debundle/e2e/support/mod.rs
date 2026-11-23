@@ -15,6 +15,7 @@ pub mod process;
 mod runtime;
 pub mod saved_analysis;
 mod serialized;
+pub mod source_record_namespace;
 mod tree_assertions;
 mod unescaped_local_callable;
 mod workspace;
