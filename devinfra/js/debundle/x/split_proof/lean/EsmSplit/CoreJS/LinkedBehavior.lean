@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.Fuel
+import EsmSplit.CoreJS.Scope
 
 namespace CoreJS.LinkedBehavior
 
@@ -95,5 +96,16 @@ theorem ends_iff {source candidate : Program} (h : Equivalent source candidate) 
     exact hr.unique hs ▸ hc
   · intro hr
     exact hr.unique hc ▸ hs
+
+/-- A successful link together with the resulting scopes and initial execution state. -/
+structure CheckedLink (p : Program) (w : World) where
+  linked : List (Module × Env)
+  ready : State w
+  equation : link p (initialState w p.regions) = .ok linked ready
+
+theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : CheckedLink p w) :
+    runProgram w fuel p = runUnits fuel (unitsOf checked.linked) checked.ready := by
+  unfold runProgram
+  rw [M.bind_apply, checked.equation]
 
 end CoreJS.LinkedBehavior

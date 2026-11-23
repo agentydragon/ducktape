@@ -73,14 +73,11 @@ eslint_test(
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
 _SHIFT_FUZZ_DATA = [
-    _SEEDED_RANDOM,
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
-    ":node_modules/shift-codegen",
-    ":node_modules/shift-fuzzer",
-    ":node_modules/shift-parser",
     "shift_fuzz_worker.mjs",
-    ":modern_syntax",
+    ":shift_candidate",
+    ":syntax_inventory",
     ":scope_metadata",
     "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -246,7 +243,6 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_dense_array_batch_test",
         "linked_flat_patterns_test",
         "linked_function_declaration_test",
-        "linked_host_profile_test",
         "linked_identifier_assignment_test",
         "linked_if_test",
         "linked_import_cells_test",
@@ -272,6 +268,15 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_wide_table_reversal_test",
     ]
 ]
+
+js_test(
+    name = "linked_host_profile_test",
+    size = "medium",
+    data = _LINKED_PROGRAMS_TEST_DATA,
+    entry_point = "linked_host_profile_test.mjs",
+    env = _LINKED_PROGRAMS_TEST_ENV,
+    shard_count = 3,
+)
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
@@ -736,8 +741,9 @@ js_test(
     entry_point = "modern_syntax_test.mjs",
 )
 
-# The coverage audit: which constructs each generator produces. `COVERAGE.md` is its output, written by hand with
-# `node coverage_audit.mjs`; the Lean sources it reads are not runfiles, so this test covers the parts.
+_ANALYSIS_INVENTORY = "//devinfra/js/debundle/x/split_proof/lean:analysis_inventory_sources"
+
+# Sample the generator coverage report against the same Lean sources the standalone audit reads.
 js_test(
     name = "coverage_audit_test",
     data = _FUZZ_SOURCES + [
@@ -746,16 +752,14 @@ js_test(
         ":analysis_inventory",
         ":coverage_audit",
         ":frontend",
-        ":modern_syntax",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
-        ":node_modules/shift-codegen",
-        ":node_modules/shift-fuzzer",
-        ":node_modules/shift-parser",
         ":scope_metadata",
         ":syntax_inventory",
+        _ANALYSIS_INVENTORY,
     ],
     entry_point = "coverage_audit_test.mjs",
+    no_copy_to_bin = [_ANALYSIS_INVENTORY],
 )
 
 # The host inventory: which standard and host features a set of JavaScript files uses.
@@ -1255,17 +1259,27 @@ js_library(
 )
 
 js_library(
+    name = "shift_candidate",
+    srcs = ["shift_candidate.mjs"],
+    # shift-fuzzer 3.0.0 requires shift-parser/src/utils.js at runtime.
+    data = [":node_modules/shift-parser"],
+    deps = [
+        ":modern_syntax",
+        ":node_modules/shift-codegen",
+        ":node_modules/shift-fuzzer",
+        ":syntax_inventory",
+        _SEEDED_RANDOM,
+    ],
+)
+
+js_library(
     name = "coverage_audit",
     srcs = ["coverage_audit.mjs"],
     deps = [
         ":analysis_inventory",
-        ":modern_syntax",
-        ":node_modules/acorn",
-        ":node_modules/shift-codegen",
-        ":node_modules/shift-fuzzer",
+        ":shift_candidate",
         ":spawn_and_wait",
         ":syntax_inventory",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
     ],
 )
 

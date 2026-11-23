@@ -193,6 +193,7 @@ py_library(
         "//agentplane/history_service/fold:__pkg__",
         "//agentplane/sampler:__pkg__",
         "//agentplane/session_dispatcher:__pkg__",
+        "//agentplane/system_tests/vm:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],
     deps = [

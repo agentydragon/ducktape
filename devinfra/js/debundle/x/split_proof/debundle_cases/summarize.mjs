@@ -1,7 +1,8 @@
 // Markdown tables from the JSON lines `run_cases.mjs` wrote.
+// Uses Map.groupBy (Node.js 21+).
 //
 //   node summarize.mjs results/cases.jsonl > results/summary.md
-import { groupBy, markdownTable, readJsonLines } from "../reporting.mjs";
+import { markdownTable, readJsonLines } from "../reporting.mjs";
 
 const rows = readJsonLines(process.argv.slice(2));
 const kind = (r) => r.outcome.split(":")[0];
@@ -20,7 +21,7 @@ const outcomeOrder = [
   "unsupported",
   "error",
 ];
-const outcomes = groupBy(rows, kind);
+const outcomes = Map.groupBy(rows, kind);
 const out = [];
 
 out.push("# debundle e2e cases against the Lean checker", "");
@@ -81,7 +82,7 @@ out.push("## Cases the adapter does not run, by cause", "");
 out.push(
   markdownTable(
     ["Cause", "Cases", "debundle accepts", "debundle rejects", "Examples"],
-    [...groupBy(unsupported, cause)].sort(byCount).map(([c, rs]) => [
+    [...Map.groupBy(unsupported, cause)].sort(byCount).map(([c, rs]) => [
       c,
       rs.length,
       rs.filter((r) => r.expect === "accept").length,
@@ -116,7 +117,7 @@ out.push("## By area", "");
 out.push(
   markdownTable(
     ["Area", "Entries", "Agree", "Strict", "Unsound or lenient", "Refusal tests", "Not run"],
-    [...groupBy(rows, (r) => r.area)].sort(byCount).map(([area, rs]) => {
+    [...Map.groupBy(rows, (r) => r.area)].sort(byCount).map(([area, rs]) => {
       const n = (pred) => rs.filter((r) => pred(kind(r))).length;
       return [
         area,

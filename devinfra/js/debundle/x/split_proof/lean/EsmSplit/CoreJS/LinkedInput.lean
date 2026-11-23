@@ -75,9 +75,10 @@ private def parse (profile : HostProfile) (path : String) (nodes : Array Json)
           exports := exports.push (← FromESTree.exportSpec sp)
       else
         unless specs.isEmpty do throw "expected an inline declaration export"
-        let (name, s) ← FromESTree.linkedDeclaration names (← numbered declaration) profile
+        let (bindings, s) ← FromESTree.linkedDeclaration names (← numbered declaration) profile
         units := units.push (i, s, declaration)
-        exports := exports.push (name, name)
+        for binding in bindings do
+          exports := exports.push (binding, binding)
     | _ =>
       let s ← (FromESTree.linkedUnit names (← numbered j) profile).mapError fun why => s!"statement {i}: {why}"
       units := units.push (i, s, j)

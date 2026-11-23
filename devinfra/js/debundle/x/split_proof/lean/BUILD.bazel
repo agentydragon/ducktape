@@ -6,6 +6,16 @@ load(":splitter_launcher.bzl", "splitter_launcher")
 
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
+filegroup(
+    name = "analysis_inventory_sources",
+    srcs = [
+        "EsmSplit/Effects.lean",
+        "EsmSplit/IntrinsicMembers.lean",
+        "EsmSplit/Intrinsics.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
 lean_library(
     name = "plan",
     srcs = [
@@ -39,11 +49,9 @@ lean_library(
 lean_library(
     name = "effects",
     srcs = [
-        "EsmSplit/Effects.lean",
-        "EsmSplit/IntrinsicMembers.lean",
-        "EsmSplit/Intrinsics.lean",
         "EsmSplit/Lower.lean",
         "EsmSplit/TranslateInput.lean",
+        ":analysis_inventory_sources",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
     deps = [":estree"],
@@ -318,6 +326,7 @@ lean_axiom_test(
         "EsmSplit/CoreJS/DeclarationArtifactsExamples.lean",
         "EsmSplit/CoreJS/HostFrame.lean",
         "EsmSplit/CoreJS/LinkedBehaviorExamples.lean",
+        "EsmSplit/CoreJS/LinkedPivot.lean",
         "EsmSplit/CoreJS/ReachabilityExamples.lean",
         "EsmSplit/CoreJS/RecordOrigin.lean",
         "EsmSplit/CoreJS/RequestAllocation.lean",
@@ -351,6 +360,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.HostFrame",
         "EsmSplit.CoreJS.LinkedBehaviorExamples",
         "EsmSplit.CoreJS.LinkedCells",
+        "EsmSplit.CoreJS.LinkedPivot",
         "EsmSplit.CoreJS.LiteralRecord",
         "EsmSplit.CoreJS.Move",
         "EsmSplit.CoreJS.OpaqueFrame",
@@ -478,6 +488,7 @@ lean_axiom_test(
         "CoreJS.ReachFrame.runUnit_access",
         "CoreJS.ReachFrame.local_commuteOn",
         "CoreJS.runUnits_reachFrame_pivot",
+        "CoreJS.LinkedBehavior.normalEquivalent_of_pivot",
         "CoreJS.local_frame_units_commute",
         "CoreJS.frame_local_units_commute",
         "CoreJS.decl_opaque_world_commute",

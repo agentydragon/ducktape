@@ -6,6 +6,7 @@ import {
   arrow,
   block,
   call,
+  caseShard,
   conditional,
   exportNamed,
   expression,
@@ -26,6 +27,7 @@ import {
 const profile = path.join(root, "page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const entry = "entry.mjs";
+const includesCase = caseShard();
 
 for (const [binding, defaulted] of [
   ["ambient", false],
@@ -33,6 +35,8 @@ for (const [binding, defaulted] of [
   ["ambient", true],
   ["local", true],
 ]) {
+  const name = defaulted ? `${binding}-default` : binding;
+  if (!includesCase(name)) continue;
   const local = binding === "local";
   const parameters = local ? [id("window")] : [];
   const type = {
@@ -44,7 +48,7 @@ for (const [binding, defaulted] of [
   if (defaulted) parameters.push({ type: "AssignmentPattern", left: id("value"), right: type });
   const read = arrow(parameters, defaulted ? id("value") : type);
   const test = fixture(
-    defaulted ? `${binding}-default` : binding,
+    name,
     program([
       variable("const", "read", read),
       variable("const", "result", call(id("read"), local ? [literal(42)] : [])),
@@ -73,7 +77,7 @@ for (const [binding, defaulted] of [
 
 // Preserve the ambient symbol operations and the captured initializer across the split.
 // The provider defers invoking the factory until after initialization.
-{
+if (includesCase("deferred-ambient-symbol")) {
   const dir = path.join(root, "deferred-ambient-symbol");
   const files = prepare(dir, {
     source: `
@@ -102,21 +106,25 @@ for (const [binding, defaulted] of [
   }
 }
 
-const caughtSymbol = fixture(
-  "caught-opaque-symbol-for",
-  'const read = () => { try { return Symbol.for((() => { throw "argument"; })()); } catch { return "caught"; } }; const result = read(); export { result };'
-);
-assert.match(caughtSymbol.run().reason, /unknown.*ambient member Symbol\.for is reached/);
-assert(!existsSync(caughtSymbol.out));
+if (includesCase("caught-opaque-symbol-for")) {
+  const caughtSymbol = fixture(
+    "caught-opaque-symbol-for",
+    'const read = () => { try { return Symbol.for((() => { throw "argument"; })()); } catch { return "caught"; } }; const result = read(); export { result };'
+  );
+  assert.match(caughtSymbol.run().reason, /unknown.*ambient member Symbol\.for is reached/);
+  assert(!existsSync(caughtSymbol.out));
+}
 
-const reachedIterator = fixture(
-  "reached-symbol-iterator",
-  "const read = () => Symbol.iterator; const result = read(); export { result };"
-);
-assert.match(reachedIterator.run().reason, /unknown.*ambient member Symbol\.iterator is reached/);
-assert(!existsSync(reachedIterator.out));
+if (includesCase("reached-symbol-iterator")) {
+  const reachedIterator = fixture(
+    "reached-symbol-iterator",
+    "const read = () => Symbol.iterator; const result = read(); export { result };"
+  );
+  assert.match(reachedIterator.run().reason, /unknown.*ambient member Symbol\.iterator is reached/);
+  assert(!existsSync(reachedIterator.out));
+}
 
-{
+if (includesCase("deferred-ambient-object")) {
   const dir = path.join(root, "deferred-ambient-object");
   const files = prepare(dir, {
     source: `
@@ -148,28 +156,32 @@ assert(!existsSync(reachedIterator.out));
   }
 }
 
-const reachedBody = fixture(
-  "reached-retained-body",
-  `const read = () => {
+if (includesCase("reached-retained-body")) {
+  const reachedBody = fixture(
+    "reached-retained-body",
+    `const read = () => {
     const unopened = () => document.title;
     const called = () => Object.keys({});
     try { return called(); } catch { return "caught"; }
   };
   const result = read();
   export { result };`
-);
-assert.match(reachedBody.run().reason, /unknown.*deferred function called: unsupported global Object/);
-assert(!existsSync(reachedBody.out));
+  );
+  assert.match(reachedBody.run().reason, /unknown.*deferred function called: unsupported global Object/);
+  assert(!existsSync(reachedBody.out));
+}
 
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {
+    const name = `opaque-error-${args.length}-${reached}`;
+    if (!includesCase(name)) continue;
     const construction = { type: "NewExpression", callee: id("Error"), arguments: args };
     const source = program([
       variable("const", "read", arrow([id("fail")], conditional(id("fail"), construction, literal(42)))),
       variable("const", "result", call(id("read"), [literal(reached)])),
       exportNamed([["result", "result"]]),
     ]);
-    const test = fixture(`opaque-error-${args.length}-${reached}`, source);
+    const test = fixture(name, source);
     assert.match(test.run().reason, /unsupported global Error/);
     const verdict = test.run("--host-contract", profile);
     if (reached) {
@@ -187,33 +199,39 @@ for (const args of [[], [literal("absent")]]) {
 }
 
 // A catch cannot turn unknown host construction into a proved normal return.
-const caught = fixture(
-  "caught-opaque-error",
-  'const read = () => { try { throw new Error((() => { throw "argument"; })()); } catch { return 7; } }; const result = read(); export { result };'
-);
-assert.match(caught.run("--host-contract", profile).reason, /unknown.*ambient constructor Error is reached/);
-assert(!existsSync(caught.out));
+if (includesCase("caught-opaque-error")) {
+  const caught = fixture(
+    "caught-opaque-error",
+    'const read = () => { try { throw new Error((() => { throw "argument"; })()); } catch { return 7; } }; const result = read(); export { result };'
+  );
+  assert.match(caught.run("--host-contract", profile).reason, /unknown.*ambient constructor Error is reached/);
+  assert(!existsSync(caught.out));
+}
 
-const lexical = fixture(
-  "shadowed-host-bindings",
-  `const read = () => {
+if (includesCase("shadowed-host-bindings")) {
+  const lexical = fixture(
+    "shadowed-host-bindings",
+    `const read = () => {
     class Error { value = "local"; }
     const Symbol = { for: (key) => key };
     return Symbol.for((new Error()).value);
   };
   const result = read(); export { result };`
-);
-const localVerdict = lexical.run("--host-contract", profile);
-assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
-assert.deepEqual(localVerdict.assumptions, []);
-for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
-  assert.equal((await import(pathToFileURL(file).href)).result, "local");
+  );
+  const localVerdict = lexical.run("--host-contract", profile);
+  assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
+  assert.deepEqual(localVerdict.assumptions, []);
+  for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
+    assert.equal((await import(pathToFileURL(file).href)).result, "local");
+  }
 }
 
 // Both constructs occur in the same program. The crossing is valid in a page.
 // In a realm without window, it reaches the deferred constructor in the split only.
 for (const pageSkipsError of [true, false]) {
-  const scope = path.join(root, `profile-reversal-${pageSkipsError}`);
+  const name = `profile-reversal-${pageSkipsError}`;
+  if (!includesCase(name)) continue;
+  const scope = path.join(root, name);
   const order = ["worker.mjs", "reader.mjs", "state.mjs"];
   const files = prepare(scope, {
     source: program([
@@ -280,13 +298,15 @@ for (const pageSkipsError of [true, false]) {
 }
 
 for (const active of [false, true]) {
+  const name = `page-url-${active}`;
+  if (!includesCase(name)) continue;
   const useURL = {
     type: "NewExpression",
     callee: id("URL"),
     arguments: [literal("https://example.org/")],
   };
   const test = fixture(
-    `page-url-${active}`,
+    name,
     program([
       variable("const", "make", arrow([id("parse")], conditional(id("parse"), useURL, literal("help")))),
       variable("const", "result", call(id("make"), [literal(active)])),
