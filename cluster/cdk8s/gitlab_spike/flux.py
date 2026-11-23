@@ -29,17 +29,13 @@ class Variables(BaseModel):
 def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, GITOPS_NAME, disable_resource_name_hashes=True)
     runfiles_root = Runfiles.CreateOrRaise().root()
-    old = terraform.gitops_terraform(
-        chart,
-        "terraform",
-        module=module,
-        variables=Variables(
-            human_ssh_keys={
-                host: SshKey(key=(runfiles_root / f"ducktape/ssh_keys/{host}-forgejo.pub").read_text().strip())
-                for host in ("atlas", "iguana", "rugged", "wyrm2")
-            }
-        ),
+    variables = Variables(
+        human_ssh_keys={
+            host: SshKey(key=(runfiles_root / f"ducktape/ssh_keys/{host}-forgejo.pub").read_text().strip())
+            for host in ("atlas", "iguana", "rugged", "wyrm2")
+        }
     )
+    old = terraform.gitops_terraform(chart, "terraform", module=module, variables=variables)
     old.add_json_patch(JsonPatch.add("/spec/suspend", True))
     identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
     for access_id, namespace, reads, writes in (
@@ -60,14 +56,9 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         "workspace",
         name="gitlab-spike",
         provider_config_name="crossplane-gitlab-spike",
-        management_policies=["Observe", "Create", "Update"],
+        management_policies=["Observe"],
         kubernetes_identity=KUBERNETES_IDENTITY,
-        variables=Variables(
-            human_ssh_keys={
-                host: SshKey(key=(runfiles_root / f"ducktape/ssh_keys/{host}-forgejo.pub").read_text().strip())
-                for host in ("atlas", "iguana", "rugged", "wyrm2")
-            }
-        ),
+        variables=variables,
         generated_versions=True,
     )
     workspace.add_json_patch(JsonPatch.add("/metadata/annotations/crossplane.io~1paused", "true"))
