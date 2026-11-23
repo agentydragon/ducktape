@@ -219,7 +219,7 @@ private def linkedObject (lower : Json → Except String Expr) (j : Json) : Exce
     let value ← match ← field v "type" with
       | "LogicalExpression" => lower v
       | "Literal" | "Identifier" | "ObjectExpression" | "ArrayExpression" | "MemberExpression"
-      | "CallExpression" | "SequenceExpression" => lower v
+      | "CallExpression" | "SequenceExpression" | "AssignmentExpression" => lower v
       | kind => throw s!"unsupported object property value {kind}"
     props := props.push (.init (.str key) value)
   return .obj props.toList
@@ -241,8 +241,8 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
     result := .binary .add result (← cooked quasi)
   return result
 
-/-- Decode a property access once, retaining the receiver for a call. The interpreter
-converts computed keys when it reads the property and refuses object coercion. -/
+/-- Decode a property access, retaining the receiver and the unevaluated key for
+the interpreter's property read, call, or write. -/
 private def linkedMember (lower : Json → Except String Expr) (j : Json) : Except String (Expr × Expr) := do
   if ← j.getObjValAs? Bool "optional" then throw "unsupported optional member access"
   let obj ← j.getObjVal? "object"
@@ -275,6 +275,16 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "MemberExpression" =>
     let (base, key) ← linkedMember (linkedExpr imports inFunction "") j
     return .get base key
+  | "AssignmentExpression" =>
+    let op ← field j "operator"
+    unless op == "=" do throw s!"unsupported linked assignment operator {op}"
+    let target ← j.getObjVal? "left"
+    let targetKind ← field target "type"
+    unless targetKind == "MemberExpression" do throw s!"unsupported linked assignment target {targetKind}"
+    -- ECMAScript infers an anonymous RHS function's name only for an identifier target.
+    let lower := linkedExpr imports inFunction ""
+    let (base, key) ← linkedMember lower target
+    return .assign (.member base key) (← lower (← j.getObjVal? "right"))
   | "ObjectExpression" => linkedObject (linkedExpr imports inFunction "") j
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"

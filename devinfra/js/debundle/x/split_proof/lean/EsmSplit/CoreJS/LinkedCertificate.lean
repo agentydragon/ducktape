@@ -59,6 +59,11 @@ private partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
+  | .assign (.member o k) rhs, .assign (.member o' k') rhs' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨value⟩ ← exprEq rhs rhs'
+    return ⟨base ▸ key ▸ value ▸ rfl⟩
   | .callMethod o k args, .callMethod o' k' args' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'

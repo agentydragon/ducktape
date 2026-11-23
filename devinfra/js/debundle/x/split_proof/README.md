@@ -79,6 +79,8 @@ evaluating arguments, and passes the receiver as `this`. Ordinary functions have
 receiver and arrows capture the surrounding `this`. Optional chains, private names, and
 `super` are outside the linked fragment.
 
+Simple assignments to dot and computed properties, such as `record.name = value` and `record[key()] = value`, use CoreJS strict property writes. CoreJS evaluates the receiver, computed key expression, and right-hand side in that order, writes through the original receiver, and returns the assigned value. Object-key coercion, host writes, and array writes can produce an unknown result during initialization. Compound assignments and assignments to identifier targets remain outside the linked lowering.
+
 Linked object literals may contain distinct identifier or string keys. Property values may be supported primitive literals, binding reads, nested object and dense array literals, nonoptional member reads, supported calls, or sequence expressions. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. If one property's value throws, evaluation stops before the following property. Computed property definitions, `__proto__`, methods, accessors, and spread are outside this fragment. A direct function expression or arrow as a property value is also outside the fragment, since an anonymous function in that position would take its name from the property key.
 
 A logical expression in a static data property, such as `{mode: config.mode || "default"}`, evaluates its left operand first. Only the selected operand supplies the property value, and an abrupt completion stops construction of the record.
