@@ -363,6 +363,7 @@ py_test(
         ":changelog",
         ":config",
         ":conftest",
+        ":events",
         "//:conftest",
         "//testing:asgi",
         "//util:playwright",

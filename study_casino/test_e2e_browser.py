@@ -15,12 +15,14 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from playwright.async_api import Page, Route
+from playwright.async_api import Page, Route, expect
 
+import study_casino.app
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
 from study_casino.conftest import post_json
+from study_casino.events import Card
 from testing.asgi import serve_app_sync
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
@@ -105,6 +107,93 @@ async def test_roulette_spin_sets_finite_wheel_transform(page: Page, casino_serv
     )
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during roulette spin\n{logs}"
+
+
+@pytest.fixture
+def blackjack_shoe(monkeypatch: pytest.MonkeyPatch) -> None:
+    # From the end: player 9 and 8, dealer 7 and K, then a 2 for hit or double.
+    shoe = [Card(rank=rank, suit="♠") for rank in ("2", "K", "8", "7", "9")]
+    monkeypatch.setattr(study_casino.app, "make_shoe", lambda _rng: shoe)
+
+
+@pytest.mark.usefixtures("blackjack_shoe")
+@pytest.mark.parametrize(("move", "credits", "payout"), [("stand", 15, 20), ("double", 20, 40)])
+async def test_blackjack_hides_hole_card_until_settlement(
+    page: Page, casino_server: str, move: str, credits: int, payout: int
+) -> None:
+    await asyncio.to_thread(_seed_credits, casino_server, credits)
+    logs = _attach_logs(page)
+    await page.goto(casino_server)
+    await page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    await page.get_by_role("button", name="casino").click()
+    await page.get_by_role("button", name="blackjack").click()
+    deal = page.get_by_role("button", name="Deal · 10 cr")
+    dealer = page.get_by_role("group", name="Dealer hand")
+    player = page.get_by_role("group", name="Player hand")
+    dealer_upcard = dealer.get_by_text("7 + ?", exact=True)
+    dealer_hole_card = dealer.get_by_text("K", exact=True)
+
+    async with page.expect_response("**/casino/blackjack/deal") as dealt:
+        await deal.click()
+    hand = (await (await dealt.value).json())["result"]
+    assert hand["dealer_cards"] == [{"rank": "7", "suit": "♠"}]
+    assert hand["dealer_value"] == 7
+    assert hand["settlement"] is None
+    await expect(dealer_upcard).to_be_visible()
+    await expect(dealer_hole_card).to_have_count(0)
+    await expect(player.get_by_text("17", exact=True)).to_be_visible()
+
+    hit = page.get_by_role("button", name="Hit", exact=True)
+    stand = page.get_by_role("button", name="Stand", exact=True)
+    double = page.get_by_role("button", name=re.compile(r"^Double "))
+    if move == "stand":
+        await expect(page.get_by_role("button", name="Double (not enough credits)")).to_be_disabled()
+        async with page.expect_response("**/casino/blackjack/hit") as hit_response:
+            await hit.click()
+        hit_hand = (await (await hit_response.value).json())["result"]
+        assert hit_hand["dealer_cards"] == hand["dealer_cards"]
+        assert hit_hand["dealer_value"] == 7
+        assert hit_hand["settlement"] is None
+        await expect(player.get_by_text("19", exact=True)).to_be_visible()
+
+    finish = asyncio.Event()
+    move_url = f"**/casino/blackjack/{move}"
+
+    async def delay_move(route: Route) -> None:
+        await finish.wait()
+        if move == "stand":
+            # Reject this attempt before it reaches the server. The retry below uses the real endpoint.
+            await route.fulfill(status=409, json={"detail": {"rule": "test", "message": "Retry this move"}})
+        else:
+            await route.continue_()
+
+    await page.route(move_url, delay_move, times=1)
+    move_button = stand if move == "stand" else double
+    await move_button.click()
+    try:
+        await expect(page.get_by_text("Dealer plays...")).to_be_visible()
+        await expect(stand).to_have_count(0)
+        await expect(dealer_upcard).to_be_visible()
+        await expect(dealer_hole_card).to_have_count(0)
+    finally:
+        finish.set()
+
+    if move == "stand":
+        await expect(stand).to_be_enabled()
+        await expect(dealer_upcard).to_be_visible()
+        await stand.click()
+    await expect(dealer_hole_card.first).to_be_visible()
+    await expect(dealer_upcard).to_have_count(0)
+    await expect(dealer.get_by_text("17", exact=True)).to_be_visible()
+    await expect(player.get_by_text("19", exact=True)).to_be_visible()
+    await expect(page.get_by_role("status").get_by_text(f"+{payout} tokens", exact=True)).to_be_visible()
+
+    await page.get_by_role("button", name="New hand").click()
+    await expect(dealer_hole_card).to_have_count(0)
+    await expect(player.get_by_text("19", exact=True)).to_have_count(0)
+    # Both fixtures now have fewer than ten credits.
+    await expect(deal).to_be_disabled()
+    assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during blackjack\n{logs}"
 
 
 async def test_changelog_modal_blocks_until_acked_and_ack_persists(page: Page, casino_server: str) -> None:
