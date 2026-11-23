@@ -112,6 +112,7 @@ ts_library(
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:queryClient",
         "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
         "//props/frontend/src/pages:DefinitionDetailPage",
