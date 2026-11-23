@@ -4,6 +4,7 @@ import {
   id,
   literal,
   call,
+  caseShard,
   conditional,
   returns,
   throws,
@@ -14,12 +15,18 @@ import {
   observedProgram,
 } from "./testing/linked_programs.mjs";
 
+const includesCase = caseShard();
+
+function checkWorkerResult(name, source, expected) {
+  if (includesCase(name)) assertWorkerResult(name, source, expected);
+}
+
 for (const [seed, value] of [0, "taken", "", 3].entries()) {
   const selected = literal(seed + 30);
   const skipped = call(arrow([], block([throws(literal(seed))])));
   const choose = conditional(literal(value), value ? selected : skipped, value ? skipped : selected);
   const source = observedProgram(arrow([], choose), call(id("worker")));
-  assertWorkerResult(`generated-conditional-${seed}`, source, seed + 30);
+  checkWorkerResult(`generated-conditional-${seed}`, source, seed + 30);
 }
 
 // The temporal dead zone throws from the test and from the selected arm respectively.
@@ -32,7 +39,7 @@ for (const [name, expr] of [
     try { return ${expr}; let later; } catch { return 7; }
   };
   export const result = worker();`;
-  assertWorkerResult(`conditional-abrupt-${name}`, source, 7);
+  checkWorkerResult(`conditional-abrupt-${name}`, source, 7);
 }
 
 // The wrong comparison result throws during initialization, so an incorrect lowering
@@ -46,7 +53,7 @@ for (const [index, [left, op, right, expected]] of [
   const test = { type: "BinaryExpression", operator: op, left, right };
   const abrupt = call(arrow([], block([throws(literal(index))])));
   const result = conditional(test, expected ? literal(true) : abrupt, expected ? abrupt : literal(false));
-  assertWorkerResult(
+  checkWorkerResult(
     `strict-comparison-${index}`,
     observedProgram({ type: "ObjectExpression", properties: [] }, result),
     expected
@@ -55,7 +62,7 @@ for (const [index, [left, op, right, expected]] of [
 
 // A void operand still runs. Failing any assertion during initialization
 // prevents an identical lowering mistake in both modules from certifying.
-assertWorkerResult(
+checkWorkerResult(
   "void-observes-operand",
   `const worker = () => {
     const box = {value: 0};
@@ -77,7 +84,7 @@ assertWorkerResult(
     consequent: throws(literal("unexpected value")),
     alternate: null,
   }));
-  assertWorkerResult(
+  checkWorkerResult(
     "generated-void-operands",
     observedProgram(arrow([], block([...checks, returns(literal(true))])), call(id("worker"))),
     true
@@ -98,7 +105,7 @@ for (const [index, [operand, tag, expected]] of [
   const [left, right] = index % 2 === 0 ? [literal(tag), type] : [type, literal(tag)];
   const expr = { type: "BinaryExpression", operator: "!=", left, right };
   const source = index < 2 ? observedProgram(arrow([], expr), call(id("worker"))) : observedProgram(expr, id("worker"));
-  assertWorkerResult(`generated-string-inequality-${index}`, source, expected);
+  checkWorkerResult(`generated-string-inequality-${index}`, source, expected);
 }
 
 // If the model gets a branch wrong, the initializer throws before certification.
@@ -112,10 +119,10 @@ for (const [index, [left, right, equal]] of [
   const expected = literal(equal);
   const result = conditional(comparison, equal ? expected : wrong, equal ? wrong : expected);
   const source = observedProgram(arrow([], result), call(id("worker")));
-  assertWorkerResult(`generated-string-equality-${index}`, source, equal);
+  checkWorkerResult(`generated-string-equality-${index}`, source, equal);
 }
 
-assertWorkerResult(
+checkWorkerResult(
   "string-equality-operand-order",
   `const worker = () => {
     const trace = { step: "start" };
@@ -142,7 +149,7 @@ assertWorkerResult(
 );
 
 // An unbounded call chain still exhausts the ordinary search budget.
-{
+if (includesCase("recursive-fuel")) {
   const { verdict, out } = workerSplit(
     "recursive-fuel",
     observedProgram(arrow([], call(id("worker"))), call(id("worker")))
@@ -153,7 +160,7 @@ assertWorkerResult(
   assert(!existsSync(out));
 }
 
-assertWorkerResult(
+checkWorkerResult(
   "hoisted-local-function",
   `const worker = (offset) => {
     const answer = read(2);
@@ -173,8 +180,10 @@ for (const [name, body, reason] of [
   ["var", "var local; function local() {} return local();", /overlaps a parameter or var binding/],
   ["duplicate", "function local() {} function local() {} return local();", /duplicate local function declaration/],
 ]) {
+  const caseName = `local-function-${name}`;
+  if (!includesCase(caseName)) continue;
   const { verdict, out } = workerSplit(
-    `local-function-${name}`,
+    caseName,
     `const worker = (read) => { ${body} }; export const result = worker();`
   );
   assert.equal(verdict.status, "rejected");
@@ -183,13 +192,13 @@ for (const [name, body, reason] of [
 }
 
 // Different numeric spellings compare by string contents.
-assertWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
-assertWorkerResult(
+checkWorkerResult("unequal-numeric-strings", 'const different = "01" != "1"; export const result = different;', true);
+checkWorkerResult(
   "typeof-local-tdz",
   'const worker = () => { try { return "undefined" != typeof later; let later; } catch { return 7; } }; export const result = worker();',
   7
 );
-assertWorkerResult(
+checkWorkerResult(
   "typeof-shadowed-host-name",
   'const window = null; export const result = "undefined" != typeof window;',
   true
@@ -201,6 +210,7 @@ for (const [name, expr, reason] of [
   ["mixed-inequality", '"01" != 1', /requires two string operands/],
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {
+  if (!includesCase(name)) continue;
   const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
   assert.equal(verdict.status, "rejected");
   assert.match(verdict.reason, reason, name);
