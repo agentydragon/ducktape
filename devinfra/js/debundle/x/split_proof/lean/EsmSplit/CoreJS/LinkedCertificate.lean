@@ -262,14 +262,13 @@ def EquivalentFor (profile : HostProfile) (source candidate : Program) : Prop :=
       ∃ t : State w, Ends w source (.ok () t) ∧ Ends w candidate (.ok () t)
 
 theorem of_browser_evaluation {source candidate : Program} (fuel : Nat)
-    (completed : ∀ w, normal (runProgram (HostProfile.browserPage.specialize w) fuel source) = true)
-    (equal : ∀ w, runProgram (HostProfile.browserPage.specialize w) fuel source =
-      runProgram (HostProfile.browserPage.specialize w) fuel candidate) :
+    (checks : ∀ w, normal (runProgram (HostProfile.browserPage.specialize w) fuel source) = true ∧
+      runProgram (HostProfile.browserPage.specialize w) fuel source =
+        runProgram (HostProfile.browserPage.specialize w) fuel candidate) :
     EquivalentFor .browserPage source candidate := by
   intro w hw
   have e := HostProfile.specialize_eq .browserPage w hw
-  have hc := completed w
-  have he := equal w
+  obtain ⟨hc, he⟩ := checks w
   rw [e] at hc he
   cases hs : runProgram w fuel source with
   | ok _ t => exact ⟨t, ⟨fuel, hs, by simp⟩, ⟨fuel, he.symm.trans hs, by simp⟩⟩
@@ -757,9 +756,17 @@ checked lookup avoids expanding the nested interpreter calls in the non-null her
 macro "verify_linked_programs " fuel:num useCbv:(" cbv_first")? : tactic => do
   let reduce ← if useCbv.isSome then `(tactic| first | cbv <;> rfl | rfl)
     else `(tactic| first | rfl | cbv <;> rfl)
+  -- One goal lets the symbolic reducer reuse the source run. The fallback
+  -- gives the two reductions separate step budgets.
+  let reduceExecution ← if useCbv.isSome then
+    `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩ | constructor <;> $reduce)
+    else `(tactic| first | exact ⟨rfl, rfl⟩ | cbv <;> constructor <;> rfl | constructor <;> $reduce)
   `(tactic|
-    constructor <;> (first | apply of_evaluation $fuel | apply of_browser_evaluation $fuel | apply sameExports_of_match) <;>
-      intro w <;> $reduce)
+    (constructor
+     · first | apply of_evaluation $fuel | apply of_browser_evaluation $fuel
+       intro w <;> $reduceExecution
+     · apply sameExports_of_match
+       intro w <;> $reduce))
 
 -- Check the actual theorem, whose reduction lemmas depend on the input program.
 open Lean Elab Command in
