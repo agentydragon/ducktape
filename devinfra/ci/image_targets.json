@@ -123,19 +123,6 @@
       "test": "//study_casino/...",
       "registry": "forgejo"
     },
-    "loom-gym-eval": {
-      "target": "//x/loom/gym:eval_image",
-      "test": "//x/loom/gym/..."
-    },
-    "wayback-proxy": {
-      "target": "//x/loom/wayback/proxy:image",
-      "test": "//x/loom/wayback/proxy/..."
-    },
-    "wayback-archive": {
-      "target": "//x/loom/wayback/cache:image",
-      "test": "//x/loom/wayback/cache:wayback_cache_test",
-      "registry": "forgejo"
-    },
     "authentik-jwt-rotation": {
       "target": "//cluster/rotators/authentik_jwt_rotation:image",
       "test": "//cluster/rotators/authentik_jwt_rotation/...",
