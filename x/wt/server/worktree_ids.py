@@ -4,9 +4,6 @@ This module contains functions that should NEVER be imported by client code.
 These operations are server-authority-only to maintain the security model.
 """
 
-from pathlib import Path
-
-from x.wt.shared.configuration import Configuration
 from x.wt.shared.protocol import WorktreeID
 
 
@@ -25,9 +22,3 @@ def parse_worktree_id(wtid: WorktreeID) -> str:
     if not s.startswith("wtid:"):
         raise ValueError(f"Invalid worktree ID format: {wtid}")
     return s.removeprefix("wtid:")
-
-
-def wtid_to_path(config: Configuration, wtid: WorktreeID) -> Path:
-    """Server-only: Convert WorktreeID to absolute worktree path using configured worktrees_dir."""
-    name = parse_worktree_id(wtid)
-    return (config.worktrees_dir / name).resolve()

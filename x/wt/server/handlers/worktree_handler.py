@@ -5,7 +5,7 @@ from pathlib import Path
 
 from x.wt.server.rpc import RpcError, ServiceDependencies, Stream, rpc
 from x.wt.server.types import DiscoveredWorktree
-from x.wt.server.worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from x.wt.server.worktree_ids import make_worktree_id, parse_worktree_id
 from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
@@ -71,9 +71,11 @@ async def worktree_create(
         raise RpcError(code=ErrorCodes.INVALID_PARAMS, message=f"Worktree path {worktree_path} already exists")
     source_path = None
     if params.source_wtid:
-        source_path = wtid_to_path(config, params.source_wtid)
-        if not source_path.exists():
-            raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Source worktree {source_path} not found")
+        source_name = parse_worktree_id(params.source_wtid)
+        source = _resolve_worktree_name_to_info(deps.index, source_name)
+        if source is None or not source.path.exists():
+            raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Source worktree '{source_name}' not found")
+        source_path = source.path.resolve()
         src_branch = git_manager.get_repo_head_shorthand(source_path)
     elif params.source_branch:
         src_branch = params.source_branch
