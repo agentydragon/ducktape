@@ -317,18 +317,19 @@ private partial def linkedFunction (imports : List Name) (kind : FuncKind) (name
   else throw "expected a function body block"
   return .mk name kind self params stmts
 
+private partial def linkedLocalDeclarations (imports : List Name) (j : Json) : Except String (Array Stmt) := do
+  let declarations ← j.getObjValAs? (Array Json) "declarations"
+  if declarations.isEmpty then throw "expected at least one declarator"
+  let kind ← field j "kind"
+  declarations.mapM fun d => Prod.snd <$> declaratorWith localBinding (linkedExpr imports true) kind d
+
 /-- Keep every declarator in its enclosing statement list. Function instantiation hoists
 all its vars, and block instantiation creates the lexical bindings before initialization. -/
 private partial def linkedFunctionBody (imports : List Name) (block : Json) : Except String (List Stmt) := do
   let mut result := #[]
   for stmt in ← block.getObjValAs? (Array Json) "body" do
     if (← field stmt "type") == "VariableDeclaration" then
-      let ds ← stmt.getObjValAs? (Array Json) "declarations"
-      if ds.isEmpty then throw "expected at least one declarator"
-      let kind ← field stmt "kind"
-      for d in ds do
-        let (_, s) ← declaratorWith localBinding (linkedExpr imports true) kind d
-        result := result.push s
+      result := result ++ (← linkedLocalDeclarations imports stmt)
     else
       result := result.push (← linkedStatement imports true stmt)
   return result.toList
@@ -344,6 +345,17 @@ private partial def linkedStatement (imports : List Name) (inFunction : Bool) (j
   if inFunction then
     match ← field j "type" with
     | "BlockStatement" => return ← linkedFunctionBlock imports j
+    | "EmptyStatement" => return .block []
+    | "IfStatement" =>
+      let test ← linkedExpr imports true "" (← j.getObjVal? "test")
+      let consequent ← linkedStatement imports true (← j.getObjVal? "consequent")
+      let alternate ← j.getObjVal? "alternate"
+      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement imports true alternate
+      return .ite test consequent elseBranch
+    | "VariableDeclaration" =>
+      -- An unbraced branch can declare vars, which already belong to the enclosing function.
+      unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
+      return .block (← linkedLocalDeclarations imports j).toList
     | "TryStatement" =>
       let body ← linkedFunctionBlock imports (← j.getObjVal? "block")
       let handler ← j.getObjVal? "handler"
