@@ -230,6 +230,7 @@ py_test(
     name = "test_block_storage",
     srcs = ["test_block_storage.py"],
     exec_properties = K3S_EXEC_PROPERTIES,
+    shard_count = 2,
     deps = [
         ":block_storage",
         "//:conftest",
