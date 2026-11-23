@@ -51,7 +51,7 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         ("runner-secrets", "gitlab-spike-ci", (), ("gitlab-spike-runner",)),
     ):
         opentofu.secret_access(chart, access_id, identity=identity, namespace=namespace, read=reads, write=writes)
-    workspace = opentofu.gitops_workspace(
+    opentofu.gitops_workspace(
         chart,
         "workspace",
         name="gitlab-spike",
@@ -60,7 +60,6 @@ def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         kubernetes_identity=KUBERNETES_IDENTITY,
         variables=variables,
     )
-    workspace.add_json_patch(JsonPatch.add("/metadata/annotations/crossplane.io~1paused", "true"))
     return chart
 
 
