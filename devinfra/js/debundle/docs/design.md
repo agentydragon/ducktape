@@ -2639,13 +2639,8 @@ values and deterministic collection order. YAML authoring and JSON reports
 continue to use Serde. The projection formats have no cross-version
 compatibility guarantee.
 
-Facts cross the process boundary through explicit saved representations and
-`analysis_codec`. Each saved binding contains its symbol and a
-first-occurrence ordinal for its hygiene context in the re-parsed modules; the
-reader restores it against its own SWC `Globals`. The codec itself writes
-ordinary named MessagePack and zstd, with no tuple or integer identity
-heuristics. See `docs/lessons_learned/cross_process_stage_b.md` for why simpler
-binding encodings are wrong.
+The saved body uses named MessagePack with zstd compression. For the scope
+identity that makes bindings portable, see [saved binding contexts](wire_format.md#why-pre-filter-facts-statementfacts-are-absent-from-public-reports).
 
 The runtime `ProgramSummary`, `AnalysisArtifactBody`, `ChunkFactAnalysis` and
 `StatementFacts` do not implement Serde. `SavedAnalysisBody::snapshot` selects the

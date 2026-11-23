@@ -441,30 +441,32 @@ ctxt is determined by that role, not by the wire data.
 
 ## Why pre-filter facts (`StatementFacts`) are absent from public reports
 
-`StatementFacts` is **pre-filter** raw analyzer output —
-`StatementFactsCollector::visit_ident` records every `Ident::to_id()`
-the visitor encounters, including reads inside nested function bodies
-with inner-scope marks. Those inner-scope `Id`s are `Globals`-bound:
-their `ctxt: u32` is meaningful only inside the SWC `Globals` that
-minted them.
+Public graph reports contain resolved top-level edges. Saved analysis must also
+retain closure-local facts. For example, in `function f() { let counter = 1;
+return counter; }`, the read belongs to the inner binding even if the chunk
+also declares `counter`. Reconstructing both by name with the top-level mark
+would add a spurious dependency. Filtering out the inner binding would lose the
+original fact.
 
-Public reports omit these raw facts. Staged analysis artifacts do retain them
-through explicit saved data: every SWC binding is represented by its symbol and
-a `ContextOrdinals` index, then restored against the consumer's freshly parsed
-modules. This preserves closure-local shadowing without serializing a
-process-local context number. Reconstructing all bindings as
-`top_level_id(name, fresh_mark)` would make a closure-local `counter` collide
-with a top-level `counter`. See `docs/lessons_learned/cross_process_stage_b.md`.
+An SWC `SyntaxContext` number indexes the resolver's own `Globals` table.
+Writing that number directly can pass a same-table round trip and still restore
+the wrong binding in another process. `analysis_codec.rs` saves
+the symbol and the context's first-occurrence ordinal across the resolved
+modules (zero for the empty context). The reader walks the same modules in the
+same order and maps the ordinal to its own context. This requires parsing for
+lowering but lets the reader reuse the facts. The
+`decodes_into_a_fresh_globals` test in `staged_analysis/analysis_artifact.rs` deliberately shifts the context numbers and
+compares restored facts with fresh analysis.
 
 ## Reader audiences
 
-| Consumer                                                                                                                     | Reads                                                                    | Cross-process?          |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------- |
-| Spec author with `jq`                                                                                                        | `dependency_graph.json.gz`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json.gz`, source bytes + spec                          | yes (Atom-only)         |
-| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json.gz`, source bytes + module spec                   | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json.gz` (gate)                           | yes                     |
-| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                               | N/A — always in-process |
+| Consumer                                                                                                                     | Reads                                                                    | Cross-process?        |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------- |
+| Spec author with `jq`                                                                                                        | `dependency_graph.json.gz`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)       |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json.gz`, source bytes + spec                          | yes (Atom-only)       |
+| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json.gz`, source bytes + module spec                   | yes (Atom-only)       |
+| `debundle bindings assign` / `modules merge`                                                                                 | spec YAMLs + `dependency_graph.json.gz` (gate)                           | yes                   |
+| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + optional saved analysis                             | yes with `--analysis` |
 
 ## Reconstruction recipe
 
@@ -714,5 +716,3 @@ stripping or string surgery.
 
 - `docs/design.md` §"Two classes of atom" — the realizability theorem
   these wire formats serialize evidence for.
-- `docs/lessons_learned/cross_process_stage_b.md` — why we don't
-  serialize pre-filter facts.
