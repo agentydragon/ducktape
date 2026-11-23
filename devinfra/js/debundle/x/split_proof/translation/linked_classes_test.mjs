@@ -32,6 +32,13 @@ for (const [name, source, expected] of [
     "Child",
   ],
   [
+    "eager-heritage",
+    `class Base { static label = "base"; }
+    const Child = class extends Base {};
+    export const result = Child.label;`,
+    "base",
+  ],
+  [
     "deferred-heritage",
     `class Base { static label = "base"; }
     const read = () => (class extends Base {}).label;
@@ -59,7 +66,7 @@ for (const [name, source, expected] of [
 ]) {
   const test = split(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "certified", name + ": " + test.log);
-  if (name === "default-derived") {
+  if (name === "eager-heritage") {
     assert.equal(
       lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict.status,
       "certified"

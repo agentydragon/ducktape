@@ -128,7 +128,7 @@ theorem perform_le {call call' : Call W} {cons cons' : Val → List Val → M W 
 
 theorem classParents_le {call call' : Call W} (h : Call.le call call') (base : Val) :
     classParents call base ⊑ classParents call' base := by
-  cases base <;> unfold classParents <;> repeat' first
+  cases base <;> simp only [classParents, classParentsNonNull] <;> repeat' first
     | exact getProp_le h _ _
     | mono_step
 

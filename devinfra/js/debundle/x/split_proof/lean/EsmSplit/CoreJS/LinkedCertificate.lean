@@ -2,6 +2,7 @@ import Lean.Elab.Deriving.ToExpr
 import Lean.Elab.Tactic.Cbv
 import Lean.Util.CollectAxioms
 import EsmSplit.CoreJS.BatchState
+import EsmSplit.CoreJS.ClassParents
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.LiteralRecord
@@ -636,6 +637,38 @@ so it can reduce any unary expression without unfolding the mutually recursive i
         let v ← evalExpr n env a
         lift (unop (← getState) op v)) := by
   cases op <;> cases a <;> rfl
+
+/-- Resolve an own data prototype on a concrete class constructor directly. Using the
+checked lookup avoids expanding the nested interpreter calls in the non-null heritage path. -/
+@[cbv_eval] private theorem classParents_obj (call : Call W) (a : Addr) (s : State W) :
+    classParents call (.obj a) s =
+      match s.objAt a with
+      | some o =>
+        match o.code with
+        | some (.closure f ..) =>
+          match f.kind, o.props.lookup "prototype" with
+          | .classCtor, some (.data (.obj p) ..) => .ok (a, some p) s
+          | _, _ => classParentsNonNull call (.obj a) s
+        | _ => classParentsNonNull call (.obj a) s
+      | none => classParentsNonNull call (.obj a) s := by
+  cases ho : s.objAt a with
+  | none => rfl
+  | some o =>
+    cases hc : o.code with
+    | none => simp only [hc]; rfl
+    | some c =>
+      cases c <;> try (simp only [hc]; rfl)
+      case closure f closed fields =>
+        cases hk : f.kind <;> try (simp only [hc, hk]; rfl)
+        case classCtor =>
+          cases hp : o.props.lookup "prototype" with
+          | none => simp only [hc, hk, hp]; rfl
+          | some property =>
+            cases property <;> try (simp only [hc, hk, hp]; rfl)
+            case data value w e c =>
+              cases value <;> try (simp only [hc, hk, hp]; rfl)
+              case obj p =>
+                simpa only [hc, hk, hp] using classParents_ownPrototype call ho hc hk hp
 
 /-- Prove both obligations by evaluating the real module graphs with an arbitrary host world.
 `cbv` produces kernel-checkable equations for definitions with well-founded recursion. -/

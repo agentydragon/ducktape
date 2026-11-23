@@ -160,21 +160,23 @@ def isConstructor (v : Val) : M W Bool := do
   | .host _ => unknown "host constructor capability"
   | _ => pure false
 
-/-- Heritage checks and the two prototype links, before allocating the class. -/
-def classParents (call : Call W) (base : Val) : M W (Addr × Option Addr) := do
+/-- Resolve non-null heritage through constructor capability and the prototype property. -/
+def classParentsNonNull (call : Call W) (base : Val) : M W (Addr × Option Addr) := do
+  if !(← isConstructor base) then throwErr .type "superclass is not a constructor" else do
+  let p ← getProp call base (.str "prototype")
+  let pp ← match p with
+    | .null => pure none
+    | .obj a => pure (some a)
+    | .host _ => unknown "host superclass prototype"
+    | _ => throwErr .type "superclass prototype is not an object or null"
   match base with
+  | .obj a => pure (a, pp)
+  | _ => unknown "host superclass"
+
+/-- Heritage checks and the two prototype links, before allocating the class. -/
+def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
-  | _ => do
-    if !(← isConstructor base) then throwErr .type "superclass is not a constructor" else do
-    let p ← getProp call base (.str "prototype")
-    let pp ← match p with
-      | .null => pure none
-      | .obj a => pure (some a)
-      | .host _ => unknown "host superclass prototype"
-      | _ => throwErr .type "superclass prototype is not an object or null"
-    match base with
-    | .obj a => pure (a, pp)
-    | _ => unknown "host superclass"
+  | base => classParentsNonNull call base
 
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
