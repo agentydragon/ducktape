@@ -97,7 +97,6 @@ py_library(
         ":page_capture",
         ":viewports",
         "//devinfra/testing:output_writer",
-        "//devinfra/testing:pytest_outputs",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
