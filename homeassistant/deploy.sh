@@ -7,7 +7,7 @@ LOCAL_DIR="$(cd "$(dirname "$0")/packages/rai" && pwd)"
 
 # rsync's itemized file type distinguishes transferred files from directory metadata.
 # Let a failed preview exit before reporting success or asking to deploy.
-changed_files=$(rsync -ani --out-format='%i %n' "$LOCAL_DIR/" "$HA_HOST:$HA_PACKAGES_DIR/" | sed -n 's/^[<>]f[^ ]* //p')
+changed_files=$(rsync -ani --out-format='%i %n' "$LOCAL_DIR/" "$HA_HOST:$HA_PACKAGES_DIR/" | sed -n 's/^.f[^ ]* //p')
 
 if [[ -z "$changed_files" ]]; then
   echo "No differences — HA is up to date."
