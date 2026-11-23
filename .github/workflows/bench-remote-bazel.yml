@@ -29,7 +29,7 @@ jobs:
           skopeo copy --retry-times 2 --digestfile "$RUNNER_TEMP/digest" docker-archive:result "docker://$image:$GITHUB_SHA"
           echo "image=$image@$(cat "$RUNNER_TEMP/digest")" >> "$GITHUB_OUTPUT"
 
-  image:
+  four-layers:
     needs: publish
     runs-on: ubuntu-latest
     permissions:
@@ -62,46 +62,37 @@ jobs:
           nix eval --expr '1 + 2'
           nix path-info "$(dirname "$(dirname "$(readlink -f "$(command -v bb)")")")"
           test -s /etc/ssl/certs/ca-bundle.crt
-  current:
-    needs: publish
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        sample: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-      - name: Verify source
-        run: python3 devinfra/ci/pr_mergeability.py verify-source
-      - uses: ./.github/actions/setup-nix-devtools
-        with:
-          installables: ".#bb .#bbapi"
-      - name: BuildBuddy ready
-        run: |
-          bb version --cli
-          bbapi --help >/dev/null
 
-  direct:
+  default-layers:
     needs: publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
         sample: [1, 2, 3]
+    container:
+      image: ghcr.io/agentydragon/ducktape-ci-launcher-candidate@sha256:89335657cd4ee57e8ef9d4d0d5c9e78b7c4d8a6052508f2ca4029fa5c715b868
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
+      - name: Trust this job's bind-mounted checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Verify source
         run: python3 devinfra/ci/pr_mergeability.py verify-source
-      - name: Install pinned BuildBuddy CLIs
-        run: |
-          python3 devinfra/buildbuddy/ci/install_clis.py \
-            --pins nix/artifact-pins.json --bin-dir "$RUNNER_TEMP/buildbuddy-bin"
-          echo "$RUNNER_TEMP/buildbuddy-bin" >> "$GITHUB_PATH"
       - name: BuildBuddy ready
         run: |
           bb version --cli
           bbapi --help >/dev/null
+      - name: Check Nix and the store database
+        shell: bash
+        run: |
+          nix eval --expr '1 + 2'
+          nix path-info "$(dirname "$(dirname "$(readlink -f "$(command -v bb)")")")"
+          test -s /etc/ssl/certs/ca-bundle.crt

@@ -38,6 +38,7 @@ pkgs.dockerTools.buildLayeredImage {
   tag = null;
   contents = [ root ];
   includeNixDB = true;
+  maxLayers = 4;
   fakeRootCommands = ''
     ${substrate.fakeRootCommands}
     mkdir -p etc/nix root
