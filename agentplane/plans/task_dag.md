@@ -31,6 +31,10 @@ The operator listed these directions without ranking them. There is also a curre
   this direction is selected. Central Sessions can name an Identity with the existing store.
 - [Organization work on GitHub Pages](#17-two-binaries-and-the-go-layout). The Go plan has no
   selected file moves left. Settings parity and test selection have concrete experiments.
+- [Authored Thread and diagnostic History](#agent_authored_conversations_design--conversations-agents-act-on-through-tools).
+  The CLI already demonstrates both views. The next product experiment is a hosted Session using
+  an optional Thread attachment chosen at Session startup. Its messenger shows deliberate posts and
+  edits. History remains available for diagnosis.
 
 The Oct 30 sprint ended Nov 13. Concrete failures in ordinary Session use still warrant repair;
 the operator waived broad disruption exercises and assigned low priority to VM startup latency.
@@ -1264,7 +1268,20 @@ separate concerns; incoming-message delivery and harness-specific notification s
 The [completed CLI experiment](../debug/authored_conversation/README.md) supplies interaction
 evidence for this review. Its original Qwen configuration missed publications after reset and
 correction. Later focused probes with an explanatory prompt improved publication on Qwen and
-Luna. The broader service ownership, MCP and migration decisions remain open.
+Luna. The [CLI Thread and Trace views](../x/authored_conversation/README.md) already separate
+explicit posts and edits from model text, tool activity and diagnostic JSON.
+
+**Operator direction, Nov 22.** Today the app folds Session History into a conversation-like view.
+The proposed messenger displays messages and revisions authored by the human and agent on a
+distinct Thread. The diagnostic view shows what the harness or model did, including tool calls and
+context items where captured. Give the two views independent entry points. A trace entry alone
+does not publish a message. Use the [hosted spike](thread_spike.md) to test whether users can
+follow real work through the messenger and still inspect History when a response goes missing.
+Prefer additive per-Session opt-in at startup, with a durable attachment to a Thread. Compare
+Agentplane tools with central sampler tools for reading, posting and editing. Exercise an enabled
+and a default Session side by side, including reconnect. The default Session continues through
+today’s History workflow. Selection of a tool path, changing the default UI and rewriting the
+journal format are separate decisions.
 
 **Operator direction, not a release (2026-11-17 13:21 UTC, among "things that are on top of my head
 right now as stuff i'd like to pursue sometime"):** "[...] together with "make a conversation-style
