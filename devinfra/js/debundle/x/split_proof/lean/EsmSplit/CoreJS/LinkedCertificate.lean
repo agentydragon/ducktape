@@ -182,32 +182,55 @@ def programLiteral (p : Program) : Except String String := term (Lean.toExpr p)
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
 
-mutual
-/-- Quote the exact Lean JSON value, including the raw object tree and each number's
-mantissa and decimal exponent. No parsing or field reinsertion is needed in the certificate. -/
-partial def jsonLiteral : Lean.Json → String
-  | .null => "Lean.Json.null"
-  | .bool b => "(Lean.Json.bool " ++ toString b ++ ")"
-  | .num n => "(Lean.Json.num ⟨(" ++ toString n.mantissa ++ ")," ++ toString n.exponent ++ "⟩)"
-  | .str s => "(Lean.Json.str " ++ s.quote ++ ")"
-  | .arr a => "(Lean.Json.arr " ++ arrayLiteral a 0 a.size ++ ")"
-  | .obj ⟨⟨o⟩⟩ => "(Lean.Json.obj ⟨⟨" ++ objectLiteral o ++ "⟩⟩)"
+private abbrev JsonQuote := StateM (Array String)
 
-/-- Bound the depth of the elaborated array literal by joining small chunks in a balanced tree. -/
-private partial def arrayLiteral (a : Array Lean.Json) (start stop : Nat) : String :=
+private def arrayFragment (stem term : String) : JsonQuote String := do
+  let definitions ← get
+  let name := s!"{stem}_array_{definitions.size}"
+  set (definitions.push s!"private def {name} : Array Lean.Json := {term}\n")
+  return name
+
+mutual
+private partial def jsonLiteral (stem : String) : Lean.Json → JsonQuote String
+  | .null => pure "Lean.Json.null"
+  | .bool b => pure ("(Lean.Json.bool " ++ toString b ++ ")")
+  | .num n => pure ("(Lean.Json.num ⟨(" ++ toString n.mantissa ++ ")," ++ toString n.exponent ++ "⟩)")
+  | .str s => pure ("(Lean.Json.str " ++ s.quote ++ ")")
+  | .arr a => do return "(Lean.Json.arr " ++ (← arrayLiteral stem a 0 a.size) ++ ")"
+  | .obj ⟨⟨o⟩⟩ => do return "(Lean.Json.obj ⟨⟨" ++ (← objectLiteral stem o) ++ "⟩⟩)"
+
+/-- Elaborate wide arrays as separate, bounded-size definitions. Join chunks in a
+balanced tree to keep the depth of the definition dependencies logarithmic. -/
+private partial def arrayLiteral (stem : String) (a : Array Lean.Json) (start stop : Nat) :
+    JsonQuote String := do
+  let chunkSize := 8
   let count := stop - start
-  if count ≤ 16 then
-    "#[" ++ String.intercalate "," ((a.extract start stop).toList.map jsonLiteral) ++ "]"
+  if count ≤ chunkSize then
+    let elements ← (a.extract start stop).toList.mapM (jsonLiteral stem)
+    let term := "#[" ++ String.intercalate "," elements ++ "]"
+    if a.size ≤ chunkSize then return term
+    arrayFragment stem term
   else
     let middle := start + count / 2
-    "(Array.append " ++ arrayLiteral a start middle ++ " " ++ arrayLiteral a middle stop ++ ")"
+    let left ← arrayLiteral stem a start middle
+    let right ← arrayLiteral stem a middle stop
+    arrayFragment stem s!"Array.append {left} {right}"
 
-private partial def objectLiteral : Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json) → String
-  | .leaf => ".leaf"
-  | .inner sz key val left right =>
-    "(.inner " ++ toString sz ++ " " ++ key.quote ++ " " ++ jsonLiteral val ++ " " ++
-      objectLiteral left ++ " " ++ objectLiteral right ++ ")"
+private partial def objectLiteral (stem : String) :
+    Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json) → JsonQuote String
+  | .leaf => pure ".leaf"
+  | .inner sz key val left right => do
+    let value ← jsonLiteral stem val
+    let l ← objectLiteral stem left
+    let r ← objectLiteral stem right
+    return s!"(.inner {sz} {key.quote} {value} {l} {r})"
 end
+
+/-- Quote the exact Lean JSON value, including the raw object tree and each number's
+mantissa and decimal exponent. No parsing or field reinsertion is needed in the certificate. -/
+def jsonDefinitions (name : String) (json : Lean.Json) : Array String :=
+  let (value, definitions) := (jsonLiteral name json).run #[]
+  definitions.push s!"private def {name} : Lean.Json := {value}\n"
 
 /-- The equation compiler puts a negative premise on the general unary case because
 `typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
@@ -263,11 +286,11 @@ def certificate (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (
   let s ← programLiteral source
   let c ← programLiteral candidate
   let p ← term (Lean.toExpr plan)
+  let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
+    jsonDefinitions "files" files
   return "import EsmSplit.CoreJS.LinkedCertificate\n\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
-    "private def sourceAST : Lean.Json := " ++ jsonLiteral sourceAST ++ "\n" ++
-    "private def providers : Lean.Json := " ++ jsonLiteral providers ++ "\n" ++
-    "private def files : Lean.Json := " ++ jsonLiteral files ++ "\n" ++
+    String.join asts.toList ++
     "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
     "private def source : Program := " ++ s ++ "\n" ++
     "private def candidate : Program := " ++ c ++ "\n" ++

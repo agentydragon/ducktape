@@ -72,26 +72,30 @@ private def jsonFixture := Json.mkObj [
 
 private def wideJsonFixture : Json :=
   Json.mkObj [("body", .arr #[.arr (Array.ofFn fun i : Fin 705 =>
-    Json.mkObj [("type", .str "Property"), ("key", .str s!"field{i.val}"),
+    let key := Json.mkObj [("type", .str "Literal"), ("raw", .str s!"field{i.val}"),
+      ("value", .str s!"field{i.val}"), ("lit", .str s!"s:field{i.val}")]
+    let value := Json.mkObj [("type", .str "Literal"), ("value", .num ⟨-Int.ofNat i.val, 2⟩)]
+    Json.mkObj [("type", .str "Property"), ("key", key),
       ("computed", .bool false), ("method", .bool false), ("shorthand", .bool false),
-      ("value", .num ⟨-Int.ofNat i.val, 2⟩), ("kind", .str "init")])])]
+      ("value", value), ("kind", .str "init")])])]
 
-open Lean Elab in
-elab "quotedJsonFixture%" n:ident : term => do
-  let fixture := if n.getId == `wide then wideJsonFixture else jsonFixture
-  let .ok stx := Parser.runParserCategory (← getEnv) `term (LinkedBehavior.jsonLiteral fixture)
-    | throwError "could not parse the fixture AST literal"
-  Term.elabTerm stx (some (mkConst ``Json))
+open Lean Elab Command in
+elab "#quoteJsonFixture" name:ident : command => do
+  let fixture := if name.getId == `quotedWideJsonFixture then wideJsonFixture else jsonFixture
+  for text in LinkedBehavior.jsonDefinitions name.getId.toString fixture do
+    let .ok stx := Parser.runParserCategory (← getEnv) `command text
+      | throwError "could not parse the quoted JSON definition"
+    elabCommand stx
 
-theorem jsonLiteralRoundTrip : (quotedJsonFixture% small) = jsonFixture := rfl
+#quoteJsonFixture quotedJsonFixture
+
+theorem jsonLiteralRoundTrip : quotedJsonFixture = jsonFixture := rfl
 
 -- The recursion budget here applies only to elaborating the generated syntax.
 set_option maxRecDepth 512 in
-private def quotedWideJsonFixture : Json := quotedJsonFixture% wide
+#quoteJsonFixture quotedWideJsonFixture
 
-#eval do
-  unless quotedWideJsonFixture == wideJsonFixture do
-    throw (IO.userError "wide JSON literal did not round-trip")
+#guard quotedWideJsonFixture == wideJsonFixture
 
 private def node (kind : String) (fields : List (String × Json)) : Json :=
   Json.mkObj (("type", .str kind) :: fields)
