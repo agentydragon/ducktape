@@ -61,7 +61,6 @@ py_library(
     srcs = ["preview_visual.py"],
     deps = [
         "//testing/frontend_visual:capture",
-        "//testing/frontend_visual:fixtures",
         "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pydantic",

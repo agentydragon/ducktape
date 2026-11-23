@@ -5,7 +5,6 @@ import pytest_bazel
 
 from agentplane.app.frontend.actions.testing.action_presentation_cases import ActionExample, ActionPresentationCases
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 _KEFIR_ENTRY = {

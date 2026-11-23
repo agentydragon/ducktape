@@ -10,7 +10,6 @@ from agentplane.app.frontend.actions.testing.action_presentation_cases import (
     ActionPresentationCases,
 )
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 ORCHESTRATION_SANDBOX = {"name": "review-box", "uid": "81000000-0000-4000-8000-000000000003"}

@@ -11,7 +11,6 @@ from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.page_capture import wait_for_stable
 from testing.frontend_visual.viewports import MOBILE, Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 GITHUB_REPO: dict[str, object] = {"owner": "example", "repo": "service"}

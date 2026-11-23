@@ -15,7 +15,6 @@ from agentplane.app.frontend.testing.history_interactions import frames, holding
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
