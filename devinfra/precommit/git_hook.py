@@ -7,9 +7,7 @@ Installed as separate console scripts via the ducktape-git-hooks wheel:
 
 from __future__ import annotations
 
-import asyncio
 import sys
-from collections.abc import Awaitable
 from pathlib import Path
 
 import pygit2
@@ -31,12 +29,12 @@ def _is_ignored(repo: pygit2.Repository, path: str) -> bool:
     return any(repo.get_attr(path, a) in (True, "true") for a in _IGNORE_ATTRS)
 
 
-async def run_filename_convention_check(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
+def _filename_convention_error(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
     violations = check_filename_conventions(deltas, head_tree)
     return "\n".join(violations) if violations else None
 
 
-async def run_frozen_specimens_check(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
+def _frozen_specimens_error(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
     violations = check_specimen_code_changes(deltas, head_tree)
     if violations:
         return "Changes to code/ in committed snapshots are not allowed.\n" + "\n".join(f"  {v}" for v in violations)
@@ -63,7 +61,7 @@ def _setup_tracing(repo: pygit2.Repository) -> None:
     trace.set_tracer_provider(provider)
 
 
-async def _run_pre_commit() -> int:
+def main_pre_commit() -> int:
     repo = pygit2.Repository(".")
     _setup_tracing(repo)
 
@@ -71,31 +69,24 @@ async def _run_pre_commit() -> int:
         head_tree, all_deltas = _staged_deltas(repo)
         deltas = [d for d in all_deltas if not _is_ignored(repo, d.new_file.path)]
 
-        async def _traced(name: str, coro: Awaitable[str | None]) -> tuple[str, str | None]:
-            with tracer.start_as_current_span(name):
-                error = await coro
-                if error:
-                    trace.get_current_span().set_status(StatusCode.ERROR, error[:200])
-                return (name, error)
-
         print(f"Validating {len(deltas)} changed files...")
-        results = list(
-            await asyncio.gather(
-                _traced("filename-conventions", run_filename_convention_check(deltas, head_tree)),
-                _traced("frozen-specimens", run_frozen_specimens_check(deltas, head_tree)),
-            )
-        )
-
-        failed = []
-        for name, error in results:
+        failed = False
+        for name, check in (
+            ("filename-conventions", _filename_convention_error),
+            ("frozen-specimens", _frozen_specimens_error),
+        ):
+            with tracer.start_as_current_span(name) as span:
+                error = check(deltas, head_tree)
+                if error:
+                    span.set_status(StatusCode.ERROR, error[:200])
             if error:
                 print(f"  {name}: FAILED")
                 print(error, file=sys.stderr)
-                failed.append(name)
+                failed = True
             else:
                 print(f"  {name}: ok")
 
-    return 1 if failed else 0
+    return int(failed)
 
 
 # prepare-commit-msg stage: block amending already-pushed commits
@@ -125,10 +116,6 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
         )
         return 1
     return 0
-
-
-def main_pre_commit() -> int:
-    return asyncio.run(_run_pre_commit())
 
 
 def main_prepare_commit_msg() -> int:
