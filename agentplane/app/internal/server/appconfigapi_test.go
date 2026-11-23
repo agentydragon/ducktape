@@ -46,7 +46,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		SandboxPresets: map[string]settings.SandboxPreset{
 			"work": {Title: "Work", Template: "linux", PolicySets: nil, InboxTags: []string{"team"}, ThreadPreset: "default"},
 		},
-		NewSandboxDefaults: settings.NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: appConfigInt64Pointer(900)},
+		NewSandboxDefaults: settings.NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: new(int64(900))},
 	}
 	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{names: []string{"alpha", "zeta"}}
@@ -125,8 +125,6 @@ func (r *appConfigPolicySetNames) ListPolicySetNames(context.Context, *policypb.
 	}
 	return &policypb.ListPolicySetNamesResponse{Names: r.names}, nil
 }
-
-func appConfigInt64Pointer(value int64) *int64 { return &value }
 
 func TestSandboxFormReturnsUnavailableWhenPolicyServiceFails(t *testing.T) {
 	fixture := testauth.New(t)

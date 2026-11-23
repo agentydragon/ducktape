@@ -181,16 +181,16 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	result.Finished = finishedCount == 1
 	result.Successful = finishedCount == 1 && successfulCount == 1
 	if startedCount == 1 && startedInvocationID != "" {
-		result.InvocationId = stringPointer(startedInvocationID)
+		result.InvocationId = new(startedInvocationID)
 	}
 	if parentInvocationIDSeen && !parentInvocationIDConflict && parentInvocationID != "" {
-		result.ParentInvocationId = stringPointer(parentInvocationID)
+		result.ParentInvocationId = new(parentInvocationID)
 	}
 	if finishedCount == 1 && len(exitCodeNames) == 1 {
-		result.ExitCodeName = stringPointer(exitCodeNames[0])
+		result.ExitCodeName = new(exitCodeNames[0])
 	}
 	if len(commands) == 1 {
-		result.Command = stringPointer(commands[0])
+		result.Command = new(commands[0])
 	}
 	if len(explicitCmdLines) == 1 && explicitCmdLines[0] != nil {
 		result.ExplicitCmdLine = &bbapipb.Arguments{Values: *explicitCmdLines[0]}
@@ -205,7 +205,7 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	if len(commitValues) == 1 {
 		for sha := range commitValues {
 			if sha != "" {
-				result.CommitSha = stringPointer(sha)
+				result.CommitSha = new(sha)
 			}
 		}
 	}
@@ -215,5 +215,3 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 func jsonPresent(raw json.RawMessage) bool {
 	return len(raw) != 0 && string(raw) != "null"
 }
-
-func stringPointer(value string) *string { return &value }

@@ -22,7 +22,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	threadPresets := map[string]settings.ThreadPreset{
 		"default": {
 			Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/state/workspaces/{session_id}",
-			ReasoningEffort: sessionTestStringPtr("high"), Instructions: "from preset", SetupScript: "setup",
+			ReasoningEffort: new("high"), Instructions: "from preset", SetupScript: "setup",
 		},
 	}
 	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "sandbox-uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
@@ -86,5 +86,3 @@ func TestSessionRPCErrorNamesUnconfirmedDispatcherCreation(t *testing.T) {
 		t.Fatalf("unexpected Dispatcher error: %v", got)
 	}
 }
-
-func sessionTestStringPtr(value string) *string { return &value }

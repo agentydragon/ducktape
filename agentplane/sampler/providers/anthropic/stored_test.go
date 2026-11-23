@@ -96,7 +96,7 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	}
 	request := Request{
 		CacheControl: &CacheControl{Type: "ephemeral", TTL: "1h"},
-		Diagnostics:  &Diagnostics{PreviousMessageID: stringPointer("msg_previous")},
+		Diagnostics:  &Diagnostics{PreviousMessageID: new("msg_previous")},
 		MaxTokens:    1024,
 		Messages:     []json.RawMessage{messageA, messageB},
 		Model:        "claude-test",
@@ -113,7 +113,7 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Diagnostics = &Diagnostics{PreviousMessageID: stringPointer("msg_newer")}
+	request.Diagnostics = &Diagnostics{PreviousMessageID: new("msg_newer")}
 	profileB, recordsB, err := StoreRequest(store, request)
 	if err != nil {
 		t.Fatal(err)
@@ -191,5 +191,3 @@ func TestRestoreRecordChecksReferencedContent(t *testing.T) {
 		t.Fatal("RestoreRecord accepted a block hash mismatch")
 	}
 }
-
-func stringPointer(value string) *string { return &value }
