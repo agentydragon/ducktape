@@ -1,49 +1,12 @@
-"""Mock OpenAI clients for testing.
-
-Provides mock implementations of Model for unit tests:
-- FakeOpenAIModel: Returns predefined responses in sequence
-- CapturingOpenAIModel: Wraps a Responses model and records its requests
-"""
+"""Fixed-response and no-op OpenAI test models."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-
 from openai_utils.model import Model, ResponsesRequest, ResponsesResult
-
-# Function type for a mocked OpenAI Responses API call
-ResponsesCreateFn = Callable[[ResponsesRequest], Awaitable[ResponsesResult]]
-
-
-class CapturingOpenAIModel(Model):
-    """Wrapper that captures all requests to an underlying OpenAI model.
-
-    Wraps a Responses model and records all requests in the .captured list.
-    """
-
-    def __init__(self, inner: Model) -> None:
-        self._inner = inner
-        self.captured: list[ResponsesRequest] = []
-        self.calls = 0
-
-    @property
-    def model(self) -> str:
-        return self._inner.model
-
-    def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
-        return self._inner.prepare(request)
-
-    async def sample(self, req: ResponsesRequest) -> ResponsesResult:
-        self.captured.append(req)
-        self.calls += 1
-        return await self._inner.sample(req)
 
 
 class FakeOpenAIModel(Model):
-    """Mock OpenAI model that returns predefined responses.
-
-    Wrap with CapturingOpenAIModel if you need to inspect requests.
-    """
+    """Mock OpenAI model that returns predefined responses."""
 
     model = "fake-model"
 
@@ -73,18 +36,6 @@ class FakeOpenAIModel(Model):
         result = self._outputs[self.calls]
         self.calls += 1
         return result
-
-
-def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:
-    """Construct a capturing mock client that delegates to the provided behavior."""
-
-    class _MockClient(Model):
-        model = "test-model"
-
-        async def sample(self, req: ResponsesRequest) -> ResponsesResult:
-            return await responses_create_fn(req)
-
-    return CapturingOpenAIModel(_MockClient())
 
 
 class NoopOpenAIClient(Model):
