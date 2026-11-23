@@ -18,7 +18,7 @@ bb run "$p/debundle_cases:debundle_cases" -- --out "$out/cases.jsonl"
 bb run "$p/debundle_cases:summarize_debundle_cases" -- "$out/cases.jsonl" > "$out/summary.md"
 ```
 
-Add `--regression` to fail after writing the report on an empty selection, a runner error, an invalid baseline, or an accepted split with a different observation. Unsupported entries are counted separately.
+Add `--regression` to fail after writing the report on an empty selection, a runner error, an invalid baseline, or an accepted split with a different observation. Unsupported entries are counted separately. Subprocess failures report the command, elapsed time, and a bounded output tail in the report and in regression failures.
 
 Use `--filter <substring>` for a smaller run.
 
