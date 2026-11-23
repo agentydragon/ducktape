@@ -4,15 +4,21 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   arrow,
+  block,
   call,
   conditional,
   exportNamed,
+  expression,
   id,
   literal,
   lower,
+  moduleEvaluationOrder,
+  observe,
   prepare,
   program,
+  returns,
   root,
+  throws,
   variable,
 } from "./linked_programs_test_support.mjs";
 
@@ -119,4 +125,73 @@ assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
 assert.deepEqual(localVerdict.assumptions, []);
 for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
   assert.equal((await import(pathToFileURL(file).href)).result, "local");
+}
+
+// Both constructs occur in the same program. The crossing is valid in a page.
+// In a realm without window, it reaches the deferred constructor in the split only.
+for (const pageSkipsError of [true, false]) {
+  const scope = path.join(root, `profile-reversal-${pageSkipsError}`);
+  const order = ["worker.mjs", "reader.mjs", "state.mjs"];
+  const files = prepare(scope, {
+    source: program([
+      {
+        type: "FunctionDeclaration",
+        id: id("read"),
+        params: [],
+        generator: false,
+        async: false,
+        body: block([
+          {
+            type: "IfStatement",
+            test: {
+              type: "BinaryExpression",
+              operator: pageSkipsError ? "===" : "!==",
+              left: { type: "UnaryExpression", operator: "typeof", prefix: true, argument: id("window") },
+              right: literal("object"),
+            },
+            consequent: returns(literal("page")),
+            alternate: null,
+          },
+          {
+            type: "IfStatement",
+            test: { type: "BinaryExpression", operator: "===", left: id("current"), right: id("undefined") },
+            consequent: throws({ type: "NewExpression", callee: id("Error"), arguments: [literal("too early")] }),
+            alternate: null,
+          },
+          returns(id("current")),
+        ]),
+      },
+      variable("var", "current", null),
+      expression({ type: "AssignmentExpression", operator: "=", left: id("current"), right: literal("ready") }),
+      variable("const", "result", call(id("read"))),
+      exportNamed([["result", "result"]]),
+    ]),
+    provider: "",
+    spec: {
+      entry,
+      modules: { "worker.mjs": ["#0"], "state.mjs": ["#1", "#2"], "reader.mjs": ["#3"], [entry]: ["#4"] },
+      order,
+      sequential: true,
+    },
+  });
+  const out = path.join(scope, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out, ["--host-contract", profile]);
+  if (!pageSkipsError) {
+    assert.match(verdict.reason, /split reached an unknown result.*ambient constructor Error is reached/);
+    assert(!existsSync(out));
+    continue;
+  }
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.assumptions.length, 1);
+  assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
+  globalThis.window = {};
+  try {
+    for (const file of [files.sourceFile, path.join(out, entry)]) {
+      assert.equal((await import(pathToFileURL(file).href)).result, "page");
+    }
+  } finally {
+    delete globalThis.window;
+  }
+  assert.deepEqual(observe(files.sourceFile, "result"), { result: "ready" });
+  assert.deepEqual(observe(path.join(out, entry), "result"), { error: "Error" });
 }
