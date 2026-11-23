@@ -134,13 +134,7 @@ def _alertmanager_config() -> dict[str, object]:
                         '|NodeMemoryMajorPagesFaults"'
                     ],
                 },
-                # Same category: fallout of roaming laptops leaving the cluster. These
-                # carry no `node` label, so the RoamingNodeOffline inhibition cannot
-                # reach them. The out-of-service taint now evicts a laptop's pods, which
-                # should end most of them; Cilium still counts offline laptops
-                # (`KubeDaemonSetRolloutStuck`) and a pod pinned to a laptop stays
-                # Pending. Prune after narrowing Cilium's tolerations and reviewing 7d of
-                # `ALERTS`, per the rule above.
+                # These alerts lack the `node` label used by RoamingNodeOffline.
                 {
                     "receiver": "null",
                     "matchers": [

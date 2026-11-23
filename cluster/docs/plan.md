@@ -158,8 +158,8 @@ editing a route.
       unsupported on these cards; Xid-79 events are captured through journal → Loki.
       Optional DCGM experimental-XID and per-GPU PCIe AER work are tracked in
       `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718/followups.md` #4).
-- [ ] Roaming laptop nodes: remaining follow-ups (Cilium tolerations, alert re-keying) are
-      in <plans/roaming_nodes.md>.
+- [ ] Roaming laptops: resume and restrictive-NAT checks, then alert routing cleanup.
+      <plans/roaming_nodes.md>
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
       `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
       decide placement before moving it.
