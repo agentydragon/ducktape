@@ -237,14 +237,15 @@ bbapi target log <invocation-id> <target-substring>
 The `Bazel CI` workflow derives its test invocation ID from the Actions run ID
 and attempt before starting Bazel. Its `BuildBuddy / Bazel ordinary tests (live)` commit
 status links to that invocation while the native `Test & Build` job is still
-running. Open that status and stream the same log locally with:
+running. Use `invocation_id` from that link and the task's scratch directory to
+stream the same log locally.
 
 ```bash
-set +e
-bbapi invocation watch <invocation-id> --fail-on-test-failure --result-file "$RUNNER_TEMP/invocation.json"
-watch_exit=$?
-set -e
-jq -r '"\(.state) \(.reason) \(.failed_test // \"\")"' "$RUNNER_TEMP/invocation.json"
+scratch="${TMPDIR:-/tmp}/agents/2026_11_23/build-diagnosis"
+mkdir -p "$scratch"
+bbapi invocation watch "$invocation_id" --fail-on-test-failure --result-file "$scratch/invocation.json" ||
+  printf 'Watch exited with status %d\n' "$?"
+jq -r '[.state, .reason, (.failed_test // "")] | @tsv' "$scratch/invocation.json"
 ```
 
 To stop as soon as BuildBuddy indexes the first non-passing `TestResult`, use

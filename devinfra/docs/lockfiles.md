@@ -9,10 +9,14 @@ Add Python dependencies to `pyproject.toml`, then regenerate the Bazel
 requirements output through RBE:
 
 ```bash
-bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
+bbr build //:requirements --remote_build_event_upload=all \
+  --remote_download_regex='.*requirements[.]out$' --noremote_accept_cached
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
 bb run //devinfra:gazelle_python_manifest.update
 ```
+
+The [artifact upload option](../buildbuddy/docs/remote.md#2-runrequest-construction)
+makes the generated file available for the download.
 
 On a NixOS host without `/bin/bash`, the workspace Bazel rc may need the host
 shell override for the Gazelle manifest update:
