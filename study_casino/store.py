@@ -12,10 +12,11 @@ from __future__ import annotations
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from itertools import repeat
 from pathlib import Path
 from typing import Any, get_args
 
@@ -559,20 +560,10 @@ def _aggregate_game(
         by_key[key].append(e)
 
     buckets = [
-        _bucket_stats(
-            key,
-            label,
-            by_key[key],
-            _theoretical_bucket(
-                theoretical.get((game, key)),
-                _fair_win_lower_tail_probability(by_key[key], bucket_key, theoretical) if game == "roulette" else None,
-            ),
-        )
+        _bucket_stats(key, label, by_key[key], _theoretical_bucket(game, by_key[key], theoretical.get((game, key))))
         for key, label in bucket_defs
     ]
-    total_theoretical = (
-        _weighted_theoretical_for_actual_wagers(game_events, bucket_key, theoretical) if game == "roulette" else None
-    )
+    total_theoretical = _roulette_total_theory(game_events, theoretical) if game == "roulette" else None
     total = _bucket_stats("__total__", "All actual wagers", game_events, total_theoretical)
 
     # Timeline never crosses below the data-collection cutoff — defensive
@@ -633,75 +624,61 @@ def _bucket_stats(
 
 
 def _theoretical_bucket(
-    value: tuple[float, float] | None, fair_win_lower_tail_probability: float | None = None
+    game: Game, events: list[GameEventRead], value: tuple[float, float] | None
 ) -> _TheoreticalStats | None:
     if value is None:
         return None
     payout_rate, rtp = value
     return _TheoreticalStats(
-        payout_rate=payout_rate, rtp=rtp, fair_win_lower_tail_probability=fair_win_lower_tail_probability
+        payout_rate=payout_rate,
+        rtp=rtp,
+        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, repeat(payout_rate, len(events)))
+        if game == "roulette"
+        else None,
     )
 
 
-def _weighted_theoretical_for_actual_wagers(
-    events: list[GameEventRead],
-    bucket_key: Callable[[GameOutcome], str | None],
-    theoretical: dict[tuple[str, str], tuple[float, float]],
+def _roulette_total_theory(
+    events: list[GameEventRead], theoretical: dict[tuple[str, str], tuple[float, float]]
 ) -> _TheoreticalStats | None:
     if not events:
         return None
 
-    expected_wins = 0.0
+    rates = []
     expected_returned = 0.0
     wagered = 0
     for event in events:
-        key = bucket_key(event.outcome)
-        if key is None:
+        if not isinstance(event.outcome, RouletteOutcome):
             return None
-        theor = theoretical.get((event.game, key))
-        if theor is None:
+        theory = theoretical.get(("roulette", event.outcome.bet_type))
+        if theory is None:
             return None
-        payout_rate, rtp = theor
-        expected_wins += payout_rate
+        payout_rate, rtp = theory
+        rates.append(payout_rate)
         expected_returned += event.wager_credits * rtp
         wagered += event.wager_credits
 
     return _TheoreticalStats(
-        payout_rate=expected_wins / len(events),
+        payout_rate=sum(rates) / len(events),
         rtp=(expected_returned / wagered) if wagered > 0 else None,
         expected_returned=expected_returned,
-        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, bucket_key, theoretical),
+        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, rates),
     )
 
 
-def _fair_win_lower_tail_probability(
-    events: list[GameEventRead],
-    bucket_key: Callable[[GameOutcome], str | None],
-    theoretical: dict[tuple[str, str], tuple[float, float]],
-) -> float | None:
+def _fair_win_lower_tail_probability(events: list[GameEventRead], payout_rates: Iterable[float]) -> float | None:
     """P(fair game has <= observed wins), conditioned on actual wager types."""
     if not events:
         return None
-
-    distribution = {0: 1.0}
-    for event in events:
-        if event.game != "roulette" or not isinstance(event.outcome, RouletteOutcome):
-            return None
-        key = bucket_key(event.outcome)
-        if key is None:
-            return None
-        theor = theoretical.get((event.game, key))
-        if theor is None:
-            return None
-        payout_rate, _rtp = theor
-        next_distribution: dict[int, float] = {}
-        for wins, probability in distribution.items():
-            next_distribution[wins] = next_distribution.get(wins, 0.0) + probability * (1.0 - payout_rate)
-            next_distribution[wins + 1] = next_distribution.get(wins + 1, 0.0) + probability * payout_rate
-        distribution = next_distribution
-
-    observed_wins = sum(1 for event in events if event.payout_tokens > 0)
-    return sum(probability for wins, probability in distribution.items() if wins <= observed_wins)
+    observed_wins = sum(event.payout_tokens > 0 for event in events)
+    # Counts above the observed number of wins cannot contribute to this tail on later spins.
+    probabilities = [1.0] + [0.0] * observed_wins
+    for spins, rate in enumerate(payout_rates, start=1):
+        # Descend so both terms still describe the distribution before this spin.
+        for wins in range(min(spins, observed_wins), 0, -1):
+            probabilities[wins] = probabilities[wins] * (1 - rate) + probabilities[wins - 1] * rate
+        probabilities[0] *= 1 - rate
+    return sum(probabilities)
 
 
 def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStats:

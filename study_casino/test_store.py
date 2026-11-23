@@ -425,7 +425,13 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     assert win.theoretical_rtp is None
 
 
-def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStore) -> None:
+@pytest.mark.parametrize(
+    ("red_won", "number_won", "tail"),
+    [(False, False, (19 / 37) * (36 / 37)), (True, False, 1 - (18 / 37) * (1 / 37)), (True, True, 1.0)],
+)
+def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(
+    store: SqlStore, red_won: bool, number_won: bool, tail: float
+) -> None:
     """The roulette total row has no fake uniform strategy assumption.
 
     It reports the expected hit rate and returned tokens for the actual
@@ -435,13 +441,15 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     _seed_game_events(
         store,
         [
-            _game_event("roulette-mix-1", "roulette", _roulette_outcome("red", False), wager=10, payout=0),
+            _game_event(
+                "roulette-mix-1", "roulette", _roulette_outcome("red", red_won), wager=10, payout=20 if red_won else 0
+            ),
             _game_event(
                 "roulette-mix-2",
                 "roulette",
-                _roulette_outcome("number", False, bet_number=7, multiplier=36),
+                _roulette_outcome("number", number_won, bet_number=7, multiplier=36),
                 wager=5,
-                payout=0,
+                payout=180 if number_won else 0,
             ),
         ],
     )
@@ -454,11 +462,11 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     assert roulette.total.theoretical_rtp == pytest.approx(36 / 37)
     assert roulette.total.theoretical_ev_per_credit == pytest.approx(-1 / 37)
     assert roulette.total.expected_net == pytest.approx(-15 / 37)
-    assert roulette.total.fair_win_lower_tail_probability == pytest.approx((19 / 37) * (36 / 37))
+    assert roulette.total.fair_win_lower_tail_probability == pytest.approx(tail)
     red = next(b for b in roulette.buckets if b.key == "red")
     number = next(b for b in roulette.buckets if b.key == "number")
-    assert red.fair_win_lower_tail_probability == pytest.approx(19 / 37)
-    assert number.fair_win_lower_tail_probability == pytest.approx(36 / 37)
+    assert red.fair_win_lower_tail_probability == pytest.approx(1.0 if red_won else 19 / 37)
+    assert number.fair_win_lower_tail_probability == pytest.approx(1.0 if number_won else 36 / 37)
 
 
 def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:
