@@ -255,26 +255,18 @@ def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
         rtp = p_win * RULES.roulette_multipliers[bet_type]
         out[("roulette", bet_type)] = (p_win, rtp)
 
-    # Slots: enumerate the joint distribution of three independent weighted picks.
     total_weight = sum(sym.weight for sym in RULES.slot_symbols)
     p_triple = 0.0
     rtp_triple = 0.0
     p_pair = 0.0
-    for i, sym in enumerate(RULES.slot_symbols):
-        p_i = sym.weight / total_weight
-        # P(triple of this symbol) = p_i^3, payout = wager * symbol.payout, so RTP contribution = p_i^3 * payout
-        p_triple += p_i**3
-        rtp_triple += (p_i**3) * sym.payout
-        # P(exactly two of this symbol over the three picks): choose 2 of 3 positions = 3 * p_i^2 * (1 - p_i),
-        # then the third pick must be any *different* symbol — already captured by (1 - p_i).
-        # Pair RTP uses the nominal multiplier before whole-token rounding.
-        for j, sym_j in enumerate(RULES.slot_symbols):
-            if i == j:
-                continue
-            p_j = sym_j.weight / total_weight
-            # Three ordered patterns where exactly two slots are i and the third is j:
-            # (i,i,j), (i,j,i), (j,i,i).
-            p_pair += 3 * (p_i**2) * p_j
+    for symbol in RULES.slot_symbols:
+        p = symbol.weight / total_weight
+        triple = p**3
+        p_triple += triple
+        rtp_triple += triple * symbol.payout
+        # The other symbol can occupy any one of the three reels.
+        p_pair += 3 * p**2 * (1 - p)
+    # Report the nominal multiplier before whole-token rounding.
     rtp_pair = p_pair * RULES.slot_pair_multiplier
     out[("slots", "triple")] = (p_triple, rtp_triple)
     out[("slots", "pair")] = (p_pair, rtp_pair)
