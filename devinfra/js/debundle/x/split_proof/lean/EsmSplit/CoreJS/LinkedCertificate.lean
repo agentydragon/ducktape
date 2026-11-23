@@ -374,6 +374,8 @@ def programLiteral (p : Program) : Except String String := term (Lean.toExpr p)
 
 private abbrev StringFields := List (String × String)
 
+private def wideRecordMinFields : Nat := 96
+
 private structure RecordQuotes where
   fields : Array StringFields := #[]
   replacements : Std.HashMap Lean.Expr String := {}
@@ -387,8 +389,7 @@ private def recordQuotes (source candidate : Program) : Except String RecordQuot
       for unit in md.body do
         let (ordinal, stmt) := unit
         let .decl kind name (.obj props) := stmt | continue
-        -- The ordinary proof reaches its reduction limit at 96 static fields.
-        if props.length < 96 then continue
+        if props.isEmpty then continue
         let some fields := props.mapM (fun
           | .init (.str key) (.str value) => some (key, value)
           | _ => none) | continue
@@ -817,9 +818,14 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   let s ← termWith replace sourceTerm
   let c ← termWith replace candidateTerm
   let recordTerms := if records.fields.isEmpty then "" else
-    let keys := (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
+    let keys := if records.fields.any (·.length ≥ wideRecordMinFields) then
+      (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
+    else #[]
     "attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++
-      String.join (records.fields.zipIdx.toList.map fun (fields, index) => recordDefinitions index fields keys)
+    String.join (records.fields.zipIdx.toList.map fun (fields, index) =>
+      -- The checked fallback scan is cheap for a small record. Individual
+      -- facts avoid repeated scans of wide field lists.
+      recordDefinitions index fields (if fields.length < wideRecordMinFields then #[] else keys))
   let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
   let p ← term (Lean.toExpr plan)
   let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
