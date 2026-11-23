@@ -41,10 +41,12 @@ inductive Val where
   | obj (a : Addr)
   | error (kind : ErrorKind) (msg : String)
   | host (name : String)
+  deriving DecidableEq
 
 inductive Property where
   | data (value : Val) (writable enumerable configurable : Bool)
   | accessor (get set : Val) (enumerable configurable : Bool)
+  deriving DecidableEq
 
 def Property.enumerable : Property → Bool
   | .data _ _ e _ | .accessor _ _ e _ => e
@@ -56,6 +58,7 @@ def Property.configurable : Property → Bool
 structure Env where
   vars : List (Name × Addr)
   this : Val
+  deriving DecidableEq
 
 /-- The bindings of `names` in `env`, and its `this`: what a closure keeps of the scope it was made in. A function
 keeps the bindings its code can mean (`Func.closes`) and no others, so two scopes that give those names the same
@@ -85,6 +88,7 @@ structure Obj where
 structure Binding where
   value : Option Val
   mutable : Bool
+  deriving DecidableEq
 
 /-- A primitive value: what the program and the host hand each other. -/
 inductive Primitive where

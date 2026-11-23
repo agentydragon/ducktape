@@ -231,6 +231,7 @@ lean_library(
         "EsmSplit/CoreJS/Reachability.lean",
         "EsmSplit/CoreJS/Scope.lean",
         "EsmSplit/CoreJS/Split.lean",
+        "EsmSplit/CoreJS/StateMatch.lean",
         "EsmSplit/CoreJS/WriteExpr.lean",
     ],
     deps = [
@@ -397,6 +398,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.RequestProperty",
         "EsmSplit.CoreJS.Scope",
         "EsmSplit.CoreJS.Split",
+        "EsmSplit.CoreJS.StateMatch",
         "EsmSplit.CoreJS.StatementFrame",
         "EsmSplit.CoreJS.WrapperLinked",
         "EsmSplit.CoreJS.WrapperMove",
@@ -484,6 +486,7 @@ lean_axiom_test(
         "CoreJS.same",
         "CoreJS.runUnit_agree",
         "CoreJS.capture_faithful",
+        "CoreJS.StateMatch.probe",
         "CoreJS.order_kept_preserves",
         "CoreJS.split_holds_statements",
         "CoreJS.split_scopes_agree",
