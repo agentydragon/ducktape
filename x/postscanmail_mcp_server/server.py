@@ -1,21 +1,4 @@
-"""FastMCP server exposing the PostScan Mail Developer API.
-
-Hand-authored thin wrapper around the eleven endpoints documented at
-<https://github.com/PostScanMail/api-docs>. PostScan Mail publishes no OpenAPI
-spec (verified: the docs repo is markdown-only and the live API serves no
-`/openapi.json`/`/swagger.json`), so `FastMCP.from_openapi` is not an option;
-the read responses are modeled as typed Pydantic schemas built from the
-observed payload shapes instead. Mutating/action response shapes are
-undocumented, so those tools return the upstream JSON verbatim (`object`).
-
-This server is **not** auth-aware — it speaks to PostScan Mail with a single
-static `x-api-key` for the account-wide developer key. Its former Kubernetes
-deployment paired it with an `mcp-oauth-facade` sidecar for per-caller auth
-and the agentydragon-only ACL (see
-<cluster/parked/postscanmail-mcp/deployment.yaml>). That app is now
-decommissioned; any revival must restore an authentication boundary before
-exposing this server.
-"""
+"""FastMCP tools for the PostScan Mail Developer API. Deployment and authentication are documented in README.md."""
 
 from __future__ import annotations
 
