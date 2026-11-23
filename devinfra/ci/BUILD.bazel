@@ -267,6 +267,7 @@ py_test(
     srcs = ["test_nix_artifact_overrides.py"],
     deps = [
         ":nix_artifact_overrides",
+        ":release_assets",
         "//devinfra/buildbuddy:cli",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
