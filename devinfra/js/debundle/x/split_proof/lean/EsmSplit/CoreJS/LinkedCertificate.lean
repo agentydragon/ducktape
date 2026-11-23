@@ -856,17 +856,6 @@ macro "verify_linked_programs " fuel:num useCbv:(" cbv_first")? : tactic => do
      · apply sameExports_of_match
        intro w <;> $reduce))
 
-/-- A successful link together with the resulting scopes and initial execution state. -/
-structure CheckedLink (p : Program) (w : World) where
-  linked : List (Module × Env)
-  ready : State w
-  equation : link p (initialState w p.regions) = .ok linked ready
-
-private theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : CheckedLink p w) :
-    runProgram w fuel p = runUnits fuel (unitsOf checked.linked) checked.ready := by
-  unfold runProgram
-  exact bind_of_ok checked.equation
-
 /-- Reduce only the real link operation. Reflexivity fills the two output fields
 with the kernel-checked module scopes and state. -/
 macro "check_linked_layout" : tactic =>
