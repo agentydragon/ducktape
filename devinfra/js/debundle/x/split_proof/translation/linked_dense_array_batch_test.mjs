@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  array,
   exportNamed,
   literal,
   lower,
@@ -9,12 +10,12 @@ import {
   prepare,
   program,
   root,
+  unary,
   variable,
 } from "./testing/linked_programs.mjs";
 
 const rowCount = 52;
-const array = (elements) => ({ type: "ArrayExpression", elements });
-const voidZero = { type: "UnaryExpression", operator: "void", prefix: true, argument: literal(0) };
+const voidZero = unary("void", literal(0));
 const rows = Array.from({ length: rowCount }, (_, index) =>
   array([
     literal(`row-${index}`),

@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  array,
   arrow,
   call,
   conditional,
@@ -20,7 +21,6 @@ const profile = path.join(root, "profile.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const entry = "entry.mjs";
 const owner = "factory.mjs";
-const array = (...elements) => ({ type: "ArrayExpression", elements });
 
 const constructors = [
   { name: "Date", args: [literal(0)], observe: (v) => v.toISOString(), expected: "1970-01-01T00:00:00.000Z" },
@@ -32,7 +32,7 @@ const constructors = [
   },
   {
     name: "Set",
-    args: [array(literal(1), literal(1), literal(2))],
+    args: [array([literal(1), literal(1), literal(2)])],
     observe: (v) => [...v],
     expected: [1, 2],
   },

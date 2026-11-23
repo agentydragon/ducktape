@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  array,
   arrow,
+  binary,
   block,
   call,
   exportNamed,
@@ -11,10 +13,12 @@ import {
   lower,
   observe,
   prepare,
+  primitive,
   program,
   returns,
   root,
   throws,
+  unary,
   variable,
 } from "./testing/linked_programs.mjs";
 
@@ -36,13 +40,6 @@ function assertCertified(name, source, result) {
   assert.deepEqual(observe(files.sourceFile, "result"), { result });
   assert.deepEqual(observe(path.join(out, entry), "result"), { result });
 }
-
-const unary = (operator, argument) => ({ type: "UnaryExpression", operator, argument, prefix: true });
-const binary = (operator, left, right) => ({ type: "BinaryExpression", operator, left, right });
-const primitive = (value) => {
-  if (value === undefined || value === Infinity) return id(String(value));
-  return typeof value === "number" && value < 0 ? unary("-", literal(-value)) : literal(value);
-};
 
 // Run the comparisons during initialization. A wrong numeric result then
 // prevents certification even when both sides lower the operator the same way.
@@ -90,7 +87,7 @@ for (const [name, cases] of [
   assertCertified(
     name,
     program([
-      variable("const", "worker", arrow([], block([...body, returns({ type: "ArrayExpression", elements: values })]))),
+      variable("const", "worker", arrow([], block([...body, returns(array(values))]))),
       variable("const", "result", call(id("worker"))),
       exportNamed([["result", "result"]]),
     ]),

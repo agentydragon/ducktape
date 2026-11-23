@@ -5,6 +5,7 @@ import { parse } from "acorn";
 import path from "node:path";
 import {
   arrow,
+  binary,
   block,
   call,
   conditional,
@@ -13,6 +14,7 @@ import {
   id,
   literal,
   lower,
+  member,
   moduleEvaluationOrder,
   observe,
   prepare,
@@ -43,8 +45,6 @@ function assertCertified({ files, out, verdict, log }, expected) {
 }
 
 const assignment = (left, right) => ({ type: "AssignmentExpression", operator: "=", left, right });
-const binary = (operator, left, right) => ({ type: "BinaryExpression", operator, left, right });
-const member = (object, property, computed = false) => ({ type: "MemberExpression", object, property, computed });
 const sequence = (...expressions) => ({ type: "SequenceExpression", expressions });
 const record = (...properties) => ({ type: "ObjectExpression", properties });
 const declare = (name, init) => variable("const", name, init);

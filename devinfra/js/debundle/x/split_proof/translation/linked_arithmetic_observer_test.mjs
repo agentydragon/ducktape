@@ -3,12 +3,14 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  binary,
   call,
   exportNamed,
   forcePreview,
   id,
   literal,
   lower,
+  member,
   moduleEvaluationOrder,
   observe,
   prepare,
@@ -52,8 +54,7 @@ assertCertified(
   true
 );
 
-const binary = (operator, left, right) => ({ type: "BinaryExpression", operator, left, right });
-const lengthRead = { type: "MemberExpression", object: id("values"), property: id("length"), computed: false };
+const lengthRead = member(id("values"), id("length"));
 
 for (const [name, length, index, result] of [
   ["numeric-length", 3, 2, true],

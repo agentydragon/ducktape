@@ -3,7 +3,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  array,
   arrow,
+  binary,
   block,
   call,
   conditional,
@@ -12,6 +14,7 @@ import {
   id,
   literal,
   lower,
+  member,
   prepare,
   program,
   property,
@@ -23,13 +26,6 @@ import {
 
 const entry = "entry.mjs";
 const load = (file) => import(pathToFileURL(file).href);
-const member = (object, property, computed) => ({
-  type: "MemberExpression",
-  object,
-  property,
-  computed,
-  optional: false,
-});
 const declaration = (name, init) => variable("const", name, init);
 
 function fixture(name, source, unitCount, moved) {
@@ -148,9 +144,9 @@ for (const [name, key, instance, present] of [
   ],
   ["inherited", "toString", { type: "ObjectExpression", properties: [] }, true],
   ["absent", "field", { type: "ObjectExpression", properties: [] }, false],
-  ["index", 0, { type: "ArrayExpression", elements: [literal(null)] }, true],
+  ["index", 0, array([literal(null)]), true],
 ]) {
-  const test = { type: "BinaryExpression", operator: "in", left: literal(key), right: id("instance") };
+  const test = binary("in", literal(key), id("instance"));
   const unexpected = call(arrow([], block([throws(literal("wrong presence"))])));
   const expected = literal(present);
   const source = program([

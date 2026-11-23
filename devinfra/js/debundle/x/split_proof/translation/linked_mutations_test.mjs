@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  array,
   arrow,
+  binary,
   block,
   call,
   exportNamed,
   id,
   literal,
   lower,
+  member,
   observe,
   prepare,
   program,
@@ -45,9 +48,7 @@ function assertRejected({ files, out, verdict, log }, reason, observation) {
 
 const assign = (operator, left, right) => ({ type: "AssignmentExpression", operator, left, right });
 const update = (operator, argument, prefix) => ({ type: "UpdateExpression", operator, argument, prefix });
-const member = (object, key, computed = false) => ({ type: "MemberExpression", object, property: key, computed });
 const record = (key, value) => ({ type: "ObjectExpression", properties: [property(key, literal(value))] });
-const array = (...elements) => ({ type: "ArrayExpression", elements });
 const run = (body) =>
   program([
     variable("const", "run", arrow([], block(body))),
@@ -58,7 +59,7 @@ const run = (body) =>
 function expect(actual, expected) {
   return {
     type: "IfStatement",
-    test: { type: "BinaryExpression", operator: "!==", left: actual, right: literal(expected) },
+    test: binary("!==", actual, literal(expected)),
     consequent: throws(literal("wrong mutation result")),
     alternate: null,
   };
@@ -127,7 +128,7 @@ for (const [operator, prefix, onMember, updated] of [
     variable("const", "assigned", update(operator, target, prefix)),
     expect(id("assigned"), expected),
     expect(target, updated),
-    returns(array(id("assigned"), target)),
+    returns(array([id("assigned"), target])),
   ]);
   assertCertified(split(`${operator}-${prefix}`, source), [expected, updated]);
 }

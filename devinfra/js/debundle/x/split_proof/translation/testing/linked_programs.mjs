@@ -11,6 +11,24 @@ assert(root, "TEST_TMPDIR is required");
 
 export const id = (name) => ({ type: "Identifier", name });
 export const literal = (value) => ({ type: "Literal", value });
+export const binary = (operator, left, right) => ({ type: "BinaryExpression", operator, left, right });
+export const unary = (operator, argument) => ({ type: "UnaryExpression", operator, argument, prefix: true });
+export const array = (elements) => ({ type: "ArrayExpression", elements });
+export const member = (object, property, computed = false) => ({
+  type: "MemberExpression",
+  object,
+  property,
+  computed,
+  optional: false,
+});
+
+export function primitive(value) {
+  // Astring's literal serializer loses signed zero and non-finite numbers.
+  if (value === undefined || Number.isNaN(value) || value === Infinity) return id(String(value));
+  if (typeof value === "number" && (value < 0 || Object.is(value, -0))) return unary("-", primitive(-value));
+  return literal(value);
+}
+
 export const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
 export const conditional = (test, consequent, alternate) => ({
   type: "ConditionalExpression",
