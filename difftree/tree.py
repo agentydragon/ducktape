@@ -83,32 +83,13 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
                     current.deletions = change.deletions
                     current.is_binary = change.is_binary
 
-    # Propagate stats bottom-up
-    def propagate_stats(node: _MutableNode) -> tuple[int, int]:
-        if node.is_file:
-            return (node.additions, node.deletions)
-
-        total_adds = 0
-        total_dels = 0
-        for child in node.children.values():
-            adds, dels = propagate_stats(child)
-            total_adds += adds
-            total_dels += dels
-
-        node.additions = total_adds
-        node.deletions = total_dels
-        return (total_adds, total_dels)
-
-    propagate_stats(root)
-
-    # Convert to immutable TreeNode
     def to_frozen(node: _MutableNode) -> TreeNode:
         frozen_children = {name: to_frozen(child) for name, child in node.children.items()}
         return TreeNode(
             name=node.name,
             is_file=node.is_file,
-            additions=node.additions,
-            deletions=node.deletions,
+            additions=node.additions if node.is_file else sum(child.additions for child in frozen_children.values()),
+            deletions=node.deletions if node.is_file else sum(child.deletions for child in frozen_children.values()),
             is_binary=node.is_binary,
             children=frozen_children,
             path=node.path,
