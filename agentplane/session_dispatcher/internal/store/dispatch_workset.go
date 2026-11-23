@@ -33,8 +33,9 @@ func (s *Store) ReadDispatchWorkset(ctx context.Context, sessionID string, calle
 	const columns = "d.command_id,d.operation_value,d.state_value,LEFT(d.reason,256),COALESCE(length(d.reason)>256,false),d.admission IS NOT NULL,d.created_at,d.updated_at,d.version"
 	// Merge only the top rows of each recent state. The latest same-Session receipt wins when old
 	// Dispatchers reused an ID. A newer live row can also supersede a tombstone.
+	// Literal sets let PostgreSQL use the matching partial indexes with generic plans.
 	activeStates := fmt.Sprintf("(%d,%d)", QueueState, DeliveringState)
-	recentStates := fmt.Sprintf("(%d,%d,%d,%d)", FailedState, UnknownState, AdmittedState, CancelledState)
+	recentStates := fmt.Sprintf("(%d,%d,%d,%d)", AdmittedState, FailedState, CancelledState, UnknownState)
 	query := `WITH visible AS (
 		SELECT o.session_id,o.sandbox_name,o.sandbox_uid FROM session o
 		WHERE o.session_id=$1 AND ` + owner + `

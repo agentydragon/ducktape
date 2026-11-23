@@ -14,9 +14,8 @@ import (
 )
 
 func DescribeSession(row *store.Session) (*dispatcherpb.Session, error) {
-	switch row.State {
-	case store.SessionWaitingState, store.SessionInProgressState, store.SessionAcceptedState, store.SessionFailedState, store.SessionUnknownState:
-	default:
+	_, known := dispatcherpb.SessionStatus_Materialization_name[int32(row.State)]
+	if !known || row.State == dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNSPECIFIED {
 		return nil, fmt.Errorf("unknown Session materialization %d", row.State)
 	}
 	result := &dispatcherpb.Session{
