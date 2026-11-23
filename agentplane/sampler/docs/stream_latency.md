@@ -137,18 +137,13 @@ requires multiple journal inserts, cursor updates and notifications in one trans
   batch. Measure first-delta delay as well as throughput; preserve ordering, raw evidence and
   reconnect/replay semantics. Reading ahead alone could just move the backlog into memory.
 
-**Interrupt delivery proposal for review.** A user interrupt already creates a durable
-`sampler_interrupt` row. [Command admission](../internal/sessionstore/admission.go) also
-notifies `central_sampler_work` in that transaction. The [replica listens](../cmd/main.go)
-for work, but the in-flight turn still checks on its own timer. The direct
-[RequestInterrupt path](../internal/sessionstore/processes.go) inserts the row without a wakeup.
-
-Use the existing [keyed LISTEN/NOTIFY hub](../../postgres/wakeups/hub.go) to wake the affected
-conversation on every interrupt insertion. Subscribe before the first pending-row read, then
-re-read on wakeup and reconnect. Keep the generation and target-turn checks when acting on the
-row. The ticker also checks for queued steering while a tool is in the foreground. Cover both
-steering arrival and a tool entering the foreground with steering already queued before removing
-the ticker. Test an interrupt committed during listener disconnection and during owner takeover.
+**Interrupt delivery after the staging sample.** The turn now subscribes to its conversation
+before reading pending interrupts. [Database triggers](../migrations/schema/0020_turn_wakeups.sql)
+notify that key when an interrupt or command commits, including writes from older replicas.
+The [turn](../internal/residentruntime/session/turn.go) re-reads durable state when the key
+wakes or the listener reconnects. A tool entering the foreground also wakes the turn so that
+previously queued steering input can yield the observation. The effect on staging latency
+still needs measurement.
 
 Test a narrower export checkpoint transaction that preserves monotonic cursors. To measure
 cross-session interference, run the same Responses replay with export and interrupt handling

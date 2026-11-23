@@ -25,6 +25,7 @@ import (
 const (
 	OutboxChannel = "central_sampler_outbox"
 	WorkChannel   = "central_sampler_work"
+	TurnChannel   = "central_sampler_turn"
 )
 
 type rowScanner interface {

@@ -22,6 +22,10 @@ func (r *Runtime) newDriver(task *residentSession) *session.Driver {
 	}, &runtimeSlot{runtime: r, task: task})
 }
 
+func (s *runtimeSlot) SubscribeTurn(conversationID string) (<-chan struct{}, func(), error) {
+	return s.runtime.turnWakeups.SubscribeKey(sessionstore.TurnChannel, conversationID)
+}
+
 func (s *runtimeSlot) Wake() <-chan struct{}  { return s.task.wake }
 func (s *runtimeSlot) Drain() <-chan struct{} { return s.runtime.draining }
 

@@ -437,6 +437,49 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 	stop()
 }
 
+func TestInterruptWakesInFlightProviderRequest(t *testing.T) {
+	store := runtimetesting.NewStore(t, integrationDatabase)
+	session := runtimetesting.OpenSessionForStore(t, store, "")
+	runtimetesting.AdmitInput(t, store, session.ID, "turn", "begin sampling")
+	requested := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+		select {
+		case requested <- struct{}{}:
+		default:
+		}
+		select {
+		case <-r.Context().Done():
+		case <-t.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	runtime, _ := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
+	select {
+	case <-requested:
+	case <-time.After(10 * time.Second):
+		t.Fatal("provider request never started")
+	}
+	owner := runtimeOwner(t, runtime, session.ID)
+	id, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually.Within(t, 10*time.Second, func() (bool, string) {
+		var cancelled bool
+		err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE((result->>'provider_cancelled')::boolean, false)
+			FROM sampler_interrupt WHERE id=$1`, id).Scan(&cancelled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cancelled, "waiting for the active turn to acknowledge the interrupt"
+	})
+}
+
 func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")

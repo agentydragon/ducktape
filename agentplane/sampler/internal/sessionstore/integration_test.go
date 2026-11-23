@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -32,6 +33,38 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestCommandAdmissionWakesOnlyItsConversation(t *testing.T) {
+	store, dsn := newTestStoreWithDSN(t)
+	target := openSessionForStore(t, store, "")
+	other := openSessionForStore(t, store, "")
+	hub, err := wakeups.Listen(t.Context(), dsn, TurnChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	input, unsubscribe, err := hub.SubscribeKey(TurnChannel, target.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	unrelated, unsubscribeOther, err := hub.SubscribeKey(TurnChannel, other.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribeOther()
+	admitInput(t, store, target.ID, "steering", "next input")
+	select {
+	case <-input:
+	case <-time.After(5 * time.Second):
+		t.Fatal("command admission did not wake its conversation")
+	}
+	select {
+	case <-unrelated:
+		t.Fatal("command admission woke an unrelated conversation")
+	default:
+	}
+}
 
 func TestStoreOperationsExpireBeforeTheirCallerWhenBlockedOnDatabaseLocks(t *testing.T) {
 	for _, scenario := range []struct {

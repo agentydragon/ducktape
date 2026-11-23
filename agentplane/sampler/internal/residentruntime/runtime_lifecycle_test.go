@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	runtimepkg "runtime"
@@ -27,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -41,9 +43,24 @@ import (
 
 func startRuntimeForTest(t *testing.T, runtime *Runtime) (context.CancelFunc, <-chan error) {
 	t.Helper()
+	// Listen on the same per-test database as the runtime.
+	dsn, err := url.Parse(integrationDatabase.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var databaseName string
+	if err := runtime.store.DB().QueryRowContext(t.Context(), "SELECT current_database()").Scan(&databaseName); err != nil {
+		t.Fatal(err)
+	}
+	dsn.Path = "/" + databaseName
+	hub, err := wakeups.Listen(t.Context(), dsn.String(), sessionstore.WorkChannel, sessionstore.TurnChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hub.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- runtime.Run(ctx, nil) }()
+	go func() { done <- runtime.Run(ctx, hub) }()
 
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
