@@ -147,11 +147,13 @@ bbr test "$p:excalidraw_original_editor_browser_smoke"
 bbr test "$p:excalidraw_certified_scroll_browser_smoke"
 ```
 
-The baseline loads the pinned editor. The split test first certifies the single
-move with the `browser-page` profile and repeats certification with
-`--check-output`. After certification, Chromium draws a rectangle, calls the
-moved export and compares the entry's exported names with the baseline. It also
-checks that the browser loaded the exact certified entry and scroll bytes.
+The baseline loads the pinned editor. The split test records its listening
+origin, certifies the single move with the `browser-page` profile and repeats
+certification with `--check-output`. It runs the original and certified editor
+in separate Chromium contexts at the same origin. Both runs draw a rectangle,
+call the scroll export and check the bytes served for the entry and its static
+providers. The split test also checks the scroll module bytes and compares the
+entry's exported names with the baseline.
 [Smoke test](browser_smoke_test.py)
 
 ### Direct AST lowering for negated initializers

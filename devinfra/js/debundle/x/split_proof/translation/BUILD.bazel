@@ -1081,6 +1081,7 @@ _EXCALIDRAW_BROWSER_DEPS = [
     "//testing:asgi",
     "//testing/frontend_visual:context",
     "//testing/frontend_visual:fixtures",
+    "@pypi//httpx",
     "@pypi//playwright",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
