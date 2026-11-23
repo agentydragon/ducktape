@@ -10,10 +10,7 @@ import pytest
 
 @pytest.fixture
 def repo(tmp_path: Path) -> pygit2.Repository:
-    repo = pygit2.init_repository(str(tmp_path))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
-    return repo
+    return pygit2.init_repository(str(tmp_path / "repo"))
 
 
 def commit(repo: pygit2.Repository) -> None:
@@ -24,12 +21,9 @@ def commit(repo: pygit2.Repository) -> None:
     repo.create_commit("HEAD", sig, sig, "commit", tree, parents)
 
 
-def staged_deltas(repo: pygit2.Repository) -> list[pygit2.DiffDelta]:
-    """Compute staged deltas the same way the precommit entrypoint does."""
-    base = repo[repo.TreeBuilder().write()].peel(pygit2.Tree) if repo.head_is_unborn else repo.head.peel(pygit2.Tree)
-    repo.index.read()
-    return list(repo.index.diff_to_tree(base).deltas)
-
-
-def head_tree(repo: pygit2.Repository) -> pygit2.Tree | None:
-    return None if repo.head_is_unborn else repo.head.peel(pygit2.Tree)
+def stage(repo: pygit2.Repository, relpath: str, content: str = "# test") -> None:
+    path = Path(repo.workdir) / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    repo.index.add(relpath)
+    repo.index.write()
