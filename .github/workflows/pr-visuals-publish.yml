@@ -27,10 +27,18 @@ permissions:
   contents: read
   pull-requests: write
 
+# The upstream head and attempt identify the same check throughout its lifetime.
+env:
+  HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+  CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+  CHECK_EXTERNAL_ID: pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}
+
 jobs:
-  announce:
+  # This job only updates the PR check. Publishing credentials belong to the publish job.
+  update-check:
     if: >-
-      github.event.action == 'in_progress' &&
+      (github.event.action == 'in_progress' ||
+       (github.event.action == 'completed' && github.event.workflow_run.conclusion == 'cancelled')) &&
       (
         (github.event.workflow_run.event == 'pull_request' &&
          github.event.workflow_run.head_repository.full_name == github.repository) ||
@@ -50,19 +58,22 @@ jobs:
         with:
           installables: ".#pr-visuals"
 
-      - name: Announce visual review
+      - name: Update visual review status
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          # The commit the run was triggered on, which never moves (see `publish`).
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_ACTION: ${{ github.event.action }}
         run: |
+          if [[ "$CI_ACTION" == in_progress ]]; then
+            status=(--status in_progress --summary "Bazel CI is running; visual publication will follow.")
+          else
+            status=(--status completed --conclusion cancelled --summary "Bazel CI was cancelled; visual publication stopped.")
+          fi
           pr-visuals-announce \
             --repository "$GITHUB_REPOSITORY" \
             --sha "$HEAD_SHA" \
-            --status in_progress \
-            --summary "Bazel CI is running; visual publication will follow." \
-            --details-url "${{ github.event.workflow_run.html_url }}" \
-            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
+            "${status[@]}" \
+            --details-url "$CI_RUN_URL" \
+            --external-id "$CHECK_EXTERNAL_ID"
 
   # A cancelled CI run has no visual publication. Other completed runs still
   # publish their available artifacts, including when unrelated tests failed.
@@ -101,14 +112,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
           AWS_REGION: us-east-1
           GITHUB_TOKEN: ${{ github.token }}
-          # The commit this run actually tested, for both event kinds: the PR head the run
-          # was triggered on (not a merge sha), which never moves.
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           # PR run → its OWNER:BRANCH, from which the publisher looks up the PR and its
           # base commit. Passed through the environment alone: a branch name is free text.
           PR_HEAD_REF: ${{ github.event.workflow_run.event != 'push' && format('{0}:{1}', github.event.workflow_run.head_repository.owner.login, github.event.workflow_run.head_branch) || '' }}
           CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           args=(
             --ci-run-id "${{ github.event.workflow_run.id }}"
@@ -124,45 +131,6 @@ jobs:
           )
           if [ -n "$PR_HEAD_REF" ]; then
             args+=(--pull-request-head "$PR_HEAD_REF")
-            args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}")
+            args+=(--check-external-id "$CHECK_EXTERNAL_ID")
           fi
           pr-visuals-publish "${args[@]}"
-
-  # Close the announcement, if one was posted before the upstream cancellation.
-  # This job has no BuildBuddy or S3 credential and never downloads visual assets.
-  cancel:
-    if: >-
-      github.event.action == 'completed' &&
-      github.event.workflow_run.conclusion == 'cancelled' &&
-      (
-        (github.event.workflow_run.event == 'pull_request' &&
-         github.event.workflow_run.head_repository.full_name == github.repository) ||
-        (github.event.workflow_run.event == 'pull_request_target' &&
-         github.event.workflow_run.head_repository.owner.login == 'agentydragon-agent')
-      )
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: devel
-
-      - name: Record visual publisher artifact
-        run: jq -e '.pins["pr-visuals"]' nix/artifact-pins.json
-
-      - uses: ./.github/actions/setup-nix-devtools
-        with:
-          installables: ".#pr-visuals"
-
-      - name: Complete cancelled visual review
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          pr-visuals-announce \
-            --repository "$GITHUB_REPOSITORY" \
-            --sha "$HEAD_SHA" \
-            --status completed \
-            --conclusion cancelled \
-            --summary "Bazel CI was cancelled; visual publication stopped." \
-            --details-url "${{ github.event.workflow_run.html_url }}" \
-            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
