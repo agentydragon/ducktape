@@ -425,6 +425,12 @@ private def emitVerdict (requested : String) (outcome : Except String Guarantee)
   IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
+private def profileVerdict (selected used : CoreJS.HostProfile) : List (String × Json) :=
+  match selected with
+  | .empty => []
+  | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson (if used == .browserPage then
+      ["typeof window is object without observable effects throughout initialization"] else []))]
+
 private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
@@ -528,7 +534,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
           throw (IO.userError "the checked reorder proves only normal-completion")
         certifyOutput (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
           IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
-        return ← emitVerdict request.label (.ok level) "closed-declarations"
+        return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile .empty)
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
     try
       unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
@@ -548,10 +554,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
           throw (IO.userError "linked execution proves only normal-completion")
         verifyExecution active work program providers files P original candidate
       let active ← used.get
-      let extra := if profile == .browserPage then
-        [("hostProfile", toJson "browser-page"), ("assumptions", toJson (if active == .browserPage then
-          ["typeof window is object without observable effects throughout initialization"] else []))] else []
-      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" extra
+      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
   let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then
