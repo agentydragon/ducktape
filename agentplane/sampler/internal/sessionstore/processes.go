@@ -388,7 +388,7 @@ func (s *Store) RequestInterrupt(ctx context.Context, conversationID string, gen
 func (s *Store) PendingInterrupts(ctx context.Context, owner Owner) ([]string, error) {
 	var ids []string
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if err := fenceOwner(ctx, tx, owner); err != nil {
 			return err
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT id::text FROM sampler_interrupt WHERE conversation_id=$1 AND generation=$2 AND result IS NULL ORDER BY id`, owner.ConversationID, owner.Generation)

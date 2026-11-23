@@ -951,12 +951,10 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 				close(done)
 			}()
 			id := receiveOperationRequest(t, peer, code.ID())
-			deadline := time.Now().Add(3 * time.Second)
-			for test.next == "operation/yield" && !code.HasForeground() {
-				if time.Now().After(deadline) {
-					t.Fatal("wait request never became the foreground observation")
-				}
-				time.Sleep(time.Millisecond)
+			select {
+			case <-code.ForegroundStarted():
+			case <-time.After(3 * time.Second):
+				t.Fatal("wait request did not signal foreground entry")
 			}
 			sent, err := code.YieldForeground(ctx)
 			if err != nil || sent != (test.next == "operation/yield") {

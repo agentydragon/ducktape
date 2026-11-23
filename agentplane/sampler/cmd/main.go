@@ -102,16 +102,11 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		return atStartupStage("logs_directory", err)
 	}
 	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
-	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel)
+	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel, sessionstore.TurnChannel)
 	if err != nil {
 		return atStartupStage("database_wakeups", err)
 	}
 	defer hub.Close()
-	work, unsubscribe, err := hub.Subscribe(sessionstore.WorkChannel)
-	if err != nil {
-		return atStartupStage("work_subscription", err)
-	}
-	defer unsubscribe()
 	var actionClient *actions.Client
 	if settings.Actions != nil {
 		actionClient, err = actions.Dial(ctx, settings.Actions.Target, settings.Actions.TLS, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
@@ -150,7 +145,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	}
 	defer tlsListener.Close()
 	running, runningCtx := errgroup.WithContext(ctx)
-	running.Go(func() error { return runtime.Run(runningCtx, work) })
+	running.Go(func() error { return runtime.Run(runningCtx, hub) })
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
 			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, sessionstore.OutboxChannel, hub, settings.HistoryTLS)

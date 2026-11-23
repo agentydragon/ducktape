@@ -37,8 +37,9 @@ type Session struct {
 	journal        chan codeJournalEvent
 	journalDone    chan struct{}
 	// foreground is the execute or wait request whose observation the model is waiting on.
-	foreground *int64
-	yielded    bool
+	foreground        *int64
+	foregroundStarted chan struct{}
+	yielded           bool
 }
 
 type codeJournalEvent struct {
@@ -82,7 +83,8 @@ func newSession(parent context.Context, manager *Manager, host *Process, journal
 	runtime := &Session{
 		manager: manager, host: host, journalSink: journal, handleDelegate: delegate, sessionID: sessionID,
 		delegates: map[int64]context.CancelFunc{}, delegateCtx: map[int64]context.Context{}, done: make(chan struct{}), bindingCtx: bindingCtx, cancel: cancel,
-		journal: make(chan codeJournalEvent, 256), journalDone: make(chan struct{}), delegateDone: make(chan struct{}),
+		foregroundStarted: make(chan struct{}, 1),
+		journal:           make(chan codeJournalEvent, 256), journalDone: make(chan struct{}), delegateDone: make(chan struct{}),
 	}
 	go runtime.journalLoop()
 	return runtime
@@ -331,12 +333,19 @@ func (r *Session) setForeground(id int64) func() {
 	r.mu.Lock()
 	r.foreground, r.yielded = &id, false
 	r.mu.Unlock()
+	select {
+	case r.foregroundStarted <- struct{}{}:
+	default:
+	}
 	return func() {
 		r.mu.Lock()
 		r.foreground, r.yielded = nil, false
 		r.mu.Unlock()
 	}
 }
+
+// ForegroundStarted wakes the turn to check for steering input queued before the observation began.
+func (r *Session) ForegroundStarted() <-chan struct{} { return r.foregroundStarted }
 
 // HasForeground reports whether an execute or wait observation is in flight and not yet yielded.
 // Without an acknowledged yield-observation capability there is nothing to yield: input then waits

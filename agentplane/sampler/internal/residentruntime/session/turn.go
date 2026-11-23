@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
@@ -12,6 +11,12 @@ import (
 )
 
 func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
+	// Subscribe before reading: a concurrent commit is in the snapshot or queues a wakeup.
+	changed, unsubscribe, err := r.slot.SubscribeTurn(owner.ConversationID)
+	if err != nil {
+		return "", err
+	}
+	defer unsubscribe()
 	interrupts, err := r.store.PendingInterrupts(ctx, owner)
 	if err != nil {
 		return "", err
@@ -29,8 +34,10 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 		result, err := r.advance(advanceCtx, owner, live, client, session)
 		completed <- advanceResult{result: result, err: err}
 	}()
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
+	var foreground <-chan struct{}
+	if live != nil && live.code != nil {
+		foreground = live.code.ForegroundStarted()
+	}
 	joined := false
 	defer func() {
 		cancel()
@@ -56,32 +63,33 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 				return "", err
 			}
 			return "", errors.New("code-mode session detached during advance")
-		case <-ticker.C:
-			interrupts, err := r.store.PendingInterrupts(ctx, owner)
+		case <-changed:
+		case <-foreground:
+		}
+		interrupts, err := r.store.PendingInterrupts(ctx, owner)
+		if err != nil {
+			return "", err
+		}
+		if len(interrupts) == 0 && foreground != nil && live.code.HasForeground() {
+			steering, err := r.store.HasSteeringInput(ctx, owner, sessionID)
 			if err != nil {
 				return "", err
 			}
-			if len(interrupts) == 0 && live != nil && live.code.HasForeground() {
-				steering, err := r.store.HasSteeringInput(ctx, owner, sessionID)
-				if err != nil {
+			if steering {
+				if _, err := live.code.YieldForeground(ctx); err != nil {
 					return "", err
 				}
-				if steering {
-					if _, err := live.code.YieldForeground(ctx); err != nil {
-						return "", err
-					}
-				}
 			}
-			if len(interrupts) > 0 {
-				conversation, readErr := r.store.Read(ctx, owner)
-				if readErr != nil {
-					return "", readErr
-				}
-				cancel()
-				<-completed
-				joined = true
-				return r.applyInterrupt(ctx, owner, live, interrupts, conversation.Pending)
+		}
+		if len(interrupts) > 0 {
+			conversation, readErr := r.store.Read(ctx, owner)
+			if readErr != nil {
+				return "", readErr
 			}
+			cancel()
+			<-completed
+			joined = true
+			return r.applyInterrupt(ctx, owner, live, interrupts, conversation.Pending)
 		}
 	}
 }
