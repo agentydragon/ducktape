@@ -101,7 +101,6 @@ py_test(
         "//:conftest",
         "//openai_utils:model",
         "//openai_utils:pydantic_strict_mode",
-        "//openai_utils/testing:openai_mock",
         "//openai_utils/testing:responses",
         "//skills/info_gathering/evals/agent_runtime/testing:handlers",
         "//skills/info_gathering/evals/agent_runtime/testing:matchers",
