@@ -1,4 +1,3 @@
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from cluster.x.forgejo_retention_report.forgejo_retention_report import (
     markdown,
     scan_repo,
 )
+from testing.git_repo import git, init_git_repo
 
 NOW = datetime(2026, 11, 8, tzinfo=UTC)
 OLD = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp())
@@ -35,16 +35,15 @@ def test_classify_shape(version: str, shape: str) -> None:
 
 
 def test_git_scan_protects_committed_and_rolled_back_references(tmp_path: Path) -> None:
-    git = ["git", "-C", str(tmp_path), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test"]
-    subprocess.run([*git, "init", "-q"], check=True)
-    subprocess.run([*git, "remote", "add", "origin", "https://git.example.test/fixtures/repo.git"], check=True)
+    init_git_repo(tmp_path)
+    git(tmp_path, "remote", "add", "origin", "https://git.example.test/fixtures/repo.git")
     pins = tmp_path / "pins.yaml"
     pins.write_text(f"digest: {DIGEST}\n")
-    subprocess.run([*git, "add", pins.name], check=True)
-    subprocess.run([*git, "commit", "-qm", "initial digest"], check=True)
+    git(tmp_path, "add", pins.name)
+    git(tmp_path, "commit", "-qm", "initial digest")
     tag = "devel-20260102000000-1234567"
     pins.write_text(f"newTag: {tag}\nimage: git.allegedly.works/fixture/image:stable\n")
-    subprocess.run([*git, "commit", "-qam", "replace digest"], check=True)
+    git(tmp_path, "commit", "-qam", "replace digest")
 
     protection = Protection()
     source = scan_repo(str(tmp_path), rollback_days=1, protection=protection)

@@ -29,7 +29,7 @@ def test_parse_diff_preserves_paths_starting_with_a_or_b(temp_git_repo: Path, ru
 
     for nested_file in nested_files:
         nested_file.write_text("after\n")
-    changes = parse_unified_diff(run_git("diff").stdout)
+    changes = parse_unified_diff(run_git("diff"))
 
     assert {change.path: change.total_changes for change in changes} == {"a/file.py": 2, "b/file.py": 2}
 
@@ -43,7 +43,7 @@ def test_parse_deleted_paths_starting_with_a_or_b(temp_git_repo: Path, run_git):
 
     for nested_file in nested_files:
         nested_file.unlink()
-    changes = parse_unified_diff(run_git("diff").stdout)
+    changes = parse_unified_diff(run_git("diff"))
 
     assert {change.path: (change.additions, change.deletions) for change in changes} == {
         "a/file.py": (0, 1),
@@ -58,7 +58,7 @@ def test_unprefixed_path_without_git_prefix_is_unchanged(temp_git_repo: Path, ru
     git_add_commit(run_git)
 
     nested_file.write_text("after\n")
-    changes = parse_unified_diff(run_git("diff", "--no-prefix").stdout)
+    changes = parse_unified_diff(run_git("diff", "--no-prefix"))
 
     assert changes == [FileChange(path="src/file.py", additions=1, deletions=1)]
 
@@ -70,8 +70,7 @@ def test_file_change_with_binary(temp_git_repo: Path, run_git):
 
     binary_file.write_bytes(PNG_HEADER + b"\xff" * 100)
 
-    result = run_git("diff")
-    changes = parse_unified_diff(result.stdout)
+    changes = parse_unified_diff(run_git("diff"))
 
     binary_change = next(c for c in changes if c.path == "image.png")
     assert binary_change == FileChange(path="image.png", additions=0, deletions=0, is_binary=True)

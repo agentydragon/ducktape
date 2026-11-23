@@ -11,6 +11,7 @@ import codegen from "shift-codegen";
 import { composeModernExpressions } from "./modern_syntax.mjs";
 import { lowerDump } from "../lowering/dump_core.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
+import { mulberry32 } from "../seeded_random.mjs";
 
 // Named source-syntax families from the input requirements. Counts describe
 // syntactic presence, not execution of every branch or semantic equivalence.
@@ -181,15 +182,6 @@ const startSeed = option("seed", 1);
 const scriptGrammar = process.argv.includes("--script-grammar");
 const modern = process.argv.includes("--modern-syntax");
 assert(Number.isInteger(count) && count > 0 && Number.isInteger(startSeed) && startSeed >= 0);
-function rng(seed) {
-  let n = seed >>> 0;
-  return () => {
-    n = (n + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(n ^ (n >>> 15), n | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 function run(rootDir, entry, marker = null) {
   const child = spawnSync(
     process.execPath,
@@ -244,7 +236,7 @@ function collect(node, target) {
 }
 for (let seed = startSeed; seed < startSeed + count; seed++) {
   stats.attempted++;
-  const random = rng(seed);
+  const random = mulberry32(seed);
   const shift = (scriptGrammar ? shiftFuzzer.fuzzScript : shiftFuzzer.fuzzModule)(
     new shiftFuzzer.FuzzerState({ maxDepth: 4, rng: random })
   );
@@ -289,7 +281,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
       stats.instrumentationRejected++;
       continue;
     }
-    const composed = composeModernExpressions(source, parsed, rng(seed ^ 0x8b11c5), marker);
+    const composed = composeModernExpressions(source, parsed, mulberry32(seed ^ 0x8b11c5), marker);
     if (composed.sites) stats.modernComposed++;
     source = composed.source;
     try {

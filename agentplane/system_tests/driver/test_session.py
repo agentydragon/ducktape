@@ -11,10 +11,11 @@ import pytest
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
+from agentplane.proto import command_pb2, event_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import session as session_module
+from agentplane.system_tests.driver.history_fixtures import events_page
 from agentplane.system_tests.driver.session import Session
 
 # gazelle:include_dep @pypi//protobuf
@@ -61,27 +62,13 @@ def _session(
     )
 
 
-def _entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
-    return event_log_pb2.EventEntry(cursor=cursor, event=event)
-
-
-def _page(*entries: event_log_pb2.EventEntry) -> history_service_pb2.ReadSessionEventsResponse:
-    page = history_service_pb2.ReadSessionEventsResponse(last_cursor=entries[-1].cursor if entries else 0)
-    page.entries.extend(entries)
-    return page
-
-
 def _completed_turn_page(command_id: str, after_cursor: int) -> history_service_pb2.ReadSessionEventsResponse:
     command = command_pb2.Command(command_id=command_id)
-    return _page(
-        _entry(after_cursor + 1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-        _entry(
-            after_cursor + 2,
-            event_pb2.Event(
-                turn_completed=event_pb2.TurnCompleted(
-                    turn_id=f"turn-{command_id}", status=event_pb2.TURN_STATUS_COMPLETED
-                )
-            ),
+    return events_page(
+        after_cursor,
+        event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+        event_pb2.Event(
+            turn_completed=event_pb2.TurnCompleted(turn_id=f"turn-{command_id}", status=event_pb2.TURN_STATUS_COMPLETED)
         ),
     )
 
@@ -214,7 +201,8 @@ async def test_history_errors_after_attachment_fail_without_retry(
         history.read_session_events.side_effect = [empty, failure]
         expected = ServiceError
     else:
-        failure = _page(_entry(2, event_pb2.Event()))
+        # The first entry skips cursor 1.
+        failure = events_page(1, event_pb2.Event())
         history.read_session_events.side_effect = [empty, failure]
         expected = ValueError
 
@@ -253,20 +241,15 @@ async def test_failed_terminal_advances_cursor_for_a_later_explicit_input() -> N
         attempts.append(after_cursor)
         command_id = dispatcher.submit_input.call_args.args[1]
         if dispatcher.submit_input.await_count == 1:
-            return _page(
-                _entry(
-                    after_cursor + 1,
-                    event_pb2.Event(
-                        command_admitted=event_pb2.CommandAdmitted(command=command_pb2.Command(command_id=command_id))
-                    ),
+            return events_page(
+                after_cursor,
+                event_pb2.Event(
+                    command_admitted=event_pb2.CommandAdmitted(command=command_pb2.Command(command_id=command_id))
                 ),
-                _entry(
-                    after_cursor + 2,
-                    event_pb2.Event(
-                        turn_completed=event_pb2.TurnCompleted(
-                            turn_id="failed-turn", status=event_pb2.TURN_STATUS_FAILED, error="setup error"
-                        )
-                    ),
+                event_pb2.Event(
+                    turn_completed=event_pb2.TurnCompleted(
+                        turn_id="failed-turn", status=event_pb2.TURN_STATUS_FAILED, error="setup error"
+                    )
                 ),
             )
         return _completed_turn_page(command_id, after_cursor)
@@ -336,10 +319,11 @@ async def test_cancelling_a_waiting_turn_does_not_replay_its_input() -> None:
 async def test_interrupted_setup_is_a_failure_and_consumes_its_terminal() -> None:
     dispatcher, history = _clients()
     session = _session(dispatcher, history)
-    history.read_session_events.return_value = _page(
-        _entry(1, event_pb2.Event(setup_output=event_pb2.SetupOutput(stdout=b"partial output\n"))),
-        _entry(2, event_pb2.Event(setup_output=event_pb2.SetupOutput(stderr=b"permission denied\n"))),
-        _entry(3, event_pb2.Event(setup_interrupted=event_pb2.SetupInterrupted())),
+    history.read_session_events.return_value = events_page(
+        0,
+        event_pb2.Event(setup_output=event_pb2.SetupOutput(stdout=b"partial output\n")),
+        event_pb2.Event(setup_output=event_pb2.SetupOutput(stderr=b"permission denied\n")),
+        event_pb2.Event(setup_interrupted=event_pb2.SetupInterrupted()),
     )
 
     with pytest.raises(AssertionError, match="interrupted") as caught:

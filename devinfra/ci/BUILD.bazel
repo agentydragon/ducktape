@@ -343,6 +343,7 @@ py_test(
     data = ["//:.github/workflows/nix-images.yml"],
     deps = [
         ":nix_images",
+        "//testing:git_repo",
         "@pypi//pytest",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
@@ -366,6 +367,7 @@ py_test(
         ":pr_mergeability",
         ":precommit_file_selection",
         "//:conftest",
+        "//testing:git_repo",
         "@pypi//pytest",
     ],
 )

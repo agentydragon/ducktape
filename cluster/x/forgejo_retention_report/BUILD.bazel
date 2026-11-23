@@ -12,6 +12,7 @@ py_test(
     srcs = ["test_forgejo_retention_report.py"],
     deps = [
         ":forgejo_retention_report",
+        "//testing:git_repo",
         "@pypi//pytest",
     ],
 )

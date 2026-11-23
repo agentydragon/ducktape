@@ -91,6 +91,7 @@ py_library(
         ":parser",
         ":progress_bar",
         ":tree",
+        "//testing:git_repo",
         "@pypi//pytest",
         "@pypi//rich",
     ],

@@ -37,6 +37,7 @@ py_test(
         ":card",
         ":sync",
         "//:conftest",
+        "//testing:git_repo",
         "@pypi//pytest",
     ],
 )

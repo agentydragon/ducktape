@@ -1,14 +1,12 @@
 import { BINARY, LOGICAL, UNARY } from "./to_core.mjs";
 import { rng } from "../translation/testing/gen/core.mjs";
+import { lcg32 } from "../seeded_random.mjs";
 
 // Bounded CoreJS programs. Every selected family executes; no unit filtering or unknown-code retry.
 // Prefix units 0 and 1 are independent allocations. Swapping them is a required real-emitter move control.
 export function generatedCases(seed) {
-  let state = seed >>> 0;
-  const pick = (xs) => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return xs[state % xs.length];
-  };
+  const next = lcg32(seed);
+  const pick = (xs) => xs[next() % xs.length];
   const num = () => pick([1, 2, 3, 5, 7]);
   const expression = (depth) => {
     if (depth === 0) return String(num());

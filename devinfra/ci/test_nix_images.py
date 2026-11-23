@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from python.runfiles import Runfiles
 
 from devinfra.ci import nix_images
 from devinfra.ci.nix_images import BUILD_JOB, Image, changed_images, load_images
+from testing.git_repo import git, init_git_repo
 
 
 def test_workflow_matches_roster_and_wait_build() -> None:
@@ -69,15 +69,12 @@ if sys.argv[1] == "--eval":
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.chdir(tmp_path)
 
-    def git(*args: str) -> None:
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args], check=True)
-
-    git("init", "--quiet")
+    init_git_repo(tmp_path)
     (tmp_path / "shared.nix").write_text("a")
     (tmp_path / "site").mkdir()
     (tmp_path / "site" / "index.html").write_text("a")
-    git("add", ".")
-    git("commit", "--quiet", "-m", "base")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "--quiet", "-m", "base")
     return tmp_path
 
 
@@ -94,11 +91,8 @@ IMAGES = {
 def test_changed_images_matches_globs(repo: Path, path: str, expected: list[str]) -> None:
     (repo / path).parent.mkdir(parents=True, exist_ok=True)
     (repo / path).write_text("b")
-    subprocess.run(["git", "add", "."], check=True)
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "-m", "change"],
-        check=True,
-    )
+    git(repo, "add", ".")
+    git(repo, "commit", "--quiet", "-m", "change")
     assert changed_images(IMAGES, "HEAD^1", "HEAD") == expected
 
 

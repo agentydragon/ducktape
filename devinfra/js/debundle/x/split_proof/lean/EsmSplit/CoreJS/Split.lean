@@ -453,32 +453,22 @@ theorem lookup_flatMap {x : α} {v : Option γ} (g : δ → List (α × γ)) :
       | none => rw [Option.none_or]; exact ih (Or.inl rfl)
       | some w => rfl
 
-theorem lookup_of_mem [LawfulBEq α] {k : α} {v : γ} : ∀ {l : List (α × γ)}, (k, v) ∈ l → (∀ v', (k, v') ∈ l → v' = v) →
-    l.lookup k = some v
-  | [], h, _ => by simp at h
-  | (k', w) :: l, h, hu => by
-    rw [List.lookup_cons]
-    by_cases hk : k = k'
-    · subst hk
-      simp only [beq_self_eq_true]
-      exact congrArg some (hu w (by simp))
-    · have : (k == k') = false := by simpa using hk
-      rw [this]
-      refine lookup_of_mem ?_ fun v' hv' => hu v' (List.mem_cons_of_mem _ hv')
-      rcases List.mem_cons.1 h with h | h
-      · exact absurd (Prod.mk.inj h).1 hk
-      · exact h
+theorem lookup_none_iff_not_mem_keys [LawfulBEq α] {k : α} {l : List (α × γ)} :
+    l.lookup k = none ↔ k ∉ l.map Prod.fst := by
+  simp only [List.lookup_eq_none_iff, bne_iff_ne, List.mem_map, not_exists, not_and]
+  exact forall_congr' fun p => forall_congr' fun _ => ne_comm
 
-theorem lookup_ne_none [LawfulBEq α] {k : α} {l : List (α × γ)} (h : k ∈ l.map (·.1)) : l.lookup k ≠ none := by
-  intro hn
-  obtain ⟨p, hp, rfl⟩ := List.mem_map.1 h
-  have := List.lookup_eq_none_iff.1 hn p hp
-  simp at this
+theorem lookup_mem [LawfulBEq α] {k : α} {v : γ} {l : List (α × γ)}
+    (h : l.lookup k = some v) : (k, v) ∈ l := by
+  obtain ⟨pre, post, rfl, _⟩ := List.lookup_eq_some_iff.mp h
+  simp
 
-theorem lookup_eq_none_of [LawfulBEq α] {k : α} {l : List (α × γ)} (h : k ∉ l.map (·.1)) : l.lookup k = none :=
-  List.lookup_eq_none_iff.2 fun p hp => by
-    have : k ≠ p.1 := fun e => h (e ▸ List.mem_map_of_mem hp)
-    simpa using this
+theorem lookup_of_mem [LawfulBEq α] {k : α} {v : γ} {l : List (α × γ)}
+    (h : (k, v) ∈ l) (unique : ∀ v', (k, v') ∈ l → v' = v) : l.lookup k = some v := by
+  have present : l.lookup k ≠ none :=
+    fun hnone => (lookup_none_iff_not_mem_keys.mp hnone) (List.mem_map_of_mem h)
+  obtain ⟨v', result⟩ := Option.ne_none_iff_exists'.mp present
+  rw [result, unique v' (lookup_mem result)]
 
 omit [BEq α] in
 theorem nodup_keys {k : α} {v v' : γ} : ∀ {l : List (α × γ)}, (l.map (·.1)).Nodup → (k, v) ∈ l → (k, v') ∈ l → v = v'
@@ -504,7 +494,7 @@ theorem lookup_zip_range : ∀ (ss : List Stmt) (j : Nat), ((List.range ss.lengt
       rw [mem_numbered, List.mem_range]
     cases h : (a :: ss)[j]? with
     | none =>
-      refine lookup_eq_none_of fun hj => ?_
+      refine lookup_none_iff_not_mem_keys.mpr fun hj => ?_
       obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hj
       rw [(hmem p).1 hp |>.2] at h
       cases h
@@ -514,14 +504,12 @@ theorem lookup_zip_range : ∀ (ss : List Stmt) (j : Nat), ((List.range ss.lengt
       rw [h] at this
       exact (Option.some.inj this).symm
 
-theorem lookup_map_snd {α γ δ : Type} [BEq α] (h : γ → δ) (k : α) : ∀ (l : List (α × γ)),
-    (l.map fun p => (p.1, h p.2)).lookup k = (l.lookup k).map h
-  | [] => rfl
-  | (k', v) :: l => by
-    simp only [List.map_cons, List.lookup_cons]
-    cases k == k' with
-    | true => rfl
-    | false => exact lookup_map_snd h k l
+theorem lookup_map_snd {α γ δ : Type} [BEq α] (h : γ → δ) (k : α) (l : List (α × γ)) :
+    (l.map fun p => (p.1, h p.2)).lookup k = (l.lookup k).map h := by
+  simp only [List.lookup_eq_findSome?, List.findSome?_map, List.map_findSome?]
+  congr 1
+  funext p
+  by_cases hk : k == p.1 <;> simp [hk]
 
 section scopes
 variable {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan} {frames : List (Nat × List (Name × Addr))}
@@ -574,7 +562,7 @@ theorem unique_defs {i j : Nat} {x : Name} (hud : EsmSplit.UniqueDefs B) (hi : i
 theorem scope_lookup_none (hfp : FootprintsOfSyntax ss B) (hF : FramesOf ((List.range ss.length).zip ss) frames)
     {M : Module} {x : Name} (h : ∀ p ∈ M.body, x ∉ (B.stmt p.1).defs) : (M.scope frames).lookup x = none := by
   rw [scope_eq]
-  refine lookup_flatMap _ _ (fun p hp => Or.inl (lookup_eq_none_of fun hx => h p hp ?_)) (Or.inl rfl)
+  refine lookup_flatMap _ _ (fun p hp => Or.inl (lookup_none_iff_not_mem_keys.mpr fun hx => h p hp ?_)) (Or.inl rfl)
   exact ((frame_keys hfp hF).1 hx).2
 
 /-- In a module with the statement that declares `x`, `x` is that statement's binding. -/
@@ -587,7 +575,7 @@ theorem scope_lookup_decl (hfp : FootprintsOfSyntax ss B) (hF : FramesOf ((List.
     · obtain ⟨hp, hxp⟩ := (frame_keys hfp hF).1 hk
       right
       rw [unique_defs hud (hfp.1 ▸ hp) (hfp.1 ▸ hj) hxp hx]
-    · exact Or.inl (lookup_eq_none_of hk)
+    · exact Or.inl (lookup_none_iff_not_mem_keys.mpr hk)
   · obtain ⟨p, hp, rfl⟩ := hjM
     exact ⟨p, hp, rfl⟩
 
@@ -753,7 +741,8 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
     rw [List.append_nil]
     exact scope_lookup_none hfp hF fun p hp => h p.1 ((hmainbody p).1 hp).1
   have hframe_some : ∀ {x j}, j < ss.length → x ∈ (B.stmt j).defs → ∃ a, (frameAt frames j).lookup x = some a :=
-    fun hj hx => Option.ne_none_iff_exists'.1 (lookup_ne_none ((frame_keys hfp hF).2 ⟨hj, hx⟩))
+    fun hj hx => Option.ne_none_iff_exists'.1 fun hnone =>
+      (lookup_none_iff_not_mem_keys.mp hnone) ((frame_keys hfp hF).2 ⟨hj, hx⟩)
   have hin : ∀ (md : EsmSplit.Module) {j}, j ∈ md.stmts → j < ss.length → ∃ p ∈ (moduleOf ss B P md).body, p.1 = j :=
     fun md j hj hjn => ⟨(j, ss[j]), (hbody md _).2 ⟨hj, by simp [hjn]⟩, rfl⟩
   -- an import of the split finds the binding of the statement that declares the name

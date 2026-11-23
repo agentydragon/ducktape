@@ -168,3 +168,9 @@ py_library(
     srcs = ["threaded_http.py"],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "git_repo",
+    srcs = ["git_repo.py"],
+    visibility = ["//visibility:public"],
+)

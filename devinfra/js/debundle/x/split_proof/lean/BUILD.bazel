@@ -486,6 +486,8 @@ lean_axiom_test(
         "CoreJS.reachFrame_lookupProp",
         "CoreJS.perform_has",
         "CoreJS.perform_get",
+        "CoreJS.perform_set",
+        "CoreJS.perform_delete",
         "CoreJS.ReachFrame.attempt",
         "CoreJS.converse_reachFrame",
         "CoreJS.opaque_world_reachFrame",

@@ -1,3 +1,9 @@
+# Git repositories
+
+Use `testing.git_repo.init_git_repo()` to initialize an empty checkout with a
+local test identity and signing disabled. Tests that need a custom topology can
+run their own clone or bare repo commands through `testing.git_repo.git()`.
+
 # Test TCP and HTTP servers
 
 Use `util.net.listen_tcp()` when a test needs ownership of a listening TCP port, and

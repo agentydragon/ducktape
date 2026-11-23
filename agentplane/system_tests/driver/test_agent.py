@@ -9,24 +9,15 @@ import pytest
 
 from agentplane.app.testing.client import Client
 from agentplane.history_service.api.history import history_service_pb2
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
+from agentplane.proto import command_pb2, event_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import agent as agent_module
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, Agent, scripted_turn_with_admission_and_history
+from agentplane.system_tests.driver.history_fixtures import events_page
 from agentplane.testing.scripted_model import ScriptedModel
 
 # gazelle:include_dep @pypi//protobuf
-
-
-def _entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
-    return event_log_pb2.EventEntry(cursor=cursor, event=event)
-
-
-def _page(*entries: event_log_pb2.EventEntry) -> history_service_pb2.ReadSessionEventsResponse:
-    page = history_service_pb2.ReadSessionEventsResponse(last_cursor=entries[-1].cursor if entries else 0)
-    page.entries.extend(entries)
-    return page
 
 
 async def test_agent_create_retries_unavailable_without_creating_another_session() -> None:
@@ -113,9 +104,8 @@ async def test_run_reports_terminal_runner_failure(failure_kind: str) -> None:
             if failure_kind == "command_failed"
             else event_pb2.Event(harness_launch_failed=event_pb2.HarnessLaunchFailed(reason=diagnostic))
         )
-        return _page(
-            _entry(after_cursor + 1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-            _entry(after_cursor + 2, failure),
+        return events_page(
+            after_cursor, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)), failure
         )
 
     client.read_session_events.side_effect = history_page
@@ -138,46 +128,26 @@ async def test_run_ignores_prior_turns_and_failures_until_its_command_is_admitte
         del limit
         command_id = dispatcher.submit_input.call_args.args[1]
         command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="test prompt"))
-        return _page(
-            _entry(
-                after_cursor + 1,
-                event_pb2.Event(
-                    command_failed=event_pb2.CommandFailed(command_id="retained-command", reason="old failure")
-                ),
+        return events_page(
+            after_cursor,
+            event_pb2.Event(
+                command_failed=event_pb2.CommandFailed(command_id="retained-command", reason="old failure")
             ),
-            _entry(
-                after_cursor + 2,
-                event_pb2.Event(harness_launch_failed=event_pb2.HarnessLaunchFailed(reason="old launch failure")),
+            event_pb2.Event(harness_launch_failed=event_pb2.HarnessLaunchFailed(reason="old launch failure")),
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="old", text="old answer")),
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(turn_id="old-turn", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
-            _entry(
-                after_cursor + 3,
-                event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="old", text="old answer")),
+            event_pb2.Event(harness_started=event_pb2.HarnessStarted(resumed=True)),
+            event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+            event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id="message", origin_command_ids=[command_id]
+                )
             ),
-            _entry(
-                after_cursor + 4,
-                event_pb2.Event(
-                    turn_completed=event_pb2.TurnCompleted(turn_id="old-turn", status=event_pb2.TURN_STATUS_COMPLETED)
-                ),
-            ),
-            _entry(after_cursor + 5, event_pb2.Event(harness_started=event_pb2.HarnessStarted(resumed=True))),
-            _entry(after_cursor + 6, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-            _entry(
-                after_cursor + 7,
-                event_pb2.Event(
-                    harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                        harness_message_id="message", origin_command_ids=[command_id]
-                    )
-                ),
-            ),
-            _entry(
-                after_cursor + 8,
-                event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="new", text="new answer")),
-            ),
-            _entry(
-                after_cursor + 9,
-                event_pb2.Event(
-                    turn_completed=event_pb2.TurnCompleted(turn_id="new-turn", status=event_pb2.TURN_STATUS_COMPLETED)
-                ),
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="new", text="new answer")),
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(turn_id="new-turn", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
         )
 
@@ -203,11 +173,9 @@ async def test_run_fails_on_matching_command_failure_before_admission() -> None:
     ) -> history_service_pb2.ReadSessionEventsResponse:
         del limit
         command_id = dispatcher.submit_input.call_args.args[1]
-        return _page(
-            _entry(
-                after_cursor + 1,
-                event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command_id, reason=diagnostic)),
-            )
+        return events_page(
+            after_cursor,
+            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command_id, reason=diagnostic)),
         )
 
     client.read_session_events.side_effect = history_page
@@ -230,40 +198,28 @@ async def test_next_turn_re_reads_entries_after_the_returned_terminal_in_a_batch
         command_id = dispatcher.submit_input.call_args.args[1]
         command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput())
         if dispatcher.submit_input.await_count == 1:
-            return _page(
-                _entry(1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-                _entry(
-                    2,
-                    event_pb2.Event(
-                        turn_completed=event_pb2.TurnCompleted(turn_id="first", status=event_pb2.TURN_STATUS_COMPLETED)
-                    ),
+            return events_page(
+                0,
+                event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+                event_pb2.Event(
+                    turn_completed=event_pb2.TurnCompleted(turn_id="first", status=event_pb2.TURN_STATUS_COMPLETED)
                 ),
-                _entry(
-                    3,
-                    event_pb2.Event(
-                        turn_completed=event_pb2.TurnCompleted(
-                            turn_id="later-retained", status=event_pb2.TURN_STATUS_COMPLETED
-                        )
-                    ),
-                ),
-            )
-        assert after_cursor == 2
-        return _page(
-            _entry(
-                3,
                 event_pb2.Event(
                     turn_completed=event_pb2.TurnCompleted(
                         turn_id="later-retained", status=event_pb2.TURN_STATUS_COMPLETED
                     )
                 ),
+            )
+        assert after_cursor == 2
+        return events_page(
+            2,
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(turn_id="later-retained", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
-            _entry(4, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-            _entry(5, event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="second", text="second answer"))),
-            _entry(
-                6,
-                event_pb2.Event(
-                    turn_completed=event_pb2.TurnCompleted(turn_id="second", status=event_pb2.TURN_STATUS_COMPLETED)
-                ),
+            event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="second", text="second answer")),
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(turn_id="second", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
         )
 
@@ -282,10 +238,8 @@ async def test_next_turn_reports_a_new_command_failure_without_an_awaited_id() -
     client = create_autospec(Client, instance=True)
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
     diagnostic = "test notification command failed"
-    client.read_session_events.return_value = _page(
-        _entry(
-            1, event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id="incoming-command", reason=diagnostic))
-        )
+    client.read_session_events.return_value = events_page(
+        0, event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id="incoming-command", reason=diagnostic))
     )
     with pytest.raises(AssertionError) as caught:
         await Agent(client, dispatcher, sandbox="box", sandbox_uid="box-uid", thread_id=uuid4(), cursor=0).next_turn()
@@ -319,8 +273,8 @@ async def test_credentials_turn_cancels_model_wait_when_collection_fails() -> No
     ) -> history_service_pb2.ReadSessionEventsResponse:
         del after_cursor, limit
         await request_started.wait()
-        return _page(
-            _entry(1, event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command_id, reason=diagnostic)))
+        return events_page(
+            0, event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command_id, reason=diagnostic))
         )
 
     client.read_session_events.side_effect = history_page
@@ -355,37 +309,23 @@ async def test_run_preserves_tool_outcome_on_completed_turn(tool_succeeded: bool
         del limit
         command_id = dispatcher.submit_input.call_args.args[1]
         command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="test prompt"))
-        return _page(
-            _entry(
-                after_cursor + 1,
-                event_pb2.Event(
-                    native=event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line='{"test": "input"}')
-                ),
+        return events_page(
+            after_cursor,
+            event_pb2.Event(
+                native=event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line='{"test": "input"}')
             ),
-            _entry(after_cursor + 2, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-            _entry(
-                after_cursor + 3,
-                event_pb2.Event(
-                    item_completed=event_pb2.ItemCompleted(
-                        item_id="test-tool", tool=event_pb2.ToolResult(output=tool_output, succeeded=tool_succeeded)
-                    )
-                ),
+            event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="test-tool", tool=event_pb2.ToolResult(output=tool_output, succeeded=tool_succeeded)
+                )
             ),
-            _entry(
-                after_cursor + 4,
-                event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="test-answer", text="test answer")),
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="test-answer", text="test answer")),
+            event_pb2.Event(
+                native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"test": "result"}')
             ),
-            _entry(
-                after_cursor + 5,
-                event_pb2.Event(
-                    native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"test": "result"}')
-                ),
-            ),
-            _entry(
-                after_cursor + 6,
-                event_pb2.Event(
-                    turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
-                ),
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
         )
 
@@ -435,39 +375,25 @@ async def test_run_rejects_unsuccessful_terminal_after_partial_output(status: ev
             command = command_pb2.Command(
                 command_id=command_id, submit_input=command_pb2.SubmitInput(text="test admitted prompt")
             )
-            return _page(
-                _entry(after_cursor + 1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-                _entry(
-                    after_cursor + 2,
-                    event_pb2.Event(
-                        item_completed=event_pb2.ItemCompleted(item_id="test-partial", text="test partial output")
-                    ),
+            return events_page(
+                after_cursor,
+                event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+                event_pb2.Event(
+                    item_completed=event_pb2.ItemCompleted(item_id="test-partial", text="test partial output")
                 ),
-                _entry(
-                    after_cursor + 3,
-                    event_pb2.Event(
-                        text_delta=event_pb2.TextDelta(item_id="test-unfinished", text="test unfinished text")
-                    ),
-                ),
-                _entry(
-                    after_cursor + 4,
-                    event_pb2.Event(
-                        turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=status, error=diagnostic)
-                    ),
+                event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-unfinished", text="test unfinished text")),
+                event_pb2.Event(
+                    turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=status, error=diagnostic)
                 ),
             )
         command = command_pb2.Command(
             command_id=command_id, submit_input=command_pb2.SubmitInput(text="test explicit next prompt")
         )
-        return _page(
-            _entry(after_cursor + 1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-            _entry(
-                after_cursor + 2,
-                event_pb2.Event(
-                    turn_completed=event_pb2.TurnCompleted(
-                        turn_id="test-next-turn", status=event_pb2.TURN_STATUS_COMPLETED
-                    )
-                ),
+        return events_page(
+            after_cursor,
+            event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(turn_id="test-next-turn", status=event_pb2.TURN_STATUS_COMPLETED)
             ),
         )
 
@@ -511,15 +437,13 @@ async def test_imported_agent_resolves_and_pins_its_destination_via_native_dispa
         del limit
         command_id = dispatcher.submit_input.call_args.args[1]
         command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput())
-        return _page(
-            _entry(after_cursor + 1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))),
-            _entry(
-                after_cursor + 2,
-                event_pb2.Event(
-                    turn_completed=event_pb2.TurnCompleted(
-                        turn_id=f"turn-{dispatcher.submit_input.await_count}", status=event_pb2.TURN_STATUS_COMPLETED
-                    )
-                ),
+        return events_page(
+            after_cursor,
+            event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
+            event_pb2.Event(
+                turn_completed=event_pb2.TurnCompleted(
+                    turn_id=f"turn-{dispatcher.submit_input.await_count}", status=event_pb2.TURN_STATUS_COMPLETED
+                )
             ),
         )
 

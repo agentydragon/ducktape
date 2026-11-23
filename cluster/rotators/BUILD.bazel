@@ -52,6 +52,7 @@ py_test(
     deps = [
         ":git_publish",
         "//:conftest",
+        "//testing:git_repo",
         "@pypi//pytest",
     ],
 )
