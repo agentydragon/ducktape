@@ -1,6 +1,5 @@
 import errno
-import subprocess
-import sys
+import fcntl
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +9,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, repo_contents_cache_gc as gc
-from devinfra.gc.conftest import link_external, make_base, make_cache_entry
+from devinfra.gc.conftest import hold_posix_lock, link_external, make_base, make_cache_entry
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 
 
@@ -395,25 +394,8 @@ def test_delete_skips_a_replaced_entry(cache: FakeCache, proc: Path, mountinfo: 
 def test_delete_yields_to_a_running_bazel_command(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
     """Bazel holds `gc_lock` shared for a command's whole duration; nothing is removed then."""
     candidates = _prunable(cache, proc, mountinfo)
-    holder = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import fcntl, os, sys; fd = os.open(sys.argv[1], os.O_RDWR); "
-            "fcntl.lockf(fd, fcntl.LOCK_SH); print('locked', flush=True); sys.stdin.read(1)",
-            str(cache.contents / "gc_lock"),
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert holder.stdout is not None
-        assert holder.stdout.readline() == "locked\n"
+    with hold_posix_lock(cache.contents / "gc_lock", fcntl.LOCK_SH):
         results = _delete(cache, candidates, mountinfo)
-    finally:
-        assert holder.stdin is not None
-        holder.communicate("x", timeout=5)
 
     assert [type(result) for result in results] == [Skipped]
     assert cache.unreferenced.is_dir()
