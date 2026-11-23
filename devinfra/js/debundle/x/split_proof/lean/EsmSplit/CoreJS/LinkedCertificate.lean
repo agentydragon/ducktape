@@ -903,7 +903,7 @@ private def recordFuelLimit (source : Program) : Nat := Id.run do
     for (_, s) in m.body do
       if let .decl _ _ (.obj props) := s then
         width := max width props.length
-  return min 1024 (64 + width)
+  return min 2048 (64 + width)
 
 private def witnessFuel (profile : HostProfile) (source candidate : Program) : Except String Nat := do
   let test := probeWitnessAt profile source candidate

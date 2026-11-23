@@ -16,8 +16,10 @@ import {
   variable,
 } from "./testing/linked_programs.mjs";
 
-const fieldCount = 705;
-const rowCount = 44;
+const fieldCount = Number(process.env.LINKED_TABLE_FIELDS ?? 705);
+const rowCount = Number(process.env.LINKED_TABLE_ROWS ?? 44);
+assert(Number.isSafeInteger(fieldCount) && fieldCount >= 17);
+assert(Number.isSafeInteger(rowCount) && rowCount >= 1);
 const fields = Array.from({ length: fieldCount }, (_, index) => [`field${index}`, `value${index}`]);
 const indexOf = (index) => (fieldCount - 17 + index) % fieldCount;
 const member = (name, key) => ({
